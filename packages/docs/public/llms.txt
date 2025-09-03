@@ -1,0 +1,178 @@
+# curl-runner Documentation Guide for Large Language Models
+
+This file provides comprehensive information about the curl-runner project and its documentation for LLM crawlers and AI assistants.
+
+## Project Overview
+
+curl-runner is a powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance, it allows developers to define, execute, and validate HTTP requests with advanced features like parallel execution, response validation, variable templation, and comprehensive output formats.
+
+## Documentation Structure
+
+The complete documentation is available at: https://curl-runner.com/docs
+
+### Getting Started
+- **Main Documentation**: https://curl-runner.com/docs/index.md
+  - Overview of curl-runner features and capabilities
+  - Quick start guide with basic examples
+  - Installation overview and next steps
+
+- **Installation Guide**: https://curl-runner.com/docs/installation.md
+  - Multiple installation methods (Bun, npm, Docker)
+  - Prerequisites and system requirements  
+  - Platform support and troubleshooting
+
+- **Quick Start**: https://curl-runner.com/docs/quick-start.md
+  - Step-by-step tutorial for first-time users
+  - Basic usage patterns and examples
+  - Common workflows and best practices
+
+### Core Configuration
+- **YAML Structure**: https://curl-runner.com/docs/yaml-structure.md
+  - Complete YAML configuration syntax
+  - Request properties and structure
+  - Collection and global configuration patterns
+  - Response validation examples
+
+- **Global Settings**: https://curl-runner.com/docs/global-settings.md
+  - Execution modes (sequential vs parallel)
+  - Timeout and retry configuration
+  - Output formatting options
+  - Default headers and request settings
+  - Variable definitions and environment setup
+
+- **Variables & Templating**: https://curl-runner.com/docs/variables.md
+  - Variable definition and usage
+  - Environment variable integration
+  - Template expressions and computed values
+  - Dynamic content generation
+
+### Command Line Interface
+- **CLI Commands**: https://curl-runner.com/docs/cli-commands.md
+  - Complete command reference
+  - Available commands and subcommands
+  - Usage patterns and examples
+  - Command-line workflow guidance
+
+- **CLI Options**: https://curl-runner.com/docs/cli-options.md
+  - Comprehensive flag and option reference
+  - Global options and command-specific options
+  - Configuration precedence and overrides
+  - Advanced usage scenarios
+
+### Features & Capabilities
+- **Parallel Execution**: https://curl-runner.com/docs/features/parallel-execution.md
+  - Concurrent request processing
+  - Performance optimization techniques
+  - Resource management and limits
+  - Use cases and best practices
+
+- **Response Validation**: https://curl-runner.com/docs/features/response-validation.md
+  - Status code validation
+  - Header and body content validation
+  - JSON schema validation
+  - Custom validation rules and patterns
+
+- **Retry Mechanism**: https://curl-runner.com/docs/features/retry-mechanism.md
+  - Automatic retry configuration
+  - Exponential backoff strategies
+  - Retry conditions and limits
+  - Error handling patterns
+
+- **Output Formats**: https://curl-runner.com/docs/features/output-formats.md
+  - Multiple output format options
+  - JSON, XML, and custom formatting
+  - Report generation and export
+  - Integration with CI/CD pipelines
+
+### Examples & Use Cases
+- **Basic Examples**: https://curl-runner.com/docs/examples/basic.md
+  - Simple GET and POST requests
+  - Basic authentication patterns
+  - Simple validation scenarios
+  - Beginner-friendly examples
+
+- **Collection Examples**: https://curl-runner.com/docs/examples/collection.md
+  - Multi-request workflows
+  - Request chaining and dependencies
+  - Collection-level configuration
+  - Advanced organization patterns
+
+- **Advanced Examples**: https://curl-runner.com/docs/examples/advanced.md
+  - Complex workflow automation
+  - Advanced validation scenarios
+  - Integration patterns
+  - Production-ready configurations
+
+### API Reference
+- **Global Settings Reference**: https://curl-runner.com/docs/api-reference/global-settings.md
+  - Complete global configuration options
+  - Property definitions and types
+  - Default values and behaviors
+  - Configuration examples
+
+- **Request Object Reference**: https://curl-runner.com/docs/api-reference/request-object.md
+  - Request object schema and properties
+  - Required and optional fields
+  - Type definitions and validation
+  - Usage examples and patterns
+
+- **Response Object Reference**: https://curl-runner.com/docs/api-reference/response-object.md
+  - Response object structure
+  - Available response data
+  - Metadata and timing information
+  - Access patterns and examples
+
+- **Validation Rules Reference**: https://curl-runner.com/docs/api-reference/validation-rules.md
+  - Complete validation rule syntax
+  - Built-in validation types
+  - Custom validation patterns
+  - Error handling and reporting
+
+## Key Features
+
+1. **YAML-Based Configuration**: Human-readable configuration files with support for variables, templates, and complex request definitions.
+
+2. **High Performance**: Built on Bun runtime for exceptional speed and efficiency.
+
+3. **Flexible Execution**: Support for both sequential and parallel request execution with configurable concurrency limits.
+
+4. **Comprehensive Validation**: Built-in response validation including status codes, headers, body content, and JSON schema validation.
+
+5. **Variable System**: Powerful templating with environment variables, computed values, and dynamic content generation.
+
+6. **Rich Output Options**: Multiple output formats including JSON, detailed reports, and integration-friendly formats.
+
+7. **Retry & Error Handling**: Configurable retry mechanisms with exponential backoff and comprehensive error reporting.
+
+8. **CLI Integration**: Full command-line interface with extensive options for automation and CI/CD integration.
+
+## Common Use Cases
+
+- **API Testing**: Automated testing of REST APIs with comprehensive validation
+- **Load Testing**: Parallel execution for performance testing scenarios
+- **CI/CD Integration**: Automated API validation in deployment pipelines
+- **Development Workflows**: Local API development and testing
+- **Monitoring**: Automated health checks and API monitoring
+- **Documentation**: Living API documentation with executable examples
+
+## Technical Implementation
+
+- **Runtime**: Bun (optimized for performance)
+- **Configuration**: YAML with advanced templating
+- **Execution**: Concurrent HTTP client with connection pooling
+- **Validation**: Schema-based validation with custom rules
+- **Output**: Structured data with multiple format options
+
+## Getting Help
+
+For comprehensive information about any aspect of curl-runner, refer to the specific documentation files linked above. Each file contains detailed explanations, examples, and best practices for that particular area of functionality.
+
+The documentation is designed to be both human-readable and LLM-friendly, with structured content, clear examples, and comprehensive cross-references between related topics.
+
+## Repository
+
+Source code and additional resources: https://github.com/alexvcasillas/curl-runner
+
+---
+
+This llms.txt file serves as a comprehensive guide for AI assistants to understand and navigate the curl-runner documentation ecosystem effectively.
