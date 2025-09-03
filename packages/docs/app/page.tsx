@@ -11,47 +11,12 @@ import {
 import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { Contributors } from '@/components/contributors';
+import { CurlRunner } from '@/components/curl-runner';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-
-const exampleYaml = `# api-tests.yaml
-global:
-  variables:
-    BASE_URL: https://api.example.com
-    API_TOKEN: your-token-here
-  execution: parallel
-
-requests:
-  - name: Get Users
-    url: \${BASE_URL}/users
-    method: GET
-    headers:
-      Authorization: Bearer \${API_TOKEN}
-      
-  - name: Health Check
-    url: \${BASE_URL}/health
-    method: GET
-    validation:
-      status: 200
-      body:
-        status: ok`;
-
-const installCommand = `# Install with Bun (recommended)
-bun install -g @curl-runner/cli
-
-# Or with npm
-npm install -g @curl-runner/cli`;
-
-const runCommand = `# Run your tests
-curl-runner api-tests.yaml -v
-
-# Run all YAML files in directory
-curl-runner tests/ --parallel
-
-# Save results to JSON
-curl-runner api-tests.yaml --output results.json`;
+import { exampleYaml, installCommand, runCommand } from './snippets';
 
 export default function Home() {
   return (
@@ -379,7 +344,7 @@ export default function Home() {
               Ready to get started?
             </h2>
             <p className="max-w-[85%] leading-normal text-muted-foreground sm:text-lg sm:leading-7">
-              Join developers who trust curl-runner for their HTTP request management needs.
+              Join developers who trust <CurlRunner /> for their HTTP request management needs.
             </p>
             <div className="flex gap-4 items-center flex-col sm:flex-row mt-4">
               <Button asChild size="lg" className="h-11 bg-cyan-500 hover:bg-cyan-600 text-white">

@@ -1,37 +1,15 @@
-import { DocsPageHeader } from "@/components/docs-page-header"
-import { CodeBlockServer } from "@/components/code-block-server"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { CheckCircle, AlertCircle, Monitor, Laptop, HardDrive } from "lucide-react"
-
-const installCommands = {
-  bun: `# Install globally with Bun (recommended)
-bun install -g @curl-runner/cli
-
-# Or install locally in your project
-bun add @curl-runner/cli`,
-  
-  npm: `# Install globally with npm
-npm install -g @curl-runner/cli
-
-# Or install locally in your project
-npm install @curl-runner/cli`,
-  
-  binary: `# Download pre-built binary (Linux/macOS/Windows)
-curl -fsSL https://install.curl-runner.dev | sh
-
-# Or download from GitHub releases
-# https://github.com/yourusername/curl-runner/releases`
-}
-
-const verifyInstall = `# Verify installation
-curl-runner --version
-
-# Show help
-curl-runner --help
-
-# Run example (if you have example files)
-curl-runner examples/simple.yaml`
+import { AlertCircle, CheckCircle, HardDrive, Laptop, Monitor } from 'lucide-react';
+import { CodeBlockServer } from '@/components/code-block-server';
+import { DocsPageHeader } from '@/components/docs-page-header';
+import { Badge } from '@/components/ui/badge';
+import {
+  bunInstallExample,
+  chocolateyInstallExample,
+  dockerInstallExample,
+  homebrewInstallExample,
+  npmInstallExample,
+  verifyInstallationExample,
+} from './snippets';
 
 export default function InstallationPage() {
   return (
@@ -53,7 +31,8 @@ export default function InstallationPage() {
                 <Badge variant="secondary">Recommended</Badge>
               </div>
               <p className="text-muted-foreground">
-                <code className="font-mono">curl-runner</code> is optimized for Bun and provides the best performance when used with Bun runtime.
+                <code className="font-mono">curl-runner</code> is optimized for Bun and provides the
+                best performance when used with Bun runtime.
               </p>
               <CodeBlockServer language="bash">
                 {`# Install Bun (if not already installed)
@@ -68,7 +47,7 @@ bun --version`}
           {/* Installation Methods */}
           <section>
             <h2 className="text-2xl font-semibold tracking-tight mb-4">Installation Methods</h2>
-            
+
             <div className="space-y-8">
               {/* Bun Installation */}
               <div className="space-y-3">
@@ -79,9 +58,7 @@ bun --version`}
                 <p className="text-muted-foreground">
                   Install using Bun for optimal performance and compatibility.
                 </p>
-                <CodeBlockServer language="bash">
-                  {installCommands.bun}
-                </CodeBlockServer>
+                <CodeBlockServer language="bash">{bunInstallExample}</CodeBlockServer>
               </div>
 
               {/* npm Installation */}
@@ -90,9 +67,7 @@ bun --version`}
                 <p className="text-muted-foreground">
                   Install using npm if you prefer Node.js ecosystem tools.
                 </p>
-                <CodeBlockServer language="bash">
-                  {installCommands.npm}
-                </CodeBlockServer>
+                <CodeBlockServer language="bash">{npmInstallExample}</CodeBlockServer>
               </div>
 
               {/* Binary Installation */}
@@ -101,9 +76,7 @@ bun --version`}
                 <p className="text-muted-foreground">
                   Download a standalone executable for your platform.
                 </p>
-                <CodeBlockServer language="bash">
-                  {installCommands.binary}
-                </CodeBlockServer>
+                <CodeBlockServer language="bash">{dockerInstallExample}</CodeBlockServer>
               </div>
             </div>
           </section>
@@ -112,11 +85,10 @@ bun --version`}
           <section>
             <h2 className="text-2xl font-semibold tracking-tight mb-4">Verify Installation</h2>
             <p className="text-muted-foreground mb-4">
-              After installation, verify that <code className="font-mono">curl-runner</code> is working correctly:
+              After installation, verify that <code className="font-mono">curl-runner</code> is
+              working correctly:
             </p>
-            <CodeBlockServer language="bash">
-              {verifyInstall}
-            </CodeBlockServer>
+            <CodeBlockServer language="bash">{verifyInstallationExample}</CodeBlockServer>
           </section>
 
           {/* Platform Support */}
@@ -138,7 +110,7 @@ bun --version`}
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-blue-500/10 p-2">
@@ -154,7 +126,7 @@ bun --version`}
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-purple-500/10 p-2">
@@ -164,9 +136,7 @@ bun --version`}
                     <h4 className="font-medium mb-2 flex items-center gap-2">
                       Windows <CheckCircle className="h-3 w-3 text-green-500" />
                     </h4>
-                    <p className="text-sm text-muted-foreground">
-                      Windows 10+, WSL2 supported
-                    </p>
+                    <p className="text-sm text-muted-foreground">Windows 10+, WSL2 supported</p>
                   </div>
                 </div>
               </div>
@@ -181,12 +151,13 @@ bun --version`}
                 <AlertCircle className="h-5 w-5" />
                 <h3 className="text-xl font-semibold">Common Issues</h3>
               </div>
-              
+
               <div className="space-y-4">
                 <div>
                   <h4 className="font-medium mb-2">Command not found</h4>
                   <p className="text-sm text-muted-foreground mb-2">
-                    If you get "curl-runner: command not found", ensure that the installation directory is in your PATH.
+                    If you get "curl-runner: command not found", ensure that the installation
+                    directory is in your PATH.
                   </p>
                   <CodeBlockServer language="bash">
                     {`# Check if curl-runner is in PATH
@@ -196,7 +167,7 @@ which curl-runner
 export PATH="$PATH:~/.bun/bin"`}
                   </CodeBlockServer>
                 </div>
-                
+
                 <div>
                   <h4 className="font-medium mb-2">Permission denied</h4>
                   <p className="text-sm text-muted-foreground mb-2">
@@ -263,5 +234,5 @@ export PATH="$PATH:~/.bun/bin"`}
         </div>
       </div>
     </main>
-  )
+  );
 }

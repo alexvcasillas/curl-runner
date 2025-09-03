@@ -1,30 +1,67 @@
 ---
 title: "Advanced Examples"
 description: "Complex real-world scenarios showcasing the full power of curl-runner. These examples demonstrate advanced patterns for production environments."
+category: "Documentation"
+keywords:
+  - curl-runner
+  - http
+  - api
+  - testing
+  - advanced
+  - examples
+  - variables
+  - authentication
+  - parallel
+  - sequential
+  - validation
+  - retry
+  - timeout
+  - headers
+  - response
+  - request
+  - collection
+  - cli
+  - environment
+slug: "/docs/advanced"
+toc: true
+date: "2025-09-03T18:48:49.351Z"
+lastModified: "2025-09-03T18:48:49.351Z"
+author: "alexvcasillas"
+authorUrl: "https://github.com/alexvcasillas/curl-runner"
+license: "MIT"
+nav:
+  label: "Advanced Examples"
+  category: "Documentation"
+tags:
+  - documentation
+  - documentation
+og:
+  title: "Advanced Examples - curl-runner Documentation"
+  description: "Complex real-world scenarios showcasing the full power of curl-runner. These examples demonstrate advanced patterns for production environments."
+  type: "article"
+  image: "/og-image.png"
+schema:
+  "@context": "https://schema.org"
+  "@type": "TechArticle"
+  headline: "Advanced Examples"
+  description: "Complex real-world scenarios showcasing the full power of curl-runner. These examples demonstrate advanced patterns for production environments."
+  datePublished: "2025-09-03T18:48:49.351Z"
+  dateModified: "2025-09-03T18:48:49.351Z"
 ---
 
 # Advanced Examples
 
 Complex real-world scenarios showcasing the full power of curl-runner. These examples demonstrate advanced patterns for production environments.
 
-## Table of Contents
-
-- [Variable Interpolation & Environment Management](#variable-interpolation--environment-management)
-- [Advanced Authentication Patterns](#advanced-authentication-patterns)
-- [Error Handling & Retry Logic](#error-handling--retry-logic)
-- [High-Performance Parallel Execution](#high-performance-parallel-execution)
-  - [Parallel Execution Considerations](#parallel-execution-considerations)
-- [Complex Response Validation](#complex-response-validation)
-  - [Validation Patterns](#validation-patterns)
-- [Full Integration Testing](#full-integration-testing)
-- [Performance & Load Testing](#performance--load-testing)
-  - [Performance Testing Tips](#performance-testing-tips)
-- [Running Advanced Examples](#running-advanced-examples)
-- [Advanced Usage Best Practices](#advanced-usage-best-practices)
+These advanced examples demonstrate sophisticated curl-runner patterns for complex workflows, integration testing, performance testing, and production environments. Each example is production-ready and includes comprehensive error handling and validation.
 
 ## Variable Interpolation & Environment Management
 
-```yaml title="advanced-variables.yaml"
+Advanced variable usage with environment loading, nested interpolation, and dynamic values.
+
+**advanced-variables.yaml**
+
+```yaml
 # Variable interpolation with environment loading
 global:
   variables:
@@ -75,13 +112,13 @@ collection:
           updatedBy: \${USER_ID}
 ```
 
-Load variables from .env files or system environment.
-
-Generate values at runtime like timestamps or UUIDs.
-
 ## Advanced Authentication Patterns
 
-```yaml title="auth-patterns.yaml"
+Multiple authentication methods, token refresh, and custom auth headers.
+
+**auth-patterns.yaml**
+
+```yaml
 # Advanced authentication patterns
 requests:
   # Basic Authentication
@@ -123,7 +160,11 @@ requests:
 
 ## Error Handling & Retry Logic
 
-```yaml title="error-handling.yaml"
+Robust error handling with retry mechanisms, fallbacks, and conditional logic.
+
+**error-handling.yaml**
+
+```yaml
 # Advanced error handling and retry logic
 global:
   continueOnError: true  # Continue even if requests fail
@@ -179,13 +220,13 @@ collection:
       # Only runs if previous request failed
 ```
 
-> **Best Practice:**
->
-
-
 ## High-Performance Parallel Execution
 
-```yaml title="parallel-execution.yaml"
+Concurrent request execution for load testing and performance optimization.
+
+**parallel-execution.yaml**
+
+```yaml
 # Parallel execution with dependencies
 global:
   execution: parallel  # Run requests concurrently
@@ -251,19 +292,13 @@ collection:
           x-rate-limit-remaining: "*"
 ```
 
-### Parallel Execution Considerations
-
-> **Resource Limits**
->
-
-
-> **Request Independence**
->
-
-
 ## Complex Response Validation
 
-```yaml title="complex-validation.yaml"
+Advanced validation patterns for complex data structures, arrays, and conditional logic.
+
+**complex-validation.yaml**
+
+```yaml
 # Complex response validation patterns
 requests:
   # Deep object validation with nested structures
@@ -343,27 +378,13 @@ requests:
                 name: ".*"
 ```
 
-### Validation Patterns
-
-> **Regex Patterns**
->
-> Use regex for flexible format validation
-
-> **Array Validation**
->
-> Validate array items and structure
-
-> **Conditional Fields**
->
-> Different validation based on content
-
-> **Nested Objects**
->
-> Deep object structure validation
-
 ## Full Integration Testing
 
-```yaml title="integration-test.yaml"
+End-to-end workflow testing with user lifecycle management and cleanup.
+
+**integration-test.yaml**
+
+```yaml
 # Full integration test suite
 global:
   variables:
@@ -529,13 +550,13 @@ collection:
         status: 204
 ```
 
-> **Integration Testing:**
->
-
-
 ## Performance & Load Testing
 
-```yaml title="performance-test.yaml"
+Load testing scenarios with concurrent requests and performance metrics validation.
+
+**performance-test.yaml**
+
+```yaml
 # Performance and load testing scenarios
 global:
   execution: parallel
@@ -643,21 +664,9 @@ collection:
           etag: "*"
 ```
 
-### Performance Testing Tips
-
-> **Warmup Phase**
->
-
-
-> **Realistic Scenarios**
->
-
-
-> **Monitor Resources**
->
-
-
 ## Running Advanced Examples
+
+Advanced examples often require additional setup and environment configuration:
 
 ```bash
 # Set up environment variables
@@ -679,20 +688,3 @@ curl-runner complex-validation.yaml --output results.json --format json
 ```
 
 ## Advanced Usage Best Practices
-
-> **Environment Separation**
->
-
-
-> **Test Data Isolation**
->
-
-
-> **Resource Cleanup**
->
-
-
-> **Performance Baselines**
->
-
-

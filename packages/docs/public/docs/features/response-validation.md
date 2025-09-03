@@ -1,30 +1,68 @@
 ---
 title: "Response Validation"
 description: "Validate HTTP responses to ensure your APIs return expected results."
+category: "Documentation"
+keywords:
+  - curl-runner
+  - http
+  - api
+  - testing
+  - response
+  - validation
+  - variables
+  - headers
+  - request
+  - collection
+slug: "/docs/response-validation"
+toc: true
+date: "2025-09-03T18:48:49.353Z"
+lastModified: "2025-09-03T18:48:49.353Z"
+author: "alexvcasillas"
+authorUrl: "https://github.com/alexvcasillas/curl-runner"
+license: "MIT"
+nav:
+  label: "Response Validation"
+  category: "Documentation"
+tags:
+  - documentation
+  - documentation
+og:
+  title: "Response Validation - curl-runner Documentation"
+  description: "Validate HTTP responses to ensure your APIs return expected results."
+  type: "article"
+  image: "/og-image.png"
+schema:
+  "@context": "https://schema.org"
+  "@type": "TechArticle"
+  headline: "Response Validation"
+  description: "Validate HTTP responses to ensure your APIs return expected results."
+  datePublished: "2025-09-03T18:48:49.353Z"
+  dateModified: "2025-09-03T18:48:49.353Z"
 ---
 
 # Response Validation
 
 Validate HTTP responses to ensure your APIs return expected results.
 
-## Table of Contents
-
-- [Overview](#overview)
-- [Status Code Validation](#status-code-validation)
-  - [Common Status Patterns](#common-status-patterns)
-- [Header Validation](#header-validation)
-- [Body Validation](#body-validation)
-  - [Validation Types](#validation-types)
-- [Complex Validation](#complex-validation)
-- [Collection Validation](#collection-validation)
-- [Validation Reference](#validation-reference)
-- [Best Practices](#best-practices)
-
 ## Overview
+
+Response validation allows you to verify that your API responses meet expected criteria. curl-runner can validate status codes, headers, and response body content, making it perfect for API testing and monitoring.
 
 ## Status Code Validation
 
-```yaml title="status-validation.yaml"
+Validate that responses return expected HTTP status codes.
+
+200, 201, 204
+
+301, 302, 304
+
+400, 401, 403, 404
+
+500, 502, 503
+
+**status-validation.yaml**
+
+```yaml
 # Validate response status codes
 request:
   name: API Health Check
@@ -42,19 +80,13 @@ request:
     status: [200, 304]  # Accept either 200 or 304
 ```
 
-### Common Status Patterns
-
-200, 201, 204
-
-301, 302, 304
-
-400, 401, 403, 404
-
-500, 502, 503
-
 ## Header Validation
 
-```yaml title="header-validation.yaml"
+Verify that responses include expected headers with correct values.
+
+**header-validation.yaml**
+
+```yaml
 # Validate response headers
 request:
   name: API Response Headers
@@ -68,13 +100,13 @@ request:
       cache-control: "no-cache"
 ```
 
-> **Note:**
->
-
-
 ## Body Validation
 
-```yaml title="body-validation.yaml"
+Validate response body content for JSON, text, or other formats.
+
+**body-validation.yaml**
+
+```yaml
 # Validate response body content
 request:
   name: Get User Profile
@@ -98,27 +130,13 @@ request:
       status: "operational"  # Only check specific fields
 ```
 
-### Validation Types
-
-> **Exact Match**
->
-
-
-> **Partial Match**
->
-
-
-> **Pattern Match**
->
-
-
-> **Wildcard Match**
->
-
-
 ## Complex Validation
 
-```yaml title="complex-validation.yaml"
+Combine multiple validation rules for comprehensive testing.
+
+**complex-validation.yaml**
+
+```yaml
 # Complex validation scenarios
 requests:
   - name: Create Resource
@@ -152,7 +170,11 @@ requests:
 
 ## Collection Validation
 
-```yaml title="collection-validation.yaml"
+Apply validation rules across collections with defaults and overrides.
+
+**collection-validation.yaml**
+
+```yaml
 # Validation in collections
 global:
   variables:
@@ -190,28 +212,12 @@ collection:
 
 ## Validation Reference
 
-| Field | Type | Description |
-| --- | --- | --- |
-| expect.status | number | number[] | Expected HTTP status code(s) |
-| expect.headers | object | Expected response headers |
-| expect.body | any | Expected response body content |
-
-
 ## Best Practices
 
-> **Start Simple**
->
+### Best Practices
 
-
-> **Use Partial Matching**
->
-
-
-> **Leverage Patterns**
->
-
-
-> **Group Related Validations**
->
-
-
+• Use descriptive variable names
+• Define common values as variables
+• Use environment variables for secrets
+• Group related variables logically
+• Document complex expressions

@@ -1,5 +1,6 @@
 import { Github, Users } from 'lucide-react';
 import Image from 'next/image';
+import { CurlRunner } from '@/components/curl-runner';
 import { Badge } from '@/components/ui/badge';
 
 /**
@@ -67,8 +68,8 @@ export function Contributors() {
             Contributors
           </h2>
           <p className="mt-6 text-lg text-gray-600 dark:text-gray-400">
-            Meet the passionate developers who make curl-runner possible. Want to join us? We'd love
-            to have you contribute to the project!
+            Meet the passionate developers who make <CurlRunner /> possible. Want to join us? We'd
+            love to have you contribute to the project!
           </p>
         </div>
 

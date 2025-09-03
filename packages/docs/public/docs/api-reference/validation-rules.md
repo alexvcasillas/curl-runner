@@ -1,33 +1,59 @@
 ---
 title: "Validation Rules API Reference"
 description: "Complete reference for response validation using the expect configuration object. Define validation rules for status codes, headers, and response body content."
+category: "Documentation"
+keywords:
+  - curl-runner
+  - http
+  - api
+  - testing
+  - validation
+  - rules
+  - reference
+  - yaml
+  - headers
+  - response
+  - request
+  - collection
+  - environment
+slug: "/docs/validation-rules"
+toc: true
+date: "2025-09-03T18:48:49.357Z"
+lastModified: "2025-09-03T18:48:49.357Z"
+author: "alexvcasillas"
+authorUrl: "https://github.com/alexvcasillas/curl-runner"
+license: "MIT"
+nav:
+  label: "Validation Rules API Reference"
+  category: "Documentation"
+tags:
+  - documentation
+  - documentation
+og:
+  title: "Validation Rules API Reference - curl-runner Documentation"
+  description: "Complete reference for response validation using the expect configuration object. Define validation rules for status codes, headers, and response body content."
+  type: "article"
+  image: "/og-image.png"
+schema:
+  "@context": "https://schema.org"
+  "@type": "TechArticle"
+  headline: "Validation Rules API Reference"
+  description: "Complete reference for response validation using the expect configuration object. Define validation rules for status codes, headers, and response body content."
+  datePublished: "2025-09-03T18:48:49.357Z"
+  dateModified: "2025-09-03T18:48:49.357Z"
 ---
 
 # Validation Rules API Reference
 
 Complete reference for response validation using the expect configuration object. Define validation rules for status codes, headers, and response body content.
 
-## Table of Contents
-
-- [Overview](#overview)
-- [ExpectConfig Properties](#expectconfig-properties)
-- [Status Code Validation](#status-code-validation)
-- [Header Validation](#header-validation)
-  - [Common Header Validation Patterns](#common-header-validation-patterns)
-- [Body Validation](#body-validation)
-  - [Body Validation Types](#body-validation-types)
-- [Pattern Validation with Regex](#pattern-validation-with-regex)
-- [Wildcard and Flexible Validation](#wildcard-and-flexible-validation)
-  - [Wildcard Use Cases](#wildcard-use-cases)
-- [Complex Validation Scenarios](#complex-validation-scenarios)
-- [Validation Inheritance and Overrides](#validation-inheritance-and-overrides)
-  - [Validation Precedence Order](#validation-precedence-order)
-- [Common Validation Patterns](#common-validation-patterns)
-- [Validation Best Practices](#validation-best-practices)
-
 ## Overview
 
-```yaml title="expect-config-complete.yaml"
+Validation rules allow you to verify that API responses meet expected criteria. Using the `expect` configuration object, you can validate HTTP status codes, response headers, and body content with support for exact matching, pattern matching, and wildcard validation.
+
+**expect-config-complete.yaml**
+
+```yaml
 # Complete ExpectConfig Example
 request:
   name: "Comprehensive Validation Example"
@@ -62,16 +88,13 @@ request:
 
 ## ExpectConfig Properties
 
-| Property | Type | Description |
-| --- | --- | --- |
-| status | number | number[] | Expected HTTP status code(s) |
-| headers | Record&lt;string, string&gt; | Expected response headers with values or patterns |
-| body | JsonValue | Expected response body structure and values |
-
-
 ## Status Code Validation
 
-```yaml title="status-validation.yaml"
+Validate that responses return expected HTTP status codes. You can specify a single status code or an array of acceptable codes.
+
+**status-validation.yaml**
+
+```yaml
 # Status Code Validation Examples
 
 # Single status code (most common)
@@ -135,33 +158,13 @@ requests:
       status: [200, 429]  # OK or Too Many Requests
 ```
 
-> 200 - OK
->
-> 201 - Created
->
-> 204 - No Content
-
-> 301 - Moved
->
-> 302 - Found
->
-> 304 - Not Modified
-
-> 400 - Bad Request
->
-> 401 - Unauthorized
->
-> 404 - Not Found
-
-> 500 - Internal Error
->
-> 502 - Bad Gateway
->
-> 503 - Unavailable
-
 ## Header Validation
 
-```yaml title="header-validation.yaml"
+Validate response headers using exact values or regular expression patterns. Header names are case-insensitive.
+
+**header-validation.yaml**
+
+```yaml
 # Header Validation Examples
 
 # Basic header validation
@@ -242,27 +245,13 @@ request:
       location: "^https://api\\.example\\.com/resources/[0-9]+$"
 ```
 
-### Common Header Validation Patterns
-
-> **Content Headers**
->
-> Validate response content metadata
-
-> **Security Headers**
->
-> Verify security policy headers
-
-> **API Headers**
->
-> Check API versioning and tracking
-
-> **Rate Limiting**
->
-> Monitor API usage limits
-
 ## Body Validation
 
-```yaml title="body-validation.yaml"
+Validate response body content with support for exact matching, partial matching, and complex nested structures.
+
+**body-validation.yaml**
+
+```yaml
 # Body Validation Examples
 
 # Exact value matching
@@ -351,27 +340,13 @@ request:
       response_times: [120, 95, 200, 150]
 ```
 
-### Body Validation Types
-
-> **Exact Matching**
->
-> Values must match exactly
-
-> **Type Validation**
->
-> Validates JSON data types
-
-> **Partial Matching**
->
-> Only specified fields validated
-
-> **Nested Objects**
->
-> Deep structure validation
-
 ## Pattern Validation with Regex
 
-```yaml title="pattern-validation.yaml"
+Use regular expressions for flexible validation of dynamic content like IDs, timestamps, emails, and custom formats.
+
+**pattern-validation.yaml**
+
+```yaml
 # Pattern Validation with Regex
 
 # Common patterns
@@ -456,7 +431,11 @@ request:
 
 ## Wildcard and Flexible Validation
 
-```yaml title="wildcard-validation.yaml"
+Use wildcards (`*`) to validate field presence without checking specific values, useful for dynamic or sensitive data.
+
+**wildcard-validation.yaml**
+
+```yaml
 # Wildcard and Flexible Validation
 
 # Wildcard matching (any value present)
@@ -524,27 +503,13 @@ request:
           timestamp: "*"
 ```
 
-### Wildcard Use Cases
-
-> **Dynamic Values**
->
-
-
-> **Sensitive Data**
->
-
-
-> **Optional Fields**
->
-
-
-> **Complex Structures**
->
-
-
 ## Complex Validation Scenarios
 
-```yaml title="complex-validation.yaml"
+Advanced validation examples combining multiple techniques for comprehensive API testing.
+
+**complex-validation.yaml**
+
+```yaml
 # Complex Validation Scenarios
 
 # Nested object validation with mixed patterns
@@ -641,7 +606,13 @@ request:
 
 ## Validation Inheritance and Overrides
 
-```yaml title="validation-inheritance.yaml"
+Understand how validation rules cascade from global to collection to request level, and how to override inherited rules.
+
+### Validation Precedence Order
+
+**validation-inheritance.yaml**
+
+```yaml
 # Validation Inheritance and Overrides
 
 # Global validation defaults
@@ -709,57 +680,6 @@ collection:
           data: "*"  # Any data structure
 ```
 
-### Validation Precedence Order
-
-> **1. Request-Level Validation**
->
-
-
-> **2. Collection-Level Defaults**
->
-
-
-> **3. Global Defaults**
->
-
-
 ## Common Validation Patterns
 
-> **API Authentication**
->
-> Validate login responses and token formats
-
-> **Data Creation**
->
-> Verify new resource creation and IDs
-
-> **Error Handling**
->
-> Validate error response structures
-
-> **Pagination**
->
-> Check paginated response metadata
-
 ## Validation Best Practices
-
-> **Start Simple, Add Complexity**
->
-
-
-> **Use Partial Matching**
->
-
-
-> **Leverage Patterns for Dynamic Data**
->
-
-
-> **Test Both Success and Error Cases**
->
-
-
-> **Use Wildcards for Sensitive Data**
->
-
-

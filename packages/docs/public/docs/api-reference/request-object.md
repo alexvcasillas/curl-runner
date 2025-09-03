@@ -1,32 +1,61 @@
 ---
 title: "Request Object API Reference"
 description: "Complete reference for the RequestConfig interface and all available options for configuring HTTP requests."
+category: "Documentation"
+keywords:
+  - curl-runner
+  - http
+  - api
+  - testing
+  - request
+  - object
+  - reference
+  - variables
+  - authentication
+  - validation
+  - retry
+  - timeout
+  - headers
+  - response
+  - environment
+slug: "/docs/request-object"
+toc: true
+date: "2025-09-03T18:48:49.356Z"
+lastModified: "2025-09-03T18:48:49.356Z"
+author: "alexvcasillas"
+authorUrl: "https://github.com/alexvcasillas/curl-runner"
+license: "MIT"
+nav:
+  label: "Request Object API Reference"
+  category: "Documentation"
+tags:
+  - documentation
+  - documentation
+og:
+  title: "Request Object API Reference - curl-runner Documentation"
+  description: "Complete reference for the RequestConfig interface and all available options for configuring HTTP requests."
+  type: "article"
+  image: "/og-image.png"
+schema:
+  "@context": "https://schema.org"
+  "@type": "TechArticle"
+  headline: "Request Object API Reference"
+  description: "Complete reference for the RequestConfig interface and all available options for configuring HTTP requests."
+  datePublished: "2025-09-03T18:48:49.356Z"
+  dateModified: "2025-09-03T18:48:49.356Z"
 ---
 
 # Request Object API Reference
 
 Complete reference for the RequestConfig interface and all available options for configuring HTTP requests.
 
-## Table of Contents
-
-- [Overview](#overview)
-- [Properties Reference](#properties-reference)
-- [HTTP Methods](#http-methods)
-- [Headers Configuration](#headers-configuration)
-- [URL Parameters](#url-parameters)
-- [Request Body](#request-body)
-  - [Body Content Types](#body-content-types)
-- [Authentication](#authentication)
-- [Timeout & Retry Configuration](#timeout--retry-configuration)
-- [Redirect Handling](#redirect-handling)
-- [Proxy & Security Configuration](#proxy--security-configuration)
-- [Request-Level Variables](#request-level-variables)
-- [Output Configuration](#output-configuration)
-- [Best Practices](#best-practices)
-
 ## Overview
 
-```yaml title="complete-request.yaml"
+The Request Object defines the configuration for individual HTTP requests in curl-runner. It supports all standard HTTP methods, authentication, headers, body content, error handling, and response validation.
+
+**complete-request.yaml**
+
+```yaml
 # Complete Request Object Example
 request:
   name: "Complete API Request"
@@ -76,29 +105,13 @@ request:
 
 ## Properties Reference
 
-| Property | Type | Required | Description |
-| --- | --- | --- | --- |
-| name | string | Optional | Human-readable name for the request |
-| url | string | Required | Target URL for the HTTP request |
-| method | HTTPMethod | Optional | HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS) |
-| headers | Record&lt;string, string&gt; | Optional | HTTP headers to include |
-| params | Record&lt;string, string&gt; | Optional | URL query parameters |
-| body | JsonValue | Optional | Request body content |
-| timeout | number | Optional | Request timeout in milliseconds |
-| followRedirects | boolean | Optional | Whether to follow HTTP redirects |
-| maxRedirects | number | Optional | Maximum number of redirects to follow |
-| auth | AuthConfig | Optional | Authentication configuration |
-| proxy | string | Optional | Proxy server URL |
-| insecure | boolean | Optional | Skip SSL certificate verification |
-| output | string | Optional | File path to save response |
-| retry | RetryConfig | Optional | Retry configuration |
-| variables | Record&lt;string, string&gt; | Optional | Request-level variables |
-| expect | ExpectConfig | Optional | Response validation rules |
-
-
 ## HTTP Methods
 
-```yaml title="http-methods.yaml"
+curl-runner supports all standard HTTP methods. The default method is GET if not specified.
+
+**http-methods.yaml**
+
+```yaml
 # HTTP Methods Examples
 requests:
   # GET - Retrieve data
@@ -151,7 +164,11 @@ requests:
 
 ## Headers Configuration
 
-```yaml title="headers-config.yaml"
+Configure HTTP headers for authentication, content type, custom metadata, and more.
+
+**headers-config.yaml**
+
+```yaml
 # Headers Configuration Examples
 requests:
   # Basic headers
@@ -199,13 +216,13 @@ requests:
       If-Modified-Since: "Wed, 21 Oct 2024 07:28:00 GMT"
 ```
 
-> **Note:**
->
-
-
 ## URL Parameters
 
-```yaml title="url-parameters.yaml"
+Add query parameters to URLs using the params object. Parameters are automatically URL-encoded.
+
+**url-parameters.yaml**
+
+```yaml
 # URL Parameters Examples
 requests:
   # Query parameters as object
@@ -251,7 +268,11 @@ requests:
 
 ## Request Body
 
-```yaml title="request-body.yaml"
+Configure request body content for POST, PUT, PATCH, and other methods that support body data.
+
+**request-body.yaml**
+
+```yaml
 # Request Body Examples
 requests:
   # JSON object body
@@ -321,27 +342,13 @@ requests:
         reference: "\${REF_ID}"
 ```
 
-### Body Content Types
-
-> **JSON Object**
->
-> Structured data as objects
-
-> **JSON Array**
->
-> Array of data items
-
-> **Form Data**
->
-> URL-encoded form data
-
-> **Plain Text**
->
-> Raw text content
-
 ## Authentication
 
-```yaml title="authentication.yaml"
+Configure authentication using the auth object or manual headers.
+
+**authentication.yaml**
+
+```yaml
 # Authentication Examples
 requests:
   # Basic authentication
@@ -386,15 +393,13 @@ requests:
       X-Timestamp: "\${REQUEST_TIMESTAMP}"
 ```
 
-| Auth Type | Required Fields | Generated Header |
-| --- | --- | --- |
-| basic | username, password | Authorization: Basic &lt;base64&gt; |
-| bearer | token | Authorization: Bearer &lt;token&gt; |
-
-
 ## Timeout & Retry Configuration
 
-```yaml title="timeout-retry.yaml"
+Configure request timeouts and retry behavior for handling network issues and unreliable services.
+
+**timeout-retry.yaml**
+
+```yaml
 # Timeout and Retry Configuration
 requests:
   # Basic timeout
@@ -438,23 +443,13 @@ requests:
       delay: 500    # Quick retry interval
 ```
 
-Quick APIs: 1-5 seconds
-
-Standard APIs: 5-15 seconds
-
-Heavy processing: 30-120 seconds
-
-File uploads: 300+ seconds
-
-count: Number of retry attempts
-
-delay: Wait time between retries
-
-Uses exponential backoff automatically
-
 ## Redirect Handling
 
-```yaml title="redirects.yaml"
+Control how curl-runner handles HTTP redirects (3xx status codes).
+
+**redirects.yaml**
+
+```yaml
 # Redirect Handling Configuration
 requests:
   # Follow redirects (default behavior)
@@ -491,7 +486,11 @@ requests:
 
 ## Proxy & Security Configuration
 
-```yaml title="proxy-security.yaml"
+Configure proxy settings and SSL/TLS security options.
+
+**proxy-security.yaml**
+
+```yaml
 # Proxy and Security Configuration
 requests:
   # HTTP proxy
@@ -527,7 +526,11 @@ requests:
 
 ## Request-Level Variables
 
-```yaml title="request-variables.yaml"
+Define variables at the request level that can be used within that specific request.
+
+**request-variables.yaml**
+
+```yaml
 # Request-Level Variables
 requests:
   # Variables defined at request level
@@ -567,7 +570,11 @@ requests:
 
 ## Output Configuration
 
-```yaml title="output-config.yaml"
+Configure where to save response data from individual requests.
+
+**output-config.yaml**
+
+```yaml
 # Output Configuration
 requests:
   # Save response to file
@@ -597,19 +604,10 @@ requests:
 
 ## Best Practices
 
-> **Use Descriptive Names**
->
+### Best Practices
 
-
-> **Set Appropriate Timeouts**
->
-
-
-> **Use Variables for Dynamic Content**
->
-
-
-> **Include Content-Type Headers**
->
-
-
+• Use descriptive variable names
+• Define common values as variables
+• Use environment variables for secrets
+• Group related variables logically
+• Document complex expressions

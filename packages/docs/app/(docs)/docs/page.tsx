@@ -1,4 +1,16 @@
-import { ArrowRight, FileText, Settings, Terminal, Zap, Book, Grid3x3, Github, Twitter, Linkedin, Users } from 'lucide-react';
+import {
+  ArrowRight,
+  Book,
+  FileText,
+  Github,
+  Grid3x3,
+  Linkedin,
+  Settings,
+  Terminal,
+  Twitter,
+  Users,
+  Zap,
+} from 'lucide-react';
 import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { DocsPageHeader } from '@/components/docs-page-header';
@@ -6,6 +18,7 @@ import { H2, H3 } from '@/components/mdx-heading';
 import { TableOfContents } from '@/components/toc';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { basicUsageExample, quickInstallExample } from './snippets';
 
 const features = [
   {
@@ -38,18 +51,6 @@ const features = [
   },
 ];
 
-const quickStartYaml = `# simple.yaml
-request:
-  name: Get JSONPlaceholder Post
-  url: https://jsonplaceholder.typicode.com/posts/1
-  method: GET`;
-
-const quickStartCommand = `# Install curl-runner
-bun install -g @curl-runner/cli
-
-# Run your first request
-curl-runner simple.yaml`;
-
 export default function DocsPage() {
   return (
     <main className="relative py-6 lg:gap-10 lg:py-8 xl:grid xl:grid-cols-[1fr_300px]">
@@ -72,18 +73,20 @@ export default function DocsPage() {
                   green: 'bg-green-500/10 text-green-600 dark:text-green-400',
                   purple: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
                 } as const;
-                
+
                 return (
                   <div key={feature.title} className="rounded-lg border bg-card p-6">
                     <div className="flex items-start gap-4">
-                      <div className={`rounded-full p-3 ${colorClasses[feature.color as keyof typeof colorClasses]?.split(' ')[0]}`}>
-                        <Icon className={`h-5 w-5 ${colorClasses[feature.color as keyof typeof colorClasses]?.split(' ').slice(1).join(' ')}`} />
+                      <div
+                        className={`rounded-full p-3 ${colorClasses[feature.color as keyof typeof colorClasses]?.split(' ')[0]}`}
+                      >
+                        <Icon
+                          className={`h-5 w-5 ${colorClasses[feature.color as keyof typeof colorClasses]?.split(' ').slice(1).join(' ')}`}
+                        />
                       </div>
                       <div className="flex-1">
                         <h3 className="font-semibold text-lg mb-2">{feature.title}</h3>
-                        <p className="text-muted-foreground">
-                          {feature.description}
-                        </p>
+                        <p className="text-muted-foreground">{feature.description}</p>
                       </div>
                     </div>
                   </div>
@@ -96,20 +99,23 @@ export default function DocsPage() {
           <section>
             <H2>Quick Start</H2>
             <p className="text-muted-foreground text-lg mb-8">
-              Get up and running with <code className="font-mono">curl-runner</code> in just a few minutes.
+              Get up and running with <code className="font-mono">curl-runner</code> in just a few
+              minutes.
             </p>
 
             <div className="space-y-8">
               <div>
                 <H3>1. Create a YAML file</H3>
                 <CodeBlockServer language="yaml" filename="simple.yaml">
-                  {quickStartYaml}
+                  {basicUsageExample}
                 </CodeBlockServer>
               </div>
 
               <div>
-                <H3>2. Run <code className="font-mono">curl-runner</code></H3>
-                <CodeBlockServer language="bash">{quickStartCommand}</CodeBlockServer>
+                <H3>
+                  2. Run <code className="font-mono">curl-runner</code>
+                </H3>
+                <CodeBlockServer language="bash">{quickInstallExample}</CodeBlockServer>
               </div>
             </div>
           </section>

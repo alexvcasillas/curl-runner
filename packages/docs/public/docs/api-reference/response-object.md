@@ -1,32 +1,63 @@
 ---
 title: "Response Object API Reference"
 description: "Complete reference for response objects returned by curl-runner, including ExecutionResult and ExecutionSummary interfaces."
+category: "Documentation"
+keywords:
+  - curl-runner
+  - http
+  - api
+  - testing
+  - response
+  - object
+  - reference
+  - validation
+  - retry
+  - timeout
+  - headers
+  - request
+  - collection
+slug: "/docs/response-object"
+toc: true
+date: "2025-09-03T18:48:49.357Z"
+lastModified: "2025-09-03T18:48:49.357Z"
+author: "alexvcasillas"
+authorUrl: "https://github.com/alexvcasillas/curl-runner"
+license: "MIT"
+nav:
+  label: "Response Object API Reference"
+  category: "Documentation"
+tags:
+  - documentation
+  - documentation
+og:
+  title: "Response Object API Reference - curl-runner Documentation"
+  description: "Complete reference for response objects returned by curl-runner, including ExecutionResult and ExecutionSummary interfaces."
+  type: "article"
+  image: "/og-image.png"
+schema:
+  "@context": "https://schema.org"
+  "@type": "TechArticle"
+  headline: "Response Object API Reference"
+  description: "Complete reference for response objects returned by curl-runner, including ExecutionResult and ExecutionSummary interfaces."
+  datePublished: "2025-09-03T18:48:49.357Z"
+  dateModified: "2025-09-03T18:48:49.357Z"
 ---
 
 # Response Object API Reference
 
 Complete reference for response objects returned by curl-runner, including ExecutionResult and ExecutionSummary interfaces.
 
-## Table of Contents
-
-- [Overview](#overview)
-- [ExecutionResult Interface](#executionresult-interface)
-- [Error Response Structure](#error-response-structure)
-- [ExecutionSummary Interface](#executionsummary-interface)
-- [Response Body Types](#response-body-types)
-  - [JSON Response Parsing](#json-response-parsing)
-- [Performance Metrics](#performance-metrics)
-- [HTTP Status Code Handling](#http-status-code-handling)
-- [Response Headers](#response-headers)
-  - [Header Categories](#header-categories)
-- [Processing Response Data](#processing-response-data)
-- [Response Handling Best Practices](#response-handling-best-practices)
-
 ## Overview
+
+curl-runner provides detailed response information through structured objects. Every request returns an ExecutionResult, and collections return an ExecutionSummary containing multiple results with aggregate statistics.
 
 ## ExecutionResult Interface
 
-```json title="execution-result.json"
+The ExecutionResult interface contains complete information about a single request execution, including the original request configuration, response data, and performance metrics.
+
+**execution-result.json**
+
+```json
 # Example ExecutionResult object structure
 {
   "request": {
@@ -79,20 +110,13 @@ Complete reference for response objects returned by curl-runner, including Execu
 }
 ```
 
-| Property | Type | Description |
-| --- | --- | --- |
-| request | RequestConfig | Original request configuration that was executed |
-| success | boolean | Whether the request completed successfully |
-| status | number? | HTTP status code (if response received) |
-| headers | Record&lt;string, string&gt;? | Response headers (if response received) |
-| body | JsonValue? | Response body content (parsed if JSON) |
-| error | string? | Error message (if request failed) |
-| metrics | MetricsObject? | Performance timing information |
-
-
 ## Error Response Structure
 
-```json title="error-result.json"
+When requests fail due to network issues, timeouts, or other errors, the ExecutionResult provides error information.
+
+**error-result.json**
+
+```json
 # Example failed request ExecutionResult
 {
   "request": {
@@ -111,17 +135,13 @@ Complete reference for response objects returned by curl-runner, including Execu
 }
 ```
 
-> **Network Errors**
->
-
-
-> **HTTP Error Status**
->
-
-
 ## ExecutionSummary Interface
 
-```json title="execution-summary.json"
+The ExecutionSummary provides aggregate information about a collection of requests, including overall statistics and all individual results.
+
+**execution-summary.json**
+
+```json
 # Example ExecutionSummary for a collection run
 {
   "total": 5,
@@ -219,18 +239,13 @@ Complete reference for response objects returned by curl-runner, including Execu
 }
 ```
 
-| Property | Type | Description |
-| --- | --- | --- |
-| total | number | Total number of requests executed |
-| successful | number | Number of successful requests |
-| failed | number | Number of failed requests |
-| duration | number | Total execution time in milliseconds |
-| results | ExecutionResult[] | Array of individual request results |
-
-
 ## Response Body Types
 
-```json title="body-types.json"
+curl-runner automatically parses JSON responses and preserves the original data types for all response content.
+
+**body-types.json**
+
+```json
 # Different response body types curl-runner handles
 
 # JSON Object Response
@@ -285,27 +300,13 @@ Complete reference for response objects returned by curl-runner, including Execu
 }
 ```
 
-### JSON Response Parsing
-
-> **Automatic Parsing**
->
-
-
-> **Type Preservation**
->
-
-
-> **Text Fallback**
->
-
-
-> **Empty Responses**
->
-
-
 ## Performance Metrics
 
-```json title="metrics-details.json"
+Detailed timing information for analyzing request performance and identifying bottlenecks.
+
+**metrics-details.json**
+
+```json
 # Detailed explanation of response metrics
 
 {
@@ -328,20 +329,13 @@ Complete reference for response objects returned by curl-runner, including Execu
 # - Connection time may be 0 if connection is reused
 ```
 
-| Metric | Unit | Description |
-| --- | --- | --- |
-| duration | milliseconds | Total request time from start to finish |
-| size | bytes | Response body size |
-| dnsLookup | milliseconds | DNS resolution time |
-| tcpConnection | milliseconds | TCP connection establishment time |
-| tlsHandshake | milliseconds | TLS/SSL handshake time (HTTPS only) |
-| firstByte | milliseconds | Time to first response byte (TTFB) |
-| download | milliseconds | Response body download time |
-
-
 ## HTTP Status Code Handling
 
-```json title="status-codes.json"
+Understanding how curl-runner processes different HTTP status codes and determines success/failure.
+
+**status-codes.json**
+
+```json
 # Common HTTP status codes in responses
 
 # Success responses (2xx)
@@ -429,33 +423,13 @@ Complete reference for response objects returned by curl-runner, including Execu
 }
 ```
 
-> 200 OK
->
-> 201 Created
->
-> 204 No Content
-
-> 301 Moved
->
-> 302 Found
->
-> 304 Not Modified
-
-> 400 Bad Request
->
-> 401 Unauthorized
->
-> 404 Not Found
-
-> 500 Internal Error
->
-> 502 Bad Gateway
->
-> 503 Unavailable
-
 ## Response Headers
 
-```json title="response-headers.json"
+Common response headers and their significance in API responses.
+
+**response-headers.json**
+
+```json
 # Common response headers and their meanings
 
 {
@@ -499,27 +473,13 @@ Complete reference for response objects returned by curl-runner, including Execu
 }
 ```
 
-### Header Categories
-
-> **Content Headers**
->
-> Describe response body
-
-> **Caching Headers**
->
-> Control client-side caching
-
-> **Security Headers**
->
-> Enforce security policies
-
-> **API Headers**
->
-> API-specific metadata
-
 ## Processing Response Data
 
-```yaml title="response-processing.yaml"
+Techniques for working with response data programmatically and in automated workflows.
+
+**response-processing.yaml**
+
+```yaml
 # How to process response data programmatically
 
 # Save response to file for processing
@@ -567,25 +527,4 @@ collection:
         status: 200
 ```
 
-> **Pro Tip:**
->
-
-
 ## Response Handling Best Practices
-
-> **Validate Critical Fields**
->
-
-
-> **Monitor Performance Metrics**
->
-
-
-> **Handle Errors Gracefully**
->
-
-
-> **Use Response Headers**
->
-
-

@@ -1,37 +1,70 @@
 ---
 title: "Collection Example"
 description: "Learn how to organize multiple requests into collections for comprehensive API testing."
+category: "Documentation"
+keywords:
+  - curl-runner
+  - http
+  - api
+  - testing
+  - collection
+  - example
+  - yaml
+  - variables
+  - parallel
+  - sequential
+  - validation
+  - retry
+  - timeout
+  - headers
+  - request
+  - cli
+slug: "/docs/collection"
+toc: true
+date: "2025-09-03T18:48:49.350Z"
+lastModified: "2025-09-03T18:48:49.350Z"
+author: "alexvcasillas"
+authorUrl: "https://github.com/alexvcasillas/curl-runner"
+license: "MIT"
+nav:
+  label: "Collection Example"
+  category: "Documentation"
+tags:
+  - documentation
+  - documentation
+og:
+  title: "Collection Example - curl-runner Documentation"
+  description: "Learn how to organize multiple requests into collections for comprehensive API testing."
+  type: "article"
+  image: "/og-image.png"
+schema:
+  "@context": "https://schema.org"
+  "@type": "TechArticle"
+  headline: "Collection Example"
+  description: "Learn how to organize multiple requests into collections for comprehensive API testing."
+  datePublished: "2025-09-03T18:48:49.350Z"
+  dateModified: "2025-09-03T18:48:49.350Z"
 ---
 
 # Collection Example
 
 Learn how to organize multiple requests into collections for comprehensive API testing.
 
-## Table of Contents
-
-- [Overview](#overview)
-- [Basic Collection](#basic-collection)
-- [Collection Variables](#collection-variables)
-- [Complete Collection Example](#complete-collection-example)
-- [Collection Structure](#collection-structure)
-- [Multiple Collections](#multiple-collections)
-- [Running Collections](#running-collections)
-- [Best Practices](#best-practices)
-- [Common Use Cases](#common-use-cases)
-
 ## Overview
 
-> **Group Related Tests**
->
+Collections allow you to group related HTTP requests together, share variables and defaults, and run comprehensive test suites. They're perfect for testing complete API workflows or organizing tests by feature.
 
+Organize requests by feature, endpoint, or workflow
 
-> **Share Configuration**
->
-
+Define variables and defaults once, use everywhere
 
 ## Basic Collection
 
-```yaml title="basic-collection.yaml"
+A simple collection groups related requests under a name and description.
+
+**basic-collection.yaml**
+
+```yaml
 # Basic collection structure
 collection:
   name: User Management API Tests
@@ -58,7 +91,11 @@ collection:
 
 ## Collection Variables
 
-```yaml title="collection-variables.yaml"
+Define variables at the collection level to share across all requests.
+
+**collection-variables.yaml**
+
+```yaml
 # Collection with shared variables
 collection:
   name: E-Commerce API Tests
@@ -93,13 +130,13 @@ collection:
         quantity: 2
 ```
 
-> **Variable Precedence:**
->
-
-
 ## Complete Collection Example
 
-```yaml title="complete-collection.yaml"
+A comprehensive example showing all collection features including global settings, defaults, variables, and validation.
+
+**complete-collection.yaml**
+
+```yaml
 # Complete collection with global settings
 global:
   execution: sequential
@@ -207,18 +244,15 @@ collection:
 
 ## Collection Structure
 
-| Field | Type | Description |
-| --- | --- | --- |
-| name | string | Collection name (required) |
-| description | string | Collection description (optional) |
-| variables | object | Collection-level variables |
-| defaults | object | Default request configuration |
-| requests | array | List of requests (required) |
-
+Understanding the collection configuration options.
 
 ## Multiple Collections
 
-```yaml title="multiple-collections.yaml"
+You can define multiple collections in separate files or use YAML document separators.
+
+**multiple-collections.yaml**
+
+```yaml
 # Multiple collections in one file
 global:
   variables:
@@ -274,7 +308,11 @@ collection:
 
 ## Running Collections
 
-```bash title="terminal"
+Execute collection tests using the curl-runner CLI.
+
+**terminal**
+
+```bash
 # Run collection tests
 curl-runner collection.yaml
 
@@ -293,21 +331,20 @@ curl-runner collection.yaml --verbose
 
 ## Best Practices
 
+Group related endpoints together for better organization and maintainability.
+
+Clear, meaningful names make collections and requests self-documenting.
+
+Set common configuration once at the collection level.
+
+Ensure reliability with proper validation and clear documentation.
+
+### Best Practices
+
+• Use descriptive variable names
+• Define common values as variables
+• Use environment variables for secrets
+• Group related variables logically
+• Document complex expressions
+
 ## Common Use Cases
-
-> **API Test Suites**
->
-
-
-> **CI/CD Pipelines**
->
-
-
-> **Health Checks**
->
-
-
-> **API Documentation**
->
-
-

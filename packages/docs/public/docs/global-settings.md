@@ -1,26 +1,96 @@
 ---
 title: "Global Settings"
 description: "Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files."
+category: "Configuration"
+keywords:
+  - curl-runner
+  - http
+  - api
+  - testing
+  - global
+  - settings
+  - yaml
+  - variables
+  - parallel
+  - sequential
+  - validation
+  - retry
+  - timeout
+  - headers
+  - response
+  - request
+  - environment
+slug: "/docs/global-settings"
+toc: true
+date: "2025-09-03T18:48:49.347Z"
+lastModified: "2025-09-03T18:48:49.347Z"
+author: "alexvcasillas"
+authorUrl: "https://github.com/alexvcasillas/curl-runner"
+license: "MIT"
+nav:
+  label: "Global Settings"
+  category: "Configuration"
+tags:
+  - documentation
+  - configuration
+og:
+  title: "Global Settings - curl-runner Documentation"
+  description: "Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files."
+  type: "article"
+  image: "/og-image.png"
+schema:
+  "@context": "https://schema.org"
+  "@type": "TechArticle"
+  headline: "Global Settings"
+  description: "Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files."
+  datePublished: "2025-09-03T18:48:49.347Z"
+  dateModified: "2025-09-03T18:48:49.347Z"
 ---
 
 # Global Settings
 
 Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files.
 
-## Table of Contents
+Global settings allow you to configure default behavior for all requests in a YAML file. These settings can be overridden by individual requests when needed.
 
-- [Execution Settings](#execution-settings)
-- [Timeout & Retry Settings](#timeout--retry-settings)
-- [Output Configuration](#output-configuration)
-- [Global Defaults](#global-defaults)
-- [Global Variables](#global-variables)
-- [Advanced Configuration](#advanced-configuration)
-- [Setting Precedence](#setting-precedence)
-- [Best Practices](#best-practices)
+**basic-global-config.yaml**
+
+```yaml
+# Basic global configuration
+global:
+  # Execution settings
+  execution: sequential
+  continueOnError: false
+  
+  # Timeout settings
+  timeout: 5000
+  retries: 3
+  
+  # Output settings
+  output:
+    verbose: true
+    saveToFile: "results.json"
+    
+  # Default request settings
+  defaults:
+    headers:
+      User-Agent: "curl-runner/1.0.0"
+      Accept: "application/json"
+    timeout: 10000
+
+requests:
+  - name: Example Request
+    url: https://api.example.com/data
+    method: GET
+```
 
 ## Execution Settings
 
-```yaml title="execution-modes.yaml"
+Control how requests are executed and how errors are handled.
+
+**execution-modes.yaml**
+
+```yaml
 # Sequential execution (default)
 global:
   execution: sequential  # Requests run one after another
@@ -37,7 +107,11 @@ global:
 
 ## Timeout & Retry Settings
 
-```yaml title="timeout-retry-config.yaml"
+Configure global timeout and retry behavior for robust request handling.
+
+**timeout-retry-config.yaml**
+
+```yaml
 # Global timeout and retry settings
 global:
   # Global timeout for all requests (milliseconds)
@@ -70,7 +144,11 @@ requests:
 
 ## Output Configuration
 
-```yaml title="output-config.yaml"
+Customize how `curl-runner` displays results and saves output data.
+
+**output-config.yaml**
+
+```yaml
 # Output configuration options
 global:
   output:
@@ -101,7 +179,11 @@ global:
 
 ## Global Defaults
 
-```yaml title="global-defaults.yaml"
+Set default values that are automatically applied to all requests unless overridden.
+
+**global-defaults.yaml**
+
+```yaml
 # Global defaults applied to all requests
 global:
   defaults:
@@ -143,7 +225,11 @@ requests:
 
 ## Global Variables
 
-```yaml title="global-variables.yaml"
+Define reusable variables that can be referenced throughout your request configurations.
+
+**global-variables.yaml**
+
+```yaml
 # Global variables for reuse across requests
 global:
   variables:
@@ -181,7 +267,13 @@ requests:
 
 ## Advanced Configuration
 
-```yaml title="advanced-global-config.yaml"
+Advanced global settings for complex scenarios including SSL, proxies, and rate limiting.
+
+Some advanced features like SSL certificates, proxies, and rate limiting may require additional setup or may not be available in all environments.
+
+**advanced-global-config.yaml**
+
+```yaml
 # Advanced global configuration
 global:
   # Execution control
@@ -242,7 +334,11 @@ global:
 
 ## Setting Precedence
 
-```yaml title="setting-precedence.yaml"
+Understanding how individual request settings override global settings.
+
+**setting-precedence.yaml**
+
+```yaml
 # How individual requests override global settings
 global:
   execution: sequential
@@ -272,27 +368,10 @@ requests:
 
 ## Best Practices
 
-• Set reasonable global timeouts (5-10 seconds)
-
-• Use environment variables for sensitive data
-
-• Group related settings logically
-
-• Define common headers in global defaults
+### Best Practices
 
 • Use descriptive variable names
-
-• Document complex configurations
-
-• Don't set timeouts too low (causes false failures)
-
-• Avoid too many concurrent requests in parallel mode
-
-• Don't hard-code sensitive information
-
-• Be careful with global retry settings
-
-• Test configurations thoroughly
-
-• Consider server rate limits
-
+• Define common values as variables
+• Use environment variables for secrets
+• Group related variables logically
+• Document complex expressions

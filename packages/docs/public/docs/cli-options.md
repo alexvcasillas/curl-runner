@@ -1,28 +1,69 @@
 ---
 title: "CLI Options"
 description: "Comprehensive reference for all command-line options available in curl-runner, including examples and best practices."
+category: "Configuration"
+keywords:
+  - curl-runner
+  - http
+  - api
+  - testing
+  - options
+  - yaml
+  - variables
+  - parallel
+  - sequential
+  - retry
+  - timeout
+  - response
+  - request
+  - cli
+  - environment
+slug: "/docs/cli-options"
+toc: true
+date: "2025-09-03T18:48:49.348Z"
+lastModified: "2025-09-03T18:48:49.348Z"
+author: "alexvcasillas"
+authorUrl: "https://github.com/alexvcasillas/curl-runner"
+license: "MIT"
+nav:
+  label: "CLI Options"
+  category: "Configuration"
+tags:
+  - documentation
+  - configuration
+og:
+  title: "CLI Options - curl-runner Documentation"
+  description: "Comprehensive reference for all command-line options available in curl-runner, including examples and best practices."
+  type: "article"
+  image: "/og-image.png"
+schema:
+  "@context": "https://schema.org"
+  "@type": "TechArticle"
+  headline: "CLI Options"
+  description: "Comprehensive reference for all command-line options available in curl-runner, including examples and best practices."
+  datePublished: "2025-09-03T18:48:49.348Z"
+  dateModified: "2025-09-03T18:48:49.348Z"
 ---
 
 # CLI Options
 
 Comprehensive reference for all command-line options available in curl-runner, including examples and best practices.
 
-## Table of Contents
-
-- [Available Options](#available-options)
-- [Combining Options](#combining-options)
-- [Environment Variables](#environment-variables)
-  - [Supported Environment Variables](#supported-environment-variables)
-- [Configuration File](#configuration-file)
-- [Output Format](#output-format)
-- [Option Precedence](#option-precedence)
-- [Best Practices](#best-practices)
+`curl-runner` provides numerous CLI options to customize execution behavior, output formatting, and error handling. Options can be combined and have both short and long forms.
 
 ## Available Options
 
+Options are grouped by functionality for easier reference.
+
+{option.description}
+
 ## Combining Options
 
-```bash title="Option Combinations"
+Short options can be combined, and multiple options can be used together for powerful configurations.
+
+**Option Combinations**
+
+```bash
 # Basic combinations
 curl-runner tests/ -v                    # Verbose output
 curl-runner tests/ -p                    # Parallel execution
@@ -47,9 +88,13 @@ curl-runner tests/ \\
 
 ## Environment Variables
 
+Many CLI options can be set via environment variables, which take precedence over default values but are overridden by explicit CLI options.
+
 ### Supported Environment Variables
 
-```bash title="Environment Variable Examples"
+**Environment Variable Examples**
+
+```bash
 # Environment variables override CLI options
 CURL_RUNNER_TIMEOUT=10000 curl-runner tests/
 CURL_RUNNER_RETRIES=3 curl-runner tests/
@@ -67,7 +112,11 @@ CURL_RUNNER_TIMEOUT=10000 curl-runner tests/ --verbose --output results.json
 
 ## Configuration File
 
-```json title=".curl-runner.json"
+Create a `.curl-runner.json` file in your project root to set default options.
+
+**.curl-runner.json**
+
+```json
 # .curl-runner.json (configuration file)
 {
   "execution": "parallel",
@@ -84,7 +133,11 @@ curl-runner tests/ --verbose  # Overrides verbose: false in config
 
 ## Output Format
 
-```json title="results.json"
+When using `--output`, results are saved in structured JSON format.
+
+**results.json**
+
+```json
 # JSON output format (when using --output)
 {
   "summary": {
@@ -113,21 +166,14 @@ curl-runner tests/ --verbose  # Overrides verbose: false in config
 
 ## Option Precedence
 
-Command-line flags take highest precedence
-
-Override defaults but yield to CLI flags
-
-Project-specific defaults from .curl-runner.json
-
-Fallback values when nothing else is specified
+When options are specified in multiple ways, curl-runner follows this precedence order:
 
 ## Best Practices
 
-> **Recommended Practices**
->
+### Best Practices
 
-
-> **Important Cautions**
->
-
-
+• Use descriptive variable names
+• Define common values as variables
+• Use environment variables for secrets
+• Group related variables logically
+• Document complex expressions

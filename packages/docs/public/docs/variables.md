@@ -1,267 +1,303 @@
 ---
 title: "Variables"
 description: "Use variables and templating to create reusable, dynamic HTTP request configurations."
+category: "Configuration"
+keywords:
+  - curl-runner
+  - http
+  - api
+  - testing
+  - variables
+  - templating
+  - headers
+  - response
+  - request
+  - collection
+  - environment
+slug: "/docs/variables"
+toc: true
+date: "2025-09-03T18:48:49.352Z"
+lastModified: "2025-09-03T18:48:49.352Z"
+author: "alexvcasillas"
+authorUrl: "https://github.com/alexvcasillas/curl-runner"
+license: "MIT"
+nav:
+  label: "Variables"
+  category: "Configuration"
+tags:
+  - documentation
+  - configuration
+og:
+  title: "Variables - curl-runner Documentation"
+  description: "Use variables and templating to create reusable, dynamic HTTP request configurations."
+  type: "article"
+  image: "/og-image.png"
+schema:
+  "@context": "https://schema.org"
+  "@type": "TechArticle"
+  headline: "Variables"
+  description: "Use variables and templating to create reusable, dynamic HTTP request configurations."
+  datePublished: "2025-09-03T18:48:49.352Z"
+  dateModified: "2025-09-03T18:48:49.352Z"
 ---
 
 # Variables
 
 Use variables and templating to create reusable, dynamic HTTP request configurations.
 
-## Table of Contents
-
-- [Variable Scopes](#variable-scopes)
-  - [Global Variables](#global-variables)
-  - [Collection Variables](#collection-variables)
-  - [Environment Variables](#environment-variables)
-- [Variable Precedence](#variable-precedence)
-- [Dynamic Variables](#dynamic-variables)
-  - [Built-in Functions](#built-in-functions)
-- [Conditional Logic](#conditional-logic)
-- [Complex Interpolation](#complex-interpolation)
-- [Best Practices](#best-practices)
-- [Common Patterns](#common-patterns)
-  - [API Authentication](#api-authentication)
-  - [Environment-Specific URLs](#environment-specific-urls)
-  - [Request Correlation IDs](#request-correlation-ids)
+Variables in curl-runner allow you to create flexible, reusable configurations. You can define variables at different scopes and use them throughout your request definitions with template interpolation.
 
 ## Variable Scopes
 
+Variables can be defined at different levels, each with its own scope and precedence rules.
+
 ### Global Variables
 
-```yaml title="global-variables.yaml"
-# Global variables available to all requests
+Global variables are available to all requests in the file and have the lowest precedence.
+
+**global-variables.yaml**
+
+```yaml
 global:
   variables:
-    BASE_URL: https://api.example.com
-    API_VERSION: v1
-    API_TOKEN: your-secret-token
-    TIMEOUT: 5000
+    BASE_URL: "https://api.example.com"
+    API_VERSION: "v1"
 
-requests:
-  - name: Get Users
-    url: \${BASE_URL}/\${API_VERSION}/users
-    method: GET
-    headers:
-      Authorization: Bearer \${API_TOKEN}
-    timeout: \${TIMEOUT}
+collection:
+  name: "API Tests"
+  requests:
+    - name: "Get users"
+      url: "\${BASE_URL}/\${API_VERSION}/users"
+      method: GET
 ```
 
 ### Collection Variables
 
-```yaml title="collection-variables.yaml"
-# Collection-level variables
+Collection variables are scoped to a specific collection and override global variables.
+
+**collection-variables.yaml**
+
+```yaml
 global:
   variables:
-    BASE_URL: https://api.example.com
-    
+    TIMEOUT: "5000"      # Global level
+    ENV: "production"
+
 collection:
-  name: User Management Tests
   variables:
-    USER_ID: 123
-    ADMIN_TOKEN: admin-secret-token
+    TIMEOUT: "10000"     # Overrides global
+    COLLECTION_ID: "api_tests"
     
   requests:
-    - name: Get User Profile
-      url: \${BASE_URL}/users/\${USER_ID}
-      headers:
-        Authorization: Bearer \${ADMIN_TOKEN}
+    - name: "Test with overrides"
+      variables:
+        TIMEOUT: "30000"  # Overrides collection and global
+        REQUEST_ID: "req_001"
+      url: "\${BASE_URL}/test"
+      timeout: \${TIMEOUT}  # Uses 30000
 ```
 
 ### Environment Variables
 
-```yaml title="env-variables.yaml"
-# Using environment variables
+Access system environment variables using the `ENV` object.
+
+**env-variables.yaml**
+
+```yaml
+# Set environment variables
+export API_KEY="your-secret-key"
+export BASE_URL="https://api.staging.com"
+
+# Reference in YAML
 global:
   variables:
-    # Environment variables are automatically available
-    BASE_URL: \${ENV.API_BASE_URL}
-    API_KEY: \${ENV.API_KEY}
-    DEBUG: \${ENV.DEBUG}
+    API_TOKEN: "\${API_KEY}"     # From environment
+    API_BASE: "\${BASE_URL}"     # From environment
+    TIMEOUT: "5000"              # Static value
+```
 
-requests:
-  - name: API Call with Env Variables
-    url: \${BASE_URL}/endpoint
-    headers:
-      X-API-Key: \${API_KEY}
-    # Conditional behavior based on environment
-    timeout: \${DEBUG ? 30000 : 5000}
+**global-variables.yaml**
+
+```yaml
+global:
+  variables:
+    BASE_URL: "https://api.example.com"
+    API_VERSION: "v1"
+
+collection:
+  name: "API Tests"
+  requests:
+    - name: "Get users"
+      url: "\${BASE_URL}/\${API_VERSION}/users"
+      method: GET
+```
+
+**collection-variables.yaml**
+
+```yaml
+global:
+  variables:
+    TIMEOUT: "5000"      # Global level
+    ENV: "production"
+
+collection:
+  variables:
+    TIMEOUT: "10000"     # Overrides global
+    COLLECTION_ID: "api_tests"
+    
+  requests:
+    - name: "Test with overrides"
+      variables:
+        TIMEOUT: "30000"  # Overrides collection and global
+        REQUEST_ID: "req_001"
+      url: "\${BASE_URL}/test"
+      timeout: \${TIMEOUT}  # Uses 30000
+```
+
+**env-variables.yaml**
+
+```yaml
+# Set environment variables
+export API_KEY="your-secret-key"
+export BASE_URL="https://api.staging.com"
+
+# Reference in YAML
+global:
+  variables:
+    API_TOKEN: "\${API_KEY}"     # From environment
+    API_BASE: "\${BASE_URL}"     # From environment
+    TIMEOUT: "5000"              # Static value
 ```
 
 ## Variable Precedence
 
-> **Precedence Order (Highest to Lowest)**
->
+When variables are defined at multiple levels, curl-runner follows a specific precedence order.
 
+**variable-precedence.yaml**
 
-```yaml title="variable-precedence.yaml"
-# Variable scoping and precedence
+```yaml
 global:
   variables:
-    SHARED_VAR: "global-value"
-    BASE_URL: https://api.example.com
-    
+    TIMEOUT: "5000"      # Global level
+    ENV: "production"
+
 collection:
   variables:
-    SHARED_VAR: "collection-value"  # Overrides global
-    COLLECTION_VAR: "collection-only"
+    TIMEOUT: "10000"     # Overrides global
+    COLLECTION_ID: "api_tests"
     
-  defaults:
-    headers:
-      X-Shared: \${SHARED_VAR}  # Will be "collection-value"
-      X-Collection: \${COLLECTION_VAR}
-      
   requests:
-    - name: Test Variable Precedence
-      url: \${BASE_URL}/test
-      # SHARED_VAR = "collection-value" (collection overrides global)
-      # COLLECTION_VAR = "collection-only"
-      # BASE_URL = "https://api.example.com" (from global)
+    - name: "Test with overrides"
+      variables:
+        TIMEOUT: "30000"  # Overrides collection and global
+        REQUEST_ID: "req_001"
+      url: "\${BASE_URL}/test"
+      timeout: \${TIMEOUT}  # Uses 30000
 ```
 
 ## Dynamic Variables
 
-### Built-in Functions
+Create dynamic values using JavaScript expressions and built-in functions.
 
-> **Date & Time**
->
+**dynamic-variables.yaml**
 
-
-> **Random Values**
->
-
-
-```yaml title="dynamic-variables.yaml"
-# Dynamic variables and computed values
+```yaml
 global:
   variables:
-    BASE_URL: https://api.example.com
-    TIMESTAMP: \${Date.now()}
-    UUID: \${crypto.randomUUID()}
-    CURRENT_DATE: \${new Date().toISOString().split('T')[0]}
+    # Dynamic timestamp
+    TIMESTAMP: "\${DATE:YYYY-MM-DD}"
+    REQUEST_TIME: "\${TIME:HH:mm:ss}"
+    
+    # UUID generation
+    REQUEST_ID: "\${UUID}"
+    SESSION_ID: "\${UUID:short}"
+    
+    # Random values
+    RANDOM_NUM: "\${RANDOM:1-1000}"
+    RANDOM_STR: "\${RANDOM:string:10}"
 
-requests:
-  - name: Create Resource with Dynamic Data
-    url: \${BASE_URL}/resources
-    method: POST
-    body:
-      id: \${UUID}
-      timestamp: \${TIMESTAMP}
-      created_date: \${CURRENT_DATE}
-      name: "Resource-\${TIMESTAMP}"
+collection:
+  requests:
+    - name: "Request with dynamic values"
+      url: "https://api.example.com/requests"
+      headers:
+        X-Request-ID: "\${REQUEST_ID}"
+        X-Timestamp: "\${TIMESTAMP}"
+        X-Session: "\${SESSION_ID}"
 ```
 
 ## Conditional Logic
 
-```yaml title="conditional-variables.yaml"
-# Conditional variables and expressions
+Use JavaScript expressions to create conditional variables and environment-specific configurations.
+
+**conditional-variables.yaml**
+
+```yaml
 global:
   variables:
-    ENV: production
-    DEBUG_MODE: false
-    API_TIMEOUT: \${ENV === 'development' ? 30000 : 5000}
-    LOG_LEVEL: \${DEBUG_MODE ? 'debug' : 'info'}
+    # Environment-based variables
+    BASE_URL: "\${NODE_ENV:production:https://api.example.com:https://api-staging.example.com}"
     
+    # Default value if environment variable not set
+    API_TIMEOUT: "\${API_TIMEOUT:5000}"
+    
+    # Multiple environment sources
+    DB_HOST: "\${DATABASE_HOST:\${DB_HOST:localhost}}"
+
 collection:
-  variables:
-    # Conditional API endpoints
-    BASE_URL: \${ENV === 'production' ? 'https://api.example.com' : 'https://api-staging.example.com'}
-    
   requests:
-    - name: Environment-Aware Request
-      url: \${BASE_URL}/data
+    - name: "Environment aware request"
+      url: "\${BASE_URL}/data"
       timeout: \${API_TIMEOUT}
-      headers:
-        X-Log-Level: \${LOG_LEVEL}
-        X-Debug: \${DEBUG_MODE ? 'true' : 'false'}
 ```
 
 ## Complex Interpolation
 
-```yaml title="complex-interpolation.yaml"
-# Complex variable interpolation
+Combine multiple variables and expressions to create complex, computed values.
+
+**complex-interpolation.yaml**
+
+```yaml
 global:
   variables:
-    API_HOST: api.example.com
-    API_PORT: 443
-    API_PROTOCOL: https
-    API_PATH: /v1/api
+    BASE_PATH: "/api/v1"
+    RESOURCE: "users"
     
-    # Computed base URL
-    BASE_URL: "\${API_PROTOCOL}://\${API_HOST}:\${API_PORT}\${API_PATH}"
+    # Computed from other variables
+    FULL_ENDPOINT: "\${BASE_URL}\${BASE_PATH}/\${RESOURCE}"
     
-    # User data
-    USER_NAME: john.doe
-    USER_DOMAIN: example.com
-    USER_EMAIL: "\${USER_NAME}@\${USER_DOMAIN}"
+    # String manipulation
+    UPPER_ENV: "\${ENV:upper}"
+    LOWER_RESOURCE: "\${RESOURCE:lower}"
 
-requests:
-  - name: Complex Interpolation Example
-    url: \${BASE_URL}/users/search
-    method: POST
-    body:
-      query: "email:\${USER_EMAIL}"
-      filters:
-        domain: \${USER_DOMAIN}
-        username: \${USER_NAME}
+collection:
+  requests:
+    - name: "Using computed variables"
+      url: "\${FULL_ENDPOINT}"
+      headers:
+        X-Environment: "\${UPPER_ENV}"
+        X-Resource-Type: "\${LOWER_RESOURCE}"
 ```
 
 ## Best Practices
 
-> **Best Practices**
->
-> • Use descriptive variable names
->
-> • Define common values as variables
->
-> • Use environment variables for secrets
->
-> • Group related variables logically
->
-> • Document complex expressions
+### Best Practices
 
-> **Avoid These Mistakes**
->
-> • Hard-coding sensitive information
->
-> • Using overly complex expressions
->
-> • Creating circular references
->
-> • Overusing dynamic variables
->
-> • Ignoring variable naming conventions
+• Use descriptive variable names
+• Define common values as variables
+• Use environment variables for secrets
+• Group related variables logically
+• Document complex expressions
 
 ## Common Patterns
 
 ### API Authentication
 
-```yaml title="API Authentication Pattern"
+```yaml
 global:
   variables:
-    
-  defaults:
-    headers:
-      Authorization: \${AUTH_HEADER}
-```
-
-### Environment-Specific URLs
-
-```yaml title="Environment-Specific URLs"
-global:
-  variables:
+    ENVIRONMENT: \${ENV.NODE_ENV || 'development'}
     BASE_URL: \${ENVIRONMENT === 'production' 
       ? 'https://api.example.com' 
       : 'https://api-staging.example.com'}
 ```
-
-### Request Correlation IDs
-
-```yaml title="Request Correlation IDs"
-global:
-  variables:
-    
-  defaults:
-    headers:
-      X-Request-Time: \${Date.now()}
-```
-

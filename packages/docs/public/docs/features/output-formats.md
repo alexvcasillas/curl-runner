@@ -1,32 +1,77 @@
 ---
 title: "Output Formats"
 description: "Control how curl-runner displays and saves request results."
+category: "Documentation"
+keywords:
+  - curl-runner
+  - http
+  - api
+  - testing
+  - output
+  - formats
+  - yaml
+  - variables
+  - headers
+  - response
+  - request
+  - cli
+  - environment
+slug: "/docs/output-formats"
+toc: true
+date: "2025-09-03T18:48:49.354Z"
+lastModified: "2025-09-03T18:48:49.354Z"
+author: "alexvcasillas"
+authorUrl: "https://github.com/alexvcasillas/curl-runner"
+license: "MIT"
+nav:
+  label: "Output Formats"
+  category: "Documentation"
+tags:
+  - documentation
+  - documentation
+og:
+  title: "Output Formats - curl-runner Documentation"
+  description: "Control how curl-runner displays and saves request results."
+  type: "article"
+  image: "/og-image.png"
+schema:
+  "@context": "https://schema.org"
+  "@type": "TechArticle"
+  headline: "Output Formats"
+  description: "Control how curl-runner displays and saves request results."
+  datePublished: "2025-09-03T18:48:49.354Z"
+  dateModified: "2025-09-03T18:48:49.354Z"
 ---
 
 # Output Formats
 
 Control how curl-runner displays and saves request results.
 
-## Table of Contents
-
-- [Overview](#overview)
-- [Output Configuration](#output-configuration)
-  - [Configuration Options](#configuration-options)
-- [Format Types](#format-types)
-  - [JSON Format](#json-format)
-  - [Pretty Format](#pretty-format)
-  - [Raw Format](#raw-format)
-- [Saving Results](#saving-results)
-- [CLI Options](#cli-options)
-  - [Output Flags](#output-flags)
-- [Use Cases](#use-cases)
-- [Best Practices](#best-practices)
-
 ## Overview
+
+`curl-runner` provides flexible output options to suit different use cases, from human-readable terminal output to machine-parseable JSON for CI/CD pipelines.
+
+> **Structured Data**
+> Machine-readable format for automation
 
 ## Output Configuration
 
-```yaml title="output-config.yaml"
+Configure output settings in the global section of your YAML file.
+
+### Configuration Options
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `format` | string | json | "json", "pretty", or "raw" |
+| `verbose` | boolean | false | Show detailed output |
+| `showHeaders` | boolean | false | Include response headers |
+| `showBody` | boolean | true | Include response body |
+| `showMetrics` | boolean | false | Include performance metrics |
+| `saveToFile` | string | - | File path to save results |
+
+**output-config.yaml**
+
+```yaml
 # Different output format configurations
 global:
   output:
@@ -42,23 +87,15 @@ requests:
     method: GET
 ```
 
-### Configuration Options
-
-| Option | Type | Default | Description |
-| --- | --- | --- | --- |
-| format | string | json | "json", "pretty", or "raw" |
-| verbose | boolean | false | Show detailed output |
-| showHeaders | boolean | false | Include response headers |
-| showBody | boolean | true | Include response body |
-| showMetrics | boolean | false | Include performance metrics |
-| saveToFile | string | - | File path to save results |
-
-
 ## Format Types
 
 ### JSON Format
 
-```yaml title="json-config.yaml"
+Structured JSON output ideal for parsing and automation.
+
+**json-config.yaml**
+
+```yaml
 # JSON format configuration
 global:
   output:
@@ -73,7 +110,66 @@ request:
   method: GET
 ```
 
-```json title="output.json"
+### Pretty Format
+
+Human-readable format with colors and formatting for terminal viewing.
+
+**pretty-config.yaml**
+
+```yaml
+# Pretty format configuration  
+global:
+  output:
+    format: pretty
+    verbose: true
+    showHeaders: true
+    showMetrics: true
+
+request:
+  name: Get User Profile
+  url: https://api.example.com/users/123
+  method: GET
+```
+
+### Raw Format
+
+Unprocessed response body, useful for binary data or custom formats.
+
+**raw-config.yaml**
+
+```yaml
+# Raw format configuration
+global:
+  output:
+    format: raw
+    showBody: true
+
+request:
+  name: Get User Profile
+  url: https://api.example.com/users/123
+  method: GET
+```
+
+**json-config.yaml**
+
+```yaml
+# JSON format configuration
+global:
+  output:
+    format: json
+    showHeaders: true
+    showBody: true
+    showMetrics: true
+
+request:
+  name: Get User Profile
+  url: https://api.example.com/users/123
+  method: GET
+```
+
+**output.json**
+
+```json
 {
   "summary": {
     "total": 3,
@@ -124,9 +220,9 @@ request:
 }
 ```
 
-### Pretty Format
+**pretty-config.yaml**
 
-```yaml title="pretty-config.yaml"
+```yaml
 # Pretty format configuration  
 global:
   output:
@@ -141,7 +237,9 @@ request:
   method: GET
 ```
 
-```text title="terminal"
+**terminal**
+
+```text
 ✅ Get User Profile
    URL: https://api.example.com/users/123
    Method: GET
@@ -169,9 +267,9 @@ request:
 Summary: 1 request completed successfully
 ```
 
-### Raw Format
+**raw-config.yaml**
 
-```yaml title="raw-config.yaml"
+```yaml
 # Raw format configuration
 global:
   output:
@@ -184,7 +282,9 @@ request:
   method: GET
 ```
 
-```json title="response.json"
+**response.json**
+
+```json
 {
   "id": 123,
   "name": "John Doe", 
@@ -195,7 +295,11 @@ request:
 
 ## Saving Results
 
-```yaml title="save-to-file.yaml"
+Save test results to files for later analysis or reporting.
+
+**save-to-file.yaml**
+
+```yaml
 # Save results to file
 global:
   output:
@@ -211,13 +315,25 @@ requests:
     method: GET
 ```
 
-> **Tip:**
->
-
-
 ## CLI Options
 
-```bash title="terminal"
+Control output format from the command line.
+
+### Output Flags
+
+| Flag | Description |
+| --- | --- |
+| `--output-format` | Set output format (json/pretty/raw) |
+| `--output, -o` | Save results to file |
+| `--verbose, -v` | Enable verbose output |
+| `--quiet, -q` | Suppress non-error output |
+| `--show-headers` | Include response headers |
+| `--show-body` | Include response body |
+| `--show-metrics` | Include performance metrics |
+
+**terminal**
+
+```bash
 # Command line output options
 # JSON format (machine-readable)
 curl-runner tests.yaml --output-format json
@@ -241,48 +357,14 @@ curl-runner tests.yaml --show-headers --show-metrics
 curl-runner tests.yaml --quiet
 ```
 
-### Output Flags
-
-| Flag | Description |
-| --- | --- |
-| --output-format | Set output format (json/pretty/raw) |
-| --output, -o | Save results to file |
-| --verbose, -v | Enable verbose output |
-| --quiet, -q | Suppress non-error output |
-| --show-headers | Include response headers |
-| --show-body | Include response body |
-| --show-metrics | Include performance metrics |
-
-
 ## Use Cases
-
-> **Continuous Integration**
->
-
-
-> **Local Testing**
->
-
-
-> **Health Checks & Monitoring**
->
-
 
 ## Best Practices
 
-> **Choose the Right Format**
->
+### Best Practices
 
-
-> **Save Important Results**
->
-
-
-> **Use Quiet Mode in Scripts**
->
-
-
-> **Enable Metrics for Performance Testing**
->
-
-
+• Use descriptive variable names
+• Define common values as variables
+• Use environment variables for secrets
+• Group related variables logically
+• Document complex expressions

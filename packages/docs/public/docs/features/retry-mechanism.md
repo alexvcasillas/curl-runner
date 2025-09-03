@@ -1,33 +1,66 @@
 ---
 title: "Retry Mechanism"
 description: "Automatically retry failed requests with configurable delays and attempts."
+category: "Documentation"
+keywords:
+  - curl-runner
+  - http
+  - api
+  - testing
+  - retry
+  - mechanism
+  - variables
+  - validation
+  - timeout
+  - headers
+  - request
+  - cli
+slug: "/docs/retry-mechanism"
+toc: true
+date: "2025-09-03T18:48:49.353Z"
+lastModified: "2025-09-03T18:48:49.353Z"
+author: "alexvcasillas"
+authorUrl: "https://github.com/alexvcasillas/curl-runner"
+license: "MIT"
+nav:
+  label: "Retry Mechanism"
+  category: "Documentation"
+tags:
+  - documentation
+  - documentation
+og:
+  title: "Retry Mechanism - curl-runner Documentation"
+  description: "Automatically retry failed requests with configurable delays and attempts."
+  type: "article"
+  image: "/og-image.png"
+schema:
+  "@context": "https://schema.org"
+  "@type": "TechArticle"
+  headline: "Retry Mechanism"
+  description: "Automatically retry failed requests with configurable delays and attempts."
+  datePublished: "2025-09-03T18:48:49.353Z"
+  dateModified: "2025-09-03T18:48:49.353Z"
 ---
 
 # Retry Mechanism
 
 Automatically retry failed requests with configurable delays and attempts.
 
-## Table of Contents
-
-- [Overview](#overview)
-- [Basic Usage](#basic-usage)
-- [Configuration Options](#configuration-options)
-- [Advanced Scenarios](#advanced-scenarios)
-- [Global Configuration](#global-configuration)
-- [Retry with Validation](#retry-with-validation)
-- [Retry Strategies](#retry-strategies)
-  - [Fixed Delay](#fixed-delay)
-  - [Increasing Delay](#increasing-delay)
-- [When to Retry](#when-to-retry)
-  - [Automatic Retry Conditions](#automatic-retry-conditions)
-- [Best Practices](#best-practices)
-- [CLI Options](#cli-options)
-
 ## Overview
+
+The retry mechanism in `curl-runner` allows you to automatically retry failed requests, making your API tests more resilient to temporary failures, network issues, and rate limiting.
+
+Automatically retry on network errors, timeouts, and 5xx status codes
+
+Control retry count, delays, and conditions per request or globally
 
 ## Basic Usage
 
-```yaml title="basic-retry.yaml"
+Configure retries using the `retry` field in your request configuration.
+
+**basic-retry.yaml**
+
+```yaml
 # Basic retry configuration
 request:
   name: Flaky API Endpoint
@@ -38,22 +71,17 @@ request:
     delay: 1000   # Wait 1 second between retries
 ```
 
-1. First attempt is made immediately
-2. If it fails, wait for the specified delay
-3. Retry up to the specified count
-4. Stop on success or after all retries exhausted
-
 ## Configuration Options
 
-| Option | Type | Default | Description |
-| --- | --- | --- | --- |
-| count | number | 0 | Number of retry attempts |
-| delay | number | 1000 | Delay between retries (ms) |
-
+Fine-tune retry behavior with these configuration options.
 
 ## Advanced Scenarios
 
-```yaml title="advanced-retry.yaml"
+Handle complex retry requirements with different configurations per request.
+
+**advanced-retry.yaml**
+
+```yaml
 # Advanced retry scenarios
 requests:
   - name: Critical API Call
@@ -79,7 +107,11 @@ requests:
 
 ## Global Configuration
 
-```yaml title="global-retry.yaml"
+Set default retry behavior for all requests and override as needed.
+
+**global-retry.yaml**
+
+```yaml
 # Global retry configuration
 global:
   defaults:
@@ -111,7 +143,11 @@ requests:
 
 ## Retry with Validation
 
-```yaml title="retry-validation.yaml"
+Combine retries with validation rules to handle eventually consistent APIs.
+
+**retry-validation.yaml**
+
+```yaml
 # Retry with validation rules
 request:
   name: Eventually Consistent API
@@ -141,7 +177,11 @@ requests:
 
 ### Fixed Delay
 
-```yaml title="fixed-delay.yaml"
+Use a consistent delay between all retry attempts.
+
+**fixed-delay.yaml**
+
+```yaml
 # Fixed delay retry strategy
 request:
   name: Reliable API Call
@@ -160,7 +200,60 @@ request:
 
 ### Increasing Delay
 
-```yaml title="exponential-backoff.yaml"
+Simulate exponential backoff by using multiple requests with increasing delays.
+
+**exponential-backoff.yaml**
+
+```yaml
+# Simulating exponential backoff
+requests:
+  - name: First Attempt
+    url: https://api.example.com/endpoint
+    retry:
+      count: 1
+      delay: 1000   # 1 second
+      
+  - name: Second Attempt (if needed)
+    url: https://api.example.com/endpoint
+    retry:
+      count: 1
+      delay: 2000   # 2 seconds
+      
+  - name: Third Attempt (if needed)
+    url: https://api.example.com/endpoint
+    retry:
+      count: 1
+      delay: 4000   # 4 seconds
+      
+  - name: Fourth Attempt (if needed)
+    url: https://api.example.com/endpoint
+    retry:
+      count: 1
+      delay: 8000   # 8 seconds
+```
+
+**fixed-delay.yaml**
+
+```yaml
+# Fixed delay retry strategy
+request:
+  name: Reliable API Call
+  url: https://api.example.com/data
+  method: GET
+  retry:
+    count: 3      # Retry up to 3 times
+    delay: 1000   # Wait exactly 1 second between retries
+    
+# Will attempt sequence:
+# 1. Initial request
+# 2. Wait 1s → Retry attempt 1  
+# 3. Wait 1s → Retry attempt 2
+# 4. Wait 1s → Retry attempt 3
+```
+
+**exponential-backoff.yaml**
+
+```yaml
 # Simulating exponential backoff
 requests:
   - name: First Attempt
@@ -190,45 +283,23 @@ requests:
 
 ## When to Retry
 
-### Automatic Retry Conditions
-
-> **Network Errors**
->
-
-
-> **Timeouts**
->
-
-
-> **5xx Errors**
->
-
-
-> **Validation Failures**
->
-
-
 ## Best Practices
 
-> **Set Reasonable Limits**
->
+### Best Practices
 
-
-> **Use Appropriate Delays**
->
-
-
-> **Consider Exponential Backoff**
->
-
-
-> **Monitor Total Time**
->
-
+• Use descriptive variable names
+• Define common values as variables
+• Use environment variables for secrets
+• Group related variables logically
+• Document complex expressions
 
 ## CLI Options
 
-```bash title="terminal"
+Control retry behavior from the command line.
+
+**terminal**
+
+```bash
 # Override retry count globally
 curl-runner api-tests.yaml --retry 5
 
@@ -238,4 +309,3 @@ curl-runner api-tests.yaml --no-retry
 # Set retry delay
 curl-runner api-tests.yaml --retry-delay 2000
 ```
-

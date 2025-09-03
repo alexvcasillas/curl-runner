@@ -1,67 +1,5 @@
----
-title: "Global Settings API Reference"
-description: "Complete reference for global configuration options that control execution behavior, output formatting, and default request settings."
-category: "Configuration"
-keywords:
-  - curl-runner
-  - http
-  - api
-  - testing
-  - global
-  - settings
-  - reference
-  - variables
-  - authentication
-  - parallel
-  - sequential
-  - validation
-  - retry
-  - timeout
-  - headers
-  - response
-  - request
-  - collection
-  - cli
-  - environment
-slug: "/docs/global-settings"
-toc: true
-date: "2025-09-03T18:48:49.355Z"
-lastModified: "2025-09-03T18:48:49.355Z"
-author: "alexvcasillas"
-authorUrl: "https://github.com/alexvcasillas/curl-runner"
-license: "MIT"
-nav:
-  label: "Global Settings API Reference"
-  category: "Configuration"
-tags:
-  - documentation
-  - configuration
-og:
-  title: "Global Settings API Reference - curl-runner Documentation"
-  description: "Complete reference for global configuration options that control execution behavior, output formatting, and default request settings."
-  type: "article"
-  image: "/og-image.png"
-schema:
-  "@context": "https://schema.org"
-  "@type": "TechArticle"
-  headline: "Global Settings API Reference"
-  description: "Complete reference for global configuration options that control execution behavior, output formatting, and default request settings."
-  datePublished: "2025-09-03T18:48:49.355Z"
-  dateModified: "2025-09-03T18:48:49.355Z"
----
-
-# Global Settings API Reference
-
-Complete reference for global configuration options that control execution behavior, output formatting, and default request settings.
-
-## Overview
-
-Global settings control the overall behavior of `curl-runner` execution, including how requests are processed, output formatting, default values, and variable management. These settings apply to all requests unless overridden at the collection or request level.
-
-**global-config-complete.yaml**
-
-```yaml
-# Complete Global Configuration Example
+// Global settings API reference snippets
+export const globalConfigExample = `# Complete Global Configuration Example
 global:
   # Execution behavior
   execution: sequential
@@ -97,19 +35,9 @@ global:
       delay: 1000
     expect:
       headers:
-        content-type: "application/json"
-```
+        content-type: "application/json"`;
 
-## Global Configuration Properties
-
-## Execution Modes
-
-Control how multiple requests are executed: sequentially (one after another) or in parallel (simultaneously).
-
-**execution-modes.yaml**
-
-```yaml
-# Execution Mode Examples
+export const executionModesExample = `# Execution Mode Examples
 
 # Sequential execution (default)
 global:
@@ -152,21 +80,9 @@ collection:
       
     - name: "Load Test 3"
       url: "https://api.example.com/endpoint3"
-      # All three run at the same time
-```
+      # All three run at the same time`;
 
-## Error Handling Configuration
-
-Configure how `curl-runner` responds to request failures and validation errors.
-
-Stop execution on first error. Best for critical workflows.
-
-Continue despite errors. Best for comprehensive testing.
-
-**error-handling.yaml**
-
-```yaml
-# Error Handling Configuration
+export const errorHandlingExample = `# Error Handling Configuration
 
 # Stop on first error (strict mode)
 global:
@@ -204,17 +120,9 @@ collection:
       
     - name: "Important Operation"
       url: "https://api.example.com/important"
-      # Runs regardless of previous failures
-```
+      # Runs regardless of previous failures`;
 
-## Global Variables
-
-Define variables that are available to all requests in the configuration. Variables support environment variable interpolation and can be overridden at collection and request levels.
-
-**global-variables.yaml**
-
-```yaml
-# Global Variables Configuration
+export const variablesExample = `# Global Variables Configuration
 
 global:
   variables:
@@ -261,17 +169,9 @@ collection:
       variables:
         # Local override for this request only
         DEFAULT_TIMEOUT: "30000"  # 30 seconds for slow endpoint
-      timeout: \${DEFAULT_TIMEOUT}
-```
+      timeout: \${DEFAULT_TIMEOUT}`;
 
-## Output Configuration
-
-Control how results are displayed and saved, including verbosity, format, and file output options.
-
-**output-config.yaml**
-
-```yaml
-# Output Configuration Options
+export const outputConfigurationExample = `# Output Configuration Options
 
 # Minimal output
 global:
@@ -310,21 +210,9 @@ global:
     format: raw       # Raw response content only
     showHeaders: false
     showBody: true
-    saveToFile: "data.txt"
-```
+    saveToFile: "data.txt"`;
 
-## Default Request Settings
-
-Configure default values that apply to all requests, reducing repetition and ensuring consistency across your API configurations.
-
-### Setting Precedence Order
-
-Values defined directly on individual requests have the highest priority and override all defaults.
-
-**defaults-config.yaml**
-
-```yaml
-# Default Request Settings
+export const defaultsExample = `# Default Request Settings
 
 global:
   defaults:
@@ -377,17 +265,9 @@ collection:
       url: "https://api.example.com/slow"
       retry:
         count: 5      # Override default retry count
-        delay: 5000   # Override default retry delay
-```
+        delay: 5000   # Override default retry delay`;
 
-## Production Configuration Example
-
-A comprehensive example showing how to configure `curl-runner` for production monitoring and CI/CD integration.
-
-**production-config.yaml**
-
-```yaml
-# Complex Production Configuration
+export const complexConfigExample = `# Complex Production Configuration
 
 global:
   # Execution settings
@@ -500,23 +380,4 @@ collection:
         body:
           dependencies:
             - name: "*"
-              status: ["healthy", "degraded"]
-```
-
-## Environment Integration
-
-```bash
-# .env file
-API_TOKEN=your_secret_token
-BASE_URL=https://api.staging.com
-DEBUG_MODE=true
-```
-
-```bash
-# Run with specific environment
-curl-runner config/production.yaml
-curl-runner config/staging.yaml
-curl-runner config/development.yaml
-```
-
-## Global Configuration Best Practices
+              status: ["healthy", "degraded"]`;

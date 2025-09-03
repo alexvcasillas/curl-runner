@@ -1,28 +1,63 @@
 ---
 title: "Parallel Execution"
 description: "Execute multiple HTTP requests simultaneously for improved performance."
+category: "Documentation"
+keywords:
+  - curl-runner
+  - http
+  - api
+  - testing
+  - parallel
+  - execution
+  - yaml
+  - variables
+  - sequential
+  - timeout
+  - response
+  - request
+  - cli
+slug: "/docs/parallel-execution"
+toc: true
+date: "2025-09-03T18:48:49.355Z"
+lastModified: "2025-09-03T18:48:49.355Z"
+author: "alexvcasillas"
+authorUrl: "https://github.com/alexvcasillas/curl-runner"
+license: "MIT"
+nav:
+  label: "Parallel Execution"
+  category: "Documentation"
+tags:
+  - documentation
+  - documentation
+og:
+  title: "Parallel Execution - curl-runner Documentation"
+  description: "Execute multiple HTTP requests simultaneously for improved performance."
+  type: "article"
+  image: "/og-image.png"
+schema:
+  "@context": "https://schema.org"
+  "@type": "TechArticle"
+  headline: "Parallel Execution"
+  description: "Execute multiple HTTP requests simultaneously for improved performance."
+  datePublished: "2025-09-03T18:48:49.355Z"
+  dateModified: "2025-09-03T18:48:49.355Z"
 ---
 
 # Parallel Execution
 
 Execute multiple HTTP requests simultaneously for improved performance.
 
-## Table of Contents
-
-- [Overview](#overview)
-- [Basic Usage](#basic-usage)
-- [Configuration Options](#configuration-options)
-- [Error Handling](#error-handling)
-- [Performance Testing](#performance-testing)
-- [CLI Usage](#cli-usage)
-  - [CLI Flags](#cli-flags)
-- [Best Practices](#best-practices)
-
 ## Overview
+
+Parallel execution allows curl-runner to send multiple HTTP requests simultaneously, significantly reducing the total execution time when testing multiple endpoints or performing load testing.
 
 ## Basic Usage
 
-```yaml title="parallel-requests.yaml"
+Configure parallel execution in your YAML file using the global execution setting.
+
+**parallel-requests.yaml**
+
+```yaml
 # Run multiple requests in parallel
 global:
   execution: parallel
@@ -51,16 +86,15 @@ requests:
 
 ## Configuration Options
 
-| Setting | Type | Description |
-| --- | --- | --- |
-| execution | string | "parallel" or "sequential" (default: "sequential") |
-| continueOnError | boolean | Continue executing remaining requests if one fails |
-| timeout | number | Global timeout for each request in milliseconds |
-
+Control how parallel execution behaves with these settings:
 
 ## Error Handling
 
-```yaml title="parallel-with-error-handling.yaml"
+When running requests in parallel, you can control how errors are handled using the `continueOnError` setting.
+
+**parallel-with-error-handling.yaml**
+
+```yaml
 # Control parallel execution
 global:
   execution: parallel
@@ -86,17 +120,13 @@ requests:
     timeout: 5000
 ```
 
-> Stop on Error
->
-> By default, if any request fails, curl-runner will cancel remaining requests
-
-> Continue on Error Recommended
->
-> Set {"continueOnError: true"} to complete all requests regardless of failures
-
 ## Performance Testing
 
-```yaml title="performance-test.yaml"
+Parallel execution is ideal for performance testing and load simulation. Use it to test how your API handles concurrent requests.
+
+**performance-test.yaml**
+
+```yaml
 # Performance testing with parallel requests
 global:
   execution: parallel
@@ -125,15 +155,21 @@ requests:
     url: \${API_URL}/health
 ```
 
-- • Total execution time for all requests
-- • Individual request duration
-- • Response sizes
-- • Success/failure counts
-- • Average response time
-
 ## CLI Usage
 
-```bash title="terminal"
+Control parallel execution from the command line.
+
+### CLI Flags
+
+| Flag | Description |
+| --- | --- |
+| `--parallel` | Force parallel execution |
+| `--sequential` | Force sequential execution |
+| `--continue-on-error` | Continue execution on failures |
+
+**terminal**
+
+```bash
 # Run with parallel execution
 curl-runner api-tests.yaml --parallel
 
@@ -144,30 +180,12 @@ curl-runner api-tests.yaml --sequential
 curl-runner api-tests.yaml --parallel --verbose
 ```
 
-### CLI Flags
-
-| Flag | Description |
-| --- | --- |
-| --parallel | Force parallel execution |
-| --sequential | Force sequential execution |
-| --continue-on-error | Continue execution on failures |
-
-
 ## Best Practices
 
-> **Use for Independent Requests**
->
+### Best Practices
 
-
-> **Set Appropriate Timeouts**
->
-
-
-> **Monitor Resource Usage**
->
-
-
-> **Use Metrics for Analysis**
->
-
-
+• Use descriptive variable names
+• Define common values as variables
+• Use environment variables for secrets
+• Group related variables logically
+• Document complex expressions
