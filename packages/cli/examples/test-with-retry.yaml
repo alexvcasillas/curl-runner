@@ -1,0 +1,24 @@
+# Example with retry configuration
+global:
+  continueOnError: false
+  output:
+    verbose: false
+    showMetrics: true
+
+requests:
+  - name: Test with Retry
+    url: https://httpbin.org/status/500,200
+    method: GET
+    retry:
+      count: 3
+      delay: 1000
+    expect:
+      status: [200, 500]
+    
+  - name: Test Timeout and Retry
+    url: https://httpbin.org/delay/10
+    method: GET
+    timeout: 2
+    retry:
+      count: 2
+      delay: 500

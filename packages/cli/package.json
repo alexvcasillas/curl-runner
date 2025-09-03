@@ -1,0 +1,36 @@
+{
+  "name": "@curl-runner/cli",
+  "version": "1.0.0",
+  "description": "A powerful CLI tool for HTTP request management using YAML configuration",
+  "type": "module",
+  "main": "./src/cli.ts",
+  "bin": {
+    "curl-runner": "./src/cli.ts"
+  },
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "dev": "bun --watch src/cli.ts",
+    "build": "bun build src/cli.ts --compile --outfile ../../curl-runner",
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "check": "biome check --write .",
+    "test": "bun test"
+  },
+  "keywords": [
+    "curl",
+    "http",
+    "api",
+    "testing",
+    "yaml",
+    "cli",
+    "bun"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

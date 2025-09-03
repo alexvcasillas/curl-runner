@@ -1,0 +1,61 @@
+{
+  "name": "@curl-runner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "curl-runner monorepo - CLI tool and documentation",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter '*' dev",
+    "dev:cli": "bun run --filter '@curl-runner/cli' dev",
+    "dev:docs": "bun run --filter '@curl-runner/docs' dev",
+    "build": "bun run --filter '*' build",
+    "build:cli": "bun run --filter '@curl-runner/cli' build",
+    "build:docs": "bun run --filter '@curl-runner/docs' build",
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "check": "biome check --write .",
+    "check:ci": "biome ci .",
+    "cli": "bun run packages/cli/src/cli.ts",
+    "test": "bun test",
+    "test:cli": "cd packages/cli && bun test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.2",
+    "@types/bun": "latest",
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "autoprefixer": "^10.4.21",
+    "next": "^15.5.2",
+    "postcss": "^8.5.6",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "shadcn": "^3.1.0",
+    "tailwindcss": "^4.1.12",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "bun": ">=1.2.21"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/curl-runner.git"
+  },
+  "keywords": [
+    "curl",
+    "http",
+    "api",
+    "testing",
+    "yaml",
+    "cli",
+    "documentation",
+    "monorepo"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.1.12"
+  }
+}

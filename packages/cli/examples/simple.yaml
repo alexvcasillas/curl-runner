@@ -1,0 +1,5 @@
+# Simple single request example
+request:
+  name: Get JSONPlaceholder Post
+  url: https://jsonplaceholder.typicode.com/posts/1
+  method: GET

@@ -1,0 +1,57 @@
+# Collection with multiple requests
+global:
+  execution: sequential
+  continueOnError: true
+  variables:
+    BASE_URL: https://jsonplaceholder.typicode.com
+  output:
+    verbose: false
+    showHeaders: false
+    showMetrics: true
+
+collection:
+  name: JSONPlaceholder API Tests
+  description: Testing various endpoints
+  requests:
+    - name: List Users
+      url: ${BASE_URL}/users
+      method: GET
+      expect:
+        status: 200
+    
+    - name: Get Specific User
+      url: ${BASE_URL}/users/1
+      method: GET
+      expect:
+        status: 200
+    
+    - name: Create Post
+      url: ${BASE_URL}/posts
+      method: POST
+      headers:
+        Content-Type: application/json
+      body:
+        title: Test Post
+        body: This is a test post created by curl-runner
+        userId: 1
+      expect:
+        status: 201
+    
+    - name: Update Post
+      url: ${BASE_URL}/posts/1
+      method: PUT
+      headers:
+        Content-Type: application/json
+      body:
+        id: 1
+        title: Updated Post
+        body: This post has been updated
+        userId: 1
+      expect:
+        status: 200
+    
+    - name: Delete Post
+      url: ${BASE_URL}/posts/1
+      method: DELETE
+      expect:
+        status: 200

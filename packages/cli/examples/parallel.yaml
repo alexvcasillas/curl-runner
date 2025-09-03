@@ -1,0 +1,52 @@
+# Parallel execution example
+global:
+  execution: parallel
+  variables:
+    API_URL: https://httpbin.org
+  output:
+    verbose: true
+    showBody: true
+    showHeaders: true
+    showMetrics: true
+    format: pretty
+
+requests:
+  - name: Get IP Address
+    url: ${API_URL}/ip
+    method: GET
+    
+  - name: Get User Agent
+    url: ${API_URL}/user-agent
+    method: GET
+    
+  - name: Get Headers
+    url: ${API_URL}/headers
+    method: GET
+    headers:
+      X-Custom-Header: curl-runner
+      Accept: application/json
+    
+  - name: Post JSON Data
+    url: ${API_URL}/post
+    method: POST
+    headers:
+      Content-Type: application/json
+    body:
+      name: Curl Runner Test
+      timestamp: "2024-01-01"
+      data:
+        key1: value1
+        key2: value2
+    
+  - name: Test Basic Auth
+    url: ${API_URL}/basic-auth/user/pass
+    method: GET
+    auth:
+      type: basic
+      username: user
+      password: pass
+    
+  - name: Test Delayed Response
+    url: ${API_URL}/delay/2
+    method: GET
+    timeout: 5
