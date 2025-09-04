@@ -1,9 +1,59 @@
-import { DocsPageHeader } from "@/components/docs-page-header"
-import { CodeBlockServer } from "@/components/code-block-server"
-import { TableOfContents } from "@/components/toc"
-import { H2, H3 } from "@/components/docs-heading"
-import { Badge } from "@/components/ui/badge"
-import { Settings, Shield, Zap, CheckCircle, Target, Activity, Globe, Server, Timer, Database, Cloud, AlertTriangle, TrendingUp, Users, Lock, Layers, Cpu, BarChart3, Lightbulb } from "lucide-react"
+import {
+  Activity,
+  BarChart3,
+  CheckCircle,
+  Database,
+  Globe,
+  Layers,
+  Server,
+  Settings,
+  Target,
+  TrendingUp,
+  Users,
+  Zap,
+} from 'lucide-react';
+import type { Metadata } from 'next';
+import { CodeBlockServer } from '@/components/code-block-server';
+import { H2, H3 } from '@/components/docs-heading';
+import { DocsPageHeader } from '@/components/docs-page-header';
+import { TableOfContents } from '@/components/toc';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+
+export const metadata: Metadata = {
+  title: 'Advanced Examples',
+  description:
+    'Complex curl-runner configurations for advanced use cases. Learn about variable interpolation, authentication, validation, and real-world API testing scenarios.',
+  keywords: [
+    'curl-runner advanced examples',
+    'complex HTTP requests',
+    'variable interpolation examples',
+    'authentication examples',
+    'response validation examples',
+    'retry mechanism examples',
+    'parallel execution examples',
+    'advanced API testing',
+    'production testing',
+    'complex configurations',
+    'enterprise examples',
+    'advanced YAML configuration',
+  ],
+  openGraph: {
+    title: 'Advanced Examples | curl-runner Documentation',
+    description:
+      'Complex curl-runner configurations for advanced use cases. Learn about variable interpolation, authentication, validation, and real-world API testing scenarios.',
+    url: 'https://curl-runner.com/docs/examples/advanced',
+    type: 'article',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Advanced Examples | curl-runner Documentation',
+    description: 'Master curl-runner with advanced examples for complex API testing scenarios.',
+  },
+  alternates: {
+    canonical: 'https://curl-runner.com/docs/examples/advanced',
+  },
+};
 
 const variableInterpolationExample = `# Variable interpolation with environment loading
 global:
@@ -52,7 +102,7 @@ collection:
           etag: "*"  # Any ETag value
         body:
           id: \${RESOURCE_ID}
-          updatedBy: \${USER_ID}`
+          updatedBy: \${USER_ID}`;
 
 const authenticationExample = `# Advanced authentication patterns
 requests:
@@ -90,7 +140,7 @@ requests:
       Authorization: "Bearer \${ACCESS_TOKEN}"
       X-Refresh-Token: "\${REFRESH_TOKEN}"
     expect:
-      status: [200, 401]  # Handle token expiry`
+      status: [200, 401]  # Handle token expiry`;
 
 const errorHandlingExample = `# Advanced error handling and retry logic
 global:
@@ -144,7 +194,7 @@ collection:
       url: https://api-backup.example.com/data
       method: GET
       timeout: 5000
-      # Only runs if previous request failed`
+      # Only runs if previous request failed`;
 
 const parallelExecutionExample = `# Parallel execution with dependencies
 global:
@@ -208,7 +258,7 @@ collection:
       expect:
         status: 200
         headers:
-          x-rate-limit-remaining: "*"`
+          x-rate-limit-remaining: "*"`;
 
 const complexValidationExample = `# Complex response validation patterns
 requests:
@@ -286,7 +336,7 @@ requests:
           items:
             item:
               - id: "^[0-9]+$"
-                name: ".*"`
+                name: ".*"`;
 
 const integrationTestExample = `# Full integration test suite
 global:
@@ -450,7 +500,7 @@ collection:
       headers:
         Authorization: "Bearer \${ADMIN_TOKEN}"  # Admin privileges required
       expect:
-        status: 204`
+        status: 204`;
 
 const performanceTestingExample = `# Performance and load testing scenarios
 global:
@@ -556,7 +606,7 @@ collection:
         status: 200
         headers:
           cache-control: "max-age=3600"
-          etag: "*"`
+          etag: "*"`;
 
 export default function AdvancedExamplesPage() {
   return (
@@ -571,23 +621,29 @@ export default function AdvancedExamplesPage() {
           {/* Overview */}
           <section>
             <p className="text-muted-foreground mb-6">
-              These advanced examples demonstrate sophisticated curl-runner patterns for complex workflows, integration testing, performance testing, and production environments. Each example is production-ready and includes comprehensive error handling and validation.
+              These advanced examples demonstrate sophisticated curl-runner patterns for complex
+              workflows, integration testing, performance testing, and production environments. Each
+              example is production-ready and includes comprehensive error handling and validation.
             </p>
-            
+
             <div className="rounded-lg border bg-muted/50 p-4">
               <p className="text-sm">
-                <strong>Note:</strong> Advanced examples often use environment variables and dynamic values. Make sure to set up your environment properly with required tokens and endpoints before running these configurations.
+                <strong>Note:</strong> Advanced examples often use environment variables and dynamic
+                values. Make sure to set up your environment properly with required tokens and
+                endpoints before running these configurations.
               </p>
             </div>
           </section>
 
           {/* Variable Interpolation */}
           <section>
+            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="variable-interpolation">Variable Interpolation & Environment Management</H2>
             <p className="text-muted-foreground mb-6">
-              Advanced variable usage with environment loading, nested interpolation, and dynamic values.
+              Advanced variable usage with environment loading, nested interpolation, and dynamic
+              values.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="advanced-variables.yaml">
               {variableInterpolationExample}
             </CodeBlockServer>
@@ -601,11 +657,15 @@ export default function AdvancedExamplesPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="text-sm space-y-2">
-                  <p>Load variables from <code>.env</code> files or system environment.</p>
-                  <code className="text-xs bg-muted px-2 py-1 rounded block">API_TOKEN=your_token_here</code>
+                  <p>
+                    Load variables from <code>.env</code> files or system environment.
+                  </p>
+                  <code className="text-xs bg-muted px-2 py-1 rounded block">
+                    API_TOKEN=your_token_here
+                  </code>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
@@ -615,7 +675,9 @@ export default function AdvancedExamplesPage() {
                 </CardHeader>
                 <CardContent className="text-sm space-y-2">
                   <p>Generate values at runtime like timestamps or UUIDs.</p>
-                  <code className="text-xs bg-muted px-2 py-1 rounded block">{"\\${CURRENT_TIME}"}</code>
+                  <code className="text-xs bg-muted px-2 py-1 rounded block">
+                    {'\\${CURRENT_TIME}'}
+                  </code>
                 </CardContent>
               </Card>
             </div>
@@ -623,11 +685,12 @@ export default function AdvancedExamplesPage() {
 
           {/* Advanced Authentication */}
           <section>
+            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="advanced-authentication">Advanced Authentication Patterns</H2>
             <p className="text-muted-foreground mb-6">
               Multiple authentication methods, token refresh, and custom auth headers.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="auth-patterns.yaml">
               {authenticationExample}
             </CodeBlockServer>
@@ -635,34 +698,40 @@ export default function AdvancedExamplesPage() {
 
           {/* Error Handling */}
           <section>
+            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="error-handling">Error Handling & Retry Logic</H2>
             <p className="text-muted-foreground mb-6">
               Robust error handling with retry mechanisms, fallbacks, and conditional logic.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="error-handling.yaml">
               {errorHandlingExample}
             </CodeBlockServer>
 
             <div className="mt-6 rounded-lg border bg-orange-500/5 dark:bg-orange-500/10 border-orange-500/20 p-4">
               <p className="text-sm">
-                <strong className="text-orange-600 dark:text-orange-400">Best Practice:</strong> Use <code>continueOnError: true</code> for test suites where you want to see all failures, but <code>false</code> for critical workflows where early termination is desired.
+                <strong className="text-orange-600 dark:text-orange-400">Best Practice:</strong> Use{' '}
+                <code>continueOnError: true</code> for test suites where you want to see all
+                failures, but <code>false</code> for critical workflows where early termination is
+                desired.
               </p>
             </div>
           </section>
 
           {/* Parallel Execution */}
           <section>
+            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="parallel-execution">High-Performance Parallel Execution</H2>
             <p className="text-muted-foreground mb-6">
               Concurrent request execution for load testing and performance optimization.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="parallel-execution.yaml">
               {parallelExecutionExample}
             </CodeBlockServer>
 
             <div className="mt-6 space-y-3">
+              {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
               <H3 id="parallel-considerations">Parallel Execution Considerations</H3>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-lg border bg-card p-4">
@@ -673,12 +742,13 @@ export default function AdvancedExamplesPage() {
                     <div>
                       <h4 className="font-medium mb-2">Resource Limits</h4>
                       <p className="text-sm text-muted-foreground">
-                        Monitor system resources and API rate limits when running many concurrent requests.
+                        Monitor system resources and API rate limits when running many concurrent
+                        requests.
                       </p>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-blue-500/10 p-2">
@@ -687,7 +757,8 @@ export default function AdvancedExamplesPage() {
                     <div>
                       <h4 className="font-medium mb-2">Request Independence</h4>
                       <p className="text-sm text-muted-foreground">
-                        Ensure parallel requests don't depend on each other's results or side effects.
+                        Ensure parallel requests don't depend on each other's results or side
+                        effects.
                       </p>
                     </div>
                   </div>
@@ -698,16 +769,19 @@ export default function AdvancedExamplesPage() {
 
           {/* Complex Validation */}
           <section>
+            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="complex-validation">Complex Response Validation</H2>
             <p className="text-muted-foreground mb-6">
-              Advanced validation patterns for complex data structures, arrays, and conditional logic.
+              Advanced validation patterns for complex data structures, arrays, and conditional
+              logic.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="complex-validation.yaml">
               {complexValidationExample}
             </CodeBlockServer>
 
             <div className="mt-6 space-y-3">
+              {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
               <H3 id="validation-patterns">Validation Patterns</H3>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-lg border bg-card p-4">
@@ -717,12 +791,14 @@ export default function AdvancedExamplesPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Regex Patterns</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Use regex for flexible format validation</p>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Use regex for flexible format validation
+                      </p>
                       <code className="text-xs bg-muted px-2 py-1 rounded">^[a-f0-9-]{36}$</code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-green-500/10 p-2">
@@ -730,12 +806,14 @@ export default function AdvancedExamplesPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Array Validation</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Validate array items and structure</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">{"items: [\"*\"]"}</code>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Validate array items and structure
+                      </p>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">{'items: ["*"]'}</code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-blue-500/10 p-2">
@@ -743,12 +821,16 @@ export default function AdvancedExamplesPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Conditional Fields</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Different validation based on content</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">{"type: [\"free\", \"premium\"]"}</code>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Different validation based on content
+                      </p>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        {'type: ["free", "premium"]'}
+                      </code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-cyan-500/10 p-2">
@@ -756,8 +838,12 @@ export default function AdvancedExamplesPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Nested Objects</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Deep object structure validation</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">metadata.pagination.*</code>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Deep object structure validation
+                      </p>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        metadata.pagination.*
+                      </code>
                     </div>
                   </div>
                 </div>
@@ -767,34 +853,39 @@ export default function AdvancedExamplesPage() {
 
           {/* Integration Testing */}
           <section>
+            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="integration-testing">Full Integration Testing</H2>
             <p className="text-muted-foreground mb-6">
               End-to-end workflow testing with user lifecycle management and cleanup.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="integration-test.yaml">
               {integrationTestExample}
             </CodeBlockServer>
 
             <div className="mt-6 rounded-lg border bg-green-500/5 dark:bg-green-500/10 border-green-500/20 p-4">
               <p className="text-sm">
-                <strong className="text-green-600 dark:text-green-400">Integration Testing:</strong> This example demonstrates a complete user lifecycle test including creation, authentication, resource management, and cleanup. Perfect for CI/CD pipelines.
+                <strong className="text-green-600 dark:text-green-400">Integration Testing:</strong>{' '}
+                This example demonstrates a complete user lifecycle test including creation,
+                authentication, resource management, and cleanup. Perfect for CI/CD pipelines.
               </p>
             </div>
           </section>
 
           {/* Performance Testing */}
           <section>
+            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="performance-testing">Performance & Load Testing</H2>
             <p className="text-muted-foreground mb-6">
               Load testing scenarios with concurrent requests and performance metrics validation.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="performance-test.yaml">
               {performanceTestingExample}
             </CodeBlockServer>
 
             <div className="mt-6 space-y-3">
+              {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
               <H3 id="performance-tips">Performance Testing Tips</H3>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 <div className="rounded-lg border bg-card p-4">
@@ -805,12 +896,13 @@ export default function AdvancedExamplesPage() {
                     <div>
                       <h4 className="font-medium mb-2">Warmup Phase</h4>
                       <p className="text-sm text-muted-foreground">
-                        Always include warmup requests to establish connections and prime caches before measuring performance.
+                        Always include warmup requests to establish connections and prime caches
+                        before measuring performance.
                       </p>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-green-500/10 p-2">
@@ -819,12 +911,13 @@ export default function AdvancedExamplesPage() {
                     <div>
                       <h4 className="font-medium mb-2">Realistic Scenarios</h4>
                       <p className="text-sm text-muted-foreground">
-                        Mix read and write operations in realistic proportions that match your production traffic patterns.
+                        Mix read and write operations in realistic proportions that match your
+                        production traffic patterns.
                       </p>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4 md:col-span-2 lg:col-span-1">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-orange-500/10 p-2">
@@ -833,7 +926,8 @@ export default function AdvancedExamplesPage() {
                     <div>
                       <h4 className="font-medium mb-2">Monitor Resources</h4>
                       <p className="text-sm text-muted-foreground">
-                        Watch for rate limiting (429 responses) and adjust concurrency levels accordingly.
+                        Watch for rate limiting (429 responses) and adjust concurrency levels
+                        accordingly.
                       </p>
                     </div>
                   </div>
@@ -844,13 +938,14 @@ export default function AdvancedExamplesPage() {
 
           {/* Running Advanced Examples */}
           <section>
+            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="running-examples">Running Advanced Examples</H2>
             <p className="text-muted-foreground mb-4">
               Advanced examples often require additional setup and environment configuration:
             </p>
-            
+
             <CodeBlockServer language="bash">
-{`# Set up environment variables
+              {`# Set up environment variables
 export API_TOKEN="your_api_token"
 export BASE_URL="https://api.example.com"
 export ADMIN_TOKEN="admin_token"
@@ -871,6 +966,7 @@ curl-runner complex-validation.yaml --output results.json --format json`}
 
           {/* Best Practices */}
           <section>
+            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="best-practices">Advanced Usage Best Practices</H2>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="rounded-lg border bg-card p-4">
@@ -881,12 +977,13 @@ curl-runner complex-validation.yaml --output results.json --format json`}
                   <div>
                     <h4 className="font-medium mb-2">Environment Separation</h4>
                     <p className="text-sm text-muted-foreground">
-                      Use different variable files for development, staging, and production environments to avoid accidental cross-environment requests.
+                      Use different variable files for development, staging, and production
+                      environments to avoid accidental cross-environment requests.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-purple-500/10 p-2">
@@ -895,12 +992,13 @@ curl-runner complex-validation.yaml --output results.json --format json`}
                   <div>
                     <h4 className="font-medium mb-2">Test Data Isolation</h4>
                     <p className="text-sm text-muted-foreground">
-                      Always use unique identifiers (timestamps, UUIDs) for test data to avoid conflicts in concurrent test runs.
+                      Always use unique identifiers (timestamps, UUIDs) for test data to avoid
+                      conflicts in concurrent test runs.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-green-500/10 p-2">
@@ -909,12 +1007,13 @@ curl-runner complex-validation.yaml --output results.json --format json`}
                   <div>
                     <h4 className="font-medium mb-2">Resource Cleanup</h4>
                     <p className="text-sm text-muted-foreground">
-                      Include cleanup steps in your test suites to remove test data and prevent resource accumulation.
+                      Include cleanup steps in your test suites to remove test data and prevent
+                      resource accumulation.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-yellow-500/10 p-2">
@@ -923,7 +1022,8 @@ curl-runner complex-validation.yaml --output results.json --format json`}
                   <div>
                     <h4 className="font-medium mb-2">Performance Baselines</h4>
                     <p className="text-sm text-muted-foreground">
-                      Establish performance baselines and validate response times to catch performance regressions early.
+                      Establish performance baselines and validate response times to catch
+                      performance regressions early.
                     </p>
                   </div>
                 </div>
@@ -940,5 +1040,5 @@ curl-runner complex-validation.yaml --output results.json --format json`}
         </div>
       </div>
     </main>
-  )
+  );
 }

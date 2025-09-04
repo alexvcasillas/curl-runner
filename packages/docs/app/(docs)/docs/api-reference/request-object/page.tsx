@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { DocsPageHeader } from "@/components/docs-page-header"
 import { CodeBlockServer } from "@/components/code-block-server"
 import { TableOfContents } from "@/components/toc"
@@ -5,6 +6,39 @@ import { H2, H3 } from "@/components/docs-heading"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FileText, List, Code, Type, Timer, Settings, Globe, Shield, Lightbulb } from "lucide-react"
+
+export const metadata: Metadata = {
+  title: 'Request Object',
+  description: 'Complete reference for curl-runner request objects including all properties, methods, headers, body formats, and configuration options.',
+  keywords: [
+    'curl-runner request object',
+    'HTTP request configuration',
+    'request properties',
+    'request methods',
+    'request headers',
+    'request body',
+    'URL parameters',
+    'request timeout',
+    'request validation',
+    'API request structure',
+    'HTTP request schema',
+    'request format'
+  ],
+  openGraph: {
+    title: 'Request Object | curl-runner API Reference',
+    description: 'Complete reference for curl-runner request objects including all properties, methods, headers, body formats, and configuration options.',
+    url: 'https://curl-runner.com/docs/api-reference/request-object',
+    type: 'article'
+    },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Request Object | curl-runner API Reference',
+    description: 'Learn about curl-runner request object structure and all available properties.',
+    },
+  alternates: {
+    canonical: 'https://curl-runner.com/docs/api-reference/request-object',
+  },
+};
 
 const requestObjectExample = `# Complete Request Object Example
 request:

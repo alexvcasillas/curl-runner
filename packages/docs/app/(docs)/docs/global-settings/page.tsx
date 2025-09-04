@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { AlertTriangle, Clock, FileText, Settings, Target, Zap } from 'lucide-react';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { DocsPageHeader } from '@/components/docs-page-header';
@@ -5,6 +6,37 @@ import { H2 } from '@/components/mdx-heading';
 import { TableOfContents } from '@/components/toc';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+
+export const metadata: Metadata = {
+  title: 'Global Settings',
+  description: 'Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files. Learn about execution modes, timeouts, retries, and output formatting.',
+  keywords: [
+    'curl-runner global settings',
+    'YAML global configuration',
+    'execution settings',
+    'global defaults',
+    'timeout configuration',
+    'retry settings',
+    'output formatting',
+    'parallel execution',
+    'sequential execution',
+    'global variables'
+  ],
+  openGraph: {
+    title: 'Global Settings | curl-runner Documentation',
+    description: 'Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files. Learn about execution modes, timeouts, retries, and output formatting.',
+    url: 'https://curl-runner.com/docs/global-settings',
+    type: 'article'
+    },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Global Settings | curl-runner Documentation',
+    description: 'Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files.',
+    },
+  alternates: {
+    canonical: 'https://curl-runner.com/docs/global-settings',
+  },
+};
 
 const basicGlobalExample = `# Basic global configuration
 global:

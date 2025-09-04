@@ -1,8 +1,44 @@
-import { DocsPageHeader } from "@/components/docs-page-header"
-import { CodeBlockServer } from "@/components/code-block-server"
-import { Badge } from "@/components/ui/badge"
-import { TableOfContents } from "@/components/toc"
-import { H2, H3 } from "@/components/docs-heading"
+/** biome-ignore-all lint/correctness/useUniqueElementIds: we use static strings */
+
+import type { Metadata } from 'next';
+import { CodeBlockServer } from '@/components/code-block-server';
+import { H2, H3 } from '@/components/docs-heading';
+import { DocsPageHeader } from '@/components/docs-page-header';
+import { TableOfContents } from '@/components/toc';
+import { Badge } from '@/components/ui/badge';
+
+export const metadata: Metadata = {
+  title: 'YAML Structure',
+  description:
+    'Learn the structure and syntax of curl-runner YAML configuration files. Complete guide to request properties, collections, and global configuration patterns.',
+  keywords: [
+    'curl-runner YAML',
+    'YAML configuration',
+    'request structure',
+    'HTTP request format',
+    'collection configuration',
+    'YAML syntax',
+    'request properties',
+    'configuration file structure',
+    'API configuration',
+    'HTTP client YAML',
+  ],
+  openGraph: {
+    title: 'YAML Structure | curl-runner Documentation',
+    description:
+      'Learn the structure and syntax of curl-runner YAML configuration files. Complete guide to request properties, collections, and global configuration patterns.',
+    url: 'https://curl-runner.com/docs/yaml-structure',
+    type: 'article',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'YAML Structure | curl-runner Documentation',
+    description: 'Learn the structure and syntax of curl-runner YAML configuration files.',
+  },
+  alternates: {
+    canonical: 'https://curl-runner.com/docs/yaml-structure',
+  },
+};
 
 const singleRequestExample = `# Single HTTP request
 request:
@@ -10,8 +46,8 @@ request:
   url: https://api.example.com/users/123
   method: GET
   headers:
-    Authorization: Bearer $\{API_TOKEN}
-    Content-Type: application/json`
+    Authorization: Bearer \${API_TOKEN}
+    Content-Type: application/json`;
 
 const multipleRequestsExample = `# Multiple requests collection
 requests:
@@ -28,7 +64,7 @@ requests:
     url: https://api.example.com/users/\${USER_ID}
     method: GET
     headers:
-      Authorization: Bearer $\{API_TOKEN}`
+      Authorization: Bearer \${API_TOKEN}`;
 
 const collectionExample = `# Advanced collection with global settings
 global:
@@ -47,23 +83,23 @@ collection:
     USER_ID: 123
   defaults:
     headers:
-      Authorization: Bearer $\{API_TOKEN}
+      Authorization: Bearer \${API_TOKEN}
       Content-Type: application/json
   
   requests:
     - name: List Users
-      url: $\{BASE_URL}/users
+      url: \${BASE_URL}/users
       method: GET
       
     - name: Get Specific User
-      url: $\{BASE_URL}/users/$\{USER_ID}
+      url: \${BASE_URL}/users/\${USER_ID}
       method: GET
       
     - name: Update User
-      url: $\{BASE_URL}/users/$\{USER_ID}
+      url: \${BASE_URL}/users/\${USER_ID}
       method: PATCH
       body:
-        name: Updated Name`
+        name: Updated Name`;
 
 const validationExample = `# Request with response validation
 request:
@@ -78,7 +114,7 @@ request:
       status: ok
       version: "^1.0.0"
   timeout: 5000
-  retries: 3`
+  retries: 3`;
 
 export default function YamlStructurePage() {
   return (
@@ -94,7 +130,8 @@ export default function YamlStructurePage() {
           <section>
             <H2 id="basic-structure">Basic Structure</H2>
             <p className="text-muted-foreground mb-6">
-              <code className="font-mono">curl-runner</code> uses YAML files to define HTTP requests. There are several ways to structure your configuration files.
+              <code className="font-mono">curl-runner</code> uses YAML files to define HTTP
+              requests. There are several ways to structure your configuration files.
             </p>
 
             <div className="space-y-8">
@@ -102,7 +139,9 @@ export default function YamlStructurePage() {
               <div className="space-y-3">
                 <H3 id="single-request">
                   Single Request
-                  <Badge variant="secondary" className="ml-2">Basic</Badge>
+                  <Badge variant="secondary" className="ml-2">
+                    Basic
+                  </Badge>
                 </H3>
                 <p className="text-sm text-muted-foreground">
                   The simplest form - define a single HTTP request.
@@ -127,7 +166,9 @@ export default function YamlStructurePage() {
               <div className="space-y-3">
                 <H3 id="collection">
                   Collection
-                  <Badge className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20 ml-2">Advanced</Badge>
+                  <Badge className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20 ml-2">
+                    Advanced
+                  </Badge>
                 </H3>
                 <p className="text-sm text-muted-foreground">
                   Advanced structure with global settings, variables, and defaults.
@@ -145,7 +186,7 @@ export default function YamlStructurePage() {
             <p className="text-muted-foreground mb-6">
               Each request can have the following properties:
             </p>
-            
+
             <div className="space-y-6">
               <div className="space-y-3">
                 <H3 id="required-properties">Required Properties</H3>
@@ -160,14 +201,22 @@ export default function YamlStructurePage() {
                     </thead>
                     <tbody>
                       <tr className="border-b">
-                        <td className="p-3"><code className="text-sm">url</code></td>
+                        <td className="p-3">
+                          <code className="text-sm">url</code>
+                        </td>
                         <td className="p-3 text-sm text-muted-foreground">string</td>
-                        <td className="p-3 text-sm text-muted-foreground">The URL to send the request to</td>
+                        <td className="p-3 text-sm text-muted-foreground">
+                          The URL to send the request to
+                        </td>
                       </tr>
                       <tr>
-                        <td className="p-3"><code className="text-sm">method</code></td>
+                        <td className="p-3">
+                          <code className="text-sm">method</code>
+                        </td>
                         <td className="p-3 text-sm text-muted-foreground">string</td>
-                        <td className="p-3 text-sm text-muted-foreground">HTTP method (GET, POST, PUT, DELETE, etc.)</td>
+                        <td className="p-3 text-sm text-muted-foreground">
+                          HTTP method (GET, POST, PUT, DELETE, etc.)
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -187,34 +236,56 @@ export default function YamlStructurePage() {
                     </thead>
                     <tbody>
                       <tr className="border-b">
-                        <td className="p-3"><code className="text-sm">name</code></td>
+                        <td className="p-3">
+                          <code className="text-sm">name</code>
+                        </td>
                         <td className="p-3 text-sm text-muted-foreground">string</td>
-                        <td className="p-3 text-sm text-muted-foreground">Display name for the request</td>
+                        <td className="p-3 text-sm text-muted-foreground">
+                          Display name for the request
+                        </td>
                       </tr>
                       <tr className="border-b">
-                        <td className="p-3"><code className="text-sm">headers</code></td>
+                        <td className="p-3">
+                          <code className="text-sm">headers</code>
+                        </td>
                         <td className="p-3 text-sm text-muted-foreground">object</td>
-                        <td className="p-3 text-sm text-muted-foreground">HTTP headers to send with the request</td>
+                        <td className="p-3 text-sm text-muted-foreground">
+                          HTTP headers to send with the request
+                        </td>
                       </tr>
                       <tr className="border-b">
-                        <td className="p-3"><code className="text-sm">body</code></td>
+                        <td className="p-3">
+                          <code className="text-sm">body</code>
+                        </td>
                         <td className="p-3 text-sm text-muted-foreground">object | string</td>
                         <td className="p-3 text-sm text-muted-foreground">Request body data</td>
                       </tr>
                       <tr className="border-b">
-                        <td className="p-3"><code className="text-sm">timeout</code></td>
+                        <td className="p-3">
+                          <code className="text-sm">timeout</code>
+                        </td>
                         <td className="p-3 text-sm text-muted-foreground">number</td>
-                        <td className="p-3 text-sm text-muted-foreground">Request timeout in milliseconds</td>
+                        <td className="p-3 text-sm text-muted-foreground">
+                          Request timeout in milliseconds
+                        </td>
                       </tr>
                       <tr className="border-b">
-                        <td className="p-3"><code className="text-sm">retries</code></td>
+                        <td className="p-3">
+                          <code className="text-sm">retries</code>
+                        </td>
                         <td className="p-3 text-sm text-muted-foreground">number</td>
-                        <td className="p-3 text-sm text-muted-foreground">Number of retry attempts</td>
+                        <td className="p-3 text-sm text-muted-foreground">
+                          Number of retry attempts
+                        </td>
                       </tr>
                       <tr>
-                        <td className="p-3"><code className="text-sm">validation</code></td>
+                        <td className="p-3">
+                          <code className="text-sm">validation</code>
+                        </td>
                         <td className="p-3 text-sm text-muted-foreground">object</td>
-                        <td className="p-3 text-sm text-muted-foreground">Response validation rules</td>
+                        <td className="p-3 text-sm text-muted-foreground">
+                          Response validation rules
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -227,9 +298,10 @@ export default function YamlStructurePage() {
           <section>
             <H2 id="global-configuration">Global Configuration</H2>
             <p className="text-muted-foreground mb-6">
-              The <code className="text-sm bg-muted px-1 py-0.5 rounded">global</code> section allows you to configure settings that apply to all requests in the file.
+              The <code className="text-sm bg-muted px-1 py-0.5 rounded">global</code> section
+              allows you to configure settings that apply to all requests in the file.
             </p>
-            
+
             <div className="border rounded-lg overflow-hidden">
               <table className="w-full">
                 <thead className="bg-muted/50">
@@ -241,29 +313,49 @@ export default function YamlStructurePage() {
                 </thead>
                 <tbody>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">variables</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">variables</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">object</td>
-                    <td className="p-3 text-sm text-muted-foreground">Global variables available to all requests</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Global variables available to all requests
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">execution</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">execution</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">string</td>
-                    <td className="p-3 text-sm text-muted-foreground">"sequential" or "parallel" execution mode</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      "sequential" or "parallel" execution mode
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">continueOnError</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">continueOnError</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">boolean</td>
-                    <td className="p-3 text-sm text-muted-foreground">Continue execution if a request fails</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Continue execution if a request fails
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">output.verbose</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">output.verbose</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">boolean</td>
-                    <td className="p-3 text-sm text-muted-foreground">Show detailed output during execution</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Show detailed output during execution
+                    </td>
                   </tr>
                   <tr>
-                    <td className="p-3"><code className="text-sm">output.saveToFile</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">output.saveToFile</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">string</td>
-                    <td className="p-3 text-sm text-muted-foreground">Save results to a JSON file</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Save results to a JSON file
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -276,7 +368,7 @@ export default function YamlStructurePage() {
             <p className="text-muted-foreground mb-4">
               Add validation rules to verify that responses meet your expectations.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="validation-example.yaml">
               {validationExample}
             </CodeBlockServer>
@@ -291,5 +383,5 @@ export default function YamlStructurePage() {
         </div>
       </div>
     </main>
-  )
+  );
 }

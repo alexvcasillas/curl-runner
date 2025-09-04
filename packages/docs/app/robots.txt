@@ -1,0 +1,37 @@
+User-agent: *
+Allow: /
+
+# Allow all search engines to crawl documentation
+Allow: /docs
+Allow: /docs/*
+
+# Sitemap location
+Sitemap: https://curl-runner.com/sitemap.xml
+
+# Additional resources for crawlers
+Sitemap: https://curl-runner.com/sitemap-docs.xml
+
+# Allow crawling of static assets
+Allow: /og-*.png
+Allow: /favicon.ico
+Allow: /manifest.json
+Allow: /*.css
+Allow: /*.js
+Allow: /*.json
+
+# Allow specific crawlers for documentation
+User-agent: Googlebot
+Allow: /
+Allow: /docs
+Allow: /docs/*
+
+User-agent: Bingbot
+Allow: /
+Allow: /docs
+Allow: /docs/*
+
+# Additional crawl delay for respectful crawling
+Crawl-delay: 1
+
+# Host specification
+Host: https://curl-runner.com

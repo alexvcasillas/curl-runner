@@ -21,8 +21,8 @@ keywords:
   - collection
 slug: "/docs/yaml-structure"
 toc: true
-date: "2025-09-03T18:48:49.351Z"
-lastModified: "2025-09-03T18:48:49.351Z"
+date: "2025-09-04T09:47:42.739Z"
+lastModified: "2025-09-04T09:47:42.739Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -42,8 +42,8 @@ schema:
   "@type": "TechArticle"
   headline: "YAML Structure"
   description: "Learn the structure and syntax of curl-runner YAML configuration files."
-  datePublished: "2025-09-03T18:48:49.351Z"
-  dateModified: "2025-09-03T18:48:49.351Z"
+  datePublished: "2025-09-04T09:47:42.739Z"
+  dateModified: "2025-09-04T09:47:42.739Z"
 ---
 
 # YAML Structure
@@ -54,7 +54,7 @@ Learn the structure and syntax of curl-runner YAML configuration files.
 
 `curl-runner` uses YAML files to define HTTP requests. There are several ways to structure your configuration files.
 
-### Single Request _Basic_
+### Single Request <Badge variant="secondary" className="ml-2"> Basic </Badge>
 
 The simplest form - define a single HTTP request.
 
@@ -67,7 +67,7 @@ request:
   url: https://api.example.com/users/123
   method: GET
   headers:
-    Authorization: Bearer $\{API_TOKEN}
+    Authorization: Bearer \${API_TOKEN}
     Content-Type: application/json
 ```
 
@@ -93,10 +93,10 @@ requests:
     url: https://api.example.com/users/\${USER_ID}
     method: GET
     headers:
-      Authorization: Bearer $\{API_TOKEN}
+      Authorization: Bearer \${API_TOKEN}
 ```
 
-### Collection _Advanced_
+### Collection <Badge className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20 ml-2"> Advanced </Badge>
 
 Advanced structure with global settings, variables, and defaults.
 
@@ -120,20 +120,20 @@ collection:
     USER_ID: 123
   defaults:
     headers:
-      Authorization: Bearer $\{API_TOKEN}
+      Authorization: Bearer \${API_TOKEN}
       Content-Type: application/json
   
   requests:
     - name: List Users
-      url: $\{BASE_URL}/users
+      url: \${BASE_URL}/users
       method: GET
       
     - name: Get Specific User
-      url: $\{BASE_URL}/users/$\{USER_ID}
+      url: \${BASE_URL}/users/\${USER_ID}
       method: GET
       
     - name: Update User
-      url: $\{BASE_URL}/users/$\{USER_ID}
+      url: \${BASE_URL}/users/\${USER_ID}
       method: PATCH
       body:
         name: Updated Name
@@ -148,7 +148,7 @@ request:
   url: https://api.example.com/users/123
   method: GET
   headers:
-    Authorization: Bearer $\{API_TOKEN}
+    Authorization: Bearer \${API_TOKEN}
     Content-Type: application/json
 ```
 
@@ -170,7 +170,7 @@ requests:
     url: https://api.example.com/users/\${USER_ID}
     method: GET
     headers:
-      Authorization: Bearer $\{API_TOKEN}
+      Authorization: Bearer \${API_TOKEN}
 ```
 
 **collection.yaml**
@@ -193,20 +193,20 @@ collection:
     USER_ID: 123
   defaults:
     headers:
-      Authorization: Bearer $\{API_TOKEN}
+      Authorization: Bearer \${API_TOKEN}
       Content-Type: application/json
   
   requests:
     - name: List Users
-      url: $\{BASE_URL}/users
+      url: \${BASE_URL}/users
       method: GET
       
     - name: Get Specific User
-      url: $\{BASE_URL}/users/$\{USER_ID}
+      url: \${BASE_URL}/users/\${USER_ID}
       method: GET
       
     - name: Update User
-      url: $\{BASE_URL}/users/$\{USER_ID}
+      url: \${BASE_URL}/users/\${USER_ID}
       method: PATCH
       body:
         name: Updated Name

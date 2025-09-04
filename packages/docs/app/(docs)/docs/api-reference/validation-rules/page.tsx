@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { DocsPageHeader } from "@/components/docs-page-header"
 import { CodeBlockServer } from "@/components/code-block-server"
 import { TableOfContents } from "@/components/toc"
@@ -5,6 +6,39 @@ import { H2, H3 } from "@/components/docs-heading"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FileText, Shield, Globe, BarChart3, Target, Code, Database, Search, CheckCircle, Layers, Lightbulb, ArrowRight, AlertTriangle, XCircle, Key, PlusCircle, List, TrendingUp, Filter, Zap, Eye } from "lucide-react"
+
+export const metadata: Metadata = {
+  title: 'Validation Rules',
+  description: 'Complete reference for curl-runner validation rules including status code validation, header validation, body validation, and custom validation patterns.',
+  keywords: [
+    'curl-runner validation rules',
+    'response validation',
+    'validation patterns',
+    'status code validation',
+    'header validation',
+    'body validation',
+    'expect configuration',
+    'validation assertions',
+    'API testing validation',
+    'response checking',
+    'validation schema',
+    'validation rules reference'
+  ],
+  openGraph: {
+    title: 'Validation Rules | curl-runner API Reference',
+    description: 'Complete reference for curl-runner validation rules including status code validation, header validation, body validation, and custom validation patterns.',
+    url: 'https://curl-runner.com/docs/api-reference/validation-rules',
+    type: 'article'
+    },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Validation Rules | curl-runner API Reference',
+    description: 'Learn about curl-runner validation rules for comprehensive API response testing.',
+    },
+  alternates: {
+    canonical: 'https://curl-runner.com/docs/api-reference/validation-rules',
+  },
+};
 
 const expectConfigExample = `# Complete ExpectConfig Example
 request:

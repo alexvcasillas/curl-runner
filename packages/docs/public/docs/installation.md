@@ -9,12 +9,13 @@ keywords:
   - testing
   - installation
   - cli
+  - docker
   - bun
   - npm
 slug: "/docs/installation"
 toc: true
-date: "2025-09-03T18:48:49.352Z"
-lastModified: "2025-09-03T18:48:49.352Z"
+date: "2025-09-04T09:47:42.740Z"
+lastModified: "2025-09-04T09:47:42.740Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -34,8 +35,8 @@ schema:
   "@type": "TechArticle"
   headline: "Installation"
   description: "Install curl-runner on your system using your preferred package manager or download a pre-built binary."
-  datePublished: "2025-09-03T18:48:49.352Z"
-  dateModified: "2025-09-03T18:48:49.352Z"
+  datePublished: "2025-09-04T09:47:42.740Z"
+  dateModified: "2025-09-04T09:47:42.740Z"
 ---
 
 # Installation

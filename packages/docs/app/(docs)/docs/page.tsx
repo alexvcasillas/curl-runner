@@ -1,24 +1,48 @@
-import {
-  ArrowRight,
-  Book,
-  FileText,
-  Github,
-  Grid3x3,
-  Linkedin,
-  Settings,
-  Terminal,
-  Twitter,
-  Users,
-  Zap,
-} from 'lucide-react';
+import { ArrowRight, Book, FileText, Grid3x3, Settings, Terminal, Zap } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { DocsPageHeader } from '@/components/docs-page-header';
 import { H2, H3 } from '@/components/mdx-heading';
 import { TableOfContents } from '@/components/toc';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { basicUsageExample, quickInstallExample } from './snippets';
+
+export const metadata: Metadata = {
+  title: 'curl-runner Documentation',
+  description:
+    'A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance, parallel execution, and comprehensive validation.',
+  keywords: [
+    'curl-runner documentation',
+    'HTTP request management',
+    'YAML configuration',
+    'API testing tool',
+    'Bun CLI tool',
+    'parallel HTTP requests',
+    'response validation',
+    'API automation',
+    'HTTP client',
+    'REST API testing',
+    'request templating',
+    'CI/CD integration',
+  ],
+  openGraph: {
+    title: 'curl-runner Documentation',
+    description:
+      'A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance, parallel execution, and comprehensive validation.',
+    url: 'https://curl-runner.com/docs',
+    type: 'article'
+    },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'curl-runner Documentation',
+    description:
+      'A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance.',
+    },
+  alternates: {
+    canonical: 'https://curl-runner.com/docs',
+  },
+};
 
 const features = [
   {

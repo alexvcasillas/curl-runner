@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { DocsPageHeader } from "@/components/docs-page-header"
 import { CodeBlockServer } from "@/components/code-block-server"
 import { TableOfContents } from "@/components/toc"
@@ -5,6 +6,39 @@ import { H2, H3 } from "@/components/docs-heading"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { AlertTriangle, CheckCircle, Settings, FileText, Monitor, Lightbulb, Shield, Globe, Timer, Zap, Database, Lock, Clock, ArrowRight, Layers } from "lucide-react"
+
+export const metadata: Metadata = {
+  title: 'Global Settings',
+  description: 'Configure global settings for curl-runner including execution behavior, default headers, timeouts, and shared variables across all requests.',
+  keywords: [
+    'curl-runner global settings',
+    'global configuration',
+    'execution settings',
+    'default headers',
+    'global timeouts',
+    'shared variables',
+    'global defaults',
+    'configuration options',
+    'execution behavior',
+    'global parameters',
+    'system configuration',
+    'curl-runner settings'
+  ],
+  openGraph: {
+    title: 'Global Settings | curl-runner API Reference',
+    description: 'Configure global settings for curl-runner including execution behavior, default headers, timeouts, and shared variables across all requests.',
+    url: 'https://curl-runner.com/docs/api-reference/global-settings',
+    type: 'article'
+    },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Global Settings | curl-runner API Reference',
+    description: 'Learn how to configure global settings for curl-runner requests and execution.',
+    },
+  alternates: {
+    canonical: 'https://curl-runner.com/docs/api-reference/global-settings',
+  },
+};
 
 const globalConfigExample = `# Complete Global Configuration Example
 global:

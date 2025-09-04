@@ -1,9 +1,43 @@
+import type { Metadata } from 'next';
 import { DocsPageHeader } from "@/components/docs-page-header"
 import { CodeBlockServer } from "@/components/code-block-server"
 import { TableOfContents } from "@/components/toc"
 import { H2, H3 } from "@/components/docs-heading"
 import { Badge } from "@/components/ui/badge"
 import { Target, Search, Zap, Eye, Shield, CheckCircle, AlertTriangle, Lightbulb } from "lucide-react"
+
+export const metadata: Metadata = {
+  title: 'Response Validation',
+  description: 'Validate HTTP response status, headers, and body content with curl-runner. Learn about assertion rules, validation patterns, and automated testing.',
+  keywords: [
+    'curl-runner response validation',
+    'HTTP response validation',
+    'API response testing',
+    'status code validation',
+    'header validation',
+    'body content validation',
+    'response assertions',
+    'validation rules',
+    'automated testing',
+    'API testing validation',
+    'response checking',
+    'validation patterns'
+  ],
+  openGraph: {
+    title: 'Response Validation | curl-runner Documentation',
+    description: 'Validate HTTP response status, headers, and body content with curl-runner. Learn about assertion rules, validation patterns, and automated testing.',
+    url: 'https://curl-runner.com/docs/features/response-validation',
+    type: 'article'
+    },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Response Validation | curl-runner Documentation',
+    description: 'Learn how to validate HTTP responses with curl-runner for robust API testing.',
+    },
+  alternates: {
+    canonical: 'https://curl-runner.com/docs/features/response-validation',
+  },
+};
 
 const statusValidation = `# Validate response status codes
 request:

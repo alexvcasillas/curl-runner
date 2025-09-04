@@ -1,9 +1,43 @@
+import type { Metadata } from 'next';
 import { DocsPageHeader } from "@/components/docs-page-header"
 import { CodeBlockServer } from "@/components/code-block-server"
 import { TableOfContents } from "@/components/toc"
 import { H2, H3 } from "@/components/docs-heading"
 import { Badge } from "@/components/ui/badge"
 import { FileJson, Terminal, BarChart3, Bug, Settings, CheckCircle, Eye, Filter, TrendingUp } from "lucide-react"
+
+export const metadata: Metadata = {
+  title: 'Output Formats',
+  description: 'Control how curl-runner displays and saves request results with different output formats including JSON, pretty-printed, and raw formats.',
+  keywords: [
+    'curl-runner output formats',
+    'JSON output format',
+    'pretty print output',
+    'raw output format',
+    'save results to file',
+    'CLI output options',
+    'verbose output',
+    'structured output',
+    'machine readable output',
+    'terminal formatting',
+    'output configuration',
+    'result formatting'
+  ],
+  openGraph: {
+    title: 'Output Formats | curl-runner Documentation',
+    description: 'Control how curl-runner displays and saves request results with different output formats including JSON, pretty-printed, and raw formats.',
+    url: 'https://curl-runner.com/docs/features/output-formats',
+    type: 'article'
+    },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Output Formats | curl-runner Documentation',
+    description: 'Learn how to control curl-runner output with different formats and save options.',
+    },
+  alternates: {
+    canonical: 'https://curl-runner.com/docs/features/output-formats',
+  },
+};
 
 const outputFormats = `# Different output format configurations
 global:

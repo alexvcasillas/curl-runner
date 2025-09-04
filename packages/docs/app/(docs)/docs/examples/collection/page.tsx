@@ -1,9 +1,43 @@
+import type { Metadata } from 'next';
 import { DocsPageHeader } from "@/components/docs-page-header"
 import { CodeBlockServer } from "@/components/code-block-server"
 import { TableOfContents } from "@/components/toc"
 import { H2, H3 } from "@/components/docs-heading"
 import { Badge } from "@/components/ui/badge"
 import { FolderOpen, FileText, Settings, CheckCircle, MessageCircle, TestTube, GitBranch, Activity, Code } from "lucide-react"
+
+export const metadata: Metadata = {
+  title: 'Collection Examples',
+  description: 'Organize related HTTP requests into collections with curl-runner. Learn about request collections, shared variables, and managing test suites.',
+  keywords: [
+    'curl-runner collection examples',
+    'request collections',
+    'test suites',
+    'organized API testing',
+    'collection structure',
+    'grouped requests',
+    'shared variables in collections',
+    'API test organization',
+    'request grouping',
+    'collection configuration',
+    'test collection patterns',
+    'structured testing'
+  ],
+  openGraph: {
+    title: 'Collection Examples | curl-runner Documentation',
+    description: 'Organize related HTTP requests into collections with curl-runner. Learn about request collections, shared variables, and managing test suites.',
+    url: 'https://curl-runner.com/docs/examples/collection',
+    type: 'article'
+    },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Collection Examples | curl-runner Documentation',
+    description: 'Learn how to organize HTTP requests into collections with curl-runner.',
+    },
+  alternates: {
+    canonical: 'https://curl-runner.com/docs/examples/collection',
+  },
+};
 
 const basicCollection = `# Basic collection structure
 collection:

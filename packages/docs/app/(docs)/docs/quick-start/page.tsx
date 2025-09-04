@@ -1,10 +1,43 @@
-import { ArrowRight, CheckCircle, Play, FileText, Grid3x3, Book } from 'lucide-react';
+import { ArrowRight, Book, CheckCircle, FileText, Grid3x3, Play } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { DocsPageHeader } from '@/components/docs-page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+
+export const metadata: Metadata = {
+  title: 'Quick Start',
+  description:
+    'Get started with curl-runner in minutes. Learn how to create your first YAML configuration, run HTTP requests, and validate responses with this step-by-step guide.',
+  keywords: [
+    'curl-runner quick start',
+    'getting started curl-runner',
+    'curl-runner tutorial',
+    'HTTP request tutorial',
+    'YAML configuration tutorial',
+    'API testing quick start',
+    'curl-runner beginner guide',
+    'first HTTP request',
+    'CLI tool tutorial',
+  ],
+  openGraph: {
+    title: 'Quick Start | curl-runner Documentation',
+    description:
+      'Get started with curl-runner in minutes. Learn how to create your first YAML configuration, run HTTP requests, and validate responses with this step-by-step guide.',
+    url: 'https://curl-runner.com/docs/quick-start',
+    type: 'article'
+    },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Quick Start | curl-runner Documentation',
+    description:
+      'Get started with curl-runner in minutes. Learn how to create your first YAML configuration and run HTTP requests.',
+    },
+  alternates: {
+    canonical: 'https://curl-runner.com/docs/quick-start',
+  },
+};
 
 const simpleExample = `# simple.yaml
 request:
@@ -124,7 +157,8 @@ export default function QuickStartPage() {
           <section>
             <h2 className="text-2xl font-semibold tracking-tight mb-4">More Examples</h2>
             <p className="text-muted-foreground mb-6">
-              Try these more advanced examples to explore <code className="font-mono">curl-runner</code>'s capabilities.
+              Try these more advanced examples to explore{' '}
+              <code className="font-mono">curl-runner</code>'s capabilities.
             </p>
 
             <div className="space-y-8">
@@ -180,14 +214,15 @@ export default function QuickStartPage() {
                         <code className="bg-muted p-1.5 rounded-lg">-v</code> —Enable verbose output
                       </div>
                       <div>
-                        <code className="bg-muted p-1.5 rounded-lg">-p</code> —Run requests in parallel
+                        <code className="bg-muted p-1.5 rounded-lg">-p</code> —Run requests in
+                        parallel
                       </div>
                       <div>
                         <code className="bg-muted p-1.5 rounded-lg">-c</code> —Continue on errors
                       </div>
                       <div>
-                        <code className="bg-muted p-1.5 rounded-lg">--output results.json</code> —Save
-                        results
+                        <code className="bg-muted p-1.5 rounded-lg">--output results.json</code>{' '}
+                        —Save results
                       </div>
                     </div>
                   </div>
@@ -203,7 +238,8 @@ export default function QuickStartPage() {
                     <h4 className="font-medium mb-3">File Patterns</h4>
                     <div className="space-y-3 text-sm">
                       <div>
-                        <code className="bg-muted p-1.5 rounded-lg">*.yaml</code> —Run all YAML files
+                        <code className="bg-muted p-1.5 rounded-lg">*.yaml</code> —Run all YAML
+                        files
                       </div>
                       <div>
                         <code className="bg-muted p-1.5 rounded-lg">tests/</code> —Run all files in
@@ -213,7 +249,8 @@ export default function QuickStartPage() {
                         <code className="bg-muted p-1.5 rounded-lg">--all</code> —Search recursively
                       </div>
                       <div>
-                        <code className="bg-muted p-1.5 rounded-lg">api-*.yaml</code> —Pattern matching
+                        <code className="bg-muted p-1.5 rounded-lg">api-*.yaml</code> —Pattern
+                        matching
                       </div>
                     </div>
                   </div>

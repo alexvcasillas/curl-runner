@@ -1,9 +1,43 @@
+import type { Metadata } from 'next';
 import { DocsPageHeader } from "@/components/docs-page-header"
 import { CodeBlockServer } from "@/components/code-block-server"
 import { TableOfContents } from "@/components/toc"
 import { H2, H3 } from "@/components/docs-heading"
 import { Badge } from "@/components/ui/badge"
 import { AlertCircle, CheckCircle, Clock, Gauge, Shield, TrendingUp } from "lucide-react"
+
+export const metadata: Metadata = {
+  title: 'Parallel Execution',
+  description: 'Execute HTTP requests in parallel for faster performance. Learn about concurrent request execution, performance optimization, and best practices.',
+  keywords: [
+    'curl-runner parallel execution',
+    'concurrent HTTP requests',
+    'parallel request processing',
+    'performance optimization',
+    'async HTTP requests',
+    'concurrent API calls',
+    'parallel testing',
+    'fast request execution',
+    'simultaneous requests',
+    'parallel mode',
+    'concurrent processing',
+    'HTTP performance'
+  ],
+  openGraph: {
+    title: 'Parallel Execution | curl-runner Documentation',
+    description: 'Execute HTTP requests in parallel for faster performance. Learn about concurrent request execution, performance optimization, and best practices.',
+    url: 'https://curl-runner.com/docs/features/parallel-execution',
+    type: 'article'
+    },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Parallel Execution | curl-runner Documentation',
+    description: 'Learn how to execute HTTP requests in parallel for faster performance with curl-runner.',
+    },
+  alternates: {
+    canonical: 'https://curl-runner.com/docs/features/parallel-execution',
+  },
+};
 
 const parallelExample = `# Run multiple requests in parallel
 global:

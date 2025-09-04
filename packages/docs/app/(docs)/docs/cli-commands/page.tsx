@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import {
   AlertTriangle,
   CheckCircle,
@@ -12,8 +13,41 @@ import {
   Save,
   Terminal,
   XCircle,
-  Zap,
+  Zap
 } from 'lucide-react';
+
+export const metadata: Metadata = {
+  title: 'CLI Commands',
+  description: 'Complete command-line interface reference for curl-runner with all available commands, options, and usage examples.',
+  keywords: [
+    'curl-runner CLI commands',
+    'command line interface',
+    'curl-runner options',
+    'CLI reference',
+    'curl-runner help',
+    'command line usage',
+    'CLI parameters',
+    'curl-runner flags',
+    'terminal commands',
+    'bash commands',
+    'command line arguments',
+    'curl-runner syntax'
+  ],
+  openGraph: {
+    title: 'CLI Commands | curl-runner Documentation',
+    description: 'Complete command-line interface reference for curl-runner with all available commands, options, and usage examples.',
+    url: 'https://curl-runner.com/docs/cli-commands',
+    type: 'article',
+    },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'CLI Commands | curl-runner Documentation',
+    description: 'Complete command-line interface reference for curl-runner with all available commands and options.',
+    },
+  alternates: {
+    canonical: 'https://curl-runner.com/docs/cli-commands',
+  },
+};
 import { CodeBlockServer } from '@/components/code-block-server';
 import { DocsPageHeader } from '@/components/docs-page-header';
 import { H2 } from '@/components/mdx-heading';

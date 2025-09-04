@@ -9,6 +9,7 @@ keywords:
   - testing
   - advanced
   - examples
+  - yaml
   - variables
   - authentication
   - parallel
@@ -24,8 +25,8 @@ keywords:
   - environment
 slug: "/docs/advanced"
 toc: true
-date: "2025-09-03T18:48:49.351Z"
-lastModified: "2025-09-03T18:48:49.351Z"
+date: "2025-09-04T09:47:42.739Z"
+lastModified: "2025-09-04T09:47:42.739Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -45,8 +46,8 @@ schema:
   "@type": "TechArticle"
   headline: "Advanced Examples"
   description: "Complex real-world scenarios showcasing the full power of curl-runner. These examples demonstrate advanced patterns for production environments."
-  datePublished: "2025-09-03T18:48:49.351Z"
-  dateModified: "2025-09-03T18:48:49.351Z"
+  datePublished: "2025-09-04T09:47:42.739Z"
+  dateModified: "2025-09-04T09:47:42.739Z"
 ---
 
 # Advanced Examples

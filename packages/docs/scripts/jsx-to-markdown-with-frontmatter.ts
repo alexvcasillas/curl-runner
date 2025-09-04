@@ -65,8 +65,8 @@ class EnhancedJSXToMarkdownConverter {
 
   private generateMetadata(filePath: string, content: string): PageMetadata {
     const pathParts = filePath.split('/');
-    const fileName = pathParts[pathParts.length - 1].replace('.tsx', '');
-    const parentDir = pathParts[pathParts.length - 2];
+    const fileName = pathParts[pathParts.length - 1]!.replace('.tsx', '');
+    const parentDir = pathParts[pathParts.length - 2] || '';
 
     // Extract basic info from content
     const heading = this.extractProp(content, 'DocsPageHeader', 'heading') || '';
@@ -314,7 +314,7 @@ class EnhancedJSXToMarkdownConverter {
     let match;
 
     while ((match = sectionRegex.exec(content)) !== null) {
-      const sectionContent = match[1];
+      const sectionContent = match[1]!;
       const sectionMarkdown = this.processSection(sectionContent);
       if (sectionMarkdown) {
         sections.push(sectionMarkdown);
@@ -329,7 +329,7 @@ class EnhancedJSXToMarkdownConverter {
 
     // Extract main heading (H2)
     const h2Match = content.match(/<(?:H2|h2)(?:\s+[^>]*)?>([^<]+)<\/(?:H2|h2)>/);
-    const sectionTitle = h2Match ? this.cleanText(h2Match[1]) : '';
+    const sectionTitle = h2Match ? this.cleanText(h2Match[1]!) : '';
 
     if (h2Match) {
       result.push(`## ${sectionTitle}`);
@@ -433,7 +433,7 @@ class EnhancedJSXToMarkdownConverter {
     for (const pattern of gridPatterns) {
       let match;
       while ((match = pattern.exec(content)) !== null) {
-        const gridContent = match[1];
+        const gridContent = match[1] || '';
         const cards = this.extractCards(gridContent);
 
         if (cards.length > 0) {
@@ -668,7 +668,7 @@ class EnhancedJSXToMarkdownConverter {
 
     // Extract lists of code items
     const codeItems = content.matchAll(
-      /<code[^>]*>(.*?)<\/code>.*?[-–]\s*(.*?)(?=<div|<\/div|$)/gs,
+      /<code[^>]*>(.*?)<\/code>.*?[-–]\s*(.*?)(?=<div|<\/div|$)/g,
     );
     for (const item of codeItems) {
       if (!result.some((r) => r.includes(item[1]))) {
@@ -836,7 +836,7 @@ class EnhancedJSXToMarkdownConverter {
       codeContent = this.codeExamples.get(varName) || this.snippets.get(varName) || '';
     } else {
       // Check for template literal {`...`}
-      const templateMatch = innerContent.match(/\{`([^`]*)`\}/s);
+      const templateMatch = innerContent.match(/\{`([\s\S]*?)`\}/);
       if (templateMatch) {
         codeContent = templateMatch[1];
       } else {
@@ -914,7 +914,7 @@ class EnhancedJSXToMarkdownConverter {
   }
 
   private extractProp(content: string, component: string, prop: string): string {
-    const regex = new RegExp(`<${component}[^>]*\\s${prop}="([^"]+)"`, 's');
+    const regex = new RegExp(`<${component}[^>]*\\s${prop}="([^"]+)"`);  
     const match = content.match(regex);
     return match ? match[1] : '';
   }
@@ -959,7 +959,7 @@ class EnhancedJSXToMarkdownConverter {
 
   private extractCodeConstants(content: string) {
     // Extract const declarations with template literals
-    const constRegex = /const\s+(\w+)\s*=\s*`([^`]*)`/gs;
+    const constRegex = /const\s+(\w+)\s*=\s*`([^`]*)`/g;
     let match;
 
     while ((match = constRegex.exec(content)) !== null) {
@@ -983,7 +983,7 @@ class EnhancedJSXToMarkdownConverter {
         const content = await file.text();
 
         // Parse export const declarations with template literals
-        const templateRegex = /export\s+const\s+(\w+)\s*=\s*`([^`]*)`/gs;
+        const templateRegex = /export\s+const\s+(\w+)\s*=\s*`([^`]*)`/g;
         let match;
         while ((match = templateRegex.exec(content)) !== null) {
           this.snippets.set(match[1], match[2]);

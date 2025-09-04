@@ -1,15 +1,48 @@
 import { AlertCircle, CheckCircle, HardDrive, Laptop, Monitor } from 'lucide-react';
+import type { Metadata } from 'next';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { DocsPageHeader } from '@/components/docs-page-header';
 import { Badge } from '@/components/ui/badge';
 import {
   bunInstallExample,
-  chocolateyInstallExample,
   dockerInstallExample,
-  homebrewInstallExample,
   npmInstallExample,
   verifyInstallationExample,
 } from './snippets';
+
+export const metadata: Metadata = {
+  title: 'Installation',
+  description:
+    'Install curl-runner on your system using your preferred package manager or download a pre-built binary. Support for Bun, npm, and Docker installation methods.',
+  keywords: [
+    'curl-runner installation',
+    'bun install curl-runner',
+    'npm install curl-runner',
+    'docker curl-runner',
+    'CLI tool installation',
+    'HTTP client setup',
+    'package manager installation',
+    'binary download',
+    'system requirements',
+    'troubleshooting installation',
+  ],
+  openGraph: {
+    title: 'Installation | curl-runner Documentation',
+    description:
+      'Install curl-runner on your system using your preferred package manager or download a pre-built binary. Support for Bun, npm, and Docker installation methods.',
+    url: 'https://curl-runner.com/docs/installation',
+    type: 'article',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Installation | curl-runner Documentation',
+    description:
+      'Install curl-runner on your system using your preferred package manager or download a pre-built binary.',
+  },
+  alternates: {
+    canonical: 'https://curl-runner.com/docs/installation',
+  },
+};
 
 export default function InstallationPage() {
   return (

@@ -1,9 +1,43 @@
+import type { Metadata } from 'next';
 import { DocsPageHeader } from "@/components/docs-page-header"
 import { CodeBlockServer } from "@/components/code-block-server"
 import { TableOfContents } from "@/components/toc"
 import { H2, H3 } from "@/components/docs-heading"
 import { Badge } from "@/components/ui/badge"
 import { RotateCcw, Clock, TrendingUp, Shield, CheckCircle, AlertTriangle, Zap, Settings, Wifi, Timer, Server, XCircle } from "lucide-react"
+
+export const metadata: Metadata = {
+  title: 'Retry Mechanism',
+  description: 'Implement robust retry logic for HTTP requests with curl-runner. Learn about retry strategies, backoff patterns, and handling transient failures.',
+  keywords: [
+    'curl-runner retry mechanism',
+    'HTTP request retries',
+    'retry logic',
+    'request failure handling',
+    'retry strategies',
+    'backoff patterns',
+    'transient failure recovery',
+    'resilient HTTP requests',
+    'retry configuration',
+    'automatic retries',
+    'error recovery',
+    'request reliability'
+  ],
+  openGraph: {
+    title: 'Retry Mechanism | curl-runner Documentation',
+    description: 'Implement robust retry logic for HTTP requests with curl-runner. Learn about retry strategies, backoff patterns, and handling transient failures.',
+    url: 'https://curl-runner.com/docs/features/retry-mechanism',
+    type: 'article'
+    },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Retry Mechanism | curl-runner Documentation',
+    description: 'Learn how to implement robust retry logic for HTTP requests with curl-runner.',
+    },
+  alternates: {
+    canonical: 'https://curl-runner.com/docs/features/retry-mechanism',
+  },
+};
 
 const basicRetry = `# Basic retry configuration
 request:

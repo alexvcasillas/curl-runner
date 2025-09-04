@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { DocsPageHeader } from "@/components/docs-page-header"
 import { CodeBlockServer } from "@/components/code-block-server"
 import { TableOfContents } from "@/components/toc"
@@ -5,6 +6,39 @@ import { H2, H3 } from "@/components/docs-heading"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FileJson, Code, FileText, File, CheckCircle, BarChart3, AlertTriangle, Timer, Wifi, AlertCircle, ArrowRight, XCircle } from "lucide-react"
+
+export const metadata: Metadata = {
+  title: 'Response Object',
+  description: 'Complete reference for curl-runner response objects including status codes, headers, body content, metrics, and execution results.',
+  keywords: [
+    'curl-runner response object',
+    'HTTP response structure',
+    'response properties',
+    'response status codes',
+    'response headers',
+    'response body',
+    'response metrics',
+    'execution results',
+    'API response format',
+    'response schema',
+    'HTTP response data',
+    'response handling'
+  ],
+  openGraph: {
+    title: 'Response Object | curl-runner API Reference',
+    description: 'Complete reference for curl-runner response objects including status codes, headers, body content, metrics, and execution results.',
+    url: 'https://curl-runner.com/docs/api-reference/response-object',
+    type: 'article'
+    },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Response Object | curl-runner API Reference',
+    description: 'Learn about curl-runner response object structure and available properties.',
+    },
+  alternates: {
+    canonical: 'https://curl-runner.com/docs/api-reference/response-object',
+  },
+};
 
 const executionResultExample = `# Example ExecutionResult object structure
 {

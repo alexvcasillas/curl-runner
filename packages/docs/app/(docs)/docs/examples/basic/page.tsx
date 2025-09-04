@@ -1,7 +1,41 @@
+import type { Metadata } from 'next';
 import { DocsPageHeader } from "@/components/docs-page-header"
 import { CodeBlockServer } from "@/components/code-block-server"
 import { Badge } from "@/components/ui/badge"
 import { Lightbulb, Globe, Bug, Zap } from "lucide-react"
+
+export const metadata: Metadata = {
+  title: 'Basic Examples',
+  description: 'Simple curl-runner examples to get started with HTTP requests. Learn basic GET, POST, PUT, and DELETE operations with practical examples.',
+  keywords: [
+    'curl-runner basic examples',
+    'simple HTTP requests',
+    'GET request examples',
+    'POST request examples',
+    'PUT request examples',
+    'DELETE request examples',
+    'basic API calls',
+    'HTTP method examples',
+    'curl-runner tutorial',
+    'beginner examples',
+    'simple API testing',
+    'basic YAML configuration'
+  ],
+  openGraph: {
+    title: 'Basic Examples | curl-runner Documentation',
+    description: 'Simple curl-runner examples to get started with HTTP requests. Learn basic GET, POST, PUT, and DELETE operations with practical examples.',
+    url: 'https://curl-runner.com/docs/examples/basic',
+    type: 'article'
+    },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Basic Examples | curl-runner Documentation',
+    description: 'Learn curl-runner basics with simple HTTP request examples and configurations.',
+    },
+  alternates: {
+    canonical: 'https://curl-runner.com/docs/examples/basic',
+  },
+};
 
 const examples = [
   {
