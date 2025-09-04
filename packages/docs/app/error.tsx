@@ -30,7 +30,7 @@ const links = [
   },
 ];
 
-export default function Error({ error, reset }: { error: Error; reset: () => void }) {
+export default function ErrorPage({ error, reset }: { error: Error; reset: () => void }) {
   return (
     <>
       <main className="mx-auto w-full max-w-7xl px-6 pt-10 pb-16 sm:pb-24 lg:px-8">

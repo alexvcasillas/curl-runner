@@ -14,8 +14,8 @@ keywords:
   - npm
 slug: "/docs/installation"
 toc: true
-date: "2025-09-04T09:47:42.740Z"
-lastModified: "2025-09-04T09:47:42.740Z"
+date: "2025-09-04T10:15:02.620Z"
+lastModified: "2025-09-04T10:15:02.620Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -35,8 +35,8 @@ schema:
   "@type": "TechArticle"
   headline: "Installation"
   description: "Install curl-runner on your system using your preferred package manager or download a pre-built binary."
-  datePublished: "2025-09-04T09:47:42.740Z"
-  dateModified: "2025-09-04T09:47:42.740Z"
+  datePublished: "2025-09-04T10:15:02.620Z"
+  dateModified: "2025-09-04T10:15:02.620Z"
 ---
 
 # Installation

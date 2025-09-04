@@ -1,3 +1,5 @@
+'use client';
+
 import { DocsSidebar } from '@/components/docs-sidebar';
 import { SiteHeader } from '@/components/site-header';
 

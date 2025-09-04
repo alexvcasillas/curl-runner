@@ -18,8 +18,8 @@ keywords:
   - request
 slug: "/docs/basic"
 toc: true
-date: "2025-09-04T09:47:42.737Z"
-lastModified: "2025-09-04T09:47:42.737Z"
+date: "2025-09-04T10:15:02.617Z"
+lastModified: "2025-09-04T10:15:02.617Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -39,8 +39,8 @@ schema:
   "@type": "TechArticle"
   headline: "Basic Examples"
   description: "Simple HTTP request configurations to get you started with curl-runner. Copy and modify these examples for your own use cases."
-  datePublished: "2025-09-04T09:47:42.737Z"
-  dateModified: "2025-09-04T09:47:42.737Z"
+  datePublished: "2025-09-04T10:15:02.617Z"
+  dateModified: "2025-09-04T10:15:02.617Z"
 ---
 
 # Basic Examples

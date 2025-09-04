@@ -667,9 +667,7 @@ class EnhancedJSXToMarkdownConverter {
     }
 
     // Extract lists of code items
-    const codeItems = content.matchAll(
-      /<code[^>]*>(.*?)<\/code>.*?[-–]\s*(.*?)(?=<div|<\/div|$)/g,
-    );
+    const codeItems = content.matchAll(/<code[^>]*>(.*?)<\/code>.*?[-–]\s*(.*?)(?=<div|<\/div|$)/g);
     for (const item of codeItems) {
       if (!result.some((r) => r.includes(item[1]))) {
         result.push(`> - \`${this.convertInlineElements(item[1])}\` - ${this.cleanText(item[2])}`);
@@ -914,7 +912,7 @@ class EnhancedJSXToMarkdownConverter {
   }
 
   private extractProp(content: string, component: string, prop: string): string {
-    const regex = new RegExp(`<${component}[^>]*\\s${prop}="([^"]+)"`);  
+    const regex = new RegExp(`<${component}[^>]*\\s${prop}="([^"]+)"`);
     const match = content.match(regex);
     return match ? match[1] : '';
   }
