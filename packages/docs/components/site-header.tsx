@@ -93,7 +93,7 @@ export function SiteHeader() {
                   <span className="sr-only">GitHub</span>
                 </a>
               </Button> */}
-              <GitHubStarsButton username="alexvcasillas" repo="react-native-loading-dots" />
+              <GitHubStarsButton username="alexvcasillas" repo="curl-runner" />
               <ThemeToggle />
             </nav>
           </div>

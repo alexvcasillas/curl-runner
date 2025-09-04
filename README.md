@@ -1,103 +1,146 @@
-# 🚀 curl-runner Monorepo
-
-A powerful CLI tool and documentation for HTTP request management using YAML configuration files. Built with [Bun](https://bun.sh) for blazing-fast performance.
+# 🚀 curl-runner
 
 [![Bun](https://img.shields.io/badge/Bun-%23000000.svg?style=for-the-badge&logo=bun&logoColor=white)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next-black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
 [![YAML](https://img.shields.io/badge/yaml-%23ffffff.svg?style=for-the-badge&logo=yaml&logoColor=151515)](https://yaml.org/)
+[![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-## 📦 Monorepo Structure
+A powerful CLI tool and documentation website for HTTP request management using YAML configuration files. Built with [Bun](https://bun.sh) for blazing-fast performance and featuring a modern documentation site powered by Next.js.
 
-This monorepo contains two main packages:
+## ✨ Features
 
-```
-curl-runner/
-├── packages/
-│   ├── cli/               # CLI tool package
-│   │   ├── src/           # Source code
-│   │   ├── examples/      # Example YAML configurations
-│   │   └── package.json
-│   └── web/               # Documentation website
-│       ├── src/           # Next.js source
-│       └── package.json
-├── package.json           # Root workspace configuration
-├── tsconfig.base.json     # Shared TypeScript config
-├── biome.json            # Code formatting and linting
-└── README.md             # This file
-```
+### 🎯 Core CLI Features
 
-## 🚀 Quick Start
+- **📝 YAML Configuration**: Define HTTP requests in simple, readable YAML files
+- **📁 Directory Support**: Execute multiple requests from entire directories
+- **🔄 Execution Modes**: Sequential and parallel execution for optimal performance
+- **🔧 Variable Interpolation**: Dynamic values using environment variables and inline substitutions
+- **✅ Response Validation**: Built-in assertions for status codes, headers, and response bodies
+- **📊 Beautiful Output**: Clean, colorized console output with detailed metrics
+- **🔄 Retry Logic**: Automatic retry mechanisms for failed requests
+- **📈 Performance Metrics**: Detailed timing and performance statistics
+
+### 🌐 Documentation Website
+
+- **📖 Comprehensive Docs**: Complete documentation with examples and tutorials
+- **🎨 Modern Design**: Beautiful, responsive UI built with Next.js and Tailwind CSS
+- **🌙 Dark Mode**: Built-in dark mode support
+- **🔍 Interactive Examples**: Live code examples and playground
+- **📱 Mobile Friendly**: Optimized for all screen sizes
+
+## 📦 Installation
 
 ### Prerequisites
 
-- [Bun](https://bun.sh) v1.2.21 or higher
+- **[Bun](https://bun.sh)** v1.2.21 or higher
 
-### Installation
+### Quick Install
 
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/curl-runner.git
 cd curl-runner
 
-# Install dependencies for all packages
+# Install all dependencies
 bun install
 
 # Build the CLI tool
 bun run build:cli
 ```
 
-### Running the CLI
+## 🚀 Quick Start
+
+### Basic Usage
 
 ```bash
-# Run the CLI directly
+# Run a single YAML file
 bun run cli examples/simple.yaml
 
-# Or from anywhere in the monorepo
-bun run packages/cli/src/cli.ts examples/
+# Run all YAML files in a directory
+bun run cli examples/
 
 # Run with options
-bun run cli -pv packages/cli/examples/
+bun run cli -pv examples/  # Parallel + Verbose mode
 ```
 
-### Running the Documentation Website
+### Your First Request
+
+Create a file called `my-request.yaml`:
+
+```yaml
+# Simple GET request
+request:
+  name: Get User Data
+  url: https://jsonplaceholder.typicode.com/users/1
+  method: GET
+  expect:
+    status: 200
+```
+
+Run it:
 
 ```bash
-# Start the development server
-bun run dev:web
-
-# Or run both CLI and web in development mode
-bun run dev
+bun run cli my-request.yaml
 ```
 
-Visit [http://localhost:3000](http://localhost:3000) to see the documentation.
+### Multiple Requests (Collection)
 
-## 📚 Package Details
+Create `api-tests.yaml`:
 
-### [@curl-runner/cli](./packages/cli)
+```yaml
+global:
+  execution: sequential
+  variables:
+    BASE_URL: https://jsonplaceholder.typicode.com
 
-The core CLI tool for running HTTP requests from YAML files.
+collection:
+  name: API Integration Tests
+  description: Testing user management endpoints
+  requests:
+    - name: List All Users
+      url: ${BASE_URL}/users
+      method: GET
+      expect:
+        status: 200
 
-**Features:**
-- 📝 YAML configuration for HTTP requests
-- 📁 Directory support for bulk execution
-- 🔄 Sequential and parallel execution modes
-- 🔧 Variable interpolation
-- ✅ Response validation
-- 📊 Beautiful console output
+    - name: Get Specific User
+      url: ${BASE_URL}/users/1
+      method: GET
+      expect:
+        status: 200
 
-[View CLI Documentation →](./packages/cli/README.md)
+    - name: Create New User
+      url: ${BASE_URL}/users
+      method: POST
+      headers:
+        Content-Type: application/json
+      body:
+        name: John Doe
+        email: john@example.com
+      expect:
+        status: 201
+```
 
-### [@curl-runner/web](./packages/web)
+## 📁 Project Structure
 
-Next.js-based documentation website for curl-runner.
-
-**Features:**
-- 📖 Comprehensive documentation
-- 🎨 Modern, responsive design
-- 🌙 Dark mode support
-- 🔍 Searchable content
-- 📱 Mobile-friendly
+```
+curl-runner/
+├── packages/
+│   ├── cli/                 # CLI tool package
+│   │   ├── src/            # Source code
+│   │   ├── examples/       # Example YAML files
+│   │   └── package.json
+│   └── docs/               # Documentation website
+│       ├── app/            # Next.js app directory
+│       ├── components/     # React components
+│       └── package.json
+├── package.json            # Root workspace configuration
+├── biome.json             # Code formatting and linting
+├── @README.md             # This file
+├── CONTRIBUTE.md          # Contribution guidelines
+└── LICENSE.md             # MIT License
+```
 
 ## 🛠️ Development
 
@@ -107,121 +150,256 @@ Next.js-based documentation website for curl-runner.
 # Install dependencies for all packages
 bun install
 
-# Run development mode for all packages
-bun run dev
+# Development mode
+bun run dev              # Run all packages in dev mode
+bun run dev:cli          # CLI only (watch mode)
+bun run dev:docs         # Documentation site only
 
-# Run development for specific package
-bun run dev:cli    # CLI only
-bun run dev:web    # Web only
+# Building
+bun run build            # Build all packages
+bun run build:cli        # Build CLI to binary
+bun run build:docs       # Build documentation site
 
-# Build all packages
-bun run build
+# Code quality
+bun run format           # Format code with Biome
+bun run lint             # Lint code with Biome
+bun run check            # Format and fix all issues
+bun run check:ci         # CI-friendly check
 
-# Build specific package
-bun run build:cli  # Build CLI
-bun run build:web  # Build website
-
-# Format and lint code
-bun run format     # Format with Biome
-bun run lint       # Lint with Biome
-bun run check      # Format and fix all issues
-
-# Run tests
-bun test          # Run all tests
-bun test:cli      # Run CLI tests only
+# Testing
+bun test                 # Run all tests
+bun test:cli             # Run CLI tests only
 ```
 
-### Project Scripts
-
-The root `package.json` manages workspace-wide operations:
-
-| Script | Description |
-|--------|-------------|
-| `dev` | Run all packages in development mode |
-| `dev:cli` | Run CLI in watch mode |
-| `dev:web` | Run documentation site in dev mode |
-| `build` | Build all packages |
-| `build:cli` | Compile CLI to binary |
-| `build:web` | Build documentation site |
-| `format` | Format code with Biome |
-| `lint` | Lint code with Biome |
-| `check` | Format and fix issues |
-| `test` | Run all tests |
-
-### Adding New Features
-
-1. **CLI Features**: Add code in `packages/cli/src/`
-2. **Documentation**: Update both `packages/cli/README.md` and website in `packages/web/`
-3. **Examples**: Add example YAML files in `packages/cli/examples/`
-4. **Tests**: Add tests alongside the code
-
-### Code Quality
-
-- **Formatter**: Biome with 2-space indentation
-- **Type Safety**: Strict TypeScript configuration
-- **Monorepo**: Bun workspaces for package management
-
-## 🧪 Testing
-
-### CLI Testing
+### Running the Documentation Site
 
 ```bash
-# Run CLI with example files
-bun run cli packages/cli/examples/simple.yaml
-bun run cli packages/cli/examples/collection.yaml
-bun run cli packages/cli/examples/parallel.yaml
+# Start development server
+bun run dev:docs
 
-# Test directory execution
-bun run cli packages/cli/examples/
-
-# Test with various options
-bun run cli -pv packages/cli/examples/  # Parallel + Verbose
-bun run cli -c --output results.json packages/cli/examples/  # Continue on error + Save results
+# Build and start production server
+bun run build:docs
+bun run start:docs
 ```
+
+Visit [http://localhost:3000](http://localhost:3000) to view the documentation.
+
+## 📝 YAML Configuration Reference
+
+### Single Request
+
+```yaml
+request:
+  name: Request Name
+  url: https://api.example.com/endpoint
+  method: GET|POST|PUT|DELETE|PATCH
+  headers:
+    Authorization: Bearer ${TOKEN}
+    Content-Type: application/json
+  body: |
+    {
+      "key": "value"
+    }
+  expect:
+    status: 200
+    headers:
+      Content-Type: application/json
+    body:
+      contains: "success"
+```
+
+### Collection (Multiple Requests)
+
+```yaml
+global:
+  execution: sequential|parallel
+  continueOnError: true|false
+  variables:
+    API_KEY: ${API_KEY}
+    BASE_URL: https://api.example.com
+  output:
+    verbose: true
+    showHeaders: true
+    showMetrics: true
+
+collection:
+  name: Collection Name
+  description: Collection description
+  requests:
+    - name: Request 1
+      url: ${BASE_URL}/endpoint1
+      method: GET
+    - name: Request 2
+      url: ${BASE_URL}/endpoint2
+      method: POST
+      body:
+        data: value
+```
+
+### Advanced Features
+
+#### Variable Interpolation
+
+```yaml
+global:
+  variables:
+    API_VERSION: v1
+    USER_ID: 123
+
+request:
+  name: Get User Profile
+  url: https://api.example.com/${API_VERSION}/users/${USER_ID}
+  method: GET
+```
+
+#### Response Validation
+
+```yaml
+request:
+  name: API Health Check
+  url: https://api.example.com/health
+  method: GET
+  expect:
+    status: 200
+    headers:
+      Content-Type: application/json
+    body:
+      contains: "healthy"
+      json:
+        status: "ok"
+        version: "1.0.0"
+```
+
+#### Retry Configuration
+
+```yaml
+request:
+  name: Flaky Endpoint
+  url: https://api.example.com/flaky
+  method: GET
+  retry:
+    attempts: 3
+    delay: 1000
+    exponential: true
+  expect:
+    status: 200
+```
+
+## 📚 CLI Options
+
+```bash
+# Execution modes
+-p, --parallel          Execute requests in parallel
+-s, --sequential        Execute requests sequentially (default)
+
+# Output control
+-v, --verbose           Show detailed output
+-q, --quiet             Suppress non-essential output
+--show-headers          Display response headers
+--show-metrics          Display timing metrics
+
+# Error handling
+-c, --continue          Continue execution on errors
+--fail-fast             Stop on first error (default)
+
+# Output formats
+-o, --output <file>     Save results to JSON file
+--format json|yaml      Output format for results
+
+# Other options
+-h, --help              Show help information
+--version               Show version information
+-w, --watch             Watch files for changes
+```
+
+## 🧪 Examples
+
+### API Testing
+
+```bash
+# Test a REST API with authentication
+bun run cli examples/api-auth.yaml
+
+# Load test with parallel requests
+bun run cli -p examples/load-test/
+
+# Integration test suite
+bun run cli --verbose examples/integration/
+```
+
+### Environment-Specific Testing
+
+```bash
+# Set environment variables
+export API_KEY=your-api-key
+export BASE_URL=https://api.staging.example.com
+
+# Run tests with environment variables
+bun run cli examples/staging-tests.yaml
+```
+
+### Continuous Integration
+
+```bash
+# CI-friendly execution with JSON output
+bun run cli --quiet --output results.json --continue examples/
+
+# Validate API contract
+bun run cli --fail-fast examples/contract-tests/
+```
+
+## 🏗️ Architecture
+
+### CLI Package (`@curl-runner/cli`)
+
+- **TypeScript** for type safety
+- **Bun** runtime for performance
+- **YAML parsing** for configuration
+- **HTTP client** with retry logic
+- **Validation engine** for assertions
+- **Pretty printing** for console output
+
+### Documentation Package (`@curl-runner/docs`)
+
+- **Next.js 15** with App Router
+- **React 19** with TypeScript
+- **Tailwind CSS** for styling
+- **Radix UI** for accessible components
+- **Shiki** for syntax highlighting
+- **GSAP** for animations
 
 ## 🤝 Contributing
 
-We welcome contributions! Please follow these steps:
+We welcome contributions! Please see our [CONTRIBUTE.md](CONTRIBUTE.md) for guidelines on:
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes in the appropriate package
-4. Update documentation in both README and website
-5. Run `bun run check` to ensure code quality
-6. Commit your changes (`git commit -m 'feat: add amazing feature'`)
-7. Push to your branch (`git push origin feature/amazing-feature`)
-8. Open a Pull Request
-
-### Development Guidelines
-
-- **Code Style**: Run `bun run format` before committing
-- **Type Safety**: Avoid `any` types
-- **Documentation**: Update both CLI and web docs
-- **Examples**: Add examples for new features
-- **Tests**: Write tests for new functionality
+- Setting up the development environment
+- Code style and conventions
+- Submitting pull requests
+- Reporting bugs and feature requests
 
 ## 📄 License
 
-MIT License - see [LICENSE](./LICENSE) file for details
+This project is licensed under the MIT License. See [LICENSE.md](LICENSE.md) for details.
 
 ## 🙏 Acknowledgments
 
-- Built with [Bun](https://bun.sh) - The fast all-in-one JavaScript runtime
-- Documentation powered by [Next.js](https://nextjs.org/)
-- Formatted with [Biome](https://biomejs.dev/)
-- Styled with [Tailwind CSS](https://tailwindcss.com/)
+- **[Bun](https://bun.sh)** - The fast all-in-one JavaScript runtime
+- **[Next.js](https://nextjs.org/)** - The React framework for production
+- **[Biome](https://biomejs.dev/)** - Fast formatter and linter
+- **[Tailwind CSS](https://tailwindcss.com/)** - Utility-first CSS framework
+- **[Radix UI](https://www.radix-ui.com/)** - Low-level UI primitives
 
 ## 📞 Support
 
-- 🐛 [Report bugs](https://github.com/yourusername/curl-runner/issues)
-- 💡 [Request features](https://github.com/yourusername/curl-runner/issues)
-- 📖 [View documentation](https://yourusername.github.io/curl-runner)
-- 💬 [Discussions](https://github.com/yourusername/curl-runner/discussions)
+- 🐛 [Report bugs](https://github.com/alexvcasillas/curl-runner/issues)
+- 💡 [Request features](https://github.com/alexvcasillas/curl-runner/issues)
+- 📖 [View documentation](https://alexvcasillas.github.io/curl-runner)
+- 💬 [Discussions](https://github.com/alexvcasillas/curl-runner/discussions)
 
 ---
 
 <div align="center">
-  <b>curl-runner</b> - Making HTTP request management simple and powerful
-  <br>
-  Made with ❤️ using Bun
+  <strong>curl-runner</strong> - Making HTTP request management simple and powerful
+  <br><br>
+  Made with ❤️ by the community
 </div>
