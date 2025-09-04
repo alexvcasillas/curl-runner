@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "bun run generate-markdown && next build",
     "start": "next start",
     "generate-markdown": "bun scripts/jsx-to-markdown-with-frontmatter.ts"
   },

@@ -21,8 +21,8 @@ keywords:
   - cli
 slug: "/docs/collection"
 toc: true
-date: "2025-09-04T10:15:02.618Z"
-lastModified: "2025-09-04T10:15:02.618Z"
+date: "2025-09-04T10:22:07.587Z"
+lastModified: "2025-09-04T10:22:07.587Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -42,8 +42,8 @@ schema:
   "@type": "TechArticle"
   headline: "Collection Example"
   description: "Learn how to organize multiple requests into collections for comprehensive API testing."
-  datePublished: "2025-09-04T10:15:02.618Z"
-  dateModified: "2025-09-04T10:15:02.618Z"
+  datePublished: "2025-09-04T10:22:07.587Z"
+  dateModified: "2025-09-04T10:22:07.587Z"
 ---
 
 # Collection Example
