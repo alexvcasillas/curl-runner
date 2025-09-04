@@ -20,10 +20,15 @@
     "check:ci": "biome ci .",
     "cli": "bun run packages/cli/src/cli.ts",
     "test": "bun test",
-    "test:cli": "cd packages/cli && bun test"
+    "test:cli": "cd packages/cli && bun test",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "changeset publish"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.2",
+    "@changesets/changelog-github": "^0.5.1",
+    "@changesets/cli": "^2.29.6",
     "@types/bun": "latest",
     "@types/node": "^24.3.0",
     "typescript": "^5.0.0"
@@ -33,7 +38,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/curl-runner.git"
+    "url": "https://github.com/alexvcasillas/curl-runner.git"
   },
   "keywords": [
     "curl",

@@ -10,7 +10,7 @@
   "scripts": {
     "start": "bun run src/cli.ts",
     "dev": "bun --watch src/cli.ts",
-    "build": "bun build src/cli.ts --compile --outfile ../../curl-runner",
+    "build": "bun build src/cli.ts --compile --outfile ./curl-runner",
     "format": "biome format --write .",
     "lint": "biome lint .",
     "check": "biome check --write .",
@@ -27,6 +27,13 @@
   ],
   "author": "",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
   "devDependencies": {
     "@types/bun": "latest"
   },
