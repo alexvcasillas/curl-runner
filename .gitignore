@@ -39,3 +39,6 @@ packages/docs/out/
 packages/docs/.vercel
 packages/docs/.turbo
 packages/docs/next-env.d.ts
+
+# Build
+curl-runner
