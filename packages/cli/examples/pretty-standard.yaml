@@ -1,0 +1,13 @@
+# Pretty format - standard level example
+# Shows request info, status, body, and metrics when enabled
+global:
+  output:
+    format: pretty
+    prettyLevel: standard
+    showBody: true
+    showMetrics: true
+
+request:
+  name: Standard Output Example
+  url: https://jsonplaceholder.typicode.com/users/1
+  method: GET

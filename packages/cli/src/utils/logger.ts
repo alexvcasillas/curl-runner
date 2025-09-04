@@ -35,17 +35,142 @@ export class Logger {
 
   constructor(config: GlobalConfig['output'] = {}) {
     this.config = {
-      verbose: true,
-      showHeaders: true,
+      verbose: false,
+      showHeaders: false,
       showBody: true,
-      showMetrics: true,
+      showMetrics: false,
       format: 'pretty',
+      prettyLevel: 'standard',
       ...config,
     };
   }
 
   private color(text: string, color: keyof typeof this.colors): string {
     return `${this.colors[color]}${text}${this.colors.reset}`;
+  }
+
+  private getShortFilename(filePath: string): string {
+    return filePath.replace(/.*\//, '').replace('.yaml', '');
+  }
+
+  private shouldShowOutput(): boolean {
+    if (this.config.format === 'raw') return false;
+    if (this.config.format === 'pretty') return true; // Pretty format should always show output
+    return this.config.verbose !== false; // For other formats, respect verbose flag
+  }
+
+  private shouldShowHeaders(): boolean {
+    if (this.config.format !== 'pretty') return this.config.showHeaders || false;
+    
+    const level = this.config.prettyLevel || 'standard';
+    switch (level) {
+      case 'minimal': return false;
+      case 'standard': return this.config.showHeaders || false;
+      case 'detailed': return true;
+      default: return this.config.showHeaders || false;
+    }
+  }
+
+  private shouldShowBody(): boolean {
+    if (this.config.format !== 'pretty') return this.config.showBody !== false;
+    
+    const level = this.config.prettyLevel || 'standard';
+    switch (level) {
+      case 'minimal': return false;  // Minimal never shows body
+      case 'standard': return this.config.showBody !== false;
+      case 'detailed': return true;  // Detailed always shows body
+      default: return this.config.showBody !== false;
+    }
+  }
+
+  private shouldShowMetrics(): boolean {
+    if (this.config.format !== 'pretty') return this.config.showMetrics || false;
+    
+    const level = this.config.prettyLevel || 'standard';
+    switch (level) {
+      case 'minimal': return false;  // Minimal never shows metrics
+      case 'standard': return this.config.showMetrics || false;
+      case 'detailed': return true;  // Detailed always shows metrics
+      default: return this.config.showMetrics || false;
+    }
+  }
+
+  private shouldShowRequestDetails(): boolean {
+    if (this.config.format !== 'pretty') return this.config.verbose || false;
+    
+    const level = this.config.prettyLevel || 'standard';
+    switch (level) {
+      case 'minimal': return false;
+      case 'standard': return this.config.verbose || false;
+      case 'detailed': return true;
+      default: return this.config.verbose || false;
+    }
+  }
+
+  private shouldShowSeparators(): boolean {
+    if (this.config.format !== 'pretty') return true;
+    
+    const level = this.config.prettyLevel || 'standard';
+    switch (level) {
+      case 'minimal': return false;
+      case 'standard': return true;
+      case 'detailed': return true;
+      default: return true;
+    }
+  }
+
+  private colorStatusCode(statusStr: string): string {
+    // For expected status codes in validation errors, use yellow to distinguish from red actual values
+    return this.color(statusStr, 'yellow');
+  }
+
+  private logValidationErrors(errorString: string): void {
+    // Check if this is a validation error with multiple parts (separated by ';')
+    const errors = errorString.split('; ');
+    
+    if (errors.length === 1) {
+      // Single error - check if it's a status error for special formatting
+      const trimmedError = errors[0].trim();
+      const statusMatch = trimmedError.match(/^Expected status (.+?), got (.+)$/);
+      if (statusMatch) {
+        const [, expected, actual] = statusMatch;
+        const expectedStatus = this.colorStatusCode(expected.replace(' or ', '|'));
+        const actualStatus = this.color(actual, 'red'); // Always red for incorrect actual values
+        console.log(`  ${this.color('✗', 'red')} ${this.color('Error:', 'red')} Expected ${this.color('status', 'yellow')} ${expectedStatus}, got ${actualStatus}`);
+      } else {
+        console.log(`  ${this.color('✗', 'red')} ${this.color('Error:', 'red')} ${trimmedError}`);
+      }
+    } else {
+      // Multiple validation errors - show them nicely formatted
+      console.log(`  ${this.color('✗', 'red')} ${this.color('Validation Errors:', 'red')}`);
+      for (const error of errors) {
+        const trimmedError = error.trim();
+        if (trimmedError) {
+          // Parse different error formats for better formatting
+          if (trimmedError.startsWith('Expected ')) {
+            // Format 1: "Expected status 201, got 200"
+            const statusMatch = trimmedError.match(/^Expected status (.+?), got (.+)$/);
+            if (statusMatch) {
+              const [, expected, actual] = statusMatch;
+              const expectedStatus = this.colorStatusCode(expected.replace(' or ', '|'));
+              const actualStatus = this.color(actual, 'red'); // Always red for incorrect actual values
+              console.log(`    ${this.color('•', 'red')} ${this.color('status', 'yellow')}: expected ${expectedStatus}, got ${actualStatus}`);
+            } else {
+              // Format 2: "Expected field to be value, got value" 
+              const fieldMatch = trimmedError.match(/^Expected (.+?) to be (.+?), got (.+)$/);
+              if (fieldMatch) {
+                const [, field, expected, actual] = fieldMatch;
+                console.log(`    ${this.color('•', 'red')} ${this.color(field, 'yellow')}: expected ${this.color(expected, 'green')}, got ${this.color(actual, 'red')}`);
+              } else {
+                console.log(`    ${this.color('•', 'red')} ${trimmedError}`);
+              }
+            }
+          } else {
+            console.log(`    ${this.color('•', 'red')} ${trimmedError}`);
+          }
+        }
+      }
+    }
   }
 
   private formatJson(data: unknown): string {
@@ -79,28 +204,35 @@ export class Logger {
   }
 
   logExecutionStart(count: number, mode: string): void {
-    this.printSeparator('═');
-    console.log(this.color('🚀 CURL RUNNER', 'bright'));
-    console.log(this.color(`Executing ${count} request(s) in ${mode} mode`, 'cyan'));
-    this.printSeparator('═');
-    console.log();
+    if (!this.shouldShowOutput()) return;
+    
+    if (this.shouldShowSeparators()) {
+      this.printSeparator('═');
+      console.log(this.color('🚀 CURL RUNNER', 'bright'));
+      console.log(this.color(`Executing ${count} request(s) in ${mode} mode`, 'cyan'));
+      this.printSeparator('═');
+      console.log();
+    }
   }
 
   logRequestStart(config: RequestConfig, index: number): void {
+    if (!this.shouldShowOutput()) return;
+
     const name = config.name || `Request #${index}`;
-    console.log(this.color(`▶ ${name}`, 'bright'));
+    const sourceFile = config.sourceFile ? ` ${this.color(`[${this.getShortFilename(config.sourceFile)}]`, 'cyan')}` : '';
+    console.log(this.color(`▶ ${name}`, 'bright') + sourceFile);
     console.log(
       `  ${this.color(config.method || 'GET', 'yellow')} ${this.color(config.url, 'blue')}`,
     );
 
-    if (this.config.verbose && config.headers && Object.keys(config.headers).length > 0) {
+    if (this.shouldShowRequestDetails() && config.headers && Object.keys(config.headers).length > 0) {
       console.log(this.color('  Headers:', 'dim'));
       for (const [key, value] of Object.entries(config.headers)) {
         console.log(`    ${key}: ${value}`);
       }
     }
 
-    if (this.config.verbose && config.body) {
+    if (this.shouldShowRequestDetails() && config.body) {
       console.log(this.color('  Body:', 'dim'));
       const bodyStr = this.formatJson(config.body);
       for (const line of bodyStr.split('\n')) {
@@ -110,7 +242,7 @@ export class Logger {
   }
 
   logCommand(command: string): void {
-    if (this.config.verbose) {
+    if (this.shouldShowRequestDetails()) {
       console.log(this.color('  Command:', 'dim'));
       console.log(this.color(`    ${command}`, 'dim'));
     }
@@ -121,6 +253,37 @@ export class Logger {
   }
 
   logRequestComplete(result: ExecutionResult): void {
+    // Handle raw format output - only show response body
+    if (this.config.format === 'raw') {
+      if (result.success && this.config.showBody && result.body) {
+        const bodyStr = this.formatJson(result.body);
+        console.log(bodyStr);
+      }
+      return;
+    }
+
+    // Handle JSON format output - structured JSON only
+    if (this.config.format === 'json') {
+      const jsonResult = {
+        request: {
+          name: result.request.name,
+          url: result.request.url,
+          method: result.request.method || 'GET',
+        },
+        success: result.success,
+        status: result.status,
+        ...(this.shouldShowHeaders() && result.headers ? { headers: result.headers } : {}),
+        ...(this.shouldShowBody() && result.body ? { body: result.body } : {}),
+        ...(result.error ? { error: result.error } : {}),
+        ...(this.shouldShowMetrics() && result.metrics ? { metrics: result.metrics } : {}),
+      };
+      console.log(JSON.stringify(jsonResult, null, 2));
+      return;
+    }
+
+    // Pretty format output (default behavior)
+    if (!this.shouldShowOutput()) return;
+
     const statusColor = result.success ? 'green' : 'red';
     const statusIcon = result.success ? '✓' : '✗';
 
@@ -130,10 +293,10 @@ export class Logger {
     );
 
     if (result.error) {
-      console.log(`  ${this.color('Error:', 'red')} ${result.error}`);
+      this.logValidationErrors(result.error);
     }
 
-    if (this.config.showMetrics && result.metrics) {
+    if (this.shouldShowMetrics() && result.metrics) {
       const metrics = result.metrics;
       const parts = [`Duration: ${this.color(this.formatDuration(metrics.duration), 'cyan')}`];
 
@@ -141,7 +304,7 @@ export class Logger {
         parts.push(`Size: ${this.color(this.formatSize(metrics.size), 'cyan')}`);
       }
 
-      if (this.config.verbose) {
+      if (this.shouldShowRequestDetails()) {
         if (metrics.dnsLookup) {
           parts.push(`DNS: ${this.formatDuration(metrics.dnsLookup)}`);
         }
@@ -159,18 +322,18 @@ export class Logger {
       console.log(`  ${parts.join(' | ')}`);
     }
 
-    if (this.config.showHeaders && result.headers && Object.keys(result.headers).length > 0) {
+    if (this.shouldShowHeaders() && result.headers && Object.keys(result.headers).length > 0) {
       console.log(this.color('  Response Headers:', 'dim'));
       for (const [key, value] of Object.entries(result.headers)) {
         console.log(`    ${key}: ${value}`);
       }
     }
 
-    if (this.config.showBody && result.body) {
+    if (this.shouldShowBody() && result.body) {
       console.log(this.color('  Response Body:', 'dim'));
       const bodyStr = this.formatJson(result.body);
       const lines = bodyStr.split('\n');
-      const maxLines = this.config.verbose ? Infinity : 10;
+      const maxLines = this.shouldShowRequestDetails() ? Infinity : 10;
       for (const line of lines.slice(0, maxLines)) {
         console.log(`    ${line}`);
       }
@@ -182,10 +345,46 @@ export class Logger {
     console.log();
   }
 
-  logSummary(summary: ExecutionSummary): void {
-    this.printSeparator('═');
-    console.log(this.color('📊 EXECUTION SUMMARY', 'bright'));
-    this.printSeparator();
+  logSummary(summary: ExecutionSummary, isGlobal: boolean = false): void {
+    // For raw format, don't show summary
+    if (this.config.format === 'raw') return;
+
+    // For JSON format, output structured summary
+    if (this.config.format === 'json') {
+      const jsonSummary = {
+        summary: {
+          total: summary.total,
+          successful: summary.successful,
+          failed: summary.failed,
+          duration: summary.duration,
+        },
+        results: summary.results.map((result) => ({
+          request: {
+            name: result.request.name,
+            url: result.request.url,
+            method: result.request.method || 'GET',
+          },
+          success: result.success,
+          status: result.status,
+          ...(this.shouldShowHeaders() && result.headers ? { headers: result.headers } : {}),
+          ...(this.shouldShowBody() && result.body ? { body: result.body } : {}),
+          ...(result.error ? { error: result.error } : {}),
+          ...(this.shouldShowMetrics() && result.metrics ? { metrics: result.metrics } : {}),
+        })),
+      };
+      console.log(JSON.stringify(jsonSummary, null, 2));
+      return;
+    }
+
+    // Pretty format summary (default behavior)
+    if (!this.shouldShowOutput()) return;
+
+    if (this.shouldShowSeparators()) {
+      this.printSeparator('═');
+      const title = isGlobal ? '🎯 OVERALL SUMMARY' : '📊 EXECUTION SUMMARY';
+      console.log(this.color(title, 'bright'));
+      this.printSeparator();
+    }
 
     const successRate = ((summary.successful / summary.total) * 100).toFixed(1);
     const statusColor =
@@ -197,7 +396,7 @@ export class Logger {
     console.log(`  Success Rate: ${this.color(`${successRate}%`, statusColor)}`);
     console.log(`  Total Duration: ${this.color(this.formatDuration(summary.duration), 'cyan')}`);
 
-    if (summary.failed > 0 && this.config.verbose) {
+    if (summary.failed > 0 && this.shouldShowRequestDetails()) {
       console.log();
       console.log(this.color('  Failed Requests:', 'red'));
       summary.results
@@ -208,7 +407,9 @@ export class Logger {
         });
     }
 
-    this.printSeparator('═');
+    if (this.shouldShowSeparators()) {
+      this.printSeparator('═');
+    }
   }
 
   logError(message: string): void {
@@ -225,5 +426,15 @@ export class Logger {
 
   logSuccess(message: string): void {
     console.log(this.color(`✅ ${message}`, 'green'));
+  }
+
+  logFileHeader(fileName: string, requestCount: number): void {
+    if (!this.shouldShowOutput() || this.config.format !== 'pretty') return;
+    
+    const shortName = fileName.replace(/.*\//, '').replace('.yaml', '');
+    console.log();
+    this.printSeparator('─');
+    console.log(this.color(`📄 ${shortName}.yaml`, 'bright') + this.color(` (${requestCount} request${requestCount === 1 ? '' : 's'})`, 'dim'));
+    this.printSeparator('─');
   }
 }

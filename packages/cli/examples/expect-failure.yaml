@@ -1,0 +1,29 @@
+# Testing expected failures (negative testing)
+# Usage: curl-runner expect-failure.yaml
+
+global:
+  output:
+    format: pretty
+    prettyLevel: standard
+
+requests:
+  - name: Test 404 Endpoint (Should Fail)
+    url: https://jsonplaceholder.typicode.com/posts/999999
+    method: GET
+    expect:
+      failure: true  # We expect this request to fail
+      status: 404    # Should return 404
+      
+  - name: Test Server Error (Should Fail)  
+    url: http://localhost:3000/api/test/status/500
+    method: GET
+    expect:
+      failure: true  # We expect this request to fail
+      status: 500    # Should return 500
+      
+  - name: Test Invalid Method (Should Fail)
+    url: http://localhost:3000/api/test/get-only
+    method: POST  # GET-only endpoint with POST method should fail
+    expect:
+      failure: true
+      status: 405   # Method Not Allowed

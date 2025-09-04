@@ -1,0 +1,40 @@
+# Mixed success and failure expectations
+# Usage: curl-runner expect-failure-mixed.yaml
+
+global:
+  output:
+    format: pretty
+    prettyLevel: standard
+
+requests:
+  - name: Normal Success Test
+    url: https://jsonplaceholder.typicode.com/posts/1
+    method: GET
+    expect:
+      status: 200  # Normal success expectation
+      
+  - name: Test Authentication Failure
+    url: http://localhost:3000/api/test/auth/basic
+    method: GET
+    auth:
+      type: basic
+      username: user
+      password: incorrectpassword
+    expect:
+      failure: true  # We expect auth to fail
+      status: 401    # Should be Unauthorized
+      
+  - name: Another Normal Success
+    url: https://jsonplaceholder.typicode.com/users/1
+    method: GET
+    expect:
+      status: 200
+      body:
+        id: 1
+        
+  - name: Test Error Response Body
+    url: http://localhost:3000/api/test/status/500
+    method: GET
+    expect:
+      failure: true  # We expect this to fail
+      status: 500    # Should be Internal Server Error

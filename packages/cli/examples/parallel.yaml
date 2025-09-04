@@ -2,7 +2,7 @@
 global:
   execution: parallel
   variables:
-    API_URL: https://httpbin.org
+    API_URL: http://localhost:3000/api/test
   output:
     verbose: true
     showBody: true

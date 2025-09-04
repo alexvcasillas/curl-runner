@@ -1,0 +1,19 @@
+# Response headers validation example
+# Usage: curl-runner validation-headers.yaml
+
+global:
+  output:
+    format: pretty
+    prettyLevel: standard
+    showHeaders: true
+
+request:
+  name: Validate Response Headers
+  url: http://localhost:3000/api/test/headers
+  method: GET
+  expect:
+    status: 200
+    body:
+      headers:
+        host: "localhost:3000"
+        user-agent: "*"

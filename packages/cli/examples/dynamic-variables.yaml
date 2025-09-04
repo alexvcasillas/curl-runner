@@ -1,0 +1,62 @@
+# Dynamic Variables Demo
+# Usage: curl-runner dynamic-variables.yaml
+
+global:
+  output:
+    format: pretty
+    prettyLevel: standard
+
+requests:
+  # UUID and timestamp generation
+  - name: UUID and Timestamp Demo
+    url: https://jsonplaceholder.typicode.com/posts
+    method: POST
+    headers:
+      X-Request-ID: "${UUID}"
+      X-Timestamp: "${CURRENT_TIME}"
+      X-User-Agent: "curl-runner-test-${UUID}"
+    body:
+      requestId: "${UUID}"              # Fresh UUID (different from header)
+      timestamp: "${CURRENT_TIME}"     # Fresh timestamp
+      title: "Test post ${UUID}"
+      body: "Created at ${CURRENT_TIME}"
+      userId: 1
+    expect:
+      status: 201
+      
+  # Date and time formatting
+  - name: Date and Time Formatting Demo  
+    url: https://jsonplaceholder.typicode.com/posts
+    method: POST
+    headers:
+      X-Date: "${DATE:YYYY-MM-DD}"
+      X-Time: "${TIME:HH:mm:ss}"
+      X-Custom: "${DATE:DD/MM/YYYY}"
+    body:
+      title: "Post created on ${DATE:YYYY-MM-DD}"
+      body: "Generated at ${TIME:HH:mm:ss} on ${DATE:DD/MM/YYYY}"
+      createdDate: "${DATE:YYYY-MM-DD}"
+      createdTime: "${TIME:HH:mm:ss}"
+      timestamp: "${CURRENT_TIME}"
+      userId: 1
+    expect:
+      status: 201
+      body:
+        id: "*"                         # Accept any generated ID
+        
+  # Mixed variables in strings
+  - name: Mixed Variables Demo
+    url: https://jsonplaceholder.typicode.com/posts  
+    method: POST
+    body:
+      title: "Report generated on ${DATE:YYYY-MM-DD} at ${TIME:HH:mm:ss}"
+      body: "Request ID: ${UUID}, Timestamp: ${CURRENT_TIME}"
+      metadata:
+        requestId: "${UUID}"
+        generatedAt: "${DATE:YYYY-MM-DD} ${TIME:HH:mm:ss}"
+        timestamp: "${CURRENT_TIME}"
+      userId: 1
+    expect:
+      status: 201
+      body:
+        title: "^Report generated on \\d{4}-\\d{2}-\\d{2} at \\d{2}:\\d{2}:\\d{2}$"

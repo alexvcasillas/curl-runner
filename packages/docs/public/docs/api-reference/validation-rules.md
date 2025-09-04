@@ -11,6 +11,7 @@ keywords:
   - rules
   - reference
   - yaml
+  - authentication
   - headers
   - response
   - request
@@ -18,8 +19,8 @@ keywords:
   - environment
 slug: "/docs/validation-rules"
 toc: true
-date: "2025-09-04T10:22:07.594Z"
-lastModified: "2025-09-04T10:22:07.594Z"
+date: "2025-09-04T14:20:38.944Z"
+lastModified: "2025-09-04T14:20:38.944Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -39,8 +40,8 @@ schema:
   "@type": "TechArticle"
   headline: "Validation Rules API Reference"
   description: "Complete reference for response validation using the expect configuration object. Define validation rules for status codes, headers, and response body content."
-  datePublished: "2025-09-04T10:22:07.594Z"
-  dateModified: "2025-09-04T10:22:07.594Z"
+  datePublished: "2025-09-04T14:20:38.944Z"
+  dateModified: "2025-09-04T14:20:38.944Z"
 ---
 
 # Validation Rules API Reference
@@ -60,6 +61,9 @@ request:
   url: "https://api.example.com/users/123"
   method: GET
   expect:
+    # Failure expectation (optional - for negative testing)
+    failure: false    # false = expect success (default), true = expect failure
+    
     # Status code validation
     status: 200
     
@@ -156,6 +160,101 @@ requests:
     method: GET
     expect:
       status: [200, 429]  # OK or Too Many Requests
+```
+
+## Failure Testing (Negative Testing)
+
+Use `expect.failure: true` to test that endpoints correctly fail in expected ways. This is useful for testing error handling, authentication failures, validation errors, and other scenarios where you expect the request to return a 4xx or 5xx status code.
+
+> **✅ Success:** `expect.failure: true` + 4xx/5xx status + validations pass
+> **❌ Failed:** `expect.failure: true` + 2xx/3xx status (expected failure but got success)
+> **❌ Failed:** `expect.failure: true` + 4xx/5xx status + validations fail (wrong error details)
+
+**failure-testing.yaml**
+
+```yaml
+# Failure Testing Examples
+
+# Test authentication failure
+request:
+  name: "Test Invalid Authentication"
+  url: "https://api.example.com/protected-resource"
+  method: GET
+  auth:
+    type: bearer
+    token: "invalid-token"
+  expect:
+    failure: true    # Expect this request to fail
+    status: 401      # Should return Unauthorized
+    body:
+      error: "Invalid token"
+      code: "AUTH_ERROR"
+
+---
+
+# Test validation failure
+request:
+  name: "Test Invalid Input"
+  url: "https://api.example.com/users"
+  method: POST
+  body:
+    name: ""         # Invalid: empty name
+    email: "invalid" # Invalid: malformed email
+  expect:
+    failure: true    # Expect validation to fail
+    status: 400      # Should return Bad Request
+    body:
+      error: "Validation failed"
+      details:
+        name: "Name is required"
+        email: "Invalid email format"
+
+---
+
+# Test resource not found
+request:
+  name: "Test Non-existent Resource"
+  url: "https://api.example.com/users/999999"
+  method: GET
+  expect:
+    failure: true    # Expect resource not found
+    status: 404      # Should return Not Found
+    body:
+      error: "User not found"
+      
+---
+
+# Test rate limiting
+request:
+  name: "Test Rate Limit Exceeded"  
+  url: "https://api.example.com/limited-endpoint"
+  method: GET
+  expect:
+    failure: true    # Expect rate limit error
+    status: 429      # Should return Too Many Requests
+    headers:
+      retry-after: "*"  # Should include retry information
+      
+---
+
+# Mixed success and failure testing
+requests:
+  # Normal success case
+  - name: "Valid Request"
+    url: "https://api.example.com/data"
+    method: GET
+    expect:
+      status: 200    # Normal success expectation
+      
+  # Test failure case  
+  - name: "Invalid Request"
+    url: "https://api.example.com/data"
+    method: GET
+    headers:
+      authorization: "invalid"
+    expect:
+      failure: true  # Expect this to fail
+      status: 403    # Should be Forbidden
 ```
 
 ## Header Validation

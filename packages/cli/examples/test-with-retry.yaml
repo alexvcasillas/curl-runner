@@ -7,16 +7,16 @@ global:
 
 requests:
   - name: Test with Retry
-    url: https://httpbin.org/status/500,200
+    url: http://localhost:3000/api/test/status/500
     method: GET
     retry:
       count: 3
       delay: 1000
     expect:
       status: [200, 500]
-    
+
   - name: Test Timeout and Retry
-    url: https://httpbin.org/delay/10
+    url: http://localhost:3000/api/test/delay/1
     method: GET
     timeout: 2
     retry:

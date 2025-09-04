@@ -1,0 +1,22 @@
+# Variables usage example
+# Usage: curl-runner variables-basic.yaml
+
+global:
+  variables:
+    API_BASE: https://jsonplaceholder.typicode.com
+    USER_ID: "1"
+    API_VERSION: v1
+  output:
+    format: pretty
+    prettyLevel: standard
+
+requests:
+  - name: Get User with Variables
+    url: ${API_BASE}/users/${USER_ID}
+    method: GET
+    headers:
+      X-API-Version: ${API_VERSION}
+    
+  - name: Get User Posts
+    url: ${API_BASE}/posts?userId=${USER_ID}
+    method: GET

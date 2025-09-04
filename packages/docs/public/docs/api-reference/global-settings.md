@@ -25,8 +25,8 @@ keywords:
   - environment
 slug: "/docs/global-settings"
 toc: true
-date: "2025-09-04T10:22:07.592Z"
-lastModified: "2025-09-04T10:22:07.592Z"
+date: "2025-09-04T14:20:38.942Z"
+lastModified: "2025-09-04T14:20:38.942Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -46,8 +46,8 @@ schema:
   "@type": "TechArticle"
   headline: "Global Settings API Reference"
   description: "Complete reference for global configuration options that control execution behavior, output formatting, and default request settings."
-  datePublished: "2025-09-04T10:22:07.592Z"
-  dateModified: "2025-09-04T10:22:07.592Z"
+  datePublished: "2025-09-04T14:20:38.942Z"
+  dateModified: "2025-09-04T14:20:38.942Z"
 ---
 
 # Global Settings API Reference
@@ -268,43 +268,56 @@ collection:
 
 Control how results are displayed and saved, including verbosity, format, and file output options.
 
+The pretty format supports three verbosity levels to control how much information is displayed.
+
 **output-config.yaml**
 
 ```yaml
 # Output Configuration Options
 
-# Minimal output
+# Minimal output - only basic status
 global:
   output:
-    verbose: false    # Only show results summary
+    format: pretty
+    prettyLevel: minimal  # Only show status and errors
     showHeaders: false
     showBody: false
     showMetrics: false
-    format: json      # Clean JSON output
 
 ---
 
-# Detailed output for debugging
+# Standard output - body and metrics when enabled
 global:
   output:
-    verbose: true     # Show detailed information
-    showHeaders: true # Include response headers
-    showBody: true    # Show response body content
-    showMetrics: true # Performance metrics
-    format: pretty    # Human-readable format
+    format: pretty
+    prettyLevel: standard  # Show body/metrics if enabled
+    showHeaders: false
+    showBody: true        # Will show body with standard level
+    showMetrics: true     # Will show basic metrics
 
 ---
 
-# Save results to file
+# Detailed output - everything visible
 global:
   output:
-    verbose: true
-    format: json
+    format: pretty
+    prettyLevel: detailed # Always show all information
+    # prettyLevel: detailed overrides individual flags
+
+---
+
+# JSON output for CI/CD
+global:
+  output:
+    format: json      # Structured JSON output
+    showHeaders: true
+    showBody: true
+    showMetrics: true
     saveToFile: "test-results/\${DATE}-api-tests.json"
 
 ---
 
-# Raw output for piping
+# Raw output for data processing
 global:
   output:
     format: raw       # Raw response content only

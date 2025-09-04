@@ -1,0 +1,27 @@
+# Multiple requests in sequence
+# Usage: curl-runner multiple-requests.yaml
+
+global:
+  output:
+    format: pretty
+    prettyLevel: standard
+    showBody: true
+
+requests:
+  - name: Get User
+    url: https://jsonplaceholder.typicode.com/users/1
+    method: GET
+    
+  - name: Get Posts
+    url: https://jsonplaceholder.typicode.com/posts?userId=1
+    method: GET
+    
+  - name: Create New Post
+    url: https://jsonplaceholder.typicode.com/posts
+    method: POST
+    headers:
+      Content-Type: application/json
+    body:
+      title: "New Post"
+      body: "Post content"
+      userId: 1

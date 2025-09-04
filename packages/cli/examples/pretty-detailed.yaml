@@ -1,0 +1,14 @@
+# Pretty format - detailed level example
+# Shows all available information including headers, body, metrics, and request details
+global:
+  output:
+    format: pretty
+    prettyLevel: detailed
+
+request:
+  name: Detailed Output Example
+  url: https://jsonplaceholder.typicode.com/users/1
+  method: GET
+  headers:
+    User-Agent: curl-runner-detailed-test
+    Accept: application/json

@@ -1,0 +1,22 @@
+# Example to test different output formats
+# Usage: 
+#   curl-runner output-formats.yaml --output-format json
+#   curl-runner output-formats.yaml --output-format raw
+#   curl-runner output-formats.yaml --output-format pretty --pretty-level minimal
+#   curl-runner output-formats.yaml --output-format pretty --pretty-level detailed
+
+global:
+  output:
+    format: pretty
+    prettyLevel: standard
+    showBody: true
+    showHeaders: true
+    showMetrics: true
+
+request:
+  name: Test Different Output Formats
+  url: https://jsonplaceholder.typicode.com/users/1
+  method: GET
+  headers:
+    Accept: application/json
+    User-Agent: curl-runner-test

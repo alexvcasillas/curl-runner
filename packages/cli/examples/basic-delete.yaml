@@ -1,0 +1,7 @@
+# Basic DELETE request example
+# Usage: curl-runner basic-delete.yaml
+
+request:
+  name: Basic DELETE Request
+  url: https://jsonplaceholder.typicode.com/posts/1
+  method: DELETE

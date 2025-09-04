@@ -1,0 +1,22 @@
+# Parallel execution example
+# Usage: curl-runner execution-parallel.yaml or curl-runner execution-parallel.yaml --execution parallel
+
+global:
+  execution: parallel  # All requests run simultaneously
+  output:
+    format: pretty
+    prettyLevel: standard
+    showMetrics: true
+
+requests:
+  - name: Parallel Request 1
+    url: http://localhost:3000/api/test/delay/1
+    method: GET
+    
+  - name: Parallel Request 2
+    url: http://localhost:3000/api/test/delay/1
+    method: GET
+    
+  - name: Parallel Request 3
+    url: http://localhost:3000/api/test/delay/1
+    method: GET

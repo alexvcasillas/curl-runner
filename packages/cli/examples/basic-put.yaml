@@ -1,0 +1,14 @@
+# Basic PUT request example
+# Usage: curl-runner basic-put.yaml
+
+request:
+  name: Basic PUT Request
+  url: https://jsonplaceholder.typicode.com/posts/1
+  method: PUT
+  headers:
+    Content-Type: application/json
+  body:
+    id: 1
+    title: "Updated Post Title"
+    body: "Updated post content"
+    userId: 1

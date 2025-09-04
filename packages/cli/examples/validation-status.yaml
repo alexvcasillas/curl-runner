@@ -1,0 +1,20 @@
+# Status code validation example
+# Usage: curl-runner validation-status.yaml
+
+global:
+  output:
+    format: pretty
+    prettyLevel: standard
+
+requests:
+  - name: Expect 200 Status
+    url: https://jsonplaceholder.typicode.com/posts/1
+    method: GET
+    expect:
+      status: 200
+      
+  - name: Accept Multiple Statuses
+    url: http://localhost:3000/api/test/status/500
+    method: GET
+    expect:
+      status: [200, 500]  # Accept either 200 or 500

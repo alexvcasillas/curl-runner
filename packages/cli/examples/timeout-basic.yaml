@@ -1,0 +1,14 @@
+# Timeout configuration example
+# Usage: curl-runner timeout-basic.yaml
+
+global:
+  output:
+    format: pretty
+    prettyLevel: standard
+    showMetrics: true
+
+request:
+  name: Request with Timeout
+  url: http://localhost:3000/api/test/delay/1  # Server waits 3 seconds before responding
+  method: GET
+  timeout: 5000  # 5 second timeout

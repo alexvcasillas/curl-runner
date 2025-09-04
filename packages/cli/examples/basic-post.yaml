@@ -1,0 +1,13 @@
+# Basic POST request with JSON body
+# Usage: curl-runner basic-post.yaml
+
+request:
+  name: Basic POST Request
+  url: https://jsonplaceholder.typicode.com/posts
+  method: POST
+  headers:
+    Content-Type: application/json
+  body:
+    title: "My New Post"
+    body: "This is the content of my post"
+    userId: 1

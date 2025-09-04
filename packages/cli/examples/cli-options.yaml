@@ -1,0 +1,16 @@
+# Example for testing CLI options
+# Usage examples:
+#   curl-runner cli-options.yaml --verbose
+#   curl-runner cli-options.yaml --quiet
+#   curl-runner cli-options.yaml --timeout 5000
+#   curl-runner cli-options.yaml --retries 2 --retry-delay 500
+#   curl-runner cli-options.yaml --show-headers --show-metrics
+#   curl-runner cli-options.yaml --output results.json
+
+request:
+  name: CLI Options Test
+  url: http://localhost:3000/api/test/delay/1
+  method: GET
+  headers:
+    Accept: application/json
+    User-Agent: curl-runner-cli-test

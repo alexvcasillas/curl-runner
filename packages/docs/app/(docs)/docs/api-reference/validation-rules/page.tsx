@@ -6,6 +6,7 @@ import { H2, H3 } from "@/components/docs-heading"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FileText, Shield, Globe, BarChart3, Target, Code, Database, Search, CheckCircle, Layers, Lightbulb, ArrowRight, AlertTriangle, XCircle, Key, PlusCircle, List, TrendingUp, Filter, Zap, Eye } from "lucide-react"
+import { failureTestingExample } from './snippets'
 
 export const metadata: Metadata = {
   title: 'Validation Rules',
@@ -46,6 +47,9 @@ request:
   url: "https://api.example.com/users/123"
   method: GET
   expect:
+    # Failure expectation (optional - for negative testing)
+    failure: false    # false = expect success (default), true = expect failure
+    
     # Status code validation
     status: 200
     
@@ -647,6 +651,11 @@ export default function ValidationRulesPage() {
                 </thead>
                 <tbody>
                   <tr className="border-b">
+                    <td className="p-3"><code className="text-sm">failure</code></td>
+                    <td className="p-3 text-sm text-muted-foreground">boolean</td>
+                    <td className="p-3 text-sm text-muted-foreground">When <code>true</code>, expect the request to fail with 4xx/5xx status. Used for negative testing.</td>
+                  </tr>
+                  <tr className="border-b">
                     <td className="p-3"><code className="text-sm">status</code></td>
                     <td className="p-3 text-sm text-muted-foreground">number | number[]</td>
                     <td className="p-3 text-sm text-muted-foreground">Expected HTTP status code(s)</td>
@@ -748,6 +757,38 @@ export default function ValidationRulesPage() {
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Failure Testing */}
+          <section>
+            <H2 id="failure-testing">Failure Testing (Negative Testing)</H2>
+            <p className="text-muted-foreground mb-6">
+              Use <code>expect.failure: true</code> to test that endpoints correctly fail in expected ways. This is useful for testing error handling, authentication failures, validation errors, and other scenarios where you expect the request to return a 4xx or 5xx status code.
+            </p>
+            
+            <CodeBlockServer language="yaml" filename="failure-testing.yaml">
+              {failureTestingExample}
+            </CodeBlockServer>
+
+            <div className="mt-6 space-y-4">
+              <div className="rounded-lg border bg-blue-500/5 dark:bg-blue-500/10 border-blue-500/20 p-4">
+                <h4 className="font-medium mb-2 text-blue-600 dark:text-blue-400 flex items-center gap-2">
+                  <Lightbulb className="h-4 w-4" />
+                  How Failure Testing Works
+                </h4>
+                <div className="space-y-2 text-sm">
+                  <p><strong>✅ Success:</strong> <code>expect.failure: true</code> + 4xx/5xx status + validations pass</p>
+                  <p><strong>❌ Failed:</strong> <code>expect.failure: true</code> + 2xx/3xx status (expected failure but got success)</p>
+                  <p><strong>❌ Failed:</strong> <code>expect.failure: true</code> + 4xx/5xx status + validations fail (wrong error details)</p>
+                </div>
+              </div>
+              
+              <div className="rounded-lg border bg-yellow-500/5 dark:bg-yellow-500/10 border-yellow-500/20 p-4">
+                <p className="text-sm">
+                  <strong className="text-yellow-600 dark:text-yellow-400">Important:</strong> When <code>expect.failure: true</code> is used, curl-runner inverts the success/failure logic. A 4xx/5xx status code that matches your expectations becomes a "successful" test result.
+                </p>
               </div>
             </div>
           </section>

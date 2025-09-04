@@ -1,0 +1,17 @@
+# Timeout with retry example
+# Usage: curl-runner timeout-with-retry.yaml
+
+global:
+  output:
+    format: pretty
+    prettyLevel: standard
+    showMetrics: true
+
+request:
+  name: Timeout with Retry
+  url: http://localhost:3000/api/test/delay/1  # Server waits 10 seconds (will timeout)
+  method: GET
+  timeout: 2000  # 2 second timeout
+  retry:
+    count: 2      # Retry twice
+    delay: 500    # 0.5 second delay between retries

@@ -10,6 +10,7 @@ export interface RequestConfig {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS';
   headers?: Record<string, string>;
   params?: Record<string, string>;
+  sourceFile?: string; // Source YAML file for better output organization
   body?: JsonValue;
   timeout?: number;
   followRedirects?: boolean;
@@ -29,9 +30,20 @@ export interface RequestConfig {
   };
   variables?: Record<string, string>;
   expect?: {
+    failure?: boolean;  // If true, expect the request to fail (for negative testing)
     status?: number | number[];
     headers?: Record<string, string>;
     body?: JsonValue;
+    responseTime?: string; // Response time validation like "< 1000", "> 500, < 2000"
+  };
+  sourceOutputConfig?: {
+    verbose?: boolean;
+    showHeaders?: boolean;
+    showBody?: boolean;
+    showMetrics?: boolean;
+    format?: 'json' | 'pretty' | 'raw';
+    prettyLevel?: 'minimal' | 'standard' | 'detailed';
+    saveToFile?: string;
   };
 }
 
@@ -53,6 +65,7 @@ export interface GlobalConfig {
     showBody?: boolean;
     showMetrics?: boolean;
     format?: 'json' | 'pretty' | 'raw';
+    prettyLevel?: 'minimal' | 'standard' | 'detailed';
     saveToFile?: string;
   };
   defaults?: Partial<RequestConfig>;

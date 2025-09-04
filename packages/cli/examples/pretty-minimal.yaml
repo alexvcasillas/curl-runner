@@ -1,0 +1,11 @@
+# Pretty format - minimal level example
+# Shows only request name, method, URL, and status
+global:
+  output:
+    format: pretty
+    prettyLevel: minimal
+
+request:
+  name: Minimal Output Example
+  url: https://jsonplaceholder.typicode.com/users/1
+  method: GET

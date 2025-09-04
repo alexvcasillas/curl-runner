@@ -1,0 +1,28 @@
+# Response body validation example
+# Usage: curl-runner validation-body.yaml
+
+global:
+  output:
+    format: pretty
+    prettyLevel: standard
+
+requests:
+  - name: Validate Simple Fields
+    url: https://jsonplaceholder.typicode.com/users/1
+    method: GET
+    expect:
+      status: 200
+      body:
+        id: 1
+        name: "Leanne Graham"
+        username: "Bret"
+        
+  - name: Validate Nested Object
+    url: https://jsonplaceholder.typicode.com/users/1
+    method: GET
+    expect:
+      status: 200
+      body:
+        address:
+          city: "Gwenborough"
+          zipcode: "92998-3874"

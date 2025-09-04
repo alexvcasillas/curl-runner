@@ -1,0 +1,11 @@
+# Authentication via custom headers
+# Usage: curl-runner auth-headers.yaml
+
+request:
+  name: Custom Header Auth
+  url: http://localhost:3000/api/test/headers
+  method: GET
+  headers:
+    Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    X-API-Key: "your-api-key-here"
+    X-Client-ID: "your-client-id"

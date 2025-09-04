@@ -1,0 +1,121 @@
+# Comprehensive example showcasing ALL features including new advanced capabilities
+# Usage: curl-runner comprehensive.yaml
+
+global:
+  execution: sequential
+  continueOnError: true
+  variables:
+    BASE_URL: https://jsonplaceholder.typicode.com
+    API_KEY: test-key-123
+    TIMEOUT: 5000
+  output:
+    format: pretty
+    prettyLevel: detailed
+    showBody: true
+    showHeaders: true
+    showMetrics: true
+  defaults:
+    headers:
+      User-Agent: curl-runner-comprehensive
+      X-API-Key: ${API_KEY}
+
+requests:
+  # Dynamic variables demonstration
+  - name: Dynamic Variables Demo
+    url: ${BASE_URL}/posts
+    method: POST
+    headers:
+      X-Request-ID: "${UUID}"
+      X-Timestamp: "${CURRENT_TIME}"
+      X-Date: "${DATE:YYYY-MM-DD}"
+      X-Time: "${TIME:HH:mm:ss}"
+    body:
+      requestId: "${UUID}"
+      timestamp: "${CURRENT_TIME}"
+      title: "Test post created on ${DATE:YYYY-MM-DD}"
+      body: "Generated at ${TIME:HH:mm:ss} with ID ${UUID}"
+      userId: 1
+    expect:
+      status: 201
+      responseTime: "< ${TIMEOUT}"
+      body:
+        id: "*"
+        title: "^Test post created on \\d{4}-\\d{2}-\\d{2}$"
+        
+  # Advanced validation features
+  - name: Advanced Validation Demo
+    url: ${BASE_URL}/posts/1
+    method: GET
+    expect:
+      status: [200, 304]
+      responseTime: "< 3000"
+      body:
+        id: "^[0-9]+$"
+        userId: [1, 2, 3, 4, 5]
+        title: "*"
+        body: "^[a-zA-Z\\s.,!?-]+$"
+        
+  # Array and range validation
+  - name: Array and Range Validation
+    url: ${BASE_URL}/posts
+    method: GET
+    expect:
+      status: 200
+      responseTime: "> 10, < 5000"
+      body:
+        length: "> 50, <= 100"
+        "[0]":
+          id: "> 0"
+          userId: ">= 1, <= 10"
+          title: "*"
+        "[-1]":
+          id: "> 90"
+          
+  # Authentication with retry
+  - name: POST with Auth and Retry
+    url: ${BASE_URL}/posts
+    method: POST
+    headers:
+      Content-Type: application/json
+    body:
+      title: "Authenticated post ${UUID}"
+      body: "Created with authentication at ${CURRENT_TIME}"
+      userId: 1
+    auth:
+      type: bearer
+      token: "sample-jwt-token"
+    retry:
+      count: 3
+      delay: 1000
+    expect:
+      status: 201
+      responseTime: "< ${TIMEOUT}"
+      body:
+        id: "> 0"
+        title: "^Authenticated post [a-f0-9-]{36}$"
+        
+  # Negative testing (will fail but continues)
+  - name: Expected Failure Test
+    url: ${BASE_URL}/posts/999999
+    method: GET
+    expect:
+      failure: true
+      status: [404, 410]
+      responseTime: "< 2000"
+      
+  # Final validation test
+  - name: Final Comprehensive Test
+    url: ${BASE_URL}/users/1
+    method: GET
+    expect:
+      status: 200
+      responseTime: "< ${TIMEOUT}"
+      body:
+        id: 1
+        name: "*"
+        username: "^[a-zA-Z0-9._-]+$"
+        email: "^[^@]+@[^@]+\\.[^@]+$"
+        address:
+          geo:
+            lat: "^-?\\d+\\.\\d+$"
+            lng: "^-?\\d+\\.\\d+$"

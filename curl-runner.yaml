@@ -1,0 +1,21 @@
+# Global curl-runner configuration file
+# This file sets default values for all curl-runner executions
+# Individual YAML files can override these settings
+
+global:
+  execution: sequential
+  continueOnError: false
+  variables:
+    DEFAULT_TIMEOUT: 30000
+    DEFAULT_USER_AGENT: curl-runner-global
+  output:
+    format: pretty
+    prettyLevel: standard
+    showBody: true
+    showHeaders: false
+    showMetrics: true
+    verbose: false
+  defaults:
+    timeout: ${DEFAULT_TIMEOUT}
+    headers:
+      User-Agent: ${DEFAULT_USER_AGENT}

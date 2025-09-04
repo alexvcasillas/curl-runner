@@ -17,11 +17,12 @@ keywords:
   - timeout
   - headers
   - response
+  - collection
   - environment
 slug: "/docs/request-object"
 toc: true
-date: "2025-09-04T10:22:07.593Z"
-lastModified: "2025-09-04T10:22:07.593Z"
+date: "2025-09-04T14:20:38.943Z"
+lastModified: "2025-09-04T14:20:38.943Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -41,8 +42,8 @@ schema:
   "@type": "TechArticle"
   headline: "Request Object API Reference"
   description: "Complete reference for the RequestConfig interface and all available options for configuring HTTP requests."
-  datePublished: "2025-09-04T10:22:07.593Z"
-  dateModified: "2025-09-04T10:22:07.593Z"
+  datePublished: "2025-09-04T14:20:38.943Z"
+  dateModified: "2025-09-04T14:20:38.943Z"
 ---
 
 # Request Object API Reference
@@ -93,6 +94,7 @@ request:
     USER_TYPE: "premium"
     REGION: "us-east"
   expect:
+    failure: false  # Expect this request to succeed (default)
     status: 201
     headers:
       location: "^/users/[0-9]+$"
@@ -566,6 +568,77 @@ requests:
           min: 10
           max: 100
     body: \${SEARCH_FILTERS}
+```
+
+## Response Validation
+
+Configure response validation using the expect object to verify status codes, headers, and body content. Includes support for negative testing with expect.failure.
+
+> Set `expect.failure: true` to test scenarios where you expect the request to fail:
+
+**validation-config.yaml**
+
+```yaml
+# Response Validation Examples
+requests:
+  # Standard success validation
+  - name: "Success Response Validation"
+    url: "https://api.example.com/users"
+    method: POST
+    body:
+      username: "newuser"
+      email: "newuser@example.com"
+    expect:
+      failure: false    # Expect success (default)
+      status: 201       # Created
+      headers:
+        content-type: "application/json"
+        location: "^/users/[0-9]+$"
+      body:
+        id: "^[0-9]+$"
+        username: "newuser"
+        email: "newuser@example.com"
+        created_at: "*"   # Any timestamp value
+        
+  # Negative testing - expect failure
+  - name: "Invalid Input Validation"  
+    url: "https://api.example.com/users"
+    method: POST
+    body:
+      username: ""      # Invalid: empty username
+      email: "invalid"  # Invalid: malformed email
+    expect:
+      failure: true     # Expect this request to fail
+      status: 400       # Bad Request
+      body:
+        error: "Validation failed"
+        details:
+          username: "Username is required"
+          email: "Invalid email format"
+          
+  # Authentication failure testing
+  - name: "Unauthorized Access Test"
+    url: "https://api.example.com/protected"
+    method: GET
+    headers:
+      authorization: "Bearer invalid-token"
+    expect:
+      failure: true     # Expect authentication to fail
+      status: 401       # Unauthorized
+      body:
+        error: "Invalid token"
+        
+  # Mixed validation with multiple acceptable statuses
+  - name: "Flexible Status Validation"
+    url: "https://api.example.com/cached-resource"
+    method: GET
+    headers:
+      if-none-match: "some-etag"
+    expect:
+      failure: false    # Expect success
+      status: [200, 304] # OK or Not Modified
+      headers:
+        cache-control: "*"  # Any cache control header
 ```
 
 ## Output Configuration

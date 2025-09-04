@@ -14,14 +14,15 @@ keywords:
   - sequential
   - retry
   - timeout
+  - headers
   - response
   - request
   - cli
   - environment
 slug: "/docs/cli-options"
 toc: true
-date: "2025-09-04T10:22:07.585Z"
-lastModified: "2025-09-04T10:22:07.585Z"
+date: "2025-09-04T14:20:38.935Z"
+lastModified: "2025-09-04T14:20:38.935Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -41,8 +42,8 @@ schema:
   "@type": "TechArticle"
   headline: "CLI Options"
   description: "Comprehensive reference for all command-line options available in curl-runner, including examples and best practices."
-  datePublished: "2025-09-04T10:22:07.585Z"
-  dateModified: "2025-09-04T10:22:07.585Z"
+  datePublished: "2025-09-04T14:20:38.935Z"
+  dateModified: "2025-09-04T14:20:38.935Z"
 ---
 
 # CLI Options
@@ -75,15 +76,28 @@ curl-runner tests/ -pvc                  # Parallel + verbose + continue on erro
 # With long options
 curl-runner tests/ --execution parallel --verbose --continue-on-error
 
+# Output format combinations
+curl-runner tests/ --output-format json --show-metrics
+curl-runner tests/ --output-format pretty --pretty-level detailed
+curl-runner tests/ --show-headers --show-body --show-metrics
+
 # Advanced combinations
 curl-runner tests/ \\
   --execution parallel \\
   --continue-on-error \\
-  --verbose \\
+  --output-format pretty \\
+  --pretty-level detailed \\
+  --show-headers \\
+  --show-metrics \\
   --timeout 30000 \\
   --retries 3 \\
+  --retry-delay 2000 \\
   --output results.json \\
   --all
+
+# Retry configurations
+curl-runner tests/ --retries 5 --retry-delay 1500  # Custom retry settings
+curl-runner tests/ --no-retry                      # Disable retries completely
 ```
 
 ## Environment Variables
@@ -98,37 +112,61 @@ Many CLI options can be set via environment variables, which take precedence ove
 # Environment variables override CLI options
 CURL_RUNNER_TIMEOUT=10000 curl-runner tests/
 CURL_RUNNER_RETRIES=3 curl-runner tests/
+CURL_RUNNER_RETRY_DELAY=2000 curl-runner tests/
 CURL_RUNNER_VERBOSE=true curl-runner tests/
+CURL_RUNNER_EXECUTION=parallel curl-runner tests/
+CURL_RUNNER_CONTINUE_ON_ERROR=true curl-runner tests/
+
+# Output format environment variables
+CURL_RUNNER_OUTPUT_FORMAT=json curl-runner tests/
+CURL_RUNNER_PRETTY_LEVEL=detailed curl-runner tests/
+CURL_RUNNER_OUTPUT_FILE=results.json curl-runner tests/
 
 # Multiple environment variables
 CURL_RUNNER_TIMEOUT=15000 \\
 CURL_RUNNER_RETRIES=2 \\
+CURL_RUNNER_RETRY_DELAY=1500 \\
 CURL_RUNNER_VERBOSE=true \\
+CURL_RUNNER_OUTPUT_FORMAT=pretty \\
+CURL_RUNNER_PRETTY_LEVEL=detailed \\
 curl-runner tests/ --execution parallel
 
 # Mix environment variables and CLI options
-CURL_RUNNER_TIMEOUT=10000 curl-runner tests/ --verbose --output results.json
+CURL_RUNNER_TIMEOUT=10000 \\
+CURL_RUNNER_OUTPUT_FORMAT=json \\
+curl-runner tests/ --verbose --show-metrics --output results.json
 ```
 
 ## Configuration File
 
-Create a `.curl-runner.json` file in your project root to set default options.
+Create a `curl-runner.yaml` file in your project root to set default options.
 
-**.curl-runner.json**
+**curl-runner.yaml**
 
-```json
-# .curl-runner.json (configuration file)
-{
-  "execution": "parallel",
-  "continueOnError": true,
-  "verbose": false,
-  "timeout": 10000,
-  "retries": 2,
-  "output": "results.json"
-}
+```yaml
+# curl-runner.yaml (configuration file)
+global:
+  execution: parallel
+  continueOnError: true
+  output:
+    verbose: false
+    format: pretty
+    prettyLevel: detailed
+    showHeaders: true
+    showBody: true
+    showMetrics: true
+    saveToFile: results.json
+  defaults:
+    timeout: 10000
+    retry:
+      count: 2
+      delay: 1000
+  variables:
+    API_BASE: "https://api.example.com"
+    API_VERSION: "v2"
 
 # CLI options override config file settings
-curl-runner tests/ --verbose  # Overrides verbose: false in config
+curl-runner tests/ --verbose --pretty-level minimal  # Overrides config file settings
 ```
 
 ## Output Format

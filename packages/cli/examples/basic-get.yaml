@@ -1,0 +1,7 @@
+# Basic GET request example
+# Usage: curl-runner basic-get.yaml
+
+request:
+  name: Basic GET Request
+  url: https://jsonplaceholder.typicode.com/posts/1
+  method: GET

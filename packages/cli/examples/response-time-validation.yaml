@@ -1,0 +1,49 @@
+# Response Time Validation Demo
+# Usage: curl-runner response-time-validation.yaml
+
+global:
+  output:
+    format: pretty
+    prettyLevel: detailed
+    showMetrics: true
+
+requests:
+  # Fast endpoint validation
+  - name: Fast Response Test
+    url: https://jsonplaceholder.typicode.com/posts/1
+    method: GET
+    expect:
+      status: 200
+      responseTime: "< 5000"          # Must be under 5 seconds
+      
+  # Range-based response time
+  - name: Response Time Range Test
+    url: https://jsonplaceholder.typicode.com/users
+    method: GET
+    expect:
+      status: 200
+      responseTime: "> 10, < 3000"   # Between 10ms and 3 seconds
+      body:
+        length: "> 0"                 # Must have some users
+        
+  # Performance test with validation
+  - name: Performance Validation Test
+    url: https://jsonplaceholder.typicode.com/posts
+    method: GET
+    expect:
+      status: 200
+      responseTime: "< 2000"          # Under 2 seconds
+      body:
+        length: "> 50"                # Must have many posts
+        "[0]":                        # First post checks
+          id: "> 0"
+          title: "*"                  # Any title
+          
+  # Error response time validation
+  - name: Error Response Time Test
+    url: https://jsonplaceholder.typicode.com/posts/999999
+    method: GET
+    expect:
+      failure: true                   # Expect 404 error
+      status: 404
+      responseTime: "< 1500"          # Even errors should be fast

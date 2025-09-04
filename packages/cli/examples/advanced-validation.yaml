@@ -1,0 +1,65 @@
+# Advanced Validation Features Demo
+# Usage: curl-runner advanced-validation.yaml
+
+global:
+  output:
+    format: pretty
+    prettyLevel: standard
+
+requests:
+  # Wildcard and regex validation
+  - name: Wildcard and Regex Validation
+    url: https://jsonplaceholder.typicode.com/posts/1
+    method: GET
+    expect:
+      status: 200
+      body:
+        id: "^[0-9]+$"           # Regex: any number
+        userId: "*"              # Wildcard: accept any value
+        title: "^[a-zA-Z\\s]+"   # Regex: letters and spaces
+        
+  # Multiple acceptable values
+  - name: Multiple Acceptable Values
+    url: https://jsonplaceholder.typicode.com/users/1
+    method: GET
+    expect:
+      status: [200, 304]         # Accept 200 OK or 304 Not Modified
+      body:
+        id: [1, 2, 3]            # Accept any of these IDs
+        username: ["Bret", "Antonette", "Samantha"]  # Accept any of these usernames
+        
+  # Numeric range validation
+  - name: Numeric Range Validation
+    url: https://jsonplaceholder.typicode.com/posts
+    method: GET
+    expect:
+      status: 200
+      responseTime: "< 3000"     # Response time under 3 seconds
+      body:
+        length: "> 50, <= 100"   # Between 50 and 100 posts
+        "[0]":                   # First post validation
+          id: "> 0"              # ID greater than 0
+          userId: ">= 1, <= 10"  # User ID between 1 and 10
+          
+  # Array selectors
+  - name: Array Selector Validation
+    url: https://jsonplaceholder.typicode.com/posts
+    method: GET
+    expect:
+      status: 200
+      body:
+        "[0]":                   # First item
+          id: 1
+        "[-1]":                  # Last item  
+          id: "> 90"             # High ID for last post
+        "[1]":                   # Second item
+          userId: "*"            # Any user ID
+          
+  # Negative testing with advanced features
+  - name: Advanced Negative Testing
+    url: https://jsonplaceholder.typicode.com/posts/999999
+    method: GET
+    expect:
+      failure: true             # Expect this to fail
+      status: [404, 410]        # Accept 404 or 410 error codes
+      responseTime: "< 2000"    # Even errors should be fast

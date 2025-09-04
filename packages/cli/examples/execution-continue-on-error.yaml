@@ -1,0 +1,24 @@
+# Continue on error example
+# Usage: curl-runner execution-continue-on-error.yaml
+
+global:
+  execution: sequential
+  continueOnError: true  # Don't stop when a request fails
+  output:
+    format: pretty
+    prettyLevel: standard
+
+requests:
+  - name: Successful Request
+    url: https://jsonplaceholder.typicode.com/posts/1
+    method: GET
+    
+  - name: Failing Request
+    url: http://localhost:3000/api/test/status/500
+    method: GET
+    expect:
+      status: 500  # Correctly expects 500 status
+      
+  - name: Another Successful Request
+    url: https://jsonplaceholder.typicode.com/posts/2
+    method: GET

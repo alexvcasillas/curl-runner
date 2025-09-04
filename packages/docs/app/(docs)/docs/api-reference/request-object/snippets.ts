@@ -444,3 +444,64 @@ export const advancedRequestExample = `requests:
         expression: "/^https?:\\/\\/.+/.test(response.body.statusUrl)"
       - name: "Response time acceptable"
         expression: "response.time < 30000"`;
+
+export const validationConfigExample = `# Response Validation Examples
+requests:
+  # Standard success validation
+  - name: "Success Response Validation"
+    url: "https://api.example.com/users"
+    method: POST
+    body:
+      username: "newuser"
+      email: "newuser@example.com"
+    expect:
+      failure: false    # Expect success (default)
+      status: 201       # Created
+      headers:
+        content-type: "application/json"
+        location: "^/users/[0-9]+$"
+      body:
+        id: "^[0-9]+$"
+        username: "newuser"
+        email: "newuser@example.com"
+        created_at: "*"   # Any timestamp value
+        
+  # Negative testing - expect failure
+  - name: "Invalid Input Validation"  
+    url: "https://api.example.com/users"
+    method: POST
+    body:
+      username: ""      # Invalid: empty username
+      email: "invalid"  # Invalid: malformed email
+    expect:
+      failure: true     # Expect this request to fail
+      status: 400       # Bad Request
+      body:
+        error: "Validation failed"
+        details:
+          username: "Username is required"
+          email: "Invalid email format"
+          
+  # Authentication failure testing
+  - name: "Unauthorized Access Test"
+    url: "https://api.example.com/protected"
+    method: GET
+    headers:
+      authorization: "Bearer invalid-token"
+    expect:
+      failure: true     # Expect authentication to fail
+      status: 401       # Unauthorized
+      body:
+        error: "Invalid token"
+        
+  # Mixed validation with multiple acceptable statuses
+  - name: "Flexible Status Validation"
+    url: "https://api.example.com/cached-resource"
+    method: GET
+    headers:
+      if-none-match: "some-etag"
+    expect:
+      failure: false    # Expect success
+      status: [200, 304] # OK or Not Modified
+      headers:
+        cache-control: "*"  # Any cache control header`;

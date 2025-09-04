@@ -1,5 +1,12 @@
 # Simple single request example
+global:
+  output:
+    verbose: true
+    format: pretty
+
 request:
-  name: Get JSONPlaceholder Post
-  url: https://jsonplaceholder.typicode.com/posts/1
+  name: Get JSONPlaceholder User
+  url: https://jsonplaceholder.typicode.com/users/1
   method: GET
+  expect:
+    status: 200

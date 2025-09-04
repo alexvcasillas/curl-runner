@@ -1,0 +1,10 @@
+# Bearer token authentication example
+# Usage: curl-runner auth-bearer.yaml
+
+request:
+  name: Bearer Token Request
+  url: http://localhost:3000/api/test/auth/bearer
+  method: GET
+  auth:
+    type: bearer
+    token: your-jwt-token-here

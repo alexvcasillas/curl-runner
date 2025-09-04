@@ -1,0 +1,19 @@
+# Save results to file example
+# Usage: curl-runner save-to-file.yaml
+
+global:
+  output:
+    format: json
+    saveToFile: "test-results.json"
+    showBody: true
+    showHeaders: true
+    showMetrics: true
+
+requests:
+  - name: API Test for File Save
+    url: https://jsonplaceholder.typicode.com/users/1
+    method: GET
+    
+  - name: Another Request
+    url: https://jsonplaceholder.typicode.com/posts/1
+    method: GET

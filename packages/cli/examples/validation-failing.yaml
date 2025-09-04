@@ -1,0 +1,23 @@
+# Example demonstrating validation success (was showing failures)
+# Usage: curl-runner validation-failing.yaml
+
+global:
+  output:
+    format: pretty
+    prettyLevel: standard
+
+requests:
+  - name: Status Validation Success
+    url: https://jsonplaceholder.typicode.com/posts/1
+    method: GET
+    expect:
+      status: 200  # Correct expectation
+      
+  - name: Body Validation Success
+    url: https://jsonplaceholder.typicode.com/users/1
+    method: GET
+    expect:
+      status: 200
+      body:
+        name: "Leanne Graham"
+        email: "Sincere@april.biz"

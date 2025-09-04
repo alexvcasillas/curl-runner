@@ -64,6 +64,22 @@ const optionGroups = [
         default: "0",
         description: "Maximum number of retries for failed requests.",
         example: "curl-runner tests/ --retries 3"
+      },
+      {
+        short: null,
+        long: "--retry-delay <milliseconds>",
+        type: "number", 
+        default: "1000",
+        description: "Delay between retry attempts in milliseconds.",
+        example: "curl-runner tests/ --retries 3 --retry-delay 2000"
+      },
+      {
+        short: null,
+        long: "--no-retry",
+        type: "boolean",
+        default: "false",
+        description: "Disable retry mechanism completely.",
+        example: "curl-runner tests/ --no-retry"
       }
     ]
   },
@@ -108,6 +124,46 @@ const optionGroups = [
         default: "false", 
         description: "Suppress all output except errors (opposite of --verbose).",
         example: "curl-runner tests/ --quiet"
+      },
+      {
+        short: null,
+        long: "--output-format <format>",
+        type: "string",
+        default: "pretty",
+        description: "Set output format. Options: 'json', 'pretty', or 'raw'.",
+        example: "curl-runner tests/ --output-format json"
+      },
+      {
+        short: null,
+        long: "--pretty-level <level>",
+        type: "string",
+        default: "standard",
+        description: "Set pretty format detail level. Options: 'minimal', 'standard', or 'detailed'.",
+        example: "curl-runner tests/ --pretty-level detailed"
+      },
+      {
+        short: null,
+        long: "--show-headers",
+        type: "boolean",
+        default: "false",
+        description: "Include response headers in output.",
+        example: "curl-runner tests/ --show-headers"
+      },
+      {
+        short: null,
+        long: "--show-body",
+        type: "boolean",
+        default: "false",
+        description: "Include response body in output.",
+        example: "curl-runner tests/ --show-body"
+      },
+      {
+        short: null,
+        long: "--show-metrics",
+        type: "boolean",
+        default: "false",
+        description: "Include performance metrics in output.",
+        example: "curl-runner tests/ --show-metrics"
       }
     ]
   }
@@ -124,29 +180,55 @@ curl-runner tests/ -pvc                  # Parallel + verbose + continue on erro
 # With long options
 curl-runner tests/ --execution parallel --verbose --continue-on-error
 
+# Output format combinations
+curl-runner tests/ --output-format json --show-metrics
+curl-runner tests/ --output-format pretty --pretty-level detailed
+curl-runner tests/ --show-headers --show-body --show-metrics
+
 # Advanced combinations
 curl-runner tests/ \\
   --execution parallel \\
   --continue-on-error \\
-  --verbose \\
+  --output-format pretty \\
+  --pretty-level detailed \\
+  --show-headers \\
+  --show-metrics \\
   --timeout 30000 \\
   --retries 3 \\
+  --retry-delay 2000 \\
   --output results.json \\
-  --all`
+  --all
+
+# Retry configurations
+curl-runner tests/ --retries 5 --retry-delay 1500  # Custom retry settings
+curl-runner tests/ --no-retry                      # Disable retries completely`
 
 const environmentExamples = `# Environment variables override CLI options
 CURL_RUNNER_TIMEOUT=10000 curl-runner tests/
 CURL_RUNNER_RETRIES=3 curl-runner tests/
+CURL_RUNNER_RETRY_DELAY=2000 curl-runner tests/
 CURL_RUNNER_VERBOSE=true curl-runner tests/
+CURL_RUNNER_EXECUTION=parallel curl-runner tests/
+CURL_RUNNER_CONTINUE_ON_ERROR=true curl-runner tests/
+
+# Output format environment variables
+CURL_RUNNER_OUTPUT_FORMAT=json curl-runner tests/
+CURL_RUNNER_PRETTY_LEVEL=detailed curl-runner tests/
+CURL_RUNNER_OUTPUT_FILE=results.json curl-runner tests/
 
 # Multiple environment variables
 CURL_RUNNER_TIMEOUT=15000 \\
 CURL_RUNNER_RETRIES=2 \\
+CURL_RUNNER_RETRY_DELAY=1500 \\
 CURL_RUNNER_VERBOSE=true \\
+CURL_RUNNER_OUTPUT_FORMAT=pretty \\
+CURL_RUNNER_PRETTY_LEVEL=detailed \\
 curl-runner tests/ --execution parallel
 
 # Mix environment variables and CLI options
-CURL_RUNNER_TIMEOUT=10000 curl-runner tests/ --verbose --output results.json`
+CURL_RUNNER_TIMEOUT=10000 \\
+CURL_RUNNER_OUTPUT_FORMAT=json \\
+curl-runner tests/ --verbose --show-metrics --output results.json`
 
 const outputFormatExamples = `# JSON output format (when using --output)
 {
@@ -173,18 +255,29 @@ const outputFormatExamples = `# JSON output format (when using --output)
   ]
 }`
 
-const configFileExample = `# .curl-runner.json (configuration file)
-{
-  "execution": "parallel",
-  "continueOnError": true,
-  "verbose": false,
-  "timeout": 10000,
-  "retries": 2,
-  "output": "results.json"
-}
+const configFileExample = `# curl-runner.yaml (configuration file)
+global:
+  execution: parallel
+  continueOnError: true
+  output:
+    verbose: false
+    format: pretty
+    prettyLevel: detailed
+    showHeaders: true
+    showBody: true
+    showMetrics: true
+    saveToFile: results.json
+  defaults:
+    timeout: 10000
+    retry:
+      count: 2
+      delay: 1000
+  variables:
+    API_BASE: "https://api.example.com"
+    API_VERSION: "v2"
 
 # CLI options override config file settings
-curl-runner tests/ --verbose  # Overrides verbose: false in config`
+curl-runner tests/ --verbose --pretty-level minimal  # Overrides config file settings`
 
 export default function CLIOptionsPage() {
   return (
@@ -367,10 +460,10 @@ export default function CLIOptionsPage() {
           <section>
             <H2>Configuration File</H2>
             <p className="text-muted-foreground text-lg mb-6">
-              Create a <code>.curl-runner.json</code> file in your project root to set default options.
+              Create a <code>curl-runner.yaml</code> file in your project root to set default options.
             </p>
 
-            <CodeBlockServer language="json" filename=".curl-runner.json">
+            <CodeBlockServer language="yaml" filename="curl-runner.yaml">
               {configFileExample}
             </CodeBlockServer>
           </section>
@@ -417,9 +510,9 @@ export default function CLIOptionsPage() {
                 <Badge variant="outline" className="text-sm font-bold">3</Badge>
                 <div className="flex-1">
                   <h4 className="font-medium">Configuration File</h4>
-                  <p className="text-sm text-muted-foreground">Project-specific defaults from .curl-runner.json</p>
+                  <p className="text-sm text-muted-foreground">Project-specific defaults from curl-runner.yaml</p>
                 </div>
-                <code className="text-sm bg-muted px-2 py-1 rounded font-mono">.curl-runner.json</code>
+                <code className="text-sm bg-muted px-2 py-1 rounded font-mono">curl-runner.yaml</code>
               </div>
               
               <div className="flex items-center gap-4 p-4 border rounded-lg">

@@ -214,38 +214,49 @@ collection:
 
 const outputConfigurationExample = `# Output Configuration Options
 
-# Minimal output
+# Minimal output - only basic status
 global:
   output:
-    verbose: false    # Only show results summary
+    format: pretty
+    prettyLevel: minimal  # Only show status and errors
     showHeaders: false
     showBody: false
     showMetrics: false
-    format: json      # Clean JSON output
 
 ---
 
-# Detailed output for debugging
+# Standard output - body and metrics when enabled
 global:
   output:
-    verbose: true     # Show detailed information
-    showHeaders: true # Include response headers
-    showBody: true    # Show response body content
-    showMetrics: true # Performance metrics
-    format: pretty    # Human-readable format
+    format: pretty
+    prettyLevel: standard  # Show body/metrics if enabled
+    showHeaders: false
+    showBody: true        # Will show body with standard level
+    showMetrics: true     # Will show basic metrics
 
 ---
 
-# Save results to file
+# Detailed output - everything visible
 global:
   output:
-    verbose: true
-    format: json
+    format: pretty
+    prettyLevel: detailed # Always show all information
+    # prettyLevel: detailed overrides individual flags
+
+---
+
+# JSON output for CI/CD
+global:
+  output:
+    format: json      # Structured JSON output
+    showHeaders: true
+    showBody: true
+    showMetrics: true
     saveToFile: "test-results/\${DATE}-api-tests.json"
 
 ---
 
-# Raw output for piping
+# Raw output for data processing
 global:
   output:
     format: raw       # Raw response content only
@@ -655,6 +666,11 @@ export default function GlobalSettingsPage() {
                     <td className="p-3 text-sm text-muted-foreground">'json' | 'pretty' | 'raw'</td>
                     <td className="p-3 text-sm text-muted-foreground">Output format style</td>
                   </tr>
+                  <tr className="border-b">
+                    <td className="p-3"><code className="text-sm">prettyLevel</code></td>
+                    <td className="p-3 text-sm text-muted-foreground">'minimal' | 'standard' | 'detailed'</td>
+                    <td className="p-3 text-sm text-muted-foreground">Pretty format verbosity level</td>
+                  </tr>
                   <tr>
                     <td className="p-3"><code className="text-sm">saveToFile</code></td>
                     <td className="p-3 text-sm text-muted-foreground">string</td>
@@ -687,7 +703,7 @@ export default function GlobalSettingsPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Pretty Format</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Human-readable, colorized output</p>
+                      <p className="text-sm text-muted-foreground mb-3">Human-readable, colorized output with configurable verbosity levels</p>
                       <Badge variant="outline">Development</Badge>
                     </div>
                   </div>
@@ -702,6 +718,63 @@ export default function GlobalSettingsPage() {
                       <h4 className="font-medium mb-2">Raw Format</h4>
                       <p className="text-sm text-muted-foreground mb-3">Raw response content only</p>
                       <Badge variant="outline">Data Extraction</Badge>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <H3 id="pretty-levels">Pretty Format Levels</H3>
+              <p className="text-muted-foreground mb-4">
+                The pretty format supports three verbosity levels to control how much information is displayed.
+              </p>
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="rounded-lg border bg-card p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-full bg-gray-500/10 p-2">
+                      <Monitor className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-medium mb-2 flex items-center gap-2">
+                        Minimal <Badge variant="secondary">Quiet</Badge>
+                      </h4>
+                      <p className="text-sm text-muted-foreground mb-3">Shows only request name, method, URL, and status. No body, headers, or metrics.</p>
+                      <div className="text-xs text-muted-foreground">
+                        <strong>Use for:</strong> Quick status checks, CI/CD summary
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="rounded-lg border bg-card p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-full bg-blue-500/10 p-2">
+                      <Monitor className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-medium mb-2 flex items-center gap-2">
+                        Standard <Badge variant="default">Default</Badge>
+                      </h4>
+                      <p className="text-sm text-muted-foreground mb-3">Shows body and metrics when explicitly enabled via showBody/showMetrics flags.</p>
+                      <div className="text-xs text-muted-foreground">
+                        <strong>Use for:</strong> Development, testing, debugging
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="rounded-lg border bg-card p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-full bg-green-500/10 p-2">
+                      <Monitor className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-medium mb-2 flex items-center gap-2">
+                        Detailed <Badge variant="outline">Verbose</Badge>
+                      </h4>
+                      <p className="text-sm text-muted-foreground mb-3">Shows all available information: headers, body, detailed metrics, request details, and commands.</p>
+                      <div className="text-xs text-muted-foreground">
+                        <strong>Use for:</strong> Troubleshooting, detailed analysis
+                      </div>
                     </div>
                   </div>
                 </div>

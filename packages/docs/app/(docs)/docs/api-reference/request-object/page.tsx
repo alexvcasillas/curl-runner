@@ -6,6 +6,7 @@ import { H2, H3 } from "@/components/docs-heading"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FileText, List, Code, Type, Timer, Settings, Globe, Shield, Lightbulb } from "lucide-react"
+import { validationConfigExample } from './snippets'
 
 export const metadata: Metadata = {
   title: 'Request Object',
@@ -77,6 +78,7 @@ request:
     USER_TYPE: "premium"
     REGION: "us-east"
   expect:
+    failure: false  # Expect this request to succeed (default)
     status: 201
     headers:
       location: "^/users/[0-9]+$"
@@ -629,11 +631,17 @@ export default function RequestObjectPage() {
                     <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
                     <td className="p-3 text-sm text-muted-foreground">Request-level variables</td>
                   </tr>
-                  <tr>
+                  <tr className="border-b">
                     <td className="p-3"><code className="text-sm">expect</code></td>
                     <td className="p-3 text-sm text-muted-foreground">ExpectConfig</td>
                     <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
-                    <td className="p-3 text-sm text-muted-foreground">Response validation rules</td>
+                    <td className="p-3 text-sm text-muted-foreground">Response validation rules including negative testing</td>
+                  </tr>
+                  <tr>
+                    <td className="p-3"><code className="text-sm">sourceOutputConfig</code></td>
+                    <td className="p-3 text-sm text-muted-foreground">OutputConfig</td>
+                    <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
+                    <td className="p-3 text-sm text-muted-foreground">Per-request output configuration (internal use)</td>
                   </tr>
                 </tbody>
               </table>
@@ -932,6 +940,43 @@ export default function RequestObjectPage() {
             <CodeBlockServer language="yaml" filename="request-variables.yaml">
               {variablesExample}
             </CodeBlockServer>
+          </section>
+
+          {/* Validation Configuration */}
+          <section>
+            <H2 id="validation-configuration">Response Validation</H2>
+            <p className="text-muted-foreground mb-6">
+              Configure response validation using the expect object to verify status codes, headers, and body content. Includes support for negative testing with expect.failure.
+            </p>
+            
+            <CodeBlockServer language="yaml" filename="validation-config.yaml">
+              {validationConfigExample}
+            </CodeBlockServer>
+
+            <div className="mt-6 space-y-4">
+              <div className="rounded-lg border bg-blue-500/5 dark:bg-blue-500/10 border-blue-500/20 p-4">
+                <h4 className="font-medium mb-2 text-blue-600 dark:text-blue-400 flex items-center gap-2">
+                  <Lightbulb className="h-4 w-4" />
+                  Negative Testing with expect.failure
+                </h4>
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p>Set <code>expect.failure: true</code> to test scenarios where you expect the request to fail:</p>
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li>Authentication failures (401, 403)</li>
+                    <li>Validation errors (400, 422)</li>
+                    <li>Resource not found (404)</li>
+                    <li>Rate limiting (429)</li>
+                    <li>Server errors (5xx)</li>
+                  </ul>
+                </div>
+              </div>
+              
+              <div className="rounded-lg border bg-green-500/5 dark:bg-green-500/10 border-green-500/20 p-4">
+                <p className="text-sm text-muted-foreground">
+                  <strong>Validation Priority:</strong> Request-level validation rules override collection and global defaults. Use partial matching to validate only the fields that matter to your test.
+                </p>
+              </div>
+            </div>
           </section>
 
           {/* Output Configuration */}

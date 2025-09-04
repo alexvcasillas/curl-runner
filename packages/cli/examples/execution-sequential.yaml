@@ -1,0 +1,22 @@
+# Sequential execution example (default behavior)
+# Usage: curl-runner execution-sequential.yaml
+
+global:
+  execution: sequential  # Requests run one after another
+  output:
+    format: pretty
+    prettyLevel: standard
+    showMetrics: true
+
+requests:
+  - name: First Request
+    url: http://localhost:3000/api/test/delay/1
+    method: GET
+    
+  - name: Second Request
+    url: http://localhost:3000/api/test/delay/1
+    method: GET
+    
+  - name: Third Request
+    url: http://localhost:3000/api/test/delay/1
+    method: GET
