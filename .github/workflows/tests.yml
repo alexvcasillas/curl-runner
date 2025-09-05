@@ -30,31 +30,56 @@ jobs:
         id: waitForVercel
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          max_timeout: 300
-          # Optional: Check for specific status
+          max_timeout: 600
           check_interval: 10
+        # Only run on pull requests, skip on direct pushes to main
+        if: github.event_name == 'pull_request'
 
-      - name: Test CLI Examples with Preview URL
+      - name: Test CLI Examples with Preview URL (PR)
+        if: github.event_name == 'pull_request'
         run: |
           # Build the CLI first
           bun run build:cli
 
           # Change to CLI directory
           cd packages/cli
-
+          
           # Get the preview URL from the previous step
           PREVIEW_URL="${{ steps.waitForVercel.outputs.url }}"
-
+          
           echo "Testing against Vercel preview: $PREVIEW_URL"
-
+          
           # Create temporary copies of examples with preview URLs
           mkdir -p examples-ci
           for file in examples/*.yaml; do
             sed "s|http://localhost:3000|$PREVIEW_URL|g" "$file" > "examples-ci/$(basename $file)"
           done
-
+          
           # Run all example YAML files with preview endpoints
           ./curl-runner examples-ci/
+          
+          # Clean up
+          rm -rf examples-ci
 
+      - name: Test CLI Examples with Production URL (Main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          # Build the CLI first
+          bun run build:cli
+
+          # Change to CLI directory
+          cd packages/cli
+          
+          echo "Testing against production: https://curl-runner.com"
+          
+          # Create temporary copies of examples with production URLs
+          mkdir -p examples-ci
+          for file in examples/*.yaml; do
+            sed "s|http://localhost:3000|https://curl-runner.com|g" "$file" > "examples-ci/$(basename $file)"
+          done
+          
+          # Run all example YAML files with production endpoints
+          ./curl-runner examples-ci/
+          
           # Clean up
           rm -rf examples-ci
