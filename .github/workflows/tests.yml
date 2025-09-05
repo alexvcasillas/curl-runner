@@ -97,11 +97,20 @@ jobs:
           # Create temporary copies of examples with preview URLs
           mkdir -p examples-ci
           for file in examples/*.yaml; do
-            # Replace both the URL and the host validation
+            # Replace both the URL and the host validation, and add Vercel bypass header
             PREVIEW_HOST=$(echo "${PREVIEW_URL}" | sed 's|https://||')
             sed -e "s|http://localhost:3000|${PREVIEW_URL}|g" \
                 -e "s|localhost:3000|${PREVIEW_HOST}|g" \
                 "$file" > "examples-ci/$(basename $file)"
+            
+            # Add Vercel automation bypass header to each request
+            if grep -q "headers:" "examples-ci/$(basename $file)"; then
+              # If headers section exists, add the bypass header
+              sed -i '/headers:/a\    x-vercel-protection-bypass: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}' "examples-ci/$(basename $file)"
+            else
+              # If no headers section exists, add one with the bypass header
+              sed -i '/method: /a\  headers:\n    x-vercel-protection-bypass: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}' "examples-ci/$(basename $file)"
+            fi
           done
 
           # Run all example YAML files with preview endpoints
@@ -124,10 +133,19 @@ jobs:
           # Create temporary copies of examples with production URLs
           mkdir -p examples-ci
           for file in examples/*.yaml; do
-            # Replace both the URL and the host validation
+            # Replace both the URL and the host validation, and add Vercel bypass header
             sed -e "s|http://localhost:3000|https://curl-runner.com|g" \
                 -e "s|localhost:3000|curl-runner.com|g" \
                 "$file" > "examples-ci/$(basename $file)"
+            
+            # Add Vercel automation bypass header to each request
+            if grep -q "headers:" "examples-ci/$(basename $file)"; then
+              # If headers section exists, add the bypass header
+              sed -i '/headers:/a\    x-vercel-protection-bypass: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}' "examples-ci/$(basename $file)"
+            else
+              # If no headers section exists, add one with the bypass header
+              sed -i '/method: /a\  headers:\n    x-vercel-protection-bypass: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}' "examples-ci/$(basename $file)"
+            fi
           done
 
           # Run all example YAML files with production endpoints
