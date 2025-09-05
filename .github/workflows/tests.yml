@@ -39,12 +39,17 @@ jobs:
           # Try to get the preview URL multiple times
           MAX_ATTEMPTS=20
           ATTEMPT=0
+          PREVIEW_URL=""
           while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
             echo "Attempt $((ATTEMPT + 1)) of $MAX_ATTEMPTS"
             
-            # Try to fetch deployment status
+            # Try to fetch deployment status for this specific commit
+            COMMIT_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
             RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" \
-              "https://api.vercel.com/v6/deployments?projectId=${{ secrets.VERCEL_PROJECT_ID }}&limit=1")
+              "https://api.vercel.com/v6/deployments?projectId=${{ secrets.VERCEL_PROJECT_ID }}&gitCommitSha=${COMMIT_SHA}&limit=1")
+            
+            # Debug: show the response
+            echo "API Response preview: $(echo "$RESPONSE" | head -c 200)..."
             
             # Check if we got a valid response with deployments
             if echo "$RESPONSE" | grep -q '"deployments"'; then
@@ -53,12 +58,16 @@ jobs:
               STATE=$(echo "$RESPONSE" | grep -o '"state":"[^"]*' | head -1 | cut -d'"' -f4)
               
               echo "Deployment state: $STATE"
+              echo "Deployment URL: $URL"
               
               if [ "$STATE" = "READY" ] && [ ! -z "$URL" ]; then
-                echo "PREVIEW_URL=https://$URL" >> $GITHUB_ENV
-                echo "Deployment ready at: https://$URL"
+                PREVIEW_URL="https://$URL"
+                echo "PREVIEW_URL=$PREVIEW_URL" >> $GITHUB_ENV
+                echo "Deployment ready at: $PREVIEW_URL"
                 break
               fi
+            else
+              echo "No deployments found in response"
             fi
             
             ATTEMPT=$((ATTEMPT + 1))
@@ -88,7 +97,11 @@ jobs:
           # Create temporary copies of examples with preview URLs
           mkdir -p examples-ci
           for file in examples/*.yaml; do
-            sed "s|http://localhost:3000|${PREVIEW_URL}|g" "$file" > "examples-ci/$(basename $file)"
+            # Replace both the URL and the host validation
+            PREVIEW_HOST=$(echo "${PREVIEW_URL}" | sed 's|https://||')
+            sed -e "s|http://localhost:3000|${PREVIEW_URL}|g" \
+                -e "s|localhost:3000|${PREVIEW_HOST}|g" \
+                "$file" > "examples-ci/$(basename $file)"
           done
 
           # Run all example YAML files with preview endpoints
@@ -111,7 +124,10 @@ jobs:
           # Create temporary copies of examples with production URLs
           mkdir -p examples-ci
           for file in examples/*.yaml; do
-            sed "s|http://localhost:3000|https://curl-runner.com|g" "$file" > "examples-ci/$(basename $file)"
+            # Replace both the URL and the host validation
+            sed -e "s|http://localhost:3000|https://curl-runner.com|g" \
+                -e "s|localhost:3000|curl-runner.com|g" \
+                "$file" > "examples-ci/$(basename $file)"
           done
 
           # Run all example YAML files with production endpoints
