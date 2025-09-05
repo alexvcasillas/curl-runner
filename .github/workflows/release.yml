@@ -12,6 +12,8 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    environment:
+      name: Production
     permissions:
       contents: write
       issues: write
