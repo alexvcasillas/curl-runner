@@ -72,18 +72,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # Everything below runs ONLY when a real release was published
-      # (Changesets sets outputs.published == 'true' in that case)
-
+      # ---------- Everything below runs ONLY when a real release was published ----------
       - name: Compute release tag + build metadata for CLI
         id: meta
         if: steps.changesets.outputs.published == 'true'
         run: |
           VERSION=$(jq -r .version packages/cli/package.json)
           TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          echo "TAG=@curl-runner/cli@${VERSION}" >> "$GITHUB_OUTPUT"
+          TAG="@curl-runner/cli@${VERSION}"
+          FILE_PREFIX="curl-runner-cli-${VERSION}"
+          echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
           echo "TIME=$TIME" >> "$GITHUB_OUTPUT"
+          echo "FILE_PREFIX=$FILE_PREFIX" >> "$GITHUB_OUTPUT"
 
       - name: Build cross-platform Bun binaries
         if: steps.changesets.outputs.published == 'true'
@@ -114,22 +115,22 @@ jobs:
         if: steps.changesets.outputs.published == 'true'
         run: |
           cd packages/cli
-          tar -czf curl-runner-linux-x64-${{ steps.meta.outputs.TAG }}.tar.gz    curl-runner-linux-x64
-          tar -czf curl-runner-linux-arm64-${{ steps.meta.outputs.TAG }}.tar.gz  curl-runner-linux-arm64
-          tar -czf curl-runner-darwin-x64-${{ steps.meta.outputs.TAG }}.tar.gz   curl-runner-darwin-x64
-          tar -czf curl-runner-darwin-arm64-${{ steps.meta.outputs.TAG }}.tar.gz curl-runner-darwin-arm64
-          zip        curl-runner-windows-x64-${{ steps.meta.outputs.TAG }}.zip   curl-runner-windows-x64.exe
+          tar -czf ${{ steps.meta.outputs.FILE_PREFIX }}-linux-x64.tar.gz    curl-runner-linux-x64
+          tar -czf ${{ steps.meta.outputs.FILE_PREFIX }}-linux-arm64.tar.gz  curl-runner-linux-arm64
+          tar -czf ${{ steps.meta.outputs.FILE_PREFIX }}-darwin-x64.tar.gz   curl-runner-darwin-x64
+          tar -czf ${{ steps.meta.outputs.FILE_PREFIX }}-darwin-arm64.tar.gz curl-runner-darwin-arm64
+          zip        ${{ steps.meta.outputs.FILE_PREFIX }}-windows-x64.zip   curl-runner-windows-x64.exe
 
       - name: Generate checksums
         if: steps.changesets.outputs.published == 'true'
         run: |
           cd packages/cli
           shasum -a 256 \
-            curl-runner-linux-x64-${{ steps.meta.outputs.TAG }}.tar.gz \
-            curl-runner-linux-arm64-${{ steps.meta.outputs.TAG }}.tar.gz \
-            curl-runner-darwin-x64-${{ steps.meta.outputs.TAG }}.tar.gz \
-            curl-runner-darwin-arm64-${{ steps.meta.outputs.TAG }}.tar.gz \
-            curl-runner-windows-x64-${{ steps.meta.outputs.TAG }}.zip \
+            ${{ steps.meta.outputs.FILE_PREFIX }}-linux-x64.tar.gz \
+            ${{ steps.meta.outputs.FILE_PREFIX }}-linux-arm64.tar.gz \
+            ${{ steps.meta.outputs.FILE_PREFIX }}-darwin-x64.tar.gz \
+            ${{ steps.meta.outputs.FILE_PREFIX }}-darwin-arm64.tar.gz \
+            ${{ steps.meta.outputs.FILE_PREFIX }}-windows-x64.zip \
             > SHA256SUMS.txt
 
       - name: Upload binaries + checksums to GitHub Release
@@ -138,11 +139,11 @@ jobs:
         with:
           tag_name: ${{ steps.meta.outputs.TAG }}
           files: |
-            packages/cli/curl-runner-linux-x64-${{ steps.meta.outputs.TAG }}.tar.gz
-            packages/cli/curl-runner-linux-arm64-${{ steps.meta.outputs.TAG }}.tar.gz
-            packages/cli/curl-runner-darwin-x64-${{ steps.meta.outputs.TAG }}.tar.gz
-            packages/cli/curl-runner-darwin-arm64-${{ steps.meta.outputs.TAG }}.tar.gz
-            packages/cli/curl-runner-windows-x64-${{ steps.meta.outputs.TAG }}.zip
+            packages/cli/${{ steps.meta.outputs.FILE_PREFIX }}-linux-x64.tar.gz
+            packages/cli/${{ steps.meta.outputs.FILE_PREFIX }}-linux-arm64.tar.gz
+            packages/cli/${{ steps.meta.outputs.FILE_PREFIX }}-darwin-x64.tar.gz
+            packages/cli/${{ steps.meta.outputs.FILE_PREFIX }}-darwin-arm64.tar.gz
+            packages/cli/${{ steps.meta.outputs.FILE_PREFIX }}-windows-x64.zip
             packages/cli/SHA256SUMS.txt
           fail_on_unmatched_files: true
         env:
