@@ -33,11 +33,8 @@ jobs:
           # Build the CLI first
           bun run build:cli
 
-          # Test with simple example
-          ./packages/cli/curl-runner packages/cli/examples/simple.yaml --output-format json
+          # Change to CLI directory and run all examples
+          cd packages/cli
 
-          # Test with collection example
-          ./packages/cli/curl-runner packages/cli/examples/collection.yaml --output-format json
-
-          # Test with auth example
-          ./packages/cli/curl-runner packages/cli/examples/auth.yaml --output-format json
+          # Run all example YAML files
+          ./curl-runner examples/
