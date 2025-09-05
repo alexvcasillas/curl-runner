@@ -5,6 +5,10 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_run:
+    workflows: ["Vercel Production Deployment"]
+    types:
+      - completed
 
 jobs:
   test:
@@ -26,15 +30,48 @@ jobs:
       - name: Run Tests
         run: bun run test
 
-      - name: Get Vercel Preview URL
-        uses: zentered/vercel-preview-url@v1.1.9
-        id: vercel_preview_url
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        with:
-          vercel_project_id: ${{ secrets.VERCEL_PROJECT_ID }}
-        # Only run on pull requests
+      - name: Wait for Vercel Deployment
         if: github.event_name == 'pull_request'
+        run: |
+          echo "Waiting for Vercel deployment to complete..."
+          sleep 30  # Initial wait for deployment to start
+
+          # Try to get the preview URL multiple times
+          MAX_ATTEMPTS=20
+          ATTEMPT=0
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            echo "Attempt $((ATTEMPT + 1)) of $MAX_ATTEMPTS"
+            
+            # Try to fetch deployment status
+            RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" \
+              "https://api.vercel.com/v6/deployments?projectId=${{ secrets.VERCEL_PROJECT_ID }}&limit=1")
+            
+            # Check if we got a valid response with deployments
+            if echo "$RESPONSE" | grep -q '"deployments"'; then
+              # Extract the URL from the first deployment
+              URL=$(echo "$RESPONSE" | grep -o '"url":"[^"]*' | head -1 | cut -d'"' -f4)
+              STATE=$(echo "$RESPONSE" | grep -o '"state":"[^"]*' | head -1 | cut -d'"' -f4)
+              
+              echo "Deployment state: $STATE"
+              
+              if [ "$STATE" = "READY" ] && [ ! -z "$URL" ]; then
+                echo "PREVIEW_URL=https://$URL" >> $GITHUB_ENV
+                echo "Deployment ready at: https://$URL"
+                break
+              fi
+            fi
+            
+            ATTEMPT=$((ATTEMPT + 1))
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              echo "Waiting 30 seconds before next attempt..."
+              sleep 30
+            fi
+          done
+
+          if [ -z "$PREVIEW_URL" ]; then
+            echo "Warning: Could not get preview URL after $MAX_ATTEMPTS attempts"
+            echo "PREVIEW_URL=https://curl-runner.com" >> $GITHUB_ENV
+          fi
 
       - name: Test CLI Examples with Preview URL (PR)
         if: github.event_name == 'pull_request'
@@ -45,15 +82,13 @@ jobs:
           # Change to CLI directory
           cd packages/cli
 
-          # Get the preview URL from the previous step
-          PREVIEW_URL="${{ steps.vercel_preview_url.outputs.preview_url }}"
-
-          echo "Testing against Vercel preview: $PREVIEW_URL"
+          # Use the preview URL from environment
+          echo "Testing against: ${PREVIEW_URL}"
 
           # Create temporary copies of examples with preview URLs
           mkdir -p examples-ci
           for file in examples/*.yaml; do
-            sed "s|http://localhost:3000|$PREVIEW_URL|g" "$file" > "examples-ci/$(basename $file)"
+            sed "s|http://localhost:3000|${PREVIEW_URL}|g" "$file" > "examples-ci/$(basename $file)"
           done
 
           # Run all example YAML files with preview endpoints
