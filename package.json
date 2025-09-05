@@ -7,6 +7,7 @@
     "packages/*"
   ],
   "scripts": {
+    "start:cli": "bun run --filter '@curl-runner/cli' start",
     "start:docs": "bun run --filter '@curl-runner/docs' start",
     "dev": "bun run --filter '*' dev",
     "dev:cli": "bun run --filter '@curl-runner/cli' dev",
