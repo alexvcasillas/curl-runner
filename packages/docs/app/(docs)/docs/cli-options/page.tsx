@@ -1,7 +1,7 @@
 import { AlertCircle, CheckCircle, Flag, Info } from 'lucide-react';
 import { CodeBlockServer } from '@/components/code-block-server';
+import { H2, H3 } from '@/components/docs-heading';
 import { DocsPageHeader } from '@/components/docs-page-header';
-import { H2, H3 } from '@/components/mdx-heading';
 import { TableOfContents } from '@/components/toc';
 import { Badge } from '@/components/ui/badge';
 
@@ -336,7 +336,7 @@ export default function CLIOptionsPage() {
 
           {/* Option Groups */}
           <section>
-            <H2>Available Options</H2>
+            <H2 id="available-options">Available Options</H2>
             <p className="text-muted-foreground text-lg mb-8">
               Options are grouped by functionality for easier reference.
             </p>
@@ -346,7 +346,7 @@ export default function CLIOptionsPage() {
                 const Icon = group.icon;
                 return (
                   <div key={group.title}>
-                    <H3 className="flex items-center space-x-2">
+                    <H3 id={group.title.toLowerCase()} className="flex items-center space-x-2">
                       <Icon className="h-5 w-5 text-primary" />
                       <span>{group.title}</span>
                     </H3>
@@ -402,7 +402,7 @@ export default function CLIOptionsPage() {
 
           {/* Option Combinations */}
           <section>
-            <H2>Combining Options</H2>
+            <H2 id="combining-options">Combining Options</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Short options can be combined, and multiple options can be used together for powerful
               configurations.
@@ -415,14 +415,14 @@ export default function CLIOptionsPage() {
 
           {/* Environment Variables */}
           <section>
-            <H2>Environment Variables</H2>
+            <H2 id="environment-variables">Environment Variables</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Many CLI options can be set via environment variables, which take precedence over
               default values but are overridden by explicit CLI options.
             </p>
 
             <div className="mb-6">
-              <H3>Supported Environment Variables</H3>
+              <H3 id="supported-environment-variables">Supported Environment Variables</H3>
               <div className="mt-6 space-y-6">
                 <div>
                   <h4 className="font-medium mb-3 flex items-center gap-2">
@@ -497,7 +497,7 @@ export default function CLIOptionsPage() {
 
           {/* Configuration File */}
           <section>
-            <H2>Configuration File</H2>
+            <H2 id="configuration-file">Configuration File</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Create a <code>curl-runner.yaml</code> file in your project root to set default
               options.
@@ -510,7 +510,7 @@ export default function CLIOptionsPage() {
 
           {/* Output Format */}
           <section>
-            <H2>Output Format</H2>
+            <H2 id="output-format">Output Format</H2>
             <p className="text-muted-foreground text-lg mb-6">
               When using <code>--output</code>, results are saved in structured JSON format.
             </p>
@@ -522,7 +522,7 @@ export default function CLIOptionsPage() {
 
           {/* Option Precedence */}
           <section>
-            <H2>Option Precedence</H2>
+            <H2 id="option-precedence">Option Precedence</H2>
             <p className="text-muted-foreground text-lg mb-6">
               When options are specified in multiple ways, curl-runner follows this precedence
               order:
@@ -593,7 +593,7 @@ export default function CLIOptionsPage() {
 
           {/* Best Practices */}
           <section>
-            <H2>Best Practices</H2>
+            <H2 id="best-practices">Best Practices</H2>
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="rounded-lg border bg-card p-4">

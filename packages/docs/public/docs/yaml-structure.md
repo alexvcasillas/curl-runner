@@ -21,8 +21,8 @@ keywords:
   - collection
 slug: "/docs/yaml-structure"
 toc: true
-date: "2025-09-05T06:23:00.137Z"
-lastModified: "2025-09-05T06:23:00.137Z"
+date: "2025-09-05T07:51:19.004Z"
+lastModified: "2025-09-05T07:51:19.004Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -42,8 +42,8 @@ schema:
   "@type": "TechArticle"
   headline: "YAML Structure"
   description: "Learn the structure and syntax of curl-runner YAML configuration files."
-  datePublished: "2025-09-05T06:23:00.137Z"
-  dateModified: "2025-09-05T06:23:00.137Z"
+  datePublished: "2025-09-05T07:51:19.004Z"
+  dateModified: "2025-09-05T07:51:19.004Z"
 ---
 
 # YAML Structure

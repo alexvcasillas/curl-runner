@@ -2,8 +2,8 @@ import { ArrowRight, Book, FileText, Grid3x3, Settings, Terminal, Zap } from 'lu
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
+import { H2, H3 } from '@/components/docs-heading';
 import { DocsPageHeader } from '@/components/docs-page-header';
-import { H2, H3 } from '@/components/mdx-heading';
 import { TableOfContents } from '@/components/toc';
 import { Button } from '@/components/ui/button';
 import { basicUsageExample, quickInstallExample } from './snippets';
@@ -87,7 +87,7 @@ export default function DocsPage() {
         <div className="space-y-12">
           {/* Features Grid */}
           <section>
-            <H2>Features</H2>
+            <H2 id="features">Features</H2>
             <div className="grid gap-6 md:grid-cols-2 mt-6">
               {features.map((feature) => {
                 const Icon = feature.icon;
@@ -121,7 +121,7 @@ export default function DocsPage() {
 
           {/* Quick Start */}
           <section>
-            <H2>Quick Start</H2>
+            <H2 id="quick-start">Quick Start</H2>
             <p className="text-muted-foreground text-lg mb-8">
               Get up and running with <code className="font-mono">curl-runner</code> in just a few
               minutes.
@@ -129,14 +129,14 @@ export default function DocsPage() {
 
             <div className="space-y-8">
               <div>
-                <H3>1. Create a YAML file</H3>
+                <H3 id="1-create-a-yaml-file">1. Create a YAML file</H3>
                 <CodeBlockServer language="yaml" filename="simple.yaml">
                   {basicUsageExample}
                 </CodeBlockServer>
               </div>
 
               <div>
-                <H3>
+                <H3 id="2-run-curl-runner">
                   2. Run <code className="font-mono">curl-runner</code>
                 </H3>
                 <CodeBlockServer language="bash">{quickInstallExample}</CodeBlockServer>
@@ -146,7 +146,7 @@ export default function DocsPage() {
 
           {/* Next Steps */}
           <section>
-            <H2>Next Steps</H2>
+            <H2 id="next-steps">Next Steps</H2>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">

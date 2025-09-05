@@ -53,8 +53,8 @@ export const metadata: Metadata = {
 };
 
 import { CodeBlockServer } from '@/components/code-block-server';
+import { H2 } from '@/components/docs-heading';
 import { DocsPageHeader } from '@/components/docs-page-header';
-import { H2 } from '@/components/mdx-heading';
 import { TableOfContents } from '@/components/toc';
 import { Badge } from '@/components/ui/badge';
 
@@ -247,7 +247,7 @@ export default function CLICommandsPage() {
         <div className="space-y-12">
           {/* Basic Usage */}
           <section>
-            <H2>Basic Usage</H2>
+            <H2 id="basic-usage">Basic Usage</H2>
             <p className="text-muted-foreground text-lg mb-6">
               The <code className="font-mono">curl-runner</code> CLI provides a simple interface for
               executing HTTP requests defined in YAML files.
@@ -260,7 +260,7 @@ export default function CLICommandsPage() {
 
           {/* Commands */}
           <section>
-            <H2>Commands</H2>
+            <H2 id="commands">Commands</H2>
 
             <div className="space-y-6">
               {commands.map((command) => (
@@ -306,7 +306,7 @@ export default function CLICommandsPage() {
 
           {/* Options */}
           <section>
-            <H2>Options</H2>
+            <H2 id="options">Options</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Available command-line options to customize{' '}
               <code className="font-mono">curl-runner</code>'s behavior.
@@ -354,7 +354,7 @@ export default function CLICommandsPage() {
 
           {/* File Patterns */}
           <section>
-            <H2>File Patterns</H2>
+            <H2 id="file-patterns">File Patterns</H2>
             <p className="text-muted-foreground text-lg mb-6">
               <code className="font-mono">curl-runner</code> supports various file patterns and glob
               expressions for flexible file selection.
@@ -367,7 +367,7 @@ export default function CLICommandsPage() {
 
           {/* Execution Modes */}
           <section>
-            <H2>Execution Modes</H2>
+            <H2 id="execution-modes">Execution Modes</H2>
 
             <div className="grid gap-6 md:grid-cols-2 mb-6">
               <div className="rounded-lg border bg-card p-4">
@@ -414,7 +414,7 @@ export default function CLICommandsPage() {
 
           {/* Output Options */}
           <section>
-            <H2>Output Options</H2>
+            <H2 id="output-options">Output Options</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Control how <code className="font-mono">curl-runner</code> displays results and saves
               output data.
@@ -427,7 +427,7 @@ export default function CLICommandsPage() {
 
           {/* Timeout and Retry Options */}
           <section>
-            <H2>Timeout & Retry Options</H2>
+            <H2 id="timeout-retry-options">Timeout & Retry Options</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Configure timeout and retry behavior for robust request handling.
             </p>
@@ -439,7 +439,7 @@ export default function CLICommandsPage() {
 
           {/* Advanced Examples */}
           <section>
-            <H2>Advanced Usage</H2>
+            <H2 id="advanced-usage">Advanced Usage</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Complex examples combining multiple options and environment variables.
             </p>
@@ -451,7 +451,7 @@ export default function CLICommandsPage() {
 
           {/* Exit Codes */}
           <section>
-            <H2>Exit Codes</H2>
+            <H2 id="exit-codes">Exit Codes</H2>
             <p className="text-muted-foreground text-lg mb-6">
               <code className="font-mono">curl-runner</code> returns specific exit codes to indicate
               execution results.

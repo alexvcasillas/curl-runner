@@ -1,8 +1,8 @@
 import { AlertTriangle, Clock, FileText, Settings, Target, Zap } from 'lucide-react';
 import type { Metadata } from 'next';
 import { CodeBlockServer } from '@/components/code-block-server';
+import { H2 } from '@/components/docs-heading';
 import { DocsPageHeader } from '@/components/docs-page-header';
-import { H2 } from '@/components/mdx-heading';
 import { TableOfContents } from '@/components/toc';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -316,7 +316,7 @@ export default function GlobalSettingsPage() {
 
           {/* Execution Settings */}
           <section>
-            <H2>Execution Settings</H2>
+            <H2 id="execution-settings">Execution Settings</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Control how requests are executed and how errors are handled.
             </p>
@@ -362,7 +362,7 @@ export default function GlobalSettingsPage() {
 
           {/* Timeout and Retry Settings */}
           <section>
-            <H2>Timeout & Retry Settings</H2>
+            <H2 id="timeout-retry-settings">Timeout & Retry Settings</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Configure global timeout and retry behavior for robust request handling.
             </p>
@@ -432,7 +432,7 @@ export default function GlobalSettingsPage() {
 
           {/* Output Configuration */}
           <section>
-            <H2>Output Configuration</H2>
+            <H2 id="output-configuration">Output Configuration</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Customize how <code className="font-mono">curl-runner</code> displays results and
               saves output data.
@@ -445,7 +445,7 @@ export default function GlobalSettingsPage() {
 
           {/* Global Defaults */}
           <section>
-            <H2>Global Defaults</H2>
+            <H2 id="global-defaults">Global Defaults</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Set default values that are automatically applied to all requests unless overridden.
             </p>
@@ -491,7 +491,7 @@ export default function GlobalSettingsPage() {
 
           {/* Global Variables */}
           <section>
-            <H2>Global Variables</H2>
+            <H2 id="global-variables">Global Variables</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Define reusable variables that can be referenced throughout your request
               configurations.
@@ -504,7 +504,7 @@ export default function GlobalSettingsPage() {
 
           {/* Advanced Configuration */}
           <section>
-            <H2>Advanced Configuration</H2>
+            <H2 id="advanced-configuration">Advanced Configuration</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Advanced global settings for complex scenarios including SSL, proxies, and rate
               limiting.
@@ -532,7 +532,7 @@ export default function GlobalSettingsPage() {
 
           {/* Setting Precedence */}
           <section>
-            <H2>Setting Precedence</H2>
+            <H2 id="setting-precedence">Setting Precedence</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Understanding how individual request settings override global settings.
             </p>
@@ -567,7 +567,7 @@ export default function GlobalSettingsPage() {
 
           {/* Best Practices */}
           <section>
-            <H2>Best Practices</H2>
+            <H2 id="best-practices">Best Practices</H2>
 
             <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2">
               <Card className="border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/50">

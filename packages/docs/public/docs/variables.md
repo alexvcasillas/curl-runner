@@ -10,14 +10,15 @@ keywords:
   - variables
   - yaml
   - templating
+  - authentication
   - headers
   - request
   - collection
   - environment
 slug: "/docs/variables"
 toc: true
-date: "2025-09-05T06:23:00.138Z"
-lastModified: "2025-09-05T06:23:00.138Z"
+date: "2025-09-05T07:51:19.005Z"
+lastModified: "2025-09-05T07:51:19.005Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -37,8 +38,8 @@ schema:
   "@type": "TechArticle"
   headline: "Variables"
   description: "Use variables and templating to create reusable, dynamic HTTP request configurations."
-  datePublished: "2025-09-05T06:23:00.138Z"
-  dateModified: "2025-09-05T06:23:00.138Z"
+  datePublished: "2025-09-05T07:51:19.005Z"
+  dateModified: "2025-09-05T07:51:19.005Z"
 ---
 
 # Variables
