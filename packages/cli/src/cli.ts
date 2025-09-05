@@ -5,6 +5,8 @@ import { RequestExecutor } from './executor/request-executor';
 import { YamlParser } from './parser/yaml';
 import type { GlobalConfig, RequestConfig } from './types/config';
 import { Logger } from './utils/logger';
+import { VersionChecker } from './utils/version-checker';
+import { getVersion } from './version';
 
 class CurlRunnerCLI {
   private logger = new Logger();
@@ -110,13 +112,21 @@ class CurlRunnerCLI {
     try {
       const { files, options } = this.parseArguments(args);
 
+      // Check for updates in the background (non-blocking)
+      if (!options.version && !options.help) {
+        const versionChecker = new VersionChecker();
+        versionChecker.checkForUpdates().catch(() => {
+          // Silently ignore any errors
+        });
+      }
+
       if (options.help) {
         this.showHelp();
         return;
       }
 
       if (options.version) {
-        console.log('curl-runner v1.0.0');
+        console.log(`curl-runner v${getVersion()}`);
         return;
       }
 

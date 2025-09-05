@@ -3,14 +3,14 @@
   "version": "1.0.1",
   "description": "A powerful CLI tool for HTTP request management using YAML configuration",
   "type": "module",
-  "main": "./src/cli.ts",
+  "main": "./dist/cli.js",
   "bin": {
-    "curl-runner": "./src/cli.ts"
+    "curl-runner": "./dist/cli.js"
   },
   "scripts": {
-    "start": "bun run src/cli.ts",
+    "start": "bun run dist/cli.js",
     "dev": "bun --watch src/cli.ts",
-    "build": "bun build src/cli.ts --compile --outfile ./curl-runner",
+    "build": "bun run scripts/build-with-version.ts",
     "format": "biome format --write .",
     "lint": "biome lint .",
     "check": "biome check --write .",
