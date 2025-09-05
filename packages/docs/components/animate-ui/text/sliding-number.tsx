@@ -1,15 +1,15 @@
 'use client';
 
-import * as React from 'react';
 import {
-  useSpring,
-  useTransform,
-  motion,
-  useInView,
   type MotionValue,
+  motion,
   type SpringOptions,
   type UseInViewOptions,
+  useInView,
+  useSpring,
+  useTransform,
 } from 'motion/react';
+import * as React from 'react';
 import useMeasure from 'react-use-measure';
 
 import { cn } from '@/lib/utils';
@@ -21,12 +21,7 @@ type SlidingNumberRollerProps = {
   transition: SpringOptions;
 };
 
-function SlidingNumberRoller({
-  prevValue,
-  value,
-  place,
-  transition,
-}: SlidingNumberRollerProps) {
+function SlidingNumberRoller({ prevValue, value, place, transition }: SlidingNumberRollerProps) {
   const startNumber = Math.floor(prevValue / place) % 10;
   const targetNumber = Math.floor(value / place) % 10;
   const animatedValue = useSpring(startNumber, transition);
@@ -46,7 +41,7 @@ function SlidingNumberRoller({
       <span className="invisible">0</span>
       {Array.from({ length: 10 }, (_, i) => (
         <SlidingNumberDisplay
-          key={i}
+          key={`number-display-${i}`}
           motionValue={animatedValue}
           number={i}
           height={height}
@@ -71,11 +66,15 @@ function SlidingNumberDisplay({
   transition,
 }: SlidingNumberDisplayProps) {
   const y = useTransform(motionValue, (latest) => {
-    if (!height) return 0;
+    if (!height) {
+      return 0;
+    }
     const currentNumber = latest % 10;
     const offset = (10 + number - currentNumber) % 10;
     let translateY = offset * height;
-    if (offset > 5) translateY -= 10 * height;
+    if (offset > 5) {
+      translateY -= 10 * height;
+    }
     return translateY;
   });
 
@@ -140,22 +139,17 @@ function SlidingNumber({
   );
 
   const formatNumber = React.useCallback(
-    (num: number) =>
-      decimalPlaces != null ? num.toFixed(decimalPlaces) : num.toString(),
+    (num: number) => (decimalPlaces != null ? num.toFixed(decimalPlaces) : num.toString()),
     [decimalPlaces],
   );
 
   const numberStr = formatNumber(effectiveNumber);
   const [newIntStrRaw, newDecStrRaw = ''] = numberStr.split('.');
-  const newIntStr =
-    padStart && newIntStrRaw?.length === 1 ? '0' + newIntStrRaw : newIntStrRaw;
+  const newIntStr = padStart && newIntStrRaw?.length === 1 ? `0${newIntStrRaw}` : newIntStrRaw;
 
   const prevFormatted = formatNumber(prevNumberRef.current);
   const [prevIntStrRaw = '', prevDecStrRaw = ''] = prevFormatted.split('.');
-  const prevIntStr =
-    padStart && prevIntStrRaw.length === 1
-      ? '0' + prevIntStrRaw
-      : prevIntStrRaw;
+  const prevIntStr = padStart && prevIntStrRaw.length === 1 ? `0${prevIntStrRaw}` : prevIntStrRaw;
 
   const adjustedPrevInt = React.useMemo(() => {
     return prevIntStr.length > (newIntStr?.length ?? 0)
@@ -164,30 +158,29 @@ function SlidingNumber({
   }, [prevIntStr, newIntStr]);
 
   const adjustedPrevDec = React.useMemo(() => {
-    if (!newDecStrRaw) return '';
+    if (!newDecStrRaw) {
+      return '';
+    }
     return prevDecStrRaw.length > newDecStrRaw.length
       ? prevDecStrRaw.slice(0, newDecStrRaw.length)
       : prevDecStrRaw.padEnd(newDecStrRaw.length, '0');
   }, [prevDecStrRaw, newDecStrRaw]);
 
   React.useEffect(() => {
-    if (isInView) prevNumberRef.current = effectiveNumber;
+    if (isInView) {
+      prevNumberRef.current = effectiveNumber;
+    }
   }, [effectiveNumber, isInView]);
 
   const intDigitCount = newIntStr?.length ?? 0;
   const intPlaces = React.useMemo(
-    () =>
-      Array.from({ length: intDigitCount }, (_, i) =>
-        Math.pow(10, intDigitCount - i - 1),
-      ),
+    () => Array.from({ length: intDigitCount }, (_, i) => 10 ** (intDigitCount - i - 1)),
     [intDigitCount],
   );
   const decPlaces = React.useMemo(
     () =>
       newDecStrRaw
-        ? Array.from({ length: newDecStrRaw.length }, (_, i) =>
-            Math.pow(10, newDecStrRaw.length - i - 1),
-          )
+        ? Array.from({ length: newDecStrRaw.length }, (_, i) => 10 ** (newDecStrRaw.length - i - 1))
         : [],
     [newDecStrRaw],
   );

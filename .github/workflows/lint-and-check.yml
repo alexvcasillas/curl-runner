@@ -1,0 +1,38 @@
+name: Lint and Check
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  lint-and-check:
+    name: Lint and Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Format Check
+        run: bun run format
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Biome Check
+        run: bun run check:ci
+
+      - name: Build CLI
+        run: bun run build:cli
+
+      - name: Build Docs
+        run: bun run build:docs

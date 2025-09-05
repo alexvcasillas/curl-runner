@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { BookOpen, Code } from 'lucide-react';
+import { BookOpen } from 'lucide-react';
 
 export interface NavItem {
   title: string;

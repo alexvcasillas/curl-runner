@@ -1,14 +1,24 @@
+import {
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  Server,
+  Timer,
+  TrendingUp,
+  Wifi,
+  XCircle,
+} from 'lucide-react';
 import type { Metadata } from 'next';
-import { DocsPageHeader } from "@/components/docs-page-header"
-import { CodeBlockServer } from "@/components/code-block-server"
-import { TableOfContents } from "@/components/toc"
-import { H2, H3 } from "@/components/docs-heading"
-import { Badge } from "@/components/ui/badge"
-import { RotateCcw, Clock, TrendingUp, Shield, CheckCircle, AlertTriangle, Zap, Settings, Wifi, Timer, Server, XCircle } from "lucide-react"
+import { CodeBlockServer } from '@/components/code-block-server';
+import { H2, H3 } from '@/components/docs-heading';
+import { DocsPageHeader } from '@/components/docs-page-header';
+import { TableOfContents } from '@/components/toc';
+import { Badge } from '@/components/ui/badge';
 
 export const metadata: Metadata = {
   title: 'Retry Mechanism',
-  description: 'Implement robust retry logic for HTTP requests with curl-runner. Learn about retry strategies, backoff patterns, and handling transient failures.',
+  description:
+    'Implement robust retry logic for HTTP requests with curl-runner. Learn about retry strategies, backoff patterns, and handling transient failures.',
   keywords: [
     'curl-runner retry mechanism',
     'HTTP request retries',
@@ -21,19 +31,20 @@ export const metadata: Metadata = {
     'retry configuration',
     'automatic retries',
     'error recovery',
-    'request reliability'
+    'request reliability',
   ],
   openGraph: {
     title: 'Retry Mechanism | curl-runner Documentation',
-    description: 'Implement robust retry logic for HTTP requests with curl-runner. Learn about retry strategies, backoff patterns, and handling transient failures.',
+    description:
+      'Implement robust retry logic for HTTP requests with curl-runner. Learn about retry strategies, backoff patterns, and handling transient failures.',
     url: 'https://curl-runner.com/docs/features/retry-mechanism',
-    type: 'article'
-    },
+    type: 'article',
+  },
   twitter: {
     card: 'summary_large_image',
     title: 'Retry Mechanism | curl-runner Documentation',
     description: 'Learn how to implement robust retry logic for HTTP requests with curl-runner.',
-    },
+  },
   alternates: {
     canonical: 'https://curl-runner.com/docs/features/retry-mechanism',
   },
@@ -46,7 +57,7 @@ request:
   method: GET
   retry:
     count: 3      # Retry up to 3 times
-    delay: 1000   # Wait 1 second between retries`
+    delay: 1000   # Wait 1 second between retries`;
 
 const advancedRetry = `# Advanced retry scenarios
 requests:
@@ -68,7 +79,7 @@ requests:
     retry:
       count: 10     # Many quick retries
       delay: 100    # Very short delay
-    timeout: 1000   # Short timeout`
+    timeout: 1000   # Short timeout`;
 
 const globalRetry = `# Global retry configuration
 global:
@@ -96,7 +107,7 @@ requests:
     url: \${API_URL}/stable
     method: GET
     retry:
-      count: 0      # Disable retries for this request`
+      count: 0      # Disable retries for this request`;
 
 const retryWithValidation = `# Retry with validation rules
 request:
@@ -120,7 +131,7 @@ requests:
       count: 3
       delay: 5000   # Back off for 5 seconds
     expect:
-      status: [200, 201]  # Retry if not 200 or 201`
+      status: [200, 201]  # Retry if not 200 or 201`;
 
 const exponentialBackoff = `# Simulating exponential backoff
 requests:
@@ -146,7 +157,7 @@ requests:
     url: https://api.example.com/endpoint
     retry:
       count: 1
-      delay: 8000   # 8 seconds`
+      delay: 8000   # 8 seconds`;
 
 const cliCommands = `# Override retry count globally
 curl-runner api-tests.yaml --retry 5
@@ -155,7 +166,7 @@ curl-runner api-tests.yaml --retry 5
 curl-runner api-tests.yaml --no-retry
 
 # Set retry delay
-curl-runner api-tests.yaml --retry-delay 2000`
+curl-runner api-tests.yaml --retry-delay 2000`;
 
 const fixedDelayExample = `# Fixed delay retry strategy
 request:
@@ -170,7 +181,7 @@ request:
 # 1. Initial request
 # 2. Wait 1s → Retry attempt 1  
 # 3. Wait 1s → Retry attempt 2
-# 4. Wait 1s → Retry attempt 3`
+# 4. Wait 1s → Retry attempt 3`;
 
 export default function RetryMechanismPage() {
   return (
@@ -186,9 +197,11 @@ export default function RetryMechanismPage() {
           <section>
             <H2 id="overview">Overview</H2>
             <p className="text-muted-foreground mb-6">
-              The retry mechanism in <code className="font-mono">curl-runner</code> allows you to automatically retry failed requests, making your API tests more resilient to temporary failures, network issues, and rate limiting.
+              The retry mechanism in <code className="font-mono">curl-runner</code> allows you to
+              automatically retry failed requests, making your API tests more resilient to temporary
+              failures, network issues, and rate limiting.
             </p>
-            
+
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="rounded-lg border p-4">
                 <div className="flex items-center gap-2 mb-2">
@@ -201,7 +214,7 @@ export default function RetryMechanismPage() {
                   Automatically retry on network errors, timeouts, and 5xx status codes
                 </p>
               </div>
-              
+
               <div className="rounded-lg border p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Badge className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
@@ -220,9 +233,11 @@ export default function RetryMechanismPage() {
           <section>
             <H2 id="basic-usage">Basic Usage</H2>
             <p className="text-muted-foreground mb-6">
-              Configure retries using the <code className="text-sm bg-muted px-1 py-0.5 rounded">retry</code> field in your request configuration.
+              Configure retries using the{' '}
+              <code className="text-sm bg-muted px-1 py-0.5 rounded">retry</code> field in your
+              request configuration.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="basic-retry.yaml">
               {basicRetry}
             </CodeBlockServer>
@@ -257,16 +272,22 @@ export default function RetryMechanismPage() {
                 </thead>
                 <tbody>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">count</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">count</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">number</td>
                     <td className="p-3 text-sm text-muted-foreground">0</td>
                     <td className="p-3 text-sm text-muted-foreground">Number of retry attempts</td>
                   </tr>
                   <tr>
-                    <td className="p-3"><code className="text-sm">delay</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">delay</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">number</td>
                     <td className="p-3 text-sm text-muted-foreground">1000</td>
-                    <td className="p-3 text-sm text-muted-foreground">Delay between retries (ms)</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Delay between retries (ms)
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -279,7 +300,7 @@ export default function RetryMechanismPage() {
             <p className="text-muted-foreground mb-6">
               Handle complex retry requirements with different configurations per request.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="advanced-retry.yaml">
               {advancedRetry}
             </CodeBlockServer>
@@ -291,7 +312,7 @@ export default function RetryMechanismPage() {
             <p className="text-muted-foreground mb-6">
               Set default retry behavior for all requests and override as needed.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="global-retry.yaml">
               {globalRetry}
             </CodeBlockServer>
@@ -303,14 +324,16 @@ export default function RetryMechanismPage() {
             <p className="text-muted-foreground mb-6">
               Combine retries with validation rules to handle eventually consistent APIs.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="retry-validation.yaml">
               {retryWithValidation}
             </CodeBlockServer>
 
             <div className="mt-6 rounded-lg border bg-yellow-500/5 dark:bg-yellow-500/10 border-yellow-500/20 p-4">
               <p className="text-sm">
-                <strong className="text-yellow-600 dark:text-yellow-400">Important:</strong> Retries occur when the request fails (network error, timeout) or when validation rules are not met. This is useful for polling APIs that may take time to update.
+                <strong className="text-yellow-600 dark:text-yellow-400">Important:</strong> Retries
+                occur when the request fails (network error, timeout) or when validation rules are
+                not met. This is useful for polling APIs that may take time to update.
               </p>
             </div>
           </section>
@@ -347,9 +370,10 @@ export default function RetryMechanismPage() {
             <div className="space-y-3">
               <H3 id="automatic-retry-conditions">Automatic Retry Conditions</H3>
               <p className="text-muted-foreground mb-6">
-                <code className="font-mono">curl-runner</code> automatically retries on these conditions:
+                <code className="font-mono">curl-runner</code> automatically retries on these
+                conditions:
               </p>
-              
+
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
@@ -364,7 +388,7 @@ export default function RetryMechanismPage() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-orange-500/10 p-2">
@@ -378,7 +402,7 @@ export default function RetryMechanismPage() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-purple-500/10 p-2">
@@ -392,7 +416,7 @@ export default function RetryMechanismPage() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-yellow-500/10 p-2">
@@ -427,7 +451,7 @@ export default function RetryMechanismPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-blue-500/10 p-2">
@@ -436,12 +460,13 @@ export default function RetryMechanismPage() {
                   <div>
                     <h4 className="font-medium mb-2">Use Appropriate Delays</h4>
                     <p className="text-sm text-muted-foreground">
-                      Avoid overwhelming servers with rapid retries. Use at least 1-second delays for production APIs.
+                      Avoid overwhelming servers with rapid retries. Use at least 1-second delays
+                      for production APIs.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-purple-500/10 p-2">
@@ -450,12 +475,13 @@ export default function RetryMechanismPage() {
                   <div>
                     <h4 className="font-medium mb-2">Consider Exponential Backoff</h4>
                     <p className="text-sm text-muted-foreground">
-                      For rate-limited APIs, increase delay between retries to avoid hitting limits repeatedly.
+                      For rate-limited APIs, increase delay between retries to avoid hitting limits
+                      repeatedly.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-yellow-500/10 p-2">
@@ -464,7 +490,8 @@ export default function RetryMechanismPage() {
                   <div>
                     <h4 className="font-medium mb-2">Monitor Total Time</h4>
                     <p className="text-sm text-muted-foreground">
-                      With retries, requests can take much longer. Set appropriate timeouts to avoid hanging tests.
+                      With retries, requests can take much longer. Set appropriate timeouts to avoid
+                      hanging tests.
                     </p>
                   </div>
                 </div>
@@ -478,7 +505,7 @@ export default function RetryMechanismPage() {
             <p className="text-muted-foreground mb-6">
               Control retry behavior from the command line.
             </p>
-            
+
             <CodeBlockServer language="bash" filename="terminal">
               {cliCommands}
             </CodeBlockServer>
@@ -493,5 +520,5 @@ export default function RetryMechanismPage() {
         </div>
       </div>
     </main>
-  )
+  );
 }

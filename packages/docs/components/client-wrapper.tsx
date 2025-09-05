@@ -1,15 +1,11 @@
-"use client"
+'use client';
 
-import { TooltipProvider } from "@/components/ui/tooltip"
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 interface ClientWrapperProps {
-  children: React.ReactNode
+  children: React.ReactNode;
 }
 
 export function ClientWrapper({ children }: ClientWrapperProps) {
-  return (
-    <TooltipProvider>
-      {children}
-    </TooltipProvider>
-  )
+  return <TooltipProvider>{children}</TooltipProvider>;
 }

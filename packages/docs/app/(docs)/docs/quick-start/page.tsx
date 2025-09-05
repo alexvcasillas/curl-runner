@@ -26,14 +26,14 @@ export const metadata: Metadata = {
     description:
       'Get started with curl-runner in minutes. Learn how to create your first YAML configuration, run HTTP requests, and validate responses with this step-by-step guide.',
     url: 'https://curl-runner.com/docs/quick-start',
-    type: 'article'
-    },
+    type: 'article',
+  },
   twitter: {
     card: 'summary_large_image',
     title: 'Quick Start | curl-runner Documentation',
     description:
       'Get started with curl-runner in minutes. Learn how to create your first YAML configuration and run HTTP requests.',
-    },
+  },
   alternates: {
     canonical: 'https://curl-runner.com/docs/quick-start',
   },
@@ -131,7 +131,7 @@ export default function QuickStartPage() {
           {/* Step by Step Guide */}
           <section>
             <div className="space-y-8">
-              {steps.map((step, index) => (
+              {steps.map((step, _index) => (
                 <div key={step.step} className="space-y-3">
                   <div className="flex items-start space-x-4">
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-medium">

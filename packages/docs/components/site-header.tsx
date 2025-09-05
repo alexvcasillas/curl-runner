@@ -1,6 +1,6 @@
 'use client';
 
-import { Github, Menu, Search, Terminal } from 'lucide-react';
+import { Menu, Search, Terminal } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';

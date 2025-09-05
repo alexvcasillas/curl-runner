@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
   if (token && token.length > 0) {
     return NextResponse.json({
       authenticated: true,
-      token: token.substring(0, 10) + '...', // Don't echo full token
+      token: `${token.substring(0, 10)}...`, // Don't echo full token
       message: 'Successfully authenticated with bearer token',
       timestamp: new Date().toISOString(),
     });

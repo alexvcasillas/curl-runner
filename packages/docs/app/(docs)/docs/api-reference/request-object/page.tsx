@@ -1,16 +1,17 @@
+import { Code, FileText, Globe, Lightbulb, List, Settings, Timer, Type } from 'lucide-react';
 import type { Metadata } from 'next';
-import { DocsPageHeader } from "@/components/docs-page-header"
-import { CodeBlockServer } from "@/components/code-block-server"
-import { TableOfContents } from "@/components/toc"
-import { H2, H3 } from "@/components/docs-heading"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { FileText, List, Code, Type, Timer, Settings, Globe, Shield, Lightbulb } from "lucide-react"
-import { validationConfigExample } from './snippets'
+import { CodeBlockServer } from '@/components/code-block-server';
+import { H2, H3 } from '@/components/docs-heading';
+import { DocsPageHeader } from '@/components/docs-page-header';
+import { TableOfContents } from '@/components/toc';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { validationConfigExample } from './snippets';
 
 export const metadata: Metadata = {
   title: 'Request Object',
-  description: 'Complete reference for curl-runner request objects including all properties, methods, headers, body formats, and configuration options.',
+  description:
+    'Complete reference for curl-runner request objects including all properties, methods, headers, body formats, and configuration options.',
   keywords: [
     'curl-runner request object',
     'HTTP request configuration',
@@ -23,19 +24,20 @@ export const metadata: Metadata = {
     'request validation',
     'API request structure',
     'HTTP request schema',
-    'request format'
+    'request format',
   ],
   openGraph: {
     title: 'Request Object | curl-runner API Reference',
-    description: 'Complete reference for curl-runner request objects including all properties, methods, headers, body formats, and configuration options.',
+    description:
+      'Complete reference for curl-runner request objects including all properties, methods, headers, body formats, and configuration options.',
     url: 'https://curl-runner.com/docs/api-reference/request-object',
-    type: 'article'
-    },
+    type: 'article',
+  },
   twitter: {
     card: 'summary_large_image',
     title: 'Request Object | curl-runner API Reference',
     description: 'Learn about curl-runner request object structure and all available properties.',
-    },
+  },
   alternates: {
     canonical: 'https://curl-runner.com/docs/api-reference/request-object',
   },
@@ -86,7 +88,7 @@ request:
     body:
       id: "^[0-9]+$"
       username: "john_doe"
-      email: "john@example.com"`
+      email: "john@example.com"`;
 
 const methodsExample = `# HTTP Methods Examples
 requests:
@@ -135,7 +137,7 @@ requests:
   # OPTIONS - Get allowed methods
   - name: "Check Allowed Methods"
     url: "https://api.example.com/users"
-    method: OPTIONS`
+    method: OPTIONS`;
 
 const headersExample = `# Headers Configuration Examples
 requests:
@@ -181,7 +183,7 @@ requests:
     headers:
       Cache-Control: "no-cache"
       If-None-Match: "\${ETAG_VALUE}"
-      If-Modified-Since: "Wed, 21 Oct 2024 07:28:00 GMT"`
+      If-Modified-Since: "Wed, 21 Oct 2024 07:28:00 GMT"`;
 
 const parametersExample = `# URL Parameters Examples
 requests:
@@ -223,7 +225,7 @@ requests:
       userId: "\${USER_ID}"
       region: "\${USER_REGION}"
       locale: "\${USER_LOCALE}"
-      apiVersion: "\${API_VERSION}"`
+      apiVersion: "\${API_VERSION}"`;
 
 const bodyExample = `# Request Body Examples
 requests:
@@ -291,7 +293,7 @@ requests:
       environment: "\${ENV}"
       data:
         value: "\${DYNAMIC_VALUE}"
-        reference: "\${REF_ID}"`
+        reference: "\${REF_ID}"`;
 
 const authenticationExample = `# Authentication Examples
 requests:
@@ -334,7 +336,7 @@ requests:
     headers:
       Authorization: "Custom \${CUSTOM_TOKEN}"
       X-Signature: "\${REQUEST_SIGNATURE}"
-      X-Timestamp: "\${REQUEST_TIMESTAMP}"`
+      X-Timestamp: "\${REQUEST_TIMESTAMP}"`;
 
 const timeoutRetryExample = `# Timeout and Retry Configuration
 requests:
@@ -376,7 +378,7 @@ requests:
     timeout: 2000
     retry:
       count: 3
-      delay: 500    # Quick retry interval`
+      delay: 500    # Quick retry interval`;
 
 const redirectsExample = `# Redirect Handling Configuration
 requests:
@@ -409,7 +411,7 @@ requests:
     followRedirects: true
     maxRedirects: 3
     body:
-      action: "submit"`
+      action: "submit"`;
 
 const proxyExample = `# Proxy and Security Configuration
 requests:
@@ -441,7 +443,7 @@ requests:
   - name: "Secure Request"
     url: "https://api.example.com/secure-endpoint"
     method: GET
-    insecure: false  # Verify SSL certificates (default)`
+    insecure: false  # Verify SSL certificates (default)`;
 
 const variablesExample = `# Request-Level Variables
 requests:
@@ -477,7 +479,7 @@ requests:
         price_range:
           min: 10
           max: 100
-    body: \${SEARCH_FILTERS}`
+    body: \${SEARCH_FILTERS}`;
 
 const outputExample = `# Output Configuration
 requests:
@@ -503,7 +505,7 @@ requests:
   - name: "Console Output"
     url: "https://api.example.com/status"
     method: GET
-    # No output field - results shown in console`
+    # No output field - results shown in console`;
 
 export default function RequestObjectPage() {
   return (
@@ -519,9 +521,11 @@ export default function RequestObjectPage() {
           <section>
             <H2 id="overview">Overview</H2>
             <p className="text-muted-foreground mb-6">
-              The Request Object defines the configuration for individual HTTP requests in curl-runner. It supports all standard HTTP methods, authentication, headers, body content, error handling, and response validation.
+              The Request Object defines the configuration for individual HTTP requests in
+              curl-runner. It supports all standard HTTP methods, authentication, headers, body
+              content, error handling, and response validation.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="complete-request.yaml">
               {requestObjectExample}
             </CodeBlockServer>
@@ -542,106 +546,202 @@ export default function RequestObjectPage() {
                 </thead>
                 <tbody>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">name</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">name</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">string</td>
-                    <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
-                    <td className="p-3 text-sm text-muted-foreground">Human-readable name for the request</td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="outline">Optional</Badge>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Human-readable name for the request
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">url</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">url</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">string</td>
-                    <td className="p-3 text-sm"><Badge variant="destructive">Required</Badge></td>
-                    <td className="p-3 text-sm text-muted-foreground">Target URL for the HTTP request</td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="destructive">Required</Badge>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Target URL for the HTTP request
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">method</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">method</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">HTTPMethod</td>
-                    <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
-                    <td className="p-3 text-sm text-muted-foreground">HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS)</td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="outline">Optional</Badge>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS)
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">headers</code></td>
-                    <td className="p-3 text-sm text-muted-foreground">Record&lt;string, string&gt;</td>
-                    <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
+                    <td className="p-3">
+                      <code className="text-sm">headers</code>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Record&lt;string, string&gt;
+                    </td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="outline">Optional</Badge>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">HTTP headers to include</td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">params</code></td>
-                    <td className="p-3 text-sm text-muted-foreground">Record&lt;string, string&gt;</td>
-                    <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
+                    <td className="p-3">
+                      <code className="text-sm">params</code>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Record&lt;string, string&gt;
+                    </td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="outline">Optional</Badge>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">URL query parameters</td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">body</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">body</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">JsonValue</td>
-                    <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="outline">Optional</Badge>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">Request body content</td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">timeout</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">timeout</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">number</td>
-                    <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
-                    <td className="p-3 text-sm text-muted-foreground">Request timeout in milliseconds</td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="outline">Optional</Badge>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Request timeout in milliseconds
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">followRedirects</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">followRedirects</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">boolean</td>
-                    <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
-                    <td className="p-3 text-sm text-muted-foreground">Whether to follow HTTP redirects</td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="outline">Optional</Badge>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Whether to follow HTTP redirects
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">maxRedirects</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">maxRedirects</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">number</td>
-                    <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
-                    <td className="p-3 text-sm text-muted-foreground">Maximum number of redirects to follow</td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="outline">Optional</Badge>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Maximum number of redirects to follow
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">auth</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">auth</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">AuthConfig</td>
-                    <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
-                    <td className="p-3 text-sm text-muted-foreground">Authentication configuration</td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="outline">Optional</Badge>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Authentication configuration
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">proxy</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">proxy</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">string</td>
-                    <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="outline">Optional</Badge>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">Proxy server URL</td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">insecure</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">insecure</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">boolean</td>
-                    <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
-                    <td className="p-3 text-sm text-muted-foreground">Skip SSL certificate verification</td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="outline">Optional</Badge>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Skip SSL certificate verification
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">output</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">output</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">string</td>
-                    <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
-                    <td className="p-3 text-sm text-muted-foreground">File path to save response</td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="outline">Optional</Badge>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      File path to save response
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">retry</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">retry</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">RetryConfig</td>
-                    <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="outline">Optional</Badge>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">Retry configuration</td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">variables</code></td>
-                    <td className="p-3 text-sm text-muted-foreground">Record&lt;string, string&gt;</td>
-                    <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
+                    <td className="p-3">
+                      <code className="text-sm">variables</code>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Record&lt;string, string&gt;
+                    </td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="outline">Optional</Badge>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">Request-level variables</td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">expect</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">expect</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">ExpectConfig</td>
-                    <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
-                    <td className="p-3 text-sm text-muted-foreground">Response validation rules including negative testing</td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="outline">Optional</Badge>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Response validation rules including negative testing
+                    </td>
                   </tr>
                   <tr>
-                    <td className="p-3"><code className="text-sm">sourceOutputConfig</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">sourceOutputConfig</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">OutputConfig</td>
-                    <td className="p-3 text-sm"><Badge variant="outline">Optional</Badge></td>
-                    <td className="p-3 text-sm text-muted-foreground">Per-request output configuration (internal use)</td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="outline">Optional</Badge>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Per-request output configuration (internal use)
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -652,9 +752,10 @@ export default function RequestObjectPage() {
           <section>
             <H2 id="http-methods">HTTP Methods</H2>
             <p className="text-muted-foreground mb-6">
-              curl-runner supports all standard HTTP methods. The default method is GET if not specified.
+              curl-runner supports all standard HTTP methods. The default method is GET if not
+              specified.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="http-methods.yaml">
               {methodsExample}
             </CodeBlockServer>
@@ -670,7 +771,7 @@ export default function RequestObjectPage() {
                   Retrieve data without side effects
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
@@ -681,7 +782,7 @@ export default function RequestObjectPage() {
                   Create new resources or submit data
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
@@ -692,7 +793,7 @@ export default function RequestObjectPage() {
                   Complete resource replacement
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
@@ -703,7 +804,7 @@ export default function RequestObjectPage() {
                   Partial resource updates
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
@@ -714,7 +815,7 @@ export default function RequestObjectPage() {
                   Delete resources
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
@@ -734,14 +835,16 @@ export default function RequestObjectPage() {
             <p className="text-muted-foreground mb-6">
               Configure HTTP headers for authentication, content type, custom metadata, and more.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="headers-config.yaml">
               {headersExample}
             </CodeBlockServer>
 
             <div className="mt-6 rounded-lg border bg-blue-500/5 dark:bg-blue-500/10 border-blue-500/20 p-4">
               <p className="text-sm">
-                <strong className="text-blue-600 dark:text-blue-400">Note:</strong> Header names are case-insensitive according to HTTP specification, but values are case-sensitive. Use variables for dynamic header values.
+                <strong className="text-blue-600 dark:text-blue-400">Note:</strong> Header names are
+                case-insensitive according to HTTP specification, but values are case-sensitive. Use
+                variables for dynamic header values.
               </p>
             </div>
           </section>
@@ -750,9 +853,10 @@ export default function RequestObjectPage() {
           <section>
             <H2 id="url-parameters">URL Parameters</H2>
             <p className="text-muted-foreground mb-6">
-              Add query parameters to URLs using the params object. Parameters are automatically URL-encoded.
+              Add query parameters to URLs using the params object. Parameters are automatically
+              URL-encoded.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="url-parameters.yaml">
               {parametersExample}
             </CodeBlockServer>
@@ -762,9 +866,10 @@ export default function RequestObjectPage() {
           <section>
             <H2 id="request-body">Request Body</H2>
             <p className="text-muted-foreground mb-6">
-              Configure request body content for POST, PUT, PATCH, and other methods that support body data.
+              Configure request body content for POST, PUT, PATCH, and other methods that support
+              body data.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="request-body.yaml">
               {bodyExample}
             </CodeBlockServer>
@@ -779,12 +884,16 @@ export default function RequestObjectPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">JSON Object</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Structured data as objects</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">{"body: {key: 'value'}"}</code>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Structured data as objects
+                      </p>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        {"body: {key: 'value'}"}
+                      </code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-green-500/10 p-2">
@@ -793,11 +902,13 @@ export default function RequestObjectPage() {
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">JSON Array</h4>
                       <p className="text-sm text-muted-foreground mb-3">Array of data items</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">{"body: [item1, item2]"}</code>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        {'body: [item1, item2]'}
+                      </code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-purple-500/10 p-2">
@@ -806,11 +917,13 @@ export default function RequestObjectPage() {
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Form Data</h4>
                       <p className="text-sm text-muted-foreground mb-3">URL-encoded form data</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">key1=value1&key2=value2</code>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        key1=value1&key2=value2
+                      </code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-orange-500/10 p-2">
@@ -819,7 +932,9 @@ export default function RequestObjectPage() {
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Plain Text</h4>
                       <p className="text-sm text-muted-foreground mb-3">Raw text content</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">{"body: \"plain text\""}</code>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        {'body: "plain text"'}
+                      </code>
                     </div>
                   </div>
                 </div>
@@ -833,7 +948,7 @@ export default function RequestObjectPage() {
             <p className="text-muted-foreground mb-6">
               Configure authentication using the auth object or manual headers.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="authentication.yaml">
               {authenticationExample}
             </CodeBlockServer>
@@ -849,14 +964,22 @@ export default function RequestObjectPage() {
                 </thead>
                 <tbody>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">basic</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">basic</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">username, password</td>
-                    <td className="p-3 text-sm text-muted-foreground">Authorization: Basic &lt;base64&gt;</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Authorization: Basic &lt;base64&gt;
+                    </td>
                   </tr>
                   <tr>
-                    <td className="p-3"><code className="text-sm">bearer</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">bearer</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">token</td>
-                    <td className="p-3 text-sm text-muted-foreground">Authorization: Bearer &lt;token&gt;</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Authorization: Bearer &lt;token&gt;
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -867,9 +990,10 @@ export default function RequestObjectPage() {
           <section>
             <H2 id="timeout-retry">Timeout & Retry Configuration</H2>
             <p className="text-muted-foreground mb-6">
-              Configure request timeouts and retry behavior for handling network issues and unreliable services.
+              Configure request timeouts and retry behavior for handling network issues and
+              unreliable services.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="timeout-retry.yaml">
               {timeoutRetryExample}
             </CodeBlockServer>
@@ -880,20 +1004,32 @@ export default function RequestObjectPage() {
                   <CardTitle className="text-base">Timeout Values</CardTitle>
                 </CardHeader>
                 <CardContent className="text-sm space-y-2">
-                  <p><strong>Quick APIs:</strong> 1-5 seconds</p>
-                  <p><strong>Standard APIs:</strong> 5-15 seconds</p>
-                  <p><strong>Heavy processing:</strong> 30-120 seconds</p>
-                  <p><strong>File uploads:</strong> 300+ seconds</p>
+                  <p>
+                    <strong>Quick APIs:</strong> 1-5 seconds
+                  </p>
+                  <p>
+                    <strong>Standard APIs:</strong> 5-15 seconds
+                  </p>
+                  <p>
+                    <strong>Heavy processing:</strong> 30-120 seconds
+                  </p>
+                  <p>
+                    <strong>File uploads:</strong> 300+ seconds
+                  </p>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">Retry Strategy</CardTitle>
                 </CardHeader>
                 <CardContent className="text-sm space-y-2">
-                  <p><strong>count:</strong> Number of retry attempts</p>
-                  <p><strong>delay:</strong> Wait time between retries</p>
+                  <p>
+                    <strong>count:</strong> Number of retry attempts
+                  </p>
+                  <p>
+                    <strong>delay:</strong> Wait time between retries
+                  </p>
                   <p>Uses exponential backoff automatically</p>
                 </CardContent>
               </Card>
@@ -906,7 +1042,7 @@ export default function RequestObjectPage() {
             <p className="text-muted-foreground mb-6">
               Control how curl-runner handles HTTP redirects (3xx status codes).
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="redirects.yaml">
               {redirectsExample}
             </CodeBlockServer>
@@ -918,14 +1054,16 @@ export default function RequestObjectPage() {
             <p className="text-muted-foreground mb-6">
               Configure proxy settings and SSL/TLS security options.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="proxy-security.yaml">
               {proxyExample}
             </CodeBlockServer>
 
             <div className="mt-6 rounded-lg border bg-yellow-500/5 dark:bg-yellow-500/10 border-yellow-500/20 p-4">
               <p className="text-sm">
-                <strong className="text-yellow-600 dark:text-yellow-400">Security Warning:</strong> Only use <code>insecure: true</code> for testing with self-signed certificates. Never use in production environments.
+                <strong className="text-yellow-600 dark:text-yellow-400">Security Warning:</strong>{' '}
+                Only use <code>insecure: true</code> for testing with self-signed certificates.
+                Never use in production environments.
               </p>
             </div>
           </section>
@@ -936,7 +1074,7 @@ export default function RequestObjectPage() {
             <p className="text-muted-foreground mb-6">
               Define variables at the request level that can be used within that specific request.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="request-variables.yaml">
               {variablesExample}
             </CodeBlockServer>
@@ -946,9 +1084,10 @@ export default function RequestObjectPage() {
           <section>
             <H2 id="validation-configuration">Response Validation</H2>
             <p className="text-muted-foreground mb-6">
-              Configure response validation using the expect object to verify status codes, headers, and body content. Includes support for negative testing with expect.failure.
+              Configure response validation using the expect object to verify status codes, headers,
+              and body content. Includes support for negative testing with expect.failure.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="validation-config.yaml">
               {validationConfigExample}
             </CodeBlockServer>
@@ -960,7 +1099,10 @@ export default function RequestObjectPage() {
                   Negative Testing with expect.failure
                 </h4>
                 <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>Set <code>expect.failure: true</code> to test scenarios where you expect the request to fail:</p>
+                  <p>
+                    Set <code>expect.failure: true</code> to test scenarios where you expect the
+                    request to fail:
+                  </p>
                   <ul className="list-disc pl-4 space-y-1">
                     <li>Authentication failures (401, 403)</li>
                     <li>Validation errors (400, 422)</li>
@@ -970,10 +1112,12 @@ export default function RequestObjectPage() {
                   </ul>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-green-500/5 dark:bg-green-500/10 border-green-500/20 p-4">
                 <p className="text-sm text-muted-foreground">
-                  <strong>Validation Priority:</strong> Request-level validation rules override collection and global defaults. Use partial matching to validate only the fields that matter to your test.
+                  <strong>Validation Priority:</strong> Request-level validation rules override
+                  collection and global defaults. Use partial matching to validate only the fields
+                  that matter to your test.
                 </p>
               </div>
             </div>
@@ -985,7 +1129,7 @@ export default function RequestObjectPage() {
             <p className="text-muted-foreground mb-6">
               Configure where to save response data from individual requests.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="output-config.yaml">
               {outputExample}
             </CodeBlockServer>
@@ -1003,12 +1147,13 @@ export default function RequestObjectPage() {
                   <div>
                     <h4 className="font-medium mb-2">Use Descriptive Names</h4>
                     <p className="text-sm text-muted-foreground">
-                      Always include meaningful names for your requests to make logs and output easier to understand.
+                      Always include meaningful names for your requests to make logs and output
+                      easier to understand.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-orange-500/10 p-2">
@@ -1017,12 +1162,13 @@ export default function RequestObjectPage() {
                   <div>
                     <h4 className="font-medium mb-2">Set Appropriate Timeouts</h4>
                     <p className="text-sm text-muted-foreground">
-                      Configure timeouts based on expected response times. Too short causes failures, too long delays error detection.
+                      Configure timeouts based on expected response times. Too short causes
+                      failures, too long delays error detection.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-green-500/10 p-2">
@@ -1031,12 +1177,13 @@ export default function RequestObjectPage() {
                   <div>
                     <h4 className="font-medium mb-2">Use Variables for Dynamic Content</h4>
                     <p className="text-sm text-muted-foreground">
-                      Leverage variables for API endpoints, tokens, and user IDs to make configurations reusable across environments.
+                      Leverage variables for API endpoints, tokens, and user IDs to make
+                      configurations reusable across environments.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-purple-500/10 p-2">
@@ -1045,7 +1192,8 @@ export default function RequestObjectPage() {
                   <div>
                     <h4 className="font-medium mb-2">Include Content-Type Headers</h4>
                     <p className="text-sm text-muted-foreground">
-                      Always specify Content-Type headers when sending body data to ensure proper server-side processing.
+                      Always specify Content-Type headers when sending body data to ensure proper
+                      server-side processing.
                     </p>
                   </div>
                 </div>
@@ -1062,5 +1210,5 @@ export default function RequestObjectPage() {
         </div>
       </div>
     </main>
-  )
+  );
 }

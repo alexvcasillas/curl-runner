@@ -1,15 +1,28 @@
+import {
+  AlertCircle,
+  AlertTriangle,
+  ArrowRight,
+  BarChart3,
+  CheckCircle,
+  Code,
+  File,
+  FileJson,
+  FileText,
+  Timer,
+  Wifi,
+  XCircle,
+} from 'lucide-react';
 import type { Metadata } from 'next';
-import { DocsPageHeader } from "@/components/docs-page-header"
-import { CodeBlockServer } from "@/components/code-block-server"
-import { TableOfContents } from "@/components/toc"
-import { H2, H3 } from "@/components/docs-heading"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { FileJson, Code, FileText, File, CheckCircle, BarChart3, AlertTriangle, Timer, Wifi, AlertCircle, ArrowRight, XCircle } from "lucide-react"
+import { CodeBlockServer } from '@/components/code-block-server';
+import { H2, H3 } from '@/components/docs-heading';
+import { DocsPageHeader } from '@/components/docs-page-header';
+import { TableOfContents } from '@/components/toc';
+import { Badge } from '@/components/ui/badge';
 
 export const metadata: Metadata = {
   title: 'Response Object',
-  description: 'Complete reference for curl-runner response objects including status codes, headers, body content, metrics, and execution results.',
+  description:
+    'Complete reference for curl-runner response objects including status codes, headers, body content, metrics, and execution results.',
   keywords: [
     'curl-runner response object',
     'HTTP response structure',
@@ -22,19 +35,20 @@ export const metadata: Metadata = {
     'API response format',
     'response schema',
     'HTTP response data',
-    'response handling'
+    'response handling',
   ],
   openGraph: {
     title: 'Response Object | curl-runner API Reference',
-    description: 'Complete reference for curl-runner response objects including status codes, headers, body content, metrics, and execution results.',
+    description:
+      'Complete reference for curl-runner response objects including status codes, headers, body content, metrics, and execution results.',
     url: 'https://curl-runner.com/docs/api-reference/response-object',
-    type: 'article'
-    },
+    type: 'article',
+  },
   twitter: {
     card: 'summary_large_image',
     title: 'Response Object | curl-runner API Reference',
     description: 'Learn about curl-runner response object structure and available properties.',
-    },
+  },
   alternates: {
     canonical: 'https://curl-runner.com/docs/api-reference/response-object',
   },
@@ -89,7 +103,7 @@ const executionResultExample = `# Example ExecutionResult object structure
     "firstByte": 189,
     "download": 8
   }
-}`
+}`;
 
 const errorResultExample = `# Example failed request ExecutionResult
 {
@@ -106,7 +120,7 @@ const errorResultExample = `# Example failed request ExecutionResult
     "dnsLookup": 2500,
     "tcpConnection": 500
   }
-}`
+}`;
 
 const executionSummaryExample = `# Example ExecutionSummary for a collection run
 {
@@ -202,7 +216,7 @@ const executionSummaryExample = `# Example ExecutionSummary for a collection run
       }
     }
   ]
-}`
+}`;
 
 const responseBodyTypesExample = `# Different response body types curl-runner handles
 
@@ -255,7 +269,7 @@ const responseBodyTypesExample = `# Different response body types curl-runner ha
     "content-length": "0"
   }
   // No body field present
-}`
+}`;
 
 const metricsDetailsExample = `# Detailed explanation of response metrics
 
@@ -276,7 +290,7 @@ const metricsDetailsExample = `# Detailed explanation of response metrics
 # - Some metrics may be 0 or undefined based on request type and caching
 # - DNS lookup may be 0 if DNS is cached
 # - TLS handshake only present for HTTPS requests
-# - Connection time may be 0 if connection is reused`
+# - Connection time may be 0 if connection is reused`;
 
 const statusCodesExample = `# Common HTTP status codes in responses
 
@@ -362,7 +376,7 @@ const statusCodesExample = `# Common HTTP status codes in responses
   "body": {
     "error": "Service temporarily unavailable"
   }
-}`
+}`;
 
 const headerTypesExample = `# Common response headers and their meanings
 
@@ -404,7 +418,7 @@ const headerTypesExample = `# Common response headers and their meanings
     // Location header (for redirects/created resources)
     "location": "https://api.example.com/users/123"
   }
-}`
+}`;
 
 const processingResponsesExample = `# How to process response data programmatically
 
@@ -450,7 +464,7 @@ collection:
       headers:
         Authorization: "Bearer \${TOKEN}"              # From previous response
       expect:
-        status: 200`
+        status: 200`;
 
 export default function ResponseObjectPage() {
   return (
@@ -466,12 +480,15 @@ export default function ResponseObjectPage() {
           <section>
             <H2 id="overview">Overview</H2>
             <p className="text-muted-foreground mb-6">
-              curl-runner provides detailed response information through structured objects. Every request returns an ExecutionResult, and collections return an ExecutionSummary containing multiple results with aggregate statistics.
+              curl-runner provides detailed response information through structured objects. Every
+              request returns an ExecutionResult, and collections return an ExecutionSummary
+              containing multiple results with aggregate statistics.
             </p>
-            
+
             <div className="rounded-lg border bg-muted/50 p-4">
               <p className="text-sm">
-                <strong>Note:</strong> Response objects are available in verbose output, saved files, and can be used for programmatic processing of API test results.
+                <strong>Note:</strong> Response objects are available in verbose output, saved
+                files, and can be used for programmatic processing of API test results.
               </p>
             </div>
           </section>
@@ -480,9 +497,11 @@ export default function ResponseObjectPage() {
           <section>
             <H2 id="execution-result">ExecutionResult Interface</H2>
             <p className="text-muted-foreground mb-6">
-              The ExecutionResult interface contains complete information about a single request execution, including the original request configuration, response data, and performance metrics.
+              The ExecutionResult interface contains complete information about a single request
+              execution, including the original request configuration, response data, and
+              performance metrics.
             </p>
-            
+
             <CodeBlockServer language="json" filename="execution-result.json">
               {executionResultExample}
             </CodeBlockServer>
@@ -498,39 +517,69 @@ export default function ResponseObjectPage() {
                 </thead>
                 <tbody>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">request</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">request</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">RequestConfig</td>
-                    <td className="p-3 text-sm text-muted-foreground">Original request configuration that was executed</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Original request configuration that was executed
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">success</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">success</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">boolean</td>
-                    <td className="p-3 text-sm text-muted-foreground">Whether the request completed successfully</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Whether the request completed successfully
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">status</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">status</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">number?</td>
-                    <td className="p-3 text-sm text-muted-foreground">HTTP status code (if response received)</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      HTTP status code (if response received)
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">headers</code></td>
-                    <td className="p-3 text-sm text-muted-foreground">Record&lt;string, string&gt;?</td>
-                    <td className="p-3 text-sm text-muted-foreground">Response headers (if response received)</td>
+                    <td className="p-3">
+                      <code className="text-sm">headers</code>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Record&lt;string, string&gt;?
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Response headers (if response received)
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">body</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">body</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">JsonValue?</td>
-                    <td className="p-3 text-sm text-muted-foreground">Response body content (parsed if JSON)</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Response body content (parsed if JSON)
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">error</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">error</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">string?</td>
-                    <td className="p-3 text-sm text-muted-foreground">Error message (if request failed)</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Error message (if request failed)
+                    </td>
                   </tr>
                   <tr>
-                    <td className="p-3"><code className="text-sm">metrics</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">metrics</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">MetricsObject?</td>
-                    <td className="p-3 text-sm text-muted-foreground">Performance timing information</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Performance timing information
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -541,9 +590,10 @@ export default function ResponseObjectPage() {
           <section>
             <H2 id="error-responses">Error Response Structure</H2>
             <p className="text-muted-foreground mb-6">
-              When requests fail due to network issues, timeouts, or other errors, the ExecutionResult provides error information.
+              When requests fail due to network issues, timeouts, or other errors, the
+              ExecutionResult provides error information.
             </p>
-            
+
             <CodeBlockServer language="json" filename="error-result.json">
               {errorResultExample}
             </CodeBlockServer>
@@ -563,7 +613,7 @@ export default function ResponseObjectPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-orange-500/10 p-2">
@@ -585,9 +635,10 @@ export default function ResponseObjectPage() {
           <section>
             <H2 id="execution-summary">ExecutionSummary Interface</H2>
             <p className="text-muted-foreground mb-6">
-              The ExecutionSummary provides aggregate information about a collection of requests, including overall statistics and all individual results.
+              The ExecutionSummary provides aggregate information about a collection of requests,
+              including overall statistics and all individual results.
             </p>
-            
+
             <CodeBlockServer language="json" filename="execution-summary.json">
               {executionSummaryExample}
             </CodeBlockServer>
@@ -603,29 +654,47 @@ export default function ResponseObjectPage() {
                 </thead>
                 <tbody>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">total</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">total</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">number</td>
-                    <td className="p-3 text-sm text-muted-foreground">Total number of requests executed</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Total number of requests executed
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">successful</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">successful</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">number</td>
-                    <td className="p-3 text-sm text-muted-foreground">Number of successful requests</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Number of successful requests
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">failed</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">failed</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">number</td>
                     <td className="p-3 text-sm text-muted-foreground">Number of failed requests</td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">duration</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">duration</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">number</td>
-                    <td className="p-3 text-sm text-muted-foreground">Total execution time in milliseconds</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Total execution time in milliseconds
+                    </td>
                   </tr>
                   <tr>
-                    <td className="p-3"><code className="text-sm">results</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">results</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">ExecutionResult[]</td>
-                    <td className="p-3 text-sm text-muted-foreground">Array of individual request results</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Array of individual request results
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -636,9 +705,10 @@ export default function ResponseObjectPage() {
           <section>
             <H2 id="response-body-types">Response Body Types</H2>
             <p className="text-muted-foreground mb-6">
-              curl-runner automatically parses JSON responses and preserves the original data types for all response content.
+              curl-runner automatically parses JSON responses and preserves the original data types
+              for all response content.
             </p>
-            
+
             <CodeBlockServer language="json" filename="body-types.json">
               {responseBodyTypesExample}
             </CodeBlockServer>
@@ -659,7 +729,7 @@ export default function ResponseObjectPage() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-green-500/10 p-2">
@@ -673,7 +743,7 @@ export default function ResponseObjectPage() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-purple-500/10 p-2">
@@ -687,7 +757,7 @@ export default function ResponseObjectPage() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-orange-500/10 p-2">
@@ -709,9 +779,10 @@ export default function ResponseObjectPage() {
           <section>
             <H2 id="metrics-object">Performance Metrics</H2>
             <p className="text-muted-foreground mb-6">
-              Detailed timing information for analyzing request performance and identifying bottlenecks.
+              Detailed timing information for analyzing request performance and identifying
+              bottlenecks.
             </p>
-            
+
             <CodeBlockServer language="json" filename="metrics-details.json">
               {metricsDetailsExample}
             </CodeBlockServer>
@@ -727,39 +798,63 @@ export default function ResponseObjectPage() {
                 </thead>
                 <tbody>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">duration</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">duration</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">milliseconds</td>
-                    <td className="p-3 text-sm text-muted-foreground">Total request time from start to finish</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Total request time from start to finish
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">size</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">size</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">bytes</td>
                     <td className="p-3 text-sm text-muted-foreground">Response body size</td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">dnsLookup</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">dnsLookup</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">milliseconds</td>
                     <td className="p-3 text-sm text-muted-foreground">DNS resolution time</td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">tcpConnection</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">tcpConnection</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">milliseconds</td>
-                    <td className="p-3 text-sm text-muted-foreground">TCP connection establishment time</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      TCP connection establishment time
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">tlsHandshake</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">tlsHandshake</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">milliseconds</td>
-                    <td className="p-3 text-sm text-muted-foreground">TLS/SSL handshake time (HTTPS only)</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      TLS/SSL handshake time (HTTPS only)
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">firstByte</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">firstByte</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">milliseconds</td>
-                    <td className="p-3 text-sm text-muted-foreground">Time to first response byte (TTFB)</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Time to first response byte (TTFB)
+                    </td>
                   </tr>
                   <tr>
-                    <td className="p-3"><code className="text-sm">download</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">download</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">milliseconds</td>
-                    <td className="p-3 text-sm text-muted-foreground">Response body download time</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Response body download time
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -770,9 +865,10 @@ export default function ResponseObjectPage() {
           <section>
             <H2 id="status-codes">HTTP Status Code Handling</H2>
             <p className="text-muted-foreground mb-6">
-              Understanding how curl-runner processes different HTTP status codes and determines success/failure.
+              Understanding how curl-runner processes different HTTP status codes and determines
+              success/failure.
             </p>
-            
+
             <CodeBlockServer language="json" filename="status-codes.json">
               {statusCodesExample}
             </CodeBlockServer>
@@ -796,7 +892,7 @@ export default function ResponseObjectPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-blue-500/10 p-2">
@@ -815,7 +911,7 @@ export default function ResponseObjectPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-orange-500/10 p-2">
@@ -834,7 +930,7 @@ export default function ResponseObjectPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-red-500/10 p-2">
@@ -862,7 +958,7 @@ export default function ResponseObjectPage() {
             <p className="text-muted-foreground mb-6">
               Common response headers and their significance in API responses.
             </p>
-            
+
             <CodeBlockServer language="json" filename="response-headers.json">
               {headerTypesExample}
             </CodeBlockServer>
@@ -878,11 +974,13 @@ export default function ResponseObjectPage() {
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Content Headers</h4>
                       <p className="text-sm text-muted-foreground mb-3">Describe response body</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">content-type, content-length</code>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        content-type, content-length
+                      </code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-green-500/10 p-2">
@@ -890,12 +988,16 @@ export default function ResponseObjectPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Caching Headers</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Control client-side caching</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">cache-control, etag</code>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Control client-side caching
+                      </p>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        cache-control, etag
+                      </code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-orange-500/10 p-2">
@@ -903,12 +1005,16 @@ export default function ResponseObjectPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Security Headers</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Enforce security policies</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">strict-transport-security</code>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Enforce security policies
+                      </p>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        strict-transport-security
+                      </code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-purple-500/10 p-2">
@@ -917,7 +1023,9 @@ export default function ResponseObjectPage() {
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">API Headers</h4>
                       <p className="text-sm text-muted-foreground mb-3">API-specific metadata</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">x-rate-limit, x-api-version</code>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        x-rate-limit, x-api-version
+                      </code>
                     </div>
                   </div>
                 </div>
@@ -931,14 +1039,16 @@ export default function ResponseObjectPage() {
             <p className="text-muted-foreground mb-6">
               Techniques for working with response data programmatically and in automated workflows.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="response-processing.yaml">
               {processingResponsesExample}
             </CodeBlockServer>
 
             <div className="mt-6 rounded-lg border bg-green-500/5 dark:bg-green-500/10 border-green-500/20 p-4">
               <p className="text-sm">
-                <strong className="text-green-600 dark:text-green-400">Pro Tip:</strong> Save responses to JSON files for post-processing with tools like jq, or import into data analysis tools for comprehensive API testing insights.
+                <strong className="text-green-600 dark:text-green-400">Pro Tip:</strong> Save
+                responses to JSON files for post-processing with tools like jq, or import into data
+                analysis tools for comprehensive API testing insights.
               </p>
             </div>
           </section>
@@ -955,12 +1065,13 @@ export default function ResponseObjectPage() {
                   <div>
                     <h4 className="font-medium mb-2">Validate Critical Fields</h4>
                     <p className="text-sm text-muted-foreground">
-                      Use response validation to ensure critical fields are present and correctly formatted, especially for automated testing.
+                      Use response validation to ensure critical fields are present and correctly
+                      formatted, especially for automated testing.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-green-500/10 p-2">
@@ -969,12 +1080,13 @@ export default function ResponseObjectPage() {
                   <div>
                     <h4 className="font-medium mb-2">Monitor Performance Metrics</h4>
                     <p className="text-sm text-muted-foreground">
-                      Track response times and identify performance bottlenecks using the detailed metrics provided in each response.
+                      Track response times and identify performance bottlenecks using the detailed
+                      metrics provided in each response.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-orange-500/10 p-2">
@@ -983,12 +1095,13 @@ export default function ResponseObjectPage() {
                   <div>
                     <h4 className="font-medium mb-2">Handle Errors Gracefully</h4>
                     <p className="text-sm text-muted-foreground">
-                      Check both the success flag and HTTP status code to properly categorize and handle different types of failures.
+                      Check both the success flag and HTTP status code to properly categorize and
+                      handle different types of failures.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-purple-500/10 p-2">
@@ -997,7 +1110,8 @@ export default function ResponseObjectPage() {
                   <div>
                     <h4 className="font-medium mb-2">Use Response Headers</h4>
                     <p className="text-sm text-muted-foreground">
-                      Leverage response headers for pagination, rate limiting, caching, and API versioning information.
+                      Leverage response headers for pagination, rate limiting, caching, and API
+                      versioning information.
                     </p>
                   </div>
                 </div>
@@ -1014,5 +1128,5 @@ export default function ResponseObjectPage() {
         </div>
       </div>
     </main>
-  )
+  );
 }

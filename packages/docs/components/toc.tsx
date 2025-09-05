@@ -55,9 +55,11 @@ export function TableOfContents({ className }: TocProps) {
     return () => {
       headings.forEach((heading) => observer.unobserve(heading));
     };
-  }, [toc]);
+  }, []);
 
-  if (toc.length === 0) return null;
+  if (toc.length === 0) {
+    return null;
+  }
 
   return (
     <div className={cn('space-y-2', className)}>

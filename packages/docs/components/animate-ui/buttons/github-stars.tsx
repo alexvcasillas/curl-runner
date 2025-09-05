@@ -66,7 +66,7 @@ function GitHubStarsButton({
   const [stars, setStars] = React.useState(0);
   const [isCompleted, setIsCompleted] = React.useState(false);
   const [displayParticles, setDisplayParticles] = React.useState(false);
-  const [isLoading, setIsLoading] = React.useState(true);
+  const [_isLoading, setIsLoading] = React.useState(true);
 
   const repoUrl = React.useMemo(() => `https://github.com/${username}/${repo}`, [username, repo]);
 
@@ -128,9 +128,9 @@ function GitHubStarsButton({
       className={cn('flex items-center gap-px', isGhost ? 'invisible' : 'absolute top-0 left-0')}
     >
       {segments.map((segment, index) => (
-        <React.Fragment key={index}>
+        <React.Fragment key={`segment-${segment}-${index}`}>
           {Array.from(segment).map((digit, digitIndex) => (
-            <SlidingNumber key={`${index}-${digitIndex}`} number={+digit} />
+            <SlidingNumber key={`digit-${digit}-${digitIndex}`} number={+digit} />
           ))}
         </React.Fragment>
       ))}
@@ -202,7 +202,7 @@ function GitHubStarsButton({
               />
               {[...Array(6)].map((_, i) => (
                 <motion.div
-                  key={i}
+                  key={`sparkle-${i}`}
                   className="absolute w-1 h-1 rounded-full bg-yellow-500"
                   initial={{ x: '50%', y: '50%', scale: 0, opacity: 0 }}
                   animate={{

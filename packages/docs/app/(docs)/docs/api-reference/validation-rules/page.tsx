@@ -1,16 +1,38 @@
+import {
+  AlertTriangle,
+  ArrowRight,
+  BarChart3,
+  CheckCircle,
+  Code,
+  Database,
+  Eye,
+  FileText,
+  Filter,
+  Globe,
+  Key,
+  Layers,
+  Lightbulb,
+  List,
+  PlusCircle,
+  Search,
+  Shield,
+  Target,
+  TrendingUp,
+  XCircle,
+  Zap,
+} from 'lucide-react';
 import type { Metadata } from 'next';
-import { DocsPageHeader } from "@/components/docs-page-header"
-import { CodeBlockServer } from "@/components/code-block-server"
-import { TableOfContents } from "@/components/toc"
-import { H2, H3 } from "@/components/docs-heading"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { FileText, Shield, Globe, BarChart3, Target, Code, Database, Search, CheckCircle, Layers, Lightbulb, ArrowRight, AlertTriangle, XCircle, Key, PlusCircle, List, TrendingUp, Filter, Zap, Eye } from "lucide-react"
-import { failureTestingExample } from './snippets'
+import { CodeBlockServer } from '@/components/code-block-server';
+import { H2, H3 } from '@/components/docs-heading';
+import { DocsPageHeader } from '@/components/docs-page-header';
+import { TableOfContents } from '@/components/toc';
+import { Badge } from '@/components/ui/badge';
+import { failureTestingExample } from './snippets';
 
 export const metadata: Metadata = {
   title: 'Validation Rules',
-  description: 'Complete reference for curl-runner validation rules including status code validation, header validation, body validation, and custom validation patterns.',
+  description:
+    'Complete reference for curl-runner validation rules including status code validation, header validation, body validation, and custom validation patterns.',
   keywords: [
     'curl-runner validation rules',
     'response validation',
@@ -23,19 +45,20 @@ export const metadata: Metadata = {
     'API testing validation',
     'response checking',
     'validation schema',
-    'validation rules reference'
+    'validation rules reference',
   ],
   openGraph: {
     title: 'Validation Rules | curl-runner API Reference',
-    description: 'Complete reference for curl-runner validation rules including status code validation, header validation, body validation, and custom validation patterns.',
+    description:
+      'Complete reference for curl-runner validation rules including status code validation, header validation, body validation, and custom validation patterns.',
     url: 'https://curl-runner.com/docs/api-reference/validation-rules',
-    type: 'article'
-    },
+    type: 'article',
+  },
   twitter: {
     card: 'summary_large_image',
     title: 'Validation Rules | curl-runner API Reference',
     description: 'Learn about curl-runner validation rules for comprehensive API response testing.',
-    },
+  },
   alternates: {
     canonical: 'https://curl-runner.com/docs/api-reference/validation-rules',
   },
@@ -73,7 +96,7 @@ request:
         roles: ["user", "premium"]  # Array with specific values
         metadata:
           lastLogin: "*"  # Any value (wildcard)
-          preferences: "*"  # Any object structure`
+          preferences: "*"  # Any object structure`;
 
 const statusValidationExample = `# Status Code Validation Examples
 
@@ -135,7 +158,7 @@ requests:
     url: "https://api.example.com/limited-endpoint"
     method: GET
     expect:
-      status: [200, 429]  # OK or Too Many Requests`
+      status: [200, 429]  # OK or Too Many Requests`;
 
 const headerValidationExample = `# Header Validation Examples
 
@@ -172,7 +195,7 @@ request:
       date: "^[A-Z][a-z]{2}, \\d{2} [A-Z][a-z]{2} \\d{4}"
       
       # ETag pattern
-      etag: "^(W/)?\\\"[a-f0-9-]+\\\""
+      etag: "^(W/)?\\"[a-f0-9-]+\\""
       
       # Rate limit patterns
       x-rate-limit-limit: "^[0-9]+$"
@@ -214,7 +237,7 @@ request:
       x-response-time: "^[0-9]+ms$"
       
       # Location header for redirects/created resources
-      location: "^https://api\\.example\\.com/resources/[0-9]+$"`
+      location: "^https://api\\.example\\.com/resources/[0-9]+$"`;
 
 const bodyValidationExample = `# Body Validation Examples
 
@@ -301,7 +324,7 @@ request:
       tags: ["api", "production", "monitoring"]
       
       # Array of numbers
-      response_times: [120, 95, 200, 150]`
+      response_times: [120, 95, 200, 150]`;
 
 const patternValidationExample = `# Pattern Validation with Regex
 
@@ -382,7 +405,7 @@ request:
         - id: "^PROD-[0-9]+$"
           name: ".+"
           price: "^[0-9]+\\.[0-9]{2}$"
-          category: "^(electronics|clothing|books|home)$"`
+          category: "^(electronics|clothing|books|home)$"`;
 
 const wildcardValidationExample = `# Wildcard and Flexible Validation
 
@@ -448,7 +471,7 @@ request:
         - id: "*"
           type: "*"        # Any type for second notification
           message: "*"
-          timestamp: "*"`
+          timestamp: "*"`;
 
 const complexValidationExample = `# Complex Validation Scenarios
 
@@ -541,7 +564,7 @@ request:
       error:
         code: "^[A-Z_]+$"
         message: "*"
-        details: "*"`
+        details: "*"`;
 
 const validationInheritanceExample = `# Validation Inheritance and Overrides
 
@@ -607,7 +630,7 @@ collection:
           # Remove rate limit requirement for this endpoint
         body:
           # Only validate if response is 200
-          data: "*"  # Any data structure`
+          data: "*"  # Any data structure`;
 
 export default function ValidationRulesPage() {
   return (
@@ -623,16 +646,21 @@ export default function ValidationRulesPage() {
           <section>
             <H2 id="overview">Overview</H2>
             <p className="text-muted-foreground mb-6">
-              Validation rules allow you to verify that API responses meet expected criteria. Using the <code>expect</code> configuration object, you can validate HTTP status codes, response headers, and body content with support for exact matching, pattern matching, and wildcard validation.
+              Validation rules allow you to verify that API responses meet expected criteria. Using
+              the <code>expect</code> configuration object, you can validate HTTP status codes,
+              response headers, and body content with support for exact matching, pattern matching,
+              and wildcard validation.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="expect-config-complete.yaml">
               {expectConfigExample}
             </CodeBlockServer>
 
             <div className="mt-6 rounded-lg border bg-muted/50 p-4">
               <p className="text-sm">
-                <strong>Important:</strong> When validation rules are present, curl-runner marks requests as failed if any validation rule doesn't match, even if the HTTP request itself was successful.
+                <strong>Important:</strong> When validation rules are present, curl-runner marks
+                requests as failed if any validation rule doesn't match, even if the HTTP request
+                itself was successful.
               </p>
             </div>
           </section>
@@ -651,24 +679,43 @@ export default function ValidationRulesPage() {
                 </thead>
                 <tbody>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">failure</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">failure</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">boolean</td>
-                    <td className="p-3 text-sm text-muted-foreground">When <code>true</code>, expect the request to fail with 4xx/5xx status. Used for negative testing.</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      When <code>true</code>, expect the request to fail with 4xx/5xx status. Used
+                      for negative testing.
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">status</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">status</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">number | number[]</td>
-                    <td className="p-3 text-sm text-muted-foreground">Expected HTTP status code(s)</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Expected HTTP status code(s)
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">headers</code></td>
-                    <td className="p-3 text-sm text-muted-foreground">Record&lt;string, string&gt;</td>
-                    <td className="p-3 text-sm text-muted-foreground">Expected response headers with values or patterns</td>
+                    <td className="p-3">
+                      <code className="text-sm">headers</code>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Record&lt;string, string&gt;
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Expected response headers with values or patterns
+                    </td>
                   </tr>
                   <tr>
-                    <td className="p-3"><code className="text-sm">body</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">body</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">JsonValue</td>
-                    <td className="p-3 text-sm text-muted-foreground">Expected response body structure and values</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Expected response body structure and values
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -679,9 +726,10 @@ export default function ValidationRulesPage() {
           <section>
             <H2 id="status-validation">Status Code Validation</H2>
             <p className="text-muted-foreground mb-6">
-              Validate that responses return expected HTTP status codes. You can specify a single status code or an array of acceptable codes.
+              Validate that responses return expected HTTP status codes. You can specify a single
+              status code or an array of acceptable codes.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="status-validation.yaml">
               {statusValidationExample}
             </CodeBlockServer>
@@ -704,7 +752,7 @@ export default function ValidationRulesPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-blue-500/10 p-2">
@@ -722,7 +770,7 @@ export default function ValidationRulesPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-orange-500/10 p-2">
@@ -740,7 +788,7 @@ export default function ValidationRulesPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-red-500/10 p-2">
@@ -765,9 +813,12 @@ export default function ValidationRulesPage() {
           <section>
             <H2 id="failure-testing">Failure Testing (Negative Testing)</H2>
             <p className="text-muted-foreground mb-6">
-              Use <code>expect.failure: true</code> to test that endpoints correctly fail in expected ways. This is useful for testing error handling, authentication failures, validation errors, and other scenarios where you expect the request to return a 4xx or 5xx status code.
+              Use <code>expect.failure: true</code> to test that endpoints correctly fail in
+              expected ways. This is useful for testing error handling, authentication failures,
+              validation errors, and other scenarios where you expect the request to return a 4xx or
+              5xx status code.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="failure-testing.yaml">
               {failureTestingExample}
             </CodeBlockServer>
@@ -779,15 +830,27 @@ export default function ValidationRulesPage() {
                   How Failure Testing Works
                 </h4>
                 <div className="space-y-2 text-sm">
-                  <p><strong>✅ Success:</strong> <code>expect.failure: true</code> + 4xx/5xx status + validations pass</p>
-                  <p><strong>❌ Failed:</strong> <code>expect.failure: true</code> + 2xx/3xx status (expected failure but got success)</p>
-                  <p><strong>❌ Failed:</strong> <code>expect.failure: true</code> + 4xx/5xx status + validations fail (wrong error details)</p>
+                  <p>
+                    <strong>✅ Success:</strong> <code>expect.failure: true</code> + 4xx/5xx status
+                    + validations pass
+                  </p>
+                  <p>
+                    <strong>❌ Failed:</strong> <code>expect.failure: true</code> + 2xx/3xx status
+                    (expected failure but got success)
+                  </p>
+                  <p>
+                    <strong>❌ Failed:</strong> <code>expect.failure: true</code> + 4xx/5xx status +
+                    validations fail (wrong error details)
+                  </p>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-yellow-500/5 dark:bg-yellow-500/10 border-yellow-500/20 p-4">
                 <p className="text-sm">
-                  <strong className="text-yellow-600 dark:text-yellow-400">Important:</strong> When <code>expect.failure: true</code> is used, curl-runner inverts the success/failure logic. A 4xx/5xx status code that matches your expectations becomes a "successful" test result.
+                  <strong className="text-yellow-600 dark:text-yellow-400">Important:</strong> When{' '}
+                  <code>expect.failure: true</code> is used, curl-runner inverts the success/failure
+                  logic. A 4xx/5xx status code that matches your expectations becomes a "successful"
+                  test result.
                 </p>
               </div>
             </div>
@@ -797,9 +860,10 @@ export default function ValidationRulesPage() {
           <section>
             <H2 id="header-validation">Header Validation</H2>
             <p className="text-muted-foreground mb-6">
-              Validate response headers using exact values or regular expression patterns. Header names are case-insensitive.
+              Validate response headers using exact values or regular expression patterns. Header
+              names are case-insensitive.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="header-validation.yaml">
               {headerValidationExample}
             </CodeBlockServer>
@@ -814,12 +878,16 @@ export default function ValidationRulesPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Content Headers</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Validate response content metadata</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">content-type, content-length</code>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Validate response content metadata
+                      </p>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        content-type, content-length
+                      </code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-orange-500/10 p-2">
@@ -827,12 +895,16 @@ export default function ValidationRulesPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Security Headers</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Verify security policy headers</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">strict-transport-security</code>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Verify security policy headers
+                      </p>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        strict-transport-security
+                      </code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-green-500/10 p-2">
@@ -840,12 +912,16 @@ export default function ValidationRulesPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">API Headers</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Check API versioning and tracking</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">x-api-version, x-request-id</code>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Check API versioning and tracking
+                      </p>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        x-api-version, x-request-id
+                      </code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-purple-500/10 p-2">
@@ -854,7 +930,9 @@ export default function ValidationRulesPage() {
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Rate Limiting</h4>
                       <p className="text-sm text-muted-foreground mb-3">Monitor API usage limits</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">x-rate-limit-remaining</code>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        x-rate-limit-remaining
+                      </code>
                     </div>
                   </div>
                 </div>
@@ -866,9 +944,10 @@ export default function ValidationRulesPage() {
           <section>
             <H2 id="body-validation">Body Validation</H2>
             <p className="text-muted-foreground mb-6">
-              Validate response body content with support for exact matching, partial matching, and complex nested structures.
+              Validate response body content with support for exact matching, partial matching, and
+              complex nested structures.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="body-validation.yaml">
               {bodyValidationExample}
             </CodeBlockServer>
@@ -883,12 +962,16 @@ export default function ValidationRulesPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Exact Matching</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Values must match exactly</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">{"status: \"active\""}</code>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Values must match exactly
+                      </p>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        {'status: "active"'}
+                      </code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-green-500/10 p-2">
@@ -896,12 +979,16 @@ export default function ValidationRulesPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Type Validation</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Validates JSON data types</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">{"active: true, count: 42"}</code>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Validates JSON data types
+                      </p>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        {'active: true, count: 42'}
+                      </code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-purple-500/10 p-2">
@@ -909,12 +996,16 @@ export default function ValidationRulesPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Partial Matching</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Only specified fields validated</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">{"id: 123  # Others ignored"}</code>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Only specified fields validated
+                      </p>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        {'id: 123  # Others ignored'}
+                      </code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-orange-500/10 p-2">
@@ -922,8 +1013,12 @@ export default function ValidationRulesPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Nested Objects</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Deep structure validation</p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">{"profile: {name: 'John'}"}</code>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Deep structure validation
+                      </p>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        {"profile: {name: 'John'}"}
+                      </code>
                     </div>
                   </div>
                 </div>
@@ -935,16 +1030,19 @@ export default function ValidationRulesPage() {
           <section>
             <H2 id="pattern-validation">Pattern Validation with Regex</H2>
             <p className="text-muted-foreground mb-6">
-              Use regular expressions for flexible validation of dynamic content like IDs, timestamps, emails, and custom formats.
+              Use regular expressions for flexible validation of dynamic content like IDs,
+              timestamps, emails, and custom formats.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="pattern-validation.yaml">
               {patternValidationExample}
             </CodeBlockServer>
 
             <div className="mt-6 rounded-lg border bg-yellow-500/5 dark:bg-yellow-500/10 border-yellow-500/20 p-4">
               <p className="text-sm">
-                <strong className="text-yellow-600 dark:text-yellow-400">Regex Escaping:</strong> Remember to properly escape backslashes in YAML strings. Use double backslashes (<code>\\\\</code>) for literal backslashes in regex patterns.
+                <strong className="text-yellow-600 dark:text-yellow-400">Regex Escaping:</strong>{' '}
+                Remember to properly escape backslashes in YAML strings. Use double backslashes (
+                <code>\\\\</code>) for literal backslashes in regex patterns.
               </p>
             </div>
           </section>
@@ -953,9 +1051,10 @@ export default function ValidationRulesPage() {
           <section>
             <H2 id="wildcard-validation">Wildcard and Flexible Validation</H2>
             <p className="text-muted-foreground mb-6">
-              Use wildcards (<code>*</code>) to validate field presence without checking specific values, useful for dynamic or sensitive data.
+              Use wildcards (<code>*</code>) to validate field presence without checking specific
+              values, useful for dynamic or sensitive data.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="wildcard-validation.yaml">
               {wildcardValidationExample}
             </CodeBlockServer>
@@ -976,7 +1075,7 @@ export default function ValidationRulesPage() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-orange-500/10 p-2">
@@ -990,7 +1089,7 @@ export default function ValidationRulesPage() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-green-500/10 p-2">
@@ -1004,7 +1103,7 @@ export default function ValidationRulesPage() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-purple-500/10 p-2">
@@ -1026,9 +1125,10 @@ export default function ValidationRulesPage() {
           <section>
             <H2 id="complex-validation">Complex Validation Scenarios</H2>
             <p className="text-muted-foreground mb-6">
-              Advanced validation examples combining multiple techniques for comprehensive API testing.
+              Advanced validation examples combining multiple techniques for comprehensive API
+              testing.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="complex-validation.yaml">
               {complexValidationExample}
             </CodeBlockServer>
@@ -1038,9 +1138,10 @@ export default function ValidationRulesPage() {
           <section>
             <H2 id="validation-inheritance">Validation Inheritance and Overrides</H2>
             <p className="text-muted-foreground mb-6">
-              Understand how validation rules cascade from global to collection to request level, and how to override inherited rules.
+              Understand how validation rules cascade from global to collection to request level,
+              and how to override inherited rules.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="validation-inheritance.yaml">
               {validationInheritanceExample}
             </CodeBlockServer>
@@ -1056,12 +1157,13 @@ export default function ValidationRulesPage() {
                     <div>
                       <h4 className="font-medium mb-2">1. Request-Level Validation</h4>
                       <p className="text-sm text-muted-foreground">
-                        Validation rules defined directly on requests have the highest priority and completely override inherited rules.
+                        Validation rules defined directly on requests have the highest priority and
+                        completely override inherited rules.
                       </p>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-green-500/10 p-2">
@@ -1070,12 +1172,13 @@ export default function ValidationRulesPage() {
                     <div>
                       <h4 className="font-medium mb-2">2. Collection-Level Defaults</h4>
                       <p className="text-sm text-muted-foreground">
-                        Collection validation defaults override global defaults and merge with request-level rules.
+                        Collection validation defaults override global defaults and merge with
+                        request-level rules.
                       </p>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-purple-500/10 p-2">
@@ -1084,7 +1187,8 @@ export default function ValidationRulesPage() {
                     <div>
                       <h4 className="font-medium mb-2">3. Global Defaults</h4>
                       <p className="text-sm text-muted-foreground">
-                        Global validation defaults provide baseline rules applied to all requests unless overridden.
+                        Global validation defaults provide baseline rules applied to all requests
+                        unless overridden.
                       </p>
                     </div>
                   </div>
@@ -1104,12 +1208,16 @@ export default function ValidationRulesPage() {
                   </div>
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">API Authentication</h4>
-                    <p className="text-sm text-muted-foreground mb-3">Validate login responses and token formats</p>
-                    <code className="text-xs bg-muted px-2 py-1 rounded block">{"token: \"^[A-Za-z0-9\\-_]+\\.\""}</code>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Validate login responses and token formats
+                    </p>
+                    <code className="text-xs bg-muted px-2 py-1 rounded block">
+                      {'token: "^[A-Za-z0-9\\-_]+\\."'}
+                    </code>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-green-500/10 p-2">
@@ -1117,12 +1225,16 @@ export default function ValidationRulesPage() {
                   </div>
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">Data Creation</h4>
-                    <p className="text-sm text-muted-foreground mb-3">Verify new resource creation and IDs</p>
-                    <code className="text-xs bg-muted px-2 py-1 rounded block">{"id: \"^[0-9]+$\", status: 201"}</code>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Verify new resource creation and IDs
+                    </p>
+                    <code className="text-xs bg-muted px-2 py-1 rounded block">
+                      {'id: "^[0-9]+$", status: 201'}
+                    </code>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-red-500/10 p-2">
@@ -1130,12 +1242,16 @@ export default function ValidationRulesPage() {
                   </div>
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">Error Handling</h4>
-                    <p className="text-sm text-muted-foreground mb-3">Validate error response structures</p>
-                    <code className="text-xs bg-muted px-2 py-1 rounded block">{"error: {code: '*', message: '*'}"}</code>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Validate error response structures
+                    </p>
+                    <code className="text-xs bg-muted px-2 py-1 rounded block">
+                      {"error: {code: '*', message: '*'}"}
+                    </code>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-purple-500/10 p-2">
@@ -1143,8 +1259,12 @@ export default function ValidationRulesPage() {
                   </div>
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">Pagination</h4>
-                    <p className="text-sm text-muted-foreground mb-3">Check paginated response metadata</p>
-                    <code className="text-xs bg-muted px-2 py-1 rounded block">{"total_pages: \"^[0-9]+$\""}</code>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Check paginated response metadata
+                    </p>
+                    <code className="text-xs bg-muted px-2 py-1 rounded block">
+                      {'total_pages: "^[0-9]+$"'}
+                    </code>
                   </div>
                 </div>
               </div>
@@ -1163,12 +1283,13 @@ export default function ValidationRulesPage() {
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">Start Simple, Add Complexity</h4>
                     <p className="text-sm text-muted-foreground">
-                      Begin with basic status code validation, then gradually add header and body validation as needed.
+                      Begin with basic status code validation, then gradually add header and body
+                      validation as needed.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-green-500/10 p-2">
@@ -1177,12 +1298,13 @@ export default function ValidationRulesPage() {
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">Use Partial Matching</h4>
                     <p className="text-sm text-muted-foreground">
-                      Validate only the fields that matter to avoid brittle tests that break with API changes.
+                      Validate only the fields that matter to avoid brittle tests that break with
+                      API changes.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-purple-500/10 p-2">
@@ -1191,12 +1313,13 @@ export default function ValidationRulesPage() {
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">Leverage Patterns for Dynamic Data</h4>
                     <p className="text-sm text-muted-foreground">
-                      Use regex patterns for IDs, timestamps, and other dynamic values that change between requests.
+                      Use regex patterns for IDs, timestamps, and other dynamic values that change
+                      between requests.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-orange-500/10 p-2">
@@ -1205,12 +1328,13 @@ export default function ValidationRulesPage() {
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">Test Both Success and Error Cases</h4>
                     <p className="text-sm text-muted-foreground">
-                      Include validation for expected error responses to ensure proper error handling.
+                      Include validation for expected error responses to ensure proper error
+                      handling.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4 md:col-span-2">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-red-500/10 p-2">
@@ -1219,7 +1343,8 @@ export default function ValidationRulesPage() {
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">Use Wildcards for Sensitive Data</h4>
                     <p className="text-sm text-muted-foreground">
-                      Validate presence of tokens and sensitive fields without exposing actual values in test logs.
+                      Validate presence of tokens and sensitive fields without exposing actual
+                      values in test logs.
                     </p>
                   </div>
                 </div>
@@ -1236,5 +1361,5 @@ export default function ValidationRulesPage() {
         </div>
       </div>
     </main>
-  )
+  );
 }

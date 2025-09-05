@@ -1,14 +1,15 @@
-import type { Metadata } from 'next';
 import { AlertTriangle, CheckCircle, Info } from 'lucide-react';
+import type { Metadata } from 'next';
 import { CodeBlockServer } from '@/components/code-block-server';
+import { H2, H3 } from '@/components/docs-heading';
 import { DocsPageHeader } from '@/components/docs-page-header';
-import { H2, H3 } from '@/components/mdx-heading';
 import { TableOfContents } from '@/components/toc';
 import { Badge } from '@/components/ui/badge';
 
 export const metadata: Metadata = {
   title: 'Variables & Templating',
-  description: 'Master variable definition and templating in curl-runner. Learn about environment variables, computed values, dynamic content generation, and template expressions.',
+  description:
+    'Master variable definition and templating in curl-runner. Learn about environment variables, computed values, dynamic content generation, and template expressions.',
   keywords: [
     'curl-runner variables',
     'YAML variables',
@@ -19,19 +20,21 @@ export const metadata: Metadata = {
     'variable interpolation',
     'templating system',
     'configuration variables',
-    'request templating'
+    'request templating',
   ],
   openGraph: {
     title: 'Variables & Templating | curl-runner Documentation',
-    description: 'Master variable definition and templating in curl-runner. Learn about environment variables, computed values, dynamic content generation, and template expressions.',
+    description:
+      'Master variable definition and templating in curl-runner. Learn about environment variables, computed values, dynamic content generation, and template expressions.',
     url: 'https://curl-runner.com/docs/variables',
-    type: 'article'
-    },
+    type: 'article',
+  },
   twitter: {
     card: 'summary_large_image',
     title: 'Variables & Templating | curl-runner Documentation',
-    description: 'Master variable definition and templating in curl-runner. Learn about environment variables and dynamic content generation.',
-    },
+    description:
+      'Master variable definition and templating in curl-runner. Learn about environment variables and dynamic content generation.',
+  },
   alternates: {
     canonical: 'https://curl-runner.com/docs/variables',
   },
@@ -39,15 +42,10 @@ export const metadata: Metadata = {
 
 import {
   basicVariablesExample,
-  complexVariablesExample,
   computedVariablesExample,
   conditionalVariablesExample,
   dynamicVariablesExample,
   environmentVariablesExample,
-  fileVariablesExample,
-  responseVariablesExample,
-  secretsExample,
-  templateVariablesExample,
   variablePrecedenceExample,
 } from './snippets';
 
@@ -90,7 +88,7 @@ export default function VariablesPage() {
 
           {/* Variable Scopes */}
           <section>
-            <H2>Variable Scopes</H2>
+            <H2 id="variable-scopes">Variable Scopes</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Variables can be defined at different levels, each with its own scope and precedence
               rules.
@@ -98,7 +96,7 @@ export default function VariablesPage() {
 
             <div className="space-y-8">
               <div>
-                <H3>Global Variables</H3>
+                <H3 id="global-variables">Global Variables</H3>
                 <p className="text-muted-foreground mb-4">
                   Global variables are available to all requests in the file and have the lowest
                   precedence.
@@ -109,7 +107,7 @@ export default function VariablesPage() {
               </div>
 
               <div>
-                <H3>Collection Variables</H3>
+                <H3 id="collection-variables">Collection Variables</H3>
                 <p className="text-muted-foreground mb-4">
                   Collection variables are scoped to a specific collection and override global
                   variables.
@@ -120,7 +118,7 @@ export default function VariablesPage() {
               </div>
 
               <div>
-                <H3>Environment Variables</H3>
+                <H3 id="environment-variables">Environment Variables</H3>
                 <p className="text-muted-foreground mb-4">
                   Access system environment variables using the <code>ENV</code> object.
                 </p>
@@ -133,7 +131,7 @@ export default function VariablesPage() {
 
           {/* Variable Precedence */}
           <section>
-            <H2>Variable Precedence</H2>
+            <H2 id="variable-precedence">Variable Precedence</H2>
             <p className="text-muted-foreground text-lg mb-6">
               When variables are defined at multiple levels, curl-runner follows a specific
               precedence order.
@@ -182,13 +180,13 @@ export default function VariablesPage() {
 
           {/* Dynamic Variables */}
           <section>
-            <H2>Dynamic Variables</H2>
+            <H2 id="dynamic-variables">Dynamic Variables</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Create dynamic values using JavaScript expressions and built-in functions.
             </p>
 
             <div className="space-y-6">
-              <H3>Built-in Functions</H3>
+              <H3 id="built-in-functions">Built-in Functions</H3>
               <div className="grid gap-4 sm:grid-cols-2 mb-6">
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
@@ -261,7 +259,7 @@ export default function VariablesPage() {
 
           {/* Conditional Variables */}
           <section>
-            <H2>Conditional Logic</H2>
+            <H2 id="conditional-logic">Conditional Logic</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Use JavaScript expressions to create conditional variables and environment-specific
               configurations.
@@ -274,7 +272,7 @@ export default function VariablesPage() {
 
           {/* Complex Interpolation */}
           <section>
-            <H2>Complex Interpolation</H2>
+            <H2 id="complex-interpolation">Complex Interpolation</H2>
             <p className="text-muted-foreground text-lg mb-6">
               Combine multiple variables and expressions to create complex, computed values.
             </p>
@@ -286,7 +284,7 @@ export default function VariablesPage() {
 
           {/* Best Practices */}
           <section>
-            <H2>Best Practices</H2>
+            <H2 id="best-practices">Best Practices</H2>
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="rounded-lg border bg-card p-4">
@@ -329,10 +327,10 @@ export default function VariablesPage() {
 
           {/* Common Patterns */}
           <section>
-            <H2>Common Patterns</H2>
+            <H2 id="common-patterns">Common Patterns</H2>
 
             <div className="space-y-6">
-              <H3>API Authentication</H3>
+              <H3 id="api-authentication">API Authentication</H3>
               <CodeBlockServer language="yaml" title="API Authentication Pattern">
                 {`global:
   variables:
@@ -344,7 +342,7 @@ export default function VariablesPage() {
       Authorization: \${AUTH_HEADER}`}
               </CodeBlockServer>
 
-              <H3>Environment-Specific URLs</H3>
+              <H3 id="environment-specific-urls">Environment-Specific URLs</H3>
               <CodeBlockServer language="yaml" title="Environment-Specific URLs">
                 {`global:
   variables:
@@ -354,7 +352,7 @@ export default function VariablesPage() {
       : 'https://api-staging.example.com'}`}
               </CodeBlockServer>
 
-              <H3>Request Correlation IDs</H3>
+              <H3 id="request-correlation-ids">Request Correlation IDs</H3>
               <CodeBlockServer language="yaml" title="Request Correlation IDs">
                 {`global:
   variables:

@@ -19,8 +19,8 @@ keywords:
   - environment
 slug: "/docs/validation-rules"
 toc: true
-date: "2025-09-04T14:20:38.944Z"
-lastModified: "2025-09-04T14:20:38.944Z"
+date: "2025-09-05T07:51:19.010Z"
+lastModified: "2025-09-05T07:51:19.010Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -40,8 +40,8 @@ schema:
   "@type": "TechArticle"
   headline: "Validation Rules API Reference"
   description: "Complete reference for response validation using the expect configuration object. Define validation rules for status codes, headers, and response body content."
-  datePublished: "2025-09-04T14:20:38.944Z"
-  dateModified: "2025-09-04T14:20:38.944Z"
+  datePublished: "2025-09-05T07:51:19.010Z"
+  dateModified: "2025-09-05T07:51:19.010Z"
 ---
 
 # Validation Rules API Reference
@@ -299,7 +299,7 @@ request:
       date: "^[A-Z][a-z]{2}, \\d{2} [A-Z][a-z]{2} \\d{4}"
       
       # ETag pattern
-      etag: "^(W/)?\\\"[a-f0-9-]+\\\""
+      etag: "^(W/)?\\"[a-f0-9-]+\\""
       
       # Rate limit patterns
       x-rate-limit-limit: "^[0-9]+$"

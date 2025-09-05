@@ -25,8 +25,8 @@ keywords:
   - environment
 slug: "/docs/advanced"
 toc: true
-date: "2025-09-04T14:20:38.938Z"
-lastModified: "2025-09-04T14:20:38.938Z"
+date: "2025-09-05T07:51:19.003Z"
+lastModified: "2025-09-05T07:51:19.003Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -46,8 +46,8 @@ schema:
   "@type": "TechArticle"
   headline: "Advanced Examples"
   description: "Complex real-world scenarios showcasing the full power of curl-runner. These examples demonstrate advanced patterns for production environments."
-  datePublished: "2025-09-04T14:20:38.938Z"
-  dateModified: "2025-09-04T14:20:38.938Z"
+  datePublished: "2025-09-05T07:51:19.003Z"
+  dateModified: "2025-09-05T07:51:19.003Z"
 ---
 
 # Advanced Examples

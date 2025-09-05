@@ -1,15 +1,27 @@
+import {
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle,
+  Clock,
+  Database,
+  FileText,
+  Globe,
+  Layers,
+  Lock,
+  Monitor,
+  Settings,
+} from 'lucide-react';
 import type { Metadata } from 'next';
-import { DocsPageHeader } from "@/components/docs-page-header"
-import { CodeBlockServer } from "@/components/code-block-server"
-import { TableOfContents } from "@/components/toc"
-import { H2, H3 } from "@/components/docs-heading"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { AlertTriangle, CheckCircle, Settings, FileText, Monitor, Lightbulb, Shield, Globe, Timer, Zap, Database, Lock, Clock, ArrowRight, Layers } from "lucide-react"
+import { CodeBlockServer } from '@/components/code-block-server';
+import { H2, H3 } from '@/components/docs-heading';
+import { DocsPageHeader } from '@/components/docs-page-header';
+import { TableOfContents } from '@/components/toc';
+import { Badge } from '@/components/ui/badge';
 
 export const metadata: Metadata = {
   title: 'Global Settings',
-  description: 'Configure global settings for curl-runner including execution behavior, default headers, timeouts, and shared variables across all requests.',
+  description:
+    'Configure global settings for curl-runner including execution behavior, default headers, timeouts, and shared variables across all requests.',
   keywords: [
     'curl-runner global settings',
     'global configuration',
@@ -22,19 +34,20 @@ export const metadata: Metadata = {
     'execution behavior',
     'global parameters',
     'system configuration',
-    'curl-runner settings'
+    'curl-runner settings',
   ],
   openGraph: {
     title: 'Global Settings | curl-runner API Reference',
-    description: 'Configure global settings for curl-runner including execution behavior, default headers, timeouts, and shared variables across all requests.',
+    description:
+      'Configure global settings for curl-runner including execution behavior, default headers, timeouts, and shared variables across all requests.',
     url: 'https://curl-runner.com/docs/api-reference/global-settings',
-    type: 'article'
-    },
+    type: 'article',
+  },
   twitter: {
     card: 'summary_large_image',
     title: 'Global Settings | curl-runner API Reference',
     description: 'Learn how to configure global settings for curl-runner requests and execution.',
-    },
+  },
   alternates: {
     canonical: 'https://curl-runner.com/docs/api-reference/global-settings',
   },
@@ -76,7 +89,7 @@ global:
       delay: 1000
     expect:
       headers:
-        content-type: "application/json"`
+        content-type: "application/json"`;
 
 const executionModesExample = `# Execution Mode Examples
 
@@ -121,7 +134,7 @@ collection:
       
     - name: "Load Test 3"
       url: "https://api.example.com/endpoint3"
-      # All three run at the same time`
+      # All three run at the same time`;
 
 const errorHandlingExample = `# Error Handling Configuration
 
@@ -161,7 +174,7 @@ collection:
       
     - name: "Important Operation"
       url: "https://api.example.com/important"
-      # Runs regardless of previous failures`
+      # Runs regardless of previous failures`;
 
 const variablesExample = `# Global Variables Configuration
 
@@ -210,7 +223,7 @@ collection:
       variables:
         # Local override for this request only
         DEFAULT_TIMEOUT: "30000"  # 30 seconds for slow endpoint
-      timeout: \${DEFAULT_TIMEOUT}`
+      timeout: \${DEFAULT_TIMEOUT}`;
 
 const outputConfigurationExample = `# Output Configuration Options
 
@@ -262,7 +275,7 @@ global:
     format: raw       # Raw response content only
     showHeaders: false
     showBody: true
-    saveToFile: "data.txt"`
+    saveToFile: "data.txt"`;
 
 const defaultsExample = `# Default Request Settings
 
@@ -317,7 +330,7 @@ collection:
       url: "https://api.example.com/slow"
       retry:
         count: 5      # Override default retry count
-        delay: 5000   # Override default retry delay`
+        delay: 5000   # Override default retry delay`;
 
 const complexConfigExample = `# Complex Production Configuration
 
@@ -432,7 +445,7 @@ collection:
         body:
           dependencies:
             - name: "*"
-              status: ["healthy", "degraded"]`
+              status: ["healthy", "degraded"]`;
 
 export default function GlobalSettingsPage() {
   return (
@@ -448,9 +461,12 @@ export default function GlobalSettingsPage() {
           <section>
             <H2 id="overview">Overview</H2>
             <p className="text-muted-foreground mb-6">
-              Global settings control the overall behavior of <code className="font-mono">curl-runner</code> execution, including how requests are processed, output formatting, default values, and variable management. These settings apply to all requests unless overridden at the collection or request level.
+              Global settings control the overall behavior of{' '}
+              <code className="font-mono">curl-runner</code> execution, including how requests are
+              processed, output formatting, default values, and variable management. These settings
+              apply to all requests unless overridden at the collection or request level.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="global-config-complete.yaml">
               {globalConfigExample}
             </CodeBlockServer>
@@ -471,34 +487,58 @@ export default function GlobalSettingsPage() {
                 </thead>
                 <tbody>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">execution</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">execution</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">'sequential' | 'parallel'</td>
                     <td className="p-3 text-sm text-muted-foreground">'sequential'</td>
-                    <td className="p-3 text-sm text-muted-foreground">How to execute multiple requests</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      How to execute multiple requests
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">continueOnError</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">continueOnError</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">boolean</td>
                     <td className="p-3 text-sm text-muted-foreground">false</td>
-                    <td className="p-3 text-sm text-muted-foreground">Whether to continue execution after errors</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Whether to continue execution after errors
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">variables</code></td>
-                    <td className="p-3 text-sm text-muted-foreground">Record&lt;string, string&gt;</td>
+                    <td className="p-3">
+                      <code className="text-sm">variables</code>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Record&lt;string, string&gt;
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">{}</td>
-                    <td className="p-3 text-sm text-muted-foreground">Global variables for all requests</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Global variables for all requests
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">output</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">output</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">OutputConfig</td>
                     <td className="p-3 text-sm text-muted-foreground">-</td>
-                    <td className="p-3 text-sm text-muted-foreground">Output formatting configuration</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Output formatting configuration
+                    </td>
                   </tr>
                   <tr>
-                    <td className="p-3"><code className="text-sm">defaults</code></td>
-                    <td className="p-3 text-sm text-muted-foreground">Partial&lt;RequestConfig&gt;</td>
+                    <td className="p-3">
+                      <code className="text-sm">defaults</code>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Partial&lt;RequestConfig&gt;
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">{}</td>
-                    <td className="p-3 text-sm text-muted-foreground">Default settings for all requests</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Default settings for all requests
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -509,9 +549,10 @@ export default function GlobalSettingsPage() {
           <section>
             <H2 id="execution-modes">Execution Modes</H2>
             <p className="text-muted-foreground mb-6">
-              Control how multiple requests are executed: sequentially (one after another) or in parallel (simultaneously).
+              Control how multiple requests are executed: sequentially (one after another) or in
+              parallel (simultaneously).
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="execution-modes.yaml">
               {executionModesExample}
             </CodeBlockServer>
@@ -527,14 +568,20 @@ export default function GlobalSettingsPage() {
                       Sequential <Badge variant="default">Default</Badge>
                     </h4>
                     <div className="text-sm text-muted-foreground space-y-2">
-                      <p><strong>Use for:</strong> Dependent requests, workflows, login sequences</p>
-                      <p><strong>Benefits:</strong> Predictable order, can use previous responses</p>
-                      <p><strong>Drawbacks:</strong> Slower total execution time</p>
+                      <p>
+                        <strong>Use for:</strong> Dependent requests, workflows, login sequences
+                      </p>
+                      <p>
+                        <strong>Benefits:</strong> Predictable order, can use previous responses
+                      </p>
+                      <p>
+                        <strong>Drawbacks:</strong> Slower total execution time
+                      </p>
                     </div>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-green-500/10 p-2">
@@ -545,9 +592,15 @@ export default function GlobalSettingsPage() {
                       Parallel <Badge variant="secondary">Performance</Badge>
                     </h4>
                     <div className="text-sm text-muted-foreground space-y-2">
-                      <p><strong>Use for:</strong> Load testing, independent health checks</p>
-                      <p><strong>Benefits:</strong> Faster execution, higher throughput</p>
-                      <p><strong>Drawbacks:</strong> No request dependencies, resource intensive</p>
+                      <p>
+                        <strong>Use for:</strong> Load testing, independent health checks
+                      </p>
+                      <p>
+                        <strong>Benefits:</strong> Faster execution, higher throughput
+                      </p>
+                      <p>
+                        <strong>Drawbacks:</strong> No request dependencies, resource intensive
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -559,9 +612,10 @@ export default function GlobalSettingsPage() {
           <section>
             <H2 id="error-handling">Error Handling Configuration</H2>
             <p className="text-muted-foreground mb-6">
-              Configure how <code className="font-mono">curl-runner</code> responds to request failures and validation errors.
+              Configure how <code className="font-mono">curl-runner</code> responds to request
+              failures and validation errors.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="error-handling.yaml">
               {errorHandlingExample}
             </CodeBlockServer>
@@ -579,11 +633,13 @@ export default function GlobalSettingsPage() {
                         <h4 className="font-medium">Fail-Fast Mode</h4>
                         <Badge variant="destructive">continueOnError: false</Badge>
                       </div>
-                      <p className="text-sm text-muted-foreground">Stop execution on first error. Best for critical workflows.</p>
+                      <p className="text-sm text-muted-foreground">
+                        Stop execution on first error. Best for critical workflows.
+                      </p>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-green-500/10 p-2">
@@ -594,7 +650,9 @@ export default function GlobalSettingsPage() {
                         <h4 className="font-medium">Resilient Mode</h4>
                         <Badge variant="secondary">continueOnError: true</Badge>
                       </div>
-                      <p className="text-sm text-muted-foreground">Continue despite errors. Best for comprehensive testing.</p>
+                      <p className="text-sm text-muted-foreground">
+                        Continue despite errors. Best for comprehensive testing.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -606,16 +664,25 @@ export default function GlobalSettingsPage() {
           <section>
             <H2 id="global-variables">Global Variables</H2>
             <p className="text-muted-foreground mb-6">
-              Define variables that are available to all requests in the configuration. Variables support environment variable interpolation and can be overridden at collection and request levels.
+              Define variables that are available to all requests in the configuration. Variables
+              support environment variable interpolation and can be overridden at collection and
+              request levels.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="global-variables.yaml">
               {variablesExample}
             </CodeBlockServer>
 
             <div className="mt-6 rounded-lg border bg-blue-500/5 dark:bg-blue-500/10 border-blue-500/20 p-4">
               <p className="text-sm">
-                <strong className="text-blue-600 dark:text-blue-400">Variable Precedence:</strong> Request-level variables override collection variables, which override global variables. Use <code>{"\\${VAR_NAME}"}</code> syntax to reference environment variables.
+                <strong className="text-blue-600 dark:text-blue-400">Variable Precedence:</strong>{' '}
+                Request-level variables override collection variables, which override global
+                variables. Use{' '}
+                <code>
+                  {'$'}
+                  {'{VAR_NAME}'}
+                </code>{' '}
+                syntax to reference environment variables.
               </p>
             </div>
           </section>
@@ -624,9 +691,10 @@ export default function GlobalSettingsPage() {
           <section>
             <H2 id="output-configuration">Output Configuration</H2>
             <p className="text-muted-foreground mb-6">
-              Control how results are displayed and saved, including verbosity, format, and file output options.
+              Control how results are displayed and saved, including verbosity, format, and file
+              output options.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="output-config.yaml">
               {outputConfigurationExample}
             </CodeBlockServer>
@@ -642,37 +710,63 @@ export default function GlobalSettingsPage() {
                 </thead>
                 <tbody>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">verbose</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">verbose</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">boolean</td>
-                    <td className="p-3 text-sm text-muted-foreground">Show detailed execution information</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Show detailed execution information
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">showHeaders</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">showHeaders</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">boolean</td>
-                    <td className="p-3 text-sm text-muted-foreground">Include response headers in output</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Include response headers in output
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">showBody</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">showBody</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">boolean</td>
-                    <td className="p-3 text-sm text-muted-foreground">Include response body content</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Include response body content
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">showMetrics</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">showMetrics</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">boolean</td>
-                    <td className="p-3 text-sm text-muted-foreground">Show performance timing metrics</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Show performance timing metrics
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">format</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">format</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">'json' | 'pretty' | 'raw'</td>
                     <td className="p-3 text-sm text-muted-foreground">Output format style</td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">prettyLevel</code></td>
-                    <td className="p-3 text-sm text-muted-foreground">'minimal' | 'standard' | 'detailed'</td>
-                    <td className="p-3 text-sm text-muted-foreground">Pretty format verbosity level</td>
+                    <td className="p-3">
+                      <code className="text-sm">prettyLevel</code>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      'minimal' | 'standard' | 'detailed'
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Pretty format verbosity level
+                    </td>
                   </tr>
                   <tr>
-                    <td className="p-3"><code className="text-sm">saveToFile</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">saveToFile</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">string</td>
                     <td className="p-3 text-sm text-muted-foreground">File path to save results</td>
                   </tr>
@@ -690,12 +784,14 @@ export default function GlobalSettingsPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">JSON Format</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Structured, machine-readable output</p>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Structured, machine-readable output
+                      </p>
                       <Badge variant="outline">CI/CD Integration</Badge>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-green-500/10 p-2">
@@ -703,12 +799,14 @@ export default function GlobalSettingsPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Pretty Format</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Human-readable, colorized output with configurable verbosity levels</p>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Human-readable, colorized output with configurable verbosity levels
+                      </p>
                       <Badge variant="outline">Development</Badge>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-orange-500/10 p-2">
@@ -716,7 +814,9 @@ export default function GlobalSettingsPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Raw Format</h4>
-                      <p className="text-sm text-muted-foreground mb-3">Raw response content only</p>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Raw response content only
+                      </p>
                       <Badge variant="outline">Data Extraction</Badge>
                     </div>
                   </div>
@@ -725,7 +825,8 @@ export default function GlobalSettingsPage() {
 
               <H3 id="pretty-levels">Pretty Format Levels</H3>
               <p className="text-muted-foreground mb-4">
-                The pretty format supports three verbosity levels to control how much information is displayed.
+                The pretty format supports three verbosity levels to control how much information is
+                displayed.
               </p>
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="rounded-lg border bg-card p-4">
@@ -737,14 +838,17 @@ export default function GlobalSettingsPage() {
                       <h4 className="font-medium mb-2 flex items-center gap-2">
                         Minimal <Badge variant="secondary">Quiet</Badge>
                       </h4>
-                      <p className="text-sm text-muted-foreground mb-3">Shows only request name, method, URL, and status. No body, headers, or metrics.</p>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Shows only request name, method, URL, and status. No body, headers, or
+                        metrics.
+                      </p>
                       <div className="text-xs text-muted-foreground">
                         <strong>Use for:</strong> Quick status checks, CI/CD summary
                       </div>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-blue-500/10 p-2">
@@ -754,14 +858,17 @@ export default function GlobalSettingsPage() {
                       <h4 className="font-medium mb-2 flex items-center gap-2">
                         Standard <Badge variant="default">Default</Badge>
                       </h4>
-                      <p className="text-sm text-muted-foreground mb-3">Shows body and metrics when explicitly enabled via showBody/showMetrics flags.</p>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Shows body and metrics when explicitly enabled via showBody/showMetrics
+                        flags.
+                      </p>
                       <div className="text-xs text-muted-foreground">
                         <strong>Use for:</strong> Development, testing, debugging
                       </div>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-green-500/10 p-2">
@@ -771,7 +878,10 @@ export default function GlobalSettingsPage() {
                       <h4 className="font-medium mb-2 flex items-center gap-2">
                         Detailed <Badge variant="outline">Verbose</Badge>
                       </h4>
-                      <p className="text-sm text-muted-foreground mb-3">Shows all available information: headers, body, detailed metrics, request details, and commands.</p>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Shows all available information: headers, body, detailed metrics, request
+                        details, and commands.
+                      </p>
                       <div className="text-xs text-muted-foreground">
                         <strong>Use for:</strong> Troubleshooting, detailed analysis
                       </div>
@@ -786,9 +896,10 @@ export default function GlobalSettingsPage() {
           <section>
             <H2 id="default-settings">Default Request Settings</H2>
             <p className="text-muted-foreground mb-6">
-              Configure default values that apply to all requests, reducing repetition and ensuring consistency across your API configurations.
+              Configure default values that apply to all requests, reducing repetition and ensuring
+              consistency across your API configurations.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="defaults-config.yaml">
               {defaultsExample}
             </CodeBlockServer>
@@ -799,21 +910,24 @@ export default function GlobalSettingsPage() {
                 <div className="rounded-lg border p-4">
                   <h4 className="font-medium mb-2">1. Request-Level Settings</h4>
                   <p className="text-sm text-muted-foreground">
-                    Values defined directly on individual requests have the highest priority and override all defaults.
+                    Values defined directly on individual requests have the highest priority and
+                    override all defaults.
                   </p>
                 </div>
-                
+
                 <div className="rounded-lg border p-4">
                   <h4 className="font-medium mb-2">2. Collection-Level Defaults</h4>
                   <p className="text-sm text-muted-foreground">
-                    Collection defaults override global defaults but are overridden by request-level settings.
+                    Collection defaults override global defaults but are overridden by request-level
+                    settings.
                   </p>
                 </div>
-                
+
                 <div className="rounded-lg border p-4">
                   <h4 className="font-medium mb-2">3. Global Defaults</h4>
                   <p className="text-sm text-muted-foreground">
-                    Global defaults have the lowest priority and provide fallback values for unspecified settings.
+                    Global defaults have the lowest priority and provide fallback values for
+                    unspecified settings.
                   </p>
                 </div>
               </div>
@@ -824,16 +938,20 @@ export default function GlobalSettingsPage() {
           <section>
             <H2 id="production-example">Production Configuration Example</H2>
             <p className="text-muted-foreground mb-6">
-              A comprehensive example showing how to configure <code className="font-mono">curl-runner</code> for production monitoring and CI/CD integration.
+              A comprehensive example showing how to configure{' '}
+              <code className="font-mono">curl-runner</code> for production monitoring and CI/CD
+              integration.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="production-config.yaml">
               {complexConfigExample}
             </CodeBlockServer>
 
             <div className="mt-6 rounded-lg border bg-green-500/5 dark:bg-green-500/10 border-green-500/20 p-4">
               <p className="text-sm">
-                <strong className="text-green-600 dark:text-green-400">Production Ready:</strong> This configuration demonstrates enterprise-level settings including proper authentication, monitoring, error handling, and CI/CD integration patterns.
+                <strong className="text-green-600 dark:text-green-400">Production Ready:</strong>{' '}
+                This configuration demonstrates enterprise-level settings including proper
+                authentication, monitoring, error handling, and CI/CD integration patterns.
               </p>
             </div>
           </section>
@@ -850,10 +968,16 @@ export default function GlobalSettingsPage() {
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">Environment Variables</h4>
                     <p className="text-sm text-muted-foreground mb-3">
-                      Reference environment variables using <code>{"\\${VAR_NAME}"}</code> syntax. <code className="font-mono">curl-runner</code> automatically loads from <code>.env</code> files.
+                      Reference environment variables using{' '}
+                      <code>
+                        {'$'}
+                        {'{VAR_NAME}'}
+                      </code>{' '}
+                      syntax. <code className="font-mono">curl-runner</code> automatically loads
+                      from <code>.env</code> files.
                     </p>
                     <CodeBlockServer language="bash">
-{`# .env file
+                      {`# .env file
 API_TOKEN=your_secret_token
 BASE_URL=https://api.staging.com
 DEBUG_MODE=true`}
@@ -861,7 +985,7 @@ DEBUG_MODE=true`}
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-blue-500/10 p-2">
@@ -870,10 +994,11 @@ DEBUG_MODE=true`}
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">Configuration Files</h4>
                     <p className="text-sm text-muted-foreground mb-3">
-                      Use different configuration files for different environments by organizing global settings appropriately.
+                      Use different configuration files for different environments by organizing
+                      global settings appropriately.
                     </p>
                     <CodeBlockServer language="bash">
-{`# Run with specific environment
+                      {`# Run with specific environment
 curl-runner config/production.yaml
 curl-runner config/staging.yaml
 curl-runner config/development.yaml`}
@@ -896,12 +1021,13 @@ curl-runner config/development.yaml`}
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">Environment Separation</h4>
                     <p className="text-sm text-muted-foreground">
-                      Use different global configurations for development, staging, and production environments to avoid accidental cross-environment requests.
+                      Use different global configurations for development, staging, and production
+                      environments to avoid accidental cross-environment requests.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-red-500/10 p-2">
@@ -910,12 +1036,13 @@ curl-runner config/development.yaml`}
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">Secure Credentials</h4>
                     <p className="text-sm text-muted-foreground">
-                      Never hard-code credentials in configuration files. Always use environment variables or secure credential management systems.
+                      Never hard-code credentials in configuration files. Always use environment
+                      variables or secure credential management systems.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-orange-500/10 p-2">
@@ -924,12 +1051,13 @@ curl-runner config/development.yaml`}
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">Appropriate Timeouts</h4>
                     <p className="text-sm text-muted-foreground">
-                      Set reasonable default timeouts based on your API characteristics. Too short causes unnecessary failures, too long delays error detection.
+                      Set reasonable default timeouts based on your API characteristics. Too short
+                      causes unnecessary failures, too long delays error detection.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-purple-500/10 p-2">
@@ -938,12 +1066,13 @@ curl-runner config/development.yaml`}
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">Consistent Headers</h4>
                     <p className="text-sm text-muted-foreground">
-                      Use global defaults for common headers like User-Agent, Accept, and API versioning to ensure consistency across all requests.
+                      Use global defaults for common headers like User-Agent, Accept, and API
+                      versioning to ensure consistency across all requests.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4 md:col-span-2">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-green-500/10 p-2">
@@ -952,7 +1081,8 @@ curl-runner config/development.yaml`}
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">Output Configuration</h4>
                     <p className="text-sm text-muted-foreground">
-                      Configure output formats appropriate for your use case: pretty for development, JSON for CI/CD, raw for data processing.
+                      Configure output formats appropriate for your use case: pretty for
+                      development, JSON for CI/CD, raw for data processing.
                     </p>
                   </div>
                 </div>
@@ -969,5 +1099,5 @@ curl-runner config/development.yaml`}
         </div>
       </div>
     </main>
-  )
+  );
 }

@@ -19,14 +19,14 @@ export class YamlParser {
       const singleVarMatch = obj.match(/^\$\{([^}]+)\}$/);
       if (singleVarMatch) {
         const varName = singleVarMatch[1];
-        const dynamicValue = this.resolveDynamicVariable(varName);
-        return dynamicValue !== null ? dynamicValue : (variables[varName] || obj);
+        const dynamicValue = YamlParser.resolveDynamicVariable(varName);
+        return dynamicValue !== null ? dynamicValue : variables[varName] || obj;
       }
-      
+
       // Handle multiple variables in the string using regex replacement
       return obj.replace(/\$\{([^}]+)\}/g, (match, varName) => {
-        const dynamicValue = this.resolveDynamicVariable(varName);
-        return dynamicValue !== null ? dynamicValue : (variables[varName] || match);
+        const dynamicValue = YamlParser.resolveDynamicVariable(varName);
+        return dynamicValue !== null ? dynamicValue : variables[varName] || match;
       });
     }
 
@@ -50,24 +50,24 @@ export class YamlParser {
     if (varName === 'UUID') {
       return crypto.randomUUID();
     }
-    
+
     // Current timestamp variations
     if (varName === 'CURRENT_TIME' || varName === 'TIMESTAMP') {
       return Date.now().toString();
     }
-    
+
     // Date formatting - ${DATE:YYYY-MM-DD}
     if (varName.startsWith('DATE:')) {
       const format = varName.slice(5); // Remove 'DATE:'
-      return this.formatDate(new Date(), format);
+      return YamlParser.formatDate(new Date(), format);
     }
-    
+
     // Time formatting - ${TIME:HH:mm:ss}
     if (varName.startsWith('TIME:')) {
       const format = varName.slice(5); // Remove 'TIME:'
-      return this.formatTime(new Date(), format);
+      return YamlParser.formatTime(new Date(), format);
     }
-    
+
     return null; // Not a dynamic variable
   }
 
@@ -75,22 +75,16 @@ export class YamlParser {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
-    
-    return format
-      .replace('YYYY', year.toString())
-      .replace('MM', month)
-      .replace('DD', day);
+
+    return format.replace('YYYY', year.toString()).replace('MM', month).replace('DD', day);
   }
 
   static formatTime(date: Date, format: string): string {
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
     const seconds = String(date.getSeconds()).padStart(2, '0');
-    
-    return format
-      .replace('HH', hours)
-      .replace('mm', minutes)
-      .replace('ss', seconds);
+
+    return format.replace('HH', hours).replace('mm', minutes).replace('ss', seconds);
   }
 
   static mergeConfigs(base: Partial<RequestConfig>, override: RequestConfig): RequestConfig {

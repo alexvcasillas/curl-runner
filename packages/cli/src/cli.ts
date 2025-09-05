@@ -10,8 +10,13 @@ class CurlRunnerCLI {
   private logger = new Logger();
 
   private async loadConfigFile(): Promise<Partial<GlobalConfig>> {
-    const configFiles = ['curl-runner.yaml', 'curl-runner.yml', '.curl-runner.yaml', '.curl-runner.yml'];
-    
+    const configFiles = [
+      'curl-runner.yaml',
+      'curl-runner.yml',
+      '.curl-runner.yaml',
+      '.curl-runner.yml',
+    ];
+
     for (const filename of configFiles) {
       try {
         const file = Bun.file(filename);
@@ -26,71 +31,78 @@ class CurlRunnerCLI {
         this.logger.logWarning(`Failed to load configuration from ${filename}: ${error}`);
       }
     }
-    
+
     return {};
   }
 
   private loadEnvironmentVariables(): Partial<GlobalConfig> {
     const envConfig: Partial<GlobalConfig> = {};
-    
+
     // Load environment variables
     if (process.env.CURL_RUNNER_TIMEOUT) {
-      envConfig.defaults = { ...envConfig.defaults, timeout: Number.parseInt(process.env.CURL_RUNNER_TIMEOUT, 10) };
+      envConfig.defaults = {
+        ...envConfig.defaults,
+        timeout: Number.parseInt(process.env.CURL_RUNNER_TIMEOUT, 10),
+      };
     }
-    
+
     if (process.env.CURL_RUNNER_RETRIES) {
-      envConfig.defaults = { 
-        ...envConfig.defaults, 
-        retry: { 
-          ...envConfig.defaults?.retry, 
-          count: Number.parseInt(process.env.CURL_RUNNER_RETRIES, 10) 
-        } 
+      envConfig.defaults = {
+        ...envConfig.defaults,
+        retry: {
+          ...envConfig.defaults?.retry,
+          count: Number.parseInt(process.env.CURL_RUNNER_RETRIES, 10),
+        },
       };
     }
-    
+
     if (process.env.CURL_RUNNER_RETRY_DELAY) {
-      envConfig.defaults = { 
-        ...envConfig.defaults, 
-        retry: { 
-          ...envConfig.defaults?.retry, 
-          delay: Number.parseInt(process.env.CURL_RUNNER_RETRY_DELAY, 10) 
-        } 
+      envConfig.defaults = {
+        ...envConfig.defaults,
+        retry: {
+          ...envConfig.defaults?.retry,
+          delay: Number.parseInt(process.env.CURL_RUNNER_RETRY_DELAY, 10),
+        },
       };
     }
-    
+
     if (process.env.CURL_RUNNER_VERBOSE) {
-      envConfig.output = { 
-        ...envConfig.output, 
-        verbose: process.env.CURL_RUNNER_VERBOSE.toLowerCase() === 'true' 
+      envConfig.output = {
+        ...envConfig.output,
+        verbose: process.env.CURL_RUNNER_VERBOSE.toLowerCase() === 'true',
       };
     }
-    
+
     if (process.env.CURL_RUNNER_EXECUTION) {
       envConfig.execution = process.env.CURL_RUNNER_EXECUTION as 'sequential' | 'parallel';
     }
-    
+
     if (process.env.CURL_RUNNER_CONTINUE_ON_ERROR) {
-      envConfig.continueOnError = process.env.CURL_RUNNER_CONTINUE_ON_ERROR.toLowerCase() === 'true';
+      envConfig.continueOnError =
+        process.env.CURL_RUNNER_CONTINUE_ON_ERROR.toLowerCase() === 'true';
     }
-    
+
     if (process.env.CURL_RUNNER_OUTPUT_FORMAT) {
       const format = process.env.CURL_RUNNER_OUTPUT_FORMAT;
       if (['json', 'pretty', 'raw'].includes(format)) {
         envConfig.output = { ...envConfig.output, format: format as 'json' | 'pretty' | 'raw' };
       }
     }
-    
+
     if (process.env.CURL_RUNNER_PRETTY_LEVEL) {
       const level = process.env.CURL_RUNNER_PRETTY_LEVEL;
       if (['minimal', 'standard', 'detailed'].includes(level)) {
-        envConfig.output = { ...envConfig.output, prettyLevel: level as 'minimal' | 'standard' | 'detailed' };
+        envConfig.output = {
+          ...envConfig.output,
+          prettyLevel: level as 'minimal' | 'standard' | 'detailed',
+        };
       }
     }
-    
+
     if (process.env.CURL_RUNNER_OUTPUT_FILE) {
       envConfig.output = { ...envConfig.output, saveToFile: process.env.CURL_RUNNER_OUTPUT_FILE };
     }
-    
+
     return envConfig;
   }
 
@@ -122,26 +134,27 @@ class CurlRunnerCLI {
       this.logger.logInfo(`Found ${yamlFiles.length} YAML file(s)`);
 
       let globalConfig: GlobalConfig = this.mergeGlobalConfigs(envConfig, configFile);
-      let allRequests: RequestConfig[] = [];
+      const allRequests: RequestConfig[] = [];
 
       // Group requests by file to show clear file separations in output
-      const fileGroups: Array<{ file: string; requests: RequestConfig[]; config?: any }> = [];
-      
+      const fileGroups: Array<{ file: string; requests: RequestConfig[]; config?: GlobalConfig }> =
+        [];
+
       for (const file of yamlFiles) {
         this.logger.logInfo(`Processing: ${file}`);
         const { requests, config } = await this.processYamlFile(file);
 
         // Associate each request with its source file's output configuration and filename
         const fileOutputConfig = config?.output || {};
-        const requestsWithSourceConfig = requests.map(request => ({
+        const requestsWithSourceConfig = requests.map((request) => ({
           ...request,
           sourceOutputConfig: fileOutputConfig,
-          sourceFile: file
+          sourceFile: file,
         }));
 
         // Only merge non-output global configs (execution, continueOnError, variables, defaults)
         if (config) {
-          const { output, ...nonOutputConfig } = config;
+          const { ...nonOutputConfig } = config;
           globalConfig = this.mergeGlobalConfigs(globalConfig, nonOutputConfig);
         }
 
@@ -165,10 +178,16 @@ class CurlRunnerCLI {
         globalConfig.output = { ...globalConfig.output, saveToFile: options.output };
       }
       if (options.outputFormat) {
-        globalConfig.output = { ...globalConfig.output, format: options.outputFormat as 'json' | 'pretty' | 'raw' };
+        globalConfig.output = {
+          ...globalConfig.output,
+          format: options.outputFormat as 'json' | 'pretty' | 'raw',
+        };
       }
       if (options.prettyLevel) {
-        globalConfig.output = { ...globalConfig.output, prettyLevel: options.prettyLevel as 'minimal' | 'standard' | 'detailed' };
+        globalConfig.output = {
+          ...globalConfig.output,
+          prettyLevel: options.prettyLevel as 'minimal' | 'standard' | 'detailed',
+        };
       }
       if (options.showHeaders !== undefined) {
         globalConfig.output = { ...globalConfig.output, showHeaders: options.showHeaders };
@@ -179,28 +198,28 @@ class CurlRunnerCLI {
       if (options.showMetrics !== undefined) {
         globalConfig.output = { ...globalConfig.output, showMetrics: options.showMetrics };
       }
-      
+
       // Apply timeout and retry settings to defaults
       if (options.timeout) {
         globalConfig.defaults = { ...globalConfig.defaults, timeout: options.timeout };
       }
       if (options.retries || options.noRetry) {
-        const retryCount = options.noRetry ? 0 : (options.retries || 0);
-        globalConfig.defaults = { 
-          ...globalConfig.defaults, 
-          retry: { 
-            ...globalConfig.defaults?.retry, 
-            count: retryCount 
-          } 
+        const retryCount = options.noRetry ? 0 : options.retries || 0;
+        globalConfig.defaults = {
+          ...globalConfig.defaults,
+          retry: {
+            ...globalConfig.defaults?.retry,
+            count: retryCount,
+          },
         };
       }
       if (options.retryDelay) {
-        globalConfig.defaults = { 
-          ...globalConfig.defaults, 
-          retry: { 
-            ...globalConfig.defaults?.retry, 
-            delay: options.retryDelay 
-          } 
+        globalConfig.defaults = {
+          ...globalConfig.defaults,
+          retry: {
+            ...globalConfig.defaults?.retry,
+            delay: options.retryDelay,
+          },
         };
       }
 
@@ -210,25 +229,25 @@ class CurlRunnerCLI {
       }
 
       const executor = new RequestExecutor(globalConfig);
-      let summary;
+      let summary: ExecutionSummary;
 
       // If multiple files, execute them with file separators for clarity
       if (fileGroups.length > 1) {
-        const allResults: any[] = [];
+        const allResults: ExecutionResult[] = [];
         let totalDuration = 0;
 
         for (let i = 0; i < fileGroups.length; i++) {
           const group = fileGroups[i];
-          
+
           // Show file header for better organization
           this.logger.logFileHeader(group.file, group.requests.length);
-          
+
           const fileSummary = await executor.execute(group.requests);
           allResults.push(...fileSummary.results);
           totalDuration += fileSummary.duration;
-          
+
           // Don't show individual file summaries for cleaner output
-          
+
           // Add spacing between files (except for the last one)
           if (i < fileGroups.length - 1) {
             console.log();
@@ -238,7 +257,7 @@ class CurlRunnerCLI {
         // Create combined summary
         const successful = allResults.filter((r) => r.success).length;
         const failed = allResults.filter((r) => !r.success).length;
-        
+
         summary = {
           total: allResults.length,
           successful,
@@ -329,7 +348,7 @@ class CurlRunnerCLI {
             case 'q':
               options.quiet = true;
               break;
-            case 'o':
+            case 'o': {
               // Handle -o flag for output file
               const outputArg = args[i + 1];
               if (outputArg && !outputArg.startsWith('-')) {
@@ -337,6 +356,7 @@ class CurlRunnerCLI {
                 i++;
               }
               break;
+            }
           }
         }
       } else {
@@ -356,17 +376,15 @@ class CurlRunnerCLI {
     let searchPatterns: string[] = [];
 
     if (patterns.length === 0) {
-      searchPatterns = options.all
-        ? ['**/*.yaml', '**/*.yml']
-        : ['*.yaml', '*.yml'];
+      searchPatterns = options.all ? ['**/*.yaml', '**/*.yml'] : ['*.yaml', '*.yml'];
     } else {
       // Check if patterns include directories
       for (const pattern of patterns) {
         try {
           // Use Bun's file system API to check if it's a directory
-          const fs = await import('fs/promises');
+          const fs = await import('node:fs/promises');
           const stat = await fs.stat(pattern);
-          
+
           if (stat.isDirectory()) {
             // Add glob patterns for all YAML files in this directory
             searchPatterns.push(`${pattern}/*.yaml`, `${pattern}/*.yml`);
