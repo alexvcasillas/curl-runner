@@ -1,14 +1,25 @@
+import {
+  Activity,
+  CheckCircle,
+  Code,
+  FileText,
+  FolderOpen,
+  GitBranch,
+  MessageCircle,
+  Settings,
+  TestTube,
+} from 'lucide-react';
 import type { Metadata } from 'next';
-import { DocsPageHeader } from "@/components/docs-page-header"
-import { CodeBlockServer } from "@/components/code-block-server"
-import { TableOfContents } from "@/components/toc"
-import { H2, H3 } from "@/components/docs-heading"
-import { Badge } from "@/components/ui/badge"
-import { FolderOpen, FileText, Settings, CheckCircle, MessageCircle, TestTube, GitBranch, Activity, Code } from "lucide-react"
+import { CodeBlockServer } from '@/components/code-block-server';
+import { H2 } from '@/components/docs-heading';
+import { DocsPageHeader } from '@/components/docs-page-header';
+import { TableOfContents } from '@/components/toc';
+import { Badge } from '@/components/ui/badge';
 
 export const metadata: Metadata = {
   title: 'Collection Examples',
-  description: 'Organize related HTTP requests into collections with curl-runner. Learn about request collections, shared variables, and managing test suites.',
+  description:
+    'Organize related HTTP requests into collections with curl-runner. Learn about request collections, shared variables, and managing test suites.',
   keywords: [
     'curl-runner collection examples',
     'request collections',
@@ -21,19 +32,20 @@ export const metadata: Metadata = {
     'request grouping',
     'collection configuration',
     'test collection patterns',
-    'structured testing'
+    'structured testing',
   ],
   openGraph: {
     title: 'Collection Examples | curl-runner Documentation',
-    description: 'Organize related HTTP requests into collections with curl-runner. Learn about request collections, shared variables, and managing test suites.',
+    description:
+      'Organize related HTTP requests into collections with curl-runner. Learn about request collections, shared variables, and managing test suites.',
     url: 'https://curl-runner.com/docs/examples/collection',
-    type: 'article'
-    },
+    type: 'article',
+  },
   twitter: {
     card: 'summary_large_image',
     title: 'Collection Examples | curl-runner Documentation',
     description: 'Learn how to organize HTTP requests into collections with curl-runner.',
-    },
+  },
   alternates: {
     canonical: 'https://curl-runner.com/docs/examples/collection',
   },
@@ -60,7 +72,7 @@ collection:
         Content-Type: application/json
       body:
         name: "John Doe"
-        email: "john@example.com"`
+        email: "john@example.com"`;
 
 const collectionWithVariables = `# Collection with shared variables
 collection:
@@ -93,7 +105,7 @@ collection:
       method: POST
       body:
         productId: \${PRODUCT_ID}
-        quantity: 2`
+        quantity: 2`;
 
 const fullCollectionExample = `# Complete collection with global settings
 global:
@@ -197,7 +209,7 @@ collection:
       url: \${BASE_URL}/users/\${TEST_USER_ID}/todos
       method: GET
       expect:
-        status: 200`
+        status: 200`;
 
 const nestedCollections = `# Multiple collections in one file
 global:
@@ -249,7 +261,7 @@ collection:
       body:
         displayName: "Updated Name"
       expect:
-        status: 200`
+        status: 200`;
 
 const runCommand = `# Run collection tests
 curl-runner collection.yaml
@@ -264,7 +276,7 @@ curl-runner collection.yaml --parallel
 curl-runner collection.yaml --output results.json
 
 # Run with verbose output
-curl-runner collection.yaml --verbose`
+curl-runner collection.yaml --verbose`;
 
 export default function CollectionExamplePage() {
   return (
@@ -280,9 +292,11 @@ export default function CollectionExamplePage() {
           <section>
             <H2 id="overview">Overview</H2>
             <p className="text-muted-foreground mb-6">
-              Collections allow you to group related HTTP requests together, share variables and defaults, and run comprehensive test suites. They're perfect for testing complete API workflows or organizing tests by feature.
+              Collections allow you to group related HTTP requests together, share variables and
+              defaults, and run comprehensive test suites. They're perfect for testing complete API
+              workflows or organizing tests by feature.
             </p>
-            
+
             <div className="grid gap-4 md:grid-cols-2">
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
@@ -300,7 +314,7 @@ export default function CollectionExamplePage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-green-500/10 p-2">
@@ -326,7 +340,7 @@ export default function CollectionExamplePage() {
             <p className="text-muted-foreground mb-6">
               A simple collection groups related requests under a name and description.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="basic-collection.yaml">
               {basicCollection}
             </CodeBlockServer>
@@ -338,14 +352,16 @@ export default function CollectionExamplePage() {
             <p className="text-muted-foreground mb-6">
               Define variables at the collection level to share across all requests.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="collection-variables.yaml">
               {collectionWithVariables}
             </CodeBlockServer>
 
             <div className="mt-6 rounded-lg border bg-blue-500/5 dark:bg-blue-500/10 border-blue-500/20 p-4">
               <p className="text-sm">
-                <strong className="text-blue-600 dark:text-blue-400">Variable Precedence:</strong> Collection variables override global variables but can be overridden by request-level variables.
+                <strong className="text-blue-600 dark:text-blue-400">Variable Precedence:</strong>{' '}
+                Collection variables override global variables but can be overridden by
+                request-level variables.
               </p>
             </div>
           </section>
@@ -354,9 +370,10 @@ export default function CollectionExamplePage() {
           <section>
             <H2 id="complete-example">Complete Collection Example</H2>
             <p className="text-muted-foreground mb-6">
-              A comprehensive example showing all collection features including global settings, defaults, variables, and validation.
+              A comprehensive example showing all collection features including global settings,
+              defaults, variables, and validation.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="complete-collection.yaml">
               {fullCollectionExample}
             </CodeBlockServer>
@@ -380,29 +397,49 @@ export default function CollectionExamplePage() {
                 </thead>
                 <tbody>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">name</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">name</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">string</td>
-                    <td className="p-3 text-sm text-muted-foreground">Collection name (required)</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Collection name (required)
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">description</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">description</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">string</td>
-                    <td className="p-3 text-sm text-muted-foreground">Collection description (optional)</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Collection description (optional)
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">variables</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">variables</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">object</td>
-                    <td className="p-3 text-sm text-muted-foreground">Collection-level variables</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Collection-level variables
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">defaults</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">defaults</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">object</td>
-                    <td className="p-3 text-sm text-muted-foreground">Default request configuration</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Default request configuration
+                    </td>
                   </tr>
                   <tr>
-                    <td className="p-3"><code className="text-sm">requests</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">requests</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">array</td>
-                    <td className="p-3 text-sm text-muted-foreground">List of requests (required)</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      List of requests (required)
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -415,7 +452,7 @@ export default function CollectionExamplePage() {
             <p className="text-muted-foreground mb-6">
               You can define multiple collections in separate files or use YAML document separators.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="multiple-collections.yaml">
               {nestedCollections}
             </CodeBlockServer>
@@ -427,7 +464,7 @@ export default function CollectionExamplePage() {
             <p className="text-muted-foreground mb-6">
               Execute collection tests using the curl-runner CLI.
             </p>
-            
+
             <CodeBlockServer language="bash" filename="terminal">
               {runCommand}
             </CodeBlockServer>
@@ -506,8 +543,12 @@ export default function CollectionExamplePage() {
                   </div>
                   <div className="flex-1 px-6 pb-6 sm:px-8 sm:pb-8 flex items-end">
                     <div className="w-full rounded-lg bg-slate-100 dark:bg-zinc-950/70 backdrop-blur-sm border border-slate-200 dark:border-zinc-800 p-3 font-mono text-xs">
-                      <div className="text-green-600 dark:text-green-400">✓ User Registration Flow</div>
-                      <div className="text-green-600 dark:text-green-400">✓ Payment Processing Suite</div>
+                      <div className="text-green-600 dark:text-green-400">
+                        ✓ User Registration Flow
+                      </div>
+                      <div className="text-green-600 dark:text-green-400">
+                        ✓ Payment Processing Suite
+                      </div>
                       <div className="text-red-400">✗ test1, test2, temp</div>
                     </div>
                   </div>
@@ -607,7 +648,8 @@ export default function CollectionExamplePage() {
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">API Test Suites</h4>
                     <p className="text-sm text-muted-foreground mb-3">
-                      Comprehensive testing of all API endpoints with organized test cases and validation rules.
+                      Comprehensive testing of all API endpoints with organized test cases and
+                      validation rules.
                     </p>
                     <Badge className="bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20">
                       Testing
@@ -615,7 +657,7 @@ export default function CollectionExamplePage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-blue-500/10 p-2">
@@ -624,7 +666,8 @@ export default function CollectionExamplePage() {
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">CI/CD Pipelines</h4>
                     <p className="text-sm text-muted-foreground mb-3">
-                      Automated API testing in deployment workflows for continuous integration and delivery.
+                      Automated API testing in deployment workflows for continuous integration and
+                      delivery.
                     </p>
                     <Badge className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
                       Integration
@@ -632,7 +675,7 @@ export default function CollectionExamplePage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-purple-500/10 p-2">
@@ -649,7 +692,7 @@ export default function CollectionExamplePage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-yellow-500/10 p-2">
@@ -678,5 +721,5 @@ export default function CollectionExamplePage() {
         </div>
       </div>
     </main>
-  )
+  );
 }

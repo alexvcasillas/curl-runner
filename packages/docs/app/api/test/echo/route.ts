@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     } else {
       body = await request.text();
     }
-  } catch (e) {
+  } catch (_e) {
     body = null;
   }
 
@@ -57,7 +57,7 @@ export async function PUT(request: NextRequest) {
     } else {
       body = await request.text();
     }
-  } catch (e) {
+  } catch (_e) {
     body = null;
   }
 
@@ -98,7 +98,7 @@ export async function PATCH(request: NextRequest) {
     } else {
       body = await request.text();
     }
-  } catch (e) {
+  } catch (_e) {
     body = null;
   }
 

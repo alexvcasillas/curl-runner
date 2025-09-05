@@ -1,14 +1,15 @@
+import { CheckCircle, Eye, Search, Shield, Target, Zap } from 'lucide-react';
 import type { Metadata } from 'next';
-import { DocsPageHeader } from "@/components/docs-page-header"
-import { CodeBlockServer } from "@/components/code-block-server"
-import { TableOfContents } from "@/components/toc"
-import { H2, H3 } from "@/components/docs-heading"
-import { Badge } from "@/components/ui/badge"
-import { Target, Search, Zap, Eye, Shield, CheckCircle, AlertTriangle, Lightbulb } from "lucide-react"
+import { CodeBlockServer } from '@/components/code-block-server';
+import { H2, H3 } from '@/components/docs-heading';
+import { DocsPageHeader } from '@/components/docs-page-header';
+import { TableOfContents } from '@/components/toc';
+import { Badge } from '@/components/ui/badge';
 
 export const metadata: Metadata = {
   title: 'Response Validation',
-  description: 'Validate HTTP response status, headers, and body content with curl-runner. Learn about assertion rules, validation patterns, and automated testing.',
+  description:
+    'Validate HTTP response status, headers, and body content with curl-runner. Learn about assertion rules, validation patterns, and automated testing.',
   keywords: [
     'curl-runner response validation',
     'HTTP response validation',
@@ -21,19 +22,20 @@ export const metadata: Metadata = {
     'automated testing',
     'API testing validation',
     'response checking',
-    'validation patterns'
+    'validation patterns',
   ],
   openGraph: {
     title: 'Response Validation | curl-runner Documentation',
-    description: 'Validate HTTP response status, headers, and body content with curl-runner. Learn about assertion rules, validation patterns, and automated testing.',
+    description:
+      'Validate HTTP response status, headers, and body content with curl-runner. Learn about assertion rules, validation patterns, and automated testing.',
     url: 'https://curl-runner.com/docs/features/response-validation',
-    type: 'article'
-    },
+    type: 'article',
+  },
   twitter: {
     card: 'summary_large_image',
     title: 'Response Validation | curl-runner Documentation',
     description: 'Learn how to validate HTTP responses with curl-runner for robust API testing.',
-    },
+  },
   alternates: {
     canonical: 'https://curl-runner.com/docs/features/response-validation',
   },
@@ -53,7 +55,7 @@ request:
   url: https://api.example.com/users/123
   method: GET
   expect:
-    status: [200, 304]  # Accept either 200 or 304`
+    status: [200, 304]  # Accept either 200 or 304`;
 
 const headerValidation = `# Validate response headers
 request:
@@ -65,7 +67,7 @@ request:
     headers:
       content-type: application/json
       x-api-version: "v2"
-      cache-control: "no-cache"`
+      cache-control: "no-cache"`;
 
 const bodyValidation = `# Validate response body content
 request:
@@ -87,7 +89,7 @@ request:
   method: GET
   expect:
     body:
-      status: "operational"  # Only check specific fields`
+      status: "operational"  # Only check specific fields`;
 
 const complexValidation = `# Complex validation scenarios
 requests:
@@ -117,7 +119,7 @@ requests:
         - id: 1
           name: "Item 1"
         - id: 2
-          name: "Item 2"`
+          name: "Item 2"`;
 
 const collectionValidation = `# Validation in collections
 global:
@@ -151,7 +153,7 @@ collection:
       expect:
         status: 200
         body:
-          data: "*"  # Any non-null value`
+          data: "*"  # Any non-null value`;
 
 export default function ResponseValidationPage() {
   return (
@@ -167,12 +169,17 @@ export default function ResponseValidationPage() {
           <section>
             <H2 id="overview">Overview</H2>
             <p className="text-muted-foreground mb-6">
-              Response validation allows you to verify that your API responses meet expected criteria. curl-runner can validate status codes, headers, and response body content, making it perfect for API testing and monitoring.
+              Response validation allows you to verify that your API responses meet expected
+              criteria. curl-runner can validate status codes, headers, and response body content,
+              making it perfect for API testing and monitoring.
             </p>
-            
+
             <div className="rounded-lg border bg-muted/50 p-4">
               <p className="text-sm">
-                <strong>Tip:</strong> Use the <code className="text-xs bg-background px-1 py-0.5 rounded">expect</code> field in your request configuration to define validation rules. If validation fails, curl-runner will report the mismatch and mark the request as failed.
+                <strong>Tip:</strong> Use the{' '}
+                <code className="text-xs bg-background px-1 py-0.5 rounded">expect</code> field in
+                your request configuration to define validation rules. If validation fails,
+                curl-runner will report the mismatch and mark the request as failed.
               </p>
             </div>
           </section>
@@ -183,7 +190,7 @@ export default function ResponseValidationPage() {
             <p className="text-muted-foreground mb-6">
               Validate that responses return expected HTTP status codes.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="status-validation.yaml">
               {statusValidation}
             </CodeBlockServer>
@@ -225,14 +232,16 @@ export default function ResponseValidationPage() {
             <p className="text-muted-foreground mb-6">
               Verify that responses include expected headers with correct values.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="header-validation.yaml">
               {headerValidation}
             </CodeBlockServer>
 
             <div className="mt-6 rounded-lg border bg-blue-500/5 dark:bg-blue-500/10 border-blue-500/20 p-4">
               <p className="text-sm">
-                <strong className="text-blue-600 dark:text-blue-400">Note:</strong> Header names are case-insensitive, but values are case-sensitive. Use exact values or regex patterns for flexible matching.
+                <strong className="text-blue-600 dark:text-blue-400">Note:</strong> Header names are
+                case-insensitive, but values are case-sensitive. Use exact values or regex patterns
+                for flexible matching.
               </p>
             </div>
           </section>
@@ -243,7 +252,7 @@ export default function ResponseValidationPage() {
             <p className="text-muted-foreground mb-6">
               Validate response body content for JSON, text, or other formats.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="body-validation.yaml">
               {bodyValidation}
             </CodeBlockServer>
@@ -261,11 +270,13 @@ export default function ResponseValidationPage() {
                       <p className="text-sm text-muted-foreground mb-3">
                         Specify exact values that must match in the response.
                       </p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">{"body: { status: \"ok\" }"}</code>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        {'body: { status: "ok" }'}
+                      </code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-green-500/10 p-2">
@@ -276,11 +287,13 @@ export default function ResponseValidationPage() {
                       <p className="text-sm text-muted-foreground mb-3">
                         Only validate specific fields, ignore others.
                       </p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">{"body: { id: 123 } # Other fields ignored"}</code>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        {'body: { id: 123 } # Other fields ignored'}
+                      </code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-purple-500/10 p-2">
@@ -291,11 +304,13 @@ export default function ResponseValidationPage() {
                       <p className="text-sm text-muted-foreground mb-3">
                         Use regex patterns for flexible validation.
                       </p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">{"body: { email: \"^[a-z]+@[a-z]+\\\\.[a-z]+$\" }"}</code>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        {'body: { email: "^[a-z]+@[a-z]+\\\\.[a-z]+$" }'}
+                      </code>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-yellow-500/10 p-2">
@@ -306,7 +321,9 @@ export default function ResponseValidationPage() {
                       <p className="text-sm text-muted-foreground mb-3">
                         Use "*" to check for presence of a field with any value.
                       </p>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">{"body: { token: \"*\" } # Field must exist"}</code>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        {'body: { token: "*" } # Field must exist'}
+                      </code>
                     </div>
                   </div>
                 </div>
@@ -320,7 +337,7 @@ export default function ResponseValidationPage() {
             <p className="text-muted-foreground mb-6">
               Combine multiple validation rules for comprehensive testing.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="complex-validation.yaml">
               {complexValidation}
             </CodeBlockServer>
@@ -332,7 +349,7 @@ export default function ResponseValidationPage() {
             <p className="text-muted-foreground mb-6">
               Apply validation rules across collections with defaults and overrides.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="collection-validation.yaml">
               {collectionValidation}
             </CodeBlockServer>
@@ -352,19 +369,29 @@ export default function ResponseValidationPage() {
                 </thead>
                 <tbody>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">expect.status</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">expect.status</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">number | number[]</td>
-                    <td className="p-3 text-sm text-muted-foreground">Expected HTTP status code(s)</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Expected HTTP status code(s)
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">expect.headers</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">expect.headers</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">object</td>
                     <td className="p-3 text-sm text-muted-foreground">Expected response headers</td>
                   </tr>
                   <tr>
-                    <td className="p-3"><code className="text-sm">expect.body</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">expect.body</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">any</td>
-                    <td className="p-3 text-sm text-muted-foreground">Expected response body content</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Expected response body content
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -383,12 +410,13 @@ export default function ResponseValidationPage() {
                   <div>
                     <h4 className="font-medium mb-2">Start Simple</h4>
                     <p className="text-sm text-muted-foreground">
-                      Begin with basic status code validation, then add more complex rules as needed.
+                      Begin with basic status code validation, then add more complex rules as
+                      needed.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-blue-500/10 p-2">
@@ -397,12 +425,13 @@ export default function ResponseValidationPage() {
                   <div>
                     <h4 className="font-medium mb-2">Use Partial Matching</h4>
                     <p className="text-sm text-muted-foreground">
-                      Don't validate entire response bodies unless necessary. Focus on critical fields to avoid brittle tests.
+                      Don't validate entire response bodies unless necessary. Focus on critical
+                      fields to avoid brittle tests.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-purple-500/10 p-2">
@@ -411,12 +440,13 @@ export default function ResponseValidationPage() {
                   <div>
                     <h4 className="font-medium mb-2">Leverage Patterns</h4>
                     <p className="text-sm text-muted-foreground">
-                      Use regex patterns for dynamic values like IDs, timestamps, or tokens that change between requests.
+                      Use regex patterns for dynamic values like IDs, timestamps, or tokens that
+                      change between requests.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-cyan-500/10 p-2">
@@ -425,7 +455,8 @@ export default function ResponseValidationPage() {
                   <div>
                     <h4 className="font-medium mb-2">Group Related Validations</h4>
                     <p className="text-sm text-muted-foreground">
-                      Use collection defaults to apply common validation rules across multiple requests.
+                      Use collection defaults to apply common validation rules across multiple
+                      requests.
                     </p>
                   </div>
                 </div>
@@ -442,5 +473,5 @@ export default function ResponseValidationPage() {
         </div>
       </div>
     </main>
-  )
+  );
 }

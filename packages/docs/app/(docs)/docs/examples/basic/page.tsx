@@ -1,12 +1,13 @@
+import { Bug, Globe, Lightbulb } from 'lucide-react';
 import type { Metadata } from 'next';
-import { DocsPageHeader } from "@/components/docs-page-header"
-import { CodeBlockServer } from "@/components/code-block-server"
-import { Badge } from "@/components/ui/badge"
-import { Lightbulb, Globe, Bug, Zap } from "lucide-react"
+import { CodeBlockServer } from '@/components/code-block-server';
+import { DocsPageHeader } from '@/components/docs-page-header';
+import { Badge } from '@/components/ui/badge';
 
 export const metadata: Metadata = {
   title: 'Basic Examples',
-  description: 'Simple curl-runner examples to get started with HTTP requests. Learn basic GET, POST, PUT, and DELETE operations with practical examples.',
+  description:
+    'Simple curl-runner examples to get started with HTTP requests. Learn basic GET, POST, PUT, and DELETE operations with practical examples.',
   keywords: [
     'curl-runner basic examples',
     'simple HTTP requests',
@@ -19,19 +20,20 @@ export const metadata: Metadata = {
     'curl-runner tutorial',
     'beginner examples',
     'simple API testing',
-    'basic YAML configuration'
+    'basic YAML configuration',
   ],
   openGraph: {
     title: 'Basic Examples | curl-runner Documentation',
-    description: 'Simple curl-runner examples to get started with HTTP requests. Learn basic GET, POST, PUT, and DELETE operations with practical examples.',
+    description:
+      'Simple curl-runner examples to get started with HTTP requests. Learn basic GET, POST, PUT, and DELETE operations with practical examples.',
     url: 'https://curl-runner.com/docs/examples/basic',
-    type: 'article'
-    },
+    type: 'article',
+  },
   twitter: {
     card: 'summary_large_image',
     title: 'Basic Examples | curl-runner Documentation',
     description: 'Learn curl-runner basics with simple HTTP request examples and configurations.',
-    },
+  },
   alternates: {
     canonical: 'https://curl-runner.com/docs/examples/basic',
   },
@@ -39,21 +41,21 @@ export const metadata: Metadata = {
 
 const examples = [
   {
-    title: "Simple GET Request",
-    description: "Basic HTTP GET request to fetch data",
-    badge: "Basic",
-    filename: "get-request.yaml",
+    title: 'Simple GET Request',
+    description: 'Basic HTTP GET request to fetch data',
+    badge: 'Basic',
+    filename: 'get-request.yaml',
     code: `# Simple GET request
 request:
   name: Get JSONPlaceholder Post
   url: https://jsonplaceholder.typicode.com/posts/1
-  method: GET`
+  method: GET`,
   },
   {
-    title: "POST Request with JSON Body",
-    description: "Create a new resource with JSON payload",
-    badge: "Basic",
-    filename: "post-request.yaml",
+    title: 'POST Request with JSON Body',
+    description: 'Create a new resource with JSON payload',
+    badge: 'Basic',
+    filename: 'post-request.yaml',
     code: `# POST request with JSON body
 request:
   name: Create New Post
@@ -64,13 +66,13 @@ request:
   body:
     title: My New Post
     body: This is the content of my new post
-    userId: 1`
+    userId: 1`,
   },
   {
-    title: "Request with Headers and Authentication",
-    description: "Include custom headers and Bearer token authentication",
-    badge: "Auth",
-    filename: "auth-request.yaml",
+    title: 'Request with Headers and Authentication',
+    description: 'Include custom headers and Bearer token authentication',
+    badge: 'Auth',
+    filename: 'auth-request.yaml',
     code: `# Request with authentication
 request:
   name: Get Protected Resource
@@ -80,13 +82,13 @@ request:
     Authorization: Bearer your-token-here
     Content-Type: application/json
     X-API-Version: "1.0"
-    User-Agent: curl-runner/1.0.0`
+    User-Agent: curl-runner/1.0.0`,
   },
   {
-    title: "PUT Request to Update Resource",
-    description: "Update an existing resource completely",
-    badge: "Basic",
-    filename: "put-request.yaml",
+    title: 'PUT Request to Update Resource',
+    description: 'Update an existing resource completely',
+    badge: 'Basic',
+    filename: 'put-request.yaml',
     code: `# PUT request to update resource
 request:
   name: Update Post
@@ -98,13 +100,13 @@ request:
     id: 1
     title: Updated Post Title
     body: This post has been updated
-    userId: 1`
+    userId: 1`,
   },
   {
-    title: "PATCH Request for Partial Update",
-    description: "Update specific fields of a resource",
-    badge: "Basic",
-    filename: "patch-request.yaml",
+    title: 'PATCH Request for Partial Update',
+    description: 'Update specific fields of a resource',
+    badge: 'Basic',
+    filename: 'patch-request.yaml',
     code: `# PATCH request for partial update
 request:
   name: Update Post Title
@@ -113,39 +115,39 @@ request:
   headers:
     Content-Type: application/json
   body:
-    title: Partially Updated Title`
+    title: Partially Updated Title`,
   },
   {
-    title: "DELETE Request",
-    description: "Remove a resource from the server",
-    badge: "Basic",
-    filename: "delete-request.yaml",
+    title: 'DELETE Request',
+    description: 'Remove a resource from the server',
+    badge: 'Basic',
+    filename: 'delete-request.yaml',
     code: `# DELETE request
 request:
   name: Delete Post
   url: https://jsonplaceholder.typicode.com/posts/1
   method: DELETE
   headers:
-    Authorization: Bearer your-token-here`
+    Authorization: Bearer your-token-here`,
   },
   {
-    title: "Request with Query Parameters",
-    description: "Include URL query parameters in your request",
-    badge: "Basic",
-    filename: "query-params.yaml",
+    title: 'Request with Query Parameters',
+    description: 'Include URL query parameters in your request',
+    badge: 'Basic',
+    filename: 'query-params.yaml',
     code: `# Request with query parameters
 request:
   name: Search Posts
   url: https://jsonplaceholder.typicode.com/posts?userId=1&_limit=5
   method: GET
   headers:
-    Accept: application/json`
+    Accept: application/json`,
   },
   {
-    title: "Form Data Request",
-    description: "Send form-encoded data (application/x-www-form-urlencoded)",
-    badge: "Forms",
-    filename: "form-request.yaml",
+    title: 'Form Data Request',
+    description: 'Send form-encoded data (application/x-www-form-urlencoded)',
+    badge: 'Forms',
+    filename: 'form-request.yaml',
     code: `# Form data request
 request:
   name: Submit Contact Form
@@ -153,13 +155,13 @@ request:
   method: POST
   headers:
     Content-Type: application/x-www-form-urlencoded
-  body: "name=John+Doe&email=john@example.com&message=Hello+World"`
+  body: "name=John+Doe&email=john@example.com&message=Hello+World"`,
   },
   {
-    title: "Request with Timeout and Retries",
-    description: "Configure request timeout and retry behavior",
-    badge: "Advanced",
-    filename: "timeout-retry.yaml",
+    title: 'Request with Timeout and Retries',
+    description: 'Configure request timeout and retry behavior',
+    badge: 'Advanced',
+    filename: 'timeout-retry.yaml',
     code: `# Request with timeout and retries
 request:
   name: Slow API Call
@@ -168,9 +170,9 @@ request:
   timeout: 5000  # 5 seconds
   retries: 3
   headers:
-    Accept: application/json`
-  }
-]
+    Accept: application/json`,
+  },
+];
 
 const runCommands = `# Run a specific example
 curl-runner get-request.yaml
@@ -182,7 +184,7 @@ curl-runner post-request.yaml -v
 curl-runner auth-request.yaml --timeout 10000
 
 # Save results to file
-curl-runner query-params.yaml --output results.json`
+curl-runner query-params.yaml --output results.json`;
 
 export default function BasicExamplesPage() {
   return (
@@ -197,11 +199,11 @@ export default function BasicExamplesPage() {
           {/* Examples */}
           <section>
             <div className="space-y-8">
-              {examples.map((example, index) => (
-                <div key={index} className="space-y-3">
+              {examples.map((example) => (
+                <div key={example.title} className="space-y-3">
                   <div className="flex items-center space-x-2">
                     <h3 className="text-xl font-semibold">{example.title}</h3>
-                    <Badge variant={example.badge === "Advanced" ? "default" : "secondary"}>
+                    <Badge variant={example.badge === 'Advanced' ? 'default' : 'secondary'}>
                       {example.badge}
                     </Badge>
                   </div>
@@ -218,11 +220,10 @@ export default function BasicExamplesPage() {
           <section>
             <h2 className="text-2xl font-semibold tracking-tight mb-4">Running the Examples</h2>
             <p className="text-muted-foreground mb-4">
-              Save any of the above examples to a YAML file and run them with <code className="font-mono">curl-runner</code>:
+              Save any of the above examples to a YAML file and run them with{' '}
+              <code className="font-mono">curl-runner</code>:
             </p>
-            <CodeBlockServer language="bash">
-              {runCommands}
-            </CodeBlockServer>
+            <CodeBlockServer language="bash">{runCommands}</CodeBlockServer>
           </section>
 
           {/* Tips */}
@@ -238,16 +239,24 @@ export default function BasicExamplesPage() {
                     <h3 className="font-medium mb-4">Testing APIs</h3>
                     <ul className="space-y-3 text-sm text-muted-foreground list-none">
                       <li className="relative pl-4 before:content-['•'] before:absolute before:left-0 before:text-blue-600 dark:before:text-blue-400">
-                        Use <code className="text-xs bg-muted px-2 py-1 rounded">https://jsonplaceholder.typicode.com</code> for testing - it's a free REST API for testing and prototyping
+                        Use{' '}
+                        <code className="text-xs bg-muted px-2 py-1 rounded">
+                          https://jsonplaceholder.typicode.com
+                        </code>{' '}
+                        for testing - it's a free REST API for testing and prototyping
                       </li>
                       <li className="relative pl-4 before:content-['•'] before:absolute before:left-0 before:text-blue-600 dark:before:text-blue-400">
-                        Try <code className="text-xs bg-muted px-2 py-1 rounded">https://httpbin.org</code> for testing different HTTP scenarios like delays, status codes, and headers
+                        Try{' '}
+                        <code className="text-xs bg-muted px-2 py-1 rounded">
+                          https://httpbin.org
+                        </code>{' '}
+                        for testing different HTTP scenarios like delays, status codes, and headers
                       </li>
                     </ul>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-6">
                 <div className="flex items-start gap-4">
                   <div className="rounded-full bg-green-500/10 p-3">
@@ -279,7 +288,9 @@ export default function BasicExamplesPage() {
                     <h3 className="font-medium mb-4">Debugging & Troubleshooting</h3>
                     <ul className="space-y-3 text-sm text-muted-foreground list-none">
                       <li className="relative pl-4 before:content-['•'] before:absolute before:left-0 before:text-purple-600 dark:before:text-purple-400">
-                        Use the <code className="text-xs bg-muted px-2 py-1 rounded">--verbose</code> flag to see detailed request and response information
+                        Use the{' '}
+                        <code className="text-xs bg-muted px-2 py-1 rounded">--verbose</code> flag
+                        to see detailed request and response information
                       </li>
                       <li className="relative pl-4 before:content-['•'] before:absolute before:left-0 before:text-purple-600 dark:before:text-purple-400">
                         Check response headers for debugging information and API limits
@@ -334,5 +345,5 @@ export default function BasicExamplesPage() {
         </div>
       </div>
     </main>
-  )
+  );
 }

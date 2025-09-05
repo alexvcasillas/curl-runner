@@ -4,12 +4,15 @@ import { type NextRequest, NextResponse } from 'next/server';
  * Status code endpoint - returns specified HTTP status code
  * Replaces httpbin.org/status functionality
  */
-export async function GET(request: NextRequest, { params }: { params: Promise<{ code: string }> }) {
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ code: string }> },
+) {
   const { code } = await params;
   const statusCode = parseInt(code, 10);
 
   // Validate status code
-  if (isNaN(statusCode) || statusCode < 100 || statusCode > 599) {
+  if (Number.isNaN(statusCode) || statusCode < 100 || statusCode > 599) {
     return NextResponse.json(
       { error: 'Invalid status code. Must be between 100-599' },
       { status: 400 },
@@ -63,7 +66,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 }
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ code: string }> }) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ code: string }> },
+) {
   return GET(request, { params });
 }
 
@@ -71,7 +77,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   return GET(request, { params });
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ code: string }> }) {
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ code: string }> },
+) {
   return GET(request, { params });
 }
 

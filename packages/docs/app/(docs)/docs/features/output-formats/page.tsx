@@ -1,14 +1,15 @@
+import { BarChart3, Bug, CheckCircle, FileJson, Filter, Settings, TrendingUp } from 'lucide-react';
 import type { Metadata } from 'next';
-import { DocsPageHeader } from "@/components/docs-page-header"
-import { CodeBlockServer } from "@/components/code-block-server"
-import { TableOfContents } from "@/components/toc"
-import { H2, H3 } from "@/components/docs-heading"
-import { Badge } from "@/components/ui/badge"
-import { FileJson, Terminal, BarChart3, Bug, Settings, CheckCircle, Eye, Filter, TrendingUp } from "lucide-react"
+import { CodeBlockServer } from '@/components/code-block-server';
+import { H2, H3 } from '@/components/docs-heading';
+import { DocsPageHeader } from '@/components/docs-page-header';
+import { TableOfContents } from '@/components/toc';
+import { Badge } from '@/components/ui/badge';
 
 export const metadata: Metadata = {
   title: 'Output Formats',
-  description: 'Control how curl-runner displays and saves request results with different output formats including JSON, pretty-printed, and raw formats.',
+  description:
+    'Control how curl-runner displays and saves request results with different output formats including JSON, pretty-printed, and raw formats.',
   keywords: [
     'curl-runner output formats',
     'JSON output format',
@@ -21,19 +22,20 @@ export const metadata: Metadata = {
     'machine readable output',
     'terminal formatting',
     'output configuration',
-    'result formatting'
+    'result formatting',
   ],
   openGraph: {
     title: 'Output Formats | curl-runner Documentation',
-    description: 'Control how curl-runner displays and saves request results with different output formats including JSON, pretty-printed, and raw formats.',
+    description:
+      'Control how curl-runner displays and saves request results with different output formats including JSON, pretty-printed, and raw formats.',
     url: 'https://curl-runner.com/docs/features/output-formats',
-    type: 'article'
-    },
+    type: 'article',
+  },
   twitter: {
     card: 'summary_large_image',
     title: 'Output Formats | curl-runner Documentation',
     description: 'Learn how to control curl-runner output with different formats and save options.',
-    },
+  },
   alternates: {
     canonical: 'https://curl-runner.com/docs/features/output-formats',
   },
@@ -51,7 +53,7 @@ global:
 requests:
   - name: API Test
     url: https://api.example.com/data
-    method: GET`
+    method: GET`;
 
 const saveToFile = `# Save results to file
 global:
@@ -65,7 +67,7 @@ global:
 requests:
   - name: Test Suite
     url: \${API_URL}/test
-    method: GET`
+    method: GET`;
 
 const cliOutput = `# Command line output options
 # JSON format (machine-readable)
@@ -87,7 +89,7 @@ curl-runner tests.yaml --verbose
 curl-runner tests.yaml --show-headers --show-metrics
 
 # Quiet mode (errors only)
-curl-runner tests.yaml --quiet`
+curl-runner tests.yaml --quiet`;
 
 const jsonExample = `{
   "summary": {
@@ -136,7 +138,7 @@ const jsonExample = `{
       }
     }
   ]
-}`
+}`;
 
 const jsonConfig = `# JSON format configuration
 global:
@@ -149,7 +151,7 @@ global:
 request:
   name: Get User Profile
   url: https://api.example.com/users/123
-  method: GET`
+  method: GET`;
 
 const prettyOutput = `✅ Get User Profile
    URL: https://api.example.com/users/123
@@ -175,7 +177,7 @@ const prettyOutput = `✅ Get User Profile
    ├─ Response Size: 256 bytes
    └─ Total Time: 125ms
 
-Summary: 1 request completed successfully`
+Summary: 1 request completed successfully`;
 
 const prettyConfig = `# Pretty format configuration  
 global:
@@ -188,14 +190,14 @@ global:
 request:
   name: Get User Profile
   url: https://api.example.com/users/123
-  method: GET`
+  method: GET`;
 
 const rawOutput = `{
   "id": 123,
   "name": "John Doe", 
   "email": "john@example.com",
   "active": true
-}`
+}`;
 
 const rawConfig = `# Raw format configuration
 global:
@@ -206,7 +208,7 @@ global:
 request:
   name: Get User Profile
   url: https://api.example.com/users/123
-  method: GET`
+  method: GET`;
 
 export default function OutputFormatsPage() {
   return (
@@ -222,9 +224,11 @@ export default function OutputFormatsPage() {
           <section>
             <H2 id="overview">Overview</H2>
             <p className="text-muted-foreground mb-6">
-              <code className="font-mono">curl-runner</code> provides flexible output options to suit different use cases, from human-readable terminal output to machine-parseable JSON for CI/CD pipelines.
+              <code className="font-mono">curl-runner</code> provides flexible output options to
+              suit different use cases, from human-readable terminal output to machine-parseable
+              JSON for CI/CD pipelines.
             </p>
-            
+
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="rounded-lg border p-4">
                 <Badge className="mb-2">JSON</Badge>
@@ -233,17 +237,21 @@ export default function OutputFormatsPage() {
                   Machine-readable format for automation
                 </p>
               </div>
-              
+
               <div className="rounded-lg border p-4">
-                <Badge variant="secondary" className="mb-2">Pretty</Badge>
+                <Badge variant="secondary" className="mb-2">
+                  Pretty
+                </Badge>
                 <h4 className="font-medium mb-1">Human Readable</h4>
                 <p className="text-sm text-muted-foreground">
                   Formatted output for terminal viewing
                 </p>
               </div>
-              
+
               <div className="rounded-lg border p-4">
-                <Badge variant="outline" className="mb-2">Raw</Badge>
+                <Badge variant="outline" className="mb-2">
+                  Raw
+                </Badge>
                 <h4 className="font-medium mb-1">Unprocessed</h4>
                 <p className="text-sm text-muted-foreground">
                   Raw response body without formatting
@@ -258,7 +266,7 @@ export default function OutputFormatsPage() {
             <p className="text-muted-foreground mb-6">
               Configure output settings in the global section of your YAML file.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="output-config.yaml">
               {outputFormats}
             </CodeBlockServer>
@@ -277,40 +285,60 @@ export default function OutputFormatsPage() {
                   </thead>
                   <tbody>
                     <tr className="border-b">
-                      <td className="p-3"><code className="text-sm">format</code></td>
+                      <td className="p-3">
+                        <code className="text-sm">format</code>
+                      </td>
                       <td className="p-3 text-sm text-muted-foreground">string</td>
                       <td className="p-3 text-sm text-muted-foreground">json</td>
-                      <td className="p-3 text-sm text-muted-foreground">"json", "pretty", or "raw"</td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        "json", "pretty", or "raw"
+                      </td>
                     </tr>
                     <tr className="border-b">
-                      <td className="p-3"><code className="text-sm">verbose</code></td>
+                      <td className="p-3">
+                        <code className="text-sm">verbose</code>
+                      </td>
                       <td className="p-3 text-sm text-muted-foreground">boolean</td>
                       <td className="p-3 text-sm text-muted-foreground">false</td>
                       <td className="p-3 text-sm text-muted-foreground">Show detailed output</td>
                     </tr>
                     <tr className="border-b">
-                      <td className="p-3"><code className="text-sm">showHeaders</code></td>
+                      <td className="p-3">
+                        <code className="text-sm">showHeaders</code>
+                      </td>
                       <td className="p-3 text-sm text-muted-foreground">boolean</td>
                       <td className="p-3 text-sm text-muted-foreground">false</td>
-                      <td className="p-3 text-sm text-muted-foreground">Include response headers</td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        Include response headers
+                      </td>
                     </tr>
                     <tr className="border-b">
-                      <td className="p-3"><code className="text-sm">showBody</code></td>
+                      <td className="p-3">
+                        <code className="text-sm">showBody</code>
+                      </td>
                       <td className="p-3 text-sm text-muted-foreground">boolean</td>
                       <td className="p-3 text-sm text-muted-foreground">true</td>
                       <td className="p-3 text-sm text-muted-foreground">Include response body</td>
                     </tr>
                     <tr className="border-b">
-                      <td className="p-3"><code className="text-sm">showMetrics</code></td>
+                      <td className="p-3">
+                        <code className="text-sm">showMetrics</code>
+                      </td>
                       <td className="p-3 text-sm text-muted-foreground">boolean</td>
                       <td className="p-3 text-sm text-muted-foreground">false</td>
-                      <td className="p-3 text-sm text-muted-foreground">Include performance metrics</td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        Include performance metrics
+                      </td>
                     </tr>
                     <tr>
-                      <td className="p-3"><code className="text-sm">saveToFile</code></td>
+                      <td className="p-3">
+                        <code className="text-sm">saveToFile</code>
+                      </td>
                       <td className="p-3 text-sm text-muted-foreground">string</td>
                       <td className="p-3 text-sm text-muted-foreground">-</td>
-                      <td className="p-3 text-sm text-muted-foreground">File path to save results</td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        File path to save results
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -327,12 +355,12 @@ export default function OutputFormatsPage() {
                 <p className="text-muted-foreground mb-6">
                   Structured JSON output ideal for parsing and automation.
                 </p>
-                
+
                 <h4 className="font-medium mb-3">Configuration</h4>
                 <CodeBlockServer language="yaml" filename="json-config.yaml">
                   {jsonConfig}
                 </CodeBlockServer>
-                
+
                 <h4 className="font-medium mb-3 mt-6">Output Example</h4>
                 <CodeBlockServer language="json" filename="output.json">
                   {jsonExample}
@@ -344,12 +372,12 @@ export default function OutputFormatsPage() {
                 <p className="text-muted-foreground mb-6">
                   Human-readable format with colors and formatting for terminal viewing.
                 </p>
-                
+
                 <h4 className="font-medium mb-3">Configuration</h4>
                 <CodeBlockServer language="yaml" filename="pretty-config.yaml">
                   {prettyConfig}
                 </CodeBlockServer>
-                
+
                 <h4 className="font-medium mb-3 mt-6">Output Example</h4>
                 <CodeBlockServer language="text" filename="terminal">
                   {prettyOutput}
@@ -361,12 +389,12 @@ export default function OutputFormatsPage() {
                 <p className="text-muted-foreground mb-6">
                   Unprocessed response body, useful for binary data or custom formats.
                 </p>
-                
+
                 <h4 className="font-medium mb-3">Configuration</h4>
                 <CodeBlockServer language="yaml" filename="raw-config.yaml">
                   {rawConfig}
                 </CodeBlockServer>
-                
+
                 <h4 className="font-medium mb-3 mt-6">Output Example</h4>
                 <CodeBlockServer language="json" filename="response.json">
                   {rawOutput}
@@ -381,14 +409,17 @@ export default function OutputFormatsPage() {
             <p className="text-muted-foreground mb-6">
               Save test results to files for later analysis or reporting.
             </p>
-            
+
             <CodeBlockServer language="yaml" filename="save-to-file.yaml">
               {saveToFile}
             </CodeBlockServer>
 
             <div className="mt-6 rounded-lg border bg-green-500/5 dark:bg-green-500/10 border-green-500/20 p-4">
               <p className="text-sm">
-                <strong className="text-green-600 dark:text-green-400">Tip:</strong> Use <code className="text-xs bg-background px-1 py-0.5 rounded">saveToFile</code> with JSON format to create test reports that can be processed by other tools or stored for historical analysis.
+                <strong className="text-green-600 dark:text-green-400">Tip:</strong> Use{' '}
+                <code className="text-xs bg-background px-1 py-0.5 rounded">saveToFile</code> with
+                JSON format to create test reports that can be processed by other tools or stored
+                for historical analysis.
               </p>
             </div>
           </section>
@@ -399,7 +430,7 @@ export default function OutputFormatsPage() {
             <p className="text-muted-foreground mb-6">
               Control output format from the command line.
             </p>
-            
+
             <CodeBlockServer language="bash" filename="terminal">
               {cliOutput}
             </CodeBlockServer>
@@ -416,32 +447,54 @@ export default function OutputFormatsPage() {
                   </thead>
                   <tbody>
                     <tr className="border-b">
-                      <td className="p-3"><code className="text-sm">--output-format</code></td>
-                      <td className="p-3 text-sm text-muted-foreground">Set output format (json/pretty/raw)</td>
+                      <td className="p-3">
+                        <code className="text-sm">--output-format</code>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        Set output format (json/pretty/raw)
+                      </td>
                     </tr>
                     <tr className="border-b">
-                      <td className="p-3"><code className="text-sm">--output, -o</code></td>
+                      <td className="p-3">
+                        <code className="text-sm">--output, -o</code>
+                      </td>
                       <td className="p-3 text-sm text-muted-foreground">Save results to file</td>
                     </tr>
                     <tr className="border-b">
-                      <td className="p-3"><code className="text-sm">--verbose, -v</code></td>
+                      <td className="p-3">
+                        <code className="text-sm">--verbose, -v</code>
+                      </td>
                       <td className="p-3 text-sm text-muted-foreground">Enable verbose output</td>
                     </tr>
                     <tr className="border-b">
-                      <td className="p-3"><code className="text-sm">--quiet, -q</code></td>
-                      <td className="p-3 text-sm text-muted-foreground">Suppress non-error output</td>
+                      <td className="p-3">
+                        <code className="text-sm">--quiet, -q</code>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        Suppress non-error output
+                      </td>
                     </tr>
                     <tr className="border-b">
-                      <td className="p-3"><code className="text-sm">--show-headers</code></td>
-                      <td className="p-3 text-sm text-muted-foreground">Include response headers</td>
+                      <td className="p-3">
+                        <code className="text-sm">--show-headers</code>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        Include response headers
+                      </td>
                     </tr>
                     <tr className="border-b">
-                      <td className="p-3"><code className="text-sm">--show-body</code></td>
+                      <td className="p-3">
+                        <code className="text-sm">--show-body</code>
+                      </td>
                       <td className="p-3 text-sm text-muted-foreground">Include response body</td>
                     </tr>
                     <tr>
-                      <td className="p-3"><code className="text-sm">--show-metrics</code></td>
-                      <td className="p-3 text-sm text-muted-foreground">Include performance metrics</td>
+                      <td className="p-3">
+                        <code className="text-sm">--show-metrics</code>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        Include performance metrics
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -461,15 +514,16 @@ export default function OutputFormatsPage() {
                   <div className="flex-1">
                     <h4 className="font-medium mb-3">Continuous Integration</h4>
                     <p className="text-sm text-muted-foreground mb-4">
-                      Use JSON format with file output for test reporting in CI pipelines. Perfect for automated testing and build systems.
+                      Use JSON format with file output for test reporting in CI pipelines. Perfect
+                      for automated testing and build systems.
                     </p>
                     <code className="text-xs bg-muted px-3 py-2 rounded block">
-                      {"curl-runner tests.yaml --output-format json -o results.json --quiet"}
+                      {'curl-runner tests.yaml --output-format json -o results.json --quiet'}
                     </code>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-6">
                 <div className="flex items-start gap-4">
                   <div className="rounded-full bg-green-500/10 p-3">
@@ -478,15 +532,16 @@ export default function OutputFormatsPage() {
                   <div className="flex-1">
                     <h4 className="font-medium mb-3">Local Testing</h4>
                     <p className="text-sm text-muted-foreground mb-4">
-                      Use pretty format with verbose output for debugging. Ideal for development and troubleshooting.
+                      Use pretty format with verbose output for debugging. Ideal for development and
+                      troubleshooting.
                     </p>
                     <code className="text-xs bg-muted px-3 py-2 rounded block">
-                      {"curl-runner tests.yaml --output-format pretty -v --show-metrics"}
+                      {'curl-runner tests.yaml --output-format pretty -v --show-metrics'}
                     </code>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-6 md:col-span-2">
                 <div className="flex items-start gap-4">
                   <div className="rounded-full bg-purple-500/10 p-3">
@@ -495,10 +550,11 @@ export default function OutputFormatsPage() {
                   <div className="flex-1">
                     <h4 className="font-medium mb-3">Health Checks & Monitoring</h4>
                     <p className="text-sm text-muted-foreground mb-4">
-                      Use raw format for simple status checks and monitoring scripts. Extract specific data without extra formatting.
+                      Use raw format for simple status checks and monitoring scripts. Extract
+                      specific data without extra formatting.
                     </p>
                     <code className="text-xs bg-muted px-3 py-2 rounded block">
-                      {"curl-runner health.yaml --output-format raw --quiet"}
+                      {'curl-runner health.yaml --output-format raw --quiet'}
                     </code>
                   </div>
                 </div>
@@ -518,12 +574,13 @@ export default function OutputFormatsPage() {
                   <div>
                     <h4 className="font-medium mb-2">Choose the Right Format</h4>
                     <p className="text-sm text-muted-foreground">
-                      Use JSON for automation, pretty for debugging, and raw for specific data formats.
+                      Use JSON for automation, pretty for debugging, and raw for specific data
+                      formats.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-green-500/10 p-2">
@@ -537,7 +594,7 @@ export default function OutputFormatsPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-purple-500/10 p-2">
@@ -551,7 +608,7 @@ export default function OutputFormatsPage() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-yellow-500/10 p-2">
@@ -577,5 +634,5 @@ export default function OutputFormatsPage() {
         </div>
       </div>
     </main>
-  )
+  );
 }

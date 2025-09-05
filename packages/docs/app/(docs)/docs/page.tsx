@@ -31,14 +31,14 @@ export const metadata: Metadata = {
     description:
       'A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance, parallel execution, and comprehensive validation.',
     url: 'https://curl-runner.com/docs',
-    type: 'article'
-    },
+    type: 'article',
+  },
   twitter: {
     card: 'summary_large_image',
     title: 'curl-runner Documentation',
     description:
       'A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance.',
-    },
+  },
   alternates: {
     canonical: 'https://curl-runner.com/docs',
   },

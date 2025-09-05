@@ -1,5 +1,5 @@
-import type { Metadata } from 'next';
 import { AlertTriangle, CheckCircle, Info } from 'lucide-react';
+import type { Metadata } from 'next';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { DocsPageHeader } from '@/components/docs-page-header';
 import { H2, H3 } from '@/components/mdx-heading';
@@ -8,7 +8,8 @@ import { Badge } from '@/components/ui/badge';
 
 export const metadata: Metadata = {
   title: 'Variables & Templating',
-  description: 'Master variable definition and templating in curl-runner. Learn about environment variables, computed values, dynamic content generation, and template expressions.',
+  description:
+    'Master variable definition and templating in curl-runner. Learn about environment variables, computed values, dynamic content generation, and template expressions.',
   keywords: [
     'curl-runner variables',
     'YAML variables',
@@ -19,19 +20,21 @@ export const metadata: Metadata = {
     'variable interpolation',
     'templating system',
     'configuration variables',
-    'request templating'
+    'request templating',
   ],
   openGraph: {
     title: 'Variables & Templating | curl-runner Documentation',
-    description: 'Master variable definition and templating in curl-runner. Learn about environment variables, computed values, dynamic content generation, and template expressions.',
+    description:
+      'Master variable definition and templating in curl-runner. Learn about environment variables, computed values, dynamic content generation, and template expressions.',
     url: 'https://curl-runner.com/docs/variables',
-    type: 'article'
-    },
+    type: 'article',
+  },
   twitter: {
     card: 'summary_large_image',
     title: 'Variables & Templating | curl-runner Documentation',
-    description: 'Master variable definition and templating in curl-runner. Learn about environment variables and dynamic content generation.',
-    },
+    description:
+      'Master variable definition and templating in curl-runner. Learn about environment variables and dynamic content generation.',
+  },
   alternates: {
     canonical: 'https://curl-runner.com/docs/variables',
   },
@@ -39,15 +42,10 @@ export const metadata: Metadata = {
 
 import {
   basicVariablesExample,
-  complexVariablesExample,
   computedVariablesExample,
   conditionalVariablesExample,
   dynamicVariablesExample,
   environmentVariablesExample,
-  fileVariablesExample,
-  responseVariablesExample,
-  secretsExample,
-  templateVariablesExample,
   variablePrecedenceExample,
 } from './snippets';
 

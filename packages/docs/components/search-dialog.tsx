@@ -1,74 +1,72 @@
-"use client"
+'use client';
 
-import { useEffect, useState } from "react"
-import { Command as CommandPrimitive } from "cmdk"
-import { Search, FileText, Hash } from "lucide-react"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { docsConfig } from "@/lib/docs-config"
+import { Command as CommandPrimitive } from 'cmdk';
+import { FileText, Hash, Search } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { docsConfig } from '@/lib/docs-config';
 
 interface SearchResult {
-  title: string
-  href: string
-  description?: string
-  type: 'page' | 'section'
+  title: string;
+  href: string;
+  description?: string;
+  type: 'page' | 'section';
 }
 
 interface SearchDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
 export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState<SearchResult[]>([])
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<SearchResult[]>([]);
 
   // Flatten all navigation items for search
   const searchableItems: SearchResult[] = [
-    ...docsConfig.sidebarNav.flatMap(section => 
-      section.items?.filter(item => item.href).map(item => ({
-        title: item.title,
-        href: item.href!,
-        description: item.description,
-        type: 'page' as const
-      })) || []
-    )
-  ]
+    ...docsConfig.sidebarNav.flatMap(
+      (section) =>
+        section.items
+          ?.filter((item) => item.href)
+          .map((item) => ({
+            title: item.title,
+            href: item.href!,
+            description: item.description,
+            type: 'page' as const,
+          })) || [],
+    ),
+  ];
 
   useEffect(() => {
     if (!query) {
-      setResults([])
-      return
+      setResults([]);
+      return;
     }
 
-    const filtered = searchableItems.filter(item =>
-      item.title.toLowerCase().includes(query.toLowerCase()) ||
-      item.description?.toLowerCase().includes(query.toLowerCase())
-    )
-    
-    setResults(filtered.slice(0, 10))
-  }, [query])
+    const filtered = searchableItems.filter(
+      (item) =>
+        item.title.toLowerCase().includes(query.toLowerCase()) ||
+        item.description?.toLowerCase().includes(query.toLowerCase()),
+    );
+
+    setResults(filtered.slice(0, 10));
+  }, [query, searchableItems.filter]);
 
   const handleSelect = (href: string) => {
-    onOpenChange(false)
-    window.location.href = href
-  }
+    onOpenChange(false);
+    window.location.href = href;
+  };
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault()
-        onOpenChange(!open)
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        onOpenChange(!open);
       }
-    }
-    document.addEventListener("keydown", down)
-    return () => document.removeEventListener("keydown", down)
-  }, [open, onOpenChange])
+    };
+    document.addEventListener('keydown', down);
+    return () => document.removeEventListener('keydown', down);
+  }, [open, onOpenChange]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -86,14 +84,14 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
               className="flex h-12 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
-          
+
           <CommandPrimitive.List className="max-h-[400px] overflow-y-auto p-2">
             {!query && (
               <CommandPrimitive.Empty className="py-6 text-center text-sm text-muted-foreground">
                 Type to search documentation...
               </CommandPrimitive.Empty>
             )}
-            
+
             {query && results.length === 0 && (
               <CommandPrimitive.Empty className="py-6 text-center text-sm text-muted-foreground">
                 No results found for "{query}"
@@ -116,9 +114,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
                 <div className="flex-1 space-y-1">
                   <p className="font-medium">{result.title}</p>
                   {result.description && (
-                    <p className="text-xs text-muted-foreground">
-                      {result.description}
-                    </p>
+                    <p className="text-xs text-muted-foreground">{result.description}</p>
                   )}
                 </div>
               </CommandPrimitive.Item>
@@ -127,5 +123,5 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
         </CommandPrimitive>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

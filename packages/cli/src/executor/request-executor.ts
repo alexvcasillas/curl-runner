@@ -2,6 +2,7 @@ import type {
   ExecutionResult,
   ExecutionSummary,
   GlobalConfig,
+  JsonValue,
   RequestConfig,
 } from '../types/config';
 import { CurlBuilder } from '../utils/curl-builder';
@@ -19,8 +20,8 @@ export class RequestExecutor {
   private mergeOutputConfig(config: RequestConfig): GlobalConfig['output'] {
     // Precedence: Individual YAML file > curl-runner.yaml > CLI options > env vars > defaults
     return {
-      ...this.globalConfig.output,   // CLI options, env vars, and defaults (lowest priority)
-      ...config.sourceOutputConfig,  // Individual file's output config (highest priority)
+      ...this.globalConfig.output, // CLI options, env vars, and defaults (lowest priority)
+      ...config.sourceOutputConfig, // Individual file's output config (highest priority)
     };
   }
 
@@ -142,7 +143,9 @@ export class RequestExecutor {
     if (expect.responseTime !== undefined && result.metrics) {
       const responseTimeMs = result.metrics.duration;
       if (!this.validateRangePattern(responseTimeMs, expect.responseTime)) {
-        errors.push(`Expected response time to match ${expect.responseTime}ms, got ${responseTimeMs.toFixed(2)}ms`);
+        errors.push(
+          `Expected response time to match ${expect.responseTime}ms, got ${responseTimeMs.toFixed(2)}ms`,
+        );
       }
     }
 
@@ -155,7 +158,7 @@ export class RequestExecutor {
       if (hasValidationErrors) {
         return { success: false, error: errors.join('; ') };
       }
-      
+
       // Check if status indicates an error
       const status = result.status || 0;
       if (status >= 400) {
@@ -163,9 +166,9 @@ export class RequestExecutor {
         return { success: true };
       } else {
         // Expected failure but got success status - FAILURE
-        return { 
-          success: false, 
-          error: `Expected request to fail (4xx/5xx) but got status ${status}` 
+        return {
+          success: false,
+          error: `Expected request to fail (4xx/5xx) but got status ${status}`,
         };
       }
     } else {
@@ -178,7 +181,11 @@ export class RequestExecutor {
     }
   }
 
-  private validateBodyProperties(actualBody: any, expectedBody: any, path: string): string[] {
+  private validateBodyProperties(
+    actualBody: JsonValue,
+    expectedBody: JsonValue,
+    path: string,
+  ): string[] {
     const errors: string[] = [];
 
     if (typeof expectedBody !== 'object' || expectedBody === null) {
@@ -202,7 +209,7 @@ export class RequestExecutor {
     // Object property comparison with array selector support
     for (const [key, expectedValue] of Object.entries(expectedBody)) {
       const currentPath = path ? `${path}.${key}` : key;
-      let actualValue: any;
+      let actualValue: JsonValue;
 
       // Handle array selectors like [0], [-1], *, slice(0,3)
       if (Array.isArray(actualBody) && this.isArraySelector(key)) {
@@ -211,7 +218,11 @@ export class RequestExecutor {
         actualValue = actualBody?.[key];
       }
 
-      if (typeof expectedValue === 'object' && expectedValue !== null && !Array.isArray(expectedValue)) {
+      if (
+        typeof expectedValue === 'object' &&
+        expectedValue !== null &&
+        !Array.isArray(expectedValue)
+      ) {
         // Recursive validation for nested objects
         const nestedErrors = this.validateBodyProperties(actualValue, expectedValue, currentPath);
         errors.push(...nestedErrors);
@@ -227,7 +238,11 @@ export class RequestExecutor {
     return errors;
   }
 
-  private validateValue(actualValue: any, expectedValue: any, path: string): { isValid: boolean; error?: string } {
+  private validateValue(
+    actualValue: JsonValue,
+    expectedValue: JsonValue,
+    path: string,
+  ): { isValid: boolean; error?: string } {
     // Wildcard validation - accept any value
     if (expectedValue === '*') {
       return { isValid: true };
@@ -235,8 +250,10 @@ export class RequestExecutor {
 
     // Multiple acceptable values (array)
     if (Array.isArray(expectedValue)) {
-      const isMatch = expectedValue.some(expected => {
-        if (expected === '*') return true;
+      const isMatch = expectedValue.some((expected) => {
+        if (expected === '*') {
+          return true;
+        }
         if (typeof expected === 'string' && this.isRegexPattern(expected)) {
           return this.validateRegexPattern(actualValue, expected);
         }
@@ -245,11 +262,11 @@ export class RequestExecutor {
         }
         return actualValue === expected;
       });
-      
+
       if (!isMatch) {
         return {
           isValid: false,
-          error: `Expected ${path} to match one of ${JSON.stringify(expectedValue)}, got ${JSON.stringify(actualValue)}`
+          error: `Expected ${path} to match one of ${JSON.stringify(expectedValue)}, got ${JSON.stringify(actualValue)}`,
         };
       }
       return { isValid: true };
@@ -260,7 +277,7 @@ export class RequestExecutor {
       if (!this.validateRegexPattern(actualValue, expectedValue)) {
         return {
           isValid: false,
-          error: `Expected ${path} to match pattern ${expectedValue}, got ${JSON.stringify(actualValue)}`
+          error: `Expected ${path} to match pattern ${expectedValue}, got ${JSON.stringify(actualValue)}`,
         };
       }
       return { isValid: true };
@@ -271,7 +288,7 @@ export class RequestExecutor {
       if (!this.validateRangePattern(actualValue, expectedValue)) {
         return {
           isValid: false,
-          error: `Expected ${path} to match range ${expectedValue}, got ${JSON.stringify(actualValue)}`
+          error: `Expected ${path} to match range ${expectedValue}, got ${JSON.stringify(actualValue)}`,
         };
       }
       return { isValid: true };
@@ -282,7 +299,7 @@ export class RequestExecutor {
       if (actualValue !== null) {
         return {
           isValid: false,
-          error: `Expected ${path} to be null, got ${JSON.stringify(actualValue)}`
+          error: `Expected ${path} to be null, got ${JSON.stringify(actualValue)}`,
         };
       }
       return { isValid: true };
@@ -292,7 +309,7 @@ export class RequestExecutor {
     if (actualValue !== expectedValue) {
       return {
         isValid: false,
-        error: `Expected ${path} to be ${JSON.stringify(expectedValue)}, got ${JSON.stringify(actualValue)}`
+        error: `Expected ${path} to be ${JSON.stringify(expectedValue)}, got ${JSON.stringify(actualValue)}`,
       };
     }
 
@@ -300,10 +317,20 @@ export class RequestExecutor {
   }
 
   private isRegexPattern(pattern: string): boolean {
-    return pattern.startsWith('^') || pattern.endsWith('$') || pattern.includes('\\d') || pattern.includes('\\w') || pattern.includes('\\s') || pattern.includes('[') || pattern.includes('*') || pattern.includes('+') || pattern.includes('?');
+    return (
+      pattern.startsWith('^') ||
+      pattern.endsWith('$') ||
+      pattern.includes('\\d') ||
+      pattern.includes('\\w') ||
+      pattern.includes('\\s') ||
+      pattern.includes('[') ||
+      pattern.includes('*') ||
+      pattern.includes('+') ||
+      pattern.includes('?')
+    );
   }
 
-  private validateRegexPattern(actualValue: any, pattern: string): boolean {
+  private validateRegexPattern(actualValue: JsonValue, pattern: string): boolean {
     // Convert value to string for regex matching
     const stringValue = String(actualValue);
     try {
@@ -317,12 +344,12 @@ export class RequestExecutor {
   private isRangePattern(pattern: string): boolean {
     // Only match explicit comparison operators, not simple number-dash-number patterns
     // This prevents matching things like zip codes "92998-3874" as ranges
-    return /^(>=?|<=?|\>|\<)\s*[\d.-]+(\s*,\s*(>=?|<=?|\>|\<)\s*[\d.-]+)*$/.test(pattern);
+    return /^(>=?|<=?|>|<)\s*[\d.-]+(\s*,\s*(>=?|<=?|>|<)\s*[\d.-]+)*$/.test(pattern);
   }
 
-  private validateRangePattern(actualValue: any, pattern: string): boolean {
+  private validateRangePattern(actualValue: JsonValue, pattern: string): boolean {
     const numValue = Number(actualValue);
-    if (isNaN(numValue)) {
+    if (Number.isNaN(numValue)) {
       return false;
     }
 
@@ -335,20 +362,27 @@ export class RequestExecutor {
     }
 
     // Handle comma-separated conditions like ">= 0, <= 100"
-    const conditions = pattern.split(',').map(c => c.trim());
-    return conditions.every(condition => {
-      const match = condition.match(/^(>=?|<=?|\>|\<)\s*([\d.-]+)$/);
-      if (!match) return false;
-      
+    const conditions = pattern.split(',').map((c) => c.trim());
+    return conditions.every((condition) => {
+      const match = condition.match(/^(>=?|<=?|>|<)\s*([\d.-]+)$/);
+      if (!match) {
+        return false;
+      }
+
       const operator = match[1];
       const targetValue = Number(match[2]);
-      
+
       switch (operator) {
-        case '>': return numValue > targetValue;
-        case '>=': return numValue >= targetValue;
-        case '<': return numValue < targetValue;
-        case '<=': return numValue <= targetValue;
-        default: return false;
+        case '>':
+          return numValue > targetValue;
+        case '>=':
+          return numValue >= targetValue;
+        case '<':
+          return numValue < targetValue;
+        case '<=':
+          return numValue <= targetValue;
+        default:
+          return false;
       }
     });
   }
@@ -357,21 +391,23 @@ export class RequestExecutor {
     return /^\[.*\]$/.test(key) || key === '*' || key.startsWith('slice(');
   }
 
-  private getArrayValue(array: any[], selector: string): any {
+  private getArrayValue(array: JsonValue[], selector: string): JsonValue {
     if (selector === '*') {
       return array; // Return entire array for * validation
     }
-    
+
     if (selector.startsWith('[') && selector.endsWith(']')) {
       const index = selector.slice(1, -1);
-      if (index === '*') return array;
-      
+      if (index === '*') {
+        return array;
+      }
+
       const numIndex = Number(index);
-      if (!isNaN(numIndex)) {
+      if (!Number.isNaN(numIndex)) {
         return numIndex >= 0 ? array[numIndex] : array[array.length + numIndex];
       }
     }
-    
+
     if (selector.startsWith('slice(')) {
       const match = selector.match(/slice\((\d+)(?:,(\d+))?\)/);
       if (match) {
@@ -380,7 +416,7 @@ export class RequestExecutor {
         return array.slice(start, end);
       }
     }
-    
+
     return undefined;
   }
 

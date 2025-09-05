@@ -637,7 +637,6 @@ export default function AdvancedExamplesPage() {
 
           {/* Variable Interpolation */}
           <section>
-            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="variable-interpolation">Variable Interpolation & Environment Management</H2>
             <p className="text-muted-foreground mb-6">
               Advanced variable usage with environment loading, nested interpolation, and dynamic
@@ -676,7 +675,8 @@ export default function AdvancedExamplesPage() {
                 <CardContent className="text-sm space-y-2">
                   <p>Generate values at runtime like timestamps or UUIDs.</p>
                   <code className="text-xs bg-muted px-2 py-1 rounded block">
-                    {'\\${CURRENT_TIME}'}
+                    {'$'}
+                    {'{CURRENT_TIME}'}
                   </code>
                 </CardContent>
               </Card>
@@ -685,7 +685,6 @@ export default function AdvancedExamplesPage() {
 
           {/* Advanced Authentication */}
           <section>
-            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="advanced-authentication">Advanced Authentication Patterns</H2>
             <p className="text-muted-foreground mb-6">
               Multiple authentication methods, token refresh, and custom auth headers.
@@ -698,7 +697,6 @@ export default function AdvancedExamplesPage() {
 
           {/* Error Handling */}
           <section>
-            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="error-handling">Error Handling & Retry Logic</H2>
             <p className="text-muted-foreground mb-6">
               Robust error handling with retry mechanisms, fallbacks, and conditional logic.
@@ -720,7 +718,6 @@ export default function AdvancedExamplesPage() {
 
           {/* Parallel Execution */}
           <section>
-            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="parallel-execution">High-Performance Parallel Execution</H2>
             <p className="text-muted-foreground mb-6">
               Concurrent request execution for load testing and performance optimization.
@@ -731,7 +728,6 @@ export default function AdvancedExamplesPage() {
             </CodeBlockServer>
 
             <div className="mt-6 space-y-3">
-              {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
               <H3 id="parallel-considerations">Parallel Execution Considerations</H3>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-lg border bg-card p-4">
@@ -769,7 +765,6 @@ export default function AdvancedExamplesPage() {
 
           {/* Complex Validation */}
           <section>
-            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="complex-validation">Complex Response Validation</H2>
             <p className="text-muted-foreground mb-6">
               Advanced validation patterns for complex data structures, arrays, and conditional
@@ -781,7 +776,6 @@ export default function AdvancedExamplesPage() {
             </CodeBlockServer>
 
             <div className="mt-6 space-y-3">
-              {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
               <H3 id="validation-patterns">Validation Patterns</H3>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-lg border bg-card p-4">
@@ -853,7 +847,6 @@ export default function AdvancedExamplesPage() {
 
           {/* Integration Testing */}
           <section>
-            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="integration-testing">Full Integration Testing</H2>
             <p className="text-muted-foreground mb-6">
               End-to-end workflow testing with user lifecycle management and cleanup.
@@ -874,7 +867,6 @@ export default function AdvancedExamplesPage() {
 
           {/* Performance Testing */}
           <section>
-            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="performance-testing">Performance & Load Testing</H2>
             <p className="text-muted-foreground mb-6">
               Load testing scenarios with concurrent requests and performance metrics validation.
@@ -885,7 +877,6 @@ export default function AdvancedExamplesPage() {
             </CodeBlockServer>
 
             <div className="mt-6 space-y-3">
-              {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
               <H3 id="performance-tips">Performance Testing Tips</H3>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 <div className="rounded-lg border bg-card p-4">
@@ -938,7 +929,6 @@ export default function AdvancedExamplesPage() {
 
           {/* Running Advanced Examples */}
           <section>
-            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="running-examples">Running Advanced Examples</H2>
             <p className="text-muted-foreground mb-4">
               Advanced examples often require additional setup and environment configuration:
@@ -966,7 +956,6 @@ curl-runner complex-validation.yaml --output results.json --format json`}
 
           {/* Best Practices */}
           <section>
-            {/** biome-ignore lint/correctness/useUniqueElementIds: it's a static string */}
             <H2 id="best-practices">Advanced Usage Best Practices</H2>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="rounded-lg border bg-card p-4">

@@ -60,13 +60,18 @@ export function MdxHeading({ level, children, className, ...props }: HeadingProp
 }
 
 function extractText(children: React.ReactNode): string {
-  if (typeof children === 'string') return children;
-  if (typeof children === 'number') return String(children);
+  if (typeof children === 'string') {
+    return children;
+  }
+  if (typeof children === 'number') {
+    return String(children);
+  }
   if (Array.isArray(children)) {
     return children.map(extractText).join('');
   }
   if (children && typeof children === 'object' && 'props' in children) {
-    return extractText((children as any).props.children);
+    const element = children as React.ReactElement;
+    return extractText(element.props.children);
   }
   return '';
 }

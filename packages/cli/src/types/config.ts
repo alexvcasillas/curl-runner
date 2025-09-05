@@ -30,7 +30,7 @@ export interface RequestConfig {
   };
   variables?: Record<string, string>;
   expect?: {
-    failure?: boolean;  // If true, expect the request to fail (for negative testing)
+    failure?: boolean; // If true, expect the request to fail (for negative testing)
     status?: number | number[];
     headers?: Record<string, string>;
     body?: JsonValue;

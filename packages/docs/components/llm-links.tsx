@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronDown, ExternalLink, FileText, MessageCircle, Sparkles } from 'lucide-react';
+import { ChevronDown, ExternalLink, FileText, MessageCircle } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { ChatGPTIcon, ClaudeIcon, GitHubIcon } from '@/components/icons';
 import { Button } from '@/components/ui/button';
@@ -18,7 +18,7 @@ interface LLMLinksProps {
   className?: string;
 }
 
-export function LLMLinks({ title, content, className = '' }: LLMLinksProps) {
+export function LLMLinks({ className = '' }: LLMLinksProps) {
   const pathname = usePathname();
 
   // Convert pathname to full URL for the markdown file

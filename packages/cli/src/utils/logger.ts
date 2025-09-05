@@ -54,68 +54,102 @@ export class Logger {
   }
 
   private shouldShowOutput(): boolean {
-    if (this.config.format === 'raw') return false;
-    if (this.config.format === 'pretty') return true; // Pretty format should always show output
+    if (this.config.format === 'raw') {
+      return false;
+    }
+    if (this.config.format === 'pretty') {
+      return true; // Pretty format should always show output
+    }
     return this.config.verbose !== false; // For other formats, respect verbose flag
   }
 
   private shouldShowHeaders(): boolean {
-    if (this.config.format !== 'pretty') return this.config.showHeaders || false;
-    
+    if (this.config.format !== 'pretty') {
+      return this.config.showHeaders || false;
+    }
+
     const level = this.config.prettyLevel || 'standard';
     switch (level) {
-      case 'minimal': return false;
-      case 'standard': return this.config.showHeaders || false;
-      case 'detailed': return true;
-      default: return this.config.showHeaders || false;
+      case 'minimal':
+        return false;
+      case 'standard':
+        return this.config.showHeaders || false;
+      case 'detailed':
+        return true;
+      default:
+        return this.config.showHeaders || false;
     }
   }
 
   private shouldShowBody(): boolean {
-    if (this.config.format !== 'pretty') return this.config.showBody !== false;
-    
+    if (this.config.format !== 'pretty') {
+      return this.config.showBody !== false;
+    }
+
     const level = this.config.prettyLevel || 'standard';
     switch (level) {
-      case 'minimal': return false;  // Minimal never shows body
-      case 'standard': return this.config.showBody !== false;
-      case 'detailed': return true;  // Detailed always shows body
-      default: return this.config.showBody !== false;
+      case 'minimal':
+        return false; // Minimal never shows body
+      case 'standard':
+        return this.config.showBody !== false;
+      case 'detailed':
+        return true; // Detailed always shows body
+      default:
+        return this.config.showBody !== false;
     }
   }
 
   private shouldShowMetrics(): boolean {
-    if (this.config.format !== 'pretty') return this.config.showMetrics || false;
-    
+    if (this.config.format !== 'pretty') {
+      return this.config.showMetrics || false;
+    }
+
     const level = this.config.prettyLevel || 'standard';
     switch (level) {
-      case 'minimal': return false;  // Minimal never shows metrics
-      case 'standard': return this.config.showMetrics || false;
-      case 'detailed': return true;  // Detailed always shows metrics
-      default: return this.config.showMetrics || false;
+      case 'minimal':
+        return false; // Minimal never shows metrics
+      case 'standard':
+        return this.config.showMetrics || false;
+      case 'detailed':
+        return true; // Detailed always shows metrics
+      default:
+        return this.config.showMetrics || false;
     }
   }
 
   private shouldShowRequestDetails(): boolean {
-    if (this.config.format !== 'pretty') return this.config.verbose || false;
-    
+    if (this.config.format !== 'pretty') {
+      return this.config.verbose || false;
+    }
+
     const level = this.config.prettyLevel || 'standard';
     switch (level) {
-      case 'minimal': return false;
-      case 'standard': return this.config.verbose || false;
-      case 'detailed': return true;
-      default: return this.config.verbose || false;
+      case 'minimal':
+        return false;
+      case 'standard':
+        return this.config.verbose || false;
+      case 'detailed':
+        return true;
+      default:
+        return this.config.verbose || false;
     }
   }
 
   private shouldShowSeparators(): boolean {
-    if (this.config.format !== 'pretty') return true;
-    
+    if (this.config.format !== 'pretty') {
+      return true;
+    }
+
     const level = this.config.prettyLevel || 'standard';
     switch (level) {
-      case 'minimal': return false;
-      case 'standard': return true;
-      case 'detailed': return true;
-      default: return true;
+      case 'minimal':
+        return false;
+      case 'standard':
+        return true;
+      case 'detailed':
+        return true;
+      default:
+        return true;
     }
   }
 
@@ -127,7 +161,7 @@ export class Logger {
   private logValidationErrors(errorString: string): void {
     // Check if this is a validation error with multiple parts (separated by ';')
     const errors = errorString.split('; ');
-    
+
     if (errors.length === 1) {
       // Single error - check if it's a status error for special formatting
       const trimmedError = errors[0].trim();
@@ -136,7 +170,9 @@ export class Logger {
         const [, expected, actual] = statusMatch;
         const expectedStatus = this.colorStatusCode(expected.replace(' or ', '|'));
         const actualStatus = this.color(actual, 'red'); // Always red for incorrect actual values
-        console.log(`  ${this.color('✗', 'red')} ${this.color('Error:', 'red')} Expected ${this.color('status', 'yellow')} ${expectedStatus}, got ${actualStatus}`);
+        console.log(
+          `  ${this.color('✗', 'red')} ${this.color('Error:', 'red')} Expected ${this.color('status', 'yellow')} ${expectedStatus}, got ${actualStatus}`,
+        );
       } else {
         console.log(`  ${this.color('✗', 'red')} ${this.color('Error:', 'red')} ${trimmedError}`);
       }
@@ -154,13 +190,17 @@ export class Logger {
               const [, expected, actual] = statusMatch;
               const expectedStatus = this.colorStatusCode(expected.replace(' or ', '|'));
               const actualStatus = this.color(actual, 'red'); // Always red for incorrect actual values
-              console.log(`    ${this.color('•', 'red')} ${this.color('status', 'yellow')}: expected ${expectedStatus}, got ${actualStatus}`);
+              console.log(
+                `    ${this.color('•', 'red')} ${this.color('status', 'yellow')}: expected ${expectedStatus}, got ${actualStatus}`,
+              );
             } else {
-              // Format 2: "Expected field to be value, got value" 
+              // Format 2: "Expected field to be value, got value"
               const fieldMatch = trimmedError.match(/^Expected (.+?) to be (.+?), got (.+)$/);
               if (fieldMatch) {
                 const [, field, expected, actual] = fieldMatch;
-                console.log(`    ${this.color('•', 'red')} ${this.color(field, 'yellow')}: expected ${this.color(expected, 'green')}, got ${this.color(actual, 'red')}`);
+                console.log(
+                  `    ${this.color('•', 'red')} ${this.color(field, 'yellow')}: expected ${this.color(expected, 'green')}, got ${this.color(actual, 'red')}`,
+                );
               } else {
                 console.log(`    ${this.color('•', 'red')} ${trimmedError}`);
               }
@@ -204,8 +244,10 @@ export class Logger {
   }
 
   logExecutionStart(count: number, mode: string): void {
-    if (!this.shouldShowOutput()) return;
-    
+    if (!this.shouldShowOutput()) {
+      return;
+    }
+
     if (this.shouldShowSeparators()) {
       this.printSeparator('═');
       console.log(this.color('🚀 CURL RUNNER', 'bright'));
@@ -216,16 +258,24 @@ export class Logger {
   }
 
   logRequestStart(config: RequestConfig, index: number): void {
-    if (!this.shouldShowOutput()) return;
+    if (!this.shouldShowOutput()) {
+      return;
+    }
 
     const name = config.name || `Request #${index}`;
-    const sourceFile = config.sourceFile ? ` ${this.color(`[${this.getShortFilename(config.sourceFile)}]`, 'cyan')}` : '';
+    const sourceFile = config.sourceFile
+      ? ` ${this.color(`[${this.getShortFilename(config.sourceFile)}]`, 'cyan')}`
+      : '';
     console.log(this.color(`▶ ${name}`, 'bright') + sourceFile);
     console.log(
       `  ${this.color(config.method || 'GET', 'yellow')} ${this.color(config.url, 'blue')}`,
     );
 
-    if (this.shouldShowRequestDetails() && config.headers && Object.keys(config.headers).length > 0) {
+    if (
+      this.shouldShowRequestDetails() &&
+      config.headers &&
+      Object.keys(config.headers).length > 0
+    ) {
       console.log(this.color('  Headers:', 'dim'));
       for (const [key, value] of Object.entries(config.headers)) {
         console.log(`    ${key}: ${value}`);
@@ -282,7 +332,9 @@ export class Logger {
     }
 
     // Pretty format output (default behavior)
-    if (!this.shouldShowOutput()) return;
+    if (!this.shouldShowOutput()) {
+      return;
+    }
 
     const statusColor = result.success ? 'green' : 'red';
     const statusIcon = result.success ? '✓' : '✗';
@@ -347,7 +399,9 @@ export class Logger {
 
   logSummary(summary: ExecutionSummary, isGlobal: boolean = false): void {
     // For raw format, don't show summary
-    if (this.config.format === 'raw') return;
+    if (this.config.format === 'raw') {
+      return;
+    }
 
     // For JSON format, output structured summary
     if (this.config.format === 'json') {
@@ -377,7 +431,9 @@ export class Logger {
     }
 
     // Pretty format summary (default behavior)
-    if (!this.shouldShowOutput()) return;
+    if (!this.shouldShowOutput()) {
+      return;
+    }
 
     if (this.shouldShowSeparators()) {
       this.printSeparator('═');
@@ -429,12 +485,17 @@ export class Logger {
   }
 
   logFileHeader(fileName: string, requestCount: number): void {
-    if (!this.shouldShowOutput() || this.config.format !== 'pretty') return;
-    
+    if (!this.shouldShowOutput() || this.config.format !== 'pretty') {
+      return;
+    }
+
     const shortName = fileName.replace(/.*\//, '').replace('.yaml', '');
     console.log();
     this.printSeparator('─');
-    console.log(this.color(`📄 ${shortName}.yaml`, 'bright') + this.color(` (${requestCount} request${requestCount === 1 ? '' : 's'})`, 'dim'));
+    console.log(
+      this.color(`📄 ${shortName}.yaml`, 'bright') +
+        this.color(` (${requestCount} request${requestCount === 1 ? '' : 's'})`, 'dim'),
+    );
     this.printSeparator('─');
   }
 }

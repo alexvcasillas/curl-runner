@@ -1,5 +1,5 @@
-import type { Metadata } from 'next';
 import { AlertTriangle, Clock, FileText, Settings, Target, Zap } from 'lucide-react';
+import type { Metadata } from 'next';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { DocsPageHeader } from '@/components/docs-page-header';
 import { H2 } from '@/components/mdx-heading';
@@ -9,7 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 export const metadata: Metadata = {
   title: 'Global Settings',
-  description: 'Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files. Learn about execution modes, timeouts, retries, and output formatting.',
+  description:
+    'Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files. Learn about execution modes, timeouts, retries, and output formatting.',
   keywords: [
     'curl-runner global settings',
     'YAML global configuration',
@@ -20,19 +21,21 @@ export const metadata: Metadata = {
     'output formatting',
     'parallel execution',
     'sequential execution',
-    'global variables'
+    'global variables',
   ],
   openGraph: {
     title: 'Global Settings | curl-runner Documentation',
-    description: 'Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files. Learn about execution modes, timeouts, retries, and output formatting.',
+    description:
+      'Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files. Learn about execution modes, timeouts, retries, and output formatting.',
     url: 'https://curl-runner.com/docs/global-settings',
-    type: 'article'
-    },
+    type: 'article',
+  },
   twitter: {
     card: 'summary_large_image',
     title: 'Global Settings | curl-runner Documentation',
-    description: 'Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files.',
-    },
+    description:
+      'Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files.',
+  },
   alternates: {
     canonical: 'https://curl-runner.com/docs/global-settings',
   },
@@ -431,7 +434,8 @@ export default function GlobalSettingsPage() {
           <section>
             <H2>Output Configuration</H2>
             <p className="text-muted-foreground text-lg mb-6">
-              Customize how <code className="font-mono">curl-runner</code> displays results and saves output data.
+              Customize how <code className="font-mono">curl-runner</code> displays results and
+              saves output data.
             </p>
 
             <CodeBlockServer language="yaml" filename="output-config.yaml">

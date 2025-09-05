@@ -30,7 +30,7 @@ const links = [
   },
 ];
 
-export default function ErrorPage({ error, reset }: { error: Error; reset: () => void }) {
+export default function ErrorPage(_props: { error: Error; reset: () => void }) {
   return (
     <>
       <main className="mx-auto w-full max-w-7xl px-6 pt-10 pb-16 sm:pb-24 lg:px-8">
@@ -56,8 +56,8 @@ export default function ErrorPage({ error, reset }: { error: Error; reset: () =>
         <div className="mx-auto mt-16 flow-root max-w-lg sm:mt-20">
           <h2 className="sr-only">Popular pages</h2>
           <ul className="-mt-6 divide-y divide-gray-900/5 border-b border-gray-900/5 dark:divide-white/10 dark:border-white/10">
-            {links.map((link, linkIdx) => (
-              <li key={linkIdx} className="relative flex gap-x-6 py-6">
+            {links.map((link) => (
+              <li key={link.href} className="relative flex gap-x-6 py-6">
                 <div className="flex size-10 flex-none items-center justify-center rounded-lg shadow-xs outline-1 outline-gray-900/10 dark:bg-gray-800/50 dark:-outline-offset-1 dark:outline-white/10">
                   <link.icon
                     aria-hidden="true"
