@@ -5,6 +5,64 @@ import type {
   RequestConfig,
 } from '../types/config';
 
+interface TreeNode {
+  label: string;
+  value?: string;
+  children?: TreeNode[];
+  color?: string;
+}
+
+class TreeRenderer {
+  private colors: Record<string, string>;
+
+  constructor(colors: Record<string, string>) {
+    this.colors = colors;
+  }
+
+  private color(text: string, colorName: string): string {
+    if (!colorName || !this.colors[colorName]) {
+      return text;
+    }
+    return `${this.colors[colorName]}${text}${this.colors.reset}`;
+  }
+
+  render(nodes: TreeNode[], basePrefix: string = '   '): void {
+    nodes.forEach((node, index) => {
+      const isLast = index === nodes.length - 1;
+      const prefix = isLast ? `${basePrefix}└─` : `${basePrefix}├─`;
+      
+      if (node.label && node.value) {
+        // Regular labeled node with value
+        const displayValue = node.color ? this.color(node.value, node.color) : node.value;
+        
+        // Handle multiline values (like Response Body)
+        const lines = displayValue.split('\n');
+        if (lines.length === 1) {
+          console.log(`${prefix} ${node.label}: ${displayValue}`);
+        } else {
+          console.log(`${prefix} ${node.label}:`);
+          const contentPrefix = isLast ? `${basePrefix}   ` : `${basePrefix}│  `;
+          lines.forEach(line => {
+            console.log(`${contentPrefix}${line}`);
+          });
+        }
+      } else if (node.label && !node.value) {
+        // Section header (like "Headers:" or "Metrics:")
+        console.log(`${prefix} ${node.label}:`);
+      } else if (!node.label && node.value) {
+        // Content line without label (like response body lines)
+        const continuationPrefix = isLast ? `${basePrefix}   ` : `${basePrefix}│  `;
+        console.log(`${continuationPrefix}${node.value}`);
+      }
+
+      if (node.children && node.children.length > 0) {
+        const childPrefix = isLast ? `${basePrefix}   ` : `${basePrefix}│  `;
+        this.render(node.children, childPrefix);
+      }
+    });
+  }
+}
+
 export class Logger {
   private config: GlobalConfig['output'];
 
@@ -40,7 +98,7 @@ export class Logger {
       showBody: true,
       showMetrics: false,
       format: 'pretty',
-      prettyLevel: 'standard',
+      prettyLevel: 'minimal',
       ...config,
     };
   }
@@ -249,46 +307,19 @@ export class Logger {
     }
 
     if (this.shouldShowSeparators()) {
-      this.printSeparator('═');
-      console.log(this.color('🚀 CURL RUNNER', 'bright'));
-      console.log(this.color(`Executing ${count} request(s) in ${mode} mode`, 'cyan'));
-      this.printSeparator('═');
+      console.log(); // Add spacing before the execution header
+      console.log(this.color(`Executing ${count} request(s) in ${mode} mode`, 'dim'));
+      console.log();
+    } else {
+      // For minimal format, still add spacing after processing info
       console.log();
     }
   }
 
   logRequestStart(config: RequestConfig, index: number): void {
-    if (!this.shouldShowOutput()) {
-      return;
-    }
-
-    const name = config.name || `Request #${index}`;
-    const sourceFile = config.sourceFile
-      ? ` ${this.color(`[${this.getShortFilename(config.sourceFile)}]`, 'cyan')}`
-      : '';
-    console.log(this.color(`▶ ${name}`, 'bright') + sourceFile);
-    console.log(
-      `  ${this.color(config.method || 'GET', 'yellow')} ${this.color(config.url, 'blue')}`,
-    );
-
-    if (
-      this.shouldShowRequestDetails() &&
-      config.headers &&
-      Object.keys(config.headers).length > 0
-    ) {
-      console.log(this.color('  Headers:', 'dim'));
-      for (const [key, value] of Object.entries(config.headers)) {
-        console.log(`    ${key}: ${value}`);
-      }
-    }
-
-    if (this.shouldShowRequestDetails() && config.body) {
-      console.log(this.color('  Body:', 'dim'));
-      const bodyStr = this.formatJson(config.body);
-      for (const line of bodyStr.split('\n')) {
-        console.log(`    ${line}`);
-      }
-    }
+    // In the new format, we show everything in logRequestComplete
+    // This method is kept for compatibility but simplified
+    return;
   }
 
   logCommand(command: string): void {
@@ -336,62 +367,166 @@ export class Logger {
       return;
     }
 
+    const level = this.config.prettyLevel || 'minimal';
     const statusColor = result.success ? 'green' : 'red';
-    const statusIcon = result.success ? '✓' : '✗';
+    const statusIcon = result.success ? '✅' : '❌';
+    const name = result.request.name || 'Request';
 
-    console.log(
-      `  ${this.color(statusIcon, statusColor)} ` +
-        `Status: ${this.color(String(result.status || 'ERROR'), statusColor)}`,
-    );
-
-    if (result.error) {
-      this.logValidationErrors(result.error);
+    if (level === 'minimal') {
+      // Minimal format: clean tree structure but compact
+      const fileTag = result.request.sourceFile ? this.getShortFilename(result.request.sourceFile) : 'inline';
+      console.log(`${statusIcon} ${this.color(name, 'bright')} [${fileTag}]`);
+      
+      const treeNodes: TreeNode[] = [];
+      const renderer = new TreeRenderer(this.colors);
+      
+      treeNodes.push({ 
+        label: result.request.method || 'GET', 
+        value: result.request.url, 
+        color: 'blue' 
+      });
+      
+      const statusText = result.status ? `${result.status}` : 'ERROR';
+      const statusLabel = statusIcon.replace('✅', '✓').replace('❌', '✗');
+      treeNodes.push({ 
+        label: `${statusLabel} Status`, 
+        value: statusText, 
+        color: statusColor 
+      });
+      
+      if (result.metrics) {
+        const durationSize = `${this.formatDuration(result.metrics.duration)} | ${this.formatSize(result.metrics.size)}`;
+        treeNodes.push({ 
+          label: 'Duration', 
+          value: durationSize, 
+          color: 'cyan' 
+        });
+      }
+      
+      renderer.render(treeNodes);
+      
+      if (result.error) {
+        console.log();
+        this.logValidationErrors(result.error);
+      }
+      
+      console.log();
+      return;
     }
 
-    if (this.shouldShowMetrics() && result.metrics) {
-      const metrics = result.metrics;
-      const parts = [`Duration: ${this.color(this.formatDuration(metrics.duration), 'cyan')}`];
-
-      if (metrics.size !== undefined) {
-        parts.push(`Size: ${this.color(this.formatSize(metrics.size), 'cyan')}`);
-      }
-
-      if (this.shouldShowRequestDetails()) {
-        if (metrics.dnsLookup) {
-          parts.push(`DNS: ${this.formatDuration(metrics.dnsLookup)}`);
-        }
-        if (metrics.tcpConnection) {
-          parts.push(`TCP: ${this.formatDuration(metrics.tcpConnection)}`);
-        }
-        if (metrics.tlsHandshake) {
-          parts.push(`TLS: ${this.formatDuration(metrics.tlsHandshake)}`);
-        }
-        if (metrics.firstByte) {
-          parts.push(`TTFB: ${this.formatDuration(metrics.firstByte)}`);
-        }
-      }
-
-      console.log(`  ${parts.join(' | ')}`);
+    // Standard and detailed formats: use clean tree structure
+    console.log(`${statusIcon} ${this.color(name, 'bright')}`);
+    
+    // Build tree structure
+    const treeNodes: TreeNode[] = [];
+    const renderer = new TreeRenderer(this.colors);
+    
+    // Main info nodes
+    treeNodes.push({ label: 'URL', value: result.request.url, color: 'blue' });
+    treeNodes.push({ label: 'Method', value: result.request.method || 'GET', color: 'yellow' });
+    treeNodes.push({ label: 'Status', value: String(result.status || 'ERROR'), color: statusColor });
+    
+    if (result.metrics) {
+      treeNodes.push({ 
+        label: 'Duration', 
+        value: this.formatDuration(result.metrics.duration), 
+        color: 'cyan' 
+      });
     }
-
+    
+    // Add headers section if needed
     if (this.shouldShowHeaders() && result.headers && Object.keys(result.headers).length > 0) {
-      console.log(this.color('  Response Headers:', 'dim'));
-      for (const [key, value] of Object.entries(result.headers)) {
-        console.log(`    ${key}: ${value}`);
-      }
+      const headerChildren: TreeNode[] = Object.entries(result.headers).map(([key, value]) => ({
+        label: this.color(key, 'dim'),
+        value: String(value)
+      }));
+      
+      treeNodes.push({
+        label: 'Headers',
+        children: headerChildren
+      });
     }
-
+    
+    // Add body section if needed
     if (this.shouldShowBody() && result.body) {
-      console.log(this.color('  Response Body:', 'dim'));
       const bodyStr = this.formatJson(result.body);
       const lines = bodyStr.split('\n');
       const maxLines = this.shouldShowRequestDetails() ? Infinity : 10;
-      for (const line of lines.slice(0, maxLines)) {
-        console.log(`    ${line}`);
-      }
+      const bodyLines = lines.slice(0, maxLines);
+      
       if (lines.length > maxLines) {
-        console.log(this.color(`    ... (${lines.length - maxLines} more lines)`, 'dim'));
+        bodyLines.push(this.color(`... (${lines.length - maxLines} more lines)`, 'dim'));
       }
+      
+      treeNodes.push({
+        label: 'Response Body',
+        value: bodyLines.join('\n')
+      });
+    }
+    
+    // Add detailed metrics section if needed
+    if (this.shouldShowMetrics() && result.metrics && level === 'detailed') {
+      const metrics = result.metrics;
+      const metricChildren: TreeNode[] = [];
+      
+      metricChildren.push({ 
+        label: 'Request Duration', 
+        value: this.formatDuration(metrics.duration), 
+        color: 'cyan' 
+      });
+      
+      if (metrics.size !== undefined) {
+        metricChildren.push({ 
+          label: 'Response Size', 
+          value: this.formatSize(metrics.size), 
+          color: 'cyan' 
+        });
+      }
+      
+      if (metrics.dnsLookup) {
+        metricChildren.push({ 
+          label: 'DNS Lookup', 
+          value: this.formatDuration(metrics.dnsLookup), 
+          color: 'cyan' 
+        });
+      }
+      
+      if (metrics.tcpConnection) {
+        metricChildren.push({ 
+          label: 'TCP Connection', 
+          value: this.formatDuration(metrics.tcpConnection), 
+          color: 'cyan' 
+        });
+      }
+      
+      if (metrics.tlsHandshake) {
+        metricChildren.push({ 
+          label: 'TLS Handshake', 
+          value: this.formatDuration(metrics.tlsHandshake), 
+          color: 'cyan' 
+        });
+      }
+      
+      if (metrics.firstByte) {
+        metricChildren.push({ 
+          label: 'Time to First Byte', 
+          value: this.formatDuration(metrics.firstByte), 
+          color: 'cyan' 
+        });
+      }
+      
+      treeNodes.push({
+        label: 'Metrics',
+        children: metricChildren
+      });
+    }
+    
+    // Render the tree
+    renderer.render(treeNodes);
+
+    if (result.error) {
+      console.log();
+      this.logValidationErrors(result.error);
     }
 
     console.log();
@@ -435,36 +570,43 @@ export class Logger {
       return;
     }
 
-    if (this.shouldShowSeparators()) {
-      this.printSeparator('═');
-      const title = isGlobal ? '🎯 OVERALL SUMMARY' : '📊 EXECUTION SUMMARY';
-      console.log(this.color(title, 'bright'));
-      this.printSeparator();
+    const level = this.config.prettyLevel || 'minimal';
+    
+    // Add spacing for global summary
+    if (isGlobal) {
+      console.log(); // Extra spacing before global summary
+    }
+    
+    if (level === 'minimal') {
+      // Simple one-line summary for minimal, similar to docs example
+      const statusColor = summary.failed === 0 ? 'green' : 'red';
+      const successText = summary.failed === 0 
+        ? `${summary.total} request${summary.total === 1 ? '' : 's'} completed successfully`
+        : `${summary.successful}/${summary.total} request${summary.total === 1 ? '' : 's'} completed, ${summary.failed} failed`;
+      
+      const summaryPrefix = isGlobal ? '🌍 Global Summary' : 'Summary';
+      console.log(`${summaryPrefix}: ${this.color(successText, statusColor)}`);
+      return;
     }
 
+    // Compact summary for standard/detailed - much simpler
     const successRate = ((summary.successful / summary.total) * 100).toFixed(1);
-    const statusColor =
-      summary.failed === 0 ? 'green' : summary.successful === 0 ? 'red' : 'yellow';
-
-    console.log(`  Total Requests: ${this.color(String(summary.total), 'cyan')}`);
-    console.log(`  Successful: ${this.color(String(summary.successful), 'green')}`);
-    console.log(`  Failed: ${this.color(String(summary.failed), 'red')}`);
-    console.log(`  Success Rate: ${this.color(`${successRate}%`, statusColor)}`);
-    console.log(`  Total Duration: ${this.color(this.formatDuration(summary.duration), 'cyan')}`);
+    const statusColor = summary.failed === 0 ? 'green' : 'red';
+    const successText = summary.failed === 0 
+      ? `${summary.total} request${summary.total === 1 ? '' : 's'} completed successfully`
+      : `${summary.successful}/${summary.total} request${summary.total === 1 ? '' : 's'} completed, ${summary.failed} failed`;
+    
+    const summaryPrefix = isGlobal ? '🌍 Global Summary' : 'Summary';
+    console.log();
+    console.log(`${summaryPrefix}: ${this.color(successText, statusColor)} (${this.color(this.formatDuration(summary.duration), 'cyan')})`);
 
     if (summary.failed > 0 && this.shouldShowRequestDetails()) {
-      console.log();
-      console.log(this.color('  Failed Requests:', 'red'));
       summary.results
         .filter((r) => !r.success)
         .forEach((r) => {
           const name = r.request.name || r.request.url;
-          console.log(`    • ${name}: ${r.error}`);
+          console.log(`  ${this.color('•', 'red')} ${name}: ${r.error}`);
         });
-    }
-
-    if (this.shouldShowSeparators()) {
-      this.printSeparator('═');
     }
   }
 
@@ -491,11 +633,9 @@ export class Logger {
 
     const shortName = fileName.replace(/.*\//, '').replace('.yaml', '');
     console.log();
-    this.printSeparator('─');
     console.log(
       this.color(`📄 ${shortName}.yaml`, 'bright') +
         this.color(` (${requestCount} request${requestCount === 1 ? '' : 's'})`, 'dim'),
     );
-    this.printSeparator('─');
   }
 }

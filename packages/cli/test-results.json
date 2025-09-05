@@ -2,7 +2,7 @@
   "total": 2,
   "successful": 2,
   "failed": 0,
-  "duration": 60.81183299999975,
+  "duration": 69.01245800000106,
   "results": [
     {
       "request": {
@@ -47,13 +47,13 @@
         }
       },
       "metrics": {
-        "duration": 58.42791699999998,
+        "duration": 60.86987500000032,
         "size": 509,
-        "dnsLookup": 2.07,
-        "tcpConnection": 12.282,
-        "tlsHandshake": 30.005,
-        "firstByte": 45.518,
-        "download": 45.573
+        "dnsLookup": 2.284,
+        "tcpConnection": 13.991999999999999,
+        "tlsHandshake": 30.647000000000002,
+        "firstByte": 49.812000000000005,
+        "download": 49.861000000000004
       }
     },
     {
@@ -136,13 +136,13 @@
         }
       ],
       "metrics": {
-        "duration": 60.27937500000007,
+        "duration": 68.4972089999992,
         "size": 2726,
-        "dnsLookup": 2.118,
-        "tcpConnection": 13.183,
-        "tlsHandshake": 30.055,
-        "firstByte": 48.007,
-        "download": 48.07
+        "dnsLookup": 2.278,
+        "tcpConnection": 14.076,
+        "tlsHandshake": 30.636,
+        "firstByte": 57.736999999999995,
+        "download": 57.811
       }
     }
   ]
