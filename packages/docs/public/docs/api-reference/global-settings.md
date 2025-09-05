@@ -25,8 +25,8 @@ keywords:
   - environment
 slug: "/docs/global-settings"
 toc: true
-date: "2025-09-05T11:38:17.404Z"
-lastModified: "2025-09-05T11:38:17.404Z"
+date: "2025-09-05T12:26:34.125Z"
+lastModified: "2025-09-05T12:26:34.125Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -46,8 +46,8 @@ schema:
   "@type": "TechArticle"
   headline: "Global Settings API Reference"
   description: "Complete reference for global configuration options that control execution behavior, output formatting, and default request settings."
-  datePublished: "2025-09-05T11:38:17.404Z"
-  dateModified: "2025-09-05T11:38:17.404Z"
+  datePublished: "2025-09-05T12:26:34.125Z"
+  dateModified: "2025-09-05T12:26:34.125Z"
 ---
 
 # Global Settings API Reference

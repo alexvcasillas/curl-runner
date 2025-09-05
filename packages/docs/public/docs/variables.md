@@ -17,8 +17,8 @@ keywords:
   - environment
 slug: "/docs/variables"
 toc: true
-date: "2025-09-05T11:38:17.401Z"
-lastModified: "2025-09-05T11:38:17.401Z"
+date: "2025-09-05T12:26:34.121Z"
+lastModified: "2025-09-05T12:26:34.121Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -38,8 +38,8 @@ schema:
   "@type": "TechArticle"
   headline: "Variables"
   description: "Use variables and templating to create reusable, dynamic HTTP request configurations."
-  datePublished: "2025-09-05T11:38:17.401Z"
-  dateModified: "2025-09-05T11:38:17.401Z"
+  datePublished: "2025-09-05T12:26:34.121Z"
+  dateModified: "2025-09-05T12:26:34.121Z"
 ---
 
 # Variables

@@ -20,8 +20,8 @@ keywords:
   - environment
 slug: "/docs/cli-commands"
 toc: true
-date: "2025-09-05T11:38:17.396Z"
-lastModified: "2025-09-05T11:38:17.396Z"
+date: "2025-09-05T12:26:34.117Z"
+lastModified: "2025-09-05T12:26:34.117Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -41,8 +41,8 @@ schema:
   "@type": "TechArticle"
   headline: "CLI Commands"
   description: "Complete command-line interface reference for curl-runner with all available commands, options, and usage examples."
-  datePublished: "2025-09-05T11:38:17.396Z"
-  dateModified: "2025-09-05T11:38:17.396Z"
+  datePublished: "2025-09-05T12:26:34.117Z"
+  dateModified: "2025-09-05T12:26:34.117Z"
 ---
 
 # CLI Commands
