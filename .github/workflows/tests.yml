@@ -25,13 +25,36 @@ jobs:
       - name: Run Tests
         run: bun run test
 
-      - name: Test CLI Examples
+      - name: Wait for Vercel Preview
+        uses: patrickedqvist/wait-for-vercel-preview@v1.3.2
+        id: waitForVercel
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          max_timeout: 300
+          # Optional: Check for specific status
+          check_interval: 10
+
+      - name: Test CLI Examples with Preview URL
         run: |
           # Build the CLI first
           bun run build:cli
 
-          # Change to CLI directory and run all examples
+          # Change to CLI directory
           cd packages/cli
 
-          # Run all example YAML files
-          ./curl-runner examples/
+          # Get the preview URL from the previous step
+          PREVIEW_URL="${{ steps.waitForVercel.outputs.url }}"
+
+          echo "Testing against Vercel preview: $PREVIEW_URL"
+
+          # Create temporary copies of examples with preview URLs
+          mkdir -p examples-ci
+          for file in examples/*.yaml; do
+            sed "s|http://localhost:3000|$PREVIEW_URL|g" "$file" > "examples-ci/$(basename $file)"
+          done
+
+          # Run all example YAML files with preview endpoints
+          ./curl-runner examples-ci/
+
+          # Clean up
+          rm -rf examples-ci
