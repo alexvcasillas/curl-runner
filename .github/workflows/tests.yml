@@ -109,7 +109,8 @@ jobs:
               sed -i '/headers:/a\    x-vercel-protection-bypass: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}' "examples-ci/$(basename $file)"
             else
               # If no headers section exists, add one with the bypass header
-              sed -i '/method: /a\  headers:\n    x-vercel-protection-bypass: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}' "examples-ci/$(basename $file)"
+              sed -i '/method: /a\  headers:' "examples-ci/$(basename $file)"
+              sed -i '/headers:/a\    x-vercel-protection-bypass: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}' "examples-ci/$(basename $file)"
             fi
           done
 
@@ -144,7 +145,8 @@ jobs:
               sed -i '/headers:/a\    x-vercel-protection-bypass: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}' "examples-ci/$(basename $file)"
             else
               # If no headers section exists, add one with the bypass header
-              sed -i '/method: /a\  headers:\n    x-vercel-protection-bypass: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}' "examples-ci/$(basename $file)"
+              sed -i '/method: /a\  headers:' "examples-ci/$(basename $file)"
+              sed -i '/headers:/a\    x-vercel-protection-bypass: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}' "examples-ci/$(basename $file)"
             fi
           done
 
