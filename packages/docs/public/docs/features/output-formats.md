@@ -18,8 +18,8 @@ keywords:
   - environment
 slug: "/docs/output-formats"
 toc: true
-date: "2025-09-05T11:38:17.403Z"
-lastModified: "2025-09-05T11:38:17.403Z"
+date: "2025-09-05T12:26:34.124Z"
+lastModified: "2025-09-05T12:26:34.124Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -39,8 +39,8 @@ schema:
   "@type": "TechArticle"
   headline: "Output Formats"
   description: "Control how curl-runner displays and saves request results."
-  datePublished: "2025-09-05T11:38:17.403Z"
-  dateModified: "2025-09-05T11:38:17.403Z"
+  datePublished: "2025-09-05T12:26:34.124Z"
+  dateModified: "2025-09-05T12:26:34.124Z"
 ---
 
 # Output Formats

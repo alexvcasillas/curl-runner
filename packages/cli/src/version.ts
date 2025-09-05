@@ -22,7 +22,7 @@ export function getVersion(): string {
       './package.json', // In case we're at root
       '../../package.json', // In case of different directory structure
     ];
-    
+
     for (const path of possiblePaths) {
       try {
         const packageJson = require(path);
@@ -33,7 +33,7 @@ export function getVersion(): string {
         // Try next path
       }
     }
-    
+
     // If no package.json found, return default
     return '0.0.0';
   } catch {

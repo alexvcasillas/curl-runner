@@ -11,7 +11,6 @@ const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 const NPM_REGISTRY_URL = 'https://registry.npmjs.org/@curl-runner/cli/latest';
 
 export class VersionChecker {
-
   async checkForUpdates(skipCache = false): Promise<void> {
     try {
       // Don't check in CI environments
@@ -70,9 +69,7 @@ export class VersionChecker {
   private compareVersions(current: string, latest: string): void {
     if (this.isNewerVersion(current, latest)) {
       console.log();
-      console.log(
-        color('╭────────────────────────────────────────────────────────╮', 'yellow'),
-      );
+      console.log(color('╭────────────────────────────────────────────────────────╮', 'yellow'));
       console.log(
         color('│', 'yellow') +
           '                                                        ' +
@@ -110,9 +107,7 @@ export class VersionChecker {
           '                                                        ' +
           color('│', 'yellow'),
       );
-      console.log(
-        color('╰────────────────────────────────────────────────────────╯', 'yellow'),
-      );
+      console.log(color('╰────────────────────────────────────────────────────────╯', 'yellow'));
       console.log();
     }
   }

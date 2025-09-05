@@ -24,7 +24,8 @@
       "!packages/docs/.next",
       "!packages/cli/build",
       "!packages/docs/scripts/jsx-to-markdown-with-frontmatter.ts",
-      "!packages/docs/app/globals.css"
+      "!packages/docs/app/globals.css",
+      "!.claude/settings.local.json"
     ]
   },
   "formatter": {
