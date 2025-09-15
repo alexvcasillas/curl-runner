@@ -48,7 +48,7 @@ export const completeRequestExample = `requests:
     retry:
       count: 3
       delay: 1000
-      backoff: exponential
+      backoff: exponential  # Coming Soon
       
     # Response expectations
     expect:
@@ -195,25 +195,20 @@ export const bodyTypesExample = `requests:
     method: POST
     headers:
       Content-Type: "application/x-www-form-urlencoded"
-    body:
-      type: "form"
-      data:
-        username: "johndoe"
-        password: "secret123"
-        remember: true
+    body: "username=johndoe&password=secret123&remember=true"  # URL encoded string
         
-  # Multipart form data
-  - name: "Multipart form body"
+  # Multipart form data - Coming Soon
+  - name: "Multipart form body"  # Coming Soon
     url: "https://api.example.com/upload"
     method: POST
     headers:
       Content-Type: "multipart/form-data"
     body:
-      type: "multipart"
+      type: "multipart"  # Coming Soon - structured multipart not implemented
       fields:
-        file: "@/path/to/file.txt"
-        description: "File upload"
-        category: "document"
+        file: "@/path/to/file.txt"  # Coming Soon
+        description: "File upload"  # Coming Soon
+        category: "document"  # Coming Soon
         
   # Raw text body
   - name: "Raw text body"
@@ -281,8 +276,9 @@ export const variablesExample = `requests:
       API_VERSION: "v2"   # Override global API_VERSION
     timeout: \${TIMEOUT}`;
 
-export const extractExample = `requests:
-  - name: "Login and extract token"
+export const extractExample = `# Data Extraction Examples - Coming Soon
+requests:
+  - name: "Login and extract token"  # Coming Soon
     url: "https://api.example.com/auth/login"
     method: POST
     body: |
@@ -290,12 +286,12 @@ export const extractExample = `requests:
         "username": "testuser",
         "password": "testpass"
       }
-    extract:
-      # Extract from response body using JSON path
-      ACCESS_TOKEN: "$.token"
-      REFRESH_TOKEN: "$.refreshToken"
-      USER_ID: "$.user.id"
-      EXPIRES_AT: "$.expiresIn"
+    extract:  # Coming Soon - data extraction not implemented
+      # Extract from response body using JSON path - Coming Soon
+      ACCESS_TOKEN: "$.token"  # Coming Soon
+      REFRESH_TOKEN: "$.refreshToken"  # Coming Soon
+      USER_ID: "$.user.id"  # Coming Soon
+      EXPIRES_AT: "$.expiresIn"  # Coming Soon
       
       # Extract from response headers
       REQUEST_ID: "headers['x-request-id']"
@@ -308,17 +304,18 @@ export const extractExample = `requests:
       Authorization: "Bearer \${ACCESS_TOKEN}"
       X-Request-ID: "\${REQUEST_ID}"`;
 
-export const fileUploadExample = `requests:
-  - name: "Single file upload"
+export const fileUploadExample = `# File Upload Examples - Coming Soon
+requests:
+  - name: "Single file upload"  # Coming Soon
     url: "https://api.example.com/upload"
     method: POST
     headers:
       Content-Type: "multipart/form-data"
     body:
-      type: "multipart"
+      type: "multipart"  # Coming Soon - structured multipart not implemented
       fields:
-        file: "@/path/to/document.pdf"
-        description: "Important document"
+        file: "@/path/to/document.pdf"  # Coming Soon
+        description: "Important document"  # Coming Soon
         
   - name: "Multiple file upload"
     url: "https://api.example.com/upload/multiple"
@@ -414,10 +411,10 @@ export const advancedRequestExample = `requests:
     retry:
       count: 3
       delay: 5000
-      backoff: exponential
-      maxDelay: 30000
-      jitter: true
-      codes: [500, 502, 503, 504]
+      backoff: exponential  # Coming Soon
+      maxDelay: 30000  # Coming Soon
+      jitter: true  # Coming Soon
+      codes: [500, 502, 503, 504]  # Coming Soon
       
     # Comprehensive validation
     expect:
@@ -430,20 +427,20 @@ export const advancedRequestExample = `requests:
         status: ["accepted", "processing", "completed"]
         timestamp: "*"
         
-    # Extract response data
-    extract:
-      JOB_ID: "$.jobId"
-      STATUS_URL: "$.statusUrl"
-      ESTIMATED_COMPLETION: "$.estimatedCompletion"
+    # Extract response data - Coming Soon
+    extract:  # Coming Soon - data extraction not implemented
+      JOB_ID: "$.jobId"  # Coming Soon
+      STATUS_URL: "$.statusUrl"  # Coming Soon
+      ESTIMATED_COMPLETION: "$.estimatedCompletion"  # Coming Soon
       
-    # Custom validation
-    custom:
-      - name: "Operation ID matches"
-        expression: "response.body.operationId === variables.OPERATION_ID"
-      - name: "Status URL is valid"
-        expression: "/^https?:\\/\\/.+/.test(response.body.statusUrl)"
-      - name: "Response time acceptable"
-        expression: "response.time < 30000"`;
+    # Custom validation - Coming Soon
+    custom:  # Coming Soon - custom validation expressions not implemented
+      - name: "Operation ID matches"  # Coming Soon
+        expression: "response.body.operationId === variables.OPERATION_ID"  # Coming Soon
+      - name: "Status URL is valid"  # Coming Soon
+        expression: "/^https?:\\/\\/.+/.test(response.body.statusUrl)"  # Coming Soon
+      - name: "Response time acceptable"  # Coming Soon
+        expression: "response.time < 30000"  # Coming Soon`;
 
 export const validationConfigExample = `# Response Validation Examples
 requests:

@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "bun run dist/cli.js",
-    "dev": "bun --watch src/cli.ts",
+    "dev": "bun run src/cli.ts",
     "build": "bun run scripts/build-with-version.ts",
     "format": "biome format --write .",
     "lint": "biome lint .",

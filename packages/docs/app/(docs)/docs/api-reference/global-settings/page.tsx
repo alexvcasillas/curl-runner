@@ -73,6 +73,7 @@ global:
     showBody: true
     showMetrics: true
     format: pretty
+    prettyLevel: standard  # minimal, standard, or detailed
     saveToFile: "results/api-test-results.json"
     
   # Default settings applied to all requests

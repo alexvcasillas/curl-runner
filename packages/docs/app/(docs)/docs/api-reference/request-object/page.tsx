@@ -421,17 +421,17 @@ requests:
     method: GET
     proxy: "http://proxy.company.com:8080"
     
-  # SOCKS proxy
+  # SOCKS proxy - Coming Soon
   - name: "SOCKS Proxy Request"
     url: "https://api.example.com/data"
     method: GET
-    proxy: "socks5://proxy.company.com:1080"
+    proxy: "socks5://proxy.company.com:1080"  # Coming Soon
     
-  # Proxy with authentication
+  # Proxy with authentication - Coming Soon  
   - name: "Authenticated Proxy Request"
     url: "https://api.example.com/data"
     method: GET
-    proxy: "http://username:password@proxy.company.com:8080"
+    proxy: "http://username:password@proxy.company.com:8080"  # Coming Soon
     
   # Disable SSL verification (insecure)
   - name: "Insecure SSL Request"
@@ -915,10 +915,13 @@ export default function RequestObjectPage() {
                       <Code className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                     </div>
                     <div className="flex-1">
-                      <h4 className="font-medium mb-2">Form Data</h4>
-                      <p className="text-sm text-muted-foreground mb-3">URL-encoded form data</p>
+                      <h4 className="font-medium mb-2 flex items-center gap-2">
+                        Form Data 
+                        <Badge variant="secondary">Coming Soon</Badge>
+                      </h4>
+                      <p className="text-sm text-muted-foreground mb-3">Structured multipart/form-data</p>
                       <code className="text-xs bg-muted px-2 py-1 rounded">
-                        key1=value1&key2=value2
+                        Raw URL-encoded strings supported
                       </code>
                     </div>
                   </div>
@@ -1030,7 +1033,10 @@ export default function RequestObjectPage() {
                   <p>
                     <strong>delay:</strong> Wait time between retries
                   </p>
-                  <p>Uses exponential backoff automatically</p>
+                  <p>
+                    <Badge variant="secondary" className="mr-2">Coming Soon</Badge>
+                    Uses exponential backoff automatically
+                  </p>
                 </CardContent>
               </Card>
             </div>
@@ -1054,6 +1060,15 @@ export default function RequestObjectPage() {
             <p className="text-muted-foreground mb-6">
               Configure proxy settings and SSL/TLS security options.
             </p>
+
+            <div className="mb-6 flex gap-2 flex-wrap">
+              <Badge variant="secondary">Coming Soon</Badge>
+              <span className="text-sm text-muted-foreground">Advanced proxy settings (SOCKS, authentication)</span>
+            </div>
+            <div className="mb-6 flex gap-2 flex-wrap">
+              <Badge variant="secondary">Coming Soon</Badge>
+              <span className="text-sm text-muted-foreground">SSL/TLS configuration (custom certificates, client certs)</span>
+            </div>
 
             <CodeBlockServer language="yaml" filename="proxy-security.yaml">
               {proxyExample}

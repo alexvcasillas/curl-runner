@@ -44,10 +44,11 @@ export const metadata: Metadata = {
 const outputFormats = `# Different output format configurations
 global:
   output:
-    format: json        # JSON output (default)
+    format: pretty      # Output format (json, pretty, raw)
+    prettyLevel: standard  # Pretty format detail level (minimal, standard, detailed)
     verbose: true       # Show detailed information
     showHeaders: true   # Include response headers
-    showBody: true      # Include response body
+    showBody: true      # Include response body (default: true)
     showMetrics: true   # Include performance metrics
 
 requests:
@@ -73,8 +74,10 @@ const cliOutput = `# Command line output options
 # JSON format (machine-readable)
 curl-runner tests.yaml --output-format json
 
-# Pretty format (human-readable)
-curl-runner tests.yaml --output-format pretty
+# Pretty format with different detail levels
+curl-runner tests.yaml --output-format pretty --pretty-level minimal
+curl-runner tests.yaml --output-format pretty --pretty-level standard
+curl-runner tests.yaml --output-format pretty --pretty-level detailed
 
 # Raw format (response body only)
 curl-runner tests.yaml --output-format raw
@@ -153,39 +156,87 @@ request:
   url: https://api.example.com/users/123
   method: GET`;
 
-const prettyOutput = `✅ Get User Profile
-   URL: https://api.example.com/users/123
-   Method: GET
-   Status: 200 OK
-   Duration: 125ms
-   
-   Headers:
-   ├─ content-type: application/json
-   ├─ x-api-version: v1
-   └─ content-length: 256
-   
-   Response Body:
-   {
-     "id": 123,
-     "name": "John Doe",
-     "email": "john@example.com",
-     "active": true
-   }
-   
-   Metrics:
-   ├─ Request Duration: 125ms
-   ├─ Response Size: 256 bytes
-   └─ Total Time: 125ms
+const prettyMinimal = `✓ Get User Profile [api-test]
+   ├─ GET https://api.example.com/users/123
+   ├─ ✓ Status: 200
+   └─ Duration: 125ms | 256 B
 
 Summary: 1 request completed successfully`;
 
-const prettyConfig = `# Pretty format configuration  
+const prettyStandard = `✓ Get User Profile
+   ├─ URL: https://api.example.com/users/123
+   ├─ Method: GET
+   ├─ Status: 200
+   └─ Duration: 125ms
+   
+   ├─ Response Body:
+      {
+        "id": 123,
+        "name": "John Doe",
+        "email": "john@example.com",
+        "active": true
+      }
+
+Summary: 1 request completed successfully`;
+
+const prettyDetailed = `✓ Get User Profile
+   ├─ URL: https://api.example.com/users/123
+   ├─ Method: GET
+   ├─ Status: 200
+   └─ Duration: 125ms
+   
+   ├─ Headers:
+   │  ├─ content-type: application/json
+   │  ├─ x-api-version: v1
+   │  └─ content-length: 256
+   │
+   ├─ Response Body:
+   │  {
+   │    "id": 123,
+   │    "name": "John Doe",
+   │    "email": "john@example.com",
+   │    "active": true
+   │  }
+   │
+   └─ Metrics:
+      ├─ Request Duration: 125ms
+      ├─ Response Size: 256 B
+      ├─ DNS Lookup: 5ms
+      ├─ TCP Connection: 10ms
+      ├─ TLS Handshake: 15ms
+      └─ Time to First Byte: 95ms
+
+Summary: 1 request completed successfully`;
+
+const prettyMinimalConfig = `# Pretty format - Minimal level
 global:
   output:
     format: pretty
-    verbose: true
-    showHeaders: true
-    showMetrics: true
+    prettyLevel: minimal  # Compact output
+
+request:
+  name: Get User Profile
+  url: https://api.example.com/users/123
+  method: GET`;
+
+const prettyStandardConfig = `# Pretty format - Standard level  
+global:
+  output:
+    format: pretty
+    prettyLevel: standard  # Balanced detail
+    showBody: true
+
+request:
+  name: Get User Profile
+  url: https://api.example.com/users/123
+  method: GET`;
+
+const prettyDetailedConfig = `# Pretty format - Detailed level
+global:
+  output:
+    format: pretty
+    prettyLevel: detailed  # Full information
+    # Headers and metrics are shown automatically
 
 request:
   name: Get User Profile
@@ -289,7 +340,7 @@ export default function OutputFormatsPage() {
                         <code className="text-sm">format</code>
                       </td>
                       <td className="p-3 text-sm text-muted-foreground">string</td>
-                      <td className="p-3 text-sm text-muted-foreground">json</td>
+                      <td className="p-3 text-sm text-muted-foreground">pretty</td>
                       <td className="p-3 text-sm text-muted-foreground">
                         "json", "pretty", or "raw"
                       </td>
@@ -328,6 +379,16 @@ export default function OutputFormatsPage() {
                       <td className="p-3 text-sm text-muted-foreground">false</td>
                       <td className="p-3 text-sm text-muted-foreground">
                         Include performance metrics
+                      </td>
+                    </tr>
+                    <tr className="border-b">
+                      <td className="p-3">
+                        <code className="text-sm">prettyLevel</code>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">string</td>
+                      <td className="p-3 text-sm text-muted-foreground">minimal</td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        "minimal", "standard", or "detailed" (for pretty format)
                       </td>
                     </tr>
                     <tr>
@@ -370,18 +431,59 @@ export default function OutputFormatsPage() {
               <div>
                 <H3 id="pretty-format">Pretty Format</H3>
                 <p className="text-muted-foreground mb-6">
-                  Human-readable format with colors and formatting for terminal viewing.
+                  Human-readable format with colors and tree-structured output for terminal viewing.
+                  Three detail levels available: minimal, standard, and detailed.
                 </p>
 
-                <h4 className="font-medium mb-3">Configuration</h4>
-                <CodeBlockServer language="yaml" filename="pretty-config.yaml">
-                  {prettyConfig}
-                </CodeBlockServer>
+                <div className="space-y-6">
+                  {/* Minimal Level */}
+                  <div className="border rounded-lg p-4">
+                    <Badge className="mb-3">Minimal</Badge>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Compact output showing only essential information
+                    </p>
+                    <h4 className="font-medium mb-3">Configuration</h4>
+                    <CodeBlockServer language="yaml" filename="pretty-minimal.yaml">
+                      {prettyMinimalConfig}
+                    </CodeBlockServer>
+                    <h4 className="font-medium mb-3 mt-4">Output Example</h4>
+                    <CodeBlockServer language="text" filename="terminal">
+                      {prettyMinimal}
+                    </CodeBlockServer>
+                  </div>
 
-                <h4 className="font-medium mb-3 mt-6">Output Example</h4>
-                <CodeBlockServer language="text" filename="terminal">
-                  {prettyOutput}
-                </CodeBlockServer>
+                  {/* Standard Level */}
+                  <div className="border rounded-lg p-4">
+                    <Badge variant="secondary" className="mb-3">Standard</Badge>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Balanced detail with response body but without headers/metrics (unless specified)
+                    </p>
+                    <h4 className="font-medium mb-3">Configuration</h4>
+                    <CodeBlockServer language="yaml" filename="pretty-standard.yaml">
+                      {prettyStandardConfig}
+                    </CodeBlockServer>
+                    <h4 className="font-medium mb-3 mt-4">Output Example</h4>
+                    <CodeBlockServer language="text" filename="terminal">
+                      {prettyStandard}
+                    </CodeBlockServer>
+                  </div>
+
+                  {/* Detailed Level */}
+                  <div className="border rounded-lg p-4">
+                    <Badge variant="outline" className="mb-3">Detailed</Badge>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Full information including headers, body, and performance metrics
+                    </p>
+                    <h4 className="font-medium mb-3">Configuration</h4>
+                    <CodeBlockServer language="yaml" filename="pretty-detailed.yaml">
+                      {prettyDetailedConfig}
+                    </CodeBlockServer>
+                    <h4 className="font-medium mb-3 mt-4">Output Example</h4>
+                    <CodeBlockServer language="text" filename="terminal">
+                      {prettyDetailed}
+                    </CodeBlockServer>
+                  </div>
+                </div>
               </div>
 
               <div>
@@ -452,6 +554,14 @@ export default function OutputFormatsPage() {
                       </td>
                       <td className="p-3 text-sm text-muted-foreground">
                         Set output format (json/pretty/raw)
+                      </td>
+                    </tr>
+                    <tr className="border-b">
+                      <td className="p-3">
+                        <code className="text-sm">--pretty-level</code>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        Set pretty format detail level (minimal/standard/detailed)
                       </td>
                     </tr>
                     <tr className="border-b">

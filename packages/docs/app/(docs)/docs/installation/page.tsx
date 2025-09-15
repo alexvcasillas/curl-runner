@@ -3,12 +3,7 @@ import type { Metadata } from 'next';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { DocsPageHeader } from '@/components/docs-page-header';
 import { Badge } from '@/components/ui/badge';
-import {
-  bunInstallExample,
-  dockerInstallExample,
-  npmInstallExample,
-  verifyInstallationExample,
-} from './snippets';
+import { bunInstallExample, npmInstallExample, verifyInstallationExample } from './snippets';
 
 export const metadata: Metadata = {
   title: 'Installation',
@@ -101,15 +96,6 @@ bun --version`}
                   Install using npm if you prefer Node.js ecosystem tools.
                 </p>
                 <CodeBlockServer language="bash">{npmInstallExample}</CodeBlockServer>
-              </div>
-
-              {/* Binary Installation */}
-              <div className="space-y-3">
-                <h3 className="text-xl font-semibold">Pre-built Binary</h3>
-                <p className="text-muted-foreground">
-                  Download a standalone executable for your platform.
-                </p>
-                <CodeBlockServer language="bash">{dockerInstallExample}</CodeBlockServer>
               </div>
             </div>
           </section>
