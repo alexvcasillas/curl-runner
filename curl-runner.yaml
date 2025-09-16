@@ -10,7 +10,7 @@ global:
     DEFAULT_USER_AGENT: curl-runner-global
   output:
     format: pretty
-    prettyLevel: standard
+    prettyLevel: minimal
     showBody: true
     showHeaders: false
     showMetrics: true

@@ -107,11 +107,31 @@ const outputOptionsExample = `# Verbose output
 curl-runner tests/ --verbose
 curl-runner tests/ -v
 
-# Save results to JSON file
+# Quiet mode (suppress output)
+curl-runner tests/ --quiet
+curl-runner tests/ -q
+
+# Save results to file
 curl-runner tests/ --output results.json
+curl-runner tests/ -o results.json
+
+# Output format options
+curl-runner tests/ --output-format json     # JSON output
+curl-runner tests/ --output-format pretty   # Pretty output (default)
+curl-runner tests/ --output-format raw      # Raw response bodies only
+
+# Pretty level options (when using pretty format)
+curl-runner tests/ --pretty-level minimal   # Compact output (default)
+curl-runner tests/ --pretty-level standard  # Standard detail
+curl-runner tests/ --pretty-level detailed  # Full detail with metrics
+
+# Control what's shown
+curl-runner tests/ --show-headers           # Include headers
+curl-runner tests/ --show-metrics           # Include metrics
+curl-runner tests/ --show-body false        # Hide response body
 
 # Combine options
-curl-runner tests/ --verbose --output results.json --continue-on-error`;
+curl-runner tests/ --output-format pretty --pretty-level detailed --show-metrics`;
 
 const timeoutOptionsExample = `# Set global timeout (milliseconds)
 curl-runner tests/ --timeout 10000
@@ -119,8 +139,14 @@ curl-runner tests/ --timeout 10000
 # Set maximum retries
 curl-runner tests/ --retries 3
 
-# Combine timeout and retries
-curl-runner tests/ --timeout 5000 --retries 2`;
+# Set retry delay (milliseconds)
+curl-runner tests/ --retry-delay 2000
+
+# Disable retries completely
+curl-runner tests/ --no-retry
+
+# Combine timeout and retry options
+curl-runner tests/ --timeout 5000 --retries 3 --retry-delay 1000`;
 
 const advancedExamples = `# Environment-specific execution
 NODE_ENV=production curl-runner api-tests.yaml
@@ -171,6 +197,15 @@ const options = [
     color: { bg: 'bg-green-500/10', text: 'text-green-600 dark:text-green-400' },
   },
   {
+    short: '-q',
+    long: '--quiet',
+    description: 'Suppress non-error output (opposite of verbose)',
+    type: 'boolean',
+    default: 'false',
+    icon: Eye,
+    color: { bg: 'bg-gray-500/10', text: 'text-gray-600 dark:text-gray-400' },
+  },
+  {
     short: '-p',
     long: '--execution parallel',
     description: 'Execute requests in parallel instead of sequential',
@@ -198,9 +233,9 @@ const options = [
     color: { bg: 'bg-teal-500/10', text: 'text-teal-600 dark:text-teal-400' },
   },
   {
-    short: null,
+    short: '-o',
     long: '--output <file>',
-    description: 'Save execution results to a JSON file',
+    description: 'Save execution results to a file',
     type: 'string',
     default: 'undefined',
     icon: Save,
@@ -208,10 +243,55 @@ const options = [
   },
   {
     short: null,
+    long: '--output-format <format>',
+    description: 'Set output format: json, pretty, or raw',
+    type: 'string',
+    default: 'pretty',
+    icon: FileText,
+    color: { bg: 'bg-cyan-500/10', text: 'text-cyan-600 dark:text-cyan-400' },
+  },
+  {
+    short: null,
+    long: '--pretty-level <level>',
+    description: 'Set pretty format detail level: minimal, standard, or detailed',
+    type: 'string',
+    default: 'minimal',
+    icon: Layers,
+    color: { bg: 'bg-pink-500/10', text: 'text-pink-600 dark:text-pink-400' },
+  },
+  {
+    short: null,
+    long: '--show-headers',
+    description: 'Include response headers in output',
+    type: 'boolean',
+    default: 'false',
+    icon: FileText,
+    color: { bg: 'bg-blue-500/10', text: 'text-blue-600 dark:text-blue-400' },
+  },
+  {
+    short: null,
+    long: '--show-body',
+    description: 'Include response body in output',
+    type: 'boolean',
+    default: 'true',
+    icon: FileText,
+    color: { bg: 'bg-green-500/10', text: 'text-green-600 dark:text-green-400' },
+  },
+  {
+    short: null,
+    long: '--show-metrics',
+    description: 'Include performance metrics in output',
+    type: 'boolean',
+    default: 'false',
+    icon: Zap,
+    color: { bg: 'bg-purple-500/10', text: 'text-purple-600 dark:text-purple-400' },
+  },
+  {
+    short: null,
     long: '--timeout <ms>',
     description: 'Set global timeout for all requests in milliseconds',
     type: 'number',
-    default: '5000',
+    default: 'undefined',
     icon: Clock,
     color: { bg: 'bg-red-500/10', text: 'text-red-600 dark:text-red-400' },
   },
@@ -223,6 +303,24 @@ const options = [
     default: '0',
     icon: RotateCcw,
     color: { bg: 'bg-yellow-500/10', text: 'text-yellow-600 dark:text-yellow-500' },
+  },
+  {
+    short: null,
+    long: '--retry-delay <ms>',
+    description: 'Set delay between retry attempts in milliseconds',
+    type: 'number',
+    default: '1000',
+    icon: Clock,
+    color: { bg: 'bg-amber-500/10', text: 'text-amber-600 dark:text-amber-500' },
+  },
+  {
+    short: null,
+    long: '--no-retry',
+    description: 'Disable retry mechanism completely',
+    type: 'boolean',
+    default: 'false',
+    icon: XCircle,
+    color: { bg: 'bg-red-500/10', text: 'text-red-600 dark:text-red-400' },
   },
   {
     short: null,

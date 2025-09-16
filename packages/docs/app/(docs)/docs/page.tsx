@@ -119,6 +119,23 @@ export default function DocsPage() {
             </div>
           </section>
 
+          {/* What is curl-runner */}
+          <section>
+            <H2 id="what-is-curl-runner">What is curl-runner?</H2>
+            <p className="text-muted-foreground text-lg mb-6">
+              <code className="font-mono">curl-runner</code> is a modern CLI tool that transforms
+              how you manage and execute HTTP requests. Instead of writing complex curl commands or
+              maintaining scattered shell scripts, you define your API requests in clean, readable
+              YAML files with powerful features like parallel execution, response validation, and
+              variable templating.
+            </p>
+            <p className="text-muted-foreground text-lg">
+              Built with Bun for exceptional performance, curl-runner is perfect for API testing,
+              automation workflows, CI/CD pipelines, and development environments where speed and
+              reliability matter.
+            </p>
+          </section>
+
           {/* Quick Start */}
           <section>
             <H2 id="quick-start">Quick Start</H2>
@@ -127,19 +144,50 @@ export default function DocsPage() {
               minutes.
             </p>
 
+            {/* Prerequisites Notice */}
+            <div className="rounded-lg border bg-blue-50/50 dark:bg-blue-950/20 p-4 mb-8">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <Zap className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-foreground">Prerequisites</h3>
+                  <div className="mt-2 text-sm text-muted-foreground space-y-2">
+                    <p>
+                      <strong>For npm/yarn/pnpm installation:</strong> Bun runtime must be installed
+                      on your system.
+                    </p>
+                    <p>
+                      Install Bun:{' '}
+                      <code className="bg-muted px-1 rounded">
+                        curl -fsSL https://bun.sh/install | bash
+                      </code>
+                    </p>
+                    <p className="mt-3">
+                      <strong>For standalone builds:</strong> No prerequisites needed! The
+                      standalone executable includes Bun bundled within it.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="space-y-8">
               <div>
-                <H3 id="1-create-a-yaml-file">1. Create a YAML file</H3>
-                <CodeBlockServer language="yaml" filename="simple.yaml">
+                <H3 id="1-install-curl-runner">1. Install curl-runner</H3>
+                <CodeBlockServer language="bash">{quickInstallExample}</CodeBlockServer>
+              </div>
+
+              <div>
+                <H3 id="2-create-a-yaml-file">2. Create a YAML file</H3>
+                <CodeBlockServer language="yaml" filename="api-test.yaml">
                   {basicUsageExample}
                 </CodeBlockServer>
               </div>
 
               <div>
-                <H3 id="2-run-curl-runner">
-                  2. Run <code className="font-mono">curl-runner</code>
-                </H3>
-                <CodeBlockServer language="bash">{quickInstallExample}</CodeBlockServer>
+                <H3 id="3-run-your-requests">3. Run your requests</H3>
+                <CodeBlockServer language="bash">curl-runner api-test.yaml</CodeBlockServer>
               </div>
             </div>
           </section>

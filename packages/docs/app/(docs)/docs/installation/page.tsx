@@ -1,14 +1,9 @@
-import { AlertCircle, CheckCircle, HardDrive, Laptop, Monitor } from 'lucide-react';
+import { AlertCircle, CheckCircle, HardDrive, Laptop, Monitor, Zap } from 'lucide-react';
 import type { Metadata } from 'next';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { DocsPageHeader } from '@/components/docs-page-header';
 import { Badge } from '@/components/ui/badge';
-import {
-  bunInstallExample,
-  dockerInstallExample,
-  npmInstallExample,
-  verifyInstallationExample,
-} from './snippets';
+import { bunInstallExample, npmInstallExample, verifyInstallationExample } from './snippets';
 
 export const metadata: Metadata = {
   title: 'Installation',
@@ -61,7 +56,7 @@ export default function InstallationPage() {
               <div className="flex items-center space-x-2">
                 <CheckCircle className="h-5 w-5 text-green-500" />
                 <h3 className="text-xl font-semibold">Bun Runtime</h3>
-                <Badge variant="secondary">Recommended</Badge>
+                <Badge variant="secondary">Mandatory</Badge>
               </div>
               <p className="text-muted-foreground">
                 <code className="font-mono">curl-runner</code> is optimized for Bun and provides the
@@ -101,15 +96,33 @@ bun --version`}
                   Install using npm if you prefer Node.js ecosystem tools.
                 </p>
                 <CodeBlockServer language="bash">{npmInstallExample}</CodeBlockServer>
-              </div>
-
-              {/* Binary Installation */}
-              <div className="space-y-3">
-                <h3 className="text-xl font-semibold">Pre-built Binary</h3>
-                <p className="text-muted-foreground">
-                  Download a standalone executable for your platform.
-                </p>
-                <CodeBlockServer language="bash">{dockerInstallExample}</CodeBlockServer>
+                {/* Prerequisites Notice */}
+                <div className="rounded-lg border bg-blue-50/50 dark:bg-blue-950/20 p-4 mb-8">
+                  <div className="flex">
+                    <div className="flex-shrink-0">
+                      <Zap className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div className="ml-3">
+                      <h3 className="text-sm font-medium text-foreground">Prerequisites</h3>
+                      <div className="mt-2 text-sm text-muted-foreground space-y-2">
+                        <p>
+                          <strong>For npm/yarn/pnpm installation:</strong> Bun runtime must be
+                          installed on your system.
+                        </p>
+                        <p>
+                          Install Bun:{' '}
+                          <code className="bg-muted px-1 rounded">
+                            curl -fsSL https://bun.sh/install | bash
+                          </code>
+                        </p>
+                        <p className="mt-3">
+                          <strong>For standalone builds:</strong> No prerequisites needed! The
+                          standalone executable includes Bun bundled within it.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </section>

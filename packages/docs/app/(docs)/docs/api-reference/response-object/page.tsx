@@ -441,9 +441,9 @@ request:
       email: ".*@.*\\..*"    # Validate email format
       created_at: "^\\d{4}-\\d{2}-\\d{2}"  # ISO date format
       
-# Chain requests using response data
+# Chain requests using response data - Coming Soon
 collection:
-  name: "Request Chain Example"
+  name: "Request Chain Example"  # Coming Soon
   requests:
     # First request - get user ID
     - name: "Login User"
@@ -458,11 +458,11 @@ collection:
           token: "*"        # Any token value
           user_id: "*"      # Any user ID
           
-    # Second request - use data from first
-    - name: "Get User Data"
-      url: "https://api.example.com/users/\${USER_ID}"  # From previous response
+    # Second request - use data from first - Coming Soon
+    - name: "Get User Data"  # Coming Soon
+      url: "https://api.example.com/users/\${USER_ID}"  # Coming Soon - from previous response
       headers:
-        Authorization: "Bearer \${TOKEN}"              # From previous response
+        Authorization: "Bearer \${TOKEN}"              # Coming Soon - from previous response
       expect:
         status: 200`;
 
@@ -1039,6 +1039,11 @@ export default function ResponseObjectPage() {
             <p className="text-muted-foreground mb-6">
               Techniques for working with response data programmatically and in automated workflows.
             </p>
+
+            <div className="mb-6 flex gap-2 flex-wrap">
+              <Badge variant="secondary">Coming Soon</Badge>
+              <span className="text-sm text-muted-foreground">Request chaining and data extraction from responses</span>
+            </div>
 
             <CodeBlockServer language="yaml" filename="response-processing.yaml">
               {processingResponsesExample}

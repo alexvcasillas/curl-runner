@@ -106,15 +106,15 @@ const steps = [
     step: 4,
     title: 'View the results',
     description: 'See the formatted output in your terminal',
-    code: `✅ Get JSONPlaceholder Post
-   Status: 200 OK
-   Time: 245ms
-   Size: 292 bytes
+    code: `ℹ Found 1 YAML file(s)
+ℹ Processing: simple.yaml
 
-📊 Execution Summary
-   ✅ Successful: 1
-   ❌ Failed: 0
-   ⏱️  Total Time: 245ms`,
+✓ Get JSONPlaceholder Post [simple]
+   ├─ GET: https://jsonplaceholder.typicode.com/posts/1
+   ├─ ✓ Status: 200
+   └─ Duration: 245ms | 292.00 B
+
+Summary: 1 request completed successfully`,
   },
 ];
 
