@@ -916,10 +916,12 @@ export default function RequestObjectPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium mb-2 flex items-center gap-2">
-                        Form Data 
+                        Form Data
                         <Badge variant="secondary">Coming Soon</Badge>
                       </h4>
-                      <p className="text-sm text-muted-foreground mb-3">Structured multipart/form-data</p>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Structured multipart/form-data
+                      </p>
                       <code className="text-xs bg-muted px-2 py-1 rounded">
                         Raw URL-encoded strings supported
                       </code>
@@ -1034,7 +1036,9 @@ export default function RequestObjectPage() {
                     <strong>delay:</strong> Wait time between retries
                   </p>
                   <p>
-                    <Badge variant="secondary" className="mr-2">Coming Soon</Badge>
+                    <Badge variant="secondary" className="mr-2">
+                      Coming Soon
+                    </Badge>
                     Uses exponential backoff automatically
                   </p>
                 </CardContent>
@@ -1063,11 +1067,15 @@ export default function RequestObjectPage() {
 
             <div className="mb-6 flex gap-2 flex-wrap">
               <Badge variant="secondary">Coming Soon</Badge>
-              <span className="text-sm text-muted-foreground">Advanced proxy settings (SOCKS, authentication)</span>
+              <span className="text-sm text-muted-foreground">
+                Advanced proxy settings (SOCKS, authentication)
+              </span>
             </div>
             <div className="mb-6 flex gap-2 flex-wrap">
               <Badge variant="secondary">Coming Soon</Badge>
-              <span className="text-sm text-muted-foreground">SSL/TLS configuration (custom certificates, client certs)</span>
+              <span className="text-sm text-muted-foreground">
+                SSL/TLS configuration (custom certificates, client certs)
+              </span>
             </div>
 
             <CodeBlockServer language="yaml" filename="proxy-security.yaml">

@@ -297,10 +297,6 @@ export class Logger {
     return `${(bytes / 1024 ** i).toFixed(2)} ${sizes[i]}`;
   }
 
-  private printSeparator(char: string = '─', length: number = 60): void {
-    console.log(this.color(char.repeat(length), 'dim'));
-  }
-
   logExecutionStart(count: number, mode: string): void {
     if (!this.shouldShowOutput()) {
       return;
@@ -316,7 +312,7 @@ export class Logger {
     }
   }
 
-  logRequestStart(config: RequestConfig, index: number): void {
+  logRequestStart(_config: RequestConfig, _index: number): void {
     // In the new format, we show everything in logRequestComplete
     // This method is kept for compatibility but simplified
     return;
@@ -598,7 +594,7 @@ export class Logger {
     }
 
     // Compact summary for standard/detailed - much simpler
-    const successRate = ((summary.successful / summary.total) * 100).toFixed(1);
+    const _successRate = ((summary.successful / summary.total) * 100).toFixed(1);
     const statusColor = summary.failed === 0 ? 'green' : 'red';
     const successText =
       summary.failed === 0
