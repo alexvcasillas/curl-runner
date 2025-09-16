@@ -1042,7 +1042,9 @@ export default function ResponseObjectPage() {
 
             <div className="mb-6 flex gap-2 flex-wrap">
               <Badge variant="secondary">Coming Soon</Badge>
-              <span className="text-sm text-muted-foreground">Request chaining and data extraction from responses</span>
+              <span className="text-sm text-muted-foreground">
+                Request chaining and data extraction from responses
+              </span>
             </div>
 
             <CodeBlockServer language="yaml" filename="response-processing.yaml">

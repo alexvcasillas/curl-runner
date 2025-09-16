@@ -35,8 +35,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'Environment Variables | curl-runner Documentation',
-    description:
-      'Configure curl-runner behavior using environment variables.',
+    description: 'Configure curl-runner behavior using environment variables.',
   },
   alternates: {
     canonical: 'https://curl-runner.com/docs/environment-variables',
@@ -247,9 +246,10 @@ export default function EnvironmentVariablesPage() {
           <section>
             <H2 id="overview">Overview</H2>
             <p className="text-muted-foreground text-lg mb-6">
-              Environment variables provide a way to configure <code className="font-mono">curl-runner</code>{' '}
-              without modifying YAML files or using command-line options. This is particularly useful for
-              CI/CD pipelines, containerized environments, and maintaining consistent settings across teams.
+              Environment variables provide a way to configure{' '}
+              <code className="font-mono">curl-runner</code> without modifying YAML files or using
+              command-line options. This is particularly useful for CI/CD pipelines, containerized
+              environments, and maintaining consistent settings across teams.
             </p>
 
             <div className="rounded-lg border bg-card p-4">
@@ -289,7 +289,8 @@ export default function EnvironmentVariablesPage() {
           <section>
             <H2 id="available-variables">Available Variables</H2>
             <p className="text-muted-foreground text-lg mb-6">
-              All curl-runner environment variables follow the <code className="font-mono">CURL_RUNNER_*</code> naming convention.
+              All curl-runner environment variables follow the{' '}
+              <code className="font-mono">CURL_RUNNER_*</code> naming convention.
             </p>
 
             <div className="grid gap-4 md:grid-cols-1">
@@ -334,7 +335,8 @@ export default function EnvironmentVariablesPage() {
           <section>
             <H2 id="output-configuration">Output Configuration</H2>
             <p className="text-muted-foreground text-lg mb-6">
-              Control how results are displayed and saved using output-related environment variables.
+              Control how results are displayed and saved using output-related environment
+              variables.
             </p>
 
             <CodeBlockServer language="bash" filename="Output Configuration">
@@ -394,7 +396,7 @@ export default function EnvironmentVariablesPage() {
           {/* Best Practices */}
           <section>
             <H2 id="best-practices">Best Practices</H2>
-            
+
             <div className="grid gap-6 md:grid-cols-2">
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
@@ -404,8 +406,8 @@ export default function EnvironmentVariablesPage() {
                   <div className="flex-1">
                     <h4 className="font-medium mb-2">Use for Environment-Specific Settings</h4>
                     <p className="text-sm text-muted-foreground">
-                      Environment variables are perfect for settings that change between development,
-                      staging, and production environments.
+                      Environment variables are perfect for settings that change between
+                      development, staging, and production environments.
                     </p>
                   </div>
                 </div>
