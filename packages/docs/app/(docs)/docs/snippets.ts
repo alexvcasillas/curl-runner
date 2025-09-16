@@ -23,13 +23,16 @@ collection:
         status: 201`;
 
 export const quickInstallExample = `# Install curl-runner globally
-npm install -g curl-runner
+npm install -g @curl-runner/cli
 
 # Or using yarn
-yarn global add curl-runner
+yarn global add @curl-runner/cli
 
 # Or using pnpm
-pnpm install -g curl-runner`;
+pnpm install -g @curl-runner/cli
+
+# Or using bun
+bun install -g @curl-runner/cli`;
 
 export const quickRunExample = `# Run a simple test
 curl-runner my-api-tests.yaml

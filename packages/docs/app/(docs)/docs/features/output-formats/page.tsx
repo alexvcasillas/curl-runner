@@ -1,10 +1,11 @@
 import { BarChart3, Bug, CheckCircle, FileJson, Filter, Settings, TrendingUp } from 'lucide-react';
 import type { Metadata } from 'next';
 import { CodeBlockServer } from '@/components/code-block-server';
-import { H2, H3 } from '@/components/docs-heading';
+import { H2, H3, H4 } from '@/components/docs-heading';
 import { DocsPageHeader } from '@/components/docs-page-header';
 import { TableOfContents } from '@/components/toc';
 import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 
 export const metadata: Metadata = {
   title: 'Output Formats',
@@ -156,20 +157,27 @@ request:
   url: https://api.example.com/users/123
   method: GET`;
 
-const prettyMinimal = `✓ Get User Profile [api-test]
-   ├─ GET https://api.example.com/users/123
+const prettyMinimal = `ℹ Found 1 YAML file(s)
+ℹ Processing: api-test.yaml
+
+✓ Get User Profile [api-test]
+   ├─ GET: https://api.example.com/users/123
    ├─ ✓ Status: 200
-   └─ Duration: 125ms | 256 B
+   └─ Duration: 125ms | 256.00 B
 
 Summary: 1 request completed successfully`;
 
-const prettyStandard = `✓ Get User Profile
+const prettyStandard = `ℹ Found 1 YAML file(s)
+ℹ Processing: api-test.yaml
+
+Executing 1 request(s) in sequential mode
+
+✓ Get User Profile
    ├─ URL: https://api.example.com/users/123
    ├─ Method: GET
    ├─ Status: 200
-   └─ Duration: 125ms
-   
-   ├─ Response Body:
+   ├─ Duration: 125ms
+   └─ Response Body:
       {
         "id": 123,
         "name": "John Doe",
@@ -177,19 +185,21 @@ const prettyStandard = `✓ Get User Profile
         "active": true
       }
 
-Summary: 1 request completed successfully`;
 
-const prettyDetailed = `✓ Get User Profile
+Summary: 1 request completed successfully (125ms)`;
+
+const prettyDetailed = `ℹ Found 1 YAML file(s)
+ℹ Processing: api-test.yaml
+
+Executing 1 request(s) in sequential mode
+
+  Command:
+    curl -X GET -w "\n__CURL_METRICS_START__%{json}__CURL_METRICS_END__" -L -s -S "https://api.example.com/users/123"
+✓ Get User Profile
    ├─ URL: https://api.example.com/users/123
    ├─ Method: GET
    ├─ Status: 200
-   └─ Duration: 125ms
-   
-   ├─ Headers:
-   │  ├─ content-type: application/json
-   │  ├─ x-api-version: v1
-   │  └─ content-length: 256
-   │
+   ├─ Duration: 125ms
    ├─ Response Body:
    │  {
    │    "id": 123,
@@ -197,16 +207,16 @@ const prettyDetailed = `✓ Get User Profile
    │    "email": "john@example.com",
    │    "active": true
    │  }
-   │
    └─ Metrics:
       ├─ Request Duration: 125ms
-      ├─ Response Size: 256 B
+      ├─ Response Size: 256.00 B
       ├─ DNS Lookup: 5ms
       ├─ TCP Connection: 10ms
       ├─ TLS Handshake: 15ms
       └─ Time to First Byte: 95ms
 
-Summary: 1 request completed successfully`;
+
+Summary: 1 request completed successfully (125ms)`;
 
 const prettyMinimalConfig = `# Pretty format - Minimal level
 global:
@@ -437,52 +447,54 @@ export default function OutputFormatsPage() {
 
                 <div className="space-y-6">
                   {/* Minimal Level */}
-                  <div className="border rounded-lg p-4">
-                    <Badge className="mb-3">Minimal</Badge>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Compact output showing only essential information
-                    </p>
-                    <h4 className="font-medium mb-3">Configuration</h4>
-                    <CodeBlockServer language="yaml" filename="pretty-minimal.yaml">
-                      {prettyMinimalConfig}
-                    </CodeBlockServer>
-                    <h4 className="font-medium mb-3 mt-4">Output Example</h4>
-                    <CodeBlockServer language="text" filename="terminal">
-                      {prettyMinimal}
-                    </CodeBlockServer>
-                  </div>
+
+                  <H4 id="minimal-format">Minimal Format</H4>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Compact output showing only essential information
+                  </p>
+                  <h4 className="font-medium mb-3">Configuration</h4>
+                  <CodeBlockServer language="yaml" filename="pretty-minimal.yaml">
+                    {prettyMinimalConfig}
+                  </CodeBlockServer>
+                  <h4 className="font-medium mb-3 mt-4">Output Example</h4>
+                  <CodeBlockServer language="text" filename="terminal">
+                    {prettyMinimal}
+                  </CodeBlockServer>
+
+                  <Separator className="my-4" />
 
                   {/* Standard Level */}
-                  <div className="border rounded-lg p-4">
-                    <Badge variant="secondary" className="mb-3">Standard</Badge>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Balanced detail with response body but without headers/metrics (unless specified)
-                    </p>
-                    <h4 className="font-medium mb-3">Configuration</h4>
-                    <CodeBlockServer language="yaml" filename="pretty-standard.yaml">
-                      {prettyStandardConfig}
-                    </CodeBlockServer>
-                    <h4 className="font-medium mb-3 mt-4">Output Example</h4>
-                    <CodeBlockServer language="text" filename="terminal">
-                      {prettyStandard}
-                    </CodeBlockServer>
-                  </div>
+
+                  <H4 id="standard-format">Standard Format</H4>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Balanced detail with response body but without headers/metrics (unless
+                    specified)
+                  </p>
+                  <h4 className="font-medium mb-3">Configuration</h4>
+                  <CodeBlockServer language="yaml" filename="pretty-standard.yaml">
+                    {prettyStandardConfig}
+                  </CodeBlockServer>
+                  <h4 className="font-medium mb-3 mt-4">Output Example</h4>
+                  <CodeBlockServer language="text" filename="terminal">
+                    {prettyStandard}
+                  </CodeBlockServer>
+
+                  <Separator className="my-4" />
 
                   {/* Detailed Level */}
-                  <div className="border rounded-lg p-4">
-                    <Badge variant="outline" className="mb-3">Detailed</Badge>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Full information including headers, body, and performance metrics
-                    </p>
-                    <h4 className="font-medium mb-3">Configuration</h4>
-                    <CodeBlockServer language="yaml" filename="pretty-detailed.yaml">
-                      {prettyDetailedConfig}
-                    </CodeBlockServer>
-                    <h4 className="font-medium mb-3 mt-4">Output Example</h4>
-                    <CodeBlockServer language="text" filename="terminal">
-                      {prettyDetailed}
-                    </CodeBlockServer>
-                  </div>
+
+                  <H4 id="detailed-format">Detailed Format</H4>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Full information including headers, body, and performance metrics
+                  </p>
+                  <h4 className="font-medium mb-3">Configuration</h4>
+                  <CodeBlockServer language="yaml" filename="pretty-detailed.yaml">
+                    {prettyDetailedConfig}
+                  </CodeBlockServer>
+                  <h4 className="font-medium mb-3 mt-4">Output Example</h4>
+                  <CodeBlockServer language="text" filename="terminal">
+                    {prettyDetailed}
+                  </CodeBlockServer>
                 </div>
               </div>
 
