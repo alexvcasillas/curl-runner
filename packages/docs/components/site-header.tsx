@@ -1,6 +1,6 @@
 'use client';
 
-import { Menu, Search, Terminal } from 'lucide-react';
+import { Menu, Terminal } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
@@ -68,7 +68,7 @@ export function SiteHeader() {
           </nav>
 
           <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">
-            <div className="w-full flex-1 md:w-auto md:flex-none">
+            {/* <div className="w-full flex-1 md:w-auto md:flex-none">
               <Button
                 variant="outline"
                 className="relative h-8 w-full justify-start rounded-md bg-background text-sm font-normal text-muted-foreground shadow-none sm:pr-12 md:w-40 lg:w-64"
@@ -81,7 +81,7 @@ export function SiteHeader() {
                   <span className="text-xs">⌘</span>K
                 </kbd>
               </Button>
-            </div>
+            </div> */}
             <nav className="flex items-center gap-1">
               {/* <Button variant="ghost" size="icon" asChild className="h-8 w-8">
                 <a
