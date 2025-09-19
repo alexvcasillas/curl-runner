@@ -1,6 +1,6 @@
 import { AlertTriangle, Clock, FileText, Settings, Target, Zap } from 'lucide-react';
-import Link from 'next/link';
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { H2 } from '@/components/docs-heading';
 import { DocsPageHeader } from '@/components/docs-page-header';
