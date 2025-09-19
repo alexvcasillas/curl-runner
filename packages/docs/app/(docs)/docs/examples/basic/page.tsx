@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     title: 'Basic Examples | curl-runner Documentation',
     description:
       'Simple curl-runner examples to get started with HTTP requests. Learn basic GET, POST, PUT, and DELETE operations with practical examples.',
-    url: 'https://curl-runner.com/docs/examples/basic',
+    url: 'https://www.curl-runner.com/docs/examples/basic',
     type: 'article',
   },
   twitter: {
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
     description: 'Learn curl-runner basics with simple HTTP request examples and configurations.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/examples/basic',
+    canonical: 'https://www.curl-runner.com/docs/examples/basic',
   },
 };
 

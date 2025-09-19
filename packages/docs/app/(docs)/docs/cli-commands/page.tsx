@@ -38,7 +38,7 @@ export const metadata: Metadata = {
     title: 'CLI Commands | curl-runner Documentation',
     description:
       'Complete command-line interface reference for curl-runner with all available commands, options, and usage examples.',
-    url: 'https://curl-runner.com/docs/cli-commands',
+    url: 'https://www.curl-runner.com/docs/cli-commands',
     type: 'article',
   },
   twitter: {
@@ -48,7 +48,7 @@ export const metadata: Metadata = {
       'Complete command-line interface reference for curl-runner with all available commands and options.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/cli-commands',
+    canonical: 'https://www.curl-runner.com/docs/cli-commands',
   },
 };
 

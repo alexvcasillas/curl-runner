@@ -30,7 +30,7 @@ export const metadata: Metadata = {
     title: 'curl-runner Documentation',
     description:
       'A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance, parallel execution, and comprehensive validation.',
-    url: 'https://curl-runner.com/docs',
+    url: 'https://www.curl-runner.com/docs',
     type: 'article',
   },
   twitter: {
@@ -40,7 +40,7 @@ export const metadata: Metadata = {
       'A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs',
+    canonical: 'https://www.curl-runner.com/docs',
   },
 };
 
@@ -251,6 +251,87 @@ export default function DocsPage() {
                     </Button>
                   </div>
                 </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Key Concepts Section */}
+          <section className="mb-16">
+            <div className="mb-8">
+              <h2 className="text-2xl font-bold mb-4">Key Concepts</h2>
+              <p className="text-muted-foreground">
+                Master these essential concepts to get the most out of curl-runner
+              </p>
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="rounded-lg border bg-card p-6">
+                <h3 className="font-semibold mb-2">
+                  <Link href="/docs/variables" className="hover:text-primary">
+                    Variables & Templating
+                  </Link>
+                </h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Create dynamic requests with variables, environment values, and computed
+                  expressions
+                </p>
+                <Link
+                  href="/docs/variables"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  Learn about variables →
+                </Link>
+              </div>
+
+              <div className="rounded-lg border bg-card p-6">
+                <h3 className="font-semibold mb-2">
+                  <Link href="/docs/global-settings" className="hover:text-primary">
+                    Global Settings
+                  </Link>
+                </h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Configure execution behavior, timeouts, and default values for all requests
+                </p>
+                <Link
+                  href="/docs/global-settings"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  Configure globally →
+                </Link>
+              </div>
+
+              <div className="rounded-lg border bg-card p-6">
+                <h3 className="font-semibold mb-2">
+                  <Link href="/docs/features/response-validation" className="hover:text-primary">
+                    Response Validation
+                  </Link>
+                </h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Validate status codes, headers, and response body content automatically
+                </p>
+                <Link
+                  href="/docs/features/response-validation"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  Validate responses →
+                </Link>
+              </div>
+
+              <div className="rounded-lg border bg-card p-6">
+                <h3 className="font-semibold mb-2">
+                  <Link href="/docs/features/parallel-execution" className="hover:text-primary">
+                    Parallel Execution
+                  </Link>
+                </h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Execute multiple requests concurrently for faster performance and load testing
+                </p>
+                <Link
+                  href="/docs/features/parallel-execution"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  Run in parallel →
+                </Link>
               </div>
             </div>
           </section>

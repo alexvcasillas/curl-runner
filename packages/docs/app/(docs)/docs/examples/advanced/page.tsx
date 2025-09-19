@@ -42,7 +42,7 @@ export const metadata: Metadata = {
     title: 'Advanced Examples | curl-runner Documentation',
     description:
       'Complex curl-runner configurations for advanced use cases. Learn about variable interpolation, authentication, validation, and real-world API testing scenarios.',
-    url: 'https://curl-runner.com/docs/examples/advanced',
+    url: 'https://www.curl-runner.com/docs/examples/advanced',
     type: 'article',
   },
   twitter: {
@@ -51,7 +51,7 @@ export const metadata: Metadata = {
     description: 'Master curl-runner with advanced examples for complex API testing scenarios.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/examples/advanced',
+    canonical: 'https://www.curl-runner.com/docs/examples/advanced',
   },
 };
 

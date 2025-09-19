@@ -1,6 +1,7 @@
 /** biome-ignore-all lint/correctness/useUniqueElementIds: we use static strings */
 
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { H2, H3 } from '@/components/docs-heading';
 import { DocsPageHeader } from '@/components/docs-page-header';
@@ -27,7 +28,7 @@ export const metadata: Metadata = {
     title: 'YAML Structure | curl-runner Documentation',
     description:
       'Learn the structure and syntax of curl-runner YAML configuration files. Complete guide to request properties, collections, and global configuration patterns.',
-    url: 'https://curl-runner.com/docs/yaml-structure',
+    url: 'https://www.curl-runner.com/docs/yaml-structure',
     type: 'article',
   },
   twitter: {
@@ -36,7 +37,7 @@ export const metadata: Metadata = {
     description: 'Learn the structure and syntax of curl-runner YAML configuration files.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/yaml-structure',
+    canonical: 'https://www.curl-runner.com/docs/yaml-structure',
   },
 };
 
@@ -372,6 +373,88 @@ export default function YamlStructurePage() {
             <CodeBlockServer language="yaml" filename="validation-example.yaml">
               {validationExample}
             </CodeBlockServer>
+          </section>
+
+          {/* Related Topics */}
+          <section className="mb-16">
+            <div className="mb-8">
+              <H2 id="related-topics">Related Topics</H2>
+              <p className="text-muted-foreground">
+                Dive deeper into specific aspects of curl-runner configuration
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-lg border bg-card p-6">
+                <h3 className="font-medium mb-2">
+                  <Link href="/docs/variables" className="hover:text-primary">
+                    Variables & Templating
+                  </Link>
+                </h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Make your YAML files dynamic with variables, environment values, and computed
+                  expressions
+                </p>
+                <Link
+                  href="/docs/variables"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  Learn about variables →
+                </Link>
+              </div>
+
+              <div className="rounded-lg border bg-card p-6">
+                <h3 className="font-medium mb-2">
+                  <Link href="/docs/global-settings" className="hover:text-primary">
+                    Global Settings
+                  </Link>
+                </h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Configure execution behavior, default headers, and shared settings for all
+                  requests
+                </p>
+                <Link
+                  href="/docs/global-settings"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  Global configuration →
+                </Link>
+              </div>
+
+              <div className="rounded-lg border bg-card p-6">
+                <h3 className="font-medium mb-2">
+                  <Link href="/docs/features/response-validation" className="hover:text-primary">
+                    Response Validation
+                  </Link>
+                </h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Complete guide to validating API responses with detailed rules and patterns
+                </p>
+                <Link
+                  href="/docs/features/response-validation"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  Validation guide →
+                </Link>
+              </div>
+
+              <div className="rounded-lg border bg-card p-6">
+                <h3 className="font-medium mb-2">
+                  <Link href="/docs/api-reference/request-object" className="hover:text-primary">
+                    Request Object API
+                  </Link>
+                </h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Complete reference for all available request properties and configuration options
+                </p>
+                <Link
+                  href="/docs/api-reference/request-object"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  API reference →
+                </Link>
+              </div>
+            </div>
           </section>
         </div>
       </div>

@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     title: 'Environment Variables | curl-runner Documentation',
     description:
       'Configure curl-runner behavior using environment variables for consistent settings across different environments.',
-    url: 'https://curl-runner.com/docs/environment-variables',
+    url: 'https://www.curl-runner.com/docs/environment-variables',
     type: 'article',
   },
   twitter: {
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
     description: 'Configure curl-runner behavior using environment variables.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/environment-variables',
+    canonical: 'https://www.curl-runner.com/docs/environment-variables',
   },
 };
 

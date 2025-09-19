@@ -1,4 +1,15 @@
-import { ArrowRight, Book, CheckCircle, FileText, Grid3x3, Play } from 'lucide-react';
+import {
+  ArrowRight,
+  Book,
+  CheckCircle,
+  FileText,
+  FolderOpen,
+  Grid3x3,
+  Play,
+  Shield,
+  Terminal,
+  Zap,
+} from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
@@ -25,7 +36,7 @@ export const metadata: Metadata = {
     title: 'Quick Start | curl-runner Documentation',
     description:
       'Get started with curl-runner in minutes. Learn how to create your first YAML configuration, run HTTP requests, and validate responses with this step-by-step guide.',
-    url: 'https://curl-runner.com/docs/quick-start',
+    url: 'https://www.curl-runner.com/docs/quick-start',
     type: 'article',
   },
   twitter: {
@@ -35,7 +46,7 @@ export const metadata: Metadata = {
       'Get started with curl-runner in minutes. Learn how to create your first YAML configuration and run HTTP requests.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/quick-start',
+    canonical: 'https://www.curl-runner.com/docs/quick-start',
   },
 };
 
@@ -316,6 +327,95 @@ export default function QuickStartPage() {
                         View Examples <ArrowRight className="ml-1 h-4 w-4" />
                       </Link>
                     </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Continue Learning Section */}
+          <section className="mb-16">
+            <div className="mb-8">
+              <h2 className="text-2xl font-bold mb-4">Continue Learning</h2>
+              <p className="text-muted-foreground">
+                Now that you've made your first request, explore these advanced features
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-lg border bg-card p-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-full bg-green-500/10 p-2">
+                    <Shield className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-medium mb-2">
+                      <Link
+                        href="/docs/features/response-validation"
+                        className="hover:text-primary"
+                      >
+                        Response Validation
+                      </Link>
+                    </h3>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Automatically validate API responses to ensure they meet your expectations
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-card p-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-full bg-blue-500/10 p-2">
+                    <FolderOpen className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-medium mb-2">
+                      <Link href="/docs/examples/collection" className="hover:text-primary">
+                        Request Collections
+                      </Link>
+                    </h3>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Organize multiple related requests into collections for better workflow
+                      management
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-card p-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-full bg-orange-500/10 p-2">
+                    <Terminal className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-medium mb-2">
+                      <Link href="/docs/cli-commands" className="hover:text-primary">
+                        CLI Commands
+                      </Link>
+                    </h3>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Master all command-line options and flags for advanced usage
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-card p-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-full bg-purple-500/10 p-2">
+                    <Zap className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-medium mb-2">
+                      <Link href="/docs/features/parallel-execution" className="hover:text-primary">
+                        Parallel Execution
+                      </Link>
+                    </h3>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Execute multiple requests concurrently for performance testing and faster
+                      workflows
+                    </p>
                   </div>
                 </div>
               </div>

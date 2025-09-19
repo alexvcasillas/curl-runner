@@ -1,5 +1,17 @@
-import { AlertCircle, CheckCircle, HardDrive, Laptop, Monitor, Zap } from 'lucide-react';
+import {
+  AlertCircle,
+  BookOpen,
+  CheckCircle,
+  FileText,
+  HardDrive,
+  Laptop,
+  Monitor,
+  Rocket,
+  Terminal,
+  Zap,
+} from 'lucide-react';
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { DocsPageHeader } from '@/components/docs-page-header';
 import { Badge } from '@/components/ui/badge';
@@ -25,7 +37,7 @@ export const metadata: Metadata = {
     title: 'Installation | curl-runner Documentation',
     description:
       'Install curl-runner on your system using your preferred package manager or download a pre-built binary. Support for Bun, npm, and Docker installation methods.',
-    url: 'https://curl-runner.com/docs/installation',
+    url: 'https://www.curl-runner.com/docs/installation',
     type: 'article',
   },
   twitter: {
@@ -35,7 +47,7 @@ export const metadata: Metadata = {
       'Install curl-runner on your system using your preferred package manager or download a pre-built binary.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/installation',
+    canonical: 'https://www.curl-runner.com/docs/installation',
   },
 };
 
@@ -222,6 +234,114 @@ export PATH="$PATH:~/.bun/bin"`}
                   <CodeBlockServer language="bash">
                     {`chmod +x /path/to/curl-runner`}
                   </CodeBlockServer>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Next Steps */}
+          <section className="mb-16">
+            <div className="mb-8">
+              <h2 className="text-2xl font-semibold tracking-tight mb-4">Next Steps</h2>
+              <p className="text-muted-foreground">
+                Now that curl-runner is installed, here's how to get started
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-lg border bg-card p-6">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-full bg-blue-500/10 p-2">
+                    <Rocket className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-medium mb-2">
+                      <Link href="/docs/quick-start" className="hover:text-primary">
+                        Quick Start Guide
+                      </Link>
+                    </h3>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Create and run your first HTTP request in minutes
+                    </p>
+                    <Link
+                      href="/docs/quick-start"
+                      className="text-sm font-medium text-primary hover:underline"
+                    >
+                      Get started →
+                    </Link>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-card p-6">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-full bg-green-500/10 p-2">
+                    <FileText className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-medium mb-2">
+                      <Link href="/docs/yaml-structure" className="hover:text-primary">
+                        YAML Configuration
+                      </Link>
+                    </h3>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Learn the configuration file format and structure
+                    </p>
+                    <Link
+                      href="/docs/yaml-structure"
+                      className="text-sm font-medium text-primary hover:underline"
+                    >
+                      Learn YAML →
+                    </Link>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-card p-6">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-full bg-purple-500/10 p-2">
+                    <BookOpen className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-medium mb-2">
+                      <Link href="/docs/examples/basic" className="hover:text-primary">
+                        Basic Examples
+                      </Link>
+                    </h3>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Copy-paste examples for common HTTP operations
+                    </p>
+                    <Link
+                      href="/docs/examples/basic"
+                      className="text-sm font-medium text-primary hover:underline"
+                    >
+                      View examples →
+                    </Link>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-card p-6">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-full bg-orange-500/10 p-2">
+                    <Terminal className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-medium mb-2">
+                      <Link href="/docs/cli-commands" className="hover:text-primary">
+                        CLI Reference
+                      </Link>
+                    </h3>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Complete command-line options and usage guide
+                    </p>
+                    <Link
+                      href="/docs/cli-commands"
+                      className="text-sm font-medium text-primary hover:underline"
+                    >
+                      CLI reference →
+                    </Link>
+                  </div>
                 </div>
               </div>
             </div>

@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     title: 'Variables & Templating | curl-runner Documentation',
     description:
       'Master variable definition and templating in curl-runner. Learn about environment variables, computed values, dynamic content generation, and template expressions.',
-    url: 'https://curl-runner.com/docs/variables',
+    url: 'https://www.curl-runner.com/docs/variables',
     type: 'article',
   },
   twitter: {
@@ -36,7 +36,7 @@ export const metadata: Metadata = {
       'Master variable definition and templating in curl-runner. Learn about environment variables and dynamic content generation.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/variables',
+    canonical: 'https://www.curl-runner.com/docs/variables',
   },
 };
 

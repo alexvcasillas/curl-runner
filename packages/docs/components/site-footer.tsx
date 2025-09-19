@@ -15,7 +15,7 @@ export function SiteFooter() {
           <Link href="/docs/quick-start" className="text-muted-foreground hover:text-foreground">
             Quick Start
           </Link>
-          <Link href="/docs/examples" className="text-muted-foreground hover:text-foreground">
+          <Link href="/docs/examples/basic" className="text-muted-foreground hover:text-foreground">
             Examples
           </Link>
           <a

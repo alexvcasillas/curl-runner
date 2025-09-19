@@ -30,7 +30,7 @@ export const metadata: Metadata = {
     title: 'Request Object | curl-runner API Reference',
     description:
       'Complete reference for curl-runner request objects including all properties, methods, headers, body formats, and configuration options.',
-    url: 'https://curl-runner.com/docs/api-reference/request-object',
+    url: 'https://www.curl-runner.com/docs/api-reference/request-object',
     type: 'article',
   },
   twitter: {
@@ -39,7 +39,7 @@ export const metadata: Metadata = {
     description: 'Learn about curl-runner request object structure and all available properties.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/api-reference/request-object',
+    canonical: 'https://www.curl-runner.com/docs/api-reference/request-object',
   },
 };
 

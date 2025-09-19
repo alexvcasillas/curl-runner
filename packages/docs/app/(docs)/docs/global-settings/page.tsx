@@ -27,7 +27,7 @@ export const metadata: Metadata = {
     title: 'Global Settings | curl-runner Documentation',
     description:
       'Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files. Learn about execution modes, timeouts, retries, and output formatting.',
-    url: 'https://curl-runner.com/docs/global-settings',
+    url: 'https://www.curl-runner.com/docs/global-settings',
     type: 'article',
   },
   twitter: {
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
       'Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/global-settings',
+    canonical: 'https://www.curl-runner.com/docs/global-settings',
   },
 };
 
