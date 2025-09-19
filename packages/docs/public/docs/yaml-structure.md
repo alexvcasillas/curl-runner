@@ -19,10 +19,11 @@ keywords:
   - response
   - request
   - collection
+  - environment
 slug: "/docs/yaml-structure"
 toc: true
-date: "2025-09-05T12:26:34.120Z"
-lastModified: "2025-09-05T12:26:34.120Z"
+date: "2025-09-19T16:15:05.339Z"
+lastModified: "2025-09-19T16:15:05.339Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -42,8 +43,8 @@ schema:
   "@type": "TechArticle"
   headline: "YAML Structure"
   description: "Learn the structure and syntax of curl-runner YAML configuration files."
-  datePublished: "2025-09-05T12:26:34.120Z"
-  dateModified: "2025-09-05T12:26:34.120Z"
+  datePublished: "2025-09-19T16:15:05.339Z"
+  dateModified: "2025-09-19T16:15:05.339Z"
 ---
 
 # YAML Structure
@@ -260,3 +261,7 @@ request:
   timeout: 5000
   retries: 3
 ```
+
+## Related Topics
+
+> Make your YAML files dynamic with variables, environment values, and computed expressions

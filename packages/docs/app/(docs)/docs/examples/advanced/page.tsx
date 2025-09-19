@@ -23,7 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 export const metadata: Metadata = {
   title: 'Advanced Examples',
   description:
-    'Complex curl-runner configurations for advanced use cases. Learn about variable interpolation, authentication, validation, and real-world API testing scenarios.',
+    'Complex curl-runner configurations for advanced use cases. Learn variable interpolation, authentication, validation, and real-world API testing.',
   keywords: [
     'curl-runner advanced examples',
     'complex HTTP requests',

@@ -14,14 +14,15 @@ keywords:
   - sequential
   - retry
   - timeout
+  - headers
   - response
   - request
   - cli
   - environment
 slug: "/docs/cli-commands"
 toc: true
-date: "2025-09-05T12:26:34.117Z"
-lastModified: "2025-09-05T12:26:34.117Z"
+date: "2025-09-19T16:15:05.335Z"
+lastModified: "2025-09-19T16:15:05.335Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -41,8 +42,8 @@ schema:
   "@type": "TechArticle"
   headline: "CLI Commands"
   description: "Complete command-line interface reference for curl-runner with all available commands, options, and usage examples."
-  datePublished: "2025-09-05T12:26:34.117Z"
-  dateModified: "2025-09-05T12:26:34.117Z"
+  datePublished: "2025-09-19T16:15:05.335Z"
+  dateModified: "2025-09-19T16:15:05.335Z"
 ---
 
 # CLI Commands
@@ -135,11 +136,31 @@ Control how `curl-runner` displays results and saves output data.
 curl-runner tests/ --verbose
 curl-runner tests/ -v
 
-# Save results to JSON file
+# Quiet mode (suppress output)
+curl-runner tests/ --quiet
+curl-runner tests/ -q
+
+# Save results to file
 curl-runner tests/ --output results.json
+curl-runner tests/ -o results.json
+
+# Output format options
+curl-runner tests/ --output-format json     # JSON output
+curl-runner tests/ --output-format pretty   # Pretty output (default)
+curl-runner tests/ --output-format raw      # Raw response bodies only
+
+# Pretty level options (when using pretty format)
+curl-runner tests/ --pretty-level minimal   # Compact output (default)
+curl-runner tests/ --pretty-level standard  # Standard detail
+curl-runner tests/ --pretty-level detailed  # Full detail with metrics
+
+# Control what's shown
+curl-runner tests/ --show-headers           # Include headers
+curl-runner tests/ --show-metrics           # Include metrics
+curl-runner tests/ --show-body false        # Hide response body
 
 # Combine options
-curl-runner tests/ --verbose --output results.json --continue-on-error
+curl-runner tests/ --output-format pretty --pretty-level detailed --show-metrics
 ```
 
 ## Timeout & Retry Options
@@ -155,8 +176,14 @@ curl-runner tests/ --timeout 10000
 # Set maximum retries
 curl-runner tests/ --retries 3
 
-# Combine timeout and retries
-curl-runner tests/ --timeout 5000 --retries 2
+# Set retry delay (milliseconds)
+curl-runner tests/ --retry-delay 2000
+
+# Disable retries completely
+curl-runner tests/ --no-retry
+
+# Combine timeout and retry options
+curl-runner tests/ --timeout 5000 --retries 3 --retry-delay 1000
 ```
 
 ## Advanced Usage
@@ -186,3 +213,7 @@ curl-runner tests/ \\
 ## Exit Codes
 
 `curl-runner` returns specific exit codes to indicate execution results.
+
+## Configuration Alternatives
+
+> Configure curl-runner behavior using CURL_RUNNER_* environment variables

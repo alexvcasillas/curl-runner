@@ -19,7 +19,7 @@ import { Badge } from '@/components/ui/badge';
 export const metadata: Metadata = {
   title: 'Collection Examples',
   description:
-    'Organize related HTTP requests into collections with curl-runner. Learn about request collections, shared variables, and managing test suites.',
+    'Organize related HTTP requests into collections with curl-runner. Learn request collections, shared variables, and test suite management.',
   keywords: [
     'curl-runner collection examples',
     'request collections',

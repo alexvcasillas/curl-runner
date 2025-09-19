@@ -13,6 +13,7 @@ keywords:
   - variables
   - parallel
   - sequential
+  - validation
   - response
   - request
   - collection
@@ -20,8 +21,8 @@ keywords:
   - installation
 slug: "/docs/quick-start"
 toc: true
-date: "2025-09-05T12:26:34.118Z"
-lastModified: "2025-09-05T12:26:34.118Z"
+date: "2025-09-19T16:15:05.337Z"
+lastModified: "2025-09-19T16:15:05.337Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -41,8 +42,8 @@ schema:
   "@type": "TechArticle"
   headline: "Quick Start"
   description: "Get up and running with curl-runner in just a few minutes. Follow these simple steps to make your first HTTP request."
-  datePublished: "2025-09-05T12:26:34.118Z"
-  dateModified: "2025-09-05T12:26:34.118Z"
+  datePublished: "2025-09-19T16:15:05.337Z"
+  dateModified: "2025-09-19T16:15:05.337Z"
 ---
 
 # Quick Start
@@ -125,3 +126,5 @@ curl-runner parallel.yaml -v
 ## Tips & Tricks
 
 ## What's Next?
+
+## Continue Learning

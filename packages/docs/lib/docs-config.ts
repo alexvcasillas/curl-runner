@@ -41,6 +41,16 @@ export const docsConfig: SidebarConfig = {
           href: '/docs/quick-start',
           description: 'Get up and running in minutes',
         },
+        {
+          title: 'Use Cases',
+          href: '/docs/use-cases',
+          description: 'Real-world applications and examples',
+        },
+        {
+          title: 'Tutorials',
+          href: '/docs/tutorials',
+          description: 'Step-by-step guides and walkthroughs',
+        },
       ],
     },
     {
@@ -100,6 +110,11 @@ export const docsConfig: SidebarConfig = {
           title: 'Options',
           href: '/docs/cli-options',
           description: 'All available command-line options',
+        },
+        {
+          title: 'Environment Variables',
+          href: '/docs/environment-variables',
+          description: 'Configure behavior with CURL_RUNNER_* variables',
         },
       ],
     },

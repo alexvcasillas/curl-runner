@@ -1,9 +1,42 @@
 import { AlertCircle, CheckCircle, Flag, Info } from 'lucide-react';
+import type { Metadata } from 'next';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { H2, H3 } from '@/components/docs-heading';
 import { DocsPageHeader } from '@/components/docs-page-header';
 import { TableOfContents } from '@/components/toc';
 import { Badge } from '@/components/ui/badge';
+
+export const metadata: Metadata = {
+  title: 'CLI Options',
+  description:
+    'Complete reference for all curl-runner command-line options including execution control, output formatting, and debugging flags.',
+  keywords: [
+    'curl-runner CLI options',
+    'command-line flags',
+    'CLI arguments',
+    'curl-runner parameters',
+    'execution options',
+    'output formatting',
+    'debugging options',
+    'CLI reference',
+    'command-line interface',
+  ],
+  openGraph: {
+    title: 'CLI Options | curl-runner Documentation',
+    description:
+      'Complete reference for all curl-runner command-line options including execution control, output formatting, and debugging flags.',
+    url: 'https://www.curl-runner.com/docs/cli-options',
+    type: 'article',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'CLI Options | curl-runner Documentation',
+    description: 'Complete reference for all curl-runner command-line options and flags.',
+  },
+  alternates: {
+    canonical: 'https://www.curl-runner.com/docs/cli-options',
+  },
+};
 
 const optionGroups = [
   {

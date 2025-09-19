@@ -21,8 +21,8 @@ keywords:
   - environment
 slug: "/docs/request-object"
 toc: true
-date: "2025-09-05T12:26:34.126Z"
-lastModified: "2025-09-05T12:26:34.126Z"
+date: "2025-09-19T16:15:05.344Z"
+lastModified: "2025-09-19T16:15:05.344Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -42,8 +42,8 @@ schema:
   "@type": "TechArticle"
   headline: "Request Object API Reference"
   description: "Complete reference for the RequestConfig interface and all available options for configuring HTTP requests."
-  datePublished: "2025-09-05T12:26:34.126Z"
-  dateModified: "2025-09-05T12:26:34.126Z"
+  datePublished: "2025-09-19T16:15:05.344Z"
+  dateModified: "2025-09-19T16:15:05.344Z"
 ---
 
 # Request Object API Reference
@@ -501,17 +501,17 @@ requests:
     method: GET
     proxy: "http://proxy.company.com:8080"
     
-  # SOCKS proxy
+  # SOCKS proxy - Coming Soon
   - name: "SOCKS Proxy Request"
     url: "https://api.example.com/data"
     method: GET
-    proxy: "socks5://proxy.company.com:1080"
+    proxy: "socks5://proxy.company.com:1080"  # Coming Soon
     
-  # Proxy with authentication
+  # Proxy with authentication - Coming Soon  
   - name: "Authenticated Proxy Request"
     url: "https://api.example.com/data"
     method: GET
-    proxy: "http://username:password@proxy.company.com:8080"
+    proxy: "http://username:password@proxy.company.com:8080"  # Coming Soon
     
   # Disable SSL verification (insecure)
   - name: "Insecure SSL Request"

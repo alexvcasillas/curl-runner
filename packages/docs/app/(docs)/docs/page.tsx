@@ -4,6 +4,11 @@ import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { H2, H3 } from '@/components/docs-heading';
 import { DocsPageHeader } from '@/components/docs-page-header';
+import {
+  BreadcrumbSchema,
+  DocumentationArticleSchema,
+  SoftwareDocumentationSchema,
+} from '@/components/structured-data';
 import { TableOfContents } from '@/components/toc';
 import { Button } from '@/components/ui/button';
 import { basicUsageExample, quickInstallExample } from './snippets';
@@ -78,6 +83,19 @@ const features = [
 export default function DocsPage() {
   return (
     <main className="relative py-6 lg:gap-10 lg:py-8 xl:grid xl:grid-cols-[1fr_300px]">
+      <SoftwareDocumentationSchema />
+      <DocumentationArticleSchema
+        title="curl-runner Documentation"
+        description="A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance, parallel execution, and comprehensive validation."
+        url="https://www.curl-runner.com/docs"
+        section="Documentation"
+      />
+      <BreadcrumbSchema
+        items={[
+          { name: 'Home', url: 'https://www.curl-runner.com' },
+          { name: 'Documentation', url: 'https://www.curl-runner.com/docs' },
+        ]}
+      />
       <div className="mx-auto w-full min-w-0">
         <DocsPageHeader
           heading="curl-runner Documentation"
@@ -195,7 +213,7 @@ export default function DocsPage() {
           {/* Next Steps */}
           <section>
             <H2 id="next-steps">Next Steps</H2>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-green-500/10 p-2">
@@ -221,13 +239,13 @@ export default function DocsPage() {
                     <Book className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div className="flex-1">
-                    <h4 className="font-medium mb-2">YAML Structure</h4>
+                    <h4 className="font-medium mb-2">Use Cases</h4>
                     <p className="text-sm text-muted-foreground mb-4">
-                      Learn the YAML configuration format and options
+                      Discover real-world applications and examples
                     </p>
                     <Button asChild variant="ghost" className="p-0">
-                      <Link href="/docs/yaml-structure" className="flex items-center">
-                        Learn More <ArrowRight className="ml-1 h-4 w-4" />
+                      <Link href="/docs/use-cases" className="flex items-center">
+                        Explore <ArrowRight className="ml-1 h-4 w-4" />
                       </Link>
                     </Button>
                   </div>
@@ -240,13 +258,32 @@ export default function DocsPage() {
                     <Grid3x3 className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                   </div>
                   <div className="flex-1">
+                    <h4 className="font-medium mb-2">Tutorials</h4>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Step-by-step guides and walkthroughs
+                    </p>
+                    <Button asChild variant="ghost" className="p-0">
+                      <Link href="/docs/tutorials" className="flex items-center">
+                        Learn <ArrowRight className="ml-1 h-4 w-4" />
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-card p-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-full bg-orange-500/10 p-2">
+                    <FileText className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <div className="flex-1">
                     <h4 className="font-medium mb-2">Examples</h4>
                     <p className="text-sm text-muted-foreground mb-4">
-                      Browse real-world examples and use cases
+                      Browse practical code examples
                     </p>
                     <Button asChild variant="ghost" className="p-0">
                       <Link href="/docs/examples/basic" className="flex items-center">
-                        Explore <ArrowRight className="ml-1 h-4 w-4" />
+                        View <ArrowRight className="ml-1 h-4 w-4" />
                       </Link>
                     </Button>
                   </div>

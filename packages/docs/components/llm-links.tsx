@@ -22,7 +22,7 @@ export function LLMLinks({ className = '' }: LLMLinksProps) {
   const pathname = usePathname();
 
   // Convert pathname to full URL for the markdown file
-  const fullMarkdownUrl = `https://curl-runner.com${pathname === '/docs' ? '/docs/index.md' : `${pathname}.md`}`;
+  const fullMarkdownUrl = `https://www.curl-runner.com${pathname === '/docs' ? '/docs/index.md' : `${pathname}.md`}`;
 
   // Create the encoded query for AI services
   const aiQuery = encodeURIComponent(`Read ${fullMarkdownUrl}, I want to ask questions about it.`);
