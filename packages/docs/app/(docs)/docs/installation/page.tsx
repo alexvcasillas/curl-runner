@@ -1,4 +1,15 @@
-import { AlertCircle, CheckCircle, HardDrive, Laptop, Monitor, Zap, Rocket, FileText, BookOpen, Terminal } from 'lucide-react';
+import {
+  AlertCircle,
+  BookOpen,
+  CheckCircle,
+  FileText,
+  HardDrive,
+  Laptop,
+  Monitor,
+  Rocket,
+  Terminal,
+  Zap,
+} from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
@@ -252,7 +263,10 @@ export PATH="$PATH:~/.bun/bin"`}
                     <p className="text-sm text-muted-foreground mb-3">
                       Create and run your first HTTP request in minutes
                     </p>
-                    <Link href="/docs/quick-start" className="text-sm font-medium text-primary hover:underline">
+                    <Link
+                      href="/docs/quick-start"
+                      className="text-sm font-medium text-primary hover:underline"
+                    >
                       Get started →
                     </Link>
                   </div>
@@ -273,7 +287,10 @@ export PATH="$PATH:~/.bun/bin"`}
                     <p className="text-sm text-muted-foreground mb-3">
                       Learn the configuration file format and structure
                     </p>
-                    <Link href="/docs/yaml-structure" className="text-sm font-medium text-primary hover:underline">
+                    <Link
+                      href="/docs/yaml-structure"
+                      className="text-sm font-medium text-primary hover:underline"
+                    >
                       Learn YAML →
                     </Link>
                   </div>
@@ -294,7 +311,10 @@ export PATH="$PATH:~/.bun/bin"`}
                     <p className="text-sm text-muted-foreground mb-3">
                       Copy-paste examples for common HTTP operations
                     </p>
-                    <Link href="/docs/examples/basic" className="text-sm font-medium text-primary hover:underline">
+                    <Link
+                      href="/docs/examples/basic"
+                      className="text-sm font-medium text-primary hover:underline"
+                    >
                       View examples →
                     </Link>
                   </div>
@@ -315,7 +335,10 @@ export PATH="$PATH:~/.bun/bin"`}
                     <p className="text-sm text-muted-foreground mb-3">
                       Complete command-line options and usage guide
                     </p>
-                    <Link href="/docs/cli-commands" className="text-sm font-medium text-primary hover:underline">
+                    <Link
+                      href="/docs/cli-commands"
+                      className="text-sm font-medium text-primary hover:underline"
+                    >
                       CLI reference →
                     </Link>
                   </div>

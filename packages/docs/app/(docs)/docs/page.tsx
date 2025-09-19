@@ -272,9 +272,13 @@ export default function DocsPage() {
                   </Link>
                 </h3>
                 <p className="text-sm text-muted-foreground mb-3">
-                  Create dynamic requests with variables, environment values, and computed expressions
+                  Create dynamic requests with variables, environment values, and computed
+                  expressions
                 </p>
-                <Link href="/docs/variables" className="text-sm font-medium text-primary hover:underline">
+                <Link
+                  href="/docs/variables"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
                   Learn about variables →
                 </Link>
               </div>
@@ -288,7 +292,10 @@ export default function DocsPage() {
                 <p className="text-sm text-muted-foreground mb-3">
                   Configure execution behavior, timeouts, and default values for all requests
                 </p>
-                <Link href="/docs/global-settings" className="text-sm font-medium text-primary hover:underline">
+                <Link
+                  href="/docs/global-settings"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
                   Configure globally →
                 </Link>
               </div>
@@ -302,7 +309,10 @@ export default function DocsPage() {
                 <p className="text-sm text-muted-foreground mb-3">
                   Validate status codes, headers, and response body content automatically
                 </p>
-                <Link href="/docs/features/response-validation" className="text-sm font-medium text-primary hover:underline">
+                <Link
+                  href="/docs/features/response-validation"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
                   Validate responses →
                 </Link>
               </div>
@@ -316,7 +326,10 @@ export default function DocsPage() {
                 <p className="text-sm text-muted-foreground mb-3">
                   Execute multiple requests concurrently for faster performance and load testing
                 </p>
-                <Link href="/docs/features/parallel-execution" className="text-sm font-medium text-primary hover:underline">
+                <Link
+                  href="/docs/features/parallel-execution"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
                   Run in parallel →
                 </Link>
               </div>

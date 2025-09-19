@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse } from 'next/server';
 
 export async function GET() {
   const rss = `<?xml version="1.0" encoding="UTF-8"?>
@@ -46,13 +46,13 @@ export async function GET() {
     </item>
 
   </channel>
-</rss>`
+</rss>`;
 
   return new NextResponse(rss, {
     status: 200,
     headers: {
       'Content-Type': 'application/rss+xml; charset=utf-8',
-      'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400'
-    }
-  })
+      'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
+    },
+  });
 }

@@ -1,4 +1,15 @@
-import { ArrowRight, Book, CheckCircle, FileText, Grid3x3, Play, Shield, FolderOpen, Terminal, Zap } from 'lucide-react';
+import {
+  ArrowRight,
+  Book,
+  CheckCircle,
+  FileText,
+  FolderOpen,
+  Grid3x3,
+  Play,
+  Shield,
+  Terminal,
+  Zap,
+} from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
@@ -339,7 +350,10 @@ export default function QuickStartPage() {
                   </div>
                   <div className="flex-1">
                     <h3 className="font-medium mb-2">
-                      <Link href="/docs/features/response-validation" className="hover:text-primary">
+                      <Link
+                        href="/docs/features/response-validation"
+                        className="hover:text-primary"
+                      >
                         Response Validation
                       </Link>
                     </h3>
@@ -362,7 +376,8 @@ export default function QuickStartPage() {
                       </Link>
                     </h3>
                     <p className="text-sm text-muted-foreground mb-3">
-                      Organize multiple related requests into collections for better workflow management
+                      Organize multiple related requests into collections for better workflow
+                      management
                     </p>
                   </div>
                 </div>
@@ -398,7 +413,8 @@ export default function QuickStartPage() {
                       </Link>
                     </h3>
                     <p className="text-sm text-muted-foreground mb-3">
-                      Execute multiple requests concurrently for performance testing and faster workflows
+                      Execute multiple requests concurrently for performance testing and faster
+                      workflows
                     </p>
                   </div>
                 </div>

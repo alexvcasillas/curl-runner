@@ -392,9 +392,13 @@ export default function YamlStructurePage() {
                   </Link>
                 </h3>
                 <p className="text-sm text-muted-foreground mb-3">
-                  Make your YAML files dynamic with variables, environment values, and computed expressions
+                  Make your YAML files dynamic with variables, environment values, and computed
+                  expressions
                 </p>
-                <Link href="/docs/variables" className="text-sm font-medium text-primary hover:underline">
+                <Link
+                  href="/docs/variables"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
                   Learn about variables →
                 </Link>
               </div>
@@ -406,9 +410,13 @@ export default function YamlStructurePage() {
                   </Link>
                 </h3>
                 <p className="text-sm text-muted-foreground mb-3">
-                  Configure execution behavior, default headers, and shared settings for all requests
+                  Configure execution behavior, default headers, and shared settings for all
+                  requests
                 </p>
-                <Link href="/docs/global-settings" className="text-sm font-medium text-primary hover:underline">
+                <Link
+                  href="/docs/global-settings"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
                   Global configuration →
                 </Link>
               </div>
@@ -422,7 +430,10 @@ export default function YamlStructurePage() {
                 <p className="text-sm text-muted-foreground mb-3">
                   Complete guide to validating API responses with detailed rules and patterns
                 </p>
-                <Link href="/docs/features/response-validation" className="text-sm font-medium text-primary hover:underline">
+                <Link
+                  href="/docs/features/response-validation"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
                   Validation guide →
                 </Link>
               </div>
@@ -436,7 +447,10 @@ export default function YamlStructurePage() {
                 <p className="text-sm text-muted-foreground mb-3">
                   Complete reference for all available request properties and configuration options
                 </p>
-                <Link href="/docs/api-reference/request-object" className="text-sm font-medium text-primary hover:underline">
+                <Link
+                  href="/docs/api-reference/request-object"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
                   API reference →
                 </Link>
               </div>
