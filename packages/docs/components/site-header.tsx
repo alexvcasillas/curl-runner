@@ -21,7 +21,7 @@ export function SiteHeader() {
   return (
     <>
       <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-14 max-w-screen-2xl items-center px-4 sm:px-6 lg:px-8">
+        <div className="w-full flex h-14 items-center px-4 sm:px-6 lg:px-8">
           {/* Mobile menu */}
           <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
             <SheetTrigger asChild>
@@ -67,32 +67,8 @@ export function SiteHeader() {
               })}
           </nav>
 
-          <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">
-            {/* <div className="w-full flex-1 md:w-auto md:flex-none">
-              <Button
-                variant="outline"
-                className="relative h-8 w-full justify-start rounded-md bg-background text-sm font-normal text-muted-foreground shadow-none sm:pr-12 md:w-40 lg:w-64"
-                onClick={() => setSearchOpen(true)}
-              >
-                <Search className="mr-2 h-4 w-4" />
-                <span className="hidden lg:inline-flex">Search documentation...</span>
-                <span className="inline-flex lg:hidden">Search...</span>
-                <kbd className="pointer-events-none absolute right-1.5 top-1.5 hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
-                  <span className="text-xs">⌘</span>K
-                </kbd>
-              </Button>
-            </div> */}
+          <div className="flex flex-1 items-center justify-end space-x-2">
             <nav className="flex items-center gap-1">
-              {/* <Button variant="ghost" size="icon" asChild className="h-8 w-8">
-                <a
-                  href="https://github.com/alexvcasillas/curl-runner"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <Github className="h-4 w-4" />
-                  <span className="sr-only">GitHub</span>
-                </a>
-              </Button> */}
               <GitHubStarsButton username="alexvcasillas" repo="curl-runner" />
               <ThemeToggle />
             </nav>
