@@ -605,6 +605,46 @@ export default function GlobalSettingsPage() {
               </Card>
             </div>
           </section>
+
+          {/* Alternative Configuration Methods */}
+          <section className="mb-16">
+            <div className="mb-8">
+              <H2 id="alternative-configuration">Alternative Configuration</H2>
+              <p className="text-muted-foreground">
+                You can also configure these settings using other methods
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-lg border bg-card p-6">
+                <h3 className="font-medium mb-2">
+                  <Link href="/docs/environment-variables" className="hover:text-primary">
+                    Environment Variables
+                  </Link>
+                </h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Override global settings using CURL_RUNNER_* environment variables without modifying YAML files
+                </p>
+                <Link href="/docs/environment-variables" className="text-sm font-medium text-primary hover:underline">
+                  Environment config →
+                </Link>
+              </div>
+
+              <div className="rounded-lg border bg-card p-6">
+                <h3 className="font-medium mb-2">
+                  <Link href="/docs/cli-commands" className="hover:text-primary">
+                    CLI Options
+                  </Link>
+                </h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Override settings temporarily using command-line flags and options
+                </p>
+                <Link href="/docs/cli-commands" className="text-sm font-medium text-primary hover:underline">
+                  CLI reference →
+                </Link>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
 

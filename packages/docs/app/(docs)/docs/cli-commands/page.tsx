@@ -594,6 +594,46 @@ export default function CLICommandsPage() {
               </div>
             </div>
           </section>
+
+          {/* Configuration Alternatives */}
+          <section className="mb-16">
+            <div className="mb-8">
+              <H2 id="configuration-alternatives">Configuration Alternatives</H2>
+              <p className="text-muted-foreground">
+                Many CLI options can also be configured using files or environment variables
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-lg border bg-card p-6">
+                <h3 className="font-medium mb-2">
+                  <Link href="/docs/environment-variables" className="hover:text-primary">
+                    Environment Variables
+                  </Link>
+                </h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Configure curl-runner behavior using CURL_RUNNER_* environment variables
+                </p>
+                <Link href="/docs/environment-variables" className="text-sm font-medium text-primary hover:underline">
+                  Environment setup →
+                </Link>
+              </div>
+
+              <div className="rounded-lg border bg-card p-6">
+                <h3 className="font-medium mb-2">
+                  <Link href="/docs/global-settings" className="hover:text-primary">
+                    Global Settings
+                  </Link>
+                </h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Set default behavior in YAML files using global configuration
+                </p>
+                <Link href="/docs/global-settings" className="text-sm font-medium text-primary hover:underline">
+                  Global config →
+                </Link>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
 

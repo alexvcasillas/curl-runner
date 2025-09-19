@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator';
 export const metadata: Metadata = {
   title: 'Output Formats',
   description:
-    'Control how curl-runner displays and saves request results with different output formats including JSON, pretty-printed, and raw formats.',
+    'Control how curl-runner displays and saves request results with different output formats including JSON, pretty-printed, and raw.',
   keywords: [
     'curl-runner output formats',
     'JSON output format',

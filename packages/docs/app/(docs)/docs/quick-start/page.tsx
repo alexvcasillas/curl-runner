@@ -14,6 +14,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { DocsPageHeader } from '@/components/docs-page-header';
+import { DocumentationArticleSchema, BreadcrumbSchema } from '@/components/structured-data';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
@@ -132,6 +133,19 @@ Summary: 1 request completed successfully`,
 export default function QuickStartPage() {
   return (
     <main className="relative py-6 lg:gap-10 lg:py-8 xl:grid xl:grid-cols-[1fr_300px]">
+      <DocumentationArticleSchema
+        title="curl-runner Quick Start Guide"
+        description="Get started with curl-runner in minutes. Learn how to create your first YAML configuration, run HTTP requests, and validate responses with this step-by-step guide."
+        url="https://www.curl-runner.com/docs/quick-start"
+        section="Quick Start"
+      />
+      <BreadcrumbSchema
+        items={[
+          { name: 'Home', url: 'https://www.curl-runner.com' },
+          { name: 'Documentation', url: 'https://www.curl-runner.com/docs' },
+          { name: 'Quick Start', url: 'https://www.curl-runner.com/docs/quick-start' },
+        ]}
+      />
       <div className="mx-auto w-full min-w-0">
         <DocsPageHeader
           heading="Quick Start"

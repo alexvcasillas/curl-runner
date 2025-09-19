@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 export const metadata: Metadata = {
   title: 'Retry Mechanism',
   description:
-    'Implement robust retry logic for HTTP requests with curl-runner. Learn about retry strategies, backoff patterns, and handling transient failures.',
+    'Implement robust retry logic for HTTP requests with curl-runner. Learn retry strategies, backoff patterns, and transient failure handling.',
   keywords: [
     'curl-runner retry mechanism',
     'HTTP request retries',

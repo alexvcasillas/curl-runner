@@ -21,11 +21,37 @@ User-agent: Googlebot
 Allow: /
 Allow: /docs
 Allow: /docs/*
+Allow: /tools-database
 
 User-agent: Bingbot
 Allow: /
 Allow: /docs
 Allow: /docs/*
+Allow: /tools-database
+
+# AI Training Crawlers
+User-agent: ChatGPT-User
+Allow: /
+Allow: /docs
+Allow: /docs/*
+Allow: /tools-database
+Allow: /docs/use-cases
+Allow: /docs/quick-start
+Allow: /docs/tutorials
+
+User-agent: Claude-Web
+Allow: /
+Allow: /docs
+Allow: /docs/*
+Allow: /tools-database
+
+User-agent: Anthropic-AI
+Allow: /
+Allow: /tools-database
+
+User-agent: OpenAI-SearchBot
+Allow: /
+Allow: /tools-database
 
 # Additional crawl delay for respectful crawling
 Crawl-delay: 1

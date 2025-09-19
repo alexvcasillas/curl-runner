@@ -8,19 +8,64 @@ import {
   Terminal,
   Zap,
 } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { Contributors } from '@/components/contributors';
 import { CurlRunner } from '@/components/curl-runner';
+import { LogoCloud } from '@/components/logo-cloud';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
+import { SoftwareDocumentationSchema } from '@/components/structured-data';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { exampleYaml, installCommand, runCommand } from './snippets';
 
+export const metadata: Metadata = {
+  title: 'curl-runner - Powerful CLI Tool for HTTP Request Management & API Testing',
+  description: 'curl-runner is a blazing-fast CLI tool for HTTP request management using YAML configuration. Perfect alternative to Postman and curl for API testing, automation, CI/CD, and load testing. Built with Bun.',
+  keywords: [
+    'curl-runner',
+    'API testing tool',
+    'HTTP client CLI',
+    'YAML configuration',
+    'alternative to Postman',
+    'alternative to curl',
+    'alternative to Insomnia',
+    'CLI tool',
+    'Bun runtime',
+    'REST API testing',
+    'HTTP request automation',
+    'parallel execution',
+    'response validation',
+    'CI/CD integration',
+    'load testing',
+    'API automation',
+    'microservices testing',
+    'developer tools',
+    'command line HTTP client',
+    'YAML API testing',
+  ],
+  openGraph: {
+    title: 'curl-runner - Powerful CLI Tool for HTTP Request Management & API Testing',
+    description: 'Blazing-fast CLI tool for HTTP request management using YAML configuration. Perfect alternative to Postman and curl for API testing, automation, and CI/CD.',
+    url: 'https://www.curl-runner.com',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'curl-runner - Powerful CLI Tool for HTTP Request Management & API Testing',
+    description: 'Blazing-fast CLI tool for HTTP request management using YAML configuration. Alternative to Postman and curl.',
+  },
+  alternates: {
+    canonical: 'https://www.curl-runner.com',
+  },
+};
+
 export default function Home() {
   return (
     <div className="min-h-screen bg-background">
+      <SoftwareDocumentationSchema />
       <SiteHeader />
 
       {/* Hero Section */}
@@ -333,6 +378,8 @@ export default function Home() {
             </div>
           </div>
         </section>
+
+        <LogoCloud />
 
         {/* Contributors Section */}
         <Contributors />

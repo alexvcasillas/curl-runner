@@ -25,14 +25,14 @@ export const metadata: Metadata = {
     'Complete documentation for curl-runner - A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance.',
   keywords: [
     'curl-runner',
-    'API testing',
-    'HTTP requests',
+    'API testing tool',
+    'HTTP client CLI',
     'YAML configuration',
     'CLI tool',
-    'Bun',
-    'REST API',
+    'Bun runtime',
+    'REST API testing',
     'HTTP client',
-    'automation',
+    'API automation',
     'testing framework',
     'parallel execution',
     'response validation',
@@ -40,6 +40,14 @@ export const metadata: Metadata = {
     'CI/CD integration',
     'API monitoring',
     'load testing',
+    'alternative to Postman',
+    'alternative to curl',
+    'alternative to Insomnia',
+    'microservices testing',
+    'developer tools',
+    'command line HTTP client',
+    'YAML API testing',
+    'HTTP request automation',
   ],
   authors: [{ name: 'curl-runner Team', url: 'https://github.com/alexvcasillas/curl-runner' }],
   creator: 'curl-runner Team',
@@ -93,7 +101,10 @@ export const metadata: Metadata = {
     site: '@curl_runner',
   },
   verification: {
-    google: 'google-site-verification-code',
+    google: process.env.GOOGLE_SITE_VERIFICATION || 'google-site-verification-placeholder',
+    other: {
+      'msvalidate.01': process.env.BING_SITE_VERIFICATION || 'bing-verification-placeholder',
+    },
   },
   category: 'technology',
   icons: {
@@ -161,6 +172,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link rel="dns-prefetch" href="https://vercel-insights.com" />
+        <link rel="dns-prefetch" href="https://vitals.vercel-insights.com" />
+        <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000" />
+        <meta name="color-scheme" content="light dark" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
