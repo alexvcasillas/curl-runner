@@ -14,7 +14,7 @@
     },
     "packages/cli": {
       "name": "@curl-runner/cli",
-      "version": "1.0.0",
+      "version": "1.0.3",
       "bin": {
         "curl-runner": "./src/cli.ts",
       },
@@ -75,6 +75,10 @@
         "tw-animate-css": "^1.3.7",
         "typescript": "^5",
       },
+    },
+    "packages/redirect": {
+      "name": "curl-runner",
+      "version": "1.0.0",
     },
   },
   "packages": {
@@ -515,6 +519,8 @@
     "cross-spawn": ["cross-spawn@7.0.6", "", { "dependencies": { "path-key": "^3.1.0", "shebang-command": "^2.0.0", "which": "^2.0.1" } }, "sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA=="],
 
     "csstype": ["csstype@3.1.3", "", {}, "sha512-M1uQkMl8rQK/szD0LNhtqxIPLpimGm8sOBwU7lLnCpSbTyY3yeU1Vc7l4KT5zT4s/yOxHH5O7tIuuLOCnLADRw=="],
+
+    "curl-runner": ["curl-runner@workspace:packages/redirect"],
 
     "dataloader": ["dataloader@1.4.0", "", {}, "sha512-68s5jYdlvasItOJnCuI2Q9s4q98g0pCyL3HrcKJu8KNugUl8ahgmZYg38ysLTgQjjXX3H8CJLkAvWrclWfcalw=="],
 
