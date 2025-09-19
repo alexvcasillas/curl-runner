@@ -14,15 +14,19 @@ keywords:
   - parallel
   - sequential
   - validation
+  - timeout
+  - headers
   - response
   - request
   - cli
   - installation
   - bun
+  - npm
+  - environment
 slug: "/docs"
 toc: true
-date: "2025-09-05T12:26:34.114Z"
-lastModified: "2025-09-05T12:26:34.114Z"
+date: "2025-09-19T16:15:05.333Z"
+lastModified: "2025-09-19T16:15:05.333Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -42,8 +46,8 @@ schema:
   "@type": "TechArticle"
   headline: "curl-runner Documentation"
   description: "A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance."
-  datePublished: "2025-09-05T12:26:34.114Z"
-  dateModified: "2025-09-05T12:26:34.114Z"
+  datePublished: "2025-09-19T16:15:05.333Z"
+  dateModified: "2025-09-19T16:15:05.333Z"
 ---
 
 # curl-runner Documentation
@@ -70,13 +74,39 @@ Global settings, variable interpolation, response validation, and customizable o
 
 
 
+## What is curl-runner?
+
+`curl-runner` is a modern CLI tool that transforms how you manage and execute HTTP requests. Instead of writing complex curl commands or maintaining scattered shell scripts, you define your API requests in clean, readable YAML files with powerful features like parallel execution, response validation, and variable templating.
+
+Built with Bun for exceptional performance, curl-runner is perfect for API testing, automation workflows, CI/CD pipelines, and development environments where speed and reliability matter.
+
 ## Quick Start
 
 Get up and running with `curl-runner` in just a few minutes.
 
-### 1. Create a YAML file
+### Prerequisites
 
-**simple.yaml**
+**For npm/yarn/pnpm installation:** Bun runtime must be installed on your system.
+
+### 1. Install curl-runner
+
+```bash
+# Install curl-runner globally
+npm install -g @curl-runner/cli
+
+# Or using yarn
+yarn global add @curl-runner/cli
+
+# Or using pnpm
+pnpm install -g @curl-runner/cli
+
+# Or using bun
+bun install -g @curl-runner/cli
+```
+
+### 2. Create a YAML file
+
+**api-test.yaml**
 
 ```yaml
 # Basic API test configuration
@@ -103,7 +133,27 @@ collection:
         status: 201
 ```
 
-**simple.yaml**
+### 3. Run your requests
+
+```bash
+curl-runner api-test.yaml
+```
+
+```bash
+# Install curl-runner globally
+npm install -g @curl-runner/cli
+
+# Or using yarn
+yarn global add @curl-runner/cli
+
+# Or using pnpm
+pnpm install -g @curl-runner/cli
+
+# Or using bun
+bun install -g @curl-runner/cli
+```
+
+**api-test.yaml**
 
 ```yaml
 # Basic API test configuration
@@ -131,14 +181,7 @@ collection:
 ```
 
 ```bash
-# Install curl-runner globally
-npm install -g curl-runner
-
-# Or using yarn
-yarn global add curl-runner
-
-# Or using pnpm
-pnpm install -g curl-runner
+curl-runner api-test.yaml
 ```
 
 ## Next Steps
@@ -160,3 +203,7 @@ Learn the YAML configuration format and options
 Browse real-world examples and use cases
 
 [Explore](/docs/examples/basic)
+
+## Key Concepts
+
+> Create dynamic requests with variables, environment values, and computed expressions

@@ -11,6 +11,7 @@ keywords:
   - formats
   - yaml
   - variables
+  - sequential
   - headers
   - response
   - request
@@ -18,8 +19,8 @@ keywords:
   - environment
 slug: "/docs/output-formats"
 toc: true
-date: "2025-09-05T12:26:34.124Z"
-lastModified: "2025-09-05T12:26:34.124Z"
+date: "2025-09-19T16:15:05.342Z"
+lastModified: "2025-09-19T16:15:05.342Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -39,8 +40,8 @@ schema:
   "@type": "TechArticle"
   headline: "Output Formats"
   description: "Control how curl-runner displays and saves request results."
-  datePublished: "2025-09-05T12:26:34.124Z"
-  dateModified: "2025-09-05T12:26:34.124Z"
+  datePublished: "2025-09-19T16:15:05.342Z"
+  dateModified: "2025-09-19T16:15:05.342Z"
 ---
 
 # Output Formats
@@ -62,11 +63,12 @@ Configure output settings in the global section of your YAML file.
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `format` | string | json | "json", "pretty", or "raw" |
+| `format` | string | pretty | "json", "pretty", or "raw" |
 | `verbose` | boolean | false | Show detailed output |
 | `showHeaders` | boolean | false | Include response headers |
 | `showBody` | boolean | true | Include response body |
 | `showMetrics` | boolean | false | Include performance metrics |
+| `prettyLevel` | string | minimal | "minimal", "standard", or "detailed" (for pretty format) |
 | `saveToFile` | string | - | File path to save results |
 
 **output-config.yaml**
@@ -75,10 +77,11 @@ Configure output settings in the global section of your YAML file.
 # Different output format configurations
 global:
   output:
-    format: json        # JSON output (default)
+    format: pretty      # Output format (json, pretty, raw)
+    prettyLevel: standard  # Pretty format detail level (minimal, standard, detailed)
     verbose: true       # Show detailed information
     showHeaders: true   # Include response headers
-    showBody: true      # Include response body
+    showBody: true      # Include response body (default: true)
     showMetrics: true   # Include performance metrics
 
 requests:
@@ -112,18 +115,16 @@ request:
 
 ### Pretty Format
 
-Human-readable format with colors and formatting for terminal viewing.
+Human-readable format with colors and tree-structured output for terminal viewing. Three detail levels available: minimal, standard, and detailed.
 
-**pretty-config.yaml**
+**pretty-minimal.yaml**
 
 ```yaml
-# Pretty format configuration  
+# Pretty format - Minimal level
 global:
   output:
     format: pretty
-    verbose: true
-    showHeaders: true
-    showMetrics: true
+    prettyLevel: minimal  # Compact output
 
 request:
   name: Get User Profile
@@ -220,16 +221,14 @@ request:
 }
 ```
 
-**pretty-config.yaml**
+**pretty-minimal.yaml**
 
 ```yaml
-# Pretty format configuration  
+# Pretty format - Minimal level
 global:
   output:
     format: pretty
-    verbose: true
-    showHeaders: true
-    showMetrics: true
+    prettyLevel: minimal  # Compact output
 
 request:
   name: Get User Profile
@@ -240,31 +239,106 @@ request:
 **terminal**
 
 ```text
-✅ Get User Profile
-   URL: https://api.example.com/users/123
-   Method: GET
-   Status: 200 OK
-   Duration: 125ms
-   
-   Headers:
-   ├─ content-type: application/json
-   ├─ x-api-version: v1
-   └─ content-length: 256
-   
-   Response Body:
-   {
-     "id": 123,
-     "name": "John Doe",
-     "email": "john@example.com",
-     "active": true
-   }
-   
-   Metrics:
-   ├─ Request Duration: 125ms
-   ├─ Response Size: 256 bytes
-   └─ Total Time: 125ms
+ℹ Found 1 YAML file(s)
+ℹ Processing: api-test.yaml
+
+✓ Get User Profile [api-test]
+   ├─ GET: https://api.example.com/users/123
+   ├─ ✓ Status: 200
+   └─ Duration: 125ms | 256.00 B
 
 Summary: 1 request completed successfully
+```
+
+**pretty-standard.yaml**
+
+```yaml
+# Pretty format - Standard level  
+global:
+  output:
+    format: pretty
+    prettyLevel: standard  # Balanced detail
+    showBody: true
+
+request:
+  name: Get User Profile
+  url: https://api.example.com/users/123
+  method: GET
+```
+
+**terminal**
+
+```text
+ℹ Found 1 YAML file(s)
+ℹ Processing: api-test.yaml
+
+Executing 1 request(s) in sequential mode
+
+✓ Get User Profile
+   ├─ URL: https://api.example.com/users/123
+   ├─ Method: GET
+   ├─ Status: 200
+   ├─ Duration: 125ms
+   └─ Response Body:
+      {
+        "id": 123,
+        "name": "John Doe",
+        "email": "john@example.com",
+        "active": true
+      }
+
+
+Summary: 1 request completed successfully (125ms)
+```
+
+**pretty-detailed.yaml**
+
+```yaml
+# Pretty format - Detailed level
+global:
+  output:
+    format: pretty
+    prettyLevel: detailed  # Full information
+    # Headers and metrics are shown automatically
+
+request:
+  name: Get User Profile
+  url: https://api.example.com/users/123
+  method: GET
+```
+
+**terminal**
+
+```text
+ℹ Found 1 YAML file(s)
+ℹ Processing: api-test.yaml
+
+Executing 1 request(s) in sequential mode
+
+  Command:
+    curl -X GET -w "\n__CURL_METRICS_START__%{json}__CURL_METRICS_END__" -L -s -S "https://api.example.com/users/123"
+✓ Get User Profile
+   ├─ URL: https://api.example.com/users/123
+   ├─ Method: GET
+   ├─ Status: 200
+   ├─ Duration: 125ms
+   ├─ Response Body:
+   │  {
+   │    "id": 123,
+   │    "name": "John Doe",
+   │    "email": "john@example.com",
+   │    "active": true
+   │  }
+   └─ Metrics:
+      ├─ Request Duration: 125ms
+      ├─ Response Size: 256.00 B
+      ├─ DNS Lookup: 5ms
+      ├─ TCP Connection: 10ms
+      ├─ TLS Handshake: 15ms
+      └─ Time to First Byte: 95ms
+
+
+Summary: 1 request completed successfully (125ms)
 ```
 
 **raw-config.yaml**
@@ -324,6 +398,7 @@ Control output format from the command line.
 | Flag | Description |
 | --- | --- |
 | `--output-format` | Set output format (json/pretty/raw) |
+| `--pretty-level` | Set pretty format detail level (minimal/standard/detailed) |
 | `--output, -o` | Save results to file |
 | `--verbose, -v` | Enable verbose output |
 | `--quiet, -q` | Suppress non-error output |
@@ -338,8 +413,10 @@ Control output format from the command line.
 # JSON format (machine-readable)
 curl-runner tests.yaml --output-format json
 
-# Pretty format (human-readable)
-curl-runner tests.yaml --output-format pretty
+# Pretty format with different detail levels
+curl-runner tests.yaml --output-format pretty --pretty-level minimal
+curl-runner tests.yaml --output-format pretty --pretty-level standard
+curl-runner tests.yaml --output-format pretty --pretty-level detailed
 
 # Raw format (response body only)
 curl-runner tests.yaml --output-format raw

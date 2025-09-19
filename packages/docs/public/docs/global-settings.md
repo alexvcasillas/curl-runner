@@ -19,11 +19,12 @@ keywords:
   - headers
   - response
   - request
+  - cli
   - environment
 slug: "/docs/global-settings"
 toc: true
-date: "2025-09-05T12:26:34.116Z"
-lastModified: "2025-09-05T12:26:34.116Z"
+date: "2025-09-19T16:15:05.335Z"
+lastModified: "2025-09-19T16:15:05.335Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -43,8 +44,8 @@ schema:
   "@type": "TechArticle"
   headline: "Global Settings"
   description: "Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files."
-  datePublished: "2025-09-05T12:26:34.116Z"
-  dateModified: "2025-09-05T12:26:34.116Z"
+  datePublished: "2025-09-19T16:15:05.335Z"
+  dateModified: "2025-09-19T16:15:05.335Z"
 ---
 
 # Global Settings
@@ -375,3 +376,7 @@ requests:
 • Use environment variables for secrets
 • Group related variables logically
 • Document complex expressions
+
+## Alternative Configuration
+
+> Override global settings using CURL_RUNNER_* environment variables without modifying YAML files

@@ -18,8 +18,8 @@ keywords:
   - collection
 slug: "/docs/response-object"
 toc: true
-date: "2025-09-05T12:26:34.128Z"
-lastModified: "2025-09-05T12:26:34.128Z"
+date: "2025-09-19T16:15:05.346Z"
+lastModified: "2025-09-19T16:15:05.346Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -39,8 +39,8 @@ schema:
   "@type": "TechArticle"
   headline: "Response Object API Reference"
   description: "Complete reference for response objects returned by curl-runner, including ExecutionResult and ExecutionSummary interfaces."
-  datePublished: "2025-09-05T12:26:34.128Z"
-  dateModified: "2025-09-05T12:26:34.128Z"
+  datePublished: "2025-09-19T16:15:05.346Z"
+  dateModified: "2025-09-19T16:15:05.346Z"
 ---
 
 # Response Object API Reference
@@ -501,9 +501,9 @@ request:
       email: ".*@.*\\..*"    # Validate email format
       created_at: "^\\d{4}-\\d{2}-\\d{2}"  # ISO date format
       
-# Chain requests using response data
+# Chain requests using response data - Coming Soon
 collection:
-  name: "Request Chain Example"
+  name: "Request Chain Example"  # Coming Soon
   requests:
     # First request - get user ID
     - name: "Login User"
@@ -518,11 +518,11 @@ collection:
           token: "*"        # Any token value
           user_id: "*"      # Any user ID
           
-    # Second request - use data from first
-    - name: "Get User Data"
-      url: "https://api.example.com/users/\${USER_ID}"  # From previous response
+    # Second request - use data from first - Coming Soon
+    - name: "Get User Data"  # Coming Soon
+      url: "https://api.example.com/users/\${USER_ID}"  # Coming Soon - from previous response
       headers:
-        Authorization: "Bearer \${TOKEN}"              # From previous response
+        Authorization: "Bearer \${TOKEN}"              # Coming Soon - from previous response
       expect:
         status: 200
 ```

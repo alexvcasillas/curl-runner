@@ -8,14 +8,16 @@ keywords:
   - api
   - testing
   - installation
+  - yaml
+  - request
   - cli
   - docker
   - bun
   - npm
 slug: "/docs/installation"
 toc: true
-date: "2025-09-05T12:26:34.122Z"
-lastModified: "2025-09-05T12:26:34.122Z"
+date: "2025-09-19T16:15:05.341Z"
+lastModified: "2025-09-19T16:15:05.341Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -35,8 +37,8 @@ schema:
   "@type": "TechArticle"
   headline: "Installation"
   description: "Install curl-runner on your system using your preferred package manager or download a pre-built binary."
-  datePublished: "2025-09-05T12:26:34.122Z"
-  dateModified: "2025-09-05T12:26:34.122Z"
+  datePublished: "2025-09-19T16:15:05.341Z"
+  dateModified: "2025-09-19T16:15:05.341Z"
 ---
 
 # Installation
@@ -68,35 +70,19 @@ Install using Bun for optimal performance and compatibility.
 Install using npm if you prefer Node.js ecosystem tools.
 
 ```bash
-npm install -g curl-runner
+npm install -g @curl-runner/cli
 ```
 
-### Pre-built Binary
+### Prerequisites
 
-Download a standalone executable for your platform.
+**For npm/yarn/pnpm installation:** Bun runtime must be installed on your system.
 
 ```bash
-# Pull the Docker image
-docker pull curlrunner/curl-runner:latest
-
-# Run tests using Docker
-docker run --rm -v "$(pwd)":/workspace curlrunner/curl-runner:latest my-tests.yaml
+bun install -g @curl-runner/cli
 ```
 
 ```bash
-bun install -g curl-runner
-```
-
-```bash
-npm install -g curl-runner
-```
-
-```bash
-# Pull the Docker image
-docker pull curlrunner/curl-runner:latest
-
-# Run tests using Docker
-docker run --rm -v "$(pwd)":/workspace curlrunner/curl-runner:latest my-tests.yaml
+npm install -g @curl-runner/cli
 ```
 
 ## Verify Installation
@@ -124,3 +110,23 @@ export PATH="$PATH:~/.bun/bin"
 ```bash
 chmod +x /path/to/curl-runner
 ```
+
+## Next Steps
+
+### Installation Guide
+
+Detailed installation instructions for all platforms
+
+[Get Started](/docs/installation)
+
+### YAML Structure
+
+Learn the YAML configuration format and options
+
+[Learn More](/docs/yaml-structure)
+
+### Examples
+
+Browse real-world examples and use cases
+
+[Explore](/docs/examples/basic)
