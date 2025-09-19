@@ -41,7 +41,7 @@ export const metadata: Metadata = {
     title: 'Response Object | curl-runner API Reference',
     description:
       'Complete reference for curl-runner response objects including status codes, headers, body content, metrics, and execution results.',
-    url: 'https://curl-runner.com/docs/api-reference/response-object',
+    url: 'https://www.curl-runner.com/docs/api-reference/response-object',
     type: 'article',
   },
   twitter: {
@@ -50,7 +50,7 @@ export const metadata: Metadata = {
     description: 'Learn about curl-runner response object structure and available properties.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/api-reference/response-object',
+    canonical: 'https://www.curl-runner.com/docs/api-reference/response-object',
   },
 };
 

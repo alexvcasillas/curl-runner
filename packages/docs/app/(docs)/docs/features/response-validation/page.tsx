@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     title: 'Response Validation | curl-runner Documentation',
     description:
       'Validate HTTP response status, headers, and body content with curl-runner. Learn about assertion rules, validation patterns, and automated testing.',
-    url: 'https://curl-runner.com/docs/features/response-validation',
+    url: 'https://www.curl-runner.com/docs/features/response-validation',
     type: 'article',
   },
   twitter: {
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
     description: 'Learn how to validate HTTP responses with curl-runner for robust API testing.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/features/response-validation',
+    canonical: 'https://www.curl-runner.com/docs/features/response-validation',
   },
 };
 

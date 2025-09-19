@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     title: 'Output Formats | curl-runner Documentation',
     description:
       'Control how curl-runner displays and saves request results with different output formats including JSON, pretty-printed, and raw formats.',
-    url: 'https://curl-runner.com/docs/features/output-formats',
+    url: 'https://www.curl-runner.com/docs/features/output-formats',
     type: 'article',
   },
   twitter: {
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
     description: 'Learn how to control curl-runner output with different formats and save options.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/features/output-formats',
+    canonical: 'https://www.curl-runner.com/docs/features/output-formats',
   },
 };
 

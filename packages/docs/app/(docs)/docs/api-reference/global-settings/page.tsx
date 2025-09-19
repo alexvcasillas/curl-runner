@@ -40,7 +40,7 @@ export const metadata: Metadata = {
     title: 'Global Settings | curl-runner API Reference',
     description:
       'Configure global settings for curl-runner including execution behavior, default headers, timeouts, and shared variables across all requests.',
-    url: 'https://curl-runner.com/docs/api-reference/global-settings',
+    url: 'https://www.curl-runner.com/docs/api-reference/global-settings',
     type: 'article',
   },
   twitter: {
@@ -49,7 +49,7 @@ export const metadata: Metadata = {
     description: 'Learn how to configure global settings for curl-runner requests and execution.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/api-reference/global-settings',
+    canonical: 'https://www.curl-runner.com/docs/api-reference/global-settings',
   },
 };
 

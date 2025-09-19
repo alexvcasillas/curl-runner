@@ -37,7 +37,7 @@ export const metadata: Metadata = {
     title: 'Retry Mechanism | curl-runner Documentation',
     description:
       'Implement robust retry logic for HTTP requests with curl-runner. Learn about retry strategies, backoff patterns, and handling transient failures.',
-    url: 'https://curl-runner.com/docs/features/retry-mechanism',
+    url: 'https://www.curl-runner.com/docs/features/retry-mechanism',
     type: 'article',
   },
   twitter: {
@@ -46,7 +46,7 @@ export const metadata: Metadata = {
     description: 'Learn how to implement robust retry logic for HTTP requests with curl-runner.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/features/retry-mechanism',
+    canonical: 'https://www.curl-runner.com/docs/features/retry-mechanism',
   },
 };
 

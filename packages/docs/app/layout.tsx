@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://curl-runner.com'),
+  metadataBase: new URL('https://www.curl-runner.com'),
   title: {
     default: 'curl-runner Documentation',
     template: '%s | curl-runner Documentation',
@@ -60,7 +60,7 @@ export const metadata: Metadata = {
   },
   manifest: '/manifest.json',
   alternates: {
-    canonical: 'https://curl-runner.com',
+    canonical: 'https://www.curl-runner.com',
     types: {
       'application/rss+xml': [{ url: '/rss.xml', title: 'curl-runner Documentation RSS' }],
     },
@@ -68,7 +68,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    url: 'https://curl-runner.com',
+    url: 'https://www.curl-runner.com',
     title: 'curl-runner Documentation',
     description:
       'Complete documentation for curl-runner - A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance.',

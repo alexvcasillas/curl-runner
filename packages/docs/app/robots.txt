@@ -6,10 +6,7 @@ Allow: /docs
 Allow: /docs/*
 
 # Sitemap location
-Sitemap: https://curl-runner.com/sitemap.xml
-
-# Additional resources for crawlers
-Sitemap: https://curl-runner.com/sitemap-docs.xml
+Sitemap: https://www.curl-runner.com/sitemap.xml
 
 # Allow crawling of static assets
 Allow: /og-*.png
@@ -34,4 +31,4 @@ Allow: /docs/*
 Crawl-delay: 1
 
 # Host specification
-Host: https://curl-runner.com
+Host: https://www.curl-runner.com

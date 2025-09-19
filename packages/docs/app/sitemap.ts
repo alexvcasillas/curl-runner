@@ -1,7 +1,7 @@
 import type { MetadataRoute } from 'next';
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = 'https://curl-runner.com';
+  const baseUrl = 'https://www.curl-runner.com';
   const currentDate = new Date();
 
   // Static pages
@@ -67,6 +67,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
     {
       url: `${baseUrl}/docs/cli-options`,
+      lastModified: currentDate,
+      changeFrequency: 'monthly' as const,
+      priority: 0.7,
+    },
+    {
+      url: `${baseUrl}/docs/environment-variables`,
       lastModified: currentDate,
       changeFrequency: 'monthly' as const,
       priority: 0.7,

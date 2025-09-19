@@ -51,7 +51,7 @@ export const metadata: Metadata = {
     title: 'Validation Rules | curl-runner API Reference',
     description:
       'Complete reference for curl-runner validation rules including status code validation, header validation, body validation, and custom validation patterns.',
-    url: 'https://curl-runner.com/docs/api-reference/validation-rules',
+    url: 'https://www.curl-runner.com/docs/api-reference/validation-rules',
     type: 'article',
   },
   twitter: {
@@ -60,7 +60,7 @@ export const metadata: Metadata = {
     description: 'Learn about curl-runner validation rules for comprehensive API response testing.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/api-reference/validation-rules',
+    canonical: 'https://www.curl-runner.com/docs/api-reference/validation-rules',
   },
 };
 

@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     title: 'Parallel Execution | curl-runner Documentation',
     description:
       'Execute HTTP requests in parallel for faster performance. Learn about concurrent request execution, performance optimization, and best practices.',
-    url: 'https://curl-runner.com/docs/features/parallel-execution',
+    url: 'https://www.curl-runner.com/docs/features/parallel-execution',
     type: 'article',
   },
   twitter: {
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
       'Learn how to execute HTTP requests in parallel for faster performance with curl-runner.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/features/parallel-execution',
+    canonical: 'https://www.curl-runner.com/docs/features/parallel-execution',
   },
 };
 

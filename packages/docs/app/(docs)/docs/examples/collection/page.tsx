@@ -38,7 +38,7 @@ export const metadata: Metadata = {
     title: 'Collection Examples | curl-runner Documentation',
     description:
       'Organize related HTTP requests into collections with curl-runner. Learn about request collections, shared variables, and managing test suites.',
-    url: 'https://curl-runner.com/docs/examples/collection',
+    url: 'https://www.curl-runner.com/docs/examples/collection',
     type: 'article',
   },
   twitter: {
@@ -47,7 +47,7 @@ export const metadata: Metadata = {
     description: 'Learn how to organize HTTP requests into collections with curl-runner.',
   },
   alternates: {
-    canonical: 'https://curl-runner.com/docs/examples/collection',
+    canonical: 'https://www.curl-runner.com/docs/examples/collection',
   },
 };
 
