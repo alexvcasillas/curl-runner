@@ -623,9 +623,13 @@ export default function GlobalSettingsPage() {
                   </Link>
                 </h3>
                 <p className="text-sm text-muted-foreground mb-3">
-                  Override global settings using CURL_RUNNER_* environment variables without modifying YAML files
+                  Override global settings using CURL_RUNNER_* environment variables without
+                  modifying YAML files
                 </p>
-                <Link href="/docs/environment-variables" className="text-sm font-medium text-primary hover:underline">
+                <Link
+                  href="/docs/environment-variables"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
                   Environment config →
                 </Link>
               </div>
@@ -639,7 +643,10 @@ export default function GlobalSettingsPage() {
                 <p className="text-sm text-muted-foreground mb-3">
                   Override settings temporarily using command-line flags and options
                 </p>
-                <Link href="/docs/cli-commands" className="text-sm font-medium text-primary hover:underline">
+                <Link
+                  href="/docs/cli-commands"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
                   CLI reference →
                 </Link>
               </div>

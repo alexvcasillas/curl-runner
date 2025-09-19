@@ -4,7 +4,11 @@ import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { H2, H3 } from '@/components/docs-heading';
 import { DocsPageHeader } from '@/components/docs-page-header';
-import { SoftwareDocumentationSchema, DocumentationArticleSchema, BreadcrumbSchema } from '@/components/structured-data';
+import {
+  BreadcrumbSchema,
+  DocumentationArticleSchema,
+  SoftwareDocumentationSchema,
+} from '@/components/structured-data';
 import { TableOfContents } from '@/components/toc';
 import { Button } from '@/components/ui/button';
 import { basicUsageExample, quickInstallExample } from './snippets';

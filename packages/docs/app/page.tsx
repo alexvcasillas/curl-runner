@@ -23,7 +23,8 @@ import { exampleYaml, installCommand, runCommand } from './snippets';
 
 export const metadata: Metadata = {
   title: 'curl-runner - Powerful CLI Tool for HTTP Request Management & API Testing',
-  description: 'curl-runner is a blazing-fast CLI tool for HTTP request management using YAML configuration. Perfect alternative to Postman and curl for API testing, automation, CI/CD, and load testing. Built with Bun.',
+  description:
+    'curl-runner is a blazing-fast CLI tool for HTTP request management using YAML configuration. Perfect alternative to Postman and curl for API testing, automation, CI/CD, and load testing. Built with Bun.',
   keywords: [
     'curl-runner',
     'API testing tool',
@@ -48,14 +49,16 @@ export const metadata: Metadata = {
   ],
   openGraph: {
     title: 'curl-runner - Powerful CLI Tool for HTTP Request Management & API Testing',
-    description: 'Blazing-fast CLI tool for HTTP request management using YAML configuration. Perfect alternative to Postman and curl for API testing, automation, and CI/CD.',
+    description:
+      'Blazing-fast CLI tool for HTTP request management using YAML configuration. Perfect alternative to Postman and curl for API testing, automation, and CI/CD.',
     url: 'https://www.curl-runner.com',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
     title: 'curl-runner - Powerful CLI Tool for HTTP Request Management & API Testing',
-    description: 'Blazing-fast CLI tool for HTTP request management using YAML configuration. Alternative to Postman and curl.',
+    description:
+      'Blazing-fast CLI tool for HTTP request management using YAML configuration. Alternative to Postman and curl.',
   },
   alternates: {
     canonical: 'https://www.curl-runner.com',

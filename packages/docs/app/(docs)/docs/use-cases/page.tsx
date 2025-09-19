@@ -1,5 +1,3 @@
-import type { Metadata } from 'next';
-import Link from 'next/link';
 import {
   ArrowRight,
   CheckCircle,
@@ -13,11 +11,13 @@ import {
   Shield,
   Zap,
 } from 'lucide-react';
+import type { Metadata } from 'next';
+import Link from 'next/link';
 import { DocsPageHeader } from '@/components/docs-page-header';
 import { LogoCloud } from '@/components/logo-cloud';
 import {
-  DocumentationArticleSchema,
   BreadcrumbSchema,
+  DocumentationArticleSchema,
   FAQSchema,
 } from '@/components/structured-data';
 import { Button } from '@/components/ui/button';

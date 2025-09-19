@@ -1,13 +1,14 @@
+import { ArrowRight, Check, X } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowRight, Check, X } from 'lucide-react';
 import { DocsPageHeader } from '@/components/docs-page-header';
-import { DocumentationArticleSchema, BreadcrumbSchema } from '@/components/structured-data';
+import { BreadcrumbSchema, DocumentationArticleSchema } from '@/components/structured-data';
 import { Button } from '@/components/ui/button';
 
 export const metadata: Metadata = {
   title: 'curl-runner vs Postman, Insomnia, curl - API Testing Tool Comparison',
-  description: 'Compare curl-runner with Postman, Insomnia, curl, and HTTPie. See why developers choose curl-runner for CLI-based API testing, automation, and CI/CD integration.',
+  description:
+    'Compare curl-runner with Postman, Insomnia, curl, and HTTPie. See why developers choose curl-runner for CLI-based API testing, automation, and CI/CD integration.',
   keywords: [
     'curl-runner vs Postman',
     'curl-runner vs Insomnia',
@@ -25,7 +26,8 @@ export const metadata: Metadata = {
   ],
   openGraph: {
     title: 'curl-runner vs Postman, Insomnia, curl - API Testing Tool Comparison',
-    description: 'Compare curl-runner with popular API testing tools. See why developers choose curl-runner for CLI-based API testing and automation.',
+    description:
+      'Compare curl-runner with popular API testing tools. See why developers choose curl-runner for CLI-based API testing and automation.',
     url: 'https://www.curl-runner.com/alternatives',
     type: 'article',
   },
@@ -51,7 +53,8 @@ const comparisons = [
       'Built-in API documentation',
       'Large marketplace of collections',
     ],
-    useCase: 'Choose curl-runner for automation, CI/CD, and developers who prefer command-line tools.',
+    useCase:
+      'Choose curl-runner for automation, CI/CD, and developers who prefer command-line tools.',
   },
   {
     tool: 'curl',
@@ -69,7 +72,8 @@ const comparisons = [
       'Very lightweight',
       'HTTP standard compliance',
     ],
-    useCase: 'Choose curl-runner for complex workflows, testing suites, and better maintainability.',
+    useCase:
+      'Choose curl-runner for complex workflows, testing suites, and better maintainability.',
   },
   {
     tool: 'Insomnia',
@@ -87,7 +91,8 @@ const comparisons = [
       'Plugin ecosystem',
       'Design-first approach',
     ],
-    useCase: 'Choose curl-runner for server environments, automation, and configuration management.',
+    useCase:
+      'Choose curl-runner for server environments, automation, and configuration management.',
   },
   {
     tool: 'HTTPie',
@@ -105,19 +110,76 @@ const comparisons = [
       'Intuitive command structure',
       'Great for learning HTTP',
     ],
-    useCase: 'Choose curl-runner for comprehensive testing workflows vs HTTPie for simple requests.',
+    useCase:
+      'Choose curl-runner for comprehensive testing workflows vs HTTPie for simple requests.',
   },
 ];
 
 const featureMatrix = [
-  { feature: 'CLI Interface', curlRunner: true, postman: false, curl: true, insomnia: false, httpie: true },
-  { feature: 'GUI Interface', curlRunner: false, postman: true, curl: false, insomnia: true, httpie: false },
-  { feature: 'YAML Configuration', curlRunner: true, postman: false, curl: false, insomnia: false, httpie: false },
-  { feature: 'Parallel Execution', curlRunner: true, postman: false, curl: false, insomnia: false, httpie: false },
-  { feature: 'Response Validation', curlRunner: true, postman: true, curl: false, insomnia: true, httpie: false },
-  { feature: 'Environment Variables', curlRunner: true, postman: true, curl: false, insomnia: true, httpie: false },
-  { feature: 'CI/CD Ready', curlRunner: true, postman: false, curl: true, insomnia: false, httpie: true },
-  { feature: 'Free & Open Source', curlRunner: true, postman: false, curl: true, insomnia: false, httpie: true },
+  {
+    feature: 'CLI Interface',
+    curlRunner: true,
+    postman: false,
+    curl: true,
+    insomnia: false,
+    httpie: true,
+  },
+  {
+    feature: 'GUI Interface',
+    curlRunner: false,
+    postman: true,
+    curl: false,
+    insomnia: true,
+    httpie: false,
+  },
+  {
+    feature: 'YAML Configuration',
+    curlRunner: true,
+    postman: false,
+    curl: false,
+    insomnia: false,
+    httpie: false,
+  },
+  {
+    feature: 'Parallel Execution',
+    curlRunner: true,
+    postman: false,
+    curl: false,
+    insomnia: false,
+    httpie: false,
+  },
+  {
+    feature: 'Response Validation',
+    curlRunner: true,
+    postman: true,
+    curl: false,
+    insomnia: true,
+    httpie: false,
+  },
+  {
+    feature: 'Environment Variables',
+    curlRunner: true,
+    postman: true,
+    curl: false,
+    insomnia: true,
+    httpie: false,
+  },
+  {
+    feature: 'CI/CD Ready',
+    curlRunner: true,
+    postman: false,
+    curl: true,
+    insomnia: false,
+    httpie: true,
+  },
+  {
+    feature: 'Free & Open Source',
+    curlRunner: true,
+    postman: false,
+    curl: true,
+    insomnia: false,
+    httpie: true,
+  },
 ];
 
 export default function AlternativesPage() {
@@ -149,12 +211,24 @@ export default function AlternativesPage() {
             <table className="w-full border-collapse border border-gray-200 dark:border-gray-700">
               <thead>
                 <tr className="bg-gray-50 dark:bg-gray-900">
-                  <th className="border border-gray-200 dark:border-gray-700 p-3 text-left">Feature</th>
-                  <th className="border border-gray-200 dark:border-gray-700 p-3 text-center">curl-runner</th>
-                  <th className="border border-gray-200 dark:border-gray-700 p-3 text-center">Postman</th>
-                  <th className="border border-gray-200 dark:border-gray-700 p-3 text-center">curl</th>
-                  <th className="border border-gray-200 dark:border-gray-700 p-3 text-center">Insomnia</th>
-                  <th className="border border-gray-200 dark:border-gray-700 p-3 text-center">HTTPie</th>
+                  <th className="border border-gray-200 dark:border-gray-700 p-3 text-left">
+                    Feature
+                  </th>
+                  <th className="border border-gray-200 dark:border-gray-700 p-3 text-center">
+                    curl-runner
+                  </th>
+                  <th className="border border-gray-200 dark:border-gray-700 p-3 text-center">
+                    Postman
+                  </th>
+                  <th className="border border-gray-200 dark:border-gray-700 p-3 text-center">
+                    curl
+                  </th>
+                  <th className="border border-gray-200 dark:border-gray-700 p-3 text-center">
+                    Insomnia
+                  </th>
+                  <th className="border border-gray-200 dark:border-gray-700 p-3 text-center">
+                    HTTPie
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -164,19 +238,39 @@ export default function AlternativesPage() {
                       {row.feature}
                     </td>
                     <td className="border border-gray-200 dark:border-gray-700 p-3 text-center">
-                      {row.curlRunner ? <Check className="h-5 w-5 text-green-600 mx-auto" /> : <X className="h-5 w-5 text-red-500 mx-auto" />}
+                      {row.curlRunner ? (
+                        <Check className="h-5 w-5 text-green-600 mx-auto" />
+                      ) : (
+                        <X className="h-5 w-5 text-red-500 mx-auto" />
+                      )}
                     </td>
                     <td className="border border-gray-200 dark:border-gray-700 p-3 text-center">
-                      {row.postman ? <Check className="h-5 w-5 text-green-600 mx-auto" /> : <X className="h-5 w-5 text-red-500 mx-auto" />}
+                      {row.postman ? (
+                        <Check className="h-5 w-5 text-green-600 mx-auto" />
+                      ) : (
+                        <X className="h-5 w-5 text-red-500 mx-auto" />
+                      )}
                     </td>
                     <td className="border border-gray-200 dark:border-gray-700 p-3 text-center">
-                      {row.curl ? <Check className="h-5 w-5 text-green-600 mx-auto" /> : <X className="h-5 w-5 text-red-500 mx-auto" />}
+                      {row.curl ? (
+                        <Check className="h-5 w-5 text-green-600 mx-auto" />
+                      ) : (
+                        <X className="h-5 w-5 text-red-500 mx-auto" />
+                      )}
                     </td>
                     <td className="border border-gray-200 dark:border-gray-700 p-3 text-center">
-                      {row.insomnia ? <Check className="h-5 w-5 text-green-600 mx-auto" /> : <X className="h-5 w-5 text-red-500 mx-auto" />}
+                      {row.insomnia ? (
+                        <Check className="h-5 w-5 text-green-600 mx-auto" />
+                      ) : (
+                        <X className="h-5 w-5 text-red-500 mx-auto" />
+                      )}
                     </td>
                     <td className="border border-gray-200 dark:border-gray-700 p-3 text-center">
-                      {row.httpie ? <Check className="h-5 w-5 text-green-600 mx-auto" /> : <X className="h-5 w-5 text-red-500 mx-auto" />}
+                      {row.httpie ? (
+                        <Check className="h-5 w-5 text-green-600 mx-auto" />
+                      ) : (
+                        <X className="h-5 w-5 text-red-500 mx-auto" />
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -224,7 +318,9 @@ export default function AlternativesPage() {
               </div>
 
               <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950 rounded">
-                <p className="text-sm"><strong>Recommendation:</strong> {comparison.useCase}</p>
+                <p className="text-sm">
+                  <strong>Recommendation:</strong> {comparison.useCase}
+                </p>
               </div>
             </div>
           ))}
@@ -243,9 +339,7 @@ export default function AlternativesPage() {
               </Link>
             </Button>
             <Button variant="outline" asChild>
-              <Link href="/docs/installation">
-                Installation Guide
-              </Link>
+              <Link href="/docs/installation">Installation Guide</Link>
             </Button>
           </div>
         </section>

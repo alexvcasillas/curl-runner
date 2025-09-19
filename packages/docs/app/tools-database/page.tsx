@@ -1,9 +1,10 @@
 import type { Metadata } from 'next';
-import { DocumentationArticleSchema, BreadcrumbSchema } from '@/components/structured-data';
+import { BreadcrumbSchema, DocumentationArticleSchema } from '@/components/structured-data';
 
 export const metadata: Metadata = {
   title: 'curl-runner - API Testing Tool | Developer Tools Database',
-  description: 'curl-runner: A powerful CLI tool for HTTP request management, API testing, and automation. Alternative to Postman, Insomnia, and curl. Built with Bun for blazing-fast performance.',
+  description:
+    'curl-runner: A powerful CLI tool for HTTP request management, API testing, and automation. Alternative to Postman, Insomnia, and curl. Built with Bun for blazing-fast performance.',
   keywords: [
     'API testing tools',
     'HTTP client CLI',
@@ -25,7 +26,8 @@ export const metadata: Metadata = {
   robots: 'index, follow',
   openGraph: {
     title: 'curl-runner - API Testing Tool | Developer Tools Database',
-    description: 'A powerful CLI tool for HTTP request management, API testing, and automation. Alternative to Postman, Insomnia, and curl.',
+    description:
+      'A powerful CLI tool for HTTP request management, API testing, and automation. Alternative to Postman, Insomnia, and curl.',
     url: 'https://www.curl-runner.com/tools-database',
     type: 'website',
   },
@@ -37,20 +39,40 @@ export const metadata: Metadata = {
 const toolFeatures = [
   {
     category: 'API Testing',
-    features: ['HTTP request management', 'Response validation', 'Authentication support', 'Request chaining']
+    features: [
+      'HTTP request management',
+      'Response validation',
+      'Authentication support',
+      'Request chaining',
+    ],
   },
   {
     category: 'Automation',
-    features: ['YAML configuration', 'Variable templating', 'Environment management', 'CI/CD integration']
+    features: [
+      'YAML configuration',
+      'Variable templating',
+      'Environment management',
+      'CI/CD integration',
+    ],
   },
   {
     category: 'Performance',
-    features: ['Parallel execution', 'Load testing', 'Built with Bun runtime', 'Blazing-fast performance']
+    features: [
+      'Parallel execution',
+      'Load testing',
+      'Built with Bun runtime',
+      'Blazing-fast performance',
+    ],
   },
   {
     category: 'Developer Experience',
-    features: ['Command-line interface', 'Multiple output formats', 'Comprehensive error handling', 'Easy installation']
-  }
+    features: [
+      'Command-line interface',
+      'Multiple output formats',
+      'Comprehensive error handling',
+      'Easy installation',
+    ],
+  },
 ];
 
 const alternatives = [
@@ -92,8 +114,9 @@ export default function ToolsDatabasePage() {
             curl-runner - API Testing Tool
           </h1>
           <p className="text-xl text-gray-600 dark:text-gray-400 max-w-3xl mx-auto">
-            A powerful CLI tool for HTTP request management, API testing, and automation.
-            Perfect alternative to Postman, Insomnia, and curl for developers who prefer command-line workflows.
+            A powerful CLI tool for HTTP request management, API testing, and automation. Perfect
+            alternative to Postman, Insomnia, and curl for developers who prefer command-line
+            workflows.
           </p>
           <div className="flex justify-center gap-4 text-sm text-gray-500">
             <span>✅ Free & Open Source</span>
@@ -107,11 +130,16 @@ export default function ToolsDatabasePage() {
         <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-6">
           <h2 className="text-2xl font-semibold mb-4">Quick Installation</h2>
           <div className="bg-black text-green-400 p-4 rounded font-mono text-sm">
-            # Install with npm<br/>
-            npm install -g curl-runner<br/><br/>
-            # Or with Bun<br/>
-            bun install -g curl-runner<br/><br/>
-            # Create your first test<br/>
+            # Install with npm
+            <br />
+            npm install -g curl-runner
+            <br />
+            <br /># Or with Bun
+            <br />
+            bun install -g curl-runner
+            <br />
+            <br /># Create your first test
+            <br />
             curl-runner init my-api-test.yaml
           </div>
         </div>
@@ -143,7 +171,10 @@ export default function ToolsDatabasePage() {
           <h2 className="text-2xl font-semibold mb-6">When to Use curl-runner</h2>
           <div className="grid md:grid-cols-2 gap-4">
             {useCases.map((useCase) => (
-              <div key={useCase} className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950 rounded">
+              <div
+                key={useCase}
+                className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950 rounded"
+              >
                 <span className="text-blue-600 dark:text-blue-400 mt-1">→</span>
                 <span className="text-sm">{useCase}</span>
               </div>

@@ -14,7 +14,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { DocsPageHeader } from '@/components/docs-page-header';
-import { DocumentationArticleSchema, BreadcrumbSchema } from '@/components/structured-data';
+import { BreadcrumbSchema, DocumentationArticleSchema } from '@/components/structured-data';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 

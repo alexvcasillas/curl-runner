@@ -7,11 +7,19 @@ interface LogoCloudProps {
 
 export function LogoCloud({ title = 'Trusted by teams at', className }: LogoCloudProps) {
   return (
-    <section className={cn('container mx-auto max-w-[64rem] py-8 md:py-12 lg:py-24 px-4 sm:px-6 lg:px-8', className)}>
+    <section
+      className={cn(
+        'container mx-auto max-w-[64rem] py-8 md:py-12 lg:py-24 px-4 sm:px-6 lg:px-8',
+        className,
+      )}
+    >
       <div className="mx-auto flex max-w-[58rem] flex-col items-center justify-center gap-6 text-center">
-        <h2 className="text-4xl font-semibold tracking-tight text-gray-900 sm:text-5xl dark:text-white">{title}</h2>
+        <h2 className="text-4xl font-semibold tracking-tight text-gray-900 sm:text-5xl dark:text-white">
+          {title}
+        </h2>
         <p className="max-w-[85%] leading-normal text-muted-foreground sm:text-lg sm:leading-7">
-          Join the developers and organizations who rely on curl-runner for their critical API testing and automation workflows.
+          Join the developers and organizations who rely on curl-runner for their critical API
+          testing and automation workflows.
         </p>
         <div className="flex justify-center">
           <div className="rounded-lg border bg-card px-12 py-8 hover:shadow-lg transition-shadow">

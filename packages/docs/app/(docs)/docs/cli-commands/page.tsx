@@ -614,7 +614,10 @@ export default function CLICommandsPage() {
                 <p className="text-sm text-muted-foreground mb-3">
                   Configure curl-runner behavior using CURL_RUNNER_* environment variables
                 </p>
-                <Link href="/docs/environment-variables" className="text-sm font-medium text-primary hover:underline">
+                <Link
+                  href="/docs/environment-variables"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
                   Environment setup →
                 </Link>
               </div>
@@ -628,7 +631,10 @@ export default function CLICommandsPage() {
                 <p className="text-sm text-muted-foreground mb-3">
                   Set default behavior in YAML files using global configuration
                 </p>
-                <Link href="/docs/global-settings" className="text-sm font-medium text-primary hover:underline">
+                <Link
+                  href="/docs/global-settings"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
                   Global config →
                 </Link>
               </div>
