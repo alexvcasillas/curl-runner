@@ -5,7 +5,7 @@ import { ImageResponse } from 'next/og';
 // Use Node.js runtime to access file system
 export const runtime = 'nodejs';
 
-export const alt = 'Variables & Templating | curl-runner Documentation';
+export const alt = 'Tutorials - Step-by-Step Guides | curl-runner Documentation';
 export const size = {
   width: 1200,
   height: 630,
@@ -39,7 +39,7 @@ export default async function Image() {
           height: '100%',
           opacity: 0.1,
           backgroundImage:
-            'radial-gradient(circle at 25% 25%, #8b5cf6 0%, transparent 50%), radial-gradient(circle at 75% 75%, #06b6d4 0%, transparent 50%)',
+            'radial-gradient(circle at 25% 25%, #10b981 0%, transparent 50%), radial-gradient(circle at 75% 75%, #3b82f6 0%, transparent 50%)',
         }}
       />
 
@@ -82,8 +82,8 @@ export default async function Image() {
         <div
           style={{
             display: 'flex',
-            background: 'rgba(139, 92, 246, 0.2)',
-            border: '2px solid rgba(139, 92, 246, 0.3)',
+            background: 'rgba(59, 130, 246, 0.2)',
+            border: '2px solid rgba(59, 130, 246, 0.3)',
             borderRadius: 16,
             padding: '8px 20px',
             marginBottom: 24,
@@ -93,12 +93,12 @@ export default async function Image() {
             style={{
               fontSize: 16,
               fontWeight: 600,
-              color: '#8b5cf6',
+              color: '#3b82f6',
               textTransform: 'uppercase',
               letterSpacing: '0.1em',
             }}
           >
-            Variables & Templating
+            Tutorials
           </span>
         </div>
 
@@ -113,7 +113,7 @@ export default async function Image() {
             letterSpacing: '-0.02em',
           }}
         >
-          curl-runner
+          curl-runner Tutorials
         </h1>
 
         {/* Subtitle */}
@@ -127,28 +127,71 @@ export default async function Image() {
             lineHeight: 1.3,
           }}
         >
-          Dynamic content with template expressions
+          Step-by-Step Guides
         </p>
 
-        {/* Variable Examples */}
+        {/* Tutorial Topics */}
         <div
           style={{
             display: 'flex',
-            gap: 32,
+            gap: 24,
             alignItems: 'center',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            maxWidth: 600,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ fontSize: 20 }}>🌍</div>
-            <span style={{ color: '#e2e8f0', fontSize: 18 }}>ENV</span>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              background: 'rgba(255, 255, 255, 0.05)',
+              padding: '8px 16px',
+              borderRadius: 8,
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+            }}
+          >
+            <span style={{ color: '#e2e8f0', fontSize: 16 }}>API Testing</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ fontSize: 20 }}>🔗</div>
-            <span style={{ color: '#e2e8f0', fontSize: 18 }}>${'{VAR}'}</span>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              background: 'rgba(255, 255, 255, 0.05)',
+              padding: '8px 16px',
+              borderRadius: 8,
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+            }}
+          >
+            <span style={{ color: '#e2e8f0', fontSize: 16 }}>CI/CD Integration</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ fontSize: 20 }}>⚡</div>
-            <span style={{ color: '#e2e8f0', fontSize: 18 }}>Dynamic</span>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              background: 'rgba(255, 255, 255, 0.05)',
+              padding: '8px 16px',
+              borderRadius: 8,
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+            }}
+          >
+            <span style={{ color: '#e2e8f0', fontSize: 16 }}>Load Testing</span>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              background: 'rgba(255, 255, 255, 0.05)',
+              padding: '8px 16px',
+              borderRadius: 8,
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+            }}
+          >
+            <span style={{ color: '#e2e8f0', fontSize: 16 }}>Advanced Workflows</span>
           </div>
         </div>
       </div>
@@ -163,7 +206,7 @@ export default async function Image() {
           color: '#64748b',
         }}
       >
-        https://www.curl-runner.com/docs/variables
+        https://www.curl-runner.com/docs/tutorials
       </div>
     </div>,
     {

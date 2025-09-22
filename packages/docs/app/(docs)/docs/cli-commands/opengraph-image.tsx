@@ -163,7 +163,7 @@ export default async function Image() {
           color: '#64748b',
         }}
       >
-        curl-runner.com/docs/cli-commands
+        https://www.curl-runner.com/docs/cli-commands
       </div>
     </div>,
     {
