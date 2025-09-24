@@ -187,7 +187,7 @@ export default async function Image() {
           color: '#64748b',
         }}
       >
-        curl-runner.com/docs/api-reference/validation-rules
+        https://www.curl-runner.com/docs/api-reference/validation-rules
       </div>
     </div>,
     {
