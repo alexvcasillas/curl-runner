@@ -189,27 +189,28 @@ export const bodyTypesExample = `requests:
       email: "john@example.com"
       age: 30
       
-  # Form data
-  - name: "Form data body"
+  # URL-encoded form data
+  - name: "URL-encoded form body"
     url: "https://api.example.com/form"
     method: POST
     headers:
       Content-Type: "application/x-www-form-urlencoded"
-    body: "username=johndoe&password=secret123&remember=true"  # URL encoded string
-        
-  # Multipart form data - Coming Soon
-  - name: "Multipart form body"  # Coming Soon
+    body: "username=johndoe&password=secret123&remember=true"
+
+  # Multipart form data with file upload (use formData instead of body)
+  - name: "Multipart form with files"
     url: "https://api.example.com/upload"
     method: POST
-    headers:
-      Content-Type: "multipart/form-data"
-    body:
-      type: "multipart"  # Coming Soon - structured multipart not implemented
-      fields:
-        file: "@/path/to/file.txt"  # Coming Soon
-        description: "File upload"  # Coming Soon
-        category: "document"  # Coming Soon
-        
+    formData:
+      # Regular form fields
+      description: "File upload"
+      category: "document"
+      # File attachment
+      file:
+        file: "./document.pdf"
+        filename: "my-document.pdf"
+        contentType: "application/pdf"
+
   # Raw text body
   - name: "Raw text body"
     url: "https://api.example.com/webhook"
@@ -304,49 +305,55 @@ requests:
       Authorization: "Bearer \${ACCESS_TOKEN}"
       X-Request-ID: "\${REQUEST_ID}"`;
 
-export const fileUploadExample = `# File Upload Examples - Coming Soon
+export const formDataExample = `# Form Data and File Upload Examples
 requests:
-  - name: "Single file upload"  # Coming Soon
+  # Simple file upload
+  - name: "Single file upload"
     url: "https://api.example.com/upload"
     method: POST
-    headers:
-      Content-Type: "multipart/form-data"
-    body:
-      type: "multipart"  # Coming Soon - structured multipart not implemented
-      fields:
-        file: "@/path/to/document.pdf"  # Coming Soon
-        description: "Important document"  # Coming Soon
-        
-  - name: "Multiple file upload"
-    url: "https://api.example.com/upload/multiple"
+    formData:
+      document:
+        file: "./report.pdf"
+
+  # File with custom filename and content type
+  - name: "File with options"
+    url: "https://api.example.com/upload"
     method: POST
-    headers:
-      Content-Type: "multipart/form-data"
-    body:
-      type: "multipart"
-      fields:
-        files:
-          - "@/path/to/file1.txt"
-          - "@/path/to/file2.txt"
-          - "@/path/to/file3.txt"
-        category: "documents"
-        
-  - name: "File upload with metadata"
-    url: "https://api.example.com/upload/advanced"
+    formData:
+      document:
+        file: "./local-file.pdf"
+        filename: "quarterly-report.pdf"
+        contentType: "application/pdf"
+
+  # Multiple files with form fields
+  - name: "Mixed form data"
+    url: "https://api.example.com/submit"
     method: POST
-    headers:
-      Content-Type: "multipart/form-data"
-    body:
-      type: "multipart"
-      fields:
-        file: "@/path/to/image.jpg"
-        filename: "profile-picture.jpg"
-        contentType: "image/jpeg"
-        metadata: |
-          {
-            "title": "Profile Picture",
-            "tags": ["profile", "user", "avatar"]
-          }`;
+    formData:
+      # Text fields
+      title: "Document Submission"
+      description: "Q4 Financial Reports"
+      submitted_by: "john@example.com"
+
+      # File attachments
+      main_document:
+        file: "./report.pdf"
+        filename: "financial-report.pdf"
+        contentType: "application/pdf"
+      supporting_document:
+        file: "./appendix.xlsx"
+        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+  # File upload with variables
+  - name: "Dynamic file upload"
+    url: "\${API_URL}/users/\${USER_ID}/avatar"
+    method: POST
+    formData:
+      description: "Uploaded on \${DATE:YYYY-MM-DD}"
+      request_id: "\${UUID}"
+      avatar:
+        file: "./profile-photo.jpg"
+        contentType: "image/jpeg"`;
 
 export const advancedRequestExample = `requests:
   - name: "Advanced request with all features"
