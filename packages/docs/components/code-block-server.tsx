@@ -31,7 +31,9 @@ export async function CodeBlockServer({
   const displayTitle = filename || title;
 
   return (
-    <div className={`relative overflow-hidden rounded-lg border bg-muted/20 max-w-full ${className}`}>
+    <div
+      className={`relative overflow-hidden rounded-lg border bg-muted/20 max-w-full ${className}`}
+    >
       {/* Terminal Header */}
       {displayTitle && (
         <div className="flex items-center justify-between border-b bg-gradient-to-r from-slate-900 to-slate-800 px-3 py-2 sm:px-4 sm:py-3">
@@ -41,7 +43,9 @@ export async function CodeBlockServer({
               <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 bg-yellow-500 rounded-full"></div>
               <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 bg-green-500 rounded-full"></div>
             </div>
-            <div className="text-xs sm:text-sm font-medium text-slate-200 truncate">{displayTitle}</div>
+            <div className="text-xs sm:text-sm font-medium text-slate-200 truncate">
+              {displayTitle}
+            </div>
           </div>
           <CopyButton className="text-white flex-shrink-0" value={children} />
         </div>

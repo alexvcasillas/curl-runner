@@ -266,7 +266,10 @@ class CurlRunnerCLI {
         globalConfig.ci = { ...globalConfig.ci, failOn: options.failOn as number };
       }
       if (options.failOnPercentage !== undefined) {
-        globalConfig.ci = { ...globalConfig.ci, failOnPercentage: options.failOnPercentage as number };
+        globalConfig.ci = {
+          ...globalConfig.ci,
+          failOnPercentage: options.failOnPercentage as number,
+        };
       }
 
       if (allRequests.length === 0) {
