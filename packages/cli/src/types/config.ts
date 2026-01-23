@@ -5,6 +5,47 @@ export interface JsonObject {
 export interface JsonArray extends Array<JsonValue> {}
 
 /**
+ * Configuration for a file attachment in a form data request.
+ *
+ * Examples:
+ * - `{ file: "./image.png" }` - Simple file attachment
+ * - `{ file: "./doc.pdf", filename: "document.pdf" }` - With custom filename
+ * - `{ file: "./data.json", contentType: "application/json" }` - With explicit content type
+ */
+export interface FileAttachment {
+  /** Path to the file (relative to YAML file or absolute) */
+  file: string;
+  /** Custom filename to send (defaults to actual filename) */
+  filename?: string;
+  /** Explicit content type (curl will auto-detect if not specified) */
+  contentType?: string;
+}
+
+/**
+ * A form field value can be a string, number, boolean, or a file attachment.
+ */
+export type FormFieldValue = string | number | boolean | FileAttachment;
+
+/**
+ * Configuration for form data (multipart/form-data) requests.
+ * Each key is a form field name, and the value can be a simple value or a file attachment.
+ *
+ * Examples:
+ * ```yaml
+ * formData:
+ *   name: "John Doe"
+ *   age: 30
+ *   avatar:
+ *     file: "./avatar.png"
+ *   document:
+ *     file: "./report.pdf"
+ *     filename: "quarterly-report.pdf"
+ *     contentType: "application/pdf"
+ * ```
+ */
+export type FormDataConfig = Record<string, FormFieldValue>;
+
+/**
  * Configuration for storing response values as variables for subsequent requests.
  * Maps a variable name to a JSON path in the response.
  *
@@ -24,6 +65,18 @@ export interface RequestConfig {
   params?: Record<string, string>;
   sourceFile?: string; // Source YAML file for better output organization
   body?: JsonValue;
+  /**
+   * Form data for multipart/form-data requests.
+   * Use this for file uploads or when you need to send form fields.
+   * Cannot be used together with 'body'.
+   *
+   * @example
+   * formData:
+   *   username: "john"
+   *   avatar:
+   *     file: "./avatar.png"
+   */
+  formData?: FormDataConfig;
   timeout?: number;
   followRedirects?: boolean;
   maxRedirects?: number;

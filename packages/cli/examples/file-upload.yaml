@@ -1,0 +1,32 @@
+# File upload with multipart/form-data
+# Usage: curl-runner file-upload.yaml
+#
+# This example demonstrates how to upload files using formData.
+# File paths are relative to the YAML file location or absolute paths.
+
+request:
+  name: File Upload Example
+  url: https://httpbin.org/post
+  method: POST
+  formData:
+    # Simple text fields
+    username: "john_doe"
+    description: "Profile photo upload"
+
+    # File attachment with just the file path
+    # The filename will be derived from the path
+    document:
+      file: "./sample-file.txt"
+
+    # File attachment with custom filename
+    # Useful when you want to send a different name than the actual file
+    profile_image:
+      file: "./sample-file.txt"
+      filename: "profile.png"
+
+    # File attachment with explicit content type
+    # Useful when curl cannot auto-detect the correct type
+    data_file:
+      file: "./sample-file.txt"
+      filename: "data.json"
+      contentType: "application/json"
