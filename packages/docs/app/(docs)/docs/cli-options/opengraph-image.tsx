@@ -152,7 +152,9 @@ export default async function Image() {
               border: '1px solid rgba(255, 255, 255, 0.1)',
             }}
           >
-            <span style={{ color: '#64748b', fontSize: 14, fontFamily: 'monospace' }}>--output-format</span>
+            <span style={{ color: '#64748b', fontSize: 14, fontFamily: 'monospace' }}>
+              --output-format
+            </span>
           </div>
           <div
             style={{
@@ -165,7 +167,9 @@ export default async function Image() {
               border: '1px solid rgba(255, 255, 255, 0.1)',
             }}
           >
-            <span style={{ color: '#64748b', fontSize: 14, fontFamily: 'monospace' }}>--execution</span>
+            <span style={{ color: '#64748b', fontSize: 14, fontFamily: 'monospace' }}>
+              --execution
+            </span>
           </div>
           <div
             style={{

@@ -1,5 +1,5 @@
 import { YAML } from 'bun';
-import type { RequestConfig, YamlFile } from '../types/config';
+import type { RequestConfig, ResponseStoreContext, YamlFile } from '../types/config';
 
 // Using class for organization, but could be refactored to functions
 export class YamlParser {
@@ -13,36 +13,82 @@ export class YamlParser {
     return YAML.parse(content) as YamlFile;
   }
 
-  static interpolateVariables(obj: unknown, variables: Record<string, string>): unknown {
+  /**
+   * Interpolates variables in an object, supporting:
+   * - Static variables: ${VAR_NAME}
+   * - Dynamic variables: ${UUID}, ${TIMESTAMP}, ${DATE:format}, ${TIME:format}
+   * - Stored response values: ${store.variableName}
+   *
+   * @param obj - The object to interpolate
+   * @param variables - Static variables map
+   * @param storeContext - Optional stored response values from previous requests
+   */
+  static interpolateVariables(
+    obj: unknown,
+    variables: Record<string, string>,
+    storeContext?: ResponseStoreContext,
+  ): unknown {
     if (typeof obj === 'string') {
       // Check if it's a single variable like ${VAR} (no other characters)
       const singleVarMatch = obj.match(/^\$\{([^}]+)\}$/);
       if (singleVarMatch) {
         const varName = singleVarMatch[1];
-        const dynamicValue = YamlParser.resolveDynamicVariable(varName);
-        return dynamicValue !== null ? dynamicValue : variables[varName] || obj;
+        const resolvedValue = YamlParser.resolveVariable(varName, variables, storeContext);
+        return resolvedValue !== null ? resolvedValue : obj;
       }
 
       // Handle multiple variables in the string using regex replacement
       return obj.replace(/\$\{([^}]+)\}/g, (match, varName) => {
-        const dynamicValue = YamlParser.resolveDynamicVariable(varName);
-        return dynamicValue !== null ? dynamicValue : variables[varName] || match;
+        const resolvedValue = YamlParser.resolveVariable(varName, variables, storeContext);
+        return resolvedValue !== null ? resolvedValue : match;
       });
     }
 
     if (Array.isArray(obj)) {
-      return obj.map((item) => YamlParser.interpolateVariables(item, variables));
+      return obj.map((item) => YamlParser.interpolateVariables(item, variables, storeContext));
     }
 
     if (obj && typeof obj === 'object') {
       const result: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(obj)) {
-        result[key] = YamlParser.interpolateVariables(value, variables);
+        result[key] = YamlParser.interpolateVariables(value, variables, storeContext);
       }
       return result;
     }
 
     return obj;
+  }
+
+  /**
+   * Resolves a single variable reference.
+   * Priority: store context > dynamic variables > static variables
+   */
+  static resolveVariable(
+    varName: string,
+    variables: Record<string, string>,
+    storeContext?: ResponseStoreContext,
+  ): string | null {
+    // Check for store variable (${store.variableName})
+    if (varName.startsWith('store.') && storeContext) {
+      const storeVarName = varName.slice(6); // Remove 'store.' prefix
+      if (storeVarName in storeContext) {
+        return storeContext[storeVarName];
+      }
+      return null; // Store variable not found, return null to keep original
+    }
+
+    // Check for dynamic variable
+    const dynamicValue = YamlParser.resolveDynamicVariable(varName);
+    if (dynamicValue !== null) {
+      return dynamicValue;
+    }
+
+    // Check for static variable
+    if (varName in variables) {
+      return variables[varName];
+    }
+
+    return null;
   }
 
   static resolveDynamicVariable(varName: string): string | null {

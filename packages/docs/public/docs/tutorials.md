@@ -16,8 +16,8 @@ keywords:
   - installation
 slug: "/docs/tutorials"
 toc: true
-date: "2025-09-19T16:15:05.336Z"
-lastModified: "2025-09-19T16:15:05.336Z"
+date: "2026-01-23T21:27:49.015Z"
+lastModified: "2026-01-23T21:27:49.015Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -37,8 +37,8 @@ schema:
   "@type": "TechArticle"
   headline: "Tutorials"
   description: "Step-by-step guides to master curl-runner from basics to advanced use cases"
-  datePublished: "2025-09-19T16:15:05.336Z"
-  dateModified: "2025-09-19T16:15:05.336Z"
+  datePublished: "2026-01-23T21:27:49.015Z"
+  dateModified: "2026-01-23T21:27:49.015Z"
 ---
 
 # Tutorials

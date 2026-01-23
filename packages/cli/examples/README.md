@@ -140,10 +140,78 @@ curl-runner execution-sequential.yaml --execution parallel
 curl-runner execution-continue-on-error.yaml
 ```
 
+## Response Storage (Chaining Requests)
+
+Store response values from one request to use in subsequent requests. This is useful for:
+- Authentication flows (store tokens for later use)
+- CRUD workflows (create resource, then use the ID to update/delete)
+- Data pipelines (extract data from one API to send to another)
+
+### Examples
+- **`response-storage.yaml`** - Basic response storage example
+- **`response-storage-auth-flow.yaml`** - Authentication workflow example
+
+### Usage
+```bash
+# Basic storage example
+curl-runner response-storage.yaml
+
+# Authentication flow
+curl-runner response-storage-auth-flow.yaml
+```
+
+### Store Configuration
+
+Use the `store` property in a request to extract values from the response:
+
+```yaml
+requests:
+  # First request: Create a resource
+  - name: Create User
+    url: https://api.example.com/users
+    method: POST
+    body:
+      name: "John Doe"
+      email: "john@example.com"
+    store:
+      userId: body.id              # Store response body's id field
+      authToken: body.token        # Store nested field
+      contentType: headers.content-type  # Store response header
+      statusCode: status           # Store HTTP status code
+
+  # Second request: Use stored values
+  - name: Get User
+    url: https://api.example.com/users/${store.userId}
+    method: GET
+    headers:
+      Authorization: Bearer ${store.authToken}
+```
+
+### Supported Paths
+
+The `store` configuration supports dot-notation paths to extract values:
+
+| Path | Description | Example |
+|------|-------------|---------|
+| `body.field` | Top-level body field | `body.id` |
+| `body.nested.field` | Nested body field | `body.data.token` |
+| `body.array.0.field` | Array element by index | `body.items.0.id` |
+| `headers.name` | Response header | `headers.content-type` |
+| `status` | HTTP status code | `status` |
+| `metrics.duration` | Response metrics | `metrics.duration` |
+
+### Important Notes
+
+- **Sequential execution required**: Response storage only works in sequential mode (the default). In parallel mode, request order is not guaranteed.
+- **Stored values are strings**: All stored values are converted to strings. Objects/arrays are JSON stringified.
+- **Scope**: Stored values persist for all subsequent requests in the same execution run.
+- **Variable syntax**: Use `${store.variableName}` to reference stored values.
+
 ## Variables and Configuration
 
 ### Examples
 - **`variables-basic.yaml`** - Variable substitution
+- **`dynamic-variables.yaml`** - Dynamic variables (UUID, timestamp, etc.)
 - **`comprehensive.yaml`** - All features combined
 - **`cli-options.yaml`** - Testing CLI options
 - **`simple.yaml`** - Simple test case
@@ -152,6 +220,9 @@ curl-runner execution-continue-on-error.yaml
 ```bash
 # Variables
 curl-runner variables-basic.yaml
+
+# Dynamic variables
+curl-runner dynamic-variables.yaml
 
 # CLI options
 curl-runner cli-options.yaml --verbose --show-headers
@@ -229,9 +300,13 @@ curl-runner pretty-*.yaml
 # Test validation
 curl-runner validation-*.yaml
 
-# Test execution modes  
+# Test execution modes
 curl-runner execution-*.yaml
 
 # Test authentication
 curl-runner auth-*.yaml
+
+# Test response storage (chaining)
+curl-runner response-storage.yaml
+curl-runner response-storage-auth-flow.yaml
 ```

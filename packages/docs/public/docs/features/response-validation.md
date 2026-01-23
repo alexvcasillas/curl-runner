@@ -15,8 +15,8 @@ keywords:
   - collection
 slug: "/docs/response-validation"
 toc: true
-date: "2025-09-19T16:15:05.342Z"
-lastModified: "2025-09-19T16:15:05.342Z"
+date: "2026-01-23T21:27:49.073Z"
+lastModified: "2026-01-23T21:27:49.073Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -36,8 +36,8 @@ schema:
   "@type": "TechArticle"
   headline: "Response Validation"
   description: "Validate HTTP responses to ensure your APIs return expected results."
-  datePublished: "2025-09-19T16:15:05.342Z"
-  dateModified: "2025-09-19T16:15:05.342Z"
+  datePublished: "2026-01-23T21:27:49.073Z"
+  dateModified: "2026-01-23T21:27:49.073Z"
 ---
 
 # Response Validation

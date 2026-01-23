@@ -4,6 +4,18 @@ export interface JsonObject {
 }
 export interface JsonArray extends Array<JsonValue> {}
 
+/**
+ * Configuration for storing response values as variables for subsequent requests.
+ * Maps a variable name to a JSON path in the response.
+ *
+ * Examples:
+ * - `{ "userId": "body.id" }` - Store response body's id field as ${store.userId}
+ * - `{ "token": "body.data.token" }` - Store nested field
+ * - `{ "statusCode": "status" }` - Store HTTP status code
+ * - `{ "contentType": "headers.content-type" }` - Store response header
+ */
+export type StoreConfig = Record<string, string>;
+
 export interface RequestConfig {
   name?: string;
   url: string;
@@ -29,6 +41,18 @@ export interface RequestConfig {
     delay?: number;
   };
   variables?: Record<string, string>;
+  /**
+   * Store response values as variables for subsequent requests.
+   * Use JSON path syntax to extract values from the response.
+   *
+   * @example
+   * store:
+   *   userId: body.id
+   *   token: body.data.accessToken
+   *   statusCode: status
+   *   contentType: headers.content-type
+   */
+  store?: StoreConfig;
   expect?: {
     failure?: boolean; // If true, expect the request to fail (for negative testing)
     status?: number | number[];
@@ -104,3 +128,9 @@ export interface ExecutionSummary {
   duration: number;
   results: ExecutionResult[];
 }
+
+/**
+ * Context for storing response values between sequential requests.
+ * Values are stored as strings and can be referenced using ${store.variableName} syntax.
+ */
+export type ResponseStoreContext = Record<string, string>;

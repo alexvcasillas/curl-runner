@@ -1,0 +1,60 @@
+# Response Storage Demo
+# Store response values from one request to use in subsequent requests
+# Usage: curl-runner response-storage.yaml
+#
+# IMPORTANT: Response storage only works in sequential execution mode (default).
+# The stored values are available via ${store.variableName} syntax.
+
+global:
+  execution: sequential  # Required for response storage
+  output:
+    format: pretty
+    prettyLevel: standard
+
+requests:
+  # First request: Create a post and store the returned ID
+  - name: Create Post
+    url: https://jsonplaceholder.typicode.com/posts
+    method: POST
+    headers:
+      Content-Type: application/json
+    body:
+      title: "My Test Post"
+      body: "This is a test post content"
+      userId: 1
+    expect:
+      status: 201
+    # Store the response ID for use in subsequent requests
+    store:
+      postId: body.id              # Store the created post ID
+      postTitle: body.title        # Store the title
+
+  # Second request: Use the stored postId to get the post
+  - name: Get Created Post
+    url: https://jsonplaceholder.typicode.com/posts/${store.postId}
+    method: GET
+    expect:
+      status: 200
+      body:
+        id: "${store.postId}"
+
+  # Third request: Get comments for the post using stored ID
+  - name: Get Post Comments
+    url: https://jsonplaceholder.typicode.com/posts/${store.postId}/comments
+    method: GET
+    expect:
+      status: 200
+
+  # Fourth request: Update the post using stored ID
+  - name: Update Post
+    url: https://jsonplaceholder.typicode.com/posts/${store.postId}
+    method: PUT
+    headers:
+      Content-Type: application/json
+    body:
+      id: "${store.postId}"
+      title: "Updated: ${store.postTitle}"
+      body: "This post has been updated"
+      userId: 1
+    expect:
+      status: 200
