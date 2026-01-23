@@ -4,9 +4,16 @@ import type {
   GlobalConfig,
   JsonValue,
   RequestConfig,
+  ResponseStoreContext,
 } from '../types/config';
+import { YamlParser } from '../parser/yaml';
 import { CurlBuilder } from '../utils/curl-builder';
 import { Logger } from '../utils/logger';
+import {
+  createStoreContext,
+  extractStoreValues,
+  mergeStoreContext,
+} from '../utils/response-store';
 
 export class RequestExecutor {
   private logger: Logger;
@@ -423,10 +430,20 @@ export class RequestExecutor {
   async executeSequential(requests: RequestConfig[]): Promise<ExecutionSummary> {
     const startTime = performance.now();
     const results: ExecutionResult[] = [];
+    const storeContext = createStoreContext();
 
     for (let i = 0; i < requests.length; i++) {
-      const result = await this.executeRequest(requests[i], i + 1);
+      // Interpolate store variables before execution
+      const interpolatedRequest = this.interpolateStoreVariables(requests[i], storeContext);
+      const result = await this.executeRequest(interpolatedRequest, i + 1);
       results.push(result);
+
+      // Store values from successful responses
+      if (result.success && interpolatedRequest.store) {
+        const storedValues = extractStoreValues(result, interpolatedRequest.store);
+        Object.assign(storeContext, storedValues);
+        this.logStoredValues(storedValues);
+      }
 
       if (!result.success && !this.globalConfig.continueOnError) {
         this.logger.logError('Stopping execution due to error');
@@ -435,6 +452,39 @@ export class RequestExecutor {
     }
 
     return this.createSummary(results, performance.now() - startTime);
+  }
+
+  /**
+   * Interpolates store variables (${store.variableName}) in a request config.
+   * This is called at execution time to resolve values from previous responses.
+   */
+  private interpolateStoreVariables(
+    request: RequestConfig,
+    storeContext: ResponseStoreContext,
+  ): RequestConfig {
+    // Only interpolate if there are stored values
+    if (Object.keys(storeContext).length === 0) {
+      return request;
+    }
+
+    // Re-interpolate the request with store context
+    // We pass empty variables since static variables were already resolved
+    return YamlParser.interpolateVariables(request, {}, storeContext) as RequestConfig;
+  }
+
+  /**
+   * Logs stored values for debugging purposes.
+   */
+  private logStoredValues(values: ResponseStoreContext): void {
+    if (Object.keys(values).length === 0) {
+      return;
+    }
+
+    const entries = Object.entries(values);
+    for (const [key, value] of entries) {
+      const displayValue = value.length > 50 ? `${value.substring(0, 50)}...` : value;
+      this.logger.logInfo(`Stored: ${key} = "${displayValue}"`);
+    }
   }
 
   async executeParallel(requests: RequestConfig[]): Promise<ExecutionSummary> {

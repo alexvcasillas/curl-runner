@@ -1,0 +1,88 @@
+# Response Storage: Authentication Flow Example
+# Demonstrates storing authentication tokens for use in subsequent requests
+# Usage: curl-runner response-storage-auth-flow.yaml
+#
+# This example simulates a common API authentication workflow:
+# 1. Login to get an access token
+# 2. Use the token for authenticated requests
+# 3. Chain responses for complex workflows
+
+global:
+  execution: sequential
+  output:
+    format: pretty
+    prettyLevel: standard
+  variables:
+    BASE_URL: https://jsonplaceholder.typicode.com
+
+requests:
+  # Step 1: Simulate login (using a POST to posts as placeholder)
+  # In a real scenario, this would be your /auth/login endpoint
+  - name: Login Request
+    url: ${BASE_URL}/posts
+    method: POST
+    headers:
+      Content-Type: application/json
+    body:
+      title: "auth_token_simulation"
+      body: "session_12345"
+      userId: 1
+    expect:
+      status: 201
+    # Store the "token" (simulated with post id) and other auth data
+    store:
+      authToken: body.id           # In real API: body.accessToken
+      sessionId: body.body         # In real API: body.sessionId
+      userId: body.userId          # Store the user ID
+
+  # Step 2: Get user profile using the stored token
+  - name: Get User Profile
+    url: ${BASE_URL}/users/${store.userId}
+    method: GET
+    headers:
+      # In a real API, you'd use: Authorization: Bearer ${store.authToken}
+      X-Session-ID: "${store.sessionId}"
+      X-Auth-Token: "${store.authToken}"
+    expect:
+      status: 200
+      body:
+        id: "${store.userId}"
+    # Store user data for subsequent requests
+    store:
+      userName: body.name
+      userEmail: body.email
+
+  # Step 3: Get user's posts using stored data
+  - name: Get User Posts
+    url: ${BASE_URL}/users/${store.userId}/posts
+    method: GET
+    headers:
+      X-Auth-Token: "${store.authToken}"
+    expect:
+      status: 200
+
+  # Step 4: Create a new post for the user
+  - name: Create User Post
+    url: ${BASE_URL}/posts
+    method: POST
+    headers:
+      Content-Type: application/json
+      X-Auth-Token: "${store.authToken}"
+    body:
+      title: "Post by ${store.userName}"
+      body: "Created via API by user ${store.userEmail}"
+      userId: "${store.userId}"
+    expect:
+      status: 201
+    # Store the new post ID for later use
+    store:
+      newPostId: body.id
+
+  # Step 5: Add a comment to the new post
+  - name: Add Comment to Post
+    url: ${BASE_URL}/posts/${store.newPostId}/comments
+    method: GET
+    headers:
+      X-Auth-Token: "${store.authToken}"
+    expect:
+      status: 200
