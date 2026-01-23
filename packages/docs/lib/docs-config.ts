@@ -82,6 +82,11 @@ export const docsConfig: SidebarConfig = {
           description: 'Store and reuse response values across requests',
         },
         {
+          title: 'File Uploads',
+          href: '/docs/features/file-uploads',
+          description: 'Upload files using multipart/form-data requests',
+        },
+        {
           title: 'Parallel Execution',
           href: '/docs/features/parallel-execution',
           description: 'Execute multiple requests simultaneously',

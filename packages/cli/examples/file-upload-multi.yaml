@@ -1,0 +1,26 @@
+# Multiple file uploads with form data
+# Usage: curl-runner file-upload-multi.yaml
+#
+# This example shows uploading multiple files in a single request
+# along with form fields - common for document submission forms.
+
+request:
+  name: Multi-File Upload
+  url: https://httpbin.org/post
+  method: POST
+  formData:
+    # Form metadata
+    form_type: "document_submission"
+    submitted_by: "user@example.com"
+    timestamp: "${TIMESTAMP}"
+
+    # Multiple file attachments
+    primary_document:
+      file: "./sample-file.txt"
+      filename: "main-document.pdf"
+      contentType: "application/pdf"
+
+    supporting_document:
+      file: "./sample-file.txt"
+      filename: "attachment.pdf"
+      contentType: "application/pdf"

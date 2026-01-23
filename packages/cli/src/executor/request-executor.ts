@@ -2,6 +2,8 @@ import { YamlParser } from '../parser/yaml';
 import type {
   ExecutionResult,
   ExecutionSummary,
+  FileAttachment,
+  FormFieldValue,
   GlobalConfig,
   JsonValue,
   RequestConfig,
@@ -28,6 +30,42 @@ export class RequestExecutor {
     };
   }
 
+  /**
+   * Checks if a form field value is a file attachment.
+   */
+  private isFileAttachment(value: FormFieldValue): value is FileAttachment {
+    return typeof value === 'object' && value !== null && 'file' in value;
+  }
+
+  /**
+   * Validates that all file attachments in formData exist.
+   * Returns an error message if any file is missing, or undefined if all files exist.
+   */
+  private async validateFileAttachments(config: RequestConfig): Promise<string | undefined> {
+    if (!config.formData) {
+      return undefined;
+    }
+
+    const missingFiles: string[] = [];
+
+    for (const [fieldName, fieldValue] of Object.entries(config.formData)) {
+      if (this.isFileAttachment(fieldValue)) {
+        const filePath = fieldValue.file;
+        const file = Bun.file(filePath);
+        const exists = await file.exists();
+        if (!exists) {
+          missingFiles.push(`${fieldName}: ${filePath}`);
+        }
+      }
+    }
+
+    if (missingFiles.length > 0) {
+      return `File(s) not found: ${missingFiles.join(', ')}`;
+    }
+
+    return undefined;
+  }
+
   async executeRequest(config: RequestConfig, index: number = 0): Promise<ExecutionResult> {
     const startTime = performance.now();
 
@@ -36,6 +74,21 @@ export class RequestExecutor {
     const requestLogger = new Logger(outputConfig);
 
     requestLogger.logRequestStart(config, index);
+
+    // Validate file attachments exist before executing
+    const fileError = await this.validateFileAttachments(config);
+    if (fileError) {
+      const failedResult: ExecutionResult = {
+        request: config,
+        success: false,
+        error: fileError,
+        metrics: {
+          duration: performance.now() - startTime,
+        },
+      };
+      requestLogger.logRequestComplete(failedResult);
+      return failedResult;
+    }
 
     const command = CurlBuilder.buildCommand(config);
     requestLogger.logCommand(command);

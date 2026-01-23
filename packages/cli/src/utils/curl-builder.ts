@@ -1,4 +1,4 @@
-import type { RequestConfig } from '../types/config';
+import type { FileAttachment, FormFieldValue, RequestConfig } from '../types/config';
 
 interface CurlMetrics {
   response_code?: number;
@@ -9,6 +9,20 @@ interface CurlMetrics {
   time_connect?: number;
   time_appconnect?: number;
   time_starttransfer?: number;
+}
+
+/**
+ * Checks if a form field value is a file attachment.
+ */
+function isFileAttachment(value: FormFieldValue): value is FileAttachment {
+  return typeof value === 'object' && value !== null && 'file' in value;
+}
+
+/**
+ * Escapes a string value for use in curl -F flag.
+ */
+function escapeFormValue(value: string): string {
+  return value.replace(/'/g, "'\\''");
 }
 
 // Using class for organization, but could be refactored to functions
@@ -34,7 +48,26 @@ export class CurlBuilder {
       }
     }
 
-    if (config.body) {
+    if (config.formData) {
+      // Use -F flags for multipart/form-data
+      for (const [fieldName, fieldValue] of Object.entries(config.formData)) {
+        if (isFileAttachment(fieldValue)) {
+          // File attachment: -F "field=@filepath;filename=name;type=mimetype"
+          let fileSpec = `@${fieldValue.file}`;
+          if (fieldValue.filename) {
+            fileSpec += `;filename=${fieldValue.filename}`;
+          }
+          if (fieldValue.contentType) {
+            fileSpec += `;type=${fieldValue.contentType}`;
+          }
+          parts.push('-F', `'${fieldName}=${escapeFormValue(fileSpec)}'`);
+        } else {
+          // Regular form field: -F "field=value"
+          const strValue = String(fieldValue);
+          parts.push('-F', `'${fieldName}=${escapeFormValue(strValue)}'`);
+        }
+      }
+    } else if (config.body) {
       const bodyStr = typeof config.body === 'string' ? config.body : JSON.stringify(config.body);
       parts.push('-d', `'${bodyStr.replace(/'/g, "'\\''")}'`);
 

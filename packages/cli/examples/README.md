@@ -25,7 +25,7 @@ curl-runner basic-*.yaml
 
 ### Types
 - **`auth-basic.yaml`** - HTTP Basic authentication
-- **`auth-bearer.yaml`** - Bearer token authentication  
+- **`auth-bearer.yaml`** - Bearer token authentication
 - **`auth-headers.yaml`** - Custom header authentication
 
 ### Usage
@@ -34,6 +34,60 @@ curl-runner auth-basic.yaml
 curl-runner auth-bearer.yaml
 curl-runner auth-headers.yaml
 ```
+
+## File Upload Examples
+
+### Types
+- **`file-upload.yaml`** - Single file upload with various options
+- **`file-upload-multi.yaml`** - Multiple file uploads with form fields
+- **`sample-file.txt`** - Sample file for testing uploads
+
+### Usage
+```bash
+# Basic file upload
+curl-runner file-upload.yaml
+
+# Multiple files
+curl-runner file-upload-multi.yaml
+```
+
+### File Upload Configuration
+
+Use `formData` instead of `body` to send multipart/form-data requests:
+
+```yaml
+request:
+  name: Upload Document
+  url: https://api.example.com/upload
+  method: POST
+  formData:
+    # Simple form fields
+    title: "My Document"
+    description: "Test upload"
+
+    # File attachment (basic)
+    document:
+      file: "./report.pdf"
+
+    # File with custom filename
+    avatar:
+      file: "./photo.jpg"
+      filename: "profile-picture.jpg"
+
+    # File with explicit content type
+    data:
+      file: "./data.bin"
+      filename: "export.json"
+      contentType: "application/json"
+```
+
+### File Attachment Properties
+
+| Property | Required | Description |
+|----------|----------|-------------|
+| `file` | Yes | Path to the file (relative or absolute) |
+| `filename` | No | Custom filename sent to server |
+| `contentType` | No | MIME type (auto-detected if not specified) |
 
 ## Retry and Timeout Examples
 

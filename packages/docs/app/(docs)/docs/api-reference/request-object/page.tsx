@@ -1,4 +1,4 @@
-import { Code, FileText, Globe, Lightbulb, List, Settings, Timer, Type } from 'lucide-react';
+import { FileText, Globe, Lightbulb, List, Settings, Timer, Type, Upload } from 'lucide-react';
 import type { Metadata } from 'next';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { H2, H3 } from '@/components/docs-heading';
@@ -6,7 +6,7 @@ import { DocsPageHeader } from '@/components/docs-page-header';
 import { TableOfContents } from '@/components/toc';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { validationConfigExample } from './snippets';
+import { formDataExample, validationConfigExample } from './snippets';
 
 export const metadata: Metadata = {
   title: 'Request Object',
@@ -617,6 +617,18 @@ export default function RequestObjectPage() {
                   </tr>
                   <tr className="border-b">
                     <td className="p-3">
+                      <code className="text-sm">formData</code>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">FormDataConfig</td>
+                    <td className="p-3 text-sm">
+                      <Badge variant="outline">Optional</Badge>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Form data with file uploads (mutually exclusive with body)
+                    </td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="p-3">
                       <code className="text-sm">timeout</code>
                     </td>
                     <td className="p-3 text-sm text-muted-foreground">number</td>
@@ -912,18 +924,15 @@ export default function RequestObjectPage() {
                 <div className="rounded-lg border bg-card p-4">
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-purple-500/10 p-2">
-                      <Code className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                      <Upload className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                     </div>
                     <div className="flex-1">
-                      <h4 className="font-medium mb-2 flex items-center gap-2">
-                        Form Data
-                        <Badge variant="secondary">Coming Soon</Badge>
-                      </h4>
+                      <h4 className="font-medium mb-2">Form Data</h4>
                       <p className="text-sm text-muted-foreground mb-3">
-                        Structured multipart/form-data
+                        Multipart/form-data with file uploads
                       </p>
                       <code className="text-xs bg-muted px-2 py-1 rounded">
-                        Raw URL-encoded strings supported
+                        {'formData: {file: {file: "./doc.pdf"}}'}
                       </code>
                     </div>
                   </div>
@@ -943,6 +952,83 @@ export default function RequestObjectPage() {
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Form Data / File Uploads */}
+          <section>
+            <H2 id="form-data">Form Data & File Uploads</H2>
+            <p className="text-muted-foreground mb-6">
+              Use the <code className="text-sm bg-muted px-1 py-0.5 rounded">formData</code>{' '}
+              property to send multipart/form-data requests with file uploads. This is mutually
+              exclusive with the <code className="text-sm bg-muted px-1 py-0.5 rounded">body</code>{' '}
+              property.
+            </p>
+
+            <CodeBlockServer language="yaml" filename="form-data.yaml">
+              {formDataExample}
+            </CodeBlockServer>
+
+            <div className="mt-6 space-y-4">
+              <H3 id="file-attachment-properties">File Attachment Properties</H3>
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-muted/50">
+                    <tr className="border-b">
+                      <th className="text-left p-3 font-medium">Property</th>
+                      <th className="text-left p-3 font-medium">Type</th>
+                      <th className="text-left p-3 font-medium">Required</th>
+                      <th className="text-left p-3 font-medium">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b">
+                      <td className="p-3">
+                        <code className="text-sm">file</code>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">string</td>
+                      <td className="p-3 text-sm">
+                        <Badge variant="destructive">Required</Badge>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        Path to the file (relative or absolute)
+                      </td>
+                    </tr>
+                    <tr className="border-b">
+                      <td className="p-3">
+                        <code className="text-sm">filename</code>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">string</td>
+                      <td className="p-3 text-sm">
+                        <Badge variant="outline">Optional</Badge>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        Custom filename sent to the server
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="p-3">
+                        <code className="text-sm">contentType</code>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">string</td>
+                      <td className="p-3 text-sm">
+                        <Badge variant="outline">Optional</Badge>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        MIME type (curl auto-detects if not specified)
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="rounded-lg border bg-blue-500/5 dark:bg-blue-500/10 border-blue-500/20 p-4">
+                <p className="text-sm">
+                  <strong className="text-blue-600 dark:text-blue-400">Note:</strong> File paths are
+                  resolved relative to the current working directory when running curl-runner. Files
+                  are validated to exist before the request is executed.
+                </p>
               </div>
             </div>
           </section>
