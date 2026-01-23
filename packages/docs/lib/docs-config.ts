@@ -77,6 +77,11 @@ export const docsConfig: SidebarConfig = {
       title: 'Features',
       items: [
         {
+          title: 'Response Storage',
+          href: '/docs/features/response-storage',
+          description: 'Store and reuse response values across requests',
+        },
+        {
           title: 'Parallel Execution',
           href: '/docs/features/parallel-execution',
           description: 'Execute multiple requests simultaneously',
