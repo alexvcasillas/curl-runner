@@ -3,7 +3,7 @@
 import { Glob } from 'bun';
 import { RequestExecutor } from './executor/request-executor';
 import { YamlParser } from './parser/yaml';
-import type { GlobalConfig, RequestConfig } from './types/config';
+import type { ExecutionSummary, GlobalConfig, RequestConfig } from './types/config';
 import { Logger } from './utils/logger';
 import { VersionChecker } from './utils/version-checker';
 import { getVersion } from './version';
@@ -103,6 +103,31 @@ class CurlRunnerCLI {
 
     if (process.env.CURL_RUNNER_OUTPUT_FILE) {
       envConfig.output = { ...envConfig.output, saveToFile: process.env.CURL_RUNNER_OUTPUT_FILE };
+    }
+
+    // CI exit code configuration
+    if (process.env.CURL_RUNNER_STRICT_EXIT) {
+      envConfig.ci = {
+        ...envConfig.ci,
+        strictExit: process.env.CURL_RUNNER_STRICT_EXIT.toLowerCase() === 'true',
+      };
+    }
+
+    if (process.env.CURL_RUNNER_FAIL_ON) {
+      envConfig.ci = {
+        ...envConfig.ci,
+        failOn: Number.parseInt(process.env.CURL_RUNNER_FAIL_ON, 10),
+      };
+    }
+
+    if (process.env.CURL_RUNNER_FAIL_ON_PERCENTAGE) {
+      const percentage = Number.parseFloat(process.env.CURL_RUNNER_FAIL_ON_PERCENTAGE);
+      if (percentage >= 0 && percentage <= 100) {
+        envConfig.ci = {
+          ...envConfig.ci,
+          failOnPercentage: percentage,
+        };
+      }
     }
 
     return envConfig;
@@ -233,6 +258,17 @@ class CurlRunnerCLI {
         };
       }
 
+      // Apply CI exit code options
+      if (options.strictExit !== undefined) {
+        globalConfig.ci = { ...globalConfig.ci, strictExit: options.strictExit as boolean };
+      }
+      if (options.failOn !== undefined) {
+        globalConfig.ci = { ...globalConfig.ci, failOn: options.failOn as number };
+      }
+      if (options.failOnPercentage !== undefined) {
+        globalConfig.ci = { ...globalConfig.ci, failOnPercentage: options.failOnPercentage as number };
+      }
+
       if (allRequests.length === 0) {
         this.logger.logError('No requests found in YAML files');
         process.exit(1);
@@ -283,7 +319,9 @@ class CurlRunnerCLI {
         summary = await executor.execute(allRequests);
       }
 
-      process.exit(summary.failed > 0 && !globalConfig.continueOnError ? 1 : 0);
+      // Determine exit code based on CI configuration
+      const exitCode = this.determineExitCode(summary, globalConfig);
+      process.exit(exitCode);
     } catch (error) {
       this.logger.logError(error instanceof Error ? error.message : String(error));
       process.exit(1);
@@ -313,6 +351,8 @@ class CurlRunnerCLI {
           options.showBody = true;
         } else if (key === 'show-metrics') {
           options.showMetrics = true;
+        } else if (key === 'strict-exit') {
+          options.strictExit = true;
         } else if (nextArg && !nextArg.startsWith('--')) {
           if (key === 'continue-on-error') {
             options.continueOnError = nextArg === 'true';
@@ -324,6 +364,13 @@ class CurlRunnerCLI {
             options.retries = Number.parseInt(nextArg, 10);
           } else if (key === 'retry-delay') {
             options.retryDelay = Number.parseInt(nextArg, 10);
+          } else if (key === 'fail-on') {
+            options.failOn = Number.parseInt(nextArg, 10);
+          } else if (key === 'fail-on-percentage') {
+            const percentage = Number.parseFloat(nextArg);
+            if (percentage >= 0 && percentage <= 100) {
+              options.failOnPercentage = percentage;
+            }
           } else if (key === 'output-format') {
             if (['json', 'pretty', 'raw'].includes(nextArg)) {
               options.outputFormat = nextArg;
@@ -485,7 +532,60 @@ class CurlRunnerCLI {
       variables: { ...base.variables, ...override.variables },
       output: { ...base.output, ...override.output },
       defaults: { ...base.defaults, ...override.defaults },
+      ci: { ...base.ci, ...override.ci },
     };
+  }
+
+  /**
+   * Determines the appropriate exit code based on execution results and CI configuration.
+   *
+   * Exit code logic:
+   * - If strictExit is enabled: exit 1 if ANY failures occur
+   * - If failOn is set: exit 1 if failures exceed the threshold
+   * - If failOnPercentage is set: exit 1 if failure percentage exceeds the threshold
+   * - Default behavior: exit 1 only if failures exist AND continueOnError is false
+   *
+   * @param summary - The execution summary containing success/failure counts
+   * @param config - Global configuration including CI exit options
+   * @returns 0 for success, 1 for failure
+   */
+  private determineExitCode(summary: ExecutionSummary, config: GlobalConfig): number {
+    const { failed, total } = summary;
+    const ci = config.ci;
+
+    // If no failures, always exit with 0
+    if (failed === 0) {
+      return 0;
+    }
+
+    // Check CI exit code options
+    if (ci) {
+      // strictExit: exit 1 if ANY failures occur
+      if (ci.strictExit) {
+        return 1;
+      }
+
+      // failOn: exit 1 if failures exceed the threshold
+      if (ci.failOn !== undefined && failed > ci.failOn) {
+        return 1;
+      }
+
+      // failOnPercentage: exit 1 if failure percentage exceeds the threshold
+      if (ci.failOnPercentage !== undefined && total > 0) {
+        const failurePercentage = (failed / total) * 100;
+        if (failurePercentage > ci.failOnPercentage) {
+          return 1;
+        }
+      }
+
+      // If any CI option is set but thresholds not exceeded, exit 0
+      if (ci.failOn !== undefined || ci.failOnPercentage !== undefined) {
+        return 0;
+      }
+    }
+
+    // Default behavior: exit 1 if failures AND continueOnError is false
+    return !config.continueOnError ? 1 : 0;
   }
 
   private showHelp(): void {
@@ -514,6 +614,11 @@ ${this.logger.color('OPTIONS:', 'yellow')}
   --show-metrics                Include performance metrics in output
   --version                     Show version
 
+${this.logger.color('CI/CD OPTIONS:', 'yellow')}
+  --strict-exit                 Exit with code 1 if any validation fails (for CI/CD)
+  --fail-on <count>             Exit with code 1 if failures exceed this count
+  --fail-on-percentage <pct>    Exit with code 1 if failure percentage exceeds this value
+
 ${this.logger.color('EXAMPLES:', 'yellow')}
   # Run all YAML files in current directory
   curl-runner
@@ -541,6 +646,18 @@ ${this.logger.color('EXAMPLES:', 'yellow')}
   
   # Run with detailed pretty output (show all information)
   curl-runner --output-format pretty --pretty-level detailed test.yaml
+
+  # CI/CD: Fail if any validation fails (strict mode)
+  curl-runner tests/ --strict-exit
+
+  # CI/CD: Run all tests but fail if any validation fails
+  curl-runner tests/ --continue-on-error --strict-exit
+
+  # CI/CD: Allow up to 2 failures
+  curl-runner tests/ --fail-on 2
+
+  # CI/CD: Allow up to 10% failures
+  curl-runner tests/ --fail-on-percentage 10
 
 ${this.logger.color('YAML STRUCTURE:', 'yellow')}
   Single request:

@@ -79,9 +79,39 @@ export interface CollectionConfig {
   requests: RequestConfig[];
 }
 
+/**
+ * CI exit code configuration options.
+ * These options control how curl-runner exits in CI/CD pipelines.
+ */
+export interface CIExitConfig {
+  /**
+   * When true, exit with code 1 if any validation failures occur,
+   * regardless of the continueOnError setting.
+   * This is useful for CI/CD pipelines that need strict validation.
+   */
+  strictExit?: boolean;
+  /**
+   * Maximum number of failures allowed before exiting with code 1.
+   * If set to 0, any failure will cause a non-zero exit.
+   * If undefined and strictExit is true, any failure causes non-zero exit.
+   */
+  failOn?: number;
+  /**
+   * Maximum percentage of failures allowed before exiting with code 1.
+   * Value should be between 0 and 100.
+   * If set to 10, up to 10% of requests can fail without causing a non-zero exit.
+   */
+  failOnPercentage?: number;
+}
+
 export interface GlobalConfig {
   execution?: 'sequential' | 'parallel';
   continueOnError?: boolean;
+  /**
+   * CI/CD exit code configuration.
+   * Controls when curl-runner should exit with non-zero status codes.
+   */
+  ci?: CIExitConfig;
   variables?: Record<string, string>;
   output?: {
     verbose?: boolean;
