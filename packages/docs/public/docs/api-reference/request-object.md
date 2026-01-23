@@ -344,6 +344,89 @@ requests:
         reference: "\${REF_ID}"
 ```
 
+## Form Data (File Uploads)
+
+Use `formData` instead of `body` to send multipart/form-data requests, commonly used for file uploads.
+
+**form-data-upload.yaml**
+
+```yaml
+# Form Data and File Upload Examples
+requests:
+  # Simple file upload
+  - name: "Upload Single File"
+    url: "https://api.example.com/upload"
+    method: POST
+    formData:
+      document:
+        file: "./report.pdf"
+
+  # File with custom filename
+  - name: "Upload with Custom Filename"
+    url: "https://api.example.com/upload"
+    method: POST
+    formData:
+      document:
+        file: "./local-file.pdf"
+        filename: "quarterly-report.pdf"
+
+  # File with explicit content type
+  - name: "Upload with Content Type"
+    url: "https://api.example.com/upload"
+    method: POST
+    formData:
+      data:
+        file: "./data.json"
+        contentType: "application/json"
+
+  # Multiple files with form fields
+  - name: "Mixed Form Data"
+    url: "https://api.example.com/submit"
+    method: POST
+    formData:
+      # Text fields
+      username: "john_doe"
+      email: "john@example.com"
+      age: 30
+      subscribe: true
+
+      # File attachments
+      avatar:
+        file: "./avatar.png"
+        contentType: "image/png"
+
+      resume:
+        file: "./resume.pdf"
+        filename: "john-doe-resume.pdf"
+        contentType: "application/pdf"
+
+  # File upload with all options
+  - name: "Complete File Upload"
+    url: "https://api.example.com/documents"
+    method: POST
+    formData:
+      description: "Quarterly financial report"
+      uploaded_by: "\${USER_ID}"
+      document:
+        file: "./report.pdf"
+        filename: "Q4-2024-Report.pdf"
+        contentType: "application/pdf"
+    expect:
+      status: 201
+```
+
+### File Attachment Properties
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `file` | string | Yes | Path to the file (relative or absolute) |
+| `filename` | string | No | Custom filename to send to the server |
+| `contentType` | string | No | MIME type (curl auto-detects if not specified) |
+
+### FormData vs Body
+
+> **Note:** `formData` and `body` are mutually exclusive. When both are specified, `formData` takes precedence. Use `body` for JSON/text content and `formData` for file uploads.
+
 ## Authentication
 
 Configure authentication using the auth object or manual headers.
