@@ -13,11 +13,11 @@ export function LogoCloud({ title = 'Trusted by teams at', className }: LogoClou
         className,
       )}
     >
-      <div className="mx-auto flex max-w-[58rem] flex-col items-center justify-center gap-6 text-center">
-        <h2 className="text-4xl font-semibold tracking-tight text-gray-900 sm:text-5xl dark:text-white">
+      <div className="mx-auto flex max-w-[58rem] flex-col items-center justify-center gap-4 sm:gap-6 text-center">
+        <h2 className="text-2xl font-semibold tracking-tight text-gray-900 sm:text-4xl lg:text-5xl dark:text-white">
           {title}
         </h2>
-        <p className="max-w-[85%] leading-normal text-muted-foreground sm:text-lg sm:leading-7">
+        <p className="max-w-[85%] leading-normal text-muted-foreground text-sm sm:text-lg sm:leading-7">
           Join the developers and organizations who rely on curl-runner for their critical API
           testing and automation workflows.
         </p>

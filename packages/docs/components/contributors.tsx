@@ -54,31 +54,31 @@ const contributors: Contributor[] = [
  */
 export function Contributors() {
   return (
-    <section className="py-24 sm:py-32">
-      <div className="mx-auto max-w-7xl px-6 lg:px-8">
+    <section className="py-12 sm:py-24 lg:py-32">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
         <div className="mx-auto max-w-2xl lg:mx-0">
           <div className="flex items-center gap-2 mb-4">
-            <Users className="h-6 w-6 text-cyan-500" />
+            <Users className="h-5 w-5 sm:h-6 sm:w-6 text-cyan-500" />
             <Badge className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20">
               Community
             </Badge>
           </div>
-          <h2 className="text-4xl font-semibold tracking-tight text-gray-900 sm:text-5xl dark:text-white">
+          <h2 className="text-2xl font-semibold tracking-tight text-gray-900 sm:text-4xl lg:text-5xl dark:text-white">
             Contributors
           </h2>
-          <p className="mt-6 text-lg text-gray-600 dark:text-gray-400">
+          <p className="mt-4 sm:mt-6 text-base sm:text-lg text-gray-600 dark:text-gray-400">
             Meet the passionate developers who make <CurlRunner /> possible. Want to join us? We'd
             love to have you contribute to the project!
           </p>
         </div>
 
         {/* Contributors Grid */}
-        <div className="mt-20 flex justify-start">
+        <div className="mt-10 sm:mt-20 flex justify-start">
           {contributors.map((person) => (
             <div key={person.name} className="group">
               {/* Profile Image */}
-              <div className="relative w-24 h-24">
+              <div className="relative w-20 h-20 sm:w-24 sm:h-24">
                 <Image
                   alt={person.name}
                   src={person.imageUrl}
