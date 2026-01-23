@@ -113,16 +113,16 @@ export default function Home() {
         </section>
 
         {/* Code Preview */}
-        <section className="container mx-auto max-w-[64rem] py-8 md:py-12 lg:py-24 px-4 sm:px-6 lg:px-8">
-          <div className="grid gap-8 lg:grid-cols-2 lg:gap-12 items-center">
-            <div className="space-y-4">
-              <h2 className="text-3xl font-bold">Simple YAML Configuration</h2>
-              <p className="text-muted-foreground text-lg">
+        <section className="container mx-auto max-w-[64rem] py-8 md:py-12 lg:py-24 px-4 sm:px-6 lg:px-8 overflow-hidden">
+          <div className="grid gap-6 lg:grid-cols-2 lg:gap-12 items-center">
+            <div className="space-y-3 sm:space-y-4">
+              <h2 className="text-2xl sm:text-3xl font-bold">Simple YAML Configuration</h2>
+              <p className="text-muted-foreground text-base sm:text-lg">
                 Define your HTTP requests using clean, readable YAML files. Support for variables,
                 templates, parallel execution, and response validation.
               </p>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-4 min-w-0">
               <CodeBlockServer language="yaml" filename="api-tests.yaml">
                 {exampleYaml}
               </CodeBlockServer>
@@ -131,24 +131,24 @@ export default function Home() {
         </section>
 
         {/* Installation */}
-        <section className="container mx-auto max-w-[64rem] py-8 md:py-12 lg:py-24 px-4 sm:px-6 lg:px-8">
-          <div className="grid gap-8 lg:grid-cols-2 lg:gap-12 items-center">
-            <div className="space-y-4 order-2 lg:order-1">
+        <section className="container mx-auto max-w-[64rem] py-8 md:py-12 lg:py-24 px-4 sm:px-6 lg:px-8 overflow-hidden">
+          <div className="grid gap-6 lg:grid-cols-2 lg:gap-12 items-center">
+            <div className="space-y-4 order-2 lg:order-1 min-w-0">
               <div className="space-y-4">
                 <div>
-                  <h3 className="text-lg font-semibold mb-2">Install</h3>
+                  <h3 className="text-base sm:text-lg font-semibold mb-2">Install</h3>
                   <CodeBlockServer language="bash">{installCommand}</CodeBlockServer>
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-semibold mb-2">Run</h3>
+                  <h3 className="text-base sm:text-lg font-semibold mb-2">Run</h3>
                   <CodeBlockServer language="bash">{runCommand}</CodeBlockServer>
                 </div>
               </div>
             </div>
-            <div className="space-y-4 order-1 lg:order-2">
-              <h2 className="text-3xl font-bold">Quick to Install & Use</h2>
-              <p className="text-muted-foreground text-lg">
+            <div className="space-y-3 sm:space-y-4 order-1 lg:order-2">
+              <h2 className="text-2xl sm:text-3xl font-bold">Quick to Install & Use</h2>
+              <p className="text-muted-foreground text-base sm:text-lg">
                 Get started in seconds with your preferred package manager. Works on Linux, macOS,
                 and Windows with full cross-platform support.
               </p>
@@ -157,13 +157,13 @@ export default function Home() {
         </section>
 
         {/* Bento Grid Features */}
-        <section className="py-24 sm:py-32">
-          <div className="mx-auto max-w-2xl px-6 lg:max-w-7xl lg:px-8">
+        <section className="py-12 sm:py-24 lg:py-32">
+          <div className="mx-auto max-w-2xl px-4 sm:px-6 lg:max-w-7xl lg:px-8">
             <div className="text-center">
               <Badge className="text-sm mb-4 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20">
                 Powerful Features
               </Badge>
-              <h2 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl">
+              <h2 className="text-2xl font-bold tracking-tight sm:text-4xl md:text-5xl lg:text-6xl">
                 <span className="bg-gradient-to-br from-black to-gray-600 bg-clip-text text-transparent dark:from-white dark:to-gray-300">
                   Everything you need for
                 </span>
@@ -172,18 +172,18 @@ export default function Home() {
                   HTTP request management
                 </span>
               </h2>
-              <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground">
+              <p className="mx-auto mt-4 max-w-2xl text-base sm:text-lg text-muted-foreground">
                 A comprehensive toolkit designed for developers who need reliable API testing and
                 automation
               </p>
             </div>
 
-            <div className="mt-16 grid gap-4 lg:grid-cols-3 lg:grid-rows-2">
+            <div className="mt-10 sm:mt-16 grid gap-4 lg:grid-cols-3 lg:grid-rows-2">
               {/* YAML Configuration - Large Left Card */}
               <div className="relative lg:row-span-2">
                 <div className="absolute inset-px rounded-lg bg-card lg:rounded-l-3xl" />
                 <div className="relative flex h-full flex-col overflow-hidden rounded-lg lg:rounded-l-3xl border">
-                  <div className="px-8 pt-8 pb-3 sm:px-10 sm:pt-10 sm:pb-0">
+                  <div className="px-4 pt-6 pb-3 sm:px-8 sm:pt-8 lg:px-10 lg:pt-10 sm:pb-0">
                     <div className="flex items-center gap-2 mb-4">
                       <FileText className="h-6 w-6 text-cyan-500" />
                       <Badge className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20">
@@ -196,8 +196,8 @@ export default function Home() {
                       variables, templates, and validation.
                     </p>
                   </div>
-                  <div className="flex-1 px-8 pb-8 sm:px-10 sm:pb-10">
-                    <div className="mt-6 rounded-lg bg-slate-100 dark:bg-zinc-950/70 backdrop-blur-sm border border-slate-200 dark:border-zinc-800 p-4 font-mono text-xs">
+                  <div className="flex-1 px-4 pb-6 sm:px-8 sm:pb-8 lg:px-10 lg:pb-10">
+                    <div className="mt-4 sm:mt-6 rounded-lg bg-slate-100 dark:bg-zinc-950/70 backdrop-blur-sm border border-slate-200 dark:border-zinc-800 p-3 sm:p-4 font-mono text-[10px] sm:text-xs overflow-x-auto">
                       <div className="text-slate-600 dark:text-gray-500"># api-test.yaml</div>
                       <div className="mt-2">
                         <span className="text-cyan-600 dark:text-cyan-400">requests</span>:
@@ -248,7 +248,7 @@ export default function Home() {
               <div className="relative max-lg:row-start-1">
                 <div className="absolute inset-px rounded-lg bg-card max-lg:rounded-t-3xl" />
                 <div className="relative flex h-full flex-col overflow-hidden rounded-lg max-lg:rounded-t-3xl border">
-                  <div className="px-8 pt-8 sm:px-10 sm:pt-10">
+                  <div className="px-4 pt-6 sm:px-8 sm:pt-8 lg:px-10 lg:pt-10">
                     <div className="flex items-center gap-2 mb-4">
                       <Zap className="h-6 w-6 text-yellow-500" />
                       <Badge className="bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20">
@@ -260,9 +260,9 @@ export default function Home() {
                       Exceptional performance for sequential and parallel request execution.
                     </p>
                   </div>
-                  <div className="flex flex-1 items-center justify-center px-8 pb-8">
+                  <div className="flex flex-1 items-center justify-center px-4 pb-6 sm:px-8 sm:pb-8">
                     <div className="text-center">
-                      <div className="text-4xl font-bold text-cyan-500">10x</div>
+                      <div className="text-3xl sm:text-4xl font-bold text-cyan-500">10x</div>
                       <div className="text-sm text-muted-foreground mt-2">
                         Faster than traditional tools
                       </div>
@@ -275,7 +275,7 @@ export default function Home() {
               <div className="relative max-lg:row-start-3 lg:col-start-2 lg:row-start-2">
                 <div className="absolute inset-px rounded-lg bg-card" />
                 <div className="relative flex h-full flex-col overflow-hidden rounded-lg border">
-                  <div className="px-8 pt-8 sm:px-10 sm:pt-10">
+                  <div className="px-4 pt-6 sm:px-8 sm:pt-8 lg:px-10 lg:pt-10">
                     <div className="flex items-center gap-2 mb-4">
                       <Terminal className="h-6 w-6 text-green-500" />
                       <Badge className="bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20">
@@ -287,8 +287,8 @@ export default function Home() {
                       Progress indicators, colored output, and comprehensive error handling.
                     </p>
                   </div>
-                  <div className="flex-1 p-8 flex items-end">
-                    <div className="w-full rounded-lg bg-slate-100 dark:bg-zinc-950/70 backdrop-blur-sm border border-slate-200 dark:border-zinc-800 p-3 font-mono text-xs">
+                  <div className="flex-1 p-4 sm:p-8 flex items-end">
+                    <div className="w-full rounded-lg bg-slate-100 dark:bg-zinc-950/70 backdrop-blur-sm border border-slate-200 dark:border-zinc-800 p-2 sm:p-3 font-mono text-[10px] sm:text-xs overflow-x-auto">
                       <div>
                         <span className="text-green-600 dark:text-green-400">✓</span>{' '}
                         <span className="text-slate-700 dark:text-slate-300">Get Users</span>{' '}
@@ -316,7 +316,7 @@ export default function Home() {
               <div className="relative lg:row-span-2">
                 <div className="absolute inset-px rounded-lg bg-card max-lg:rounded-b-3xl lg:rounded-r-3xl" />
                 <div className="relative flex h-full flex-col overflow-hidden rounded-lg max-lg:rounded-b-3xl lg:rounded-r-3xl border">
-                  <div className="px-8 pt-8 pb-3 sm:px-10 sm:pt-10 sm:pb-0">
+                  <div className="px-4 pt-6 pb-3 sm:px-8 sm:pt-8 lg:px-10 lg:pt-10 sm:pb-0">
                     <div className="flex items-center gap-2 mb-4">
                       <Settings className="h-6 w-6 text-purple-500" />
                       <Badge className="bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20">
@@ -328,8 +328,8 @@ export default function Home() {
                       Global settings, variable interpolation, retries, and custom output formats.
                     </p>
                   </div>
-                  <div className="flex-1 px-8 pb-8 sm:px-10 sm:pb-10">
-                    <div className="mt-6 space-y-4">
+                  <div className="flex-1 px-4 pb-6 sm:px-8 sm:pb-8 lg:px-10 lg:pb-10">
+                    <div className="mt-4 sm:mt-6 space-y-3 sm:space-y-4">
                       <div className="flex items-center gap-3">
                         <div className="h-8 w-8 rounded-lg bg-cyan-500/10 flex items-center justify-center">
                           <Play className="h-4 w-4 text-cyan-500" />
@@ -389,14 +389,14 @@ export default function Home() {
 
         {/* CTA */}
         <section className="container mx-auto max-w-[64rem] py-8 md:py-12 lg:py-24 px-4 sm:px-6 lg:px-8">
-          <div className="mx-auto flex max-w-[58rem] flex-col items-center justify-center gap-6 text-center">
-            <h2 className="font-bold text-3xl leading-[1.1] sm:text-3xl md:text-6xl">
+          <div className="mx-auto flex max-w-[58rem] flex-col items-center justify-center gap-4 sm:gap-6 text-center">
+            <h2 className="font-bold text-2xl leading-[1.1] sm:text-3xl md:text-5xl lg:text-6xl">
               Ready to get started?
             </h2>
-            <p className="max-w-[85%] leading-normal text-muted-foreground sm:text-lg sm:leading-7">
+            <p className="max-w-[85%] leading-normal text-muted-foreground text-sm sm:text-lg sm:leading-7">
               Join developers who trust <CurlRunner /> for their HTTP request management needs.
             </p>
-            <div className="flex gap-4 items-center flex-col sm:flex-row mt-4">
+            <div className="flex gap-3 sm:gap-4 items-center flex-col sm:flex-row mt-2 sm:mt-4">
               <Button asChild size="lg" className="h-11 bg-cyan-500 hover:bg-cyan-600 text-white">
                 <Link href="/docs/installation">
                   <Download className="mr-2 h-4 w-4" />
