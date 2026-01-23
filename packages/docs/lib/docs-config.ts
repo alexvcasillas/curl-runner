@@ -101,6 +101,11 @@ export const docsConfig: SidebarConfig = {
           href: '/docs/features/output-formats',
           description: 'Control output format and logging',
         },
+        {
+          title: 'CI/CD Integration',
+          href: '/docs/features/ci-integration',
+          description: 'CI-friendly exit codes for pipeline integration',
+        },
       ],
     },
     {
