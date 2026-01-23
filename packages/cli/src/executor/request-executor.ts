@@ -1,3 +1,4 @@
+import { YamlParser } from '../parser/yaml';
 import type {
   ExecutionResult,
   ExecutionSummary,
@@ -6,14 +7,9 @@ import type {
   RequestConfig,
   ResponseStoreContext,
 } from '../types/config';
-import { YamlParser } from '../parser/yaml';
 import { CurlBuilder } from '../utils/curl-builder';
 import { Logger } from '../utils/logger';
-import {
-  createStoreContext,
-  extractStoreValues,
-  mergeStoreContext,
-} from '../utils/response-store';
+import { createStoreContext, extractStoreValues } from '../utils/response-store';
 
 export class RequestExecutor {
   private logger: Logger;
