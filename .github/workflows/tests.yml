@@ -9,6 +9,12 @@ on:
     workflows: ["Vercel Production Deployment"]
     types:
       - completed
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to checkout'
+        required: true
+        type: string
 
 jobs:
   test:
@@ -18,6 +24,8 @@ jobs:
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
