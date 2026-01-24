@@ -23,6 +23,9 @@ export const metadata: Metadata = {
     'parallel mode',
     'concurrent processing',
     'HTTP performance',
+    'maxConcurrency',
+    'rate limiting',
+    'concurrency control',
   ],
   openGraph: {
     title: 'Parallel Execution | curl-runner Documentation',
@@ -124,8 +127,44 @@ curl-runner api-tests.yaml --parallel
 # Override file setting to run sequentially
 curl-runner api-tests.yaml --sequential
 
+# Run parallel with max 5 concurrent requests
+curl-runner api-tests.yaml --parallel --max-concurrent 5
+
 # Run parallel with verbose output
 curl-runner api-tests.yaml --parallel --verbose`;
+
+const concurrencyControlExample = `# Limit concurrent requests to avoid rate limiting
+global:
+  execution: parallel
+  maxConcurrency: 5  # Only 5 requests run at a time
+  continueOnError: true
+  variables:
+    API_URL: https://api.example.com
+
+requests:
+  - name: Request 1
+    url: \${API_URL}/endpoint1
+  - name: Request 2
+    url: \${API_URL}/endpoint2
+  - name: Request 3
+    url: \${API_URL}/endpoint3
+  - name: Request 4
+    url: \${API_URL}/endpoint4
+  - name: Request 5
+    url: \${API_URL}/endpoint5
+  - name: Request 6
+    url: \${API_URL}/endpoint6
+  - name: Request 7
+    url: \${API_URL}/endpoint7
+  - name: Request 8
+    url: \${API_URL}/endpoint8
+  - name: Request 9
+    url: \${API_URL}/endpoint9
+  - name: Request 10
+    url: \${API_URL}/endpoint10
+# With maxConcurrency: 5, requests run in batches:
+# Batch 1: Requests 1-5 (parallel)
+# Batch 2: Requests 6-10 (parallel)`;
 
 export default function ParallelExecutionPage() {
   return (
@@ -207,6 +246,15 @@ export default function ParallelExecutionPage() {
                       Continue executing remaining requests if one fails
                     </td>
                   </tr>
+                  <tr className="border-b">
+                    <td className="p-3">
+                      <code className="text-sm">maxConcurrency</code>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">number</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Maximum number of requests to run simultaneously (default: unlimited)
+                    </td>
+                  </tr>
                   <tr>
                     <td className="p-3">
                       <code className="text-sm">timeout</code>
@@ -218,6 +266,30 @@ export default function ParallelExecutionPage() {
                   </tr>
                 </tbody>
               </table>
+            </div>
+          </section>
+
+          {/* Concurrency Control */}
+          <section>
+            <H2 id="concurrency-control">Concurrency Control</H2>
+            <p className="text-muted-foreground mb-6">
+              Use <code className="text-sm bg-muted px-1 py-0.5 rounded">maxConcurrency</code> to
+              limit the number of requests that run simultaneously. This is useful for avoiding rate
+              limiting from APIs or preventing overwhelming target servers.
+            </p>
+
+            <CodeBlockServer language="yaml" filename="concurrency-control.yaml">
+              {concurrencyControlExample}
+            </CodeBlockServer>
+
+            <div className="mt-6 rounded-lg border bg-muted/50 p-4">
+              <h4 className="text-sm font-medium mb-2">When to Use Concurrency Limits</h4>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                <li>• APIs with rate limits (e.g., 10 requests/second)</li>
+                <li>• Testing against servers with limited capacity</li>
+                <li>• Simulating realistic concurrent user loads</li>
+                <li>• Avoiding resource exhaustion on your machine</li>
+              </ul>
             </div>
           </section>
 
@@ -333,6 +405,14 @@ export default function ParallelExecutionPage() {
                       </td>
                       <td className="p-3 text-sm text-muted-foreground">
                         Force sequential execution
+                      </td>
+                    </tr>
+                    <tr className="border-b">
+                      <td className="p-3">
+                        <code className="text-sm">--max-concurrent &lt;n&gt;</code>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        Limit concurrent requests in parallel mode
                       </td>
                     </tr>
                     <tr>
