@@ -1,1 +1,6 @@
+# Generate markdown from docs to catch any TSX compilation errors
+echo "Checking docs build..."
+bun run --filter '@curl-runner/docs' generate-markdown || exit 1
+
+# Run lint-staged for formatting
 bunx lint-staged
