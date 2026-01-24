@@ -240,13 +240,12 @@ global:
     API_KEY: your-secret-api-key
     
     # Environment-specific variables
-    ENVIRONMENT: \${ENV.NODE_ENV || 'development'}
-    DEBUG_MODE: \${ENVIRONMENT === 'development'}
-    
+    ENVIRONMENT: "\${NODE_ENV}"
+
     # Computed variables
     API_ENDPOINT: "\${BASE_URL}/\${API_VERSION}"
     AUTH_HEADER: "Bearer \${API_KEY}"
-    TIMEOUT: \${DEBUG_MODE ? 30000 : 5000}
+    TIMEOUT: 5000
     
   defaults:
     headers:
@@ -319,9 +318,9 @@ global:
     
   # Global variables
   variables:
-    BASE_URL: \${ENV.API_BASE_URL || 'https://api.example.com'}
-    API_KEY: \${ENV.API_KEY}
-    TRACE_ID: \${crypto.randomUUID()}
+    BASE_URL: "\${API_BASE_URL}"
+    API_KEY: "\${API_KEY}"
+    TRACE_ID: "\${UUID}"
     
   # Global defaults
   defaults:

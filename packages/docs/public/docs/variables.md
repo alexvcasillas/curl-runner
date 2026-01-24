@@ -100,7 +100,7 @@ collection:
 
 ### Environment Variables
 
-Access system environment variables using the `ENV` object.
+Access system environment variables using the same `${VAR_NAME}` syntax. The parser checks `process.env` as a fallback for undefined static variables.
 
 **env-variables.yaml**
 
@@ -297,8 +297,6 @@ collection:
 ```yaml
 global:
   variables:
-    ENVIRONMENT: \${ENV.NODE_ENV || 'development'}
-    BASE_URL: \${ENVIRONMENT === 'production' 
-      ? 'https://api.example.com' 
-      : 'https://api-staging.example.com'}
+    ENVIRONMENT: "\${NODE_ENV}"
+    BASE_URL: "https://api.example.com"
 ```
