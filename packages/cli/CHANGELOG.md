@@ -1,5 +1,16 @@
 # @curl-runner/cli
 
+## 1.9.0
+
+### Minor Changes
+
+- [#37](https://github.com/alexvcasillas/curl-runner/pull/37) [`9968188`](https://github.com/alexvcasillas/curl-runner/commit/996818855042d12b2dce364b66972bca92add697) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Add SSL/TLS certificate configuration support
+
+  - New `ssl` configuration option for requests and global settings
+  - Support for custom CA certificates (`ssl.ca`)
+  - Support for mutual TLS (mTLS) with client certificates (`ssl.cert`, `ssl.key`)
+  - Support for disabling SSL verification (`ssl.verify: false`)
+
 ## 1.8.0
 
 ### Minor Changes
