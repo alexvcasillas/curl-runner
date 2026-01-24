@@ -175,6 +175,84 @@ describe('YamlParser.resolveVariable', () => {
   });
 });
 
+describe('YamlParser string transforms', () => {
+  test('should transform variable to uppercase with :upper', () => {
+    const variables = { ENV: 'production' };
+    const result = YamlParser.resolveVariable('ENV:upper', variables, {});
+    expect(result).toBe('PRODUCTION');
+  });
+
+  test('should transform variable to lowercase with :lower', () => {
+    const variables = { RESOURCE: 'USERS' };
+    const result = YamlParser.resolveVariable('RESOURCE:lower', variables, {});
+    expect(result).toBe('users');
+  });
+
+  test('should return null for transform on missing variable', () => {
+    const result = YamlParser.resolveVariable('MISSING:upper', {}, {});
+    expect(result).toBeNull();
+  });
+
+  test('should work with interpolateVariables for :upper transform', () => {
+    const obj = {
+      headers: {
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: Testing string transform
+        'X-Environment': '${ENV:upper}',
+      },
+    };
+    const variables = { ENV: 'production' };
+    const result = YamlParser.interpolateVariables(obj, variables);
+    expect(result).toEqual({
+      headers: {
+        'X-Environment': 'PRODUCTION',
+      },
+    });
+  });
+
+  test('should work with interpolateVariables for :lower transform', () => {
+    const obj = {
+      headers: {
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: Testing string transform
+        'X-Resource': '${RESOURCE:lower}',
+      },
+    };
+    const variables = { RESOURCE: 'USERS' };
+    const result = YamlParser.interpolateVariables(obj, variables);
+    expect(result).toEqual({
+      headers: {
+        'X-Resource': 'users',
+      },
+    });
+  });
+
+  test('should mix transforms with regular variables', () => {
+    const obj = {
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: Testing string transform
+      url: '${BASE_URL}/${RESOURCE:lower}',
+      headers: {
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: Testing string transform
+        'X-Environment': '${ENV:upper}',
+      },
+    };
+    const variables = { BASE_URL: 'https://api.example.com', RESOURCE: 'Users', ENV: 'staging' };
+    const result = YamlParser.interpolateVariables(obj, variables);
+    expect(result).toEqual({
+      url: 'https://api.example.com/users',
+      headers: {
+        'X-Environment': 'STAGING',
+      },
+    });
+  });
+
+  test('should keep unresolved transforms as-is', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: Testing string transform
+    const obj = { value: '${MISSING:upper}' };
+    const result = YamlParser.interpolateVariables(obj, {});
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: Testing string transform
+    expect(result).toEqual({ value: '${MISSING:upper}' });
+  });
+});
+
 describe('YamlParser.resolveVariable with default values', () => {
   test('should use default value when variable is not set', () => {
     const result = YamlParser.resolveVariable('API_TIMEOUT:5000', {}, {});
@@ -189,17 +267,20 @@ describe('YamlParser.resolveVariable with default values', () => {
 
   test('should handle nested default with first variable set', () => {
     const variables = { DATABASE_HOST: 'prod-db.example.com' };
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: Testing variable interpolation
     const result = YamlParser.resolveVariable('DATABASE_HOST:${DB_HOST:localhost}', variables, {});
     expect(result).toBe('prod-db.example.com');
   });
 
   test('should handle nested default with second variable set', () => {
     const variables = { DB_HOST: 'staging-db.example.com' };
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: Testing variable interpolation
     const result = YamlParser.resolveVariable('DATABASE_HOST:${DB_HOST:localhost}', variables, {});
     expect(result).toBe('staging-db.example.com');
   });
 
   test('should use final fallback when no variables are set', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: Testing variable interpolation
     const result = YamlParser.resolveVariable('DATABASE_HOST:${DB_HOST:localhost}', {}, {});
     expect(result).toBe('localhost');
   });
