@@ -120,7 +120,12 @@ export default function VariablesPage() {
               <div>
                 <H3 id="environment-variables">Environment Variables</H3>
                 <p className="text-muted-foreground mb-4">
-                  Access system environment variables using the <code>ENV</code> object.
+                  Environment variables from your system can be accessed using the same{' '}
+                  <code className="bg-primary/20 text-primary px-2 py-1 rounded text-sm font-mono">
+                    ${`{VAR_NAME}`}
+                  </code>{' '}
+                  syntax. The parser checks <code>process.env</code> as a fallback for undefined
+                  static variables.
                 </p>
                 <CodeBlockServer language="yaml" filename="env-variables.yaml">
                   {environmentVariablesExample}
@@ -151,7 +156,7 @@ export default function VariablesPage() {
                       </Badge>
                       <span className="font-medium">Environment Variables</span>
                       <code className="text-sm bg-primary/20 text-primary px-2 py-1 rounded font-mono">
-                        ${`{ENV.VAR_NAME}`}
+                        ${`{VAR_NAME}`} (from process.env)
                       </code>
                     </div>
                     <div className="flex items-center space-x-3">
@@ -334,9 +339,9 @@ export default function VariablesPage() {
               <CodeBlockServer language="yaml" title="API Authentication Pattern">
                 {`global:
   variables:
-    API_KEY: \${ENV.API_KEY}
+    API_KEY: "\${API_KEY}"
     AUTH_HEADER: "Bearer \${API_KEY}"
-    
+
   defaults:
     headers:
       Authorization: \${AUTH_HEADER}`}
@@ -346,10 +351,8 @@ export default function VariablesPage() {
               <CodeBlockServer language="yaml" title="Environment-Specific URLs">
                 {`global:
   variables:
-    ENVIRONMENT: \${ENV.NODE_ENV || 'development'}
-    BASE_URL: \${ENVIRONMENT === 'production' 
-      ? 'https://api.example.com' 
-      : 'https://api-staging.example.com'}`}
+    ENVIRONMENT: "\${NODE_ENV}"
+    BASE_URL: "https://api.example.com"`}
               </CodeBlockServer>
 
               <H3 id="request-correlation-ids">Request Correlation IDs</H3>
