@@ -164,13 +164,13 @@ request:
 # Retry delays: 1000ms, 1500ms, 2250ms, 3375ms, 5063ms`;
 
 const cliCommands = `# Override retry count globally
-curl-runner api-tests.yaml --retry 5
+curl-runner api-tests.yaml --retries 5
 
 # Disable all retries
 curl-runner api-tests.yaml --no-retry
 
 # Set retry delay
-curl-runner api-tests.yaml --retry-delay 2000`;
+curl-runner api-tests.yaml --retries 3 --retry-delay 2000`;
 
 const fixedDelayExample = `# Fixed delay retry strategy
 request:
