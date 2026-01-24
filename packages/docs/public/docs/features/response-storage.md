@@ -18,8 +18,8 @@ keywords:
   - request
 slug: "/docs/response-storage"
 toc: true
-date: "2026-01-24T16:07:24.504Z"
-lastModified: "2026-01-24T16:07:24.504Z"
+date: "2026-01-24T16:01:46.347Z"
+lastModified: "2026-01-24T16:01:46.347Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -39,8 +39,8 @@ schema:
   "@type": "TechArticle"
   headline: "Response Storage"
   description: "Store response values from one request to use in subsequent requests."
-  datePublished: "2026-01-24T16:07:24.504Z"
-  dateModified: "2026-01-24T16:07:24.504Z"
+  datePublished: "2026-01-24T16:01:46.347Z"
+  dateModified: "2026-01-24T16:01:46.347Z"
 ---
 
 # Response Storage
