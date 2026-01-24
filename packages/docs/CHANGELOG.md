@@ -1,5 +1,14 @@
 # @curl-runner/docs
 
+## 0.1.2
+
+### Patch Changes
+
+- [#42](https://github.com/alexvcasillas/curl-runner/pull/42) [`523a42f`](https://github.com/alexvcasillas/curl-runner/commit/523a42f6eded3589d91a165f1975cc7c313dd3fd) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Remove undocumented output configuration options from global-settings.md
+
+  - Removed: `includeResponseBody`, `includeRequestDetails`, `colors`, `showProgress`, `timestampFormat`
+  - Updated examples to use correct implemented options: `format`, `prettyLevel`, `showHeaders`, `showBody`, `showMetrics`
+
 ## 0.1.1
 
 ### Patch Changes
