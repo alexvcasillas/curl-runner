@@ -1224,7 +1224,7 @@ export default function RequestObjectPage() {
             </CodeBlockServer>
 
             <div className="mt-6">
-              <H3>SSL Configuration Properties</H3>
+              <H3 id="ssl-properties">SSL Configuration Properties</H3>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
