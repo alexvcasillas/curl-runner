@@ -265,6 +265,33 @@ global:
     timeout: 8000
     retries: 2`;
 
+const sslConfigExample = `# Global SSL/TLS Configuration
+global:
+  # Apply SSL settings to all requests
+  ssl:
+    # Verify SSL certificates (default: true)
+    verify: true
+
+    # Custom CA certificate for enterprise environments
+    ca: "./certs/company-ca.pem"
+
+    # Client certificate for mutual TLS (mTLS)
+    cert: "./certs/client.pem"
+    key: "./certs/client-key.pem"
+
+requests:
+  # This request uses global SSL settings
+  - name: "Uses Global SSL"
+    url: "https://internal-api.company.com/data"
+    method: GET
+
+  # This request overrides global SSL settings
+  - name: "Different SSL Config"
+    url: "https://partner-api.example.com/data"
+    method: GET
+    ssl:
+      ca: "./certs/partner-ca.pem"  # Override with different CA`;
+
 const overrideExample = `# How individual requests override global settings
 global:
   execution: sequential
@@ -518,8 +545,9 @@ export default function GlobalSettingsPage() {
               </CardHeader>
               <CardContent className="text-amber-700 dark:text-amber-300">
                 <p>
-                  Some advanced features like SSL certificates, proxies, and rate limiting may
+                  Some advanced features like proxies and rate limiting may
                   require additional setup or may not be available in all environments.
+                  SSL/TLS certificate configuration is fully supported.
                 </p>
               </CardContent>
             </Card>
@@ -527,6 +555,68 @@ export default function GlobalSettingsPage() {
             <CodeBlockServer language="yaml" filename="advanced-global-config.yaml">
               {advancedConfigExample}
             </CodeBlockServer>
+          </section>
+
+          {/* SSL/TLS Configuration */}
+          <section>
+            <H2 id="ssl-tls-configuration">SSL/TLS Configuration</H2>
+            <p className="text-muted-foreground text-lg mb-6">
+              Configure SSL/TLS certificates globally for all requests. Individual requests can
+              override these settings.
+            </p>
+
+            <CodeBlockServer language="yaml" filename="ssl-config.yaml">
+              {sslConfigExample}
+            </CodeBlockServer>
+
+            <div className="mt-6">
+              <H3 id="ssl-properties">SSL Configuration Properties</H3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-2 pr-4">Property</th>
+                      <th className="text-left py-2 pr-4">Type</th>
+                      <th className="text-left py-2 pr-4">Default</th>
+                      <th className="text-left py-2">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b">
+                      <td className="py-2 pr-4"><code>verify</code></td>
+                      <td className="py-2 pr-4">boolean</td>
+                      <td className="py-2 pr-4"><code>true</code></td>
+                      <td className="py-2">Whether to verify SSL certificates</td>
+                    </tr>
+                    <tr className="border-b">
+                      <td className="py-2 pr-4"><code>ca</code></td>
+                      <td className="py-2 pr-4">string</td>
+                      <td className="py-2 pr-4">-</td>
+                      <td className="py-2">Path to CA certificate file</td>
+                    </tr>
+                    <tr className="border-b">
+                      <td className="py-2 pr-4"><code>cert</code></td>
+                      <td className="py-2 pr-4">string</td>
+                      <td className="py-2 pr-4">-</td>
+                      <td className="py-2">Path to client certificate file for mTLS</td>
+                    </tr>
+                    <tr className="border-b">
+                      <td className="py-2 pr-4"><code>key</code></td>
+                      <td className="py-2 pr-4">string</td>
+                      <td className="py-2 pr-4">-</td>
+                      <td className="py-2">Path to client private key file for mTLS</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-lg border bg-muted/50 p-4">
+              <p className="text-sm">
+                <strong>Note:</strong> Global SSL settings apply to all requests. Individual requests
+                can override these settings by specifying their own <code>ssl</code> configuration.
+              </p>
+            </div>
           </section>
 
           {/* Setting Precedence */}
