@@ -79,7 +79,11 @@ export default function VariablesPage() {
                     <code className="bg-primary/20 text-primary px-2 py-1 rounded text-sm font-mono">
                       ${`{VARIABLE_NAME}`}
                     </code>{' '}
-                    syntax, which supports JavaScript expressions and complex logic.
+                    syntax. You can also use default values with{' '}
+                    <code className="bg-primary/20 text-primary px-2 py-1 rounded text-sm font-mono">
+                      ${`{VAR:default}`}
+                    </code>
+                    .
                   </p>
                 </div>
               </div>
@@ -182,7 +186,7 @@ export default function VariablesPage() {
           <section>
             <H2 id="dynamic-variables">Dynamic Variables</H2>
             <p className="text-muted-foreground text-lg mb-6">
-              Create dynamic values using JavaScript expressions and built-in functions.
+              Create dynamic values using built-in functions.
             </p>
 
             <div className="space-y-6">
@@ -198,19 +202,19 @@ export default function VariablesPage() {
                       <div className="space-y-2 text-sm">
                         <div>
                           <code className="bg-primary/10 text-primary px-2 py-1 rounded font-mono">
-                            Date.now()
+                            ${`{DATE:YYYY-MM-DD}`}
                           </code>{' '}
-                          - Current timestamp
+                          - Formatted date
                         </div>
                         <div>
                           <code className="bg-primary/10 text-primary px-2 py-1 rounded font-mono">
-                            new Date().toISOString()
+                            ${`{TIME:HH:mm:ss}`}
                           </code>{' '}
-                          - ISO date
+                          - Formatted time
                         </div>
                         <div>
                           <code className="bg-primary/10 text-primary px-2 py-1 rounded font-mono">
-                            new Date().getTime()
+                            ${`{TIMESTAMP}`}
                           </code>{' '}
                           - Unix timestamp
                         </div>
@@ -229,21 +233,21 @@ export default function VariablesPage() {
                       <div className="space-y-2 text-sm">
                         <div>
                           <code className="bg-primary/10 text-primary px-2 py-1 rounded font-mono">
-                            crypto.randomUUID()
+                            ${`{UUID}`}
                           </code>{' '}
                           - UUID v4
                         </div>
                         <div>
                           <code className="bg-primary/10 text-primary px-2 py-1 rounded font-mono">
-                            Math.random()
+                            ${`{UUID:short}`}
                           </code>{' '}
-                          - Random number
+                          - Short UUID
                         </div>
                         <div>
                           <code className="bg-primary/10 text-primary px-2 py-1 rounded font-mono">
-                            Math.floor(Math.random() * 1000)
+                            ${`{RANDOM:1-1000}`}
                           </code>{' '}
-                          - Random int
+                          - Random integer
                         </div>
                       </div>
                     </div>
@@ -257,17 +261,21 @@ export default function VariablesPage() {
             </div>
           </section>
 
-          {/* Conditional Variables */}
+          {/* Default Values */}
           <section>
-            <H2 id="conditional-logic">Conditional Logic</H2>
+            <H2 id="default-values">Default Values</H2>
             <p className="text-muted-foreground text-lg mb-6">
-              Use JavaScript expressions to create conditional variables and environment-specific
-              configurations.
+              Use default value syntax to provide fallback values when variables are not set.
             </p>
 
-            <CodeBlockServer language="yaml" filename="conditional-variables.yaml">
+            <CodeBlockServer language="yaml" filename="default-values.yaml">
               {conditionalVariablesExample}
             </CodeBlockServer>
+
+            <p className="text-muted-foreground mt-4">
+              For environment-specific configurations, use separate YAML files per environment or
+              set environment variables directly.
+            </p>
           </section>
 
           {/* Complex Interpolation */}
@@ -334,34 +342,28 @@ export default function VariablesPage() {
               <CodeBlockServer language="yaml" title="API Authentication Pattern">
                 {`global:
   variables:
-    API_KEY: \${ENV.API_KEY}
-    AUTH_HEADER: "Bearer \${API_KEY}"
-    
-  defaults:
-    headers:
-      Authorization: \${AUTH_HEADER}`}
-              </CodeBlockServer>
+    # Use environment variables for configuration
+    BASE_URL: "\${API_BASE_URL:https://api-staging.example.com}"
+    API_KEY: "\${API_KEY}"
 
-              <H3 id="environment-specific-urls">Environment-Specific URLs</H3>
-              <CodeBlockServer language="yaml" title="Environment-Specific URLs">
-                {`global:
-  variables:
-    ENVIRONMENT: \${ENV.NODE_ENV || 'development'}
-    BASE_URL: \${ENVIRONMENT === 'production' 
-      ? 'https://api.example.com' 
-      : 'https://api-staging.example.com'}`}
+collection:
+  requests:
+    - name: "Authenticated request"
+      url: "\${BASE_URL}/users"
+      headers:
+        Authorization: "Bearer \${API_KEY}"`}
               </CodeBlockServer>
 
               <H3 id="request-correlation-ids">Request Correlation IDs</H3>
               <CodeBlockServer language="yaml" title="Request Correlation IDs">
                 {`global:
   variables:
-    CORRELATION_ID: \${crypto.randomUUID()}
-    
+    CORRELATION_ID: "\${UUID}"
+
   defaults:
     headers:
-      X-Correlation-ID: \${CORRELATION_ID}
-      X-Request-Time: \${Date.now()}`}
+      X-Correlation-ID: "\${CORRELATION_ID}"
+      X-Request-Time: "\${TIMESTAMP}"`}
               </CodeBlockServer>
             </div>
           </section>
