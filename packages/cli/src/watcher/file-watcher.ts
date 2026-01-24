@@ -1,4 +1,4 @@
-import { watch, type FSWatcher } from 'node:fs';
+import { type FSWatcher, watch } from 'node:fs';
 import type { WatchConfig } from '../types/config';
 import type { Logger } from '../utils/logger';
 
@@ -21,7 +21,7 @@ export class FileWatcher {
   }
 
   async start(): Promise<void> {
-    const { files, config, logger } = this.options;
+    const { files, logger } = this.options;
 
     // Initial run
     await this.runRequests();

@@ -10,6 +10,12 @@ const createMockLogger = () => ({
   logWarning: mock(() => {}),
 });
 
+// Helper to access private method for testing
+const triggerFileChange = (watcher: FileWatcher, filename: string) => {
+  // biome-ignore lint/complexity/useLiteralKeys: accessing private method for testing
+  watcher['handleFileChange'](filename);
+};
+
 describe('FileWatcher', () => {
   let watcher: FileWatcher;
   let mockLogger: ReturnType<typeof createMockLogger>;
@@ -37,9 +43,9 @@ describe('FileWatcher', () => {
     watcher = new FileWatcher(options);
 
     // Simulate rapid file changes
-    watcher['handleFileChange']('test.yaml');
-    watcher['handleFileChange']('test.yaml');
-    watcher['handleFileChange']('test.yaml');
+    triggerFileChange(watcher, 'test.yaml');
+    triggerFileChange(watcher, 'test.yaml');
+    triggerFileChange(watcher, 'test.yaml');
 
     // Wait for debounce to settle
     await Bun.sleep(100);
@@ -66,11 +72,11 @@ describe('FileWatcher', () => {
     watcher = new FileWatcher(options);
 
     // Start first run
-    watcher['handleFileChange']('test.yaml');
+    triggerFileChange(watcher, 'test.yaml');
     await Bun.sleep(20); // Let debounce fire
 
     // Change during run (should be queued)
-    watcher['handleFileChange']('test.yaml');
+    triggerFileChange(watcher, 'test.yaml');
 
     // Wait for both runs to complete
     await Bun.sleep(300);
@@ -89,12 +95,14 @@ describe('FileWatcher', () => {
     watcher = new FileWatcher(options);
 
     // Trigger a change to start debounce timer
-    watcher['handleFileChange']('test.yaml');
+    triggerFileChange(watcher, 'test.yaml');
 
     // Stop should clear the timer
     watcher.stop();
 
+    // biome-ignore lint/complexity/useLiteralKeys: accessing private field for testing
     expect(watcher['debounceTimer']).toBeNull();
+    // biome-ignore lint/complexity/useLiteralKeys: accessing private field for testing
     expect(watcher['watchers']).toHaveLength(0);
   });
 
@@ -109,7 +117,7 @@ describe('FileWatcher', () => {
     watcher = new FileWatcher(options);
 
     const startTime = performance.now();
-    watcher['handleFileChange']('test.yaml');
+    triggerFileChange(watcher, 'test.yaml');
 
     // Wait less than default debounce
     await Bun.sleep(100);
@@ -138,7 +146,7 @@ describe('FileWatcher', () => {
     watcher = new FileWatcher(options);
 
     // Should not throw
-    watcher['handleFileChange']('test.yaml');
+    triggerFileChange(watcher, 'test.yaml');
     await Bun.sleep(50);
 
     expect(mockLogger.logError).toHaveBeenCalledWith('Test error');
@@ -154,7 +162,7 @@ describe('FileWatcher', () => {
 
     watcher = new FileWatcher(options);
 
-    watcher['handleFileChange']('my-api.yaml');
+    triggerFileChange(watcher, 'my-api.yaml');
     await Bun.sleep(50);
 
     expect(mockLogger.logFileChanged).toHaveBeenCalledWith('my-api.yaml');
@@ -170,7 +178,7 @@ describe('FileWatcher', () => {
 
     watcher = new FileWatcher(options);
 
-    watcher['handleFileChange']('test.yaml');
+    triggerFileChange(watcher, 'test.yaml');
     await Bun.sleep(50);
 
     expect(mockLogger.logWatchReady).toHaveBeenCalled();
