@@ -118,14 +118,17 @@ requests:
   - name: Health Check 5
     url: \${API_URL}/health`;
 
-const cliUsage = `# Run with parallel execution
-curl-runner api-tests.yaml --parallel
+const cliUsage = `# Run with parallel execution (short flag)
+curl-runner api-tests.yaml -p
+
+# Run with parallel execution (long flag)
+curl-runner api-tests.yaml --execution parallel
 
 # Override file setting to run sequentially
-curl-runner api-tests.yaml --sequential
+curl-runner api-tests.yaml --execution sequential
 
 # Run parallel with verbose output
-curl-runner api-tests.yaml --parallel --verbose`;
+curl-runner api-tests.yaml -p --verbose`;
 
 export default function ParallelExecutionPage() {
   return (
@@ -154,7 +157,7 @@ export default function ParallelExecutionPage() {
                   {'execution: parallel'}
                 </code>{' '}
                 setting in your YAML file or the{' '}
-                <code className="text-xs bg-background px-1 py-0.5 rounded">--parallel</code> CLI
+                <code className="text-xs bg-background px-1 py-0.5 rounded">-p</code> CLI
                 flag.
               </p>
             </div>
@@ -321,15 +324,23 @@ export default function ParallelExecutionPage() {
                   <tbody>
                     <tr className="border-b">
                       <td className="p-3">
-                        <code className="text-sm">--parallel</code>
+                        <code className="text-sm">-p</code>
                       </td>
                       <td className="p-3 text-sm text-muted-foreground">
-                        Force parallel execution
+                        Force parallel execution (short flag)
                       </td>
                     </tr>
                     <tr className="border-b">
                       <td className="p-3">
-                        <code className="text-sm">--sequential</code>
+                        <code className="text-sm">--execution parallel</code>
+                      </td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        Force parallel execution (long flag)
+                      </td>
+                    </tr>
+                    <tr className="border-b">
+                      <td className="p-3">
+                        <code className="text-sm">--execution sequential</code>
                       </td>
                       <td className="p-3 text-sm text-muted-foreground">
                         Force sequential execution
