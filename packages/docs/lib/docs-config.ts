@@ -51,6 +51,31 @@ export const docsConfig: SidebarConfig = {
           href: '/docs/tutorials',
           description: 'Step-by-step guides and walkthroughs',
         },
+        {
+          title: 'Getting Started Tutorial',
+          href: '/docs/tutorials/getting-started',
+          description: 'Your first API test with curl-runner',
+        },
+        {
+          title: 'Authentication Workflows',
+          href: '/docs/tutorials/authentication-workflows',
+          description: 'Response storage and token management',
+        },
+        {
+          title: 'CI/CD Integration',
+          href: '/docs/tutorials/ci-cd-integration',
+          description: 'GitHub Actions and pipeline setup',
+        },
+        {
+          title: 'Parallel Execution',
+          href: '/docs/tutorials/parallel-execution',
+          description: 'Performance testing with parallel requests',
+        },
+        {
+          title: 'Advanced Validation',
+          href: '/docs/tutorials/advanced-validation',
+          description: 'Regex, ranges, and complex patterns',
+        },
       ],
     },
     {
