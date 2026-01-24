@@ -1,5 +1,25 @@
 # @curl-runner/cli
 
+## 1.8.0
+
+### Minor Changes
+
+- [#36](https://github.com/alexvcasillas/curl-runner/pull/36) [`8722304`](https://github.com/alexvcasillas/curl-runner/commit/8722304aab156442e4e015acc8a9c046a5a029c5) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Add exponential backoff support for retry mechanism
+
+  The retry configuration now supports a `backoff` multiplier for exponential backoff between retries. When set, the delay increases exponentially with each retry attempt using the formula: `delay * backoff^(attempt-1)`.
+
+  Example usage:
+
+  ```yaml
+  retry:
+    count: 3
+    delay: 1000 # Initial delay: 1 second
+    backoff: 2.0 # Multiplier
+  # Delays: 1000ms, 2000ms, 4000ms
+  ```
+
+  The backoff defaults to 1 (no backoff) to maintain backward compatibility.
+
 ## 1.7.0
 
 ### Minor Changes
