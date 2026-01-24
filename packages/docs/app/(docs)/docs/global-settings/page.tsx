@@ -236,11 +236,6 @@ global:
     https: "https://secure-proxy.company.com:8443"
     bypass: ["localhost", "*.internal.com"]
 
-  # Rate limiting
-  rateLimit:
-    maxRequests: 100
-    perSecond: 10
-
   # Output configuration
   output:
     verbose: true
@@ -504,8 +499,7 @@ export default function GlobalSettingsPage() {
           <section>
             <H2 id="advanced-configuration">Advanced Configuration</H2>
             <p className="text-muted-foreground text-lg mb-6">
-              Advanced global settings for complex scenarios including SSL, proxies, and rate
-              limiting.
+              Advanced global settings for complex scenarios including SSL and proxies.
             </p>
 
             <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/50 mb-6">
@@ -517,8 +511,8 @@ export default function GlobalSettingsPage() {
               </CardHeader>
               <CardContent className="text-amber-700 dark:text-amber-300">
                 <p>
-                  Some advanced features like SSL certificates, proxies, and rate limiting may
-                  require additional setup or may not be available in all environments.
+                  Some advanced features like SSL certificates and proxies may require additional
+                  setup or may not be available in all environments.
                 </p>
               </CardContent>
             </Card>
