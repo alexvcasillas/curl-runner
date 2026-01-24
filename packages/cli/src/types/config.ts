@@ -57,6 +57,25 @@ export type FormDataConfig = Record<string, FormFieldValue>;
  */
 export type StoreConfig = Record<string, string>;
 
+/**
+ * SSL/TLS certificate configuration options.
+ *
+ * Examples:
+ * - `{ verify: false }` - Disable SSL verification (equivalent to insecure: true)
+ * - `{ ca: "./certs/ca.pem" }` - Use custom CA certificate
+ * - `{ cert: "./certs/client.pem", key: "./certs/client-key.pem" }` - Mutual TLS (mTLS)
+ */
+export interface SSLConfig {
+  /** Whether to verify SSL certificates. Defaults to true. */
+  verify?: boolean;
+  /** Path to CA certificate file for custom certificate authorities. */
+  ca?: string;
+  /** Path to client certificate file for mutual TLS authentication. */
+  cert?: string;
+  /** Path to client private key file for mutual TLS authentication. */
+  key?: string;
+}
+
 export interface RequestConfig {
   name?: string;
   url: string;
@@ -88,6 +107,18 @@ export interface RequestConfig {
   };
   proxy?: string;
   insecure?: boolean;
+  /**
+   * SSL/TLS certificate configuration.
+   * Use this for custom CA certificates or mutual TLS (mTLS) authentication.
+   *
+   * @example
+   * ssl:
+   *   verify: true
+   *   ca: "./certs/ca.pem"
+   *   cert: "./certs/client.pem"
+   *   key: "./certs/client-key.pem"
+   */
+  ssl?: SSLConfig;
   output?: string;
   retry?: {
     count: number;
@@ -165,6 +196,11 @@ export interface GlobalConfig {
    * Controls when curl-runner should exit with non-zero status codes.
    */
   ci?: CIExitConfig;
+  /**
+   * Global SSL/TLS certificate configuration.
+   * Applied to all requests unless overridden at the request level.
+   */
+  ssl?: SSLConfig;
   variables?: Record<string, string>;
   output?: {
     verbose?: boolean;

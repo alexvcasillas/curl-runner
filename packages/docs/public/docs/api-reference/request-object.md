@@ -583,31 +583,91 @@ requests:
     url: "https://api.example.com/data"
     method: GET
     proxy: "http://proxy.company.com:8080"
-    
+
   # SOCKS proxy - Coming Soon
   - name: "SOCKS Proxy Request"
     url: "https://api.example.com/data"
     method: GET
     proxy: "socks5://proxy.company.com:1080"  # Coming Soon
-    
-  # Proxy with authentication - Coming Soon  
+
+  # Proxy with authentication - Coming Soon
   - name: "Authenticated Proxy Request"
     url: "https://api.example.com/data"
     method: GET
     proxy: "http://username:password@proxy.company.com:8080"  # Coming Soon
-    
+
   # Disable SSL verification (insecure)
   - name: "Insecure SSL Request"
     url: "https://self-signed-cert.example.com/api"
     method: GET
     insecure: true  # Skip SSL certificate verification
-    
+
   # Secure request (default behavior)
   - name: "Secure Request"
     url: "https://api.example.com/secure-endpoint"
     method: GET
     insecure: false  # Verify SSL certificates (default)
 ```
+
+## SSL/TLS Certificate Configuration
+
+Configure SSL/TLS certificates for custom CA, mutual TLS (mTLS), and enterprise environments.
+
+**ssl-config.yaml**
+
+```yaml
+# SSL/TLS Certificate Configuration
+requests:
+  # Custom CA certificate for enterprise environments
+  - name: "Custom CA Certificate"
+    url: "https://internal-api.company.com/data"
+    method: GET
+    ssl:
+      ca: "./certs/company-ca.pem"
+
+  # Mutual TLS (mTLS) authentication
+  - name: "mTLS Client Authentication"
+    url: "https://secure-api.example.com/protected"
+    method: GET
+    ssl:
+      ca: "./certs/ca.pem"
+      cert: "./certs/client.pem"
+      key: "./certs/client-key.pem"
+
+  # Disable verification via ssl config (equivalent to insecure: true)
+  - name: "SSL Verification Disabled"
+    url: "https://self-signed.example.com/api"
+    method: GET
+    ssl:
+      verify: false
+
+  # Self-signed cert with custom CA
+  - name: "Self-Signed with CA"
+    url: "https://dev-server.local/api"
+    method: GET
+    ssl:
+      verify: true  # Enable verification
+      ca: "./certs/dev-ca.pem"  # But use custom CA
+
+  # Client certificate without custom CA (uses system CA store)
+  - name: "Client Cert Only"
+    url: "https://api.example.com/mtls-endpoint"
+    method: GET
+    ssl:
+      cert: "./certs/client.pem"
+      key: "./certs/client-key.pem"
+```
+
+### SSL Configuration Properties
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `verify` | boolean | `true` | Whether to verify SSL certificates |
+| `ca` | string | - | Path to CA certificate file |
+| `cert` | string | - | Path to client certificate file for mTLS |
+| `key` | string | - | Path to client private key file for mTLS |
+
+> **Note:** The `insecure: true` option is equivalent to `ssl.verify: false`. If both are specified, SSL verification will be disabled.
 
 ## Request-Level Variables
 
