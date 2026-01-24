@@ -301,11 +301,11 @@ Control retry behavior from the command line.
 
 ```bash
 # Override retry count globally
-curl-runner api-tests.yaml --retry 5
+curl-runner api-tests.yaml --retries 5
 
 # Disable all retries
 curl-runner api-tests.yaml --no-retry
 
 # Set retry delay
-curl-runner api-tests.yaml --retry-delay 2000
+curl-runner api-tests.yaml --retries 3 --retry-delay 2000
 ```

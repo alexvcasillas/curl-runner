@@ -163,21 +163,25 @@ Control parallel execution from the command line.
 
 | Flag | Description |
 | --- | --- |
-| `--parallel` | Force parallel execution |
-| `--sequential` | Force sequential execution |
+| `-p` | Force parallel execution (short flag) |
+| `--execution parallel` | Force parallel execution |
+| `--execution sequential` | Force sequential execution |
 | `--continue-on-error` | Continue execution on failures |
 
 **terminal**
 
 ```bash
-# Run with parallel execution
-curl-runner api-tests.yaml --parallel
+# Run with parallel execution (short flag)
+curl-runner api-tests.yaml -p
+
+# Run with parallel execution (long flag)
+curl-runner api-tests.yaml --execution parallel
 
 # Override file setting to run sequentially
-curl-runner api-tests.yaml --sequential
+curl-runner api-tests.yaml --execution sequential
 
 # Run parallel with verbose output
-curl-runner api-tests.yaml --parallel --verbose
+curl-runner api-tests.yaml -p --verbose
 ```
 
 ## Best Practices
