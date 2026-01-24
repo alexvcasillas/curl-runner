@@ -99,14 +99,33 @@ collection:
       url: "\${BASE_URL}/data"
       timeout: \${API_TIMEOUT}`;
 
+export const stringTransformsExample = `global:
+  variables:
+    ENV: "production"
+    RESOURCE: "Users"
+
+    # Transform to uppercase
+    UPPER_ENV: "\${ENV:upper}"           # Results in "PRODUCTION"
+
+    # Transform to lowercase
+    LOWER_RESOURCE: "\${RESOURCE:lower}" # Results in "users"
+
+collection:
+  requests:
+    - name: "Request with case transforms"
+      url: "https://api.example.com/\${RESOURCE:lower}"
+      headers:
+        X-Environment: "\${ENV:upper}"
+        X-Resource-Type: "\${RESOURCE:lower}"`;
+
 export const computedVariablesExample = `global:
   variables:
     BASE_PATH: "/api/v1"
     RESOURCE: "users"
-    
+
     # Computed from other variables
     FULL_ENDPOINT: "\${BASE_URL}\${BASE_PATH}/\${RESOURCE}"
-    
+
     # String manipulation
     UPPER_ENV: "\${ENV:upper}"
     LOWER_RESOURCE: "\${RESOURCE:lower}"

@@ -1,5 +1,48 @@
 # @curl-runner/cli
 
+## 1.6.0
+
+### Minor Changes
+
+- [#34](https://github.com/alexvcasillas/curl-runner/pull/34) [`c9487a3`](https://github.com/alexvcasillas/curl-runner/commit/c9487a30245ae9cee02affb015ab3f0a8758f6fe) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Add string transformation support for variables
+
+  New `:upper` and `:lower` transforms for case manipulation:
+
+  - `${VAR:upper}` converts variable value to uppercase
+  - `${VAR:lower}` converts variable value to lowercase
+  - Works with both static variables and environment variables
+
+  Example usage:
+
+  ```yaml
+  global:
+    variables:
+      ENV: "production"
+      RESOURCE: "Users"
+
+  collection:
+    requests:
+      - name: API Request
+        url: "https://api.example.com/${RESOURCE:lower}"
+        headers:
+          X-Environment: "${ENV:upper}"
+  ```
+
+  This resolves to `https://api.example.com/users` with header `X-Environment: PRODUCTION`.
+
+## 1.5.0
+
+### Minor Changes
+
+- [#33](https://github.com/alexvcasillas/curl-runner/pull/33) [`fd9eb74`](https://github.com/alexvcasillas/curl-runner/commit/fd9eb74d0006a6da27e9e3b8942eb1f4257bdb7e) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Add default value syntax for variables (`${VAR:default}`)
+
+  Variables can now specify fallback values that are used when the variable is not set:
+
+  - Basic defaults: `${API_TIMEOUT:5000}` - uses "5000" if API_TIMEOUT is not defined
+  - Nested defaults: `${DATABASE_HOST:${DB_HOST:localhost}}` - tries DATABASE_HOST, then DB_HOST, then falls back to "localhost"
+
+  This syntax does not conflict with existing dynamic variable patterns like `${DATE:YYYY-MM-DD}` or `${TIME:HH:mm:ss}`.
+
 ## 1.4.0
 
 ### Minor Changes
