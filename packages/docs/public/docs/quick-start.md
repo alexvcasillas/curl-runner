@@ -21,8 +21,8 @@ keywords:
   - installation
 slug: "/docs/quick-start"
 toc: true
-date: "2026-01-24T11:05:45.876Z"
-lastModified: "2026-01-24T11:05:45.876Z"
+date: "2026-01-24T16:05:37.555Z"
+lastModified: "2026-01-24T16:05:37.555Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -42,8 +42,8 @@ schema:
   "@type": "TechArticle"
   headline: "Quick Start"
   description: "Get up and running with curl-runner in just a few minutes. Follow these simple steps to make your first HTTP request."
-  datePublished: "2026-01-24T11:05:45.876Z"
-  dateModified: "2026-01-24T11:05:45.876Z"
+  datePublished: "2026-01-24T16:05:37.555Z"
+  dateModified: "2026-01-24T16:05:37.555Z"
 ---
 
 # Quick Start
