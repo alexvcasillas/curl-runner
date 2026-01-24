@@ -23,8 +23,8 @@ keywords:
   - environment
 slug: "/docs/global-settings"
 toc: true
-date: "2026-01-24T16:04:59.519Z"
-lastModified: "2026-01-24T16:04:59.519Z"
+date: "2026-01-24T16:01:46.336Z"
+lastModified: "2026-01-24T16:01:46.336Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -44,8 +44,8 @@ schema:
   "@type": "TechArticle"
   headline: "Global Settings"
   description: "Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files."
-  datePublished: "2026-01-24T16:04:59.519Z"
-  dateModified: "2026-01-24T16:04:59.519Z"
+  datePublished: "2026-01-24T16:01:46.336Z"
+  dateModified: "2026-01-24T16:01:46.336Z"
 ---
 
 # Global Settings
@@ -300,6 +300,11 @@ global:
     http: "http://proxy.company.com:8080"
     https: "https://secure-proxy.company.com:8443"
     bypass: ["localhost", "*.internal.com"]
+
+  # Rate limiting
+  rateLimit:
+    maxRequests: 100
+    perSecond: 10
 
   # Output configuration
   output:
