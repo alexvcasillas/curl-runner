@@ -538,10 +538,32 @@ export class RequestExecutor {
 
   async executeParallel(requests: RequestConfig[]): Promise<ExecutionSummary> {
     const startTime = performance.now();
+    const maxConcurrency = this.globalConfig.maxConcurrency;
 
-    const promises = requests.map((request, index) => this.executeRequest(request, index + 1));
+    // If no concurrency limit, execute all requests simultaneously
+    if (!maxConcurrency || maxConcurrency >= requests.length) {
+      const promises = requests.map((request, index) => this.executeRequest(request, index + 1));
+      const results = await Promise.all(promises);
+      return this.createSummary(results, performance.now() - startTime);
+    }
 
-    const results = await Promise.all(promises);
+    // Execute in chunks with limited concurrency
+    const results: ExecutionResult[] = [];
+    for (let i = 0; i < requests.length; i += maxConcurrency) {
+      const chunk = requests.slice(i, i + maxConcurrency);
+      const chunkPromises = chunk.map((request, chunkIndex) =>
+        this.executeRequest(request, i + chunkIndex + 1),
+      );
+      const chunkResults = await Promise.all(chunkPromises);
+      results.push(...chunkResults);
+
+      // Check if we should stop on error
+      const hasError = chunkResults.some((r) => !r.success);
+      if (hasError && !this.globalConfig.continueOnError) {
+        this.logger.logError('Stopping execution due to error');
+        break;
+      }
+    }
 
     return this.createSummary(results, performance.now() - startTime);
   }
