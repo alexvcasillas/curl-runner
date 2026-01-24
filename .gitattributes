@@ -1,0 +1,3 @@
+# Auto-resolve CHANGELOG conflicts by keeping lines from both branches
+packages/cli/CHANGELOG.md merge=union
+packages/docs/CHANGELOG.md merge=union
