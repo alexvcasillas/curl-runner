@@ -18,8 +18,8 @@ keywords:
   - request
 slug: "/docs/response-storage"
 toc: true
-date: "2026-01-23T21:27:49.063Z"
-lastModified: "2026-01-23T21:27:49.063Z"
+date: "2026-01-24T11:05:45.909Z"
+lastModified: "2026-01-24T11:05:45.909Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -39,8 +39,8 @@ schema:
   "@type": "TechArticle"
   headline: "Response Storage"
   description: "Store response values from one request to use in subsequent requests."
-  datePublished: "2026-01-23T21:27:49.063Z"
-  dateModified: "2026-01-23T21:27:49.063Z"
+  datePublished: "2026-01-24T11:05:45.909Z"
+  dateModified: "2026-01-24T11:05:45.909Z"
 ---
 
 # Response Storage
@@ -57,7 +57,7 @@ Build complex workflows by passing data between sequential requests
 
 ## Basic Usage
 
-Use the `store` property in your request to extract and save response values. Reference stored values using the `${store.variableName}` syntax.
+Use the `store` property in your request to extract and save response values. Reference stored values using the ` $ {store.variableName} ` syntax.
 
 **basic-storage.yaml**
 
