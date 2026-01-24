@@ -317,17 +317,14 @@ class CurlRunnerCLI {
       }
 
       // Check if watch mode is enabled
-      const watchEnabled =
-        options.watch || globalConfig.watch?.enabled;
+      const watchEnabled = options.watch || globalConfig.watch?.enabled;
 
       if (watchEnabled) {
         // Build watch config from options and global config
         const watchConfig: WatchConfig = {
           enabled: true,
           debounce:
-            (options.watchDebounce as number | undefined) ??
-            globalConfig.watch?.debounce ??
-            300,
+            (options.watchDebounce as number | undefined) ?? globalConfig.watch?.debounce ?? 300,
           clear: (options.watchClear as boolean | undefined) ?? globalConfig.watch?.clear ?? true,
         };
 
