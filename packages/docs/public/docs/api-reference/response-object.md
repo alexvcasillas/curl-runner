@@ -18,8 +18,8 @@ keywords:
   - collection
 slug: "/docs/response-object"
 toc: true
-date: "2026-01-24T11:08:05.149Z"
-lastModified: "2026-01-24T11:08:05.149Z"
+date: "2026-01-24T15:29:16.947Z"
+lastModified: "2026-01-24T15:29:16.947Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -39,8 +39,8 @@ schema:
   "@type": "TechArticle"
   headline: "Response Object API Reference"
   description: "Complete reference for response objects returned by curl-runner, including ExecutionResult and ExecutionSummary interfaces."
-  datePublished: "2026-01-24T11:08:05.149Z"
-  dateModified: "2026-01-24T11:08:05.149Z"
+  datePublished: "2026-01-24T15:29:16.947Z"
+  dateModified: "2026-01-24T15:29:16.947Z"
 ---
 
 # Response Object API Reference

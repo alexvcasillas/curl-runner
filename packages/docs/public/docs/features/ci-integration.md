@@ -21,8 +21,8 @@ keywords:
   - environment
 slug: "/docs/ci-integration"
 toc: true
-date: "2026-01-24T11:08:05.097Z"
-lastModified: "2026-01-24T11:08:05.097Z"
+date: "2026-01-24T15:29:16.923Z"
+lastModified: "2026-01-24T15:29:16.923Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -42,8 +42,8 @@ schema:
   "@type": "TechArticle"
   headline: "CI/CD Integration"
   description: "Integrate curl-runner with CI/CD pipelines using CI-friendly exit codes and configurable failure thresholds."
-  datePublished: "2026-01-24T11:08:05.097Z"
-  dateModified: "2026-01-24T11:08:05.097Z"
+  datePublished: "2026-01-24T15:29:16.923Z"
+  dateModified: "2026-01-24T15:29:16.923Z"
 ---
 
 # CI/CD Integration

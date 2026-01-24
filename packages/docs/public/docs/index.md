@@ -25,8 +25,8 @@ keywords:
   - environment
 slug: "/docs"
 toc: true
-date: "2026-01-24T11:08:04.993Z"
-lastModified: "2026-01-24T11:08:04.993Z"
+date: "2026-01-24T15:29:16.875Z"
+lastModified: "2026-01-24T15:29:16.875Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -46,8 +46,8 @@ schema:
   "@type": "TechArticle"
   headline: "curl-runner Documentation"
   description: "A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance."
-  datePublished: "2026-01-24T11:08:04.993Z"
-  dateModified: "2026-01-24T11:08:04.993Z"
+  datePublished: "2026-01-24T15:29:16.875Z"
+  dateModified: "2026-01-24T15:29:16.875Z"
 ---
 
 # curl-runner Documentation

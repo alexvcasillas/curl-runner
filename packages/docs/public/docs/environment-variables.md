@@ -22,8 +22,8 @@ keywords:
   - npm
 slug: "/docs/environment-variables"
 toc: true
-date: "2026-01-24T11:08:05.123Z"
-lastModified: "2026-01-24T11:08:05.123Z"
+date: "2026-01-24T15:29:16.934Z"
+lastModified: "2026-01-24T15:29:16.934Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -43,8 +43,8 @@ schema:
   "@type": "TechArticle"
   headline: "Environment Variables"
   description: "Configure curl-runner behavior using environment variables for consistent settings across different environments."
-  datePublished: "2026-01-24T11:08:05.123Z"
-  dateModified: "2026-01-24T11:08:05.123Z"
+  datePublished: "2026-01-24T15:29:16.934Z"
+  dateModified: "2026-01-24T15:29:16.934Z"
 ---
 
 # Environment Variables
