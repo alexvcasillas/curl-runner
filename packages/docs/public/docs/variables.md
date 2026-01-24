@@ -198,7 +198,7 @@ collection:
 
 ## Dynamic Variables
 
-Create dynamic values using JavaScript expressions and built-in functions.
+Create dynamic values using built-in functions.
 
 **dynamic-variables.yaml**
 
@@ -227,30 +227,29 @@ collection:
         X-Session: "\${SESSION_ID}"
 ```
 
-## Conditional Logic
+## Default Values
 
-Use JavaScript expressions to create conditional variables and environment-specific configurations.
+Use default value syntax to provide fallback values when variables are not set.
 
-**conditional-variables.yaml**
+**default-values.yaml**
 
 ```yaml
 global:
   variables:
-    # Environment-based variables
-    BASE_URL: "\${NODE_ENV:production:https://api.example.com:https://api-staging.example.com}"
-    
     # Default value if environment variable not set
     API_TIMEOUT: "\${API_TIMEOUT:5000}"
-    
-    # Multiple environment sources
+
+    # Nested default values
     DB_HOST: "\${DATABASE_HOST:\${DB_HOST:localhost}}"
 
 collection:
   requests:
-    - name: "Environment aware request"
+    - name: "Request with defaults"
       url: "\${BASE_URL}/data"
       timeout: \${API_TIMEOUT}
 ```
+
+For environment-specific configurations, use separate YAML files per environment or set environment variables directly.
 
 ## Complex Interpolation
 
@@ -297,8 +296,14 @@ collection:
 ```yaml
 global:
   variables:
-    ENVIRONMENT: \${ENV.NODE_ENV || 'development'}
-    BASE_URL: \${ENVIRONMENT === 'production' 
-      ? 'https://api.example.com' 
-      : 'https://api-staging.example.com'}
+    # Use environment variables for configuration
+    BASE_URL: "\${API_BASE_URL:https://api-staging.example.com}"
+    API_KEY: "\${API_KEY}"
+
+collection:
+  requests:
+    - name: "Authenticated request"
+      url: "\${BASE_URL}/users"
+      headers:
+        Authorization: "Bearer \${API_KEY}"
 ```
