@@ -40,5 +40,8 @@ packages/docs/.vercel
 packages/docs/.turbo
 packages/docs/next-env.d.ts
 
+# Generated documentation markdown (regenerated at build time)
+packages/docs/public/docs/
+
 # Build
 curl-runner
