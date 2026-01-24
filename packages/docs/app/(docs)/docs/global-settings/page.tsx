@@ -2,7 +2,7 @@ import { AlertTriangle, Clock, FileText, Settings, Target, Zap } from 'lucide-re
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
-import { H2 } from '@/components/docs-heading';
+import { H2, H3 } from '@/components/docs-heading';
 import { DocsPageHeader } from '@/components/docs-page-header';
 import { TableOfContents } from '@/components/toc';
 import { Badge } from '@/components/ui/badge';
