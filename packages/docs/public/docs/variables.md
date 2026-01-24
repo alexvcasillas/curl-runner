@@ -17,8 +17,8 @@ keywords:
   - environment
 slug: "/docs/variables"
 toc: true
-date: "2026-01-23T21:27:49.050Z"
-lastModified: "2026-01-23T21:27:49.050Z"
+date: "2026-01-24T11:06:00.554Z"
+lastModified: "2026-01-24T11:06:00.554Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -38,8 +38,8 @@ schema:
   "@type": "TechArticle"
   headline: "Variables"
   description: "Use variables and templating to create reusable, dynamic HTTP request configurations."
-  datePublished: "2026-01-23T21:27:49.050Z"
-  dateModified: "2026-01-23T21:27:49.050Z"
+  datePublished: "2026-01-24T11:06:00.554Z"
+  dateModified: "2026-01-24T11:06:00.554Z"
 ---
 
 # Variables
@@ -252,6 +252,33 @@ collection:
       timeout: \${API_TIMEOUT}
 ```
 
+## String Transforms
+
+Transform variable values using built-in string modifiers for case manipulation.
+
+**string-transforms.yaml**
+
+```yaml
+global:
+  variables:
+    ENV: "production"
+    RESOURCE: "Users"
+
+    # Transform to uppercase
+    UPPER_ENV: "\${ENV:upper}"           # Results in "PRODUCTION"
+
+    # Transform to lowercase
+    LOWER_RESOURCE: "\${RESOURCE:lower}" # Results in "users"
+
+collection:
+  requests:
+    - name: "Request with case transforms"
+      url: "https://api.example.com/\${RESOURCE:lower}"
+      headers:
+        X-Environment: "\${ENV:upper}"
+        X-Resource-Type: "\${RESOURCE:lower}"
+```
+
 ## Complex Interpolation
 
 Combine multiple variables and expressions to create complex, computed values.
@@ -263,10 +290,10 @@ global:
   variables:
     BASE_PATH: "/api/v1"
     RESOURCE: "users"
-    
+
     # Computed from other variables
     FULL_ENDPOINT: "\${BASE_URL}\${BASE_PATH}/\${RESOURCE}"
-    
+
     # String manipulation
     UPPER_ENV: "\${ENV:upper}"
     LOWER_RESOURCE: "\${RESOURCE:lower}"

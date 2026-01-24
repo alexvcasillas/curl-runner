@@ -46,6 +46,7 @@ import {
   conditionalVariablesExample,
   dynamicVariablesExample,
   environmentVariablesExample,
+  stringTransformsExample,
   variablePrecedenceExample,
 } from './snippets';
 
@@ -267,6 +268,43 @@ export default function VariablesPage() {
 
             <CodeBlockServer language="yaml" filename="conditional-variables.yaml">
               {conditionalVariablesExample}
+            </CodeBlockServer>
+          </section>
+
+          {/* String Transforms */}
+          <section>
+            <H2 id="string-transforms">String Transforms</H2>
+            <p className="text-muted-foreground text-lg mb-6">
+              Transform variable values using built-in string modifiers for case manipulation.
+            </p>
+
+            <div className="rounded-lg border bg-card p-4 mb-6">
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-blue-500/10 p-2">
+                  <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="flex-1 pt-1">
+                  <h4 className="font-medium mb-3">Available Transforms</h4>
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <code className="bg-primary/10 text-primary px-2 py-1 rounded font-mono">
+                        ${`{VAR:upper}`}
+                      </code>{' '}
+                      - Convert value to UPPERCASE
+                    </div>
+                    <div>
+                      <code className="bg-primary/10 text-primary px-2 py-1 rounded font-mono">
+                        ${`{VAR:lower}`}
+                      </code>{' '}
+                      - Convert value to lowercase
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <CodeBlockServer language="yaml" filename="string-transforms.yaml">
+              {stringTransformsExample}
             </CodeBlockServer>
           </section>
 
