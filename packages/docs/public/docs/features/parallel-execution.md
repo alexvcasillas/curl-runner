@@ -18,8 +18,8 @@ keywords:
   - cli
 slug: "/docs/parallel-execution"
 toc: true
-date: "2026-01-23T21:27:49.061Z"
-lastModified: "2026-01-23T21:27:49.061Z"
+date: "2026-01-24T11:08:05.076Z"
+lastModified: "2026-01-24T11:08:05.076Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -39,8 +39,8 @@ schema:
   "@type": "TechArticle"
   headline: "Parallel Execution"
   description: "Execute multiple HTTP requests simultaneously for improved performance."
-  datePublished: "2026-01-23T21:27:49.061Z"
-  dateModified: "2026-01-23T21:27:49.061Z"
+  datePublished: "2026-01-24T11:08:05.076Z"
+  dateModified: "2026-01-24T11:08:05.076Z"
 ---
 
 # Parallel Execution
@@ -87,6 +87,47 @@ requests:
 ## Configuration Options
 
 Control how parallel execution behaves with these settings:
+
+## Concurrency Control
+
+Use `maxConcurrency` to limit the number of requests that run simultaneously. This is useful for avoiding rate limiting from APIs or preventing overwhelming target servers.
+
+**concurrency-control.yaml**
+
+```yaml
+# Limit concurrent requests to avoid rate limiting
+global:
+  execution: parallel
+  maxConcurrency: 5  # Only 5 requests run at a time
+  continueOnError: true
+  variables:
+    API_URL: https://api.example.com
+
+requests:
+  - name: Request 1
+    url: \${API_URL}/endpoint1
+  - name: Request 2
+    url: \${API_URL}/endpoint2
+  - name: Request 3
+    url: \${API_URL}/endpoint3
+  - name: Request 4
+    url: \${API_URL}/endpoint4
+  - name: Request 5
+    url: \${API_URL}/endpoint5
+  - name: Request 6
+    url: \${API_URL}/endpoint6
+  - name: Request 7
+    url: \${API_URL}/endpoint7
+  - name: Request 8
+    url: \${API_URL}/endpoint8
+  - name: Request 9
+    url: \${API_URL}/endpoint9
+  - name: Request 10
+    url: \${API_URL}/endpoint10
+# With maxConcurrency: 5, requests run in batches:
+# Batch 1: Requests 1-5 (parallel)
+# Batch 2: Requests 6-10 (parallel)
+```
 
 ## Error Handling
 
@@ -165,6 +206,7 @@ Control parallel execution from the command line.
 | --- | --- |
 | `--parallel` | Force parallel execution |
 | `--sequential` | Force sequential execution |
+| `--max-concurrent &lt;n&gt;` | Limit concurrent requests in parallel mode |
 | `--continue-on-error` | Continue execution on failures |
 
 **terminal**
@@ -175,6 +217,9 @@ curl-runner api-tests.yaml --parallel
 
 # Override file setting to run sequentially
 curl-runner api-tests.yaml --sequential
+
+# Run parallel with max 5 concurrent requests
+curl-runner api-tests.yaml --parallel --max-concurrent 5
 
 # Run parallel with verbose output
 curl-runner api-tests.yaml --parallel --verbose
