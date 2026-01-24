@@ -21,8 +21,8 @@ keywords:
   - environment
 slug: "/docs/request-object"
 toc: true
-date: "2026-01-24T11:13:22.571Z"
-lastModified: "2026-01-24T11:13:22.571Z"
+date: "2026-01-24T16:04:12.314Z"
+lastModified: "2026-01-24T16:04:12.314Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -42,8 +42,8 @@ schema:
   "@type": "TechArticle"
   headline: "Request Object API Reference"
   description: "Complete reference for the RequestConfig interface and all available options for configuring HTTP requests."
-  datePublished: "2026-01-24T11:13:22.571Z"
-  dateModified: "2026-01-24T11:13:22.571Z"
+  datePublished: "2026-01-24T16:04:12.314Z"
+  dateModified: "2026-01-24T16:04:12.314Z"
 ---
 
 # Request Object API Reference

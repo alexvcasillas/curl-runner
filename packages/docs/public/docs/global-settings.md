@@ -23,8 +23,8 @@ keywords:
   - environment
 slug: "/docs/global-settings"
 toc: true
-date: "2026-01-24T11:13:22.513Z"
-lastModified: "2026-01-24T11:13:22.513Z"
+date: "2026-01-24T16:04:12.303Z"
+lastModified: "2026-01-24T16:04:12.303Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -44,8 +44,8 @@ schema:
   "@type": "TechArticle"
   headline: "Global Settings"
   description: "Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files."
-  datePublished: "2026-01-24T11:13:22.513Z"
-  dateModified: "2026-01-24T11:13:22.513Z"
+  datePublished: "2026-01-24T16:04:12.303Z"
+  dateModified: "2026-01-24T16:04:12.303Z"
 ---
 
 # Global Settings
@@ -235,35 +235,32 @@ Define reusable variables that can be referenced throughout your request configu
 global:
   variables:
     # API configuration
-    BASE_URL: https://api.example.com
-    API_VERSION: v1
-    API_KEY: your-secret-api-key
-    
-    # Environment-specific variables
-    ENVIRONMENT: \${ENV.NODE_ENV || 'development'}
-    DEBUG_MODE: \${ENVIRONMENT === 'development'}
-    
+    BASE_URL: "https://api.example.com"
+    API_VERSION: "v1"
+    API_KEY: "\${API_KEY}"
+
     # Computed variables
     API_ENDPOINT: "\${BASE_URL}/\${API_VERSION}"
     AUTH_HEADER: "Bearer \${API_KEY}"
-    TIMEOUT: \${DEBUG_MODE ? 30000 : 5000}
-    
+
+    # Default values when environment variable not set
+    TIMEOUT: "\${REQUEST_TIMEOUT:5000}"
+
   defaults:
     headers:
-      Authorization: \${AUTH_HEADER}
-    timeout: \${TIMEOUT}
+      Authorization: "\${AUTH_HEADER}"
+    timeout: "\${TIMEOUT}"
 
 requests:
   - name: Get Users
-    url: \${API_ENDPOINT}/users
+    url: "\${API_ENDPOINT}/users"
     method: GET
-    
+
   - name: Create User
-    url: \${API_ENDPOINT}/users
+    url: "\${API_ENDPOINT}/users"
     method: POST
     body:
       name: "John Doe"
-      environment: \${ENVIRONMENT}
 ```
 
 ## Advanced Configuration
@@ -281,51 +278,51 @@ global:
   execution: parallel
   continueOnError: true
   maxConcurrency: 5  # Limit concurrent requests in parallel mode
-  
-  # Timeout settings
+
+  # Advanced timeout settings
   timeout: 10000
   retries: 3
   retryDelay: 1000
   retryBackoff: 2.0
   retryOn: ["timeout", "5xx", "network"]
-  
+
   # SSL/TLS settings
   ssl:
     verify: true
     ca: "./certs/ca.pem"
     cert: "./certs/client.pem"
     key: "./certs/client-key.pem"
-  
+
   # Proxy settings
   proxy:
     http: "http://proxy.company.com:8080"
     https: "https://secure-proxy.company.com:8443"
     bypass: ["localhost", "*.internal.com"]
-    
+
   # Rate limiting
   rateLimit:
     maxRequests: 100
     perSecond: 10
-    
+
   # Output configuration
   output:
     verbose: true
-    saveToFile: "results-\${Date.now()}.json"
+    saveToFile: "results.json"
     format: "detailed"
     colors: true
     includeMetrics: true
-    
+
   # Global variables
   variables:
-    BASE_URL: \${ENV.API_BASE_URL || 'https://api.example.com'}
-    API_KEY: \${ENV.API_KEY}
-    TRACE_ID: \${crypto.randomUUID()}
-    
+    BASE_URL: "\${API_BASE_URL:https://api.example.com}"
+    API_KEY: "\${API_KEY}"
+    TRACE_ID: "\${UUID}"
+
   # Global defaults
   defaults:
     headers:
       User-Agent: "curl-runner/1.0.0"
-      X-Trace-ID: \${TRACE_ID}
+      X-Trace-ID: "\${TRACE_ID}"
       Authorization: "Bearer \${API_KEY}"
     timeout: 8000
     retries: 2
