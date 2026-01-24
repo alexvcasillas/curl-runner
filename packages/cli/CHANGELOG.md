@@ -1,5 +1,17 @@
 # @curl-runner/cli
 
+## 1.4.0
+
+### Minor Changes
+
+- [#31](https://github.com/alexvcasillas/curl-runner/pull/31) [`3a9f252`](https://github.com/alexvcasillas/curl-runner/commit/3a9f2525788a8193bc6947c3d6b32379b14d480c) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Add support for additional dynamic variable generators:
+
+  - `${UUID:short}` - Returns the first 8 characters of a UUID
+  - `${RANDOM:min-max}` - Generates a random integer in the specified range
+  - `${RANDOM:string:length}` - Generates a random alphanumeric string of specified length
+
+  These variables are useful for API testing scenarios where shorter IDs or random test data are needed.
+
 ## 1.3.0
 
 ### Minor Changes

@@ -8,14 +8,16 @@ keywords:
   - api
   - testing
   - file
-  - upload
-  - multipart
-  - form-data
-  - attachment
+  - uploads
+  - variables
+  - validation
+  - response
+  - request
+  - environment
 slug: "/docs/file-uploads"
 toc: true
-date: "2026-01-23T21:27:49.063Z"
-lastModified: "2026-01-23T21:27:49.063Z"
+date: "2026-01-24T16:07:59.112Z"
+lastModified: "2026-01-24T16:07:59.112Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -24,7 +26,7 @@ nav:
   category: "Documentation"
 tags:
   - documentation
-  - features
+  - documentation
 og:
   title: "File Uploads - curl-runner Documentation"
   description: "Upload files using multipart/form-data requests with curl-runner."
@@ -35,8 +37,8 @@ schema:
   "@type": "TechArticle"
   headline: "File Uploads"
   description: "Upload files using multipart/form-data requests with curl-runner."
-  datePublished: "2026-01-23T21:27:49.063Z"
-  dateModified: "2026-01-23T21:27:49.063Z"
+  datePublished: "2026-01-24T16:07:59.112Z"
+  dateModified: "2026-01-24T16:07:59.112Z"
 ---
 
 # File Uploads
@@ -45,11 +47,13 @@ Upload files using multipart/form-data requests with curl-runner.
 
 ## Overview
 
-File uploads allow you to send files to APIs using the standard multipart/form-data encoding. This is commonly used for:
+File uploads allow you to send files to APIs using the standard multipart/form-data encoding. This is commonly used for uploading images, documents, and other binary content.
 
-- Uploading images, documents, and other files
-- Submitting forms with file attachments
-- Sending mixed data (files and text fields) in a single request
+Just specify the file path and curl-runner handles the rest
+
+Override filename and content type as needed
+
+Combine file uploads with regular form fields
 
 ## Basic Usage
 
@@ -70,10 +74,7 @@ request:
 
 ## Form Data Configuration
 
-The `formData` property accepts an object where each key is a form field name. Values can be:
-
-- **Simple values**: strings, numbers, or booleans
-- **File attachments**: objects with a `file` property
+The `formData` property accepts an object where each key is a form field name. Values can be simple types or file attachments.
 
 **form-data-types.yaml**
 
@@ -102,51 +103,26 @@ request:
 
 File attachments support additional options for customizing how files are sent.
 
-### Basic File Attachment
-
-The simplest form just specifies the file path:
+**file-options.yaml**
 
 ```yaml
-formData:
-  document:
-    file: "./path/to/file.pdf"
-```
-
-### Custom Filename
-
-Override the filename sent to the server:
-
-```yaml
-formData:
-  document:
-    file: "./local-file.pdf"
-    filename: "quarterly-report.pdf"
-```
-
-### Explicit Content Type
-
-Specify the MIME type when curl cannot auto-detect it:
-
-```yaml
-formData:
-  data:
-    file: "./data.bin"
-    contentType: "application/octet-stream"
-```
-
-### All Options Combined
-
-```yaml
-formData:
-  document:
-    file: "./report.pdf"
-    filename: "Q4-Report-2024.pdf"
-    contentType: "application/pdf"
+# File attachment with all options
+request:
+  name: Upload with Options
+  url: https://api.example.com/upload
+  method: POST
+  formData:
+    document:
+      file: "./report.pdf"
+      filename: "Q4-Report-2024.pdf"
+      contentType: "application/pdf"
 ```
 
 ## Complete Examples
 
 ### Single File Upload
+
+Upload a single file with validation.
 
 **single-file.yaml**
 
@@ -165,6 +141,8 @@ request:
 ```
 
 ### Multiple File Upload
+
+Upload multiple files in a single request.
 
 **multi-file.yaml**
 
@@ -194,6 +172,8 @@ request:
 
 ### Files with Form Fields
 
+Combine file uploads with regular form fields - common for application submissions.
+
 **mixed-form.yaml**
 
 ```yaml
@@ -221,7 +201,9 @@ request:
     status: 201
 ```
 
-### Using Variables in File Uploads
+### Using Variables
+
+File uploads work seamlessly with curl-runner variables.
 
 **variable-upload.yaml**
 
@@ -245,56 +227,161 @@ request:
     status: 201
 ```
 
-## File Path Resolution
+**single-file.yaml**
 
-File paths in `formData` are resolved relative to the current working directory when running curl-runner.
-
-```bash
-# If running from project root:
-curl-runner examples/file-upload.yaml
-
-# Files are resolved relative to where you run the command
-# ./avatar.png would look for avatar.png in the current directory
+```yaml
+# Upload a single file
+request:
+  name: Upload Profile Picture
+  url: https://api.example.com/users/123/avatar
+  method: POST
+  formData:
+    avatar:
+      file: "./profile-photo.jpg"
+      contentType: "image/jpeg"
+  expect:
+    status: 200
 ```
 
-### Tips for File Paths
+**multi-file.yaml**
 
-- Use relative paths for portability
-- Use absolute paths when files are in fixed locations
-- Consider the working directory when running curl-runner
+```yaml
+# Upload multiple files
+request:
+  name: Upload Documents
+  url: https://api.example.com/documents/batch
+  method: POST
+  formData:
+    primary_document:
+      file: "./main-report.pdf"
+      filename: "report.pdf"
+      contentType: "application/pdf"
 
-## Error Handling
+    supporting_document:
+      file: "./appendix.pdf"
+      filename: "appendix.pdf"
+      contentType: "application/pdf"
 
-curl-runner validates that all specified files exist before executing the request. If any file is missing, the request fails with a descriptive error.
-
+    spreadsheet:
+      file: "./data.xlsx"
+      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  expect:
+    status: 201
 ```
-Error: File(s) not found: avatar: ./missing-file.png, document: ./another-missing.pdf
+
+**mixed-form.yaml**
+
+```yaml
+# Combine files with regular form fields
+request:
+  name: Submit Application
+  url: https://api.example.com/applications
+  method: POST
+  formData:
+    # Text fields
+    applicant_name: "John Doe"
+    email: "john@example.com"
+    position: "Software Engineer"
+
+    # File attachments
+    resume:
+      file: "./resume.pdf"
+      filename: "john-doe-resume.pdf"
+      contentType: "application/pdf"
+
+    cover_letter:
+      file: "./cover-letter.pdf"
+      contentType: "application/pdf"
+  expect:
+    status: 201
 ```
 
-## FormData vs Body
+**variable-upload.yaml**
 
-The `formData` and `body` properties are mutually exclusive. When both are specified, `formData` takes precedence.
+```yaml
+# Use variables in file upload requests
+global:
+  variables:
+    API_URL: https://api.example.com
+    USER_ID: "12345"
 
-| Use Case | Property |
-|----------|----------|
-| JSON data | `body` |
-| Plain text | `body` |
-| File uploads | `formData` |
-| Form submissions with files | `formData` |
-| Mixed files and fields | `formData` |
+request:
+  name: Upload User Document
+  url: \${API_URL}/users/\${USER_ID}/documents
+  method: POST
+  formData:
+    description: "Uploaded on \${DATE:YYYY-MM-DD}"
+    request_id: "\${UUID}"
+    document:
+      file: "./document.pdf"
+  expect:
+    status: 201
+```
+
+## Real-World Example
+
+A complete authenticated file upload workflow demonstrating response storage combined with file uploads.
+
+**authenticated-upload.yaml**
+
+```yaml
+# Real-world: Image upload with metadata
+global:
+  execution: sequential
+  variables:
+    API_URL: https://api.example.com
+
+requests:
+  # Step 1: Authenticate
+  - name: Login
+    url: \${API_URL}/auth/login
+    method: POST
+    headers:
+      Content-Type: application/json
+    body:
+      username: "admin"
+      password: "secret123"
+    store:
+      authToken: body.accessToken
+
+  # Step 2: Upload image with authentication
+  - name: Upload Product Image
+    url: \${API_URL}/products/images
+    method: POST
+    headers:
+      Authorization: Bearer \${store.authToken}
+    formData:
+      product_id: "PROD-12345"
+      image_type: "thumbnail"
+      image:
+        file: "./product-image.jpg"
+        filename: "product-thumbnail.jpg"
+        contentType: "image/jpeg"
+    expect:
+      status: 201
+    store:
+      imageId: body.id
+
+  # Step 3: Verify upload
+  - name: Get Image Details
+    url: \${API_URL}/images/\${store.imageId}
+    method: GET
+    headers:
+      Authorization: Bearer \${store.authToken}
+    expect:
+      status: 200
+```
+
+## Important Notes
+
+> curl-runner validates that all specified files exist before executing the request. If any file is missing, the request fails with a descriptive error message.
 
 ## Best Practices
 
-### File Upload Best Practices
+### Best Practices
 
-- Use descriptive field names that match API expectations
-- Specify content types for non-standard file formats
-- Use custom filenames when the original name isn't meaningful
-- Validate file existence before running large test suites
-- Use variables for dynamic file paths when needed
-
-### Security Considerations
-
-- Never commit sensitive files to version control
-- Use environment variables for file paths containing sensitive data
-- Be cautious with file uploads in CI/CD pipelines
+• Use descriptive variable names
+• Define common values as variables
+• Use environment variables for secrets
+• Group related variables logically
+• Document complex expressions
