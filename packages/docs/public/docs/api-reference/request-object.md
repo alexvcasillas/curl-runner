@@ -21,8 +21,8 @@ keywords:
   - environment
 slug: "/docs/request-object"
 toc: true
-date: "2026-01-24T10:40:06.885Z"
-lastModified: "2026-01-24T10:40:06.885Z"
+date: "2026-01-24T11:13:22.571Z"
+lastModified: "2026-01-24T11:13:22.571Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -42,8 +42,8 @@ schema:
   "@type": "TechArticle"
   headline: "Request Object API Reference"
   description: "Complete reference for the RequestConfig interface and all available options for configuring HTTP requests."
-  datePublished: "2026-01-24T10:40:06.885Z"
-  dateModified: "2026-01-24T10:40:06.885Z"
+  datePublished: "2026-01-24T11:13:22.571Z"
+  dateModified: "2026-01-24T11:13:22.571Z"
 ---
 
 # Request Object API Reference
@@ -590,6 +590,64 @@ requests:
     url: "https://api.example.com/secure-endpoint"
     method: GET
     insecure: false  # Verify SSL certificates (default)
+```
+
+## SSL/TLS Certificate Configuration
+
+Configure SSL/TLS certificates for custom CA, mutual TLS (mTLS), and enterprise environments.
+
+### SSL Configuration Properties
+
+| Property | Type | Default | Description |
+| --- | --- | --- | --- |
+| `verify` | boolean | `true` | Whether to verify SSL certificates |
+| `ca` | string | - | Path to CA certificate file |
+| `cert` | string | - | Path to client certificate file for mTLS |
+| `key` | string | - | Path to client private key file for mTLS |
+
+**ssl-config.yaml**
+
+```yaml
+# SSL/TLS Certificate Configuration
+requests:
+  # Custom CA certificate for enterprise environments
+  - name: "Custom CA Certificate"
+    url: "https://internal-api.company.com/data"
+    method: GET
+    ssl:
+      ca: "./certs/company-ca.pem"
+
+  # Mutual TLS (mTLS) authentication
+  - name: "mTLS Client Authentication"
+    url: "https://secure-api.example.com/protected"
+    method: GET
+    ssl:
+      ca: "./certs/ca.pem"
+      cert: "./certs/client.pem"
+      key: "./certs/client-key.pem"
+
+  # Disable verification via ssl config (equivalent to insecure: true)
+  - name: "SSL Verification Disabled"
+    url: "https://self-signed.example.com/api"
+    method: GET
+    ssl:
+      verify: false
+
+  # Self-signed cert with custom CA
+  - name: "Self-Signed with CA"
+    url: "https://dev-server.local/api"
+    method: GET
+    ssl:
+      verify: true  # Enable verification
+      ca: "./certs/dev-ca.pem"  # But use custom CA
+
+  # Client certificate without custom CA (uses system CA store)
+  - name: "Client Cert Only"
+    url: "https://api.example.com/mtls-endpoint"
+    method: GET
+    ssl:
+      cert: "./certs/client.pem"
+      key: "./certs/client-key.pem"
 ```
 
 ## Request-Level Variables

@@ -545,9 +545,9 @@ export default function GlobalSettingsPage() {
               </CardHeader>
               <CardContent className="text-amber-700 dark:text-amber-300">
                 <p>
-                  Some advanced features like proxies and rate limiting may
-                  require additional setup or may not be available in all environments.
-                  SSL/TLS certificate configuration is fully supported.
+                  Some advanced features like proxies and rate limiting may require additional setup
+                  or may not be available in all environments. SSL/TLS certificate configuration is
+                  fully supported.
                 </p>
               </CardContent>
             </Card>
@@ -583,25 +583,35 @@ export default function GlobalSettingsPage() {
                   </thead>
                   <tbody>
                     <tr className="border-b">
-                      <td className="py-2 pr-4"><code>verify</code></td>
+                      <td className="py-2 pr-4">
+                        <code>verify</code>
+                      </td>
                       <td className="py-2 pr-4">boolean</td>
-                      <td className="py-2 pr-4"><code>true</code></td>
+                      <td className="py-2 pr-4">
+                        <code>true</code>
+                      </td>
                       <td className="py-2">Whether to verify SSL certificates</td>
                     </tr>
                     <tr className="border-b">
-                      <td className="py-2 pr-4"><code>ca</code></td>
+                      <td className="py-2 pr-4">
+                        <code>ca</code>
+                      </td>
                       <td className="py-2 pr-4">string</td>
                       <td className="py-2 pr-4">-</td>
                       <td className="py-2">Path to CA certificate file</td>
                     </tr>
                     <tr className="border-b">
-                      <td className="py-2 pr-4"><code>cert</code></td>
+                      <td className="py-2 pr-4">
+                        <code>cert</code>
+                      </td>
                       <td className="py-2 pr-4">string</td>
                       <td className="py-2 pr-4">-</td>
                       <td className="py-2">Path to client certificate file for mTLS</td>
                     </tr>
                     <tr className="border-b">
-                      <td className="py-2 pr-4"><code>key</code></td>
+                      <td className="py-2 pr-4">
+                        <code>key</code>
+                      </td>
                       <td className="py-2 pr-4">string</td>
                       <td className="py-2 pr-4">-</td>
                       <td className="py-2">Path to client private key file for mTLS</td>
@@ -613,8 +623,9 @@ export default function GlobalSettingsPage() {
 
             <div className="mt-6 rounded-lg border bg-muted/50 p-4">
               <p className="text-sm">
-                <strong>Note:</strong> Global SSL settings apply to all requests. Individual requests
-                can override these settings by specifying their own <code>ssl</code> configuration.
+                <strong>Note:</strong> Global SSL settings apply to all requests. Individual
+                requests can override these settings by specifying their own <code>ssl</code>{' '}
+                configuration.
               </p>
             </div>
           </section>

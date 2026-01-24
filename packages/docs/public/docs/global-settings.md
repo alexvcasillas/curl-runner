@@ -23,8 +23,8 @@ keywords:
   - environment
 slug: "/docs/global-settings"
 toc: true
-date: "2026-01-24T10:40:06.841Z"
-lastModified: "2026-01-24T10:40:06.841Z"
+date: "2026-01-24T11:13:22.513Z"
+lastModified: "2026-01-24T11:13:22.513Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -44,8 +44,8 @@ schema:
   "@type": "TechArticle"
   headline: "Global Settings"
   description: "Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files."
-  datePublished: "2026-01-24T10:40:06.841Z"
-  dateModified: "2026-01-24T10:40:06.841Z"
+  datePublished: "2026-01-24T11:13:22.513Z"
+  dateModified: "2026-01-24T11:13:22.513Z"
 ---
 
 # Global Settings
@@ -270,7 +270,7 @@ requests:
 
 Advanced global settings for complex scenarios including SSL, proxies, and rate limiting.
 
-Some advanced features like SSL certificates, proxies, and rate limiting may require additional setup or may not be available in all environments.
+Some advanced features like proxies and rate limiting may require additional setup or may not be available in all environments. SSL/TLS certificate configuration is fully supported.
 
 **advanced-global-config.yaml**
 
@@ -282,10 +282,8 @@ global:
   continueOnError: true
   maxConcurrency: 5  # Limit concurrent requests in parallel mode
   
-  # Advanced timeout settings
+  # Timeout settings
   timeout: 10000
-  connectionTimeout: 5000
-  readTimeout: 15000
   retries: 3
   retryDelay: 1000
   retryBackoff: 2.0
@@ -331,6 +329,50 @@ global:
       Authorization: "Bearer \${API_KEY}"
     timeout: 8000
     retries: 2
+```
+
+## SSL/TLS Configuration
+
+Configure SSL/TLS certificates globally for all requests. Individual requests can override these settings.
+
+### SSL Configuration Properties
+
+| Property | Type | Default | Description |
+| --- | --- | --- | --- |
+| `verify` | boolean | `true` | Whether to verify SSL certificates |
+| `ca` | string | - | Path to CA certificate file |
+| `cert` | string | - | Path to client certificate file for mTLS |
+| `key` | string | - | Path to client private key file for mTLS |
+
+**ssl-config.yaml**
+
+```yaml
+# Global SSL/TLS Configuration
+global:
+  # Apply SSL settings to all requests
+  ssl:
+    # Verify SSL certificates (default: true)
+    verify: true
+
+    # Custom CA certificate for enterprise environments
+    ca: "./certs/company-ca.pem"
+
+    # Client certificate for mutual TLS (mTLS)
+    cert: "./certs/client.pem"
+    key: "./certs/client-key.pem"
+
+requests:
+  # This request uses global SSL settings
+  - name: "Uses Global SSL"
+    url: "https://internal-api.company.com/data"
+    method: GET
+
+  # This request overrides global SSL settings
+  - name: "Different SSL Config"
+    url: "https://partner-api.example.com/data"
+    method: GET
+    ssl:
+      ca: "./certs/partner-ca.pem"  # Override with different CA
 ```
 
 ## Setting Precedence

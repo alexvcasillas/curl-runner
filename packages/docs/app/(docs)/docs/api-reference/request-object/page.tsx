@@ -1216,7 +1216,8 @@ export default function RequestObjectPage() {
           <section>
             <H2 id="ssl-tls">SSL/TLS Certificate Configuration</H2>
             <p className="text-muted-foreground mb-6">
-              Configure SSL/TLS certificates for custom CA, mutual TLS (mTLS), and enterprise environments.
+              Configure SSL/TLS certificates for custom CA, mutual TLS (mTLS), and enterprise
+              environments.
             </p>
 
             <CodeBlockServer language="yaml" filename="ssl-config.yaml">
@@ -1237,25 +1238,35 @@ export default function RequestObjectPage() {
                   </thead>
                   <tbody>
                     <tr className="border-b">
-                      <td className="py-2 pr-4"><code>verify</code></td>
+                      <td className="py-2 pr-4">
+                        <code>verify</code>
+                      </td>
                       <td className="py-2 pr-4">boolean</td>
-                      <td className="py-2 pr-4"><code>true</code></td>
+                      <td className="py-2 pr-4">
+                        <code>true</code>
+                      </td>
                       <td className="py-2">Whether to verify SSL certificates</td>
                     </tr>
                     <tr className="border-b">
-                      <td className="py-2 pr-4"><code>ca</code></td>
+                      <td className="py-2 pr-4">
+                        <code>ca</code>
+                      </td>
                       <td className="py-2 pr-4">string</td>
                       <td className="py-2 pr-4">-</td>
                       <td className="py-2">Path to CA certificate file</td>
                     </tr>
                     <tr className="border-b">
-                      <td className="py-2 pr-4"><code>cert</code></td>
+                      <td className="py-2 pr-4">
+                        <code>cert</code>
+                      </td>
                       <td className="py-2 pr-4">string</td>
                       <td className="py-2 pr-4">-</td>
                       <td className="py-2">Path to client certificate file for mTLS</td>
                     </tr>
                     <tr className="border-b">
-                      <td className="py-2 pr-4"><code>key</code></td>
+                      <td className="py-2 pr-4">
+                        <code>key</code>
+                      </td>
                       <td className="py-2 pr-4">string</td>
                       <td className="py-2 pr-4">-</td>
                       <td className="py-2">Path to client private key file for mTLS</td>
@@ -1268,7 +1279,8 @@ export default function RequestObjectPage() {
             <div className="mt-6 rounded-lg border bg-muted/50 p-4">
               <p className="text-sm">
                 <strong>Note:</strong> The <code>insecure: true</code> option is equivalent to{' '}
-                <code>ssl.verify: false</code>. If both are specified, SSL verification will be disabled.
+                <code>ssl.verify: false</code>. If both are specified, SSL verification will be
+                disabled.
               </p>
             </div>
           </section>

@@ -18,8 +18,8 @@ keywords:
   - cli
 slug: "/docs/parallel-execution"
 toc: true
-date: "2026-01-24T10:40:06.852Z"
-lastModified: "2026-01-24T10:40:06.852Z"
+date: "2026-01-24T11:13:22.527Z"
+lastModified: "2026-01-24T11:13:22.527Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -39,8 +39,8 @@ schema:
   "@type": "TechArticle"
   headline: "Parallel Execution"
   description: "Execute multiple HTTP requests simultaneously for improved performance."
-  datePublished: "2026-01-24T10:40:06.852Z"
-  dateModified: "2026-01-24T10:40:06.852Z"
+  datePublished: "2026-01-24T11:13:22.527Z"
+  dateModified: "2026-01-24T11:13:22.527Z"
 ---
 
 # Parallel Execution
