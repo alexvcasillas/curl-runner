@@ -133,31 +133,35 @@ requests:
     expect:
       status: [200, 201]  # Retry if not 200 or 201`;
 
-const exponentialBackoff = `# Simulating exponential backoff
-requests:
-  - name: First Attempt
-    url: https://api.example.com/endpoint
-    retry:
-      count: 1
-      delay: 1000   # 1 second
-      
-  - name: Second Attempt (if needed)
-    url: https://api.example.com/endpoint
-    retry:
-      count: 1
-      delay: 2000   # 2 seconds
-      
-  - name: Third Attempt (if needed)
-    url: https://api.example.com/endpoint
-    retry:
-      count: 1
-      delay: 4000   # 4 seconds
-      
-  - name: Fourth Attempt (if needed)
-    url: https://api.example.com/endpoint
-    retry:
-      count: 1
-      delay: 8000   # 8 seconds`;
+const exponentialBackoff = `# Exponential backoff with backoff multiplier
+request:
+  name: API with Exponential Backoff
+  url: https://api.example.com/endpoint
+  method: GET
+  retry:
+    count: 4        # Retry up to 4 times
+    delay: 1000     # Initial delay: 1 second
+    backoff: 2      # Double the delay each retry
+
+# Retry delays will be:
+# Attempt 1: 1000ms (1s)
+# Attempt 2: 2000ms (2s)
+# Attempt 3: 4000ms (4s)
+# Attempt 4: 8000ms (8s)
+
+---
+
+# Gentler backoff with 1.5x multiplier
+request:
+  name: Gentle Backoff
+  url: https://api.example.com/rate-limited
+  method: GET
+  retry:
+    count: 5
+    delay: 1000
+    backoff: 1.5    # 1.5x multiplier
+
+# Retry delays: 1000ms, 1500ms, 2250ms, 3375ms, 5063ms`;
 
 const cliCommands = `# Override retry count globally
 curl-runner api-tests.yaml --retry 5
@@ -279,14 +283,24 @@ export default function RetryMechanismPage() {
                     <td className="p-3 text-sm text-muted-foreground">0</td>
                     <td className="p-3 text-sm text-muted-foreground">Number of retry attempts</td>
                   </tr>
-                  <tr>
+                  <tr className="border-b">
                     <td className="p-3">
                       <code className="text-sm">delay</code>
                     </td>
                     <td className="p-3 text-sm text-muted-foreground">number</td>
                     <td className="p-3 text-sm text-muted-foreground">1000</td>
                     <td className="p-3 text-sm text-muted-foreground">
-                      Delay between retries (ms)
+                      Initial delay between retries (ms)
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="p-3">
+                      <code className="text-sm">backoff</code>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">number</td>
+                    <td className="p-3 text-sm text-muted-foreground">1</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Exponential backoff multiplier. Delay increases as: delay × backoff^(attempt-1)
                     </td>
                   </tr>
                 </tbody>
@@ -353,9 +367,11 @@ export default function RetryMechanismPage() {
               </div>
 
               <div>
-                <H3 id="increasing-delay">Increasing Delay</H3>
+                <H3 id="exponential-backoff">Exponential Backoff</H3>
                 <p className="text-muted-foreground mb-4">
-                  Simulate exponential backoff by using multiple requests with increasing delays.
+                  Use the <code className="text-sm bg-muted px-1 py-0.5 rounded">backoff</code> multiplier
+                  to increase delays exponentially between retries. This is ideal for rate-limited APIs
+                  and helps reduce server load during outages.
                 </p>
                 <CodeBlockServer language="yaml" filename="exponential-backoff.yaml">
                   {exponentialBackoff}
