@@ -1,5 +1,17 @@
 # @curl-runner/cli
 
+## 1.7.0
+
+### Minor Changes
+
+- [#35](https://github.com/alexvcasillas/curl-runner/pull/35) [`c398f6b`](https://github.com/alexvcasillas/curl-runner/commit/c398f6bed818a43a62c42b23aa41d875bdc2a354) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Add maxConcurrency option for parallel execution
+
+  - New `maxConcurrency` setting in global config to limit simultaneous requests in parallel mode
+  - New `--max-concurrent <n>` CLI flag
+  - New `CURL_RUNNER_MAX_CONCURRENCY` environment variable support
+
+  This helps avoid rate limiting from APIs and prevents overwhelming target servers when running many requests in parallel.
+
 ## 1.6.0
 
 ### Minor Changes

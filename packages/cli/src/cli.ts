@@ -84,6 +84,13 @@ class CurlRunnerCLI {
         process.env.CURL_RUNNER_CONTINUE_ON_ERROR.toLowerCase() === 'true';
     }
 
+    if (process.env.CURL_RUNNER_MAX_CONCURRENCY) {
+      const maxConcurrency = Number.parseInt(process.env.CURL_RUNNER_MAX_CONCURRENCY, 10);
+      if (maxConcurrency > 0) {
+        envConfig.maxConcurrency = maxConcurrency;
+      }
+    }
+
     if (process.env.CURL_RUNNER_OUTPUT_FORMAT) {
       const format = process.env.CURL_RUNNER_OUTPUT_FORMAT;
       if (['json', 'pretty', 'raw'].includes(format)) {
@@ -199,6 +206,9 @@ class CurlRunnerCLI {
 
       if (options.execution) {
         globalConfig.execution = options.execution as 'sequential' | 'parallel';
+      }
+      if (options.maxConcurrent !== undefined) {
+        globalConfig.maxConcurrency = options.maxConcurrent as number;
       }
       if (options.continueOnError !== undefined) {
         globalConfig.continueOnError = options.continueOnError;
@@ -367,6 +377,11 @@ class CurlRunnerCLI {
             options.retries = Number.parseInt(nextArg, 10);
           } else if (key === 'retry-delay') {
             options.retryDelay = Number.parseInt(nextArg, 10);
+          } else if (key === 'max-concurrent') {
+            const maxConcurrent = Number.parseInt(nextArg, 10);
+            if (maxConcurrent > 0) {
+              options.maxConcurrent = maxConcurrent;
+            }
           } else if (key === 'fail-on') {
             options.failOn = Number.parseInt(nextArg, 10);
           } else if (key === 'fail-on-percentage') {
@@ -603,6 +618,7 @@ ${this.logger.color('OPTIONS:', 'yellow')}
   -v, --verbose                 Enable verbose output
   -q, --quiet                   Suppress non-error output
   -p, --execution parallel      Execute requests in parallel
+  --max-concurrent <n>          Limit concurrent requests in parallel mode
   -c, --continue-on-error       Continue execution on errors
   -o, --output <file>           Save results to file
   --all                         Find all YAML files recursively
@@ -637,6 +653,9 @@ ${this.logger.color('EXAMPLES:', 'yellow')}
 
   # Run all files recursively in parallel
   curl-runner --all -p
+
+  # Run in parallel with max 5 concurrent requests
+  curl-runner -p --max-concurrent 5 tests.yaml
 
   # Run directory recursively
   curl-runner --all examples/
