@@ -23,8 +23,8 @@ keywords:
   - environment
 slug: "/docs/global-settings"
 toc: true
-date: "2026-01-23T21:27:49.010Z"
-lastModified: "2026-01-23T21:27:49.010Z"
+date: "2026-01-24T10:33:02.092Z"
+lastModified: "2026-01-24T10:33:02.092Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -44,8 +44,8 @@ schema:
   "@type": "TechArticle"
   headline: "Global Settings"
   description: "Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files."
-  datePublished: "2026-01-23T21:27:49.010Z"
-  dateModified: "2026-01-23T21:27:49.010Z"
+  datePublished: "2026-01-24T10:33:02.092Z"
+  dateModified: "2026-01-24T10:33:02.092Z"
 ---
 
 # Global Settings
@@ -282,8 +282,10 @@ global:
   continueOnError: true
   maxConcurrency: 5  # Limit concurrent requests in parallel mode
   
-  # Timeout settings
+  # Advanced timeout settings
   timeout: 10000
+  connectionTimeout: 5000
+  readTimeout: 15000
   retries: 3
   retryDelay: 1000
   retryBackoff: 2.0

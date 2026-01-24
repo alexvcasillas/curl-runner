@@ -21,8 +21,8 @@ keywords:
   - environment
 slug: "/docs/request-object"
 toc: true
-date: "2026-01-23T21:27:49.028Z"
-lastModified: "2026-01-23T21:27:49.028Z"
+date: "2026-01-24T10:33:02.393Z"
+lastModified: "2026-01-24T10:33:02.393Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -42,8 +42,8 @@ schema:
   "@type": "TechArticle"
   headline: "Request Object API Reference"
   description: "Complete reference for the RequestConfig interface and all available options for configuring HTTP requests."
-  datePublished: "2026-01-23T21:27:49.028Z"
-  dateModified: "2026-01-23T21:27:49.028Z"
+  datePublished: "2026-01-24T10:33:02.393Z"
+  dateModified: "2026-01-24T10:33:02.393Z"
 ---
 
 # Request Object API Reference
@@ -344,88 +344,71 @@ requests:
         reference: "\${REF_ID}"
 ```
 
-## Form Data (File Uploads)
+## Form Data & File Uploads
 
-Use `formData` instead of `body` to send multipart/form-data requests, commonly used for file uploads.
+Use the `formData` property to send multipart/form-data requests with file uploads. This is mutually exclusive with the `body` property.
 
-**form-data-upload.yaml**
+### File Attachment Properties
+
+| Property | Type | Required | Description |
+| --- | --- | --- | --- |
+| `file` | string | _Required_ | Path to the file (relative or absolute) |
+| `filename` | string | _Optional_ | Custom filename sent to the server |
+| `contentType` | string | _Optional_ | MIME type (curl auto-detects if not specified) |
+
+**form-data.yaml**
 
 ```yaml
 # Form Data and File Upload Examples
 requests:
   # Simple file upload
-  - name: "Upload Single File"
+  - name: "Single file upload"
     url: "https://api.example.com/upload"
     method: POST
     formData:
       document:
         file: "./report.pdf"
 
-  # File with custom filename
-  - name: "Upload with Custom Filename"
+  # File with custom filename and content type
+  - name: "File with options"
     url: "https://api.example.com/upload"
     method: POST
     formData:
       document:
         file: "./local-file.pdf"
         filename: "quarterly-report.pdf"
-
-  # File with explicit content type
-  - name: "Upload with Content Type"
-    url: "https://api.example.com/upload"
-    method: POST
-    formData:
-      data:
-        file: "./data.json"
-        contentType: "application/json"
+        contentType: "application/pdf"
 
   # Multiple files with form fields
-  - name: "Mixed Form Data"
+  - name: "Mixed form data"
     url: "https://api.example.com/submit"
     method: POST
     formData:
       # Text fields
-      username: "john_doe"
-      email: "john@example.com"
-      age: 30
-      subscribe: true
+      title: "Document Submission"
+      description: "Q4 Financial Reports"
+      submitted_by: "john@example.com"
 
       # File attachments
-      avatar:
-        file: "./avatar.png"
-        contentType: "image/png"
-
-      resume:
-        file: "./resume.pdf"
-        filename: "john-doe-resume.pdf"
+      main_document:
+        file: "./report.pdf"
+        filename: "financial-report.pdf"
         contentType: "application/pdf"
+      supporting_document:
+        file: "./appendix.xlsx"
+        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-  # File upload with all options
-  - name: "Complete File Upload"
-    url: "https://api.example.com/documents"
+  # File upload with variables
+  - name: "Dynamic file upload"
+    url: "\${API_URL}/users/\${USER_ID}/avatar"
     method: POST
     formData:
-      description: "Quarterly financial report"
-      uploaded_by: "\${USER_ID}"
-      document:
-        file: "./report.pdf"
-        filename: "Q4-2024-Report.pdf"
-        contentType: "application/pdf"
-    expect:
-      status: 201
+      description: "Uploaded on \${DATE:YYYY-MM-DD}"
+      request_id: "\${UUID}"
+      avatar:
+        file: "./profile-photo.jpg"
+        contentType: "image/jpeg"
 ```
-
-### File Attachment Properties
-
-| Property | Type | Required | Description |
-|----------|------|----------|-------------|
-| `file` | string | Yes | Path to the file (relative or absolute) |
-| `filename` | string | No | Custom filename to send to the server |
-| `contentType` | string | No | MIME type (curl auto-detects if not specified) |
-
-### FormData vs Body
-
-> **Note:** `formData` and `body` are mutually exclusive. When both are specified, `formData` takes precedence. Use `body` for JSON/text content and `formData` for file uploads.
 
 ## Authentication
 
@@ -583,91 +566,31 @@ requests:
     url: "https://api.example.com/data"
     method: GET
     proxy: "http://proxy.company.com:8080"
-
+    
   # SOCKS proxy - Coming Soon
   - name: "SOCKS Proxy Request"
     url: "https://api.example.com/data"
     method: GET
     proxy: "socks5://proxy.company.com:1080"  # Coming Soon
-
-  # Proxy with authentication - Coming Soon
+    
+  # Proxy with authentication - Coming Soon  
   - name: "Authenticated Proxy Request"
     url: "https://api.example.com/data"
     method: GET
     proxy: "http://username:password@proxy.company.com:8080"  # Coming Soon
-
+    
   # Disable SSL verification (insecure)
   - name: "Insecure SSL Request"
     url: "https://self-signed-cert.example.com/api"
     method: GET
     insecure: true  # Skip SSL certificate verification
-
+    
   # Secure request (default behavior)
   - name: "Secure Request"
     url: "https://api.example.com/secure-endpoint"
     method: GET
     insecure: false  # Verify SSL certificates (default)
 ```
-
-## SSL/TLS Certificate Configuration
-
-Configure SSL/TLS certificates for custom CA, mutual TLS (mTLS), and enterprise environments.
-
-**ssl-config.yaml**
-
-```yaml
-# SSL/TLS Certificate Configuration
-requests:
-  # Custom CA certificate for enterprise environments
-  - name: "Custom CA Certificate"
-    url: "https://internal-api.company.com/data"
-    method: GET
-    ssl:
-      ca: "./certs/company-ca.pem"
-
-  # Mutual TLS (mTLS) authentication
-  - name: "mTLS Client Authentication"
-    url: "https://secure-api.example.com/protected"
-    method: GET
-    ssl:
-      ca: "./certs/ca.pem"
-      cert: "./certs/client.pem"
-      key: "./certs/client-key.pem"
-
-  # Disable verification via ssl config (equivalent to insecure: true)
-  - name: "SSL Verification Disabled"
-    url: "https://self-signed.example.com/api"
-    method: GET
-    ssl:
-      verify: false
-
-  # Self-signed cert with custom CA
-  - name: "Self-Signed with CA"
-    url: "https://dev-server.local/api"
-    method: GET
-    ssl:
-      verify: true  # Enable verification
-      ca: "./certs/dev-ca.pem"  # But use custom CA
-
-  # Client certificate without custom CA (uses system CA store)
-  - name: "Client Cert Only"
-    url: "https://api.example.com/mtls-endpoint"
-    method: GET
-    ssl:
-      cert: "./certs/client.pem"
-      key: "./certs/client-key.pem"
-```
-
-### SSL Configuration Properties
-
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `verify` | boolean | `true` | Whether to verify SSL certificates |
-| `ca` | string | - | Path to CA certificate file |
-| `cert` | string | - | Path to client certificate file for mTLS |
-| `key` | string | - | Path to client private key file for mTLS |
-
-> **Note:** The `insecure: true` option is equivalent to `ssl.verify: false`. If both are specified, SSL verification will be disabled.
 
 ## Request-Level Variables
 
