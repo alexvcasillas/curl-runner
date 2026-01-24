@@ -39,7 +39,11 @@ export class YamlParser {
       }
 
       // Check if it's a single variable that spans the entire string
-      if (extractedVars.length === 1 && extractedVars[0].start === 0 && extractedVars[0].end === obj.length) {
+      if (
+        extractedVars.length === 1 &&
+        extractedVars[0].start === 0 &&
+        extractedVars[0].end === obj.length
+      ) {
         const varName = extractedVars[0].name;
         const resolvedValue = YamlParser.resolveVariable(varName, variables, storeContext);
         return resolvedValue !== null ? resolvedValue : obj;
@@ -75,7 +79,7 @@ export class YamlParser {
 
   /**
    * Resolves a single variable reference.
-   * Priority: store context > dynamic variables > static variables > default values
+   * Priority: store context > string transforms > dynamic variables > static variables > default values
    */
   static resolveVariable(
     varName: string,
@@ -89,6 +93,19 @@ export class YamlParser {
         return storeContext[storeVarName];
       }
       return null; // Store variable not found, return null to keep original
+    }
+
+    // Check for string transforms: ${VAR:upper} or ${VAR:lower}
+    const transformMatch = varName.match(/^([^:]+):(upper|lower)$/);
+    if (transformMatch) {
+      const baseVarName = transformMatch[1];
+      const transform = transformMatch[2];
+      const baseValue = variables[baseVarName] || process.env[baseVarName];
+
+      if (baseValue) {
+        return transform === 'upper' ? baseValue.toUpperCase() : baseValue.toLowerCase();
+      }
+      return null; // Base variable not found
     }
 
     // Check for default value syntax: ${VAR:default}

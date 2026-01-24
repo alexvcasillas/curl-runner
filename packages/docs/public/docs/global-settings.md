@@ -23,8 +23,8 @@ keywords:
   - environment
 slug: "/docs/global-settings"
 toc: true
-date: "2026-01-24T11:05:45.888Z"
-lastModified: "2026-01-24T11:05:45.888Z"
+date: "2026-01-24T16:01:46.336Z"
+lastModified: "2026-01-24T16:01:46.336Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -44,8 +44,8 @@ schema:
   "@type": "TechArticle"
   headline: "Global Settings"
   description: "Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files."
-  datePublished: "2026-01-24T11:05:45.888Z"
-  dateModified: "2026-01-24T11:05:45.888Z"
+  datePublished: "2026-01-24T16:01:46.336Z"
+  dateModified: "2026-01-24T16:01:46.336Z"
 ---
 
 # Global Settings
@@ -278,7 +278,7 @@ global:
   execution: parallel
   continueOnError: true
   maxConcurrency: 5  # Limit concurrent requests in parallel mode
-  
+
   # Advanced timeout settings
   timeout: 10000
   connectionTimeout: 5000
@@ -287,25 +287,25 @@ global:
   retryDelay: 1000
   retryBackoff: 2.0
   retryOn: ["timeout", "5xx", "network"]
-  
+
   # SSL/TLS settings
   ssl:
     verify: true
     ca: "./certs/ca.pem"
     cert: "./certs/client.pem"
     key: "./certs/client-key.pem"
-  
+
   # Proxy settings
   proxy:
     http: "http://proxy.company.com:8080"
     https: "https://secure-proxy.company.com:8443"
     bypass: ["localhost", "*.internal.com"]
-    
+
   # Rate limiting
   rateLimit:
     maxRequests: 100
     perSecond: 10
-    
+
   # Output configuration
   output:
     verbose: true

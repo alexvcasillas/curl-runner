@@ -17,8 +17,8 @@ keywords:
   - environment
 slug: "/docs/variables"
 toc: true
-date: "2026-01-24T11:05:45.855Z"
-lastModified: "2026-01-24T11:05:45.855Z"
+date: "2026-01-24T16:01:46.343Z"
+lastModified: "2026-01-24T16:01:46.343Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -38,8 +38,8 @@ schema:
   "@type": "TechArticle"
   headline: "Variables"
   description: "Use variables and templating to create reusable, dynamic HTTP request configurations."
-  datePublished: "2026-01-24T11:05:45.855Z"
-  dateModified: "2026-01-24T11:05:45.855Z"
+  datePublished: "2026-01-24T16:01:46.343Z"
+  dateModified: "2026-01-24T16:01:46.343Z"
 ---
 
 # Variables
@@ -257,11 +257,13 @@ collection:
         X-Session: "\${SESSION_ID}"
 ```
 
-## Conditional Variables
+## Default Values
 
 Use default value syntax to provide fallback values when variables are not set.
 
-**conditional-variables.yaml**
+For environment-specific configurations, use separate YAML files per environment or set environment variables directly.
+
+**default-values.yaml**
 
 ```yaml
 global:
@@ -279,7 +281,32 @@ collection:
       timeout: \${API_TIMEOUT}
 ```
 
-For environment-specific configurations, use separate YAML files per environment or set environment variables directly.
+## String Transforms
+
+Transform variable values using built-in string modifiers for case manipulation.
+
+**string-transforms.yaml**
+
+```yaml
+global:
+  variables:
+    ENV: "production"
+    RESOURCE: "Users"
+
+    # Transform to uppercase
+    UPPER_ENV: "\${ENV:upper}"           # Results in "PRODUCTION"
+
+    # Transform to lowercase
+    LOWER_RESOURCE: "\${RESOURCE:lower}" # Results in "users"
+
+collection:
+  requests:
+    - name: "Request with case transforms"
+      url: "https://api.example.com/\${RESOURCE:lower}"
+      headers:
+        X-Environment: "\${ENV:upper}"
+        X-Resource-Type: "\${RESOURCE:lower}"
+```
 
 ## Complex Interpolation
 
@@ -292,10 +319,10 @@ global:
   variables:
     BASE_PATH: "/api/v1"
     RESOURCE: "users"
-    
+
     # Computed from other variables
     FULL_ENDPOINT: "\${BASE_URL}\${BASE_PATH}/\${RESOURCE}"
-    
+
     # String manipulation
     UPPER_ENV: "\${ENV:upper}"
     LOWER_RESOURCE: "\${RESOURCE:lower}"
@@ -322,18 +349,3 @@ collection:
 ## Common Patterns
 
 ### API Authentication
-
-```yaml
-global:
-  variables:
-    # Use environment variables for configuration
-    BASE_URL: "\${API_BASE_URL:https://api-staging.example.com}"
-    API_KEY: "\${API_KEY}"
-
-collection:
-  requests:
-    - name: "Authenticated request"
-      url: "\${BASE_URL}/users"
-      headers:
-        Authorization: "Bearer \${API_KEY}"
-```
