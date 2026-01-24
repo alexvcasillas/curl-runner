@@ -91,8 +91,24 @@ export class CurlBuilder {
       parts.push('-x', config.proxy);
     }
 
-    if (config.insecure) {
+    // SSL/TLS configuration
+    // insecure: true takes precedence (backwards compatibility)
+    // ssl.verify: false is equivalent to insecure: true
+    if (config.insecure || config.ssl?.verify === false) {
       parts.push('-k');
+    }
+
+    // SSL certificate options
+    if (config.ssl) {
+      if (config.ssl.ca) {
+        parts.push('--cacert', `"${config.ssl.ca}"`);
+      }
+      if (config.ssl.cert) {
+        parts.push('--cert', `"${config.ssl.cert}"`);
+      }
+      if (config.ssl.key) {
+        parts.push('--key', `"${config.ssl.key}"`);
+      }
     }
 
     if (config.output) {
