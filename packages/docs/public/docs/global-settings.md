@@ -155,27 +155,24 @@ global:
   output:
     # Verbose output with request/response details
     verbose: true
-    
+
     # Save results to JSON file
     saveToFile: "test-results.json"
-    
-    # Include response bodies in output
-    includeResponseBody: true
-    
-    # Include request details in output
-    includeRequestDetails: true
-    
-    # Format for console output
-    format: "detailed"  # Options: "minimal", "standard", "detailed"
-    
-    # Colorize console output
-    colors: true
-    
-    # Show progress indicators
-    showProgress: true
-    
-    # Timestamp format
-    timestampFormat: "ISO"  # Options: "ISO", "unix", "relative"
+
+    # Output format
+    format: "pretty"  # Options: "json", "pretty", "raw"
+
+    # Pretty format detail level (only applies when format is "pretty")
+    prettyLevel: "standard"  # Options: "minimal", "standard", "detailed"
+
+    # Show response headers in output
+    showHeaders: true
+
+    # Show response body in output (default: true)
+    showBody: true
+
+    # Show performance metrics in output
+    showMetrics: true
 ```
 
 ## Global Defaults
@@ -313,9 +310,11 @@ global:
   output:
     verbose: true
     saveToFile: "results-\${Date.now()}.json"
-    format: "detailed"
-    colors: true
-    includeMetrics: true
+    format: "pretty"
+    prettyLevel: "detailed"
+    showHeaders: true
+    showBody: true
+    showMetrics: true
     
   # Global variables
   variables:
