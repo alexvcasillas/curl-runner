@@ -17,8 +17,8 @@ keywords:
   - environment
 slug: "/docs/variables"
 toc: true
-date: "2026-01-24T11:05:45.855Z"
-lastModified: "2026-01-24T11:05:45.855Z"
+date: "2026-01-24T16:06:12.622Z"
+lastModified: "2026-01-24T16:06:12.622Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -38,8 +38,8 @@ schema:
   "@type": "TechArticle"
   headline: "Variables"
   description: "Use variables and templating to create reusable, dynamic HTTP request configurations."
-  datePublished: "2026-01-24T11:05:45.855Z"
-  dateModified: "2026-01-24T11:05:45.855Z"
+  datePublished: "2026-01-24T16:06:12.622Z"
+  dateModified: "2026-01-24T16:06:12.622Z"
 ---
 
 # Variables
@@ -257,11 +257,13 @@ collection:
         X-Session: "\${SESSION_ID}"
 ```
 
-## Conditional Variables
+## Default Values
 
 Use default value syntax to provide fallback values when variables are not set.
 
-**conditional-variables.yaml**
+For environment-specific configurations, use separate YAML files per environment or set environment variables directly.
+
+**default-values.yaml**
 
 ```yaml
 global:
@@ -278,8 +280,6 @@ collection:
       url: "\${BASE_URL}/data"
       timeout: \${API_TIMEOUT}
 ```
-
-For environment-specific configurations, use separate YAML files per environment or set environment variables directly.
 
 ## Complex Interpolation
 
@@ -322,18 +322,3 @@ collection:
 ## Common Patterns
 
 ### API Authentication
-
-```yaml
-global:
-  variables:
-    # Use environment variables for configuration
-    BASE_URL: "\${API_BASE_URL:https://api-staging.example.com}"
-    API_KEY: "\${API_KEY}"
-
-collection:
-  requests:
-    - name: "Authenticated request"
-      url: "\${BASE_URL}/users"
-      headers:
-        Authorization: "Bearer \${API_KEY}"
-```

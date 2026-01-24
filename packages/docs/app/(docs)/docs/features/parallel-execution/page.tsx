@@ -157,8 +157,7 @@ export default function ParallelExecutionPage() {
                   {'execution: parallel'}
                 </code>{' '}
                 setting in your YAML file or the{' '}
-                <code className="text-xs bg-background px-1 py-0.5 rounded">-p</code> CLI
-                flag.
+                <code className="text-xs bg-background px-1 py-0.5 rounded">-p</code> CLI flag.
               </p>
             </div>
           </section>

@@ -39,7 +39,11 @@ export class YamlParser {
       }
 
       // Check if it's a single variable that spans the entire string
-      if (extractedVars.length === 1 && extractedVars[0].start === 0 && extractedVars[0].end === obj.length) {
+      if (
+        extractedVars.length === 1 &&
+        extractedVars[0].start === 0 &&
+        extractedVars[0].end === obj.length
+      ) {
         const varName = extractedVars[0].name;
         const resolvedValue = YamlParser.resolveVariable(varName, variables, storeContext);
         return resolvedValue !== null ? resolvedValue : obj;

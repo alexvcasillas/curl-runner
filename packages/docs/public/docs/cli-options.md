@@ -21,8 +21,8 @@ keywords:
   - environment
 slug: "/docs/cli-options"
 toc: true
-date: "2026-01-24T11:05:45.964Z"
-lastModified: "2026-01-24T11:05:45.964Z"
+date: "2026-01-24T16:06:12.618Z"
+lastModified: "2026-01-24T16:06:12.618Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -42,8 +42,8 @@ schema:
   "@type": "TechArticle"
   headline: "CLI Options"
   description: "Comprehensive reference for all command-line options available in curl-runner, including examples and best practices."
-  datePublished: "2026-01-24T11:05:45.964Z"
-  dateModified: "2026-01-24T11:05:45.964Z"
+  datePublished: "2026-01-24T16:06:12.618Z"
+  dateModified: "2026-01-24T16:06:12.618Z"
 ---
 
 # CLI Options
