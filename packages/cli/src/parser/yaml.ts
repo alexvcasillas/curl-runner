@@ -115,7 +115,9 @@ export class YamlParser {
     if (randomStringMatch) {
       const length = Number(randomStringMatch[1]);
       const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-      return Array.from({ length }, () => chars.charAt(Math.floor(Math.random() * chars.length))).join('');
+      return Array.from({ length }, () =>
+        chars.charAt(Math.floor(Math.random() * chars.length)),
+      ).join('');
     }
 
     // Current timestamp variations
