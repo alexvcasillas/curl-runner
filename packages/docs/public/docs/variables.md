@@ -17,8 +17,8 @@ keywords:
   - environment
 slug: "/docs/variables"
 toc: true
-date: "2026-01-24T15:29:16.884Z"
-lastModified: "2026-01-24T15:29:16.884Z"
+date: "2026-01-24T16:02:39.686Z"
+lastModified: "2026-01-24T16:02:39.686Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -38,8 +38,8 @@ schema:
   "@type": "TechArticle"
   headline: "Variables"
   description: "Use variables and templating to create reusable, dynamic HTTP request configurations."
-  datePublished: "2026-01-24T15:29:16.884Z"
-  dateModified: "2026-01-24T15:29:16.884Z"
+  datePublished: "2026-01-24T16:02:39.686Z"
+  dateModified: "2026-01-24T16:02:39.686Z"
 ---
 
 # Variables
@@ -196,9 +196,39 @@ collection:
       timeout: \${TIMEOUT}  # Uses 30000
 ```
 
+## Default Values
+
+Provide fallback values for variables that may not be set using the ` ${VAR:default} ` syntax.
+
+**default-values.yaml**
+
+```yaml
+global:
+  variables:
+    # Basic default value - uses "5000" if API_TIMEOUT is not set
+    API_TIMEOUT: "\${API_TIMEOUT:5000}"
+
+    # Default with URL - uses the URL if API_BASE is not set
+    API_BASE: "\${API_BASE:https://api.example.com}"
+
+    # Nested defaults - tries DATABASE_HOST, then DB_HOST, then "localhost"
+    DB_HOST: "\${DATABASE_HOST:\${DB_HOST:localhost}}"
+
+    # Empty default - uses empty string if OPTIONAL_PARAM is not set
+    OPTIONAL_PARAM: "\${OPTIONAL_PARAM:}"
+
+collection:
+  requests:
+    - name: "Request with defaults"
+      url: "\${API_BASE}/data"
+      timeout: \${API_TIMEOUT}
+      headers:
+        X-DB-Host: "\${DB_HOST}"
+```
+
 ## Dynamic Variables
 
-Create dynamic values using JavaScript expressions and built-in functions.
+Create dynamic values using built-in functions.
 
 **dynamic-variables.yaml**
 
@@ -227,27 +257,26 @@ collection:
         X-Session: "\${SESSION_ID}"
 ```
 
-## Conditional Logic
+## Default Values
 
-Use JavaScript expressions to create conditional variables and environment-specific configurations.
+Use default value syntax to provide fallback values when variables are not set.
 
-**conditional-variables.yaml**
+For environment-specific configurations, use separate YAML files per environment or set environment variables directly.
+
+**default-values.yaml**
 
 ```yaml
 global:
   variables:
-    # Environment-based variables
-    BASE_URL: "\${NODE_ENV:production:https://api.example.com:https://api-staging.example.com}"
-    
     # Default value if environment variable not set
     API_TIMEOUT: "\${API_TIMEOUT:5000}"
-    
-    # Multiple environment sources
+
+    # Nested default values
     DB_HOST: "\${DATABASE_HOST:\${DB_HOST:localhost}}"
 
 collection:
   requests:
-    - name: "Environment aware request"
+    - name: "Request with defaults"
       url: "\${BASE_URL}/data"
       timeout: \${API_TIMEOUT}
 ```
@@ -293,12 +322,3 @@ collection:
 ## Common Patterns
 
 ### API Authentication
-
-```yaml
-global:
-  variables:
-    ENVIRONMENT: \${ENV.NODE_ENV || 'development'}
-    BASE_URL: \${ENVIRONMENT === 'production' 
-      ? 'https://api.example.com' 
-      : 'https://api-staging.example.com'}
-```

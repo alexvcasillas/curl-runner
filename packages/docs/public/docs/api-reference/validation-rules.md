@@ -19,8 +19,8 @@ keywords:
   - environment
 slug: "/docs/validation-rules"
 toc: true
-date: "2026-01-24T15:29:16.943Z"
-lastModified: "2026-01-24T15:29:16.943Z"
+date: "2026-01-24T16:02:39.693Z"
+lastModified: "2026-01-24T16:02:39.693Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -40,8 +40,8 @@ schema:
   "@type": "TechArticle"
   headline: "Validation Rules API Reference"
   description: "Complete reference for response validation using the expect configuration object. Define validation rules for status codes, headers, and response body content."
-  datePublished: "2026-01-24T15:29:16.943Z"
-  dateModified: "2026-01-24T15:29:16.943Z"
+  datePublished: "2026-01-24T16:02:39.693Z"
+  dateModified: "2026-01-24T16:02:39.693Z"
 ---
 
 # Validation Rules API Reference
