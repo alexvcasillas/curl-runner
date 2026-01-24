@@ -92,6 +92,9 @@ export interface RequestConfig {
   retry?: {
     count: number;
     delay?: number;
+    /** Exponential backoff multiplier. Default is 1 (no backoff).
+     * Example: with delay=1000 and backoff=2, delays are: 1000ms, 2000ms, 4000ms, 8000ms... */
+    backoff?: number;
   };
   variables?: Record<string, string>;
   /**
