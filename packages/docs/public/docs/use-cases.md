@@ -24,8 +24,8 @@ keywords:
   - environment
 slug: "/docs/use-cases"
 toc: true
-date: "2026-01-24T16:03:18.278Z"
-lastModified: "2026-01-24T16:03:18.278Z"
+date: "2026-01-24T16:01:46.343Z"
+lastModified: "2026-01-24T16:01:46.343Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -45,8 +45,8 @@ schema:
   "@type": "TechArticle"
   headline: "Real-World Use Cases"
   description: "Discover how organizations use curl-runner to solve API testing, automation, and monitoring challenges"
-  datePublished: "2026-01-24T16:03:18.278Z"
-  dateModified: "2026-01-24T16:03:18.278Z"
+  datePublished: "2026-01-24T16:01:46.343Z"
+  dateModified: "2026-01-24T16:01:46.343Z"
 ---
 
 # Real-World Use Cases
