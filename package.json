@@ -23,7 +23,8 @@
     "test": "bun test || echo 'No tests found'",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "changeset publish"
+    "release": "changeset publish",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.2",
@@ -31,6 +32,8 @@
     "@changesets/cli": "^2.29.6",
     "@types/bun": "latest",
     "@types/node": "^24.3.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
     "typescript": "^5.0.0"
   },
   "engines": {
@@ -51,5 +54,10 @@
     "monorepo"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "lint-staged": {
+    "*.{js,ts,tsx,jsx,json,css,md}": [
+      "biome check --write --no-errors-on-unmatched"
+    ]
+  }
 }
