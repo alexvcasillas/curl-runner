@@ -2,6 +2,7 @@ import { ImageResponse } from 'next/og';
 
 export const runtime = 'edge';
 
+
 export const alt = 'Environment Variables - curl-runner Documentation';
 export const size = {
   width: 1200,
@@ -15,6 +16,7 @@ export default async function Image() {
     <div
       style={{
         fontSize: 48,
+        fontFamily: 'system-ui, sans-serif',
         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
         width: '100%',
         height: '100%',
@@ -32,8 +34,6 @@ export default async function Image() {
         Configure curl-runner behavior using environment variables
       </div>
     </div>,
-    {
-      ...size,
-    },
+    { ...size },
   );
 }
