@@ -210,6 +210,11 @@ export interface GlobalConfig {
    * Applied to all requests unless overridden at the request level.
    */
   ssl?: SSLConfig;
+  /**
+   * Watch mode configuration.
+   * Automatically re-runs requests when YAML files change.
+   */
+  watch?: WatchConfig;
   variables?: Record<string, string>;
   output?: {
     verbose?: boolean;
@@ -262,3 +267,16 @@ export interface ExecutionSummary {
  * Values are stored as strings and can be referenced using ${store.variableName} syntax.
  */
 export type ResponseStoreContext = Record<string, string>;
+
+/**
+ * Configuration for watch mode.
+ * Watch mode automatically re-runs requests when YAML files change.
+ */
+export interface WatchConfig {
+  /** Enable watch mode. Default: false */
+  enabled?: boolean;
+  /** Debounce delay in milliseconds. Default: 300 */
+  debounce?: number;
+  /** Clear screen between runs. Default: true */
+  clear?: boolean;
+}

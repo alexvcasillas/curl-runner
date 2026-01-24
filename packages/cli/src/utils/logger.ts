@@ -645,4 +645,28 @@ export class Logger {
         this.color(` (${requestCount} request${requestCount === 1 ? '' : 's'})`, 'dim'),
     );
   }
+
+  logWatch(files: string[]): void {
+    console.log();
+    console.log(
+      `${this.color('Watching for changes...', 'cyan')} ${this.color('(press Ctrl+C to stop)', 'dim')}`,
+    );
+    const fileList = files.length <= 3 ? files.join(', ') : `${files.length} files`;
+    console.log(this.color(`   Files: ${fileList}`, 'dim'));
+    console.log();
+  }
+
+  logWatchReady(): void {
+    console.log();
+    console.log(this.color('Watching for changes...', 'cyan'));
+  }
+
+  logFileChanged(filename: string): void {
+    const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+    console.log(this.color('-'.repeat(50), 'dim'));
+    console.log(
+      `${this.color(`[${timestamp}]`, 'dim')} File changed: ${this.color(filename, 'yellow')}`,
+    );
+    console.log();
+  }
 }
