@@ -1,5 +1,35 @@
 # @curl-runner/cli
 
+## 1.6.0
+
+### Minor Changes
+
+- [#34](https://github.com/alexvcasillas/curl-runner/pull/34) [`c9487a3`](https://github.com/alexvcasillas/curl-runner/commit/c9487a30245ae9cee02affb015ab3f0a8758f6fe) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Add string transformation support for variables
+
+  New `:upper` and `:lower` transforms for case manipulation:
+
+  - `${VAR:upper}` converts variable value to uppercase
+  - `${VAR:lower}` converts variable value to lowercase
+  - Works with both static variables and environment variables
+
+  Example usage:
+
+  ```yaml
+  global:
+    variables:
+      ENV: "production"
+      RESOURCE: "Users"
+
+  collection:
+    requests:
+      - name: API Request
+        url: "https://api.example.com/${RESOURCE:lower}"
+        headers:
+          X-Environment: "${ENV:upper}"
+  ```
+
+  This resolves to `https://api.example.com/users` with header `X-Environment: PRODUCTION`.
+
 ## 1.5.0
 
 ### Minor Changes
