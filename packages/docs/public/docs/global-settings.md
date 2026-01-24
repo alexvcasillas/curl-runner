@@ -268,9 +268,9 @@ requests:
 
 ## Advanced Configuration
 
-Advanced global settings for complex scenarios including SSL, proxies, and rate limiting.
+Advanced global settings for complex scenarios including SSL and proxies.
 
-Some advanced features like SSL certificates, proxies, and rate limiting may require additional setup or may not be available in all environments.
+Some advanced features like SSL certificates and proxies may require additional setup or may not be available in all environments.
 
 **advanced-global-config.yaml**
 
@@ -303,12 +303,7 @@ global:
     http: "http://proxy.company.com:8080"
     https: "https://secure-proxy.company.com:8443"
     bypass: ["localhost", "*.internal.com"]
-    
-  # Rate limiting
-  rateLimit:
-    maxRequests: 100
-    perSecond: 10
-    
+
   # Output configuration
   output:
     verbose: true
