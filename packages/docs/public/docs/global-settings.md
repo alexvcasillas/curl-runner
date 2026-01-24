@@ -23,8 +23,8 @@ keywords:
   - environment
 slug: "/docs/global-settings"
 toc: true
-date: "2026-01-24T16:07:59.102Z"
-lastModified: "2026-01-24T16:07:59.102Z"
+date: "2026-01-24T16:01:46.336Z"
+lastModified: "2026-01-24T16:01:46.336Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -44,8 +44,8 @@ schema:
   "@type": "TechArticle"
   headline: "Global Settings"
   description: "Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files."
-  datePublished: "2026-01-24T16:07:59.102Z"
-  dateModified: "2026-01-24T16:07:59.102Z"
+  datePublished: "2026-01-24T16:01:46.336Z"
+  dateModified: "2026-01-24T16:01:46.336Z"
 ---
 
 # Global Settings

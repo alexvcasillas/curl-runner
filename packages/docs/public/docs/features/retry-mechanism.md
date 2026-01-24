@@ -17,8 +17,8 @@ keywords:
   - cli
 slug: "/docs/retry-mechanism"
 toc: true
-date: "2026-01-24T16:07:59.109Z"
-lastModified: "2026-01-24T16:07:59.109Z"
+date: "2026-01-24T16:01:46.344Z"
+lastModified: "2026-01-24T16:01:46.344Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -38,8 +38,8 @@ schema:
   "@type": "TechArticle"
   headline: "Retry Mechanism"
   description: "Automatically retry failed requests with configurable delays and attempts."
-  datePublished: "2026-01-24T16:07:59.109Z"
-  dateModified: "2026-01-24T16:07:59.109Z"
+  datePublished: "2026-01-24T16:01:46.344Z"
+  dateModified: "2026-01-24T16:01:46.344Z"
 ---
 
 # Retry Mechanism
