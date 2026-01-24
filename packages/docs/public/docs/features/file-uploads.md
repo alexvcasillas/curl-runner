@@ -16,8 +16,8 @@ keywords:
   - environment
 slug: "/docs/file-uploads"
 toc: true
-date: "2026-01-24T10:33:02.241Z"
-lastModified: "2026-01-24T10:33:02.241Z"
+date: "2026-01-24T10:40:06.857Z"
+lastModified: "2026-01-24T10:40:06.857Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -37,8 +37,8 @@ schema:
   "@type": "TechArticle"
   headline: "File Uploads"
   description: "Upload files using multipart/form-data requests with curl-runner."
-  datePublished: "2026-01-24T10:33:02.241Z"
-  dateModified: "2026-01-24T10:33:02.241Z"
+  datePublished: "2026-01-24T10:40:06.857Z"
+  dateModified: "2026-01-24T10:40:06.857Z"
 ---
 
 # File Uploads

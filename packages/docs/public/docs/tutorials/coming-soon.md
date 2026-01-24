@@ -9,8 +9,8 @@ keywords:
   - testing
 slug: "/docs/coming-soon"
 toc: true
-date: "2026-01-24T10:33:02.073Z"
-lastModified: "2026-01-24T10:33:02.073Z"
+date: "2026-01-24T10:40:06.834Z"
+lastModified: "2026-01-24T10:40:06.834Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -30,6 +30,6 @@ schema:
   "@type": "TechArticle"
   headline: ""
   description: ""
-  datePublished: "2026-01-24T10:33:02.073Z"
-  dateModified: "2026-01-24T10:33:02.073Z"
+  datePublished: "2026-01-24T10:40:06.834Z"
+  dateModified: "2026-01-24T10:40:06.834Z"
 ---
