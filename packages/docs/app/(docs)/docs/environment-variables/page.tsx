@@ -103,9 +103,14 @@ curl-runner tests/
 export CURL_RUNNER_CONTINUE_ON_ERROR=true
 curl-runner tests/
 
+# Limit concurrent requests in parallel mode
+export CURL_RUNNER_MAX_CONCURRENCY=5
+curl-runner tests/
+
 # Combine execution settings
 export CURL_RUNNER_EXECUTION=parallel
 export CURL_RUNNER_CONTINUE_ON_ERROR=true
+export CURL_RUNNER_MAX_CONCURRENCY=10
 curl-runner tests/`;
 
 const dockerExample = `# Dockerfile example
@@ -175,6 +180,15 @@ const variables = [
     example: 'true',
     icon: AlertTriangle,
     color: { bg: 'bg-orange-500/10', text: 'text-orange-600 dark:text-orange-400' },
+  },
+  {
+    name: 'CURL_RUNNER_MAX_CONCURRENCY',
+    description: 'Maximum number of concurrent requests in parallel mode',
+    type: 'number',
+    default: 'unlimited',
+    example: '5',
+    icon: Zap,
+    color: { bg: 'bg-teal-500/10', text: 'text-teal-600 dark:text-teal-400' },
   },
   {
     name: 'CURL_RUNNER_OUTPUT_FORMAT',

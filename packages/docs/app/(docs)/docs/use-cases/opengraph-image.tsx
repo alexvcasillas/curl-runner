@@ -5,6 +5,9 @@ import { ImageResponse } from 'next/og';
 // Use Node.js runtime to access file system
 export const runtime = 'nodejs';
 
+
+
+
 export const alt = 'Use Cases - Real-World Applications | curl-runner Documentation';
 export const size = {
   width: 1200,
@@ -28,7 +31,7 @@ export default async function Image() {
         alignItems: 'center',
         justifyContent: 'center',
         flexDirection: 'column',
-        fontFamily: 'Inter, system-ui, sans-serif',
+        fontFamily: 'system-ui, sans-serif',
       }}
     >
       {/* Background Pattern */}
@@ -222,8 +225,6 @@ export default async function Image() {
         https://www.curl-runner.com/docs/use-cases
       </div>
     </div>,
-    {
-      ...size,
-    },
+    { ...size },
   );
 }
