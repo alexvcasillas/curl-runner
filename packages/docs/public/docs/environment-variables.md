@@ -22,8 +22,8 @@ keywords:
   - npm
 slug: "/docs/environment-variables"
 toc: true
-date: "2026-01-23T21:27:49.020Z"
-lastModified: "2026-01-23T21:27:49.020Z"
+date: "2026-01-24T16:04:59.534Z"
+lastModified: "2026-01-24T16:04:59.534Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -43,8 +43,8 @@ schema:
   "@type": "TechArticle"
   headline: "Environment Variables"
   description: "Configure curl-runner behavior using environment variables for consistent settings across different environments."
-  datePublished: "2026-01-23T21:27:49.020Z"
-  dateModified: "2026-01-23T21:27:49.020Z"
+  datePublished: "2026-01-24T16:04:59.534Z"
+  dateModified: "2026-01-24T16:04:59.534Z"
 ---
 
 # Environment Variables
@@ -84,37 +84,7 @@ CURL_RUNNER_VERBOSE=true curl-runner tests/
 
 All curl-runner environment variables follow the `CURL_RUNNER_*` naming convention.
 
-### General Variables
-
-| Variable | Type | Description |
-|----------|------|-------------|
-| `CURL_RUNNER_VERBOSE` | boolean | Enable verbose output (`true`/`false`) |
-| `CURL_RUNNER_EXECUTION` | string | Execution mode (`sequential`/`parallel`) |
-| `CURL_RUNNER_CONTINUE_ON_ERROR` | boolean | Continue on errors (`true`/`false`) |
-
-### Request Variables
-
-| Variable | Type | Description |
-|----------|------|-------------|
-| `CURL_RUNNER_TIMEOUT` | number | Request timeout in milliseconds |
-| `CURL_RUNNER_RETRIES` | number | Maximum retry attempts |
-| `CURL_RUNNER_RETRY_DELAY` | number | Delay between retries in milliseconds |
-
-### Output Variables
-
-| Variable | Type | Description |
-|----------|------|-------------|
-| `CURL_RUNNER_OUTPUT_FORMAT` | string | Output format (`json`/`pretty`/`raw`) |
-| `CURL_RUNNER_PRETTY_LEVEL` | string | Pretty format level (`minimal`/`standard`/`detailed`) |
-| `CURL_RUNNER_OUTPUT_FILE` | string | Path to save results |
-
-### CI/CD Variables
-
-| Variable | Type | Description |
-|----------|------|-------------|
-| `CURL_RUNNER_STRICT_EXIT` | boolean | Exit with code 1 if any validation fails (`true`/`false`) |
-| `CURL_RUNNER_FAIL_ON` | number | Maximum allowed failures before exit code 1 |
-| `CURL_RUNNER_FAIL_ON_PERCENTAGE` | number | Maximum allowed failure percentage (0-100) |
+{variable.description}
 
 ## Output Configuration
 
@@ -204,50 +174,29 @@ CMD ["curl-runner", "/tests"]
 
 Examples of using environment variables in popular CI/CD platforms.
 
-### GitHub Actions
+**CI/CD Examples**
 
 ```yaml
-# Basic CI workflow with strict exit
+# GitHub Actions
 - name: Run API Tests
   env:
-    CURL_RUNNER_STRICT_EXIT: true
-    CURL_RUNNER_CONTINUE_ON_ERROR: true
+    CURL_RUNNER_VERBOSE: true
     CURL_RUNNER_OUTPUT_FORMAT: json
-    CURL_RUNNER_OUTPUT_FILE: test-results.json
+    CURL_RUNNER_CONTINUE_ON_ERROR: true
   run: curl-runner tests/
 
-# Allow some failures in large test suite
-- name: Run Smoke Tests
-  env:
-    CURL_RUNNER_FAIL_ON_PERCENTAGE: 10
-    CURL_RUNNER_CONTINUE_ON_ERROR: true
-  run: curl-runner smoke-tests/
-```
-
-### GitLab CI
-
-```yaml
+# GitLab CI
 test:
   variables:
-    CURL_RUNNER_STRICT_EXIT: "true"
     CURL_RUNNER_EXECUTION: parallel
     CURL_RUNNER_TIMEOUT: "30000"
-    CURL_RUNNER_OUTPUT_FORMAT: json
   script:
     - curl-runner api-tests.yaml
-  artifacts:
-    when: always
-    paths:
-      - test-results.json
-```
 
-### Jenkins Pipeline
-
-```groovy
+# Jenkins Pipeline
 pipeline {
   environment {
-    CURL_RUNNER_STRICT_EXIT = 'true'
-    CURL_RUNNER_CONTINUE_ON_ERROR = 'true'
+    CURL_RUNNER_VERBOSE = 'true'
     CURL_RUNNER_OUTPUT_FILE = 'test-results.json'
   }
   stages {
@@ -257,31 +206,7 @@ pipeline {
       }
     }
   }
-  post {
-    always {
-      archiveArtifacts artifacts: 'test-results.json', allowEmptyArchive: true
-    }
-  }
 }
-```
-
-### CircleCI
-
-```yaml
-version: 2.1
-jobs:
-  test:
-    docker:
-      - image: node:20
-    environment:
-      CURL_RUNNER_STRICT_EXIT: "true"
-      CURL_RUNNER_CONTINUE_ON_ERROR: "true"
-    steps:
-      - checkout
-      - run: npm install -g curl-runner
-      - run: curl-runner tests/ --output-format json --output test-results.json
-      - store_artifacts:
-          path: test-results.json
 ```
 
 ## Best Practices
