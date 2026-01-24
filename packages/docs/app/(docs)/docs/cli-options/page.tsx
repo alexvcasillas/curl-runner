@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle, Flag, Info } from 'lucide-react';
+import { AlertCircle, CheckCircle, Eye, Flag, Info } from 'lucide-react';
 import type { Metadata } from 'next';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { H2, H3 } from '@/components/docs-heading';
@@ -200,6 +200,38 @@ const optionGroups = [
       },
     ],
   },
+  {
+    title: 'Watch Mode',
+    icon: Eye,
+    options: [
+      {
+        short: '-w',
+        long: '--watch',
+        type: 'boolean',
+        default: 'false',
+        description:
+          'Watch files for changes and automatically re-run requests when files are modified.',
+        example: 'curl-runner api.yaml --watch',
+      },
+      {
+        short: null,
+        long: '--watch-debounce <milliseconds>',
+        type: 'number',
+        default: '300',
+        description:
+          'Debounce delay for watch mode. Prevents rapid re-runs when files change quickly.',
+        example: 'curl-runner tests/ -w --watch-debounce 500',
+      },
+      {
+        short: null,
+        long: '--no-watch-clear',
+        type: 'boolean',
+        default: 'false',
+        description: 'Disable screen clearing between watch mode runs.',
+        example: 'curl-runner api.yaml -w --no-watch-clear',
+      },
+    ],
+  },
 ];
 
 const combinationExamples = `# Basic combinations
@@ -234,7 +266,13 @@ curl-runner tests/ \\
 
 # Retry configurations
 curl-runner tests/ --retries 5 --retry-delay 1500  # Custom retry settings
-curl-runner tests/ --no-retry                      # Disable retries completely`;
+curl-runner tests/ --no-retry                      # Disable retries completely
+
+# Watch mode
+curl-runner api.yaml -w                            # Watch and re-run on changes
+curl-runner tests/ --watch --watch-debounce 500    # Custom debounce delay
+curl-runner api.yaml -w --no-watch-clear           # Don't clear screen between runs
+curl-runner tests/ -wpv                            # Watch + parallel + verbose`;
 
 const environmentExamples = `# Environment variables override CLI options
 CURL_RUNNER_TIMEOUT=10000 curl-runner tests/
@@ -248,6 +286,11 @@ CURL_RUNNER_CONTINUE_ON_ERROR=true curl-runner tests/
 CURL_RUNNER_OUTPUT_FORMAT=json curl-runner tests/
 CURL_RUNNER_PRETTY_LEVEL=detailed curl-runner tests/
 CURL_RUNNER_OUTPUT_FILE=results.json curl-runner tests/
+
+# Watch mode environment variables
+CURL_RUNNER_WATCH=true curl-runner api.yaml
+CURL_RUNNER_WATCH_DEBOUNCE=500 curl-runner tests/ -w
+CURL_RUNNER_WATCH_CLEAR=false curl-runner api.yaml -w
 
 # Multiple environment variables
 CURL_RUNNER_TIMEOUT=15000 \\
