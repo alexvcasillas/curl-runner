@@ -17,8 +17,8 @@ keywords:
   - cli
 slug: "/docs/retry-mechanism"
 toc: true
-date: "2026-01-24T11:05:45.895Z"
-lastModified: "2026-01-24T11:05:45.895Z"
+date: "2026-01-24T16:03:18.279Z"
+lastModified: "2026-01-24T16:03:18.279Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -38,8 +38,8 @@ schema:
   "@type": "TechArticle"
   headline: "Retry Mechanism"
   description: "Automatically retry failed requests with configurable delays and attempts."
-  datePublished: "2026-01-24T11:05:45.895Z"
-  dateModified: "2026-01-24T11:05:45.895Z"
+  datePublished: "2026-01-24T16:03:18.279Z"
+  dateModified: "2026-01-24T16:03:18.279Z"
 ---
 
 # Retry Mechanism
@@ -198,38 +198,42 @@ request:
 # 4. Wait 1s → Retry attempt 3
 ```
 
-### Increasing Delay
+### Exponential Backoff
 
-Simulate exponential backoff by using multiple requests with increasing delays.
+Use the `backoff` multiplier to increase delays exponentially between retries. This is ideal for rate-limited APIs and helps reduce server load during outages.
 
 **exponential-backoff.yaml**
 
 ```yaml
-# Simulating exponential backoff
-requests:
-  - name: First Attempt
-    url: https://api.example.com/endpoint
-    retry:
-      count: 1
-      delay: 1000   # 1 second
-      
-  - name: Second Attempt (if needed)
-    url: https://api.example.com/endpoint
-    retry:
-      count: 1
-      delay: 2000   # 2 seconds
-      
-  - name: Third Attempt (if needed)
-    url: https://api.example.com/endpoint
-    retry:
-      count: 1
-      delay: 4000   # 4 seconds
-      
-  - name: Fourth Attempt (if needed)
-    url: https://api.example.com/endpoint
-    retry:
-      count: 1
-      delay: 8000   # 8 seconds
+# Exponential backoff with backoff multiplier
+request:
+  name: API with Exponential Backoff
+  url: https://api.example.com/endpoint
+  method: GET
+  retry:
+    count: 4        # Retry up to 4 times
+    delay: 1000     # Initial delay: 1 second
+    backoff: 2      # Double the delay each retry
+
+# Retry delays will be:
+# Attempt 1: 1000ms (1s)
+# Attempt 2: 2000ms (2s)
+# Attempt 3: 4000ms (4s)
+# Attempt 4: 8000ms (8s)
+
+---
+
+# Gentler backoff with 1.5x multiplier
+request:
+  name: Gentle Backoff
+  url: https://api.example.com/rate-limited
+  method: GET
+  retry:
+    count: 5
+    delay: 1000
+    backoff: 1.5    # 1.5x multiplier
+
+# Retry delays: 1000ms, 1500ms, 2250ms, 3375ms, 5063ms
 ```
 
 **fixed-delay.yaml**
@@ -254,31 +258,35 @@ request:
 **exponential-backoff.yaml**
 
 ```yaml
-# Simulating exponential backoff
-requests:
-  - name: First Attempt
-    url: https://api.example.com/endpoint
-    retry:
-      count: 1
-      delay: 1000   # 1 second
-      
-  - name: Second Attempt (if needed)
-    url: https://api.example.com/endpoint
-    retry:
-      count: 1
-      delay: 2000   # 2 seconds
-      
-  - name: Third Attempt (if needed)
-    url: https://api.example.com/endpoint
-    retry:
-      count: 1
-      delay: 4000   # 4 seconds
-      
-  - name: Fourth Attempt (if needed)
-    url: https://api.example.com/endpoint
-    retry:
-      count: 1
-      delay: 8000   # 8 seconds
+# Exponential backoff with backoff multiplier
+request:
+  name: API with Exponential Backoff
+  url: https://api.example.com/endpoint
+  method: GET
+  retry:
+    count: 4        # Retry up to 4 times
+    delay: 1000     # Initial delay: 1 second
+    backoff: 2      # Double the delay each retry
+
+# Retry delays will be:
+# Attempt 1: 1000ms (1s)
+# Attempt 2: 2000ms (2s)
+# Attempt 3: 4000ms (4s)
+# Attempt 4: 8000ms (8s)
+
+---
+
+# Gentler backoff with 1.5x multiplier
+request:
+  name: Gentle Backoff
+  url: https://api.example.com/rate-limited
+  method: GET
+  retry:
+    count: 5
+    delay: 1000
+    backoff: 1.5    # 1.5x multiplier
+
+# Retry delays: 1000ms, 1500ms, 2250ms, 3375ms, 5063ms
 ```
 
 ## When to Retry

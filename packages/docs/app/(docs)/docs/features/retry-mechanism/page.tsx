@@ -300,7 +300,8 @@ export default function RetryMechanismPage() {
                     <td className="p-3 text-sm text-muted-foreground">number</td>
                     <td className="p-3 text-sm text-muted-foreground">1</td>
                     <td className="p-3 text-sm text-muted-foreground">
-                      Exponential backoff multiplier. Delay increases as: delay × backoff^(attempt-1)
+                      Exponential backoff multiplier. Delay increases as: delay ×
+                      backoff^(attempt-1)
                     </td>
                   </tr>
                 </tbody>
@@ -369,9 +370,9 @@ export default function RetryMechanismPage() {
               <div>
                 <H3 id="exponential-backoff">Exponential Backoff</H3>
                 <p className="text-muted-foreground mb-4">
-                  Use the <code className="text-sm bg-muted px-1 py-0.5 rounded">backoff</code> multiplier
-                  to increase delays exponentially between retries. This is ideal for rate-limited APIs
-                  and helps reduce server load during outages.
+                  Use the <code className="text-sm bg-muted px-1 py-0.5 rounded">backoff</code>{' '}
+                  multiplier to increase delays exponentially between retries. This is ideal for
+                  rate-limited APIs and helps reduce server load during outages.
                 </p>
                 <CodeBlockServer language="yaml" filename="exponential-backoff.yaml">
                   {exponentialBackoff}
