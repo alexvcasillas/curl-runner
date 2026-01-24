@@ -123,6 +123,9 @@ export interface RequestConfig {
   retry?: {
     count: number;
     delay?: number;
+    /** Exponential backoff multiplier. Default is 1 (no backoff).
+     * Example: with delay=1000 and backoff=2, delays are: 1000ms, 2000ms, 4000ms, 8000ms... */
+    backoff?: number;
   };
   variables?: Record<string, string>;
   /**
@@ -190,6 +193,12 @@ export interface CIExitConfig {
 
 export interface GlobalConfig {
   execution?: 'sequential' | 'parallel';
+  /**
+   * Maximum number of concurrent requests when using parallel execution.
+   * If not set, all requests will execute simultaneously.
+   * Useful for avoiding rate limiting or overwhelming target servers.
+   */
+  maxConcurrency?: number;
   continueOnError?: boolean;
   /**
    * CI/CD exit code configuration.

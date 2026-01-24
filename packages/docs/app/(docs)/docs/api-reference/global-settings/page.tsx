@@ -509,6 +509,16 @@ export default function GlobalSettingsPage() {
                   </tr>
                   <tr className="border-b">
                     <td className="p-3">
+                      <code className="text-sm">maxConcurrency</code>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">number</td>
+                    <td className="p-3 text-sm text-muted-foreground">unlimited</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Maximum concurrent requests in parallel mode
+                    </td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="p-3">
                       <code className="text-sm">variables</code>
                     </td>
                     <td className="p-3 text-sm text-muted-foreground">

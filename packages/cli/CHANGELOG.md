@@ -1,5 +1,37 @@
 # @curl-runner/cli
 
+## 1.8.0
+
+### Minor Changes
+
+- [#36](https://github.com/alexvcasillas/curl-runner/pull/36) [`8722304`](https://github.com/alexvcasillas/curl-runner/commit/8722304aab156442e4e015acc8a9c046a5a029c5) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Add exponential backoff support for retry mechanism
+
+  The retry configuration now supports a `backoff` multiplier for exponential backoff between retries. When set, the delay increases exponentially with each retry attempt using the formula: `delay * backoff^(attempt-1)`.
+
+  Example usage:
+
+  ```yaml
+  retry:
+    count: 3
+    delay: 1000 # Initial delay: 1 second
+    backoff: 2.0 # Multiplier
+  # Delays: 1000ms, 2000ms, 4000ms
+  ```
+
+  The backoff defaults to 1 (no backoff) to maintain backward compatibility.
+
+## 1.7.0
+
+### Minor Changes
+
+- [#35](https://github.com/alexvcasillas/curl-runner/pull/35) [`c398f6b`](https://github.com/alexvcasillas/curl-runner/commit/c398f6bed818a43a62c42b23aa41d875bdc2a354) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Add maxConcurrency option for parallel execution
+
+  - New `maxConcurrency` setting in global config to limit simultaneous requests in parallel mode
+  - New `--max-concurrent <n>` CLI flag
+  - New `CURL_RUNNER_MAX_CONCURRENCY` environment variable support
+
+  This helps avoid rate limiting from APIs and prevents overwhelming target servers when running many requests in parallel.
+
 ## 1.6.0
 
 ### Minor Changes

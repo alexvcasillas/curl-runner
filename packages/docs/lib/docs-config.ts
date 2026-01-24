@@ -99,7 +99,7 @@ export const docsConfig: SidebarConfig = {
         {
           title: 'Retry Mechanism',
           href: '/docs/features/retry-mechanism',
-          description: 'Automatic retry with configurable delays',
+          description: 'Automatic retry with exponential backoff',
         },
         {
           title: 'Output Formats',
