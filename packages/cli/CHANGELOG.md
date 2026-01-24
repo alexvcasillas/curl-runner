@@ -1,5 +1,17 @@
 # @curl-runner/cli
 
+## 1.10.0
+
+### Minor Changes
+
+- [#55](https://github.com/alexvcasillas/curl-runner/pull/55) [`5f675de`](https://github.com/alexvcasillas/curl-runner/commit/5f675de3a576ec45c522695e8a3542246d9b2438) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Add watch mode for automatic re-execution on file changes
+
+  - New `-w, --watch` flag to enable watch mode
+  - `--watch-debounce <ms>` option to customize debounce delay (default: 300ms)
+  - `--no-watch-clear` option to disable screen clearing between runs
+  - Support via environment variables: `CURL_RUNNER_WATCH`, `CURL_RUNNER_WATCH_DEBOUNCE`, `CURL_RUNNER_WATCH_CLEAR`
+  - Support via YAML config under `global.watch`
+
 ## 1.9.0
 
 ### Minor Changes
