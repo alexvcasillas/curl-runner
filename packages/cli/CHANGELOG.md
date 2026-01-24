@@ -1,5 +1,34 @@
 # @curl-runner/cli
 
+## 1.3.0
+
+### Minor Changes
+
+- [#28](https://github.com/alexvcasillas/curl-runner/pull/28) [`e35a89d`](https://github.com/alexvcasillas/curl-runner/commit/e35a89ddcf23a03a4d170057490ab6e783271fb2) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Add file attachment support for multipart/form-data requests
+
+  New `formData` property for uploading files and sending form data:
+
+  - Send files using the `file` property with path to the file
+  - Customize the filename sent to the server with `filename`
+  - Specify explicit MIME type with `contentType`
+  - Mix file attachments with regular form fields
+  - Automatic file existence validation before request execution
+
+  Example usage:
+
+  ```yaml
+  request:
+    name: Upload Document
+    url: https://api.example.com/upload
+    method: POST
+    formData:
+      title: "My Document"
+      document:
+        file: "./report.pdf"
+        filename: "quarterly-report.pdf"
+        contentType: "application/pdf"
+  ```
+
 ## 1.2.0
 
 ### Minor Changes
