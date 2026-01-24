@@ -445,6 +445,47 @@ requests:
     method: GET
     insecure: false  # Verify SSL certificates (default)`;
 
+const sslExample = `# SSL/TLS Certificate Configuration
+requests:
+  # Custom CA certificate for enterprise environments
+  - name: "Custom CA Certificate"
+    url: "https://internal-api.company.com/data"
+    method: GET
+    ssl:
+      ca: "./certs/company-ca.pem"
+
+  # Mutual TLS (mTLS) authentication
+  - name: "mTLS Client Authentication"
+    url: "https://secure-api.example.com/protected"
+    method: GET
+    ssl:
+      ca: "./certs/ca.pem"
+      cert: "./certs/client.pem"
+      key: "./certs/client-key.pem"
+
+  # Disable verification via ssl config (equivalent to insecure: true)
+  - name: "SSL Verification Disabled"
+    url: "https://self-signed.example.com/api"
+    method: GET
+    ssl:
+      verify: false
+
+  # Self-signed cert with custom CA
+  - name: "Self-Signed with CA"
+    url: "https://dev-server.local/api"
+    method: GET
+    ssl:
+      verify: true  # Enable verification
+      ca: "./certs/dev-ca.pem"  # But use custom CA
+
+  # Client certificate without custom CA (uses system CA store)
+  - name: "Client Cert Only"
+    url: "https://api.example.com/mtls-endpoint"
+    method: GET
+    ssl:
+      cert: "./certs/client.pem"
+      key: "./certs/client-key.pem"`;
+
 const variablesExample = `# Request-Level Variables
 requests:
   # Variables defined at request level
@@ -1157,12 +1198,6 @@ export default function RequestObjectPage() {
                 Advanced proxy settings (SOCKS, authentication)
               </span>
             </div>
-            <div className="mb-6 flex gap-2 flex-wrap">
-              <Badge variant="secondary">Coming Soon</Badge>
-              <span className="text-sm text-muted-foreground">
-                SSL/TLS configuration (custom certificates, client certs)
-              </span>
-            </div>
 
             <CodeBlockServer language="yaml" filename="proxy-security.yaml">
               {proxyExample}
@@ -1173,6 +1208,67 @@ export default function RequestObjectPage() {
                 <strong className="text-yellow-600 dark:text-yellow-400">Security Warning:</strong>{' '}
                 Only use <code>insecure: true</code> for testing with self-signed certificates.
                 Never use in production environments.
+              </p>
+            </div>
+          </section>
+
+          {/* SSL/TLS Certificate Configuration */}
+          <section>
+            <H2 id="ssl-tls">SSL/TLS Certificate Configuration</H2>
+            <p className="text-muted-foreground mb-6">
+              Configure SSL/TLS certificates for custom CA, mutual TLS (mTLS), and enterprise environments.
+            </p>
+
+            <CodeBlockServer language="yaml" filename="ssl-config.yaml">
+              {sslExample}
+            </CodeBlockServer>
+
+            <div className="mt-6">
+              <H3>SSL Configuration Properties</H3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-2 pr-4">Property</th>
+                      <th className="text-left py-2 pr-4">Type</th>
+                      <th className="text-left py-2 pr-4">Default</th>
+                      <th className="text-left py-2">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b">
+                      <td className="py-2 pr-4"><code>verify</code></td>
+                      <td className="py-2 pr-4">boolean</td>
+                      <td className="py-2 pr-4"><code>true</code></td>
+                      <td className="py-2">Whether to verify SSL certificates</td>
+                    </tr>
+                    <tr className="border-b">
+                      <td className="py-2 pr-4"><code>ca</code></td>
+                      <td className="py-2 pr-4">string</td>
+                      <td className="py-2 pr-4">-</td>
+                      <td className="py-2">Path to CA certificate file</td>
+                    </tr>
+                    <tr className="border-b">
+                      <td className="py-2 pr-4"><code>cert</code></td>
+                      <td className="py-2 pr-4">string</td>
+                      <td className="py-2 pr-4">-</td>
+                      <td className="py-2">Path to client certificate file for mTLS</td>
+                    </tr>
+                    <tr className="border-b">
+                      <td className="py-2 pr-4"><code>key</code></td>
+                      <td className="py-2 pr-4">string</td>
+                      <td className="py-2 pr-4">-</td>
+                      <td className="py-2">Path to client private key file for mTLS</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-lg border bg-muted/50 p-4">
+              <p className="text-sm">
+                <strong>Note:</strong> The <code>insecure: true</code> option is equivalent to{' '}
+                <code>ssl.verify: false</code>. If both are specified, SSL verification will be disabled.
               </p>
             </div>
           </section>

@@ -217,10 +217,8 @@ global:
   continueOnError: true
   maxConcurrency: 5  # Limit concurrent requests in parallel mode
   
-  # Advanced timeout settings
+  # Timeout settings
   timeout: 10000
-  connectionTimeout: 5000
-  readTimeout: 15000
   retries: 3
   retryDelay: 1000
   retryBackoff: 2.0
