@@ -1,0 +1,9 @@
+# Basic Snapshot Testing
+# Run with: curl-runner examples/snapshot-basic.yaml --snapshot
+# Update snapshots: curl-runner examples/snapshot-basic.yaml -su
+
+request:
+  name: Get User
+  url: https://jsonplaceholder.typicode.com/users/1
+  method: GET
+  snapshot: true

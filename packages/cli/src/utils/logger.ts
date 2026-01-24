@@ -1,3 +1,4 @@
+import { SnapshotFormatter } from '../snapshot/snapshot-formatter';
 import type {
   ExecutionResult,
   ExecutionSummary,
@@ -409,6 +410,12 @@ export class Logger {
         this.logValidationErrors(result.error);
       }
 
+      // Show snapshot result
+      if (result.snapshotResult) {
+        console.log();
+        this.logSnapshotResult(result.request.name || 'Request', result.snapshotResult);
+      }
+
       console.log();
       return;
     }
@@ -532,7 +539,25 @@ export class Logger {
       this.logValidationErrors(result.error);
     }
 
+    // Show snapshot result
+    if (result.snapshotResult) {
+      console.log();
+      this.logSnapshotResult(result.request.name || 'Request', result.snapshotResult);
+    }
+
     console.log();
+  }
+
+  /**
+   * Logs snapshot comparison result.
+   */
+  private logSnapshotResult(requestName: string, result: ExecutionResult['snapshotResult']): void {
+    if (!result) {
+      return;
+    }
+
+    const formatter = new SnapshotFormatter();
+    console.log(formatter.formatResult(requestName, result));
   }
 
   logSummary(summary: ExecutionSummary, isGlobal: boolean = false): void {
