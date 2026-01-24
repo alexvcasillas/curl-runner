@@ -5,6 +5,12 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to checkout'
+        required: true
+        type: string
 
 jobs:
   lint-and-check:
@@ -13,6 +19,8 @@ jobs:
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
