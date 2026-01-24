@@ -63,6 +63,28 @@ collection:
         X-Timestamp: "\${TIMESTAMP}"
         X-Session: "\${SESSION_ID}"`;
 
+export const defaultValuesExample = `global:
+  variables:
+    # Basic default value - uses "5000" if API_TIMEOUT is not set
+    API_TIMEOUT: "\${API_TIMEOUT:5000}"
+
+    # Default with URL - uses the URL if API_BASE is not set
+    API_BASE: "\${API_BASE:https://api.example.com}"
+
+    # Nested defaults - tries DATABASE_HOST, then DB_HOST, then "localhost"
+    DB_HOST: "\${DATABASE_HOST:\${DB_HOST:localhost}}"
+
+    # Empty default - uses empty string if OPTIONAL_PARAM is not set
+    OPTIONAL_PARAM: "\${OPTIONAL_PARAM:}"
+
+collection:
+  requests:
+    - name: "Request with defaults"
+      url: "\${API_BASE}/data"
+      timeout: \${API_TIMEOUT}
+      headers:
+        X-DB-Host: "\${DB_HOST}"`;
+
 export const conditionalVariablesExample = `global:
   variables:
     # Default value if environment variable not set

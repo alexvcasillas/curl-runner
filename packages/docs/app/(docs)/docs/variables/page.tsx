@@ -44,6 +44,7 @@ import {
   basicVariablesExample,
   computedVariablesExample,
   conditionalVariablesExample,
+  defaultValuesExample,
   dynamicVariablesExample,
   environmentVariablesExample,
   variablePrecedenceExample,
@@ -180,6 +181,70 @@ export default function VariablesPage() {
             <CodeBlockServer language="yaml" filename="variable-precedence.yaml">
               {variablePrecedenceExample}
             </CodeBlockServer>
+          </section>
+
+          {/* Default Values */}
+          <section>
+            <H2 id="default-values">Default Values</H2>
+            <p className="text-muted-foreground text-lg mb-6">
+              Provide fallback values for variables that may not be set using the{' '}
+              <code className="bg-primary/20 text-primary px-2 py-1 rounded text-sm font-mono">
+                ${`{VAR:default}`}
+              </code>{' '}
+              syntax.
+            </p>
+
+            <div className="rounded-lg border bg-card p-4 mb-6">
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-green-500/10 p-2">
+                  <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+                </div>
+                <div className="flex-1 pt-1">
+                  <h4 className="font-medium mb-3">Default Value Syntax</h4>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>
+                      <code className="bg-muted px-2 py-1 rounded font-mono">
+                        ${`{VAR:default}`}
+                      </code>{' '}
+                      - Uses &quot;default&quot; if VAR is not set
+                    </p>
+                    <p>
+                      <code className="bg-muted px-2 py-1 rounded font-mono">
+                        ${`{VAR:\${OTHER:fallback}}`}
+                      </code>{' '}
+                      - Nested defaults: tries VAR, then OTHER, then &quot;fallback&quot;
+                    </p>
+                    <p>
+                      <code className="bg-muted px-2 py-1 rounded font-mono">${`{VAR:}`}</code> -
+                      Uses empty string if VAR is not set
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <CodeBlockServer language="yaml" filename="default-values.yaml">
+              {defaultValuesExample}
+            </CodeBlockServer>
+
+            <div className="rounded-lg border bg-card p-4 mt-6">
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-blue-500/10 p-2">
+                  <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="flex-1 pt-1">
+                  <h4 className="font-medium mb-2">Note on Reserved Prefixes</h4>
+                  <p className="text-sm text-muted-foreground">
+                    The colon syntax is also used for dynamic variables like{' '}
+                    <code className="bg-muted px-1 rounded font-mono">DATE:format</code> and{' '}
+                    <code className="bg-muted px-1 rounded font-mono">TIME:format</code>. These
+                    reserved prefixes (<code>DATE</code>, <code>TIME</code>, <code>UUID</code>,{' '}
+                    <code>RANDOM</code>) are handled specially and won&apos;t conflict with default
+                    value syntax.
+                  </p>
+                </div>
+              </div>
+            </div>
           </section>
 
           {/* Dynamic Variables */}
