@@ -144,6 +144,29 @@ export class YamlParser {
       return crypto.randomUUID();
     }
 
+    // UUID:short - first segment (8 chars) of a UUID
+    if (varName === 'UUID:short') {
+      return crypto.randomUUID().split('-')[0];
+    }
+
+    // RANDOM:min-max - random number in range
+    const randomRangeMatch = varName.match(/^RANDOM:(\d+)-(\d+)$/);
+    if (randomRangeMatch) {
+      const min = Number(randomRangeMatch[1]);
+      const max = Number(randomRangeMatch[2]);
+      return String(Math.floor(Math.random() * (max - min + 1)) + min);
+    }
+
+    // RANDOM:string:length - random alphanumeric string
+    const randomStringMatch = varName.match(/^RANDOM:string:(\d+)$/);
+    if (randomStringMatch) {
+      const length = Number(randomStringMatch[1]);
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      return Array.from({ length }, () =>
+        chars.charAt(Math.floor(Math.random() * chars.length)),
+      ).join('');
+    }
+
     // Current timestamp variations
     if (varName === 'CURRENT_TIME' || varName === 'TIMESTAMP') {
       return Date.now().toString();

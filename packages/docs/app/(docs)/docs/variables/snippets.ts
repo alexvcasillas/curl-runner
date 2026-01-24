@@ -87,18 +87,15 @@ collection:
 
 export const conditionalVariablesExample = `global:
   variables:
-    # Environment-based variables
-    BASE_URL: "\${NODE_ENV:production:https://api.example.com:https://api-staging.example.com}"
-
     # Default value if environment variable not set
     API_TIMEOUT: "\${API_TIMEOUT:5000}"
 
-    # Multiple environment sources
+    # Nested default values
     DB_HOST: "\${DATABASE_HOST:\${DB_HOST:localhost}}"
 
 collection:
   requests:
-    - name: "Environment aware request"
+    - name: "Request with defaults"
       url: "\${BASE_URL}/data"
       timeout: \${API_TIMEOUT}`;
 
