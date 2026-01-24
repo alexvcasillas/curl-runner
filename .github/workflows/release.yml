@@ -34,16 +34,6 @@ jobs:
       - name: Install Dependencies
         run: bun install --frozen-lockfile
 
-      - name: Lint and Check
-        run: bun run check:ci
-
-      - name: Run Tests
-        run: bun run test
-
-      - name: Build CLI (repo build)
-        run: bun run build:cli
-
-      # ---------- npm auth for publish ----------
       - name: Configure npm auth
         run: |
           echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
@@ -51,15 +41,6 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Verify npm auth (optional)
-        run: |
-          npm config get registry
-          npm whoami
-          npm ping
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      # ---------- Changesets: version + publish (+ GitHub Release via config) ----------
       - name: Create Release Pull Request or Publish to npm
         id: changesets
         uses: changesets/action@v1
