@@ -44,6 +44,7 @@ import {
   basicVariablesExample,
   computedVariablesExample,
   conditionalVariablesExample,
+  defaultValuesExample,
   dynamicVariablesExample,
   environmentVariablesExample,
   variablePrecedenceExample,
@@ -79,7 +80,11 @@ export default function VariablesPage() {
                     <code className="bg-primary/20 text-primary px-2 py-1 rounded text-sm font-mono">
                       ${`{VARIABLE_NAME}`}
                     </code>{' '}
-                    syntax, which supports JavaScript expressions and complex logic.
+                    syntax. You can also use default values with{' '}
+                    <code className="bg-primary/20 text-primary px-2 py-1 rounded text-sm font-mono">
+                      ${`{VAR:default}`}
+                    </code>
+                    .
                   </p>
                 </div>
               </div>
@@ -183,11 +188,75 @@ export default function VariablesPage() {
             </CodeBlockServer>
           </section>
 
+          {/* Default Values */}
+          <section>
+            <H2 id="default-values">Default Values</H2>
+            <p className="text-muted-foreground text-lg mb-6">
+              Provide fallback values for variables that may not be set using the{' '}
+              <code className="bg-primary/20 text-primary px-2 py-1 rounded text-sm font-mono">
+                ${`{VAR:default}`}
+              </code>{' '}
+              syntax.
+            </p>
+
+            <div className="rounded-lg border bg-card p-4 mb-6">
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-green-500/10 p-2">
+                  <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+                </div>
+                <div className="flex-1 pt-1">
+                  <h4 className="font-medium mb-3">Default Value Syntax</h4>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <p>
+                      <code className="bg-muted px-2 py-1 rounded font-mono">
+                        ${`{VAR:default}`}
+                      </code>{' '}
+                      - Uses &quot;default&quot; if VAR is not set
+                    </p>
+                    <p>
+                      <code className="bg-muted px-2 py-1 rounded font-mono">
+                        ${`{VAR:\${OTHER:fallback}}`}
+                      </code>{' '}
+                      - Nested defaults: tries VAR, then OTHER, then &quot;fallback&quot;
+                    </p>
+                    <p>
+                      <code className="bg-muted px-2 py-1 rounded font-mono">${`{VAR:}`}</code> -
+                      Uses empty string if VAR is not set
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <CodeBlockServer language="yaml" filename="default-values.yaml">
+              {defaultValuesExample}
+            </CodeBlockServer>
+
+            <div className="rounded-lg border bg-card p-4 mt-6">
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-blue-500/10 p-2">
+                  <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="flex-1 pt-1">
+                  <h4 className="font-medium mb-2">Note on Reserved Prefixes</h4>
+                  <p className="text-sm text-muted-foreground">
+                    The colon syntax is also used for dynamic variables like{' '}
+                    <code className="bg-muted px-1 rounded font-mono">DATE:format</code> and{' '}
+                    <code className="bg-muted px-1 rounded font-mono">TIME:format</code>. These
+                    reserved prefixes (<code>DATE</code>, <code>TIME</code>, <code>UUID</code>,{' '}
+                    <code>RANDOM</code>) are handled specially and won&apos;t conflict with default
+                    value syntax.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
           {/* Dynamic Variables */}
           <section>
             <H2 id="dynamic-variables">Dynamic Variables</H2>
             <p className="text-muted-foreground text-lg mb-6">
-              Create dynamic values using JavaScript expressions and built-in functions.
+              Create dynamic values using built-in functions.
             </p>
 
             <div className="space-y-6">
@@ -203,19 +272,19 @@ export default function VariablesPage() {
                       <div className="space-y-2 text-sm">
                         <div>
                           <code className="bg-primary/10 text-primary px-2 py-1 rounded font-mono">
-                            Date.now()
+                            ${`{DATE:YYYY-MM-DD}`}
                           </code>{' '}
-                          - Current timestamp
+                          - Formatted date
                         </div>
                         <div>
                           <code className="bg-primary/10 text-primary px-2 py-1 rounded font-mono">
-                            new Date().toISOString()
+                            ${`{TIME:HH:mm:ss}`}
                           </code>{' '}
-                          - ISO date
+                          - Formatted time
                         </div>
                         <div>
                           <code className="bg-primary/10 text-primary px-2 py-1 rounded font-mono">
-                            new Date().getTime()
+                            ${`{TIMESTAMP}`}
                           </code>{' '}
                           - Unix timestamp
                         </div>
@@ -234,21 +303,21 @@ export default function VariablesPage() {
                       <div className="space-y-2 text-sm">
                         <div>
                           <code className="bg-primary/10 text-primary px-2 py-1 rounded font-mono">
-                            crypto.randomUUID()
+                            ${`{UUID}`}
                           </code>{' '}
                           - UUID v4
                         </div>
                         <div>
                           <code className="bg-primary/10 text-primary px-2 py-1 rounded font-mono">
-                            Math.random()
+                            ${`{UUID:short}`}
                           </code>{' '}
-                          - Random number
+                          - Short UUID
                         </div>
                         <div>
                           <code className="bg-primary/10 text-primary px-2 py-1 rounded font-mono">
-                            Math.floor(Math.random() * 1000)
+                            ${`{RANDOM:1-1000}`}
                           </code>{' '}
-                          - Random int
+                          - Random integer
                         </div>
                       </div>
                     </div>
@@ -262,17 +331,21 @@ export default function VariablesPage() {
             </div>
           </section>
 
-          {/* Conditional Variables */}
+          {/* Default Values */}
           <section>
-            <H2 id="conditional-logic">Conditional Logic</H2>
+            <H2 id="default-values">Default Values</H2>
             <p className="text-muted-foreground text-lg mb-6">
-              Use JavaScript expressions to create conditional variables and environment-specific
-              configurations.
+              Use default value syntax to provide fallback values when variables are not set.
             </p>
 
-            <CodeBlockServer language="yaml" filename="conditional-variables.yaml">
+            <CodeBlockServer language="yaml" filename="default-values.yaml">
               {conditionalVariablesExample}
             </CodeBlockServer>
+
+            <p className="text-muted-foreground mt-4">
+              For environment-specific configurations, use separate YAML files per environment or
+              set environment variables directly.
+            </p>
           </section>
 
           {/* Complex Interpolation */}
@@ -339,32 +412,28 @@ export default function VariablesPage() {
               <CodeBlockServer language="yaml" title="API Authentication Pattern">
                 {`global:
   variables:
+    # Use environment variables for configuration
+    BASE_URL: "\${API_BASE_URL:https://api-staging.example.com}"
     API_KEY: "\${API_KEY}"
-    AUTH_HEADER: "Bearer \${API_KEY}"
 
-  defaults:
-    headers:
-      Authorization: \${AUTH_HEADER}`}
-              </CodeBlockServer>
-
-              <H3 id="environment-specific-urls">Environment-Specific URLs</H3>
-              <CodeBlockServer language="yaml" title="Environment-Specific URLs">
-                {`global:
-  variables:
-    ENVIRONMENT: "\${NODE_ENV}"
-    BASE_URL: "https://api.example.com"`}
+collection:
+  requests:
+    - name: "Authenticated request"
+      url: "\${BASE_URL}/users"
+      headers:
+        Authorization: "Bearer \${API_KEY}"`}
               </CodeBlockServer>
 
               <H3 id="request-correlation-ids">Request Correlation IDs</H3>
               <CodeBlockServer language="yaml" title="Request Correlation IDs">
                 {`global:
   variables:
-    CORRELATION_ID: \${crypto.randomUUID()}
-    
+    CORRELATION_ID: "\${UUID}"
+
   defaults:
     headers:
-      X-Correlation-ID: \${CORRELATION_ID}
-      X-Request-Time: \${Date.now()}`}
+      X-Correlation-ID: "\${CORRELATION_ID}"
+      X-Request-Time: "\${TIMESTAMP}"`}
               </CodeBlockServer>
             </div>
           </section>

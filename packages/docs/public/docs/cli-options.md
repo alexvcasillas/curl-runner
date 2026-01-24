@@ -21,8 +21,8 @@ keywords:
   - environment
 slug: "/docs/cli-options"
 toc: true
-date: "2026-01-23T21:27:49.055Z"
-lastModified: "2026-01-23T21:27:49.055Z"
+date: "2026-01-24T16:07:24.496Z"
+lastModified: "2026-01-24T16:07:24.496Z"
 author: "alexvcasillas"
 authorUrl: "https://github.com/alexvcasillas/curl-runner"
 license: "MIT"
@@ -42,8 +42,8 @@ schema:
   "@type": "TechArticle"
   headline: "CLI Options"
   description: "Comprehensive reference for all command-line options available in curl-runner, including examples and best practices."
-  datePublished: "2026-01-23T21:27:49.055Z"
-  dateModified: "2026-01-23T21:27:49.055Z"
+  datePublished: "2026-01-24T16:07:24.496Z"
+  dateModified: "2026-01-24T16:07:24.496Z"
 ---
 
 # CLI Options
@@ -56,47 +56,7 @@ Comprehensive reference for all command-line options available in curl-runner, i
 
 Options are grouped by functionality for easier reference.
 
-### General Options
-
-| Option | Short | Description |
-|--------|-------|-------------|
-| `--help` | `-h` | Show help message |
-| `--version` | | Show version number |
-| `--verbose` | `-v` | Enable verbose output |
-| `--quiet` | `-q` | Suppress non-error output |
-| `--all` | | Find all YAML files recursively |
-
-### Execution Options
-
-| Option | Short | Description |
-|--------|-------|-------------|
-| `--execution parallel` | `-p` | Execute requests in parallel |
-| `--continue-on-error` | `-c` | Continue execution on errors |
-| `--timeout <ms>` | | Set request timeout in milliseconds |
-| `--retries <count>` | | Set maximum retry attempts |
-| `--retry-delay <ms>` | | Set delay between retries in milliseconds |
-| `--no-retry` | | Disable retry mechanism |
-
-### Output Options
-
-| Option | Short | Description |
-|--------|-------|-------------|
-| `--output <file>` | `-o` | Save results to file |
-| `--output-format <format>` | | Set output format (json\|pretty\|raw) |
-| `--pretty-level <level>` | | Set pretty format level (minimal\|standard\|detailed) |
-| `--show-headers` | | Include response headers in output |
-| `--show-body` | | Include response body in output |
-| `--show-metrics` | | Include performance metrics in output |
-
-### CI/CD Options
-
-These options control exit code behavior for CI/CD pipeline integration.
-
-| Option | Description |
-|--------|-------------|
-| `--strict-exit` | Exit with code 1 if any validation fails |
-| `--fail-on <count>` | Exit with code 1 if failures exceed this count |
-| `--fail-on-percentage <pct>` | Exit with code 1 if failure percentage exceeds this value |
+{option.description}
 
 ## Combining Options
 
@@ -138,69 +98,6 @@ curl-runner tests/ \\
 # Retry configurations
 curl-runner tests/ --retries 5 --retry-delay 1500  # Custom retry settings
 curl-runner tests/ --no-retry                      # Disable retries completely
-
-# CI/CD configurations
-curl-runner tests/ --strict-exit                    # Fail if ANY validation fails
-curl-runner tests/ -c --strict-exit                 # Run all tests, fail if any fail
-curl-runner tests/ --fail-on 2                      # Allow up to 2 failures
-curl-runner tests/ --fail-on-percentage 10          # Allow up to 10% failures
-```
-
-## CI/CD Exit Codes
-
-By default, curl-runner exits with code 0 if `continueOnError` is set, even when validations fail. The CI/CD options provide finer control over exit behavior.
-
-### Exit Code Behavior
-
-| Configuration | No Failures | Failures Exist |
-|--------------|-------------|----------------|
-| Default (no options) | Exit 0 | Exit 1 |
-| `--continue-on-error` | Exit 0 | Exit 0 |
-| `--strict-exit` | Exit 0 | Exit 1 |
-| `--continue-on-error --strict-exit` | Exit 0 | Exit 1 |
-| `--fail-on N` | Exit 0 | Exit 0 if <= N failures, Exit 1 if > N |
-| `--fail-on-percentage P` | Exit 0 | Exit 0 if <= P%, Exit 1 if > P% |
-
-### CI/CD Examples
-
-**Strict Mode (Fail on Any Failure)**
-
-```bash
-# GitHub Actions example
-- name: Run API Tests
-  run: curl-runner tests/ --strict-exit
-```
-
-**Run All Tests, Then Fail**
-
-Use `--continue-on-error` with `--strict-exit` to run all tests but still fail the pipeline:
-
-```bash
-# Run all tests, then report overall status
-curl-runner tests/ --continue-on-error --strict-exit
-```
-
-**Tolerance Thresholds**
-
-Allow some failures in large test suites:
-
-```bash
-# Allow up to 5 failures
-curl-runner tests/ --fail-on 5
-
-# Allow up to 10% of tests to fail
-curl-runner tests/ --fail-on-percentage 10
-```
-
-**Combined with Output**
-
-```bash
-# CI: Run all tests, output JSON, fail if any validation fails
-curl-runner tests/ \
-  --continue-on-error \
-  --strict-exit \
-  --output-format json \
-  --output results.json
 ```
 
 ## Environment Variables
@@ -233,11 +130,6 @@ CURL_RUNNER_VERBOSE=true \\
 CURL_RUNNER_OUTPUT_FORMAT=pretty \\
 CURL_RUNNER_PRETTY_LEVEL=detailed \\
 curl-runner tests/ --execution parallel
-
-# CI/CD environment variables
-CURL_RUNNER_STRICT_EXIT=true curl-runner tests/
-CURL_RUNNER_FAIL_ON=5 curl-runner tests/
-CURL_RUNNER_FAIL_ON_PERCENTAGE=10 curl-runner tests/
 
 # Mix environment variables and CLI options
 CURL_RUNNER_TIMEOUT=10000 \\
