@@ -2,7 +2,6 @@ import { ImageResponse } from 'next/og';
 
 export const runtime = 'edge';
 
-
 export const alt = 'Environment Variables - curl-runner Documentation';
 export const size = {
   width: 1200,

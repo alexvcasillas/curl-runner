@@ -5,7 +5,7 @@ import { ImageResponse } from 'next/og';
 // Use Node.js runtime to access file system
 export const runtime = 'nodejs';
 
-export const alt = 'Advanced Examples | curl-runner Documentation';
+export const alt = 'Watch Mode | curl-runner Documentation';
 export const size = {
   width: 1200,
   height: 630,
@@ -39,7 +39,7 @@ export default async function Image() {
           height: '100%',
           opacity: 0.1,
           backgroundImage:
-            'radial-gradient(circle at 25% 25%, #ef4444 0%, transparent 50%), radial-gradient(circle at 75% 75%, #f97316 0%, transparent 50%)',
+            'radial-gradient(circle at 25% 25%, #0ea5e9 0%, transparent 50%), radial-gradient(circle at 75% 75%, #06b6d4 0%, transparent 50%)',
         }}
       />
 
@@ -82,8 +82,8 @@ export default async function Image() {
         <div
           style={{
             display: 'flex',
-            background: 'rgba(239, 68, 68, 0.2)',
-            border: '2px solid rgba(239, 68, 68, 0.3)',
+            background: 'rgba(14, 165, 233, 0.2)',
+            border: '2px solid rgba(14, 165, 233, 0.3)',
             borderRadius: 16,
             padding: '8px 20px',
             marginBottom: 24,
@@ -93,12 +93,12 @@ export default async function Image() {
             style={{
               fontSize: 16,
               fontWeight: 600,
-              color: '#ef4444',
+              color: '#0ea5e9',
               textTransform: 'uppercase',
               letterSpacing: '0.1em',
             }}
           >
-            Advanced Examples
+            Watch Mode
           </span>
         </div>
 
@@ -127,10 +127,10 @@ export default async function Image() {
             lineHeight: 1.3,
           }}
         >
-          Complex configurations for real-world scenarios
+          Auto re-run on file changes
         </p>
 
-        {/* Advanced Features */}
+        {/* Watch Features */}
         <div
           style={{
             display: 'flex',
@@ -139,16 +139,16 @@ export default async function Image() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ fontSize: 20 }}>🔐</div>
-            <span style={{ color: '#e2e8f0', fontSize: 18 }}>Auth</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ fontSize: 20 }}>🔄</div>
-            <span style={{ color: '#e2e8f0', fontSize: 18 }}>Templating</span>
+            <div style={{ fontSize: 20 }}>👀</div>
+            <span style={{ color: '#e2e8f0', fontSize: 18 }}>Watch</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ fontSize: 20 }}>⚡</div>
-            <span style={{ color: '#e2e8f0', fontSize: 18 }}>Production</span>
+            <span style={{ color: '#e2e8f0', fontSize: 18 }}>Instant</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ fontSize: 20 }}>🔄</div>
+            <span style={{ color: '#e2e8f0', fontSize: 18 }}>Auto-run</span>
           </div>
         </div>
       </div>
@@ -163,7 +163,7 @@ export default async function Image() {
           color: '#64748b',
         }}
       >
-        https://www.curl-runner.com/docs/examples/advanced
+        https://www.curl-runner.com/docs/features/watch-mode
       </div>
     </div>,
     { ...size },

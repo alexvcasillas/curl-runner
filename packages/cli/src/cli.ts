@@ -3,10 +3,17 @@
 import { Glob } from 'bun';
 import { RequestExecutor } from './executor/request-executor';
 import { YamlParser } from './parser/yaml';
-import type { ExecutionSummary, GlobalConfig, RequestConfig } from './types/config';
+import type {
+  ExecutionResult,
+  ExecutionSummary,
+  GlobalConfig,
+  RequestConfig,
+  WatchConfig,
+} from './types/config';
 import { Logger } from './utils/logger';
 import { VersionChecker } from './utils/version-checker';
 import { getVersion } from './version';
+import { FileWatcher } from './watcher/file-watcher';
 
 class CurlRunnerCLI {
   private logger = new Logger();
@@ -135,6 +142,28 @@ class CurlRunnerCLI {
           failOnPercentage: percentage,
         };
       }
+    }
+
+    // Watch mode configuration
+    if (process.env.CURL_RUNNER_WATCH) {
+      envConfig.watch = {
+        ...envConfig.watch,
+        enabled: process.env.CURL_RUNNER_WATCH.toLowerCase() === 'true',
+      };
+    }
+
+    if (process.env.CURL_RUNNER_WATCH_DEBOUNCE) {
+      envConfig.watch = {
+        ...envConfig.watch,
+        debounce: Number.parseInt(process.env.CURL_RUNNER_WATCH_DEBOUNCE, 10),
+      };
+    }
+
+    if (process.env.CURL_RUNNER_WATCH_CLEAR) {
+      envConfig.watch = {
+        ...envConfig.watch,
+        clear: process.env.CURL_RUNNER_WATCH_CLEAR.toLowerCase() !== 'false',
+      };
     }
 
     return envConfig;
@@ -287,58 +316,107 @@ class CurlRunnerCLI {
         process.exit(1);
       }
 
-      const executor = new RequestExecutor(globalConfig);
-      let summary: ExecutionSummary;
+      // Check if watch mode is enabled
+      const watchEnabled = options.watch || globalConfig.watch?.enabled;
 
-      // If multiple files, execute them with file separators for clarity
-      if (fileGroups.length > 1) {
-        const allResults: ExecutionResult[] = [];
-        let totalDuration = 0;
-
-        for (let i = 0; i < fileGroups.length; i++) {
-          const group = fileGroups[i];
-
-          // Show file header for better organization
-          this.logger.logFileHeader(group.file, group.requests.length);
-
-          const fileSummary = await executor.execute(group.requests);
-          allResults.push(...fileSummary.results);
-          totalDuration += fileSummary.duration;
-
-          // Don't show individual file summaries for cleaner output
-
-          // Add spacing between files (except for the last one)
-          if (i < fileGroups.length - 1) {
-            console.log();
-          }
-        }
-
-        // Create combined summary
-        const successful = allResults.filter((r) => r.success).length;
-        const failed = allResults.filter((r) => !r.success).length;
-
-        summary = {
-          total: allResults.length,
-          successful,
-          failed,
-          duration: totalDuration,
-          results: allResults,
+      if (watchEnabled) {
+        // Build watch config from options and global config
+        const watchConfig: WatchConfig = {
+          enabled: true,
+          debounce:
+            (options.watchDebounce as number | undefined) ?? globalConfig.watch?.debounce ?? 300,
+          clear: (options.watchClear as boolean | undefined) ?? globalConfig.watch?.clear ?? true,
         };
 
-        // Show final summary
-        executor.logger.logSummary(summary, true);
-      } else {
-        // Single file - use normal execution
-        summary = await executor.execute(allRequests);
-      }
+        const watcher = new FileWatcher({
+          files: yamlFiles,
+          config: watchConfig,
+          logger: this.logger,
+          onRun: async () => {
+            await this.executeRequests(yamlFiles, globalConfig);
+          },
+        });
 
-      // Determine exit code based on CI configuration
-      const exitCode = this.determineExitCode(summary, globalConfig);
-      process.exit(exitCode);
+        await watcher.start();
+      } else {
+        // Normal execution mode
+        const summary = await this.executeRequests(yamlFiles, globalConfig);
+        const exitCode = this.determineExitCode(summary, globalConfig);
+        process.exit(exitCode);
+      }
     } catch (error) {
       this.logger.logError(error instanceof Error ? error.message : String(error));
       process.exit(1);
     }
+  }
+
+  private async executeRequests(
+    yamlFiles: string[],
+    globalConfig: GlobalConfig,
+  ): Promise<ExecutionSummary> {
+    // Process YAML files and collect requests
+    const fileGroups: Array<{ file: string; requests: RequestConfig[]; config?: GlobalConfig }> =
+      [];
+    const allRequests: RequestConfig[] = [];
+
+    for (const file of yamlFiles) {
+      const { requests, config } = await this.processYamlFile(file);
+
+      const fileOutputConfig = config?.output || {};
+      const requestsWithSourceConfig = requests.map((request) => ({
+        ...request,
+        sourceOutputConfig: fileOutputConfig,
+        sourceFile: file,
+      }));
+
+      fileGroups.push({ file, requests: requestsWithSourceConfig, config });
+      allRequests.push(...requestsWithSourceConfig);
+    }
+
+    const executor = new RequestExecutor(globalConfig);
+    let summary: ExecutionSummary;
+
+    // If multiple files, execute them with file separators for clarity
+    if (fileGroups.length > 1) {
+      const allResults: ExecutionResult[] = [];
+      let totalDuration = 0;
+
+      for (let i = 0; i < fileGroups.length; i++) {
+        const group = fileGroups[i];
+
+        // Show file header for better organization
+        this.logger.logFileHeader(group.file, group.requests.length);
+
+        const fileSummary = await executor.execute(group.requests);
+        allResults.push(...fileSummary.results);
+        totalDuration += fileSummary.duration;
+
+        // Add spacing between files (except for the last one)
+        if (i < fileGroups.length - 1) {
+          console.log();
+        }
+      }
+
+      // Create combined summary
+      const successful = allResults.filter((r) => r.success).length;
+      const failed = allResults.filter((r) => !r.success).length;
+
+      summary = {
+        total: allResults.length,
+        successful,
+        failed,
+        duration: totalDuration,
+        results: allResults,
+      };
+
+      // Show final summary
+      this.logger.logSummary(summary, true);
+    } else {
+      // Single file - use normal execution
+      summary = await executor.execute(allRequests);
+    }
+
+    return summary;
   }
 
   private parseArguments(args: string[]): { files: string[]; options: Record<string, unknown> } {
@@ -366,6 +444,12 @@ class CurlRunnerCLI {
           options.showMetrics = true;
         } else if (key === 'strict-exit') {
           options.strictExit = true;
+        } else if (key === 'watch') {
+          options.watch = true;
+        } else if (key === 'watch-clear') {
+          options.watchClear = true;
+        } else if (key === 'no-watch-clear') {
+          options.watchClear = false;
         } else if (nextArg && !nextArg.startsWith('--')) {
           if (key === 'continue-on-error') {
             options.continueOnError = nextArg === 'true';
@@ -397,6 +481,8 @@ class CurlRunnerCLI {
             if (['minimal', 'standard', 'detailed'].includes(nextArg)) {
               options.prettyLevel = nextArg;
             }
+          } else if (key === 'watch-debounce') {
+            options.watchDebounce = Number.parseInt(nextArg, 10);
           } else {
             options[key] = nextArg;
           }
@@ -422,6 +508,9 @@ class CurlRunnerCLI {
               break;
             case 'q':
               options.quiet = true;
+              break;
+            case 'w':
+              options.watch = true;
               break;
             case 'o': {
               // Handle -o flag for output file
@@ -551,6 +640,7 @@ class CurlRunnerCLI {
       output: { ...base.output, ...override.output },
       defaults: { ...base.defaults, ...override.defaults },
       ci: { ...base.ci, ...override.ci },
+      watch: { ...base.watch, ...override.watch },
     };
   }
 
@@ -633,6 +723,11 @@ ${this.logger.color('OPTIONS:', 'yellow')}
   --show-metrics                Include performance metrics in output
   --version                     Show version
 
+${this.logger.color('WATCH MODE:', 'yellow')}
+  -w, --watch                   Watch files and re-run on changes
+  --watch-debounce <ms>         Debounce delay for watch mode (default: 300)
+  --no-watch-clear              Don't clear screen between watch runs
+
 ${this.logger.color('CI/CD OPTIONS:', 'yellow')}
   --strict-exit                 Exit with code 1 if any validation fails (for CI/CD)
   --fail-on <count>             Exit with code 1 if failures exceed this count
@@ -680,6 +775,12 @@ ${this.logger.color('EXAMPLES:', 'yellow')}
 
   # CI/CD: Allow up to 10% failures
   curl-runner tests/ --fail-on-percentage 10
+
+  # Watch mode - re-run on file changes
+  curl-runner api.yaml --watch
+
+  # Watch with custom debounce
+  curl-runner tests/ -w --watch-debounce 500
 
 ${this.logger.color('YAML STRUCTURE:', 'yellow')}
   Single request:

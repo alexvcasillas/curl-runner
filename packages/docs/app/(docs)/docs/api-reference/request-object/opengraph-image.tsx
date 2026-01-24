@@ -5,9 +5,6 @@ import { ImageResponse } from 'next/og';
 // Use Node.js runtime to access file system
 export const runtime = 'nodejs';
 
-
-
-
 export const alt = 'Request Object | curl-runner API Reference';
 export const size = {
   width: 1200,

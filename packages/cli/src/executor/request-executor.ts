@@ -102,7 +102,7 @@ export class RequestExecutor {
         requestLogger.logRetry(attempt, maxAttempts - 1);
         if (config.retry?.delay) {
           const backoff = config.retry.backoff ?? 1;
-          const delay = config.retry.delay * Math.pow(backoff, attempt - 1);
+          const delay = config.retry.delay * backoff ** (attempt - 1);
           await Bun.sleep(delay);
         }
       }
