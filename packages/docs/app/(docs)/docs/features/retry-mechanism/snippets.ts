@@ -14,120 +14,136 @@ export const basicRetryExample = `collection:
 export const retryConfigurationExample = `collection:
   name: "Retry Configuration Options"
   requests:
-    - name: "Linear backoff retry"
+    - name: "Fixed delay retry (no backoff)"
       url: "https://httpbin.org/unstable"
       method: GET
       retry:
-        count: 5
-        delay: 2000
-        backoff: linear     # 2s, 4s, 6s, 8s, 10s
-        maxDelay: 10000
-        
-    - name: "Exponential backoff retry"
+        count: 3
+        delay: 2000         # Fixed 2s delay between retries
+        # backoff defaults to 1 (no increase)
+
+    - name: "Exponential backoff retry (2x)"
       url: "https://httpbin.org/unstable"
       method: GET
       retry:
         count: 5
         delay: 1000
-        backoff: exponential  # 1s, 2s, 4s, 8s, 16s
-        maxDelay: 30000
-        
-    - name: "Fixed delay retry"
+        backoff: 2          # 1s, 2s, 4s, 8s, 16s
+
+    - name: "Gentle backoff retry (1.5x)"
       url: "https://httpbin.org/unstable"
       method: GET
       retry:
-        count: 3
-        delay: 5000
-        backoff: fixed      # 5s, 5s, 5s`;
+        count: 4
+        delay: 1000
+        backoff: 1.5        # 1s, 1.5s, 2.25s, 3.375s`;
 
 export const statusCodeRetryExample = `collection:
-  name: "Status Code Based Retry"
+  name: "Retry with Validation"
   requests:
-    - name: "Retry on server errors only"
+    - name: "Retry until success status"
       url: "https://httpbin.org/unstable"
       method: GET
       retry:
         count: 3
         delay: 1000
-        codes: [500, 502, 503, 504]  # Only retry server errors
-        
-    - name: "Retry on timeouts and server errors"
+        backoff: 2
+      expect:
+        status: 200           # Retry if status is not 200
+
+    - name: "Retry with timeout handling"
       url: "https://httpbin.org/delay/10"
       method: GET
-      timeout: 5000
-      retry:
-        count: 2
-        delay: 2000
-        codes: [408, 500, 502, 503, 504]  # Include timeout errors
-        
-    - name: "Custom retry codes"
-      url: "https://api.example.com/flaky-endpoint"
-      method: GET
+      timeout: 5000           # 5 second timeout
       retry:
         count: 3
-        delay: 1000
-        codes: [429, 500, 503]  # Rate limit + server errors`;
+        delay: 2000
+        backoff: 1.5
+      expect:
+        status: [200, 201]    # Accept success statuses
 
-export const jitterRetryExample = `collection:
-  name: "Retry with Jitter"
+    - name: "Critical endpoint with exponential backoff"
+      url: "https://api.example.com/critical"
+      method: GET
+      retry:
+        count: 5
+        delay: 1000
+        backoff: 2            # 1s, 2s, 4s, 8s, 16s
+      expect:
+        status: 200`;
+
+export const backoffExamplesSnippet = `collection:
+  name: "Backoff Multiplier Examples"
   requests:
-    - name: "Retry with jitter to avoid thundering herd"
+    - name: "Aggressive backoff (3x multiplier)"
+      url: "https://httpbin.org/unstable"
+      method: GET
+      retry:
+        count: 4
+        delay: 500
+        backoff: 3          # 500ms, 1.5s, 4.5s, 13.5s
+
+    - name: "Conservative backoff (1.2x multiplier)"
       url: "https://httpbin.org/unstable"
       method: GET
       retry:
         count: 5
         delay: 1000
-        backoff: exponential
-        jitter: true        # Add random variation to delays
-        maxDelay: 30000
-        
-    - name: "Custom jitter range"
+        backoff: 1.2        # 1s, 1.2s, 1.44s, 1.73s, 2.07s
+
+    - name: "Standard exponential (2x multiplier)"
       url: "https://httpbin.org/unstable"
       method: GET
       retry:
-        count: 3
-        delay: 2000
-        jitter: true
-        jitterRange: 0.5    # ±50% variation in delay`;
+        count: 4
+        delay: 1000
+        backoff: 2          # 1s, 2s, 4s, 8s`;
 
-export const conditionalRetryExample = `collection:
-  name: "Conditional Retry Logic"
+export const retryWithExpectExample = `collection:
+  name: "Retry with Expect Validation"
   requests:
-    - name: "Retry based on response content"
+    - name: "Retry until body matches"
       url: "https://api.example.com/status"
       method: GET
       retry:
+        count: 5
+        delay: 2000
+        backoff: 1.5
+      expect:
+        status: 200
+        body:
+          status: "ready"     # Retry until status is "ready"
+
+    - name: "Retry with response time check"
+      url: "https://api.example.com/fast"
+      method: GET
+      retry:
         count: 3
         delay: 1000
-        condition: "response.body.status === 'processing'"
-        
-    - name: "Retry based on headers"
+        backoff: 2
+      expect:
+        status: 200
+        responseTime: "< 1000"  # Retry if response takes > 1s
+
+    - name: "Retry with header validation"
       url: "https://api.example.com/data"
       method: GET
       retry:
-        count: 5
-        delay: 2000
-        condition: "response.headers['x-retry-after']"
-        
-    - name: "Complex retry condition"
-      url: "https://api.example.com/complex"
-      method: GET
-      retry:
         count: 3
-        delay: 1000
-        condition: |
-          response.status >= 500 || 
-          (response.status === 429 && response.headers['retry-after']) ||
-          response.body.error === 'temporary_failure'`;
+        delay: 1500
+        backoff: 2
+      expect:
+        status: [200, 201]
+        headers:
+          content-type: "application/json"`;
 
 export const globalRetryExample = `global:
   defaults:
     # Apply retry settings to all requests
     retry:
-      count: 2
+      count: 3
       delay: 1000
-      backoff: exponential
-      codes: [500, 502, 503, 504]
+      backoff: 2        # 2x exponential backoff
 
 collection:
   name: "Global Retry Settings"
@@ -135,28 +151,30 @@ collection:
     - name: "Uses global retry settings"
       url: "https://httpbin.org/status/500"
       method: GET
-      # Inherits global retry configuration
-      
+      # Inherits global retry: count=3, delay=1000, backoff=2
+
     - name: "Override global retry settings"
       url: "https://httpbin.org/status/503"
       method: GET
       retry:
-        count: 5        # Override global count
-        delay: 2000     # Override global delay
-        # Other settings inherited from global
-        
+        count: 5        # Override: more retries
+        delay: 2000     # Override: longer initial delay
+        backoff: 1.5    # Override: gentler backoff
+
     - name: "Disable retry for this request"
       url: "https://httpbin.org/status/404"
       method: GET
       retry:
         count: 0        # No retries for this request`;
 
-export const retryWithExtractExample = `collection:
-  name: "Retry with Data Extraction"
+export const retryWithStoreExample = `collection:
+  name: "Retry with Response Storage"
   requests:
-    - name: "Login with retry"
+    - name: "Login with retry and backoff"
       url: "https://api.example.com/auth/login"
       method: POST
+      headers:
+        Content-Type: "application/json"
       body: |
         {
           "username": "testuser",
@@ -165,28 +183,32 @@ export const retryWithExtractExample = `collection:
       retry:
         count: 3
         delay: 2000
-        codes: [500, 502, 503]
-      extract:
-        AUTH_TOKEN: "$.token"  # Extract even after retries
-        
-    - name: "Use extracted token"
+        backoff: 2            # 2s, 4s, 8s delays
+      store:
+        AUTH_TOKEN: "body.token"  # Store token after successful retry
+      expect:
+        status: 200
+
+    - name: "Use stored token with retry"
       url: "https://api.example.com/protected"
       method: GET
       headers:
-        Authorization: "Bearer \${AUTH_TOKEN}"
+        Authorization: "Bearer \${store.AUTH_TOKEN}"
       retry:
         count: 2
-        delay: 1000`;
+        delay: 1000
+        backoff: 2
+      expect:
+        status: 200`;
 
 export const advancedRetryExample = `collection:
   name: "Advanced Retry Scenarios"
   requests:
-    - name: "Payment processing with smart retry"
+    - name: "Payment processing with exponential backoff"
       url: "https://payments.api.example.com/charge"
       method: POST
       headers:
         Content-Type: "application/json"
-        Idempotency-Key: "\${UUID}"  # Prevent duplicate charges
       body: |
         {
           "amount": 2999,
@@ -196,16 +218,10 @@ export const advancedRetryExample = `collection:
       retry:
         count: 3
         delay: 1000
-        backoff: exponential
-        maxDelay: 10000
-        jitter: true
-        codes: [500, 502, 503, 504, 429]
-        condition: |
-          response.status >= 500 || 
-          response.status === 429 ||
-          (response.body && response.body.error && 
-           response.body.error.type === 'api_connection_error')
-           
+        backoff: 2          # 1s, 2s, 4s delays
+      expect:
+        status: [200, 201]
+
     - name: "File upload with progressive retry"
       url: "https://api.example.com/upload"
       method: POST
@@ -213,23 +229,22 @@ export const advancedRetryExample = `collection:
       retry:
         count: 5
         delay: 2000
-        backoff: exponential
-        maxDelay: 60000
-        jitter: true
-        codes: [408, 500, 502, 503, 504]
-        
-    - name: "Database operation with circuit breaker"
+        backoff: 2          # 2s, 4s, 8s, 16s, 32s delays
+      expect:
+        status: 200
+
+    - name: "Slow database query with gentle backoff"
       url: "https://api.example.com/database/query"
       method: POST
+      timeout: 60000
       retry:
         count: 3
         delay: 5000
-        backoff: exponential
-        maxDelay: 30000
-        codes: [500, 503, 504]
-        condition: |
-          response.status >= 500 && 
-          !response.headers['x-circuit-breaker-open']`;
+        backoff: 1.5        # 5s, 7.5s, 11.25s delays
+      expect:
+        status: 200
+        body:
+          success: true`;
 
 export const retryBestPracticesExample = `# Best practices for retry configuration
 collection:
@@ -241,10 +256,10 @@ collection:
       retry:
         count: 5
         delay: 1000
-        backoff: exponential
-        jitter: true
-        codes: [500, 502, 503, 504, 408]
-        
+        backoff: 2            # Exponential backoff: 1s, 2s, 4s, 8s, 16s
+      expect:
+        status: 200
+
     - name: "Idempotent PUT request - safe to retry"
       url: "https://api.example.com/users/123"
       method: PUT
@@ -258,15 +273,15 @@ collection:
       retry:
         count: 3
         delay: 2000
-        backoff: exponential
-        codes: [500, 502, 503, 504]
-        
-    - name: "Non-idempotent POST - careful retry"
+        backoff: 2            # 2s, 4s, 8s delays
+      expect:
+        status: [200, 204]
+
+    - name: "Non-idempotent POST - conservative retry"
       url: "https://api.example.com/orders"
       method: POST
       headers:
         Content-Type: "application/json"
-        Idempotency-Key: "\${UUID}"  # Make it safe to retry
       body: |
         {
           "productId": "123",
@@ -275,11 +290,10 @@ collection:
       retry:
         count: 2              # Fewer retries for POST
         delay: 3000
-        codes: [500, 502, 503, 504]  # Don't retry client errors
-        condition: |
-          response.status >= 500 && 
-          response.body.error !== 'duplicate_order'
-          
+        backoff: 1.5          # Gentler backoff: 3s, 4.5s
+      expect:
+        status: [200, 201]
+
     - name: "DELETE request - no retry"
       url: "https://api.example.com/users/123"
       method: DELETE
