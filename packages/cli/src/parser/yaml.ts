@@ -18,6 +18,8 @@ export class YamlParser {
    * - Static variables: ${VAR_NAME}
    * - Dynamic variables: ${UUID}, ${TIMESTAMP}, ${DATE:format}, ${TIME:format}
    * - Stored response values: ${store.variableName}
+   * - Default values: ${VAR_NAME:default} - uses 'default' if VAR_NAME is not found
+   * - Nested defaults: ${VAR1:${VAR2:fallback}} - tries VAR1, then VAR2, then 'fallback'
    *
    * @param obj - The object to interpolate
    * @param variables - Static variables map
@@ -29,19 +31,31 @@ export class YamlParser {
     storeContext?: ResponseStoreContext,
   ): unknown {
     if (typeof obj === 'string') {
-      // Check if it's a single variable like ${VAR} (no other characters)
-      const singleVarMatch = obj.match(/^\$\{([^}]+)\}$/);
-      if (singleVarMatch) {
-        const varName = singleVarMatch[1];
+      // Extract all variable references with proper brace matching
+      const extractedVars = YamlParser.extractVariables(obj);
+
+      if (extractedVars.length === 0) {
+        return obj;
+      }
+
+      // Check if it's a single variable that spans the entire string
+      if (extractedVars.length === 1 && extractedVars[0].start === 0 && extractedVars[0].end === obj.length) {
+        const varName = extractedVars[0].name;
         const resolvedValue = YamlParser.resolveVariable(varName, variables, storeContext);
         return resolvedValue !== null ? resolvedValue : obj;
       }
 
-      // Handle multiple variables in the string using regex replacement
-      return obj.replace(/\$\{([^}]+)\}/g, (match, varName) => {
-        const resolvedValue = YamlParser.resolveVariable(varName, variables, storeContext);
-        return resolvedValue !== null ? resolvedValue : match;
-      });
+      // Handle multiple variables in the string
+      let result = '';
+      let lastEnd = 0;
+      for (const varRef of extractedVars) {
+        result += obj.slice(lastEnd, varRef.start);
+        const resolvedValue = YamlParser.resolveVariable(varRef.name, variables, storeContext);
+        result += resolvedValue !== null ? resolvedValue : obj.slice(varRef.start, varRef.end);
+        lastEnd = varRef.end;
+      }
+      result += obj.slice(lastEnd);
+      return result;
     }
 
     if (Array.isArray(obj)) {
@@ -61,7 +75,7 @@ export class YamlParser {
 
   /**
    * Resolves a single variable reference.
-   * Priority: store context > dynamic variables > static variables
+   * Priority: store context > dynamic variables > static variables > default values
    */
   static resolveVariable(
     varName: string,
@@ -75,6 +89,39 @@ export class YamlParser {
         return storeContext[storeVarName];
       }
       return null; // Store variable not found, return null to keep original
+    }
+
+    // Check for default value syntax: ${VAR:default}
+    // Must check before dynamic variables to properly handle defaults
+    const colonIndex = varName.indexOf(':');
+    if (colonIndex !== -1) {
+      const actualVarName = varName.slice(0, colonIndex);
+      const defaultValue = varName.slice(colonIndex + 1);
+
+      // Don't confuse with DATE:, TIME:, UUID:, RANDOM: patterns
+      // These are reserved prefixes for dynamic variable generation
+      const reservedPrefixes = ['DATE', 'TIME', 'UUID', 'RANDOM'];
+      if (!reservedPrefixes.includes(actualVarName)) {
+        // Try to resolve the actual variable name
+        const resolved = YamlParser.resolveVariable(actualVarName, variables, storeContext);
+        if (resolved !== null) {
+          return resolved;
+        }
+        // Variable not found, use the default value
+        // The default value might itself be a variable reference like ${OTHER_VAR:fallback}
+        // Note: Due to the regex in interpolateVariables using [^}]+, nested braces
+        // get truncated (e.g., "${VAR:${OTHER:default}}" captures "VAR:${OTHER:default")
+        // So we check for both complete ${...} and truncated ${... patterns
+        if (defaultValue.startsWith('${')) {
+          // Handle both complete ${VAR} and truncated ${VAR (from nested braces)
+          const nestedVarName = defaultValue.endsWith('}')
+            ? defaultValue.slice(2, -1)
+            : defaultValue.slice(2);
+          const nestedResolved = YamlParser.resolveVariable(nestedVarName, variables, storeContext);
+          return nestedResolved !== null ? nestedResolved : defaultValue;
+        }
+        return defaultValue;
+      }
     }
 
     // Check for dynamic variable
@@ -131,6 +178,46 @@ export class YamlParser {
     const seconds = String(date.getSeconds()).padStart(2, '0');
 
     return format.replace('HH', hours).replace('mm', minutes).replace('ss', seconds);
+  }
+
+  /**
+   * Extracts variable references from a string, properly handling nested braces.
+   * For example, "${VAR:${OTHER:default}}" is extracted as a single variable reference.
+   */
+  static extractVariables(str: string): Array<{ start: number; end: number; name: string }> {
+    const variables: Array<{ start: number; end: number; name: string }> = [];
+    let i = 0;
+
+    while (i < str.length) {
+      // Look for ${
+      if (str[i] === '$' && str[i + 1] === '{') {
+        const start = i;
+        i += 2; // Skip past ${
+        let braceCount = 1;
+        const nameStart = i;
+
+        // Find the matching closing brace
+        while (i < str.length && braceCount > 0) {
+          if (str[i] === '{') {
+            braceCount++;
+          } else if (str[i] === '}') {
+            braceCount--;
+          }
+          i++;
+        }
+
+        if (braceCount === 0) {
+          // Found matching closing brace
+          const name = str.slice(nameStart, i - 1); // Exclude the closing }
+          variables.push({ start, end: i, name });
+        }
+        // If braceCount > 0, we have unmatched braces - skip this variable
+      } else {
+        i++;
+      }
+    }
+
+    return variables;
   }
 
   static mergeConfigs(base: Partial<RequestConfig>, override: RequestConfig): RequestConfig {
