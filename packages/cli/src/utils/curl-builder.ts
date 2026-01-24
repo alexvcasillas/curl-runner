@@ -1,4 +1,4 @@
-import type { FileAttachment, FormFieldValue, RequestConfig, SSLConfig } from '../types/config';
+import type { FileAttachment, FormFieldValue, RequestConfig } from '../types/config';
 
 interface CurlMetrics {
   response_code?: number;
