@@ -350,13 +350,15 @@ bun run test          # All tests
 
 ---
 
-## 14. Unresolved Questions
+## 14. Design Decisions (Jest-inspired)
 
-1. Snapshot per-file vs single file? Plan uses per-yaml-file.
-2. Binary responses? Store hash only or base64 encode?
-3. Header normalization? Lowercase keys? Sort order?
-4. Array wildcard syntax? `body[*].id` vs `body.*.id`?
-5. Watch mode interaction? Auto-update snapshots on watch re-run?
-6. Snapshot locking? Prevent concurrent writes in parallel mode?
-7. Metrics in snapshot? Include timing for perf regression?
-8. Interactive mode? Prompt to update each failing snapshot?
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Snapshot storage | **Per-file** | Like Jest - smaller PR diffs, less merge conflicts |
+| Binary responses | **Hash only** | Keeps snapshots readable; hash sufficient for change detection |
+| Header normalization | **Lowercase + sorted** | HTTP headers case-insensitive; ensures deterministic output |
+| Array wildcard syntax | **`body[*].id`** | JSONPath standard; `body.*.id` ambiguous with object keys |
+| Watch mode | **No auto-update** | Would defeat purpose; show "press u to update" hint |
+| Parallel writes | **Queue per file** | Simple mutex prevents corruption |
+| Metrics in snapshot | **No** | Too volatile (network latency); causes false failures |
+| Interactive mode | **TTY only** | Like Jest - prompt in terminal, silent fail in CI |
