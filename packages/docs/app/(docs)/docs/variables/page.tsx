@@ -273,8 +273,8 @@ export default function VariablesPage() {
             </CodeBlockServer>
 
             <p className="text-muted-foreground mt-4">
-              For environment-specific configurations, use separate YAML files per environment or set
-              environment variables directly.
+              For environment-specific configurations, use separate YAML files per environment or
+              set environment variables directly.
             </p>
           </section>
 
