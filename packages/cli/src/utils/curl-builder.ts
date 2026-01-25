@@ -133,7 +133,15 @@ export class CurlBuilder {
     status?: number;
     headers?: Record<string, string>;
     body?: string;
-    metrics?: CurlMetrics;
+    metrics?: {
+      duration: number;
+      size?: number;
+      dnsLookup?: number;
+      tcpConnection?: number;
+      tlsHandshake?: number;
+      firstByte?: number;
+      download?: number;
+    };
     error?: string;
   }> {
     try {

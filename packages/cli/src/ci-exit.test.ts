@@ -52,6 +52,7 @@ function createSummary(total: number, failed: number): ExecutionSummary {
     total,
     successful: total - failed,
     failed,
+    skipped: 0,
     duration: 1000,
     results: [],
   };
