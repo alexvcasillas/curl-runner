@@ -1,5 +1,18 @@
 # @curl-runner/cli
 
+## 1.15.0
+
+### Minor Changes
+
+- [#65](https://github.com/alexvcasillas/curl-runner/pull/65) [`084a3c3`](https://github.com/alexvcasillas/curl-runner/commit/084a3c37030920fc5398cbc178fa8c899a370a05) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - feat: add response diffing for environment/run comparison
+
+  - Compare API responses between environments (staging/prod)
+  - Detect API drift between runs over time
+  - Exclude dynamic paths (timestamps, IDs)
+  - Multiple output formats: terminal, JSON, markdown
+  - CI-friendly exit codes
+  - Diff subcommand for offline baseline comparison
+
 ## 1.14.0
 
 ### Minor Changes
