@@ -1,9 +1,19 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-let fontsCache: { name: string; data: Buffer; weight: number; style: string }[] | null = null;
+type FontWeight = 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900;
+type FontStyle = 'normal' | 'italic';
 
-export async function getOgFonts() {
+interface FontOptions {
+  name: string;
+  data: Buffer;
+  weight: FontWeight;
+  style: FontStyle;
+}
+
+let fontsCache: FontOptions[] | null = null;
+
+export async function getOgFonts(): Promise<FontOptions[]> {
   if (fontsCache) {
     return fontsCache;
   }
@@ -16,8 +26,8 @@ export async function getOgFonts() {
   ]);
 
   fontsCache = [
-    { name: 'Inter', data: interRegular, weight: 400, style: 'normal' },
-    { name: 'Inter', data: interBold, weight: 700, style: 'normal' },
+    { name: 'Inter', data: interRegular, weight: 400 as FontWeight, style: 'normal' as FontStyle },
+    { name: 'Inter', data: interBold, weight: 700 as FontWeight, style: 'normal' as FontStyle },
   ];
 
   return fontsCache;
