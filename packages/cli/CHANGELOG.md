@@ -1,5 +1,11 @@
 # @curl-runner/cli
 
+## 1.12.0
+
+### Minor Changes
+
+- [#60](https://github.com/alexvcasillas/curl-runner/pull/60) [`3476345`](https://github.com/alexvcasillas/curl-runner/commit/34763453df1f5329dd4dc81414c6f965e000962d) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - feat: add conditional request chaining with `when` field for skip/run logic based on previous results
+
 ## 1.11.0
 
 ### Minor Changes
