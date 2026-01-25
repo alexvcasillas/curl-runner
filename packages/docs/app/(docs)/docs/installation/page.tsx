@@ -14,8 +14,18 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { DocsPageHeader } from '@/components/docs-page-header';
+import { DownloadsSection } from '@/components/downloads-section';
 import { Badge } from '@/components/ui/badge';
-import { bunInstallExample, npmInstallExample, verifyInstallationExample } from './snippets';
+import {
+  bunInstallExample,
+  linuxBinaryInstallExample,
+  npmInstallExample,
+  verifyChecksumLinuxExample,
+  verifyChecksumMacOSExample,
+  verifyChecksumWindowsExample,
+  verifyInstallationExample,
+  windowsBinaryInstallExample,
+} from './snippets';
 
 export const metadata: Metadata = {
   title: 'Installation',
@@ -131,6 +141,67 @@ bun --version`}
                           <strong>For standalone builds:</strong> No prerequisites needed! The
                           standalone executable includes Bun bundled within it.
                         </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Binary Downloads */}
+              <div className="space-y-3">
+                <h3 className="text-xl font-semibold">Pre-compiled Binaries</h3>
+                <p className="text-muted-foreground">
+                  Download standalone executables with no dependencies required.
+                </p>
+                <DownloadsSection />
+
+                <div className="mt-6 space-y-4">
+                  <h4 className="text-lg font-medium">Installation Instructions</h4>
+
+                  <div className="space-y-6">
+                    <div>
+                      <h5 className="text-base font-medium mb-2 flex items-center gap-2">
+                        <HardDrive className="h-4 w-4" /> Linux / macOS
+                      </h5>
+                      <CodeBlockServer language="bash">{linuxBinaryInstallExample}</CodeBlockServer>
+                    </div>
+
+                    <div>
+                      <h5 className="text-base font-medium mb-2 flex items-center gap-2">
+                        <Monitor className="h-4 w-4" /> Windows (PowerShell)
+                      </h5>
+                      <CodeBlockServer language="powershell">
+                        {windowsBinaryInstallExample}
+                      </CodeBlockServer>
+                    </div>
+
+                    <div>
+                      <h5 className="text-base font-medium mb-2">Verify Checksum (Recommended)</h5>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Always verify the download integrity using SHA256 checksums.
+                      </p>
+
+                      <div className="space-y-4">
+                        <div>
+                          <p className="text-sm font-medium mb-2">Linux:</p>
+                          <CodeBlockServer language="bash">
+                            {verifyChecksumLinuxExample}
+                          </CodeBlockServer>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-medium mb-2">macOS:</p>
+                          <CodeBlockServer language="bash">
+                            {verifyChecksumMacOSExample}
+                          </CodeBlockServer>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-medium mb-2">Windows (PowerShell):</p>
+                          <CodeBlockServer language="powershell">
+                            {verifyChecksumWindowsExample}
+                          </CodeBlockServer>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -369,6 +440,14 @@ export PATH="$PATH:~/.bun/bin"`}
                   className="inline-block no-underline transition-colors hover:text-foreground text-muted-foreground"
                 >
                   Installation Methods
+                </a>
+              </li>
+              <li className="mt-0 pt-2">
+                <a
+                  href="#binary-downloads"
+                  className="inline-block no-underline transition-colors hover:text-foreground text-muted-foreground"
+                >
+                  Binary Downloads
                 </a>
               </li>
               <li className="mt-0 pt-2">
