@@ -389,7 +389,7 @@ export default function ConditionalExecutionPage() {
             <div className="space-y-4">
               <div className="rounded-lg border bg-yellow-500/5 dark:bg-yellow-500/10 border-yellow-500/20 p-4">
                 <div className="flex items-start gap-3">
-                  <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mt-0.5" />
+                  <AlertTriangle className="h-5 w-5 shrink-0 text-yellow-600 dark:text-yellow-400 mt-0.5" />
                   <div>
                     <h4 className="font-medium text-yellow-600 dark:text-yellow-400 mb-1">
                       Sequential Execution Required
@@ -405,7 +405,7 @@ export default function ConditionalExecutionPage() {
 
               <div className="rounded-lg border bg-muted/50 p-4">
                 <div className="flex items-start gap-3">
-                  <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 mt-0.5" />
+                  <CheckCircle className="h-5 w-5 shrink-0 text-green-600 dark:text-green-400 mt-0.5" />
                   <div>
                     <h4 className="font-medium mb-1">Skipped Requests Don't Fail</h4>
                     <p className="text-sm text-muted-foreground">
@@ -418,7 +418,7 @@ export default function ConditionalExecutionPage() {
 
               <div className="rounded-lg border bg-muted/50 p-4">
                 <div className="flex items-start gap-3">
-                  <Zap className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+                  <Zap className="h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400 mt-0.5" />
                   <div>
                     <h4 className="font-medium mb-1">Short-Circuit Evaluation</h4>
                     <p className="text-sm text-muted-foreground">
@@ -432,7 +432,7 @@ export default function ConditionalExecutionPage() {
 
               <div className="rounded-lg border bg-muted/50 p-4">
                 <div className="flex items-start gap-3">
-                  <Sparkles className="h-5 w-5 text-purple-600 dark:text-purple-400 mt-0.5" />
+                  <Sparkles className="h-5 w-5 shrink-0 text-purple-600 dark:text-purple-400 mt-0.5" />
                   <div>
                     <h4 className="font-medium mb-1">Variable Interpolation</h4>
                     <p className="text-sm text-muted-foreground">
@@ -456,7 +456,7 @@ export default function ConditionalExecutionPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
-                  <div className="rounded-full bg-green-500/10 p-2">
+                  <div className="shrink-0 rounded-full bg-green-500/10 p-2">
                     <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
                   </div>
                   <div>
@@ -471,7 +471,7 @@ export default function ConditionalExecutionPage() {
 
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
-                  <div className="rounded-full bg-blue-500/10 p-2">
+                  <div className="shrink-0 rounded-full bg-blue-500/10 p-2">
                     <GitBranch className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div>
@@ -486,7 +486,7 @@ export default function ConditionalExecutionPage() {
 
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
-                  <div className="rounded-full bg-purple-500/10 p-2">
+                  <div className="shrink-0 rounded-full bg-purple-500/10 p-2">
                     <Workflow className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                   </div>
                   <div>
@@ -501,7 +501,7 @@ export default function ConditionalExecutionPage() {
 
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
-                  <div className="rounded-full bg-orange-500/10 p-2">
+                  <div className="shrink-0 rounded-full bg-orange-500/10 p-2">
                     <AlertTriangle className="h-4 w-4 text-orange-600 dark:text-orange-400" />
                   </div>
                   <div>
