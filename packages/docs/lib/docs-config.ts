@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { BookOpen } from 'lucide-react';
+import { BookOpen, Download } from 'lucide-react';
 
 export interface NavItem {
   title: string;
@@ -20,6 +20,11 @@ export const docsConfig: SidebarConfig = {
       title: 'Documentation',
       href: '/docs',
       icon: BookOpen,
+    },
+    {
+      title: 'Downloads',
+      href: '/downloads',
+      icon: Download,
     },
   ],
   sidebarNav: [

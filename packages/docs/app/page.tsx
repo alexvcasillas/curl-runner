@@ -13,6 +13,7 @@ import Link from 'next/link';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { Contributors } from '@/components/contributors';
 import { CurlRunner } from '@/components/curl-runner';
+import { DownloadsSection } from '@/components/downloads-section';
 import { LogoCloud } from '@/components/logo-cloud';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
@@ -96,6 +97,13 @@ export default function Home() {
 
             <div className="flex gap-4 items-center flex-col sm:flex-row">
               <Button asChild size="lg" className="h-11 bg-cyan-500 hover:bg-cyan-600 text-white">
+                <Link href="/downloads">
+                  <Download className="mr-2 h-4 w-4" />
+                  Download
+                </Link>
+              </Button>
+
+              <Button variant="outline" size="lg" className="h-11" asChild>
                 <Link href="/docs/quick-start">
                   <Play className="mr-2 h-4 w-4" />
                   Get Started
@@ -154,6 +162,17 @@ export default function Home() {
               </p>
             </div>
           </div>
+        </section>
+
+        {/* Binary Downloads */}
+        <section className="container mx-auto max-w-[64rem] py-8 md:py-12 lg:py-24 px-4 sm:px-6 lg:px-8">
+          <div className="space-y-4 mb-8 text-center">
+            <h2 className="text-2xl sm:text-3xl font-bold">Or Download Pre-compiled Binaries</h2>
+            <p className="text-muted-foreground text-base sm:text-lg max-w-2xl mx-auto">
+              Standalone executables for direct download. No dependencies required.
+            </p>
+          </div>
+          <DownloadsSection showHeader={false} />
         </section>
 
         {/* Bento Grid Features */}

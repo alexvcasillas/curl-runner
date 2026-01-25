@@ -12,6 +12,9 @@ export function SiteFooter() {
           <Link href="/docs" className="text-muted-foreground hover:text-foreground">
             Documentation
           </Link>
+          <Link href="/downloads" className="text-muted-foreground hover:text-foreground">
+            Downloads
+          </Link>
           <Link href="/docs/quick-start" className="text-muted-foreground hover:text-foreground">
             Quick Start
           </Link>
