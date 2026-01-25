@@ -1,4 +1,8 @@
 // Installation page snippets
+export const curlInstallerExample = `curl -fsSL https://www.curl-runner.com/install.sh | bash`;
+
+export const powershellInstallerExample = `irm https://www.curl-runner.com/install.ps1 | iex`;
+
 export const npmInstallExample = `npm install -g @curl-runner/cli`;
 
 export const yarnInstallExample = `yarn global add @curl-runner/cli`;
