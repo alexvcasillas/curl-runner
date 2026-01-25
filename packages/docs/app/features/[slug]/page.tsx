@@ -10,9 +10,9 @@ import { Button } from '@/components/ui/button';
 import { featuresData, getAllFeatures } from '@/lib/features-data';
 
 interface FeaturePageProps {
-  params: {
+  params: Promise<{
     slug: string;
-  };
+  }>;
 }
 
 export function generateStaticParams() {
@@ -21,8 +21,9 @@ export function generateStaticParams() {
   }));
 }
 
-export function generateMetadata({ params }: FeaturePageProps): Metadata {
-  const feature = featuresData[params.slug];
+export async function generateMetadata({ params }: FeaturePageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const feature = featuresData[slug];
 
   if (!feature) {
     return {
@@ -53,13 +54,14 @@ export function generateMetadata({ params }: FeaturePageProps): Metadata {
       description: feature.shortDescription,
     },
     alternates: {
-      canonical: `https://www.curl-runner.com/features/${feature.slug}`,
+      canonical: `https://www.curl-runner.com/features/${slug}`,
     },
   };
 }
 
-export default function FeaturePage({ params }: FeaturePageProps) {
-  const feature = featuresData[params.slug];
+export default async function FeaturePage({ params }: FeaturePageProps) {
+  const { slug } = await params;
+  const feature = featuresData[slug];
 
   if (!feature) {
     notFound();
