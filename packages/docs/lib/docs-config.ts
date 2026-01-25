@@ -127,11 +127,6 @@ export const docsConfig: SidebarConfig = {
           description: 'CI-friendly exit codes for pipeline integration',
         },
         {
-          title: 'Watch Mode',
-          href: '/docs/features/watch-mode',
-          description: 'Auto-rerun requests when files change',
-        },
-        {
           title: 'Performance Profiling',
           href: '/docs/features/performance-profiling',
           description: 'Run requests N times for p50/p95/p99 latency stats',

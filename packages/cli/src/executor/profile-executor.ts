@@ -14,7 +14,6 @@ export class ProfileExecutor {
   private profileConfig: ProfileConfig;
 
   constructor(globalConfig: GlobalConfig, profileConfig: ProfileConfig) {
-    this.globalConfig = globalConfig;
     this.profileConfig = profileConfig;
     this.logger = new Logger(globalConfig.output);
   }
