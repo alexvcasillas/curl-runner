@@ -9,6 +9,9 @@ export function SiteFooter() {
           aria-label="Footer"
           className="-mb-6 flex flex-wrap justify-center gap-x-12 gap-y-3 text-sm"
         >
+          <Link href="/#features" className="text-muted-foreground hover:text-foreground">
+            Features
+          </Link>
           <Link href="/docs" className="text-muted-foreground hover:text-foreground">
             Documentation
           </Link>

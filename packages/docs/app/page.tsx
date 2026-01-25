@@ -403,7 +403,10 @@ export default function Home() {
         </section>
 
         {/* Feature Showcase Section */}
-        <section className="container mx-auto max-w-7xl py-8 md:py-12 lg:py-24 px-4 sm:px-6 lg:px-8">
+        <section
+          id="features"
+          className="container mx-auto max-w-7xl py-8 md:py-12 lg:py-24 px-4 sm:px-6 lg:px-8"
+        >
           <div className="text-center mb-12">
             <Badge className="text-sm mb-4 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20">
               Explore Features

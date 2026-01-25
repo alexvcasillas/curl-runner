@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { BookOpen, Download } from 'lucide-react';
+import { BookOpen, Download, Zap } from 'lucide-react';
 
 export interface NavItem {
   title: string;
@@ -16,6 +16,11 @@ export interface SidebarConfig {
 
 export const docsConfig: SidebarConfig = {
   mainNav: [
+    {
+      title: 'Features',
+      href: '/#features',
+      icon: Zap,
+    },
     {
       title: 'Documentation',
       href: '/docs',
