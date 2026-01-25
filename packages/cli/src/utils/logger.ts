@@ -667,7 +667,6 @@ export class Logger {
     }
 
     const name = config.name || `Request ${index}`;
-    const reasonText = reason ? ` - ${reason}` : '';
 
     if (this.config.format === 'json') {
       const jsonResult = {
@@ -684,12 +683,12 @@ export class Logger {
     }
 
     // Pretty format
-    console.log(`${this.color('⊘', 'yellow')} ${this.color(name, 'bright')} ${this.color('[SKIP]', 'yellow')}`);
+    console.log(
+      `${this.color('⊘', 'yellow')} ${this.color(name, 'bright')} ${this.color('[SKIP]', 'yellow')}`,
+    );
 
     if (reason) {
-      const treeNodes: TreeNode[] = [
-        { label: 'Reason', value: reason, color: 'yellow' },
-      ];
+      const treeNodes: TreeNode[] = [{ label: 'Reason', value: reason, color: 'yellow' }];
       const renderer = new TreeRenderer(this.colors);
       renderer.render(treeNodes);
     }

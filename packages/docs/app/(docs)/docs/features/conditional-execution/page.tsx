@@ -66,8 +66,9 @@ export default function ConditionalExecutionPage() {
             <H2 id="overview">Overview</H2>
             <p className="text-muted-foreground mb-6">
               Conditional execution allows you to control which requests run based on the results of
-              previous requests. Use the <code className="text-sm bg-muted px-1 py-0.5 rounded">when</code> field
-              to define conditions that must be met for a request to execute.
+              previous requests. Use the{' '}
+              <code className="text-sm bg-muted px-1 py-0.5 rounded">when</code> field to define
+              conditions that must be met for a request to execute.
             </p>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -114,7 +115,9 @@ export default function ConditionalExecutionPage() {
               <h4 className="text-sm font-medium mb-2">How it works:</h4>
               <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
                 <li>First request executes and stores values</li>
-                <li>Before each subsequent request, the <code>when</code> condition is evaluated</li>
+                <li>
+                  Before each subsequent request, the <code>when</code> condition is evaluated
+                </li>
                 <li>If condition is true, request executes normally</li>
                 <li>If condition is false, request is skipped (marked as skipped, not failed)</li>
               </ol>
@@ -143,25 +146,33 @@ export default function ConditionalExecutionPage() {
                 </thead>
                 <tbody>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">"store.status == 200"</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">"store.status == 200"</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">
                       <code>left: store.status, operator: "==", right: 200</code>
                     </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">"store.userId exists"</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">"store.userId exists"</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">
                       <code>left: store.userId, operator: exists</code>
                     </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">"store.count &gt;= 10"</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">"store.count &gt;= 10"</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">
                       <code>left: store.count, operator: "&gt;=", right: 10</code>
                     </td>
                   </tr>
                   <tr>
-                    <td className="p-3"><code className="text-sm">"store.name contains admin"</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">"store.name contains admin"</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">
                       <code>left: store.name, operator: contains, right: "admin"</code>
                     </td>
@@ -189,54 +200,96 @@ export default function ConditionalExecutionPage() {
                 </thead>
                 <tbody>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">==</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">==</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">Equal to</td>
-                    <td className="p-3 text-sm"><code>store.status == 200</code></td>
+                    <td className="p-3 text-sm">
+                      <code>store.status == 200</code>
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">!=</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">!=</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">Not equal to</td>
-                    <td className="p-3 text-sm"><code>store.status != 404</code></td>
+                    <td className="p-3 text-sm">
+                      <code>store.status != 404</code>
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">&gt;</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">&gt;</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">Greater than</td>
-                    <td className="p-3 text-sm"><code>store.count &gt; 0</code></td>
+                    <td className="p-3 text-sm">
+                      <code>store.count &gt; 0</code>
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">&lt;</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">&lt;</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">Less than</td>
-                    <td className="p-3 text-sm"><code>store.count &lt; 100</code></td>
+                    <td className="p-3 text-sm">
+                      <code>store.count &lt; 100</code>
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">&gt;=</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">&gt;=</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">Greater than or equal</td>
-                    <td className="p-3 text-sm"><code>store.version &gt;= 2</code></td>
+                    <td className="p-3 text-sm">
+                      <code>store.version &gt;= 2</code>
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">&lt;=</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">&lt;=</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">Less than or equal</td>
-                    <td className="p-3 text-sm"><code>store.count &lt;= 50</code></td>
+                    <td className="p-3 text-sm">
+                      <code>store.count &lt;= 50</code>
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">contains</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">contains</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">String contains substring</td>
-                    <td className="p-3 text-sm"><code>store.name contains "admin"</code></td>
+                    <td className="p-3 text-sm">
+                      <code>store.name contains "admin"</code>
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">matches</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">matches</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">Regex pattern match</td>
-                    <td className="p-3 text-sm"><code>store.email matches "^.+@.+"</code></td>
+                    <td className="p-3 text-sm">
+                      <code>store.email matches "^.+@.+"</code>
+                    </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="p-3"><code className="text-sm">exists</code></td>
-                    <td className="p-3 text-sm text-muted-foreground">Value exists and not empty</td>
-                    <td className="p-3 text-sm"><code>store.token exists</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">exists</code>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Value exists and not empty
+                    </td>
+                    <td className="p-3 text-sm">
+                      <code>store.token exists</code>
+                    </td>
                   </tr>
                   <tr>
-                    <td className="p-3"><code className="text-sm">not-exists</code></td>
+                    <td className="p-3">
+                      <code className="text-sm">not-exists</code>
+                    </td>
                     <td className="p-3 text-sm text-muted-foreground">Value missing or empty</td>
-                    <td className="p-3 text-sm"><code>store.error not-exists</code></td>
+                    <td className="p-3 text-sm">
+                      <code>store.error not-exists</code>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -256,7 +309,8 @@ export default function ConditionalExecutionPage() {
                 <H3 id="all-conditions">AND Logic (all)</H3>
                 <p className="text-muted-foreground mb-4">
                   Use <code className="text-sm bg-muted px-1 py-0.5 rounded">all</code> when every
-                  condition must be true. Evaluation stops on the first false condition (short-circuit).
+                  condition must be true. Evaluation stops on the first false condition
+                  (short-circuit).
                 </p>
                 <CodeBlockServer language="yaml" filename="all-conditions.yaml">
                   {allConditionsExample}
@@ -266,8 +320,9 @@ export default function ConditionalExecutionPage() {
               <div>
                 <H3 id="any-conditions">OR Logic (any)</H3>
                 <p className="text-muted-foreground mb-4">
-                  Use <code className="text-sm bg-muted px-1 py-0.5 rounded">any</code> when at least
-                  one condition must be true. Evaluation stops on the first true condition (short-circuit).
+                  Use <code className="text-sm bg-muted px-1 py-0.5 rounded">any</code> when at
+                  least one condition must be true. Evaluation stops on the first true condition
+                  (short-circuit).
                 </p>
                 <CodeBlockServer language="yaml" filename="any-conditions.yaml">
                   {anyConditionsExample}
@@ -381,8 +436,13 @@ export default function ConditionalExecutionPage() {
                   <div>
                     <h4 className="font-medium mb-1">Variable Interpolation</h4>
                     <p className="text-sm text-muted-foreground">
-                      Use <code>{'${VAR}'}</code> syntax in condition values. Variables are resolved
-                      before condition evaluation.
+                      Use{' '}
+                      <code>
+                        {'$'}
+                        {'{VAR}'}
+                      </code>{' '}
+                      syntax in condition values. Variables are resolved before condition
+                      evaluation.
                     </p>
                   </div>
                 </div>
@@ -432,8 +492,8 @@ export default function ConditionalExecutionPage() {
                   <div>
                     <h4 className="font-medium mb-2">Plan Your Flow</h4>
                     <p className="text-sm text-muted-foreground">
-                      Design your workflow before adding conditions. Ensure data-producing
-                      requests come before conditional requests.
+                      Design your workflow before adding conditions. Ensure data-producing requests
+                      come before conditional requests.
                     </p>
                   </div>
                 </div>

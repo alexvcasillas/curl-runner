@@ -60,15 +60,24 @@ export function parseStringCondition(condition: string): ConditionExpression | n
  */
 function parseRightValue(value: string): string | number | boolean {
   // Boolean
-  if (value === 'true') return true;
-  if (value === 'false') return false;
+  if (value === 'true') {
+    return true;
+  }
+  if (value === 'false') {
+    return false;
+  }
 
   // Number
   const num = Number(value);
-  if (!Number.isNaN(num) && value !== '') return num;
+  if (!Number.isNaN(num) && value !== '') {
+    return num;
+  }
 
   // String - remove quotes if present
-  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
     return value.slice(1, -1);
   }
 
@@ -96,10 +105,16 @@ function getStoreValue(path: string, context: ResponseStoreContext): unknown {
     }
     // Try to parse as number
     const num = Number(value);
-    if (!Number.isNaN(num) && value !== '') return num;
+    if (!Number.isNaN(num) && value !== '') {
+      return num;
+    }
     // Try to parse as boolean
-    if (value === 'true') return true;
-    if (value === 'false') return false;
+    if (value === 'true') {
+      return true;
+    }
+    if (value === 'false') {
+      return false;
+    }
     return value;
   }
 
@@ -143,9 +158,15 @@ export function evaluateExpression(
   const caseSensitive = expr.caseSensitive ?? false;
 
   const formatValue = (v: unknown): string => {
-    if (v === undefined) return 'undefined';
-    if (v === null) return 'null';
-    if (typeof v === 'string') return `"${v}"`;
+    if (v === undefined) {
+      return 'undefined';
+    }
+    if (v === null) {
+      return 'null';
+    }
+    if (typeof v === 'string') {
+      return `"${v}"`;
+    }
     return String(v);
   };
 

@@ -255,7 +255,11 @@ describe('evaluateExpression', () => {
 
   describe('matches operator', () => {
     test('should match regex pattern', () => {
-      const expr: ConditionExpression = { left: 'store.name', operator: 'matches', right: '^[A-Z]' };
+      const expr: ConditionExpression = {
+        left: 'store.name',
+        operator: 'matches',
+        right: '^[A-Z]',
+      };
       expect(evaluateExpression(expr, context).passed).toBe(true);
     });
 
