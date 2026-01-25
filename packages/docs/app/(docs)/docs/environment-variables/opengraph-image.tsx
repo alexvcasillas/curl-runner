@@ -1,5 +1,4 @@
 import { ImageResponse } from 'next/og';
-import { getOgFonts } from '@/lib/og-fonts';
 
 export const runtime = 'nodejs';
 
@@ -12,8 +11,6 @@ export const size = {
 export const contentType = 'image/png';
 
 export default async function Image() {
-  const fonts = await getOgFonts();
-
   return new ImageResponse(
     <div
       style={{
@@ -35,6 +32,6 @@ export default async function Image() {
         Configure curl-runner behavior using environment variables
       </div>
     </div>,
-    { ...size, fonts },
+    { ...size },
   );
 }

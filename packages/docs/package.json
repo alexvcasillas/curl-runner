@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
     "@gsap/react": "^2.1.2",
     "@heroicons/react": "^2.2.0",
     "@radix-ui/react-collapsible": "^1.1.12",
@@ -19,6 +20,8 @@
     "@radix-ui/react-separator": "^1.1.7",
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@vercel/analytics": "^1.5.0",
+    "@vercel/speed-insights": "^1.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -32,9 +35,7 @@
     "react-dom": "19.1.0",
     "react-use-measure": "^2.1.7",
     "shiki": "^3.12.1",
-    "tailwind-merge": "^3.3.1",
-    "@vercel/analytics": "^1.5.0",
-    "@vercel/speed-insights": "^1.2.0"
+    "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",

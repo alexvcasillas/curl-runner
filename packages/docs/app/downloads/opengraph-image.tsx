@@ -1,5 +1,6 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { ImageResponse } from 'next/og';
-import { getOgFonts, getOgIcon } from '@/lib/og-fonts';
 
 export const runtime = 'nodejs';
 export const alt = 'Download curl-runner';
@@ -10,7 +11,8 @@ export const size = {
 export const contentType = 'image/png';
 
 export default async function Image() {
-  const [fonts, iconSrc] = await Promise.all([getOgFonts(), getOgIcon()]);
+  const iconData = await readFile(join(process.cwd(), 'public', 'icon-light-192.png'));
+  const iconSrc = `data:image/png;base64,${iconData.toString('base64')}`;
 
   return new ImageResponse(
     <div
@@ -146,6 +148,6 @@ export default async function Image() {
         curl-runner.com/downloads
       </div>
     </div>,
-    { ...size, fonts },
+    { ...size },
   );
 }
