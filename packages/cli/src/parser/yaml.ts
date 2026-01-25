@@ -1,4 +1,3 @@
-import { YAML } from 'bun';
 import type { RequestConfig, ResponseStoreContext, YamlFile } from '../types/config';
 
 // Using class for organization, but could be refactored to functions
@@ -6,11 +5,11 @@ export class YamlParser {
   static async parseFile(filepath: string): Promise<YamlFile> {
     const file = Bun.file(filepath);
     const content = await file.text();
-    return YAML.parse(content) as YamlFile;
+    return Bun.YAML.parse(content) as YamlFile;
   }
 
   static parse(content: string): YamlFile {
-    return YAML.parse(content) as YamlFile;
+    return Bun.YAML.parse(content) as YamlFile;
   }
 
   /**

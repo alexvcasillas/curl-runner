@@ -106,7 +106,7 @@ export class Logger {
     };
   }
 
-  private color(text: string, color: keyof typeof this.colors): string {
+  color(text: string, color: keyof typeof this.colors): string {
     return `${this.colors[color]}${text}${this.colors.reset}`;
   }
 

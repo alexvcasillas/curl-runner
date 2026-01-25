@@ -14,6 +14,7 @@
     "format": "biome format --write .",
     "lint": "biome lint .",
     "check": "biome check --write .",
+    "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "keywords": [

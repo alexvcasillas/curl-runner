@@ -99,8 +99,8 @@ bun --version`}
           <section>
             <h2 className="text-2xl font-semibold tracking-tight mb-4">Quick Install</h2>
             <p className="text-muted-foreground mb-4">
-              The fastest way to install <code className="font-mono">curl-runner</code>. Downloads the
-              latest pre-compiled binary, verifies checksum, and adds to PATH automatically.
+              The fastest way to install <code className="font-mono">curl-runner</code>. Downloads
+              the latest pre-compiled binary, verifies checksum, and adds to PATH automatically.
             </p>
 
             <div className="space-y-6">
@@ -114,7 +114,9 @@ bun --version`}
 
               <div className="space-y-3">
                 <h3 className="text-xl font-semibold">Windows (PowerShell)</h3>
-                <CodeBlockServer language="powershell">{powershellInstallerExample}</CodeBlockServer>
+                <CodeBlockServer language="powershell">
+                  {powershellInstallerExample}
+                </CodeBlockServer>
               </div>
             </div>
 

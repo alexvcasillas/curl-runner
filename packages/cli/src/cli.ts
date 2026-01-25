@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { Glob } from 'bun';
+import { showUpgradeHelp, UpgradeCommand } from './commands/upgrade';
 import { BaselineManager, DiffFormatter, DiffOrchestrator } from './diff';
 import { ProfileExecutor } from './executor/profile-executor';
 import { RequestExecutor } from './executor/request-executor';
@@ -38,9 +39,9 @@ class CurlRunnerCLI {
         if (await file.exists()) {
           const yamlContent = await YamlParser.parseFile(filename);
           // Extract global config from the YAML file
-          const config = yamlContent.global || yamlContent;
+          const config = yamlContent.global || {};
           this.logger.logInfo(`Loaded configuration from ${filename}`);
-          return config;
+          return config as Partial<GlobalConfig>;
         }
       } catch (error) {
         this.logger.logWarning(`Failed to load configuration from ${filename}: ${error}`);
@@ -318,6 +319,17 @@ class CurlRunnerCLI {
         return;
       }
 
+      // Handle upgrade subcommand: curl-runner upgrade [options]
+      if (args[0] === 'upgrade') {
+        if (args.includes('--help') || args.includes('-h')) {
+          showUpgradeHelp();
+          return;
+        }
+        const upgradeCmd = new UpgradeCommand();
+        await upgradeCmd.run(args.slice(1));
+        return;
+      }
+
       // Handle diff subcommand: curl-runner diff <label1> <label2> [file]
       if (args[0] === 'diff' && args.length >= 3) {
         await this.executeDiffSubcommand(args.slice(1), options);
@@ -373,16 +385,16 @@ class CurlRunnerCLI {
         globalConfig.maxConcurrency = options.maxConcurrent as number;
       }
       if (options.continueOnError !== undefined) {
-        globalConfig.continueOnError = options.continueOnError;
+        globalConfig.continueOnError = options.continueOnError as boolean;
       }
       if (options.verbose !== undefined) {
-        globalConfig.output = { ...globalConfig.output, verbose: options.verbose };
+        globalConfig.output = { ...globalConfig.output, verbose: options.verbose as boolean };
       }
       if (options.quiet !== undefined) {
         globalConfig.output = { ...globalConfig.output, verbose: false };
       }
       if (options.output) {
-        globalConfig.output = { ...globalConfig.output, saveToFile: options.output };
+        globalConfig.output = { ...globalConfig.output, saveToFile: options.output as string };
       }
       if (options.outputFormat) {
         globalConfig.output = {
@@ -397,21 +409,27 @@ class CurlRunnerCLI {
         };
       }
       if (options.showHeaders !== undefined) {
-        globalConfig.output = { ...globalConfig.output, showHeaders: options.showHeaders };
+        globalConfig.output = {
+          ...globalConfig.output,
+          showHeaders: options.showHeaders as boolean,
+        };
       }
       if (options.showBody !== undefined) {
-        globalConfig.output = { ...globalConfig.output, showBody: options.showBody };
+        globalConfig.output = { ...globalConfig.output, showBody: options.showBody as boolean };
       }
       if (options.showMetrics !== undefined) {
-        globalConfig.output = { ...globalConfig.output, showMetrics: options.showMetrics };
+        globalConfig.output = {
+          ...globalConfig.output,
+          showMetrics: options.showMetrics as boolean,
+        };
       }
 
       // Apply timeout and retry settings to defaults
       if (options.timeout) {
-        globalConfig.defaults = { ...globalConfig.defaults, timeout: options.timeout };
+        globalConfig.defaults = { ...globalConfig.defaults, timeout: options.timeout as number };
       }
       if (options.retries || options.noRetry) {
-        const retryCount = options.noRetry ? 0 : options.retries || 0;
+        const retryCount = options.noRetry ? 0 : (options.retries as number) || 0;
         globalConfig.defaults = {
           ...globalConfig.defaults,
           retry: {
@@ -425,7 +443,7 @@ class CurlRunnerCLI {
           ...globalConfig.defaults,
           retry: {
             ...globalConfig.defaults?.retry,
-            delay: options.retryDelay,
+            delay: options.retryDelay as number,
           },
         };
       }
@@ -670,13 +688,15 @@ class CurlRunnerCLI {
       }
 
       // Create combined summary
-      const successful = allResults.filter((r) => r.success).length;
-      const failed = allResults.filter((r) => !r.success).length;
+      const successful = allResults.filter((r) => r.success && !r.skipped).length;
+      const failed = allResults.filter((r) => !r.success && !r.skipped).length;
+      const skipped = allResults.filter((r) => r.skipped).length;
 
       summary = {
         total: allResults.length,
         successful,
         failed,
+        skipped,
         duration: totalDuration,
         results: allResults,
       };
@@ -1081,7 +1101,7 @@ class CurlRunnerCLI {
     variables: Record<string, string>,
     defaults: Partial<RequestConfig>,
   ): RequestConfig {
-    const interpolated = YamlParser.interpolateVariables(request, variables);
+    const interpolated = YamlParser.interpolateVariables(request, variables) as RequestConfig;
     return YamlParser.mergeConfigs(defaults, interpolated);
   }
 
@@ -1213,6 +1233,11 @@ ${this.logger.color('DIFF OPTIONS:', 'yellow')}
 ${this.logger.color('DIFF SUBCOMMAND:', 'yellow')}
   curl-runner diff <label1> <label2> [file.yaml]
                                 Compare two stored baselines without making requests
+
+${this.logger.color('UPGRADE:', 'yellow')}
+  curl-runner upgrade           Upgrade to latest version (auto-detects install method)
+  curl-runner upgrade --dry-run Preview upgrade command without executing
+  curl-runner upgrade --force   Force reinstall even if up to date
 
 ${this.logger.color('EXAMPLES:', 'yellow')}
   # Run all YAML files in current directory
