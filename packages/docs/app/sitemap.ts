@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next';
+import { getAllFeatures } from '@/lib/features-data';
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const baseUrl = 'https://www.curl-runner.com';
@@ -163,5 +164,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
   ];
 
-  return [...staticRoutes, ...docsRoutes];
+  // Feature landing pages
+  const featureRoutes = getAllFeatures().map((feature) => ({
+    url: `${baseUrl}/features/${feature.slug}`,
+    lastModified: currentDate,
+    changeFrequency: 'monthly' as const,
+    priority: 0.8,
+  }));
+
+  return [...staticRoutes, ...docsRoutes, ...featureRoutes];
 }
