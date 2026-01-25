@@ -1,0 +1,89 @@
+# Conditional Execution - Advanced
+# Demonstrates compound conditions (all/any) and various operators.
+# Usage: curl-runner conditional-advanced.yaml
+
+global:
+  execution: sequential
+  output:
+    format: pretty
+    prettyLevel: standard
+
+requests:
+  # First request: Get a post and store multiple values
+  - name: Get Post
+    url: https://jsonplaceholder.typicode.com/posts/1
+    method: GET
+    expect:
+      status: 200
+    store:
+      status: status
+      postId: body.id
+      userId: body.userId
+      title: body.title
+
+  # Using `all` - ALL conditions must be true (AND logic)
+  - name: Get Comments (All Conditions)
+    url: https://jsonplaceholder.typicode.com/posts/${store.postId}/comments
+    method: GET
+    when:
+      all:
+        - left: store.status
+          operator: "=="
+          right: 200
+        - left: store.postId
+          operator: exists
+        - left: store.userId
+          operator: "<="
+          right: 10
+    expect:
+      status: 200
+
+  # Using `any` - ANY condition must be true (OR logic)
+  - name: Get User (Any Condition)
+    url: https://jsonplaceholder.typicode.com/users/${store.userId}
+    method: GET
+    when:
+      any:
+        - left: store.userId
+          operator: "=="
+          right: 1
+        - left: store.userId
+          operator: "=="
+          right: 2
+        - left: store.userId
+          operator: "=="
+          right: 3
+    expect:
+      status: 200
+
+  # Using `contains` operator
+  - name: Get Album (Title Contains)
+    url: https://jsonplaceholder.typicode.com/users/${store.userId}/albums
+    method: GET
+    when:
+      left: store.title
+      operator: contains
+      right: "sunt"
+    expect:
+      status: 200
+
+  # Using `matches` operator (regex)
+  - name: Get Todos (Title Matches Pattern)
+    url: https://jsonplaceholder.typicode.com/users/${store.userId}/todos
+    method: GET
+    when:
+      left: store.title
+      operator: matches
+      right: "^sunt.*"
+    expect:
+      status: 200
+
+  # Using `not-exists` operator - runs only if error is NOT set
+  - name: Final Request (No Error)
+    url: https://jsonplaceholder.typicode.com/posts/${store.postId}
+    method: GET
+    when:
+      left: store.error
+      operator: not-exists
+    expect:
+      status: 200

@@ -1,0 +1,56 @@
+# Conditional Execution - String Shorthand
+# Demonstrates simplified string syntax for conditions.
+# Usage: curl-runner conditional-shorthand.yaml
+
+global:
+  execution: sequential
+  output:
+    format: pretty
+    prettyLevel: standard
+
+requests:
+  # First request: Get a post
+  - name: Get Post
+    url: https://jsonplaceholder.typicode.com/posts/1
+    method: GET
+    expect:
+      status: 200
+    store:
+      status: status
+      postId: body.id
+      userId: body.userId
+
+  # String shorthand for equality
+  - name: Get Comments (Status 200)
+    url: https://jsonplaceholder.typicode.com/posts/${store.postId}/comments
+    when: "store.status == 200"
+    expect:
+      status: 200
+
+  # String shorthand for exists
+  - name: Get User (PostId Exists)
+    url: https://jsonplaceholder.typicode.com/users/${store.userId}
+    when: "store.postId exists"
+    expect:
+      status: 200
+
+  # String shorthand for comparison
+  - name: Get Albums (UserId <= 5)
+    url: https://jsonplaceholder.typicode.com/users/${store.userId}/albums
+    when: "store.userId <= 5"
+    expect:
+      status: 200
+
+  # String shorthand for not-equals
+  - name: Get Todos (Status != 404)
+    url: https://jsonplaceholder.typicode.com/users/${store.userId}/todos
+    when: "store.status != 404"
+    expect:
+      status: 200
+
+  # This will be skipped - checking for 404
+  - name: Error Handler (Will Skip)
+    url: https://jsonplaceholder.typicode.com/posts/${store.postId}
+    when: "store.status == 404"
+    expect:
+      status: 200

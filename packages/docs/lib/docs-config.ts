@@ -82,6 +82,11 @@ export const docsConfig: SidebarConfig = {
           description: 'Store and reuse response values across requests',
         },
         {
+          title: 'Conditional Execution',
+          href: '/docs/features/conditional-execution',
+          description: 'Skip or run requests based on previous results',
+        },
+        {
           title: 'File Uploads',
           href: '/docs/features/file-uploads',
           description: 'Upload files using multipart/form-data requests',

@@ -11,6 +11,7 @@ import type {
   ResponseStoreContext,
   SnapshotConfig,
 } from '../types/config';
+import { evaluateCondition } from '../utils/condition-evaluator';
 import { CurlBuilder } from '../utils/curl-builder';
 import { Logger } from '../utils/logger';
 import { createStoreContext, extractStoreValues } from '../utils/response-store';
@@ -516,6 +517,23 @@ export class RequestExecutor {
     for (let i = 0; i < requests.length; i++) {
       // Interpolate store variables before execution
       const interpolatedRequest = this.interpolateStoreVariables(requests[i], storeContext);
+
+      // Evaluate `when` condition if present
+      if (interpolatedRequest.when) {
+        const conditionResult = evaluateCondition(interpolatedRequest.when, storeContext);
+        if (!conditionResult.shouldRun) {
+          const skippedResult: ExecutionResult = {
+            request: interpolatedRequest,
+            success: true, // Skipped requests are not failures
+            skipped: true,
+            skipReason: conditionResult.reason,
+          };
+          results.push(skippedResult);
+          this.logger.logSkipped(interpolatedRequest, i + 1, conditionResult.reason);
+          continue;
+        }
+      }
+
       const result = await this.executeRequest(interpolatedRequest, i + 1);
       results.push(result);
 
@@ -618,13 +636,15 @@ export class RequestExecutor {
   }
 
   private createSummary(results: ExecutionResult[], duration: number): ExecutionSummary {
-    const successful = results.filter((r) => r.success).length;
+    const skipped = results.filter((r) => r.skipped).length;
+    const successful = results.filter((r) => r.success && !r.skipped).length;
     const failed = results.filter((r) => !r.success).length;
 
     return {
       total: results.length,
       successful,
       failed,
+      skipped,
       duration,
       results,
     };
