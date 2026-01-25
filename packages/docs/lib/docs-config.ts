@@ -111,6 +111,11 @@ export const docsConfig: SidebarConfig = {
           href: '/docs/features/ci-integration',
           description: 'CI-friendly exit codes for pipeline integration',
         },
+        {
+          title: 'Watch Mode',
+          href: '/docs/features/watch-mode',
+          description: 'Auto-rerun requests on file changes',
+        },
       ],
     },
     {
