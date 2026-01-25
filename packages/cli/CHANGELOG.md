@@ -1,5 +1,11 @@
 # @curl-runner/cli
 
+## 1.13.0
+
+### Minor Changes
+
+- [#61](https://github.com/alexvcasillas/curl-runner/pull/61) [`66b4e8f`](https://github.com/alexvcasillas/curl-runner/commit/66b4e8fd96a10f6659c6e1be844dc510b31e0f56) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - feat: add binary download links to landing and installation pages
+
 ## 1.12.0
 
 ### Minor Changes
