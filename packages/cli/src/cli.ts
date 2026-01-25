@@ -166,6 +166,38 @@ class CurlRunnerCLI {
       };
     }
 
+    // Snapshot configuration
+    if (process.env.CURL_RUNNER_SNAPSHOT) {
+      envConfig.snapshot = {
+        ...envConfig.snapshot,
+        enabled: process.env.CURL_RUNNER_SNAPSHOT.toLowerCase() === 'true',
+      };
+    }
+
+    if (process.env.CURL_RUNNER_SNAPSHOT_UPDATE) {
+      const mode = process.env.CURL_RUNNER_SNAPSHOT_UPDATE.toLowerCase();
+      if (['none', 'all', 'failing'].includes(mode)) {
+        envConfig.snapshot = {
+          ...envConfig.snapshot,
+          updateMode: mode as 'none' | 'all' | 'failing',
+        };
+      }
+    }
+
+    if (process.env.CURL_RUNNER_SNAPSHOT_DIR) {
+      envConfig.snapshot = {
+        ...envConfig.snapshot,
+        dir: process.env.CURL_RUNNER_SNAPSHOT_DIR,
+      };
+    }
+
+    if (process.env.CURL_RUNNER_SNAPSHOT_CI) {
+      envConfig.snapshot = {
+        ...envConfig.snapshot,
+        ci: process.env.CURL_RUNNER_SNAPSHOT_CI.toLowerCase() === 'true',
+      };
+    }
+
     return envConfig;
   }
 
@@ -311,6 +343,33 @@ class CurlRunnerCLI {
         };
       }
 
+      // Apply snapshot options
+      if (options.snapshot !== undefined) {
+        globalConfig.snapshot = {
+          ...globalConfig.snapshot,
+          enabled: options.snapshot as boolean,
+        };
+      }
+      if (options.snapshotUpdate !== undefined) {
+        globalConfig.snapshot = {
+          ...globalConfig.snapshot,
+          enabled: true,
+          updateMode: options.snapshotUpdate as 'none' | 'all' | 'failing',
+        };
+      }
+      if (options.snapshotDir !== undefined) {
+        globalConfig.snapshot = {
+          ...globalConfig.snapshot,
+          dir: options.snapshotDir as string,
+        };
+      }
+      if (options.snapshotCi !== undefined) {
+        globalConfig.snapshot = {
+          ...globalConfig.snapshot,
+          ci: options.snapshotCi as boolean,
+        };
+      }
+
       if (allRequests.length === 0) {
         this.logger.logError('No requests found in YAML files');
         process.exit(1);
@@ -450,6 +509,14 @@ class CurlRunnerCLI {
           options.watchClear = true;
         } else if (key === 'no-watch-clear') {
           options.watchClear = false;
+        } else if (key === 'snapshot') {
+          options.snapshot = true;
+        } else if (key === 'update-snapshots') {
+          options.snapshotUpdate = 'all';
+        } else if (key === 'update-failing') {
+          options.snapshotUpdate = 'failing';
+        } else if (key === 'ci-snapshot') {
+          options.snapshotCi = true;
         } else if (nextArg && !nextArg.startsWith('--')) {
           if (key === 'continue-on-error') {
             options.continueOnError = nextArg === 'true';
@@ -483,6 +550,8 @@ class CurlRunnerCLI {
             }
           } else if (key === 'watch-debounce') {
             options.watchDebounce = Number.parseInt(nextArg, 10);
+          } else if (key === 'snapshot-dir') {
+            options.snapshotDir = nextArg;
           } else {
             options[key] = nextArg;
           }
@@ -511,6 +580,12 @@ class CurlRunnerCLI {
               break;
             case 'w':
               options.watch = true;
+              break;
+            case 's':
+              options.snapshot = true;
+              break;
+            case 'u':
+              options.snapshotUpdate = 'all';
               break;
             case 'o': {
               // Handle -o flag for output file
@@ -641,6 +716,7 @@ class CurlRunnerCLI {
       defaults: { ...base.defaults, ...override.defaults },
       ci: { ...base.ci, ...override.ci },
       watch: { ...base.watch, ...override.watch },
+      snapshot: { ...base.snapshot, ...override.snapshot },
     };
   }
 
@@ -733,6 +809,13 @@ ${this.logger.color('CI/CD OPTIONS:', 'yellow')}
   --fail-on <count>             Exit with code 1 if failures exceed this count
   --fail-on-percentage <pct>    Exit with code 1 if failure percentage exceeds this value
 
+${this.logger.color('SNAPSHOT OPTIONS:', 'yellow')}
+  -s, --snapshot                Enable snapshot testing
+  -u, --update-snapshots        Update all snapshots
+  --update-failing              Update only failing snapshots
+  --snapshot-dir <dir>          Custom snapshot directory (default: __snapshots__)
+  --ci-snapshot                 Fail if snapshot is missing (CI mode)
+
 ${this.logger.color('EXAMPLES:', 'yellow')}
   # Run all YAML files in current directory
   curl-runner
@@ -781,6 +864,15 @@ ${this.logger.color('EXAMPLES:', 'yellow')}
 
   # Watch with custom debounce
   curl-runner tests/ -w --watch-debounce 500
+
+  # Snapshot testing - save and compare responses
+  curl-runner api.yaml --snapshot
+
+  # Update all snapshots
+  curl-runner api.yaml -su
+
+  # CI mode - fail if snapshot missing
+  curl-runner api.yaml --snapshot --ci-snapshot
 
 ${this.logger.color('YAML STRUCTURE:', 'yellow')}
   Single request:
