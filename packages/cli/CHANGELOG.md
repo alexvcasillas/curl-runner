@@ -1,5 +1,11 @@
 # @curl-runner/cli
 
+## 1.14.0
+
+### Minor Changes
+
+- [#59](https://github.com/alexvcasillas/curl-runner/pull/59) [`27e6cc2`](https://github.com/alexvcasillas/curl-runner/commit/27e6cc2ba79bc08ba579f938f63f231ea9e3fbe0) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - feat: add performance profiling mode with p50/p95/p99 latency stats
+
 ## 1.13.0
 
 ### Minor Changes
