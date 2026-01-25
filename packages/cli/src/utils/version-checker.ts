@@ -69,45 +69,38 @@ export class VersionChecker {
   private compareVersions(current: string, latest: string): void {
     if (this.isNewerVersion(current, latest)) {
       console.log();
-      console.log(color('╭────────────────────────────────────────────────────────╮', 'yellow'));
+      console.log(color('╭───────────────────────────────────────────────╮', 'yellow'));
       console.log(
         color('│', 'yellow') +
-          '                                                        ' +
+          '                                               ' +
           color('│', 'yellow'),
       );
       console.log(
         color('│', 'yellow') +
           '  ' +
-          color('📦 New version available!', 'bright') +
+          color('Update available!', 'bright') +
           ` ${color(current, 'red')} → ${color(latest, 'green')}` +
-          '     ' +
+          '        ' +
           color('│', 'yellow'),
       );
       console.log(
         color('│', 'yellow') +
-          '                                                        ' +
+          '                                               ' +
           color('│', 'yellow'),
       );
       console.log(
         color('│', 'yellow') +
-          '  Update with: ' +
-          color('npm install -g @curl-runner/cli', 'cyan') +
-          '   ' +
+          '  Run ' +
+          color('curl-runner upgrade', 'cyan') +
+          ' to update          ' +
           color('│', 'yellow'),
       );
       console.log(
         color('│', 'yellow') +
-          '          or: ' +
-          color('bun install -g @curl-runner/cli', 'cyan') +
-          '   ' +
+          '                                               ' +
           color('│', 'yellow'),
       );
-      console.log(
-        color('│', 'yellow') +
-          '                                                        ' +
-          color('│', 'yellow'),
-      );
-      console.log(color('╰────────────────────────────────────────────────────────╯', 'yellow'));
+      console.log(color('╰───────────────────────────────────────────────╯', 'yellow'));
       console.log();
     }
   }

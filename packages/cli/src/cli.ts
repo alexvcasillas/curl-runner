@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { Glob } from 'bun';
+import { showUpgradeHelp, UpgradeCommand } from './commands/upgrade';
 import { BaselineManager, DiffFormatter, DiffOrchestrator } from './diff';
 import { ProfileExecutor } from './executor/profile-executor';
 import { RequestExecutor } from './executor/request-executor';
@@ -315,6 +316,17 @@ class CurlRunnerCLI {
 
       if (options.version) {
         console.log(`curl-runner v${getVersion()}`);
+        return;
+      }
+
+      // Handle upgrade subcommand: curl-runner upgrade [options]
+      if (args[0] === 'upgrade') {
+        if (args.includes('--help') || args.includes('-h')) {
+          showUpgradeHelp();
+          return;
+        }
+        const upgradeCmd = new UpgradeCommand();
+        await upgradeCmd.run(args.slice(1));
         return;
       }
 
@@ -1213,6 +1225,11 @@ ${this.logger.color('DIFF OPTIONS:', 'yellow')}
 ${this.logger.color('DIFF SUBCOMMAND:', 'yellow')}
   curl-runner diff <label1> <label2> [file.yaml]
                                 Compare two stored baselines without making requests
+
+${this.logger.color('UPGRADE:', 'yellow')}
+  curl-runner upgrade           Upgrade to latest version (auto-detects install method)
+  curl-runner upgrade --dry-run Preview upgrade command without executing
+  curl-runner upgrade --force   Force reinstall even if up to date
 
 ${this.logger.color('EXAMPLES:', 'yellow')}
   # Run all YAML files in current directory

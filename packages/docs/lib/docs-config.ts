@@ -166,6 +166,11 @@ export const docsConfig: SidebarConfig = {
           href: '/docs/environment-variables',
           description: 'Configure behavior with CURL_RUNNER_* variables',
         },
+        {
+          title: 'Upgrade',
+          href: '/docs/features/upgrade',
+          description: 'Upgrade curl-runner to the latest version',
+        },
       ],
     },
     {
