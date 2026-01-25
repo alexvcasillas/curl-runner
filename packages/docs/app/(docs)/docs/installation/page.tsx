@@ -30,12 +30,11 @@ import {
 export const metadata: Metadata = {
   title: 'Installation',
   description:
-    'Install curl-runner on your system using your preferred package manager or download a pre-built binary. Support for Bun, npm, and Docker installation methods.',
+    'Install curl-runner on your system using your preferred package manager or download a pre-built binary. Support for Bun, npm, and standalone executables.',
   keywords: [
     'curl-runner installation',
     'bun install curl-runner',
     'npm install curl-runner',
-    'docker curl-runner',
     'CLI tool installation',
     'HTTP client setup',
     'package manager installation',
@@ -46,7 +45,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'Installation | curl-runner Documentation',
     description:
-      'Install curl-runner on your system using your preferred package manager or download a pre-built binary. Support for Bun, npm, and Docker installation methods.',
+      'Install curl-runner on your system using your preferred package manager or download a pre-built binary. Support for Bun, npm, and standalone executables.',
     url: 'https://www.curl-runner.com/docs/installation',
     type: 'article',
   },

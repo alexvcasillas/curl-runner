@@ -179,7 +179,7 @@ export default function DownloadsPage() {
             </p>
           </div>
 
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="max-w-xl mx-auto">
             <div className="rounded-lg border bg-card p-6">
               <h3 className="font-semibold mb-2 text-lg">Package Managers</h3>
               <p className="text-sm text-muted-foreground mb-4">
@@ -192,19 +192,6 @@ export default function DownloadsPage() {
                 <Link href="/docs/installation#installation-methods">
                   View All Package Managers
                 </Link>
-              </Button>
-            </div>
-
-            <div className="rounded-lg border bg-card p-6">
-              <h3 className="font-semibold mb-2 text-lg">Docker</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Use our official Docker image for containerized environments
-              </p>
-              <code className="block bg-muted p-3 rounded text-sm mb-4">
-                docker pull curlrunner/curl-runner:latest
-              </code>
-              <Button asChild variant="outline" size="sm">
-                <Link href="/docs/installation#docker">View Docker Guide</Link>
               </Button>
             </div>
           </div>
