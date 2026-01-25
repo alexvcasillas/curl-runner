@@ -1,9 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  getUpgradeCommand,
-  getUpgradeCommandWindows,
-  isWindows,
-} from './installation-detector';
+import { getUpgradeCommand, getUpgradeCommandWindows, isWindows } from './installation-detector';
 
 describe('getUpgradeCommand', () => {
   test('returns bun command for bun source', () => {
@@ -15,11 +11,15 @@ describe('getUpgradeCommand', () => {
   });
 
   test('returns curl command for curl source', () => {
-    expect(getUpgradeCommand('curl')).toBe('curl -fsSL https://www.curl-runner.com/install.sh | bash');
+    expect(getUpgradeCommand('curl')).toBe(
+      'curl -fsSL https://www.curl-runner.com/install.sh | bash',
+    );
   });
 
   test('returns curl command for standalone source', () => {
-    expect(getUpgradeCommand('standalone')).toBe('curl -fsSL https://www.curl-runner.com/install.sh | bash');
+    expect(getUpgradeCommand('standalone')).toBe(
+      'curl -fsSL https://www.curl-runner.com/install.sh | bash',
+    );
   });
 });
 
@@ -33,11 +33,15 @@ describe('getUpgradeCommandWindows', () => {
   });
 
   test('returns PowerShell command for curl source', () => {
-    expect(getUpgradeCommandWindows('curl')).toBe('irm https://www.curl-runner.com/install.ps1 | iex');
+    expect(getUpgradeCommandWindows('curl')).toBe(
+      'irm https://www.curl-runner.com/install.ps1 | iex',
+    );
   });
 
   test('returns PowerShell command for standalone source', () => {
-    expect(getUpgradeCommandWindows('standalone')).toBe('irm https://www.curl-runner.com/install.ps1 | iex');
+    expect(getUpgradeCommandWindows('standalone')).toBe(
+      'irm https://www.curl-runner.com/install.ps1 | iex',
+    );
   });
 });
 

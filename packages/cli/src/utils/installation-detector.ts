@@ -54,8 +54,12 @@ export function detectInstallationSource(): DetectionResult {
 
 function isBunInstall(execPath: string): boolean {
   // Check if running from bun's global install directory
-  if (execPath.includes('.bun')) return true;
-  if (process.env.BUN_INSTALL && execPath.includes(process.env.BUN_INSTALL)) return true;
+  if (execPath.includes('.bun')) {
+    return true;
+  }
+  if (process.env.BUN_INSTALL && execPath.includes(process.env.BUN_INSTALL)) {
+    return true;
+  }
 
   // Check for bun-specific paths
   const bunPaths = ['/bun/install/', '/.bun/bin/', '/bun/bin/'];
@@ -64,12 +68,20 @@ function isBunInstall(execPath: string): boolean {
 
 function isNpmInstall(execPath: string, argv0: string): boolean {
   // Check for npm global install indicators
-  if (execPath.includes('node_modules')) return true;
-  if (argv0.includes('node_modules')) return true;
+  if (execPath.includes('node_modules')) {
+    return true;
+  }
+  if (argv0.includes('node_modules')) {
+    return true;
+  }
 
   // Check for npm config env vars (set when running via npm)
-  if (process.env.npm_config_prefix) return true;
-  if (process.env.npm_execpath) return true;
+  if (process.env.npm_config_prefix) {
+    return true;
+  }
+  if (process.env.npm_execpath) {
+    return true;
+  }
 
   // Check common npm global paths
   const npmPaths = ['/lib/node_modules/', '/node_modules/.bin/'];

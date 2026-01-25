@@ -4,10 +4,10 @@
 import { color } from '../utils/colors';
 import {
   type DetectionResult,
-  type InstallationSource,
   detectInstallationSource,
   getUpgradeCommand,
   getUpgradeCommandWindows,
+  type InstallationSource,
   isWindows,
 } from '../utils/installation-detector';
 import { getVersion } from '../version';
@@ -101,7 +101,9 @@ export class UpgradeCommand {
         const response = await fetch(NPM_REGISTRY_URL, {
           signal: AbortSignal.timeout(5000),
         });
-        if (!response.ok) return null;
+        if (!response.ok) {
+          return null;
+        }
         const data = (await response.json()) as { version: string };
         return data.version;
       }
@@ -113,7 +115,9 @@ export class UpgradeCommand {
           Accept: 'application/vnd.github.v3+json',
         },
       });
-      if (!response.ok) return null;
+      if (!response.ok) {
+        return null;
+      }
       const data = (await response.json()) as { tag_name: string };
       return data.tag_name.replace(/^v/, '');
     } catch {
@@ -132,8 +136,12 @@ export class UpgradeCommand {
       const currentPart = currentParts[i] || 0;
       const latestPart = latestParts[i] || 0;
 
-      if (latestPart > currentPart) return true;
-      if (latestPart < currentPart) return false;
+      if (latestPart > currentPart) {
+        return true;
+      }
+      if (latestPart < currentPart) {
+        return false;
+      }
     }
 
     return false;

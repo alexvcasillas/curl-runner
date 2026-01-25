@@ -180,7 +180,9 @@ export default function UpgradePage() {
           {/* Options */}
           <section>
             <H2 id="options">Options</H2>
-            <p className="text-muted-foreground text-lg mb-6">Available options for the upgrade command.</p>
+            <p className="text-muted-foreground text-lg mb-6">
+              Available options for the upgrade command.
+            </p>
 
             <div className="grid gap-4 mb-6">
               <div className="rounded-lg border bg-card p-4">

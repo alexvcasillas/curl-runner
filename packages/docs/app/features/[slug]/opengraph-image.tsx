@@ -173,7 +173,13 @@ export default async function Image({ params }: { params: Promise<{ slug: string
             boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
           }}
         >
-          <img src={iconSrc} alt="curl-runner" width="72" height="72" style={{ borderRadius: 10 }} />
+          <img
+            src={iconSrc}
+            alt="curl-runner"
+            width="72"
+            height="72"
+            style={{ borderRadius: 10 }}
+          />
         </div>
 
         {/* Badge */}
