@@ -573,6 +573,7 @@ export class Logger {
           total: summary.total,
           successful: summary.successful,
           failed: summary.failed,
+          skipped: summary.skipped,
           duration: summary.duration,
         },
         results: summary.results.map((result) => ({
@@ -608,10 +609,11 @@ export class Logger {
     if (level === 'minimal') {
       // Simple one-line summary for minimal, similar to docs example
       const statusColor = summary.failed === 0 ? 'green' : 'red';
+      const skippedText = summary.skipped > 0 ? `, ${summary.skipped} skipped` : '';
       const successText =
         summary.failed === 0
-          ? `${summary.total} request${summary.total === 1 ? '' : 's'} completed successfully`
-          : `${summary.successful}/${summary.total} request${summary.total === 1 ? '' : 's'} completed, ${summary.failed} failed`;
+          ? `${summary.total} request${summary.total === 1 ? '' : 's'} completed successfully${skippedText}`
+          : `${summary.successful}/${summary.total} request${summary.total === 1 ? '' : 's'} completed, ${summary.failed} failed${skippedText}`;
 
       const summaryPrefix = isGlobal ? '◆ Global Summary' : 'Summary';
       console.log(`${summaryPrefix}: ${this.color(successText, statusColor)}`);
@@ -621,10 +623,11 @@ export class Logger {
     // Compact summary for standard/detailed - much simpler
     const _successRate = ((summary.successful / summary.total) * 100).toFixed(1);
     const statusColor = summary.failed === 0 ? 'green' : 'red';
+    const skippedText = summary.skipped > 0 ? `, ${summary.skipped} skipped` : '';
     const successText =
       summary.failed === 0
-        ? `${summary.total} request${summary.total === 1 ? '' : 's'} completed successfully`
-        : `${summary.successful}/${summary.total} request${summary.total === 1 ? '' : 's'} completed, ${summary.failed} failed`;
+        ? `${summary.total} request${summary.total === 1 ? '' : 's'} completed successfully${skippedText}`
+        : `${summary.successful}/${summary.total} request${summary.total === 1 ? '' : 's'} completed, ${summary.failed} failed${skippedText}`;
 
     const summaryPrefix = isGlobal ? '◆ Global Summary' : 'Summary';
     console.log();
@@ -656,6 +659,42 @@ export class Logger {
 
   logSuccess(message: string): void {
     console.log(this.color(`✓ ${message}`, 'green'));
+  }
+
+  logSkipped(config: RequestConfig, index: number, reason?: string): void {
+    if (!this.shouldShowOutput()) {
+      return;
+    }
+
+    const name = config.name || `Request ${index}`;
+    const reasonText = reason ? ` - ${reason}` : '';
+
+    if (this.config.format === 'json') {
+      const jsonResult = {
+        request: {
+          name: config.name,
+          url: config.url,
+          method: config.method || 'GET',
+        },
+        skipped: true,
+        reason: reason || 'condition not met',
+      };
+      console.log(JSON.stringify(jsonResult, null, 2));
+      return;
+    }
+
+    // Pretty format
+    console.log(`${this.color('⊘', 'yellow')} ${this.color(name, 'bright')} ${this.color('[SKIP]', 'yellow')}`);
+
+    if (reason) {
+      const treeNodes: TreeNode[] = [
+        { label: 'Reason', value: reason, color: 'yellow' },
+      ];
+      const renderer = new TreeRenderer(this.colors);
+      renderer.render(treeNodes);
+    }
+
+    console.log();
   }
 
   logFileHeader(fileName: string, requestCount: number): void {
