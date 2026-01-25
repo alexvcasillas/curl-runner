@@ -1,13 +1,16 @@
 #!/usr/bin/env bun
 
 import { Glob } from 'bun';
+import { BaselineManager, DiffFormatter, DiffOrchestrator } from './diff';
 import { ProfileExecutor } from './executor/profile-executor';
 import { RequestExecutor } from './executor/request-executor';
 import { YamlParser } from './parser/yaml';
 import type {
+  DiffConfig,
   ExecutionResult,
   ExecutionSummary,
   GlobalConfig,
+  GlobalDiffConfig,
   ProfileConfig,
   RequestConfig,
   WatchConfig,
@@ -244,6 +247,52 @@ class CurlRunnerCLI {
       };
     }
 
+    // Diff configuration
+    if (process.env.CURL_RUNNER_DIFF) {
+      envConfig.diff = {
+        ...envConfig.diff,
+        enabled: process.env.CURL_RUNNER_DIFF.toLowerCase() === 'true',
+      };
+    }
+
+    if (process.env.CURL_RUNNER_DIFF_SAVE) {
+      envConfig.diff = {
+        ...envConfig.diff,
+        save: process.env.CURL_RUNNER_DIFF_SAVE.toLowerCase() === 'true',
+      };
+    }
+
+    if (process.env.CURL_RUNNER_DIFF_LABEL) {
+      envConfig.diff = {
+        ...envConfig.diff,
+        label: process.env.CURL_RUNNER_DIFF_LABEL,
+      };
+    }
+
+    if (process.env.CURL_RUNNER_DIFF_COMPARE) {
+      envConfig.diff = {
+        ...envConfig.diff,
+        compareWith: process.env.CURL_RUNNER_DIFF_COMPARE,
+      };
+    }
+
+    if (process.env.CURL_RUNNER_DIFF_DIR) {
+      envConfig.diff = {
+        ...envConfig.diff,
+        dir: process.env.CURL_RUNNER_DIFF_DIR,
+      };
+    }
+
+    if (process.env.CURL_RUNNER_DIFF_OUTPUT) {
+      const format = process.env.CURL_RUNNER_DIFF_OUTPUT.toLowerCase();
+      if (['terminal', 'json', 'markdown'].includes(format)) {
+        envConfig.diff = {
+          ...envConfig.diff,
+          outputFormat: format as 'terminal' | 'json' | 'markdown',
+        };
+      }
+    }
+
     return envConfig;
   }
 
@@ -266,6 +315,12 @@ class CurlRunnerCLI {
 
       if (options.version) {
         console.log(`curl-runner v${getVersion()}`);
+        return;
+      }
+
+      // Handle diff subcommand: curl-runner diff <label1> <label2> [file]
+      if (args[0] === 'diff' && args.length >= 3) {
+        await this.executeDiffSubcommand(args.slice(1), options);
         return;
       }
 
@@ -413,6 +468,46 @@ class CurlRunnerCLI {
         globalConfig.snapshot = {
           ...globalConfig.snapshot,
           ci: options.snapshotCi as boolean,
+        };
+      }
+
+      // Apply diff options
+      if (options.diff !== undefined) {
+        globalConfig.diff = {
+          ...globalConfig.diff,
+          enabled: options.diff as boolean,
+        };
+      }
+      if (options.diffSave !== undefined) {
+        globalConfig.diff = {
+          ...globalConfig.diff,
+          enabled: true,
+          save: options.diffSave as boolean,
+        };
+      }
+      if (options.diffLabel !== undefined) {
+        globalConfig.diff = {
+          ...globalConfig.diff,
+          label: options.diffLabel as string,
+        };
+      }
+      if (options.diffCompare !== undefined) {
+        globalConfig.diff = {
+          ...globalConfig.diff,
+          enabled: true,
+          compareWith: options.diffCompare as string,
+        };
+      }
+      if (options.diffDir !== undefined) {
+        globalConfig.diff = {
+          ...globalConfig.diff,
+          dir: options.diffDir as string,
+        };
+      }
+      if (options.diffOutput !== undefined) {
+        globalConfig.diff = {
+          ...globalConfig.diff,
+          outputFormat: options.diffOutput as 'terminal' | 'json' | 'markdown',
         };
       }
 
@@ -593,7 +688,136 @@ class CurlRunnerCLI {
       summary = await executor.execute(allRequests);
     }
 
+    // Handle diff mode
+    if (globalConfig.diff?.enabled || globalConfig.diff?.save || globalConfig.diff?.compareWith) {
+      await this.handleDiffMode(yamlFiles[0], summary.results, globalConfig.diff);
+    }
+
     return summary;
+  }
+
+  private async handleDiffMode(
+    yamlPath: string,
+    results: ExecutionResult[],
+    diffConfig: GlobalDiffConfig,
+  ): Promise<void> {
+    const orchestrator = new DiffOrchestrator(diffConfig);
+    const formatter = new DiffFormatter(diffConfig.outputFormat || 'terminal');
+    const config: DiffConfig = BaselineManager.mergeConfig(diffConfig, true) || {};
+
+    const currentLabel = diffConfig.label || 'current';
+    const compareLabel = diffConfig.compareWith;
+
+    // Save baseline if requested
+    if (diffConfig.save) {
+      await orchestrator.saveBaseline(yamlPath, currentLabel, results, config);
+      this.logger.logInfo(`Baseline saved as '${currentLabel}'`);
+    }
+
+    // Compare with baseline if requested
+    if (compareLabel) {
+      const diffSummary = await orchestrator.compareWithBaseline(
+        yamlPath,
+        results,
+        currentLabel,
+        compareLabel,
+        config,
+      );
+
+      // Check if baseline exists
+      if (diffSummary.newBaselines === diffSummary.totalRequests) {
+        this.logger.logWarning(
+          `No baseline '${compareLabel}' found. Saving current run as baseline.`,
+        );
+        await orchestrator.saveBaseline(yamlPath, compareLabel, results, config);
+        return;
+      }
+
+      const output = formatter.formatSummary(diffSummary, compareLabel, currentLabel);
+      console.log(output);
+
+      // Save current as baseline if configured
+      if (diffConfig.save) {
+        await orchestrator.saveBaseline(yamlPath, currentLabel, results, config);
+      }
+    } else if (diffConfig.enabled && !diffConfig.save) {
+      // Auto-detect: list available baselines or save first baseline
+      const labels = await orchestrator.listLabels(yamlPath);
+
+      if (labels.length === 0) {
+        // No baselines exist - save current as default baseline
+        await orchestrator.saveBaseline(yamlPath, 'baseline', results, config);
+        this.logger.logInfo(`No baselines found. Saved current run as 'baseline'.`);
+      } else if (labels.length === 1) {
+        // One baseline exists - compare against it
+        const diffSummary = await orchestrator.compareWithBaseline(
+          yamlPath,
+          results,
+          currentLabel,
+          labels[0],
+          config,
+        );
+        const output = formatter.formatSummary(diffSummary, labels[0], currentLabel);
+        console.log(output);
+      } else {
+        // Multiple baselines - list them
+        this.logger.logInfo(`Available baselines: ${labels.join(', ')}`);
+        this.logger.logInfo(`Use --diff-compare <label> to compare against a specific baseline.`);
+      }
+    }
+  }
+
+  /**
+   * Executes the diff subcommand to compare two stored baselines.
+   * Usage: curl-runner diff <label1> <label2> [file.yaml]
+   */
+  private async executeDiffSubcommand(
+    args: string[],
+    options: Record<string, unknown>,
+  ): Promise<void> {
+    const label1 = args[0];
+    const label2 = args[1];
+    let yamlFile = args[2];
+
+    // Find YAML file if not specified
+    if (!yamlFile) {
+      const yamlFiles = await this.findYamlFiles([], options);
+      if (yamlFiles.length === 0) {
+        this.logger.logError(
+          'No YAML files found. Specify a file: curl-runner diff <label1> <label2> <file.yaml>',
+        );
+        process.exit(1);
+      }
+      if (yamlFiles.length > 1) {
+        this.logger.logError('Multiple YAML files found. Specify which file to use.');
+        process.exit(1);
+      }
+      yamlFile = yamlFiles[0];
+    }
+
+    const diffConfig: GlobalDiffConfig = {
+      dir: (options.diffDir as string) || '__baselines__',
+      outputFormat: (options.diffOutput as 'terminal' | 'json' | 'markdown') || 'terminal',
+    };
+
+    const orchestrator = new DiffOrchestrator(diffConfig);
+    const formatter = new DiffFormatter(diffConfig.outputFormat || 'terminal');
+    const config: DiffConfig = { exclude: [], match: {} };
+
+    try {
+      const diffSummary = await orchestrator.compareTwoBaselines(yamlFile, label1, label2, config);
+      const output = formatter.formatSummary(diffSummary, label1, label2);
+      console.log(output);
+
+      // Exit with code 1 if differences found
+      if (diffSummary.changed > 0) {
+        process.exit(1);
+      }
+      process.exit(0);
+    } catch (error) {
+      this.logger.logError(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
   }
 
   private parseArguments(args: string[]): { files: string[]; options: Record<string, unknown> } {
@@ -637,6 +861,10 @@ class CurlRunnerCLI {
           options.snapshotUpdate = 'failing';
         } else if (key === 'ci-snapshot') {
           options.snapshotCi = true;
+        } else if (key === 'diff') {
+          options.diff = true;
+        } else if (key === 'diff-save') {
+          options.diffSave = true;
         } else if (nextArg && !nextArg.startsWith('--')) {
           if (key === 'continue-on-error') {
             options.continueOnError = nextArg === 'true';
@@ -680,6 +908,16 @@ class CurlRunnerCLI {
             options.profileExport = nextArg;
           } else if (key === 'snapshot-dir') {
             options.snapshotDir = nextArg;
+          } else if (key === 'diff-label') {
+            options.diffLabel = nextArg;
+          } else if (key === 'diff-compare') {
+            options.diffCompare = nextArg;
+          } else if (key === 'diff-dir') {
+            options.diffDir = nextArg;
+          } else if (key === 'diff-output') {
+            if (['terminal', 'json', 'markdown'].includes(nextArg)) {
+              options.diffOutput = nextArg;
+            }
           } else {
             options[key] = nextArg;
           }
@@ -714,6 +952,9 @@ class CurlRunnerCLI {
               break;
             case 'u':
               options.snapshotUpdate = 'all';
+              break;
+            case 'd':
+              options.diff = true;
               break;
             case 'o': {
               // Handle -o flag for output file
@@ -854,6 +1095,7 @@ class CurlRunnerCLI {
       ci: { ...base.ci, ...override.ci },
       watch: { ...base.watch, ...override.watch },
       snapshot: { ...base.snapshot, ...override.snapshot },
+      diff: { ...base.diff, ...override.diff },
     };
   }
 
@@ -960,6 +1202,18 @@ ${this.logger.color('SNAPSHOT OPTIONS:', 'yellow')}
   --snapshot-dir <dir>          Custom snapshot directory (default: __snapshots__)
   --ci-snapshot                 Fail if snapshot is missing (CI mode)
 
+${this.logger.color('DIFF OPTIONS:', 'yellow')}
+  -d, --diff                    Enable response diffing (compare with baseline)
+  --diff-save                   Save current run as baseline
+  --diff-label <name>           Label for current run (e.g., 'staging', 'v1.0')
+  --diff-compare <label>        Compare against this baseline label
+  --diff-dir <dir>              Baseline storage directory (default: __baselines__)
+  --diff-output <format>        Output format (terminal|json|markdown)
+
+${this.logger.color('DIFF SUBCOMMAND:', 'yellow')}
+  curl-runner diff <label1> <label2> [file.yaml]
+                                Compare two stored baselines without making requests
+
 ${this.logger.color('EXAMPLES:', 'yellow')}
   # Run all YAML files in current directory
   curl-runner
@@ -1026,6 +1280,21 @@ ${this.logger.color('EXAMPLES:', 'yellow')}
 
   # CI mode - fail if snapshot missing
   curl-runner api.yaml --snapshot --ci-snapshot
+
+  # Response diffing - save baseline for staging
+  curl-runner api.yaml --diff-save --diff-label staging
+
+  # Compare current run against staging baseline
+  curl-runner api.yaml --diff --diff-compare staging
+
+  # Compare staging vs production baselines (offline)
+  curl-runner diff staging production api.yaml
+
+  # Auto-diff: creates baseline on first run, compares on subsequent runs
+  curl-runner api.yaml --diff
+
+  # Diff with JSON output for CI
+  curl-runner api.yaml --diff --diff-compare staging --diff-output json
 
 ${this.logger.color('YAML STRUCTURE:', 'yellow')}
   Single request:

@@ -1,0 +1,16 @@
+# Basic Response Diffing
+# Save baseline: curl-runner examples/response-diffing-basic.yaml --diff-save --diff-label baseline
+# Compare later: curl-runner examples/response-diffing-basic.yaml --diff --diff-compare baseline
+# Auto mode:     curl-runner examples/response-diffing-basic.yaml --diff
+
+global:
+  diff:
+    exclude:
+      - "body.headers.Date"
+      - "body.headers.X-Request-Id"
+      - "*.timestamp"
+
+request:
+  name: Get IP Info
+  url: https://httpbin.org/get
+  method: GET

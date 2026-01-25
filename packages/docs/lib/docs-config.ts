@@ -112,6 +112,11 @@ export const docsConfig: SidebarConfig = {
           description: 'Save and compare response snapshots for regression testing',
         },
         {
+          title: 'Response Diffing',
+          href: '/docs/features/response-diffing',
+          description: 'Compare responses between environments to detect API drift',
+        },
+        {
           title: 'Retry Mechanism',
           href: '/docs/features/retry-mechanism',
           description: 'Automatic retry with exponential backoff',
