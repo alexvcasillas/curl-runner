@@ -18,8 +18,10 @@ import { DownloadsSection } from '@/components/downloads-section';
 import { Badge } from '@/components/ui/badge';
 import {
   bunInstallExample,
+  curlInstallerExample,
   linuxBinaryInstallExample,
   npmInstallExample,
+  powershellInstallerExample,
   verifyChecksumLinuxExample,
   verifyChecksumMacOSExample,
   verifyChecksumWindowsExample,
@@ -93,16 +95,54 @@ bun --version`}
             </div>
           </section>
 
+          {/* Quick Install */}
+          <section>
+            <h2 className="text-2xl font-semibold tracking-tight mb-4">Quick Install</h2>
+            <p className="text-muted-foreground mb-4">
+              The fastest way to install <code className="font-mono">curl-runner</code>. Downloads the
+              latest pre-compiled binary, verifies checksum, and adds to PATH automatically.
+            </p>
+
+            <div className="space-y-6">
+              <div className="space-y-3">
+                <div className="flex items-center space-x-2">
+                  <h3 className="text-xl font-semibold">Linux / macOS</h3>
+                  <Badge variant="default">Recommended</Badge>
+                </div>
+                <CodeBlockServer language="bash">{curlInstallerExample}</CodeBlockServer>
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="text-xl font-semibold">Windows (PowerShell)</h3>
+                <CodeBlockServer language="powershell">{powershellInstallerExample}</CodeBlockServer>
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-green-50/50 dark:bg-green-950/20 p-4 mt-6">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-foreground">No Prerequisites</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    The installer downloads a standalone binary with Bun bundled. No runtime
+                    dependencies required.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
           {/* Installation Methods */}
           <section>
-            <h2 className="text-2xl font-semibold tracking-tight mb-4">Installation Methods</h2>
+            <h2 className="text-2xl font-semibold tracking-tight mb-4">Package Managers</h2>
 
             <div className="space-y-8">
               {/* Bun Installation */}
               <div className="space-y-3">
                 <div className="flex items-center space-x-2">
                   <h3 className="text-xl font-semibold">Bun Package Manager</h3>
-                  <Badge variant="default">Recommended</Badge>
                 </div>
                 <p className="text-muted-foreground">
                   Install using Bun for optimal performance and compatibility.
@@ -435,10 +475,18 @@ export PATH="$PATH:~/.bun/bin"`}
               </li>
               <li className="mt-0 pt-2">
                 <a
-                  href="#installation-methods"
+                  href="#quick-install"
                   className="inline-block no-underline transition-colors hover:text-foreground text-muted-foreground"
                 >
-                  Installation Methods
+                  Quick Install
+                </a>
+              </li>
+              <li className="mt-0 pt-2">
+                <a
+                  href="#package-managers"
+                  className="inline-block no-underline transition-colors hover:text-foreground text-muted-foreground"
+                >
+                  Package Managers
                 </a>
               </li>
               <li className="mt-0 pt-2">
