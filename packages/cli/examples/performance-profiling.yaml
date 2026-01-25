@@ -1,0 +1,28 @@
+# Performance Profiling Example
+# Run with: curl-runner examples/performance-profiling.yaml -P 50
+
+# Global profile config (can also be set via CLI flags)
+global:
+  profile:
+    iterations: 50      # Run each request 50 times
+    warmup: 5           # Exclude first 5 iterations from stats
+    concurrency: 1      # Sequential execution (use higher for load testing)
+    histogram: true     # Show latency distribution
+
+requests:
+  - name: Health Check
+    url: https://httpbin.org/get
+    method: GET
+    expect:
+      status: 200
+
+  - name: POST Latency Test
+    url: https://httpbin.org/post
+    method: POST
+    headers:
+      Content-Type: application/json
+    body:
+      test: "data"
+      timestamp: "${TIMESTAMP}"
+    expect:
+      status: 200

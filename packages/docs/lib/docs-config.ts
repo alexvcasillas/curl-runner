@@ -131,6 +131,11 @@ export const docsConfig: SidebarConfig = {
           href: '/docs/features/ci-integration',
           description: 'CI-friendly exit codes for pipeline integration',
         },
+        {
+          title: 'Performance Profiling',
+          href: '/docs/features/performance-profiling',
+          description: 'Run requests N times for p50/p95/p99 latency stats',
+        },
       ],
     },
     {
