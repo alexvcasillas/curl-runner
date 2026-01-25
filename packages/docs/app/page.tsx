@@ -97,6 +97,13 @@ export default function Home() {
 
             <div className="flex gap-4 items-center flex-col sm:flex-row">
               <Button asChild size="lg" className="h-11 bg-cyan-500 hover:bg-cyan-600 text-white">
+                <Link href="/downloads">
+                  <Download className="mr-2 h-4 w-4" />
+                  Download
+                </Link>
+              </Button>
+
+              <Button variant="outline" size="lg" className="h-11" asChild>
                 <Link href="/docs/quick-start">
                   <Play className="mr-2 h-4 w-4" />
                   Get Started
