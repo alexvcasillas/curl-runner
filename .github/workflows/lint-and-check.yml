@@ -44,6 +44,3 @@ jobs:
 
       - name: Build CLI
         run: bun run build:cli
-
-      - name: Build Docs
-        run: bun run build:docs
