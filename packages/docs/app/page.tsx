@@ -20,6 +20,7 @@ import { SiteHeader } from '@/components/site-header';
 import { SoftwareDocumentationSchema } from '@/components/structured-data';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { getAllFeatures } from '@/lib/features-data';
 import { exampleYaml, installCommand, runCommand } from './snippets';
 
 export const metadata: Metadata = {
@@ -398,6 +399,59 @@ export default function Home() {
                 </div>
               </div>
             </div>
+          </div>
+        </section>
+
+        {/* Feature Showcase Section */}
+        <section className="container mx-auto max-w-7xl py-8 md:py-12 lg:py-24 px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <Badge className="text-sm mb-4 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20">
+              Explore Features
+            </Badge>
+            <h2 className="text-2xl font-bold tracking-tight sm:text-4xl md:text-5xl">
+              <span className="bg-gradient-to-br from-black to-gray-600 bg-clip-text text-transparent dark:from-white dark:to-gray-300">
+                Discover what makes
+              </span>
+              <br />
+              <span className="bg-gradient-to-br from-cyan-400 to-cyan-600 bg-clip-text text-transparent">
+                curl-runner powerful
+              </span>
+            </h2>
+            <p className="mx-auto mt-4 max-w-2xl text-base sm:text-lg text-muted-foreground">
+              Explore our comprehensive feature set designed for modern API testing and automation
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {getAllFeatures().map((feature) => {
+              const Icon = feature.icon;
+              return (
+                <Link
+                  key={feature.slug}
+                  href={`/features/${feature.slug}`}
+                  className="group relative rounded-lg border bg-card p-6 hover:border-cyan-500/50 transition-all hover:shadow-lg"
+                >
+                  <div className="flex items-start gap-4">
+                    <div
+                      className={`rounded-lg bg-${feature.color}-500/10 p-2.5 group-hover:bg-${feature.color}-500/20 transition-colors`}
+                    >
+                      <Icon
+                        className={`h-5 w-5 text-${feature.color}-600 dark:text-${feature.color}-400`}
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold mb-2 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors">
+                        {feature.title}
+                      </h3>
+                      <p className="text-sm text-muted-foreground line-clamp-2">
+                        {feature.shortDescription}
+                      </p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-transform group-hover:translate-x-1" />
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         </section>
 
