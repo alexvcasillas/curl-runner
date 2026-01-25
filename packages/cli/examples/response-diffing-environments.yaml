@@ -1,0 +1,50 @@
+# Response Diffing Between Environments
+#
+# Workflow:
+# 1. Save staging baseline:
+#    curl-runner examples/response-diffing-environments.yaml --diff-save --diff-label staging
+#
+# 2. Save production baseline:
+#    curl-runner examples/response-diffing-environments.yaml --diff-save --diff-label production
+#
+# 3. Compare environments (offline, no requests):
+#    curl-runner diff staging production examples/response-diffing-environments.yaml
+#
+# 4. Compare current run against staging:
+#    curl-runner examples/response-diffing-environments.yaml --diff --diff-compare staging
+#
+# CI Example (JSON output):
+#    curl-runner examples/response-diffing-environments.yaml --diff --diff-compare staging --diff-output json
+
+global:
+  diff:
+    enabled: true
+    exclude:
+      - "*.timestamp"
+      - "*.Date"
+      - "body.headers.X-Request-Id"
+      - "body.headers.X-Amzn-Trace-Id"
+    match:
+      "body.origin": "*"  # IP address can change
+
+requests:
+  - name: Get Request Info
+    url: https://httpbin.org/get
+    method: GET
+    diff:
+      exclude:
+        - "body.headers.Host"
+
+  - name: Get Headers
+    url: https://httpbin.org/headers
+    method: GET
+
+  - name: Post Data
+    url: https://httpbin.org/post
+    method: POST
+    body:
+      username: testuser
+      action: login
+    diff:
+      match:
+        "body.headers.Content-Length": "*"
