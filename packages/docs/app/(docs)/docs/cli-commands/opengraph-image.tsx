@@ -28,7 +28,6 @@ export default async function Image() {
         alignItems: 'center',
         justifyContent: 'center',
         flexDirection: 'column',
-        fontFamily: 'system-ui, sans-serif',
       }}
     >
       {/* Background Pattern */}

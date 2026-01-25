@@ -15,7 +15,6 @@ export default async function Image() {
     <div
       style={{
         fontSize: 48,
-        fontFamily: 'system-ui, sans-serif',
         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
         width: '100%',
         height: '100%',
