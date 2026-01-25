@@ -1,16 +1,19 @@
 #!/usr/bin/env bun
 
 import { Glob } from 'bun';
+import { ProfileExecutor } from './executor/profile-executor';
 import { RequestExecutor } from './executor/request-executor';
 import { YamlParser } from './parser/yaml';
 import type {
   ExecutionResult,
   ExecutionSummary,
   GlobalConfig,
+  ProfileConfig,
   RequestConfig,
   WatchConfig,
 } from './types/config';
 import { Logger } from './utils/logger';
+import { exportToCSV, exportToJSON } from './utils/stats';
 import { VersionChecker } from './utils/version-checker';
 import { getVersion } from './version';
 import { FileWatcher } from './watcher/file-watcher';
@@ -163,6 +166,49 @@ class CurlRunnerCLI {
       envConfig.watch = {
         ...envConfig.watch,
         clear: process.env.CURL_RUNNER_WATCH_CLEAR.toLowerCase() !== 'false',
+      };
+    }
+
+    // Profile mode configuration
+    if (process.env.CURL_RUNNER_PROFILE) {
+      const iterations = Number.parseInt(process.env.CURL_RUNNER_PROFILE, 10);
+      if (iterations > 0) {
+        envConfig.profile = {
+          ...envConfig.profile,
+          iterations,
+        };
+      }
+    }
+
+    if (process.env.CURL_RUNNER_PROFILE_WARMUP) {
+      envConfig.profile = {
+        ...envConfig.profile,
+        iterations: envConfig.profile?.iterations ?? 10,
+        warmup: Number.parseInt(process.env.CURL_RUNNER_PROFILE_WARMUP, 10),
+      };
+    }
+
+    if (process.env.CURL_RUNNER_PROFILE_CONCURRENCY) {
+      envConfig.profile = {
+        ...envConfig.profile,
+        iterations: envConfig.profile?.iterations ?? 10,
+        concurrency: Number.parseInt(process.env.CURL_RUNNER_PROFILE_CONCURRENCY, 10),
+      };
+    }
+
+    if (process.env.CURL_RUNNER_PROFILE_HISTOGRAM) {
+      envConfig.profile = {
+        ...envConfig.profile,
+        iterations: envConfig.profile?.iterations ?? 10,
+        histogram: process.env.CURL_RUNNER_PROFILE_HISTOGRAM.toLowerCase() === 'true',
+      };
+    }
+
+    if (process.env.CURL_RUNNER_PROFILE_EXPORT) {
+      envConfig.profile = {
+        ...envConfig.profile,
+        iterations: envConfig.profile?.iterations ?? 10,
+        exportFile: process.env.CURL_RUNNER_PROFILE_EXPORT,
       };
     }
 
@@ -319,7 +365,36 @@ class CurlRunnerCLI {
       // Check if watch mode is enabled
       const watchEnabled = options.watch || globalConfig.watch?.enabled;
 
-      if (watchEnabled) {
+      // Check if profile mode is enabled (mutually exclusive with watch mode)
+      const profileIterations =
+        (options.profile as number | undefined) ?? globalConfig.profile?.iterations;
+      const profileEnabled = profileIterations && profileIterations > 0;
+
+      if (watchEnabled && profileEnabled) {
+        this.logger.logError('Profile mode and watch mode cannot be used together');
+        process.exit(1);
+      }
+
+      if (profileEnabled) {
+        // Profile mode - run requests multiple times for latency stats
+        const profileConfig: ProfileConfig = {
+          iterations: profileIterations,
+          warmup:
+            (options.profileWarmup as number | undefined) ?? globalConfig.profile?.warmup ?? 1,
+          concurrency:
+            (options.profileConcurrency as number | undefined) ??
+            globalConfig.profile?.concurrency ??
+            1,
+          histogram:
+            (options.profileHistogram as boolean | undefined) ??
+            globalConfig.profile?.histogram ??
+            false,
+          exportFile:
+            (options.profileExport as string | undefined) ?? globalConfig.profile?.exportFile,
+        };
+
+        await this.executeProfileMode(allRequests, globalConfig, profileConfig);
+      } else if (watchEnabled) {
         // Build watch config from options and global config
         const watchConfig: WatchConfig = {
           enabled: true,
@@ -348,6 +423,49 @@ class CurlRunnerCLI {
       this.logger.logError(error instanceof Error ? error.message : String(error));
       process.exit(1);
     }
+  }
+
+  private async executeProfileMode(
+    requests: RequestConfig[],
+    globalConfig: GlobalConfig,
+    profileConfig: ProfileConfig,
+  ): Promise<void> {
+    const profileExecutor = new ProfileExecutor(globalConfig, profileConfig);
+    const results = await profileExecutor.profileRequests(requests);
+
+    this.logger.logProfileSummary(results);
+
+    // Export results if requested
+    if (profileConfig.exportFile) {
+      const exportData: string[] = [];
+      const isCSV = profileConfig.exportFile.endsWith('.csv');
+
+      for (const result of results) {
+        const name = result.request.name || result.request.url;
+        if (isCSV) {
+          exportData.push(exportToCSV(result.stats, name));
+        } else {
+          exportData.push(exportToJSON(result.stats, name));
+        }
+      }
+
+      const content = isCSV ? exportData.join('\n\n') : `[${exportData.join(',\n')}]`;
+      await Bun.write(profileConfig.exportFile, content);
+      this.logger.logInfo(`Profile results exported to ${profileConfig.exportFile}`);
+    }
+
+    // Exit with code 1 if failure rate is high
+    const totalFailures = results.reduce((sum, r) => sum + r.stats.failures, 0);
+    const totalIterations = results.reduce(
+      (sum, r) => sum + r.stats.iterations + r.stats.warmup,
+      0,
+    );
+
+    if (totalFailures > 0 && totalFailures / totalIterations > 0.5) {
+      process.exit(1);
+    }
+
+    process.exit(0);
   }
 
   private async executeRequests(
@@ -450,6 +568,8 @@ class CurlRunnerCLI {
           options.watchClear = true;
         } else if (key === 'no-watch-clear') {
           options.watchClear = false;
+        } else if (key === 'profile-histogram') {
+          options.profileHistogram = true;
         } else if (nextArg && !nextArg.startsWith('--')) {
           if (key === 'continue-on-error') {
             options.continueOnError = nextArg === 'true';
@@ -483,6 +603,14 @@ class CurlRunnerCLI {
             }
           } else if (key === 'watch-debounce') {
             options.watchDebounce = Number.parseInt(nextArg, 10);
+          } else if (key === 'profile') {
+            options.profile = Number.parseInt(nextArg, 10);
+          } else if (key === 'profile-warmup') {
+            options.profileWarmup = Number.parseInt(nextArg, 10);
+          } else if (key === 'profile-concurrency') {
+            options.profileConcurrency = Number.parseInt(nextArg, 10);
+          } else if (key === 'profile-export') {
+            options.profileExport = nextArg;
           } else {
             options[key] = nextArg;
           }
@@ -517,6 +645,15 @@ class CurlRunnerCLI {
               const outputArg = args[i + 1];
               if (outputArg && !outputArg.startsWith('-')) {
                 options.output = outputArg;
+                i++;
+              }
+              break;
+            }
+            case 'P': {
+              // Handle -P flag for profile mode
+              const profileArg = args[i + 1];
+              if (profileArg && !profileArg.startsWith('-')) {
+                options.profile = Number.parseInt(profileArg, 10);
                 i++;
               }
               break;
@@ -728,6 +865,13 @@ ${this.logger.color('WATCH MODE:', 'yellow')}
   --watch-debounce <ms>         Debounce delay for watch mode (default: 300)
   --no-watch-clear              Don't clear screen between watch runs
 
+${this.logger.color('PROFILE MODE:', 'yellow')}
+  -P, --profile <n>             Run each request N times for latency stats
+  --profile-warmup <n>          Warmup iterations to exclude from stats (default: 1)
+  --profile-concurrency <n>     Concurrent iterations (default: 1 = sequential)
+  --profile-histogram           Show ASCII histogram of latency distribution
+  --profile-export <file>       Export raw timings to file (.json or .csv)
+
 ${this.logger.color('CI/CD OPTIONS:', 'yellow')}
   --strict-exit                 Exit with code 1 if any validation fails (for CI/CD)
   --fail-on <count>             Exit with code 1 if failures exceed this count
@@ -781,6 +925,15 @@ ${this.logger.color('EXAMPLES:', 'yellow')}
 
   # Watch with custom debounce
   curl-runner tests/ -w --watch-debounce 500
+
+  # Profile mode - run request 100 times for latency stats
+  curl-runner api.yaml -P 100
+
+  # Profile with 5 warmup iterations and histogram
+  curl-runner api.yaml --profile 50 --profile-warmup 5 --profile-histogram
+
+  # Profile with concurrent iterations and export
+  curl-runner api.yaml -P 100 --profile-concurrency 10 --profile-export results.json
 
 ${this.logger.color('YAML STRUCTURE:', 'yellow')}
   Single request:

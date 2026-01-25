@@ -2,8 +2,10 @@ import type {
   ExecutionResult,
   ExecutionSummary,
   GlobalConfig,
+  ProfileResult,
   RequestConfig,
 } from '../types/config';
+import { generateHistogram } from './stats';
 
 interface TreeNode {
   label: string;
@@ -668,5 +670,124 @@ export class Logger {
       `${this.color(`[${timestamp}]`, 'dim')} File changed: ${this.color(filename, 'yellow')}`,
     );
     console.log();
+  }
+
+  logProfileStart(
+    requestName: string,
+    iterations: number,
+    warmup: number,
+    concurrency: number,
+  ): void {
+    if (!this.shouldShowOutput()) {
+      return;
+    }
+
+    console.log();
+    console.log(`${this.color('⚡ PROFILING', 'magenta')} ${this.color(requestName, 'bright')}`);
+    console.log(
+      this.color(
+        `   ${iterations} iterations, ${warmup} warmup, concurrency: ${concurrency}`,
+        'dim',
+      ),
+    );
+  }
+
+  logProfileResult(result: ProfileResult, showHistogram: boolean): void {
+    const { stats, request } = result;
+    const name = request.name || request.url;
+
+    if (this.config.format === 'json') {
+      console.log(
+        JSON.stringify({
+          request: { name, url: request.url, method: request.method || 'GET' },
+          stats: {
+            iterations: stats.iterations,
+            warmup: stats.warmup,
+            failures: stats.failures,
+            failureRate: stats.failureRate,
+            min: stats.min,
+            max: stats.max,
+            mean: stats.mean,
+            median: stats.median,
+            p50: stats.p50,
+            p95: stats.p95,
+            p99: stats.p99,
+            stdDev: stats.stdDev,
+          },
+        }),
+      );
+      return;
+    }
+
+    if (this.config.format === 'raw') {
+      // Raw format: just print the key stats
+      console.log(`${stats.p50}\t${stats.p95}\t${stats.p99}\t${stats.mean}`);
+      return;
+    }
+
+    // Pretty format
+    console.log();
+    const statusIcon = stats.failures === 0 ? this.color('✓', 'green') : this.color('⚠', 'yellow');
+    console.log(`${statusIcon} ${this.color(name, 'bright')}`);
+
+    // Latency stats table
+    console.log(this.color('   ┌─────────────────────────────────────┐', 'dim'));
+    console.log(
+      `   │ ${this.color('p50', 'cyan')}    ${this.formatLatency(stats.p50).padStart(10)} │ ${this.color('min', 'dim')}   ${this.formatLatency(stats.min).padStart(10)} │`,
+    );
+    console.log(
+      `   │ ${this.color('p95', 'yellow')}    ${this.formatLatency(stats.p95).padStart(10)} │ ${this.color('max', 'dim')}   ${this.formatLatency(stats.max).padStart(10)} │`,
+    );
+    console.log(
+      `   │ ${this.color('p99', 'red')}    ${this.formatLatency(stats.p99).padStart(10)} │ ${this.color('mean', 'dim')}  ${this.formatLatency(stats.mean).padStart(10)} │`,
+    );
+    console.log(this.color('   └─────────────────────────────────────┘', 'dim'));
+
+    // Additional stats
+    console.log(
+      this.color(
+        `   σ ${stats.stdDev.toFixed(2)}ms | ${stats.iterations} samples | ${stats.failures} failures (${stats.failureRate}%)`,
+        'dim',
+      ),
+    );
+
+    // Optional histogram
+    if (showHistogram && stats.timings.length > 0) {
+      console.log();
+      console.log(this.color('   Distribution:', 'dim'));
+      const histogramLines = generateHistogram(stats.timings, 8, 30);
+      for (const line of histogramLines) {
+        console.log(`   ${this.color(line, 'dim')}`);
+      }
+    }
+  }
+
+  private formatLatency(ms: number): string {
+    if (ms < 1) {
+      return `${(ms * 1000).toFixed(0)}µs`;
+    }
+    if (ms < 1000) {
+      return `${ms.toFixed(1)}ms`;
+    }
+    return `${(ms / 1000).toFixed(2)}s`;
+  }
+
+  logProfileSummary(results: ProfileResult[]): void {
+    if (!this.shouldShowOutput()) {
+      return;
+    }
+
+    const totalIterations = results.reduce((sum, r) => sum + r.stats.iterations, 0);
+    const totalFailures = results.reduce((sum, r) => sum + r.stats.failures, 0);
+
+    console.log();
+    console.log(this.color('─'.repeat(50), 'dim'));
+    console.log(
+      `${this.color('⚡ Profile Summary:', 'magenta')} ${results.length} request${results.length === 1 ? '' : 's'}, ${totalIterations} total iterations`,
+    );
+
+    if (totalFailures > 0) {
+      console.log(this.color(`   ${totalFailures} total failures`, 'yellow'));
+    }
   }
 }
