@@ -1,8 +1,7 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import type { ImageResponseOptions } from 'next/dist/compiled/@vercel/og/types';
 import { ImageResponse } from 'next/og';
 import { featuresData } from '@/lib/features-data';
+import { getOgFonts, getOgIcon } from '@/lib/og-fonts';
 
 export const runtime = 'nodejs';
 export const alt = 'curl-runner Feature';
@@ -99,6 +98,7 @@ export function generateImageMetadata() {
 export default async function Image({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const feature = featuresData[slug];
+  const [fonts, iconSrc] = await Promise.all([getOgFonts(), getOgIcon()]);
 
   if (!feature) {
     return new ImageResponse(
@@ -116,12 +116,9 @@ export default async function Image({ params }: { params: Promise<{ slug: string
       >
         Feature not found
       </div>,
-      { ...size } as ImageResponseOptions,
+      { ...size, fonts } as ImageResponseOptions,
     );
   }
-
-  const iconData = await readFile(join(process.cwd(), 'public', 'icon-light-192.png'));
-  const iconSrc = `data:image/png;base64,${iconData.toString('base64')}`;
   const colors = colorMap[feature.color] || colorMap.blue;
 
   return new ImageResponse(
@@ -240,6 +237,6 @@ export default async function Image({ params }: { params: Promise<{ slug: string
         {`curl-runner.com/features/${slug}`}
       </div>
     </div>,
-    { ...size } as ImageResponseOptions,
+    { ...size, fonts } as ImageResponseOptions,
   );
 }

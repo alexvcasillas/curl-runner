@@ -32,6 +32,6 @@ export default async function Image() {
         Configure curl-runner behavior using environment variables
       </div>
     </div>,
-    { ...size },
+    { ...size, fonts },
   );
 }
