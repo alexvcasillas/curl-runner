@@ -1,5 +1,11 @@
 # @curl-runner/cli
 
+## 1.16.0
+
+### Minor Changes
+
+- [#70](https://github.com/alexvcasillas/curl-runner/pull/70) [`c7ed9b3`](https://github.com/alexvcasillas/curl-runner/commit/c7ed9b3a7eda5a3a6943ca0f6f89caa1d1ff01d1) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - feat: add `curl-runner upgrade` command with auto-detection of installation source
+
 ## 1.15.0
 
 ### Minor Changes
