@@ -58,6 +58,87 @@ export type FormDataConfig = Record<string, FormFieldValue>;
 export type StoreConfig = Record<string, string>;
 
 /**
+ * Operators for conditional expressions.
+ */
+export type ConditionOperator =
+  | '=='
+  | '!='
+  | '>'
+  | '<'
+  | '>='
+  | '<='
+  | 'contains'
+  | 'matches'
+  | 'exists'
+  | 'not-exists';
+
+/**
+ * A single condition expression comparing a store value against an expected value.
+ *
+ * Examples:
+ * - `{ left: "store.status", operator: "==", right: 200 }`
+ * - `{ left: "store.userId", operator: "exists" }`
+ * - `{ left: "store.body.type", operator: "contains", right: "user" }`
+ */
+export interface ConditionExpression {
+  /** Left operand - typically a store path like "store.status" or "store.body.id" */
+  left: string;
+  /** Comparison operator */
+  operator: ConditionOperator;
+  /** Right operand - the value to compare against. Optional for exists/not-exists. */
+  right?: string | number | boolean;
+  /** Case-sensitive comparison for string operators. Default: false (case-insensitive) */
+  caseSensitive?: boolean;
+}
+
+/**
+ * Configuration for conditional request execution.
+ * Supports single conditions, AND (all), and OR (any) compound conditions.
+ *
+ * Examples:
+ * ```yaml
+ * # Single condition
+ * when:
+ *   left: store.status
+ *   operator: "=="
+ *   right: 200
+ *
+ * # AND condition (all must be true)
+ * when:
+ *   all:
+ *     - left: store.status
+ *       operator: "=="
+ *       right: 200
+ *     - left: store.userId
+ *       operator: exists
+ *
+ * # OR condition (any must be true)
+ * when:
+ *   any:
+ *     - left: store.type
+ *       operator: "=="
+ *       right: "admin"
+ *     - left: store.type
+ *       operator: "=="
+ *       right: "superuser"
+ * ```
+ */
+export interface WhenCondition {
+  /** All conditions must be true (AND logic) */
+  all?: ConditionExpression[];
+  /** Any condition must be true (OR logic) */
+  any?: ConditionExpression[];
+  /** Single condition - left operand */
+  left?: string;
+  /** Single condition - operator */
+  operator?: ConditionOperator;
+  /** Single condition - right operand */
+  right?: string | number | boolean;
+  /** Case-sensitive comparison for string operators. Default: false */
+  caseSensitive?: boolean;
+}
+
+/**
  * SSL/TLS certificate configuration options.
  *
  * Examples:
@@ -140,6 +221,30 @@ export interface RequestConfig {
    *   contentType: headers.content-type
    */
   store?: StoreConfig;
+  /**
+   * Conditional execution - skip/run request based on previous results.
+   * Only works in sequential execution mode.
+   *
+   * @example
+   * # Object syntax
+   * when:
+   *   left: store.status
+   *   operator: "=="
+   *   right: 200
+   *
+   * # String shorthand
+   * when: "store.status == 200"
+   *
+   * # Compound conditions
+   * when:
+   *   all:
+   *     - left: store.userId
+   *       operator: exists
+   *     - left: store.status
+   *       operator: "<"
+   *       right: 400
+   */
+  when?: WhenCondition | string;
   expect?: {
     failure?: boolean; // If true, expect the request to fail (for negative testing)
     status?: number | number[];
@@ -269,12 +374,17 @@ export interface ExecutionResult {
   };
   /** Snapshot comparison result (if snapshot testing enabled). */
   snapshotResult?: SnapshotCompareResult;
+  /** Whether this request was skipped due to a `when` condition. */
+  skipped?: boolean;
+  /** Reason the request was skipped (condition that failed). */
+  skipReason?: string;
 }
 
 export interface ExecutionSummary {
   total: number;
   successful: number;
   failed: number;
+  skipped: number;
   duration: number;
   results: ExecutionResult[];
 }

@@ -1,0 +1,54 @@
+# Conditional Execution - Basic
+# Skip/run requests based on previous results using `when` field.
+# Usage: curl-runner conditional-basic.yaml
+#
+# IMPORTANT: Conditional execution only works in sequential mode (default).
+
+global:
+  execution: sequential
+  output:
+    format: pretty
+    prettyLevel: standard
+
+requests:
+  # First request: Get a post and store its data
+  - name: Get Post
+    url: https://jsonplaceholder.typicode.com/posts/1
+    method: GET
+    expect:
+      status: 200
+    store:
+      postId: body.id
+      userId: body.userId
+
+  # This request runs only if postId exists
+  - name: Get Post Comments
+    url: https://jsonplaceholder.typicode.com/posts/${store.postId}/comments
+    method: GET
+    when:
+      left: store.postId
+      operator: exists
+    expect:
+      status: 200
+
+  # This request runs only if userId equals 1
+  - name: Get User Details
+    url: https://jsonplaceholder.typicode.com/users/${store.userId}
+    method: GET
+    when:
+      left: store.userId
+      operator: "=="
+      right: 1
+    expect:
+      status: 200
+
+  # This request is skipped because userId is not 999
+  - name: Get Other User (Will Skip)
+    url: https://jsonplaceholder.typicode.com/users/${store.userId}
+    method: GET
+    when:
+      left: store.userId
+      operator: "=="
+      right: 999
+    expect:
+      status: 200
