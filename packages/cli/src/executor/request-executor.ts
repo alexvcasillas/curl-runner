@@ -1,4 +1,5 @@
 import { YamlParser } from '../parser/yaml';
+import { SnapshotManager } from '../snapshot/snapshot-manager';
 import type {
   ExecutionResult,
   ExecutionSummary,
@@ -8,6 +9,7 @@ import type {
   JsonValue,
   RequestConfig,
   ResponseStoreContext,
+  SnapshotConfig,
 } from '../types/config';
 import { CurlBuilder } from '../utils/curl-builder';
 import { Logger } from '../utils/logger';
@@ -16,10 +18,12 @@ import { createStoreContext, extractStoreValues } from '../utils/response-store'
 export class RequestExecutor {
   private logger: Logger;
   private globalConfig: GlobalConfig;
+  private snapshotManager: SnapshotManager;
 
   constructor(globalConfig: GlobalConfig = {}) {
     this.globalConfig = globalConfig;
     this.logger = new Logger(globalConfig.output);
+    this.snapshotManager = new SnapshotManager(globalConfig.snapshot);
   }
 
   private mergeOutputConfig(config: RequestConfig): GlobalConfig['output'] {
@@ -28,6 +32,13 @@ export class RequestExecutor {
       ...this.globalConfig.output, // CLI options, env vars, and defaults (lowest priority)
       ...config.sourceOutputConfig, // Individual file's output config (highest priority)
     };
+  }
+
+  /**
+   * Gets the effective snapshot config for a request.
+   */
+  private getSnapshotConfig(config: RequestConfig): SnapshotConfig | null {
+    return SnapshotManager.mergeConfig(this.globalConfig.snapshot, config.snapshot);
   }
 
   /**
@@ -137,6 +148,25 @@ export class RequestExecutor {
           if (!validationResult.success) {
             executionResult.success = false;
             executionResult.error = validationResult.error;
+          }
+        }
+
+        // Snapshot testing
+        const snapshotConfig = this.getSnapshotConfig(config);
+        if (snapshotConfig && config.sourceFile) {
+          const snapshotResult = await this.snapshotManager.compareAndUpdate(
+            config.sourceFile,
+            config.name || 'Request',
+            executionResult,
+            snapshotConfig,
+          );
+          executionResult.snapshotResult = snapshotResult;
+
+          if (!snapshotResult.match && !snapshotResult.updated) {
+            executionResult.success = false;
+            if (!executionResult.error) {
+              executionResult.error = 'Snapshot mismatch';
+            }
           }
         }
 

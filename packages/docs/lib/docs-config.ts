@@ -97,9 +97,19 @@ export const docsConfig: SidebarConfig = {
           description: 'Validate API responses',
         },
         {
+          title: 'Snapshot Testing',
+          href: '/docs/features/snapshots',
+          description: 'Save and compare response snapshots for regression testing',
+        },
+        {
           title: 'Retry Mechanism',
           href: '/docs/features/retry-mechanism',
           description: 'Automatic retry with exponential backoff',
+        },
+        {
+          title: 'Watch Mode',
+          href: '/docs/features/watch-mode',
+          description: 'Auto re-run requests on file changes',
         },
         {
           title: 'Output Formats',

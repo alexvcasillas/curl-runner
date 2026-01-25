@@ -1,0 +1,47 @@
+# Advanced Snapshot Testing
+# Demonstrates exclusions, wildcards, and multiple includes
+# Run with: curl-runner examples/snapshot-advanced.yaml --snapshot
+
+global:
+  snapshot:
+    dir: "__snapshots__"
+    exclude:
+      - "*.updatedAt"  # Exclude all updatedAt fields
+
+collection:
+  name: Snapshot Testing Examples
+  requests:
+    # Snapshot with status and body
+    - name: Get Posts with Status
+      url: https://jsonplaceholder.typicode.com/posts/1
+      method: GET
+      snapshot:
+        include:
+          - status
+          - body
+        exclude:
+          - body.userId  # Dynamic value
+
+    # Snapshot with headers
+    - name: Get User with Headers
+      url: https://jsonplaceholder.typicode.com/users/1
+      method: GET
+      snapshot:
+        include:
+          - status
+          - headers
+          - body
+        exclude:
+          - headers.date
+          - headers.x-powered-by
+
+    # Snapshot with match rules for dynamic values
+    - name: Get Comments
+      url: https://jsonplaceholder.typicode.com/comments?postId=1
+      method: GET
+      snapshot:
+        include:
+          - body
+        match:
+          "body[0].id": "*"  # Accept any id value
+          "body[0].email": "regex:^[\\w.-]+@[\\w.-]+$"  # Match email pattern
