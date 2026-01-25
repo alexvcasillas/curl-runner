@@ -143,6 +143,7 @@ export default async function Image({ params }: { params: Promise<{ slug: string
           width: '100%',
           height: '100%',
           opacity: 0.15,
+          display: 'flex',
           backgroundImage: `radial-gradient(circle at 25% 25%, ${colors.glow} 0%, transparent 50%), radial-gradient(circle at 75% 75%, ${colors.glow} 0%, transparent 50%)`,
         }}
       />
@@ -227,9 +228,10 @@ export default async function Image({ params }: { params: Promise<{ slug: string
           right: 40,
           fontSize: 18,
           color: '#64748b',
+          display: 'flex',
         }}
       >
-        curl-runner.com/features/{slug}
+        {`curl-runner.com/features/${slug}`}
       </div>
     </div>,
     { ...size } as ImageResponseOptions,

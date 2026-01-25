@@ -33,6 +33,7 @@ export default async function Image() {
           width: '100%',
           height: '100%',
           opacity: 0.1,
+          display: 'flex',
           backgroundImage:
             'radial-gradient(circle at 25% 25%, #10b981 0%, transparent 50%), radial-gradient(circle at 75% 75%, #3b82f6 0%, transparent 50%)',
         }}
@@ -141,6 +142,7 @@ export default async function Image() {
           right: 40,
           fontSize: 18,
           color: '#64748b',
+          display: 'flex',
         }}
       >
         curl-runner.com/downloads
