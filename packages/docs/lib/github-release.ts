@@ -38,11 +38,12 @@ function parseAssets(assets: ReleaseAsset[]): {
   for (const asset of assets) {
     // Parse binary assets
     const binaryMatch = asset.name.match(
-      /^curl-runner-cli-.+-(?<os>linux|darwin|windows)-(?<arch>x64|arm64)\.(tar\.gz|zip)$/,
+      /^curl-runner-cli-.+-(linux|darwin|windows)-(x64|arm64)\.(tar\.gz|zip)$/,
     );
 
-    if (binaryMatch?.groups) {
-      const { os, arch } = binaryMatch.groups;
+    if (binaryMatch) {
+      const os = binaryMatch[1];
+      const arch = binaryMatch[2];
       const platform = `${os}-${arch}`;
 
       binaries.push({
