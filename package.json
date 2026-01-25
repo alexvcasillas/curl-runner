@@ -19,6 +19,8 @@
     "lint": "biome lint .",
     "check": "biome check --write .",
     "check:ci": "biome ci .",
+    "typecheck": "bun run --filter '*' typecheck",
+    "typecheck:docs": "bun run --filter '@curl-runner/docs' typecheck",
     "cli": "bun run packages/cli/src/cli.ts",
     "test": "bun test || echo 'No tests found'",
     "changeset": "changeset",

@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "bun run generate-markdown && next build",
     "start": "next start",
-    "generate-markdown": "bun scripts/jsx-to-markdown-with-frontmatter.ts"
+    "generate-markdown": "bun scripts/jsx-to-markdown-with-frontmatter.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
