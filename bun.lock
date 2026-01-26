@@ -17,7 +17,7 @@
     },
     "packages/cli": {
       "name": "@curl-runner/cli",
-      "version": "1.15.0",
+      "version": "1.16.0",
       "bin": {
         "curl-runner": "./src/cli.ts",
       },
@@ -35,6 +35,8 @@
         "@fontsource/inter": "^5.2.8",
         "@gsap/react": "^2.1.2",
         "@heroicons/react": "^2.2.0",
+        "@pulsora/core": "^1.0.0",
+        "@pulsora/react": "^1.0.0",
         "@radix-ui/react-collapsible": "^1.1.12",
         "@radix-ui/react-dialog": "^1.1.15",
         "@radix-ui/react-dropdown-menu": "^2.1.16",
@@ -331,6 +333,10 @@
     "@nodelib/fs.stat": ["@nodelib/fs.stat@2.0.5", "", {}, "sha512-RkhPPp2zrqDAQA/2jNhnztcPAlv64XdhIp7a7454A5ovI7Bukxgt7MX7udwAu3zg1DcpPU0rz3VV1SeaqvY4+A=="],
 
     "@nodelib/fs.walk": ["@nodelib/fs.walk@1.2.8", "", { "dependencies": { "@nodelib/fs.scandir": "2.1.5", "fastq": "^1.6.0" } }, "sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg=="],
+
+    "@pulsora/core": ["@pulsora/core@1.0.0", "", {}, "sha512-bWU8JvV9x313c1Qd6b+kvE0Z917kkZTLVYX5OxY2q/x3UyKrlDv+xcnc7ZugWzCr2E+YfjEGHwePtghok0TS1Q=="],
+
+    "@pulsora/react": ["@pulsora/react@1.0.0", "", { "peerDependencies": { "@pulsora/core": "^1.0.0", "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0" } }, "sha512-5R3KrryRii5m+T8wFV8drpWl0G3BgKwTQMLvAOcZiICrGQPsyVEW9ervDj/pueO+afDiuG9KLex63SWupzbE4w=="],
 
     "@radix-ui/number": ["@radix-ui/number@1.1.1", "", {}, "sha512-MkKCwxlXTgz6CFoJx3pCwn07GKp36+aZyu/u2Ln2VrA5DcdyCZkASEDBTd8x5whTQQL5CiYf4prXKLcgQdv29g=="],
 
