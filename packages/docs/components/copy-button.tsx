@@ -1,5 +1,6 @@
 'use client';
 
+import { useEvent } from '@pulsora/react';
 import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -8,14 +9,19 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 interface CopyButtonProps {
   value: string;
   className?: string;
+  trackAs?: string;
 }
 
-export function CopyButton({ value, className }: CopyButtonProps) {
+export function CopyButton({ value, className, trackAs }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
+  const track = useEvent();
 
   const onCopy = async () => {
     await navigator.clipboard.writeText(value);
     setCopied(true);
+    if (trackAs) {
+      track('copy_command', { type: trackAs });
+    }
     setTimeout(() => setCopied(false), 2000);
   };
 
