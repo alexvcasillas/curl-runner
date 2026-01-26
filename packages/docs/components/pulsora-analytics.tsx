@@ -11,7 +11,7 @@ function PageviewTracker() {
 
 export function PulsoraAnalytics({ children }: { children: React.ReactNode }) {
   return (
-    <PulsoraProvider config={{ apiToken: 'pub_xOBWAHbZhCDJvbzN0Yytltl2osCI2zAP' }}>
+    <PulsoraProvider config={{ apiToken: 'pub_X62LKER4NpQqrkZ8A7oIbJMFR1k6an0u' }}>
       <PageviewTracker />
       {children}
     </PulsoraProvider>
