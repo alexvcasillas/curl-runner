@@ -13,7 +13,7 @@
     "@fontsource/inter": "^5.2.8",
     "@gsap/react": "^2.1.2",
     "@heroicons/react": "^2.2.0",
-    "@pulsora/core": "^1.0.0",
+    "@pulsora/core": "^1.0.1",
     "@pulsora/react": "^1.0.0",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.15",

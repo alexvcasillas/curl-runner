@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "esnext",
+    "allowJs": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "types": ["remotion", "react", "react-dom"]
+  },
+  "include": ["src/**/*"]
+}
