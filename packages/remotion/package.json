@@ -1,0 +1,22 @@
+{
+  "name": "@curl-runner/remotion",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bunx @remotion/cli preview src/index.ts",
+    "render": "bunx @remotion/cli render src/index.ts curl-runner-promo out/curl-runner-promo.mp4",
+    "still": "bunx @remotion/cli still src/index.ts curl-runner-thumb out/curl-runner-thumb.png"
+  },
+  "dependencies": {
+    "remotion": "^4.0.140",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@remotion/cli": "^4.0.140",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "typescript": "^5.7.2"
+  }
+}

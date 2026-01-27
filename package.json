@@ -61,5 +61,8 @@
     "*.{js,ts,tsx,jsx,json,css,md}": [
       "biome check --write --no-errors-on-unmatched"
     ]
+  },
+  "dependencies": {
+    "@pulsora/core": "1.0.1"
   }
 }
