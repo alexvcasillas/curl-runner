@@ -43,7 +43,7 @@ detect_arch() {
 }
 
 # Get latest release version
-get_latest_version() {
+get_latest_release() {
   local tag version
   tag=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
   if [ -z "$tag" ]; then
@@ -51,16 +51,18 @@ get_latest_version() {
   fi
   # Extract bare version from tag (e.g., "@curl-runner/cli@1.16.0" -> "1.16.0")
   version=$(echo "$tag" | sed -E 's/.*@([0-9]+\.[0-9]+\.[0-9]+)$/\1/')
-  echo "$version"
+  # Return both: "tag version"
+  echo "$tag $version"
 }
 
 # Download and verify checksum
 download_and_verify() {
-  local version="$1"
-  local platform="$2"
+  local tag="$1"
+  local version="$2"
+  local platform="$3"
   local tarball="curl-runner-cli-${version}-${platform}.tar.gz"
-  local download_url="https://github.com/${REPO}/releases/download/${version}/${tarball}"
-  local checksum_url="https://github.com/${REPO}/releases/download/${version}/SHA256SUMS.txt"
+  local download_url="https://github.com/${REPO}/releases/download/${tag}/${tarball}"
+  local checksum_url="https://github.com/${REPO}/releases/download/${tag}/SHA256SUMS.txt"
   local tmp_dir
   tmp_dir=$(mktemp -d)
 
@@ -100,9 +102,9 @@ download_and_verify() {
   info "Extracting binary..."
   tar -xzf "$tarball"
 
-  # Move to install directory
+  # Move to install directory (binary is named curl-runner-{platform})
   mkdir -p "$INSTALL_DIR"
-  mv "$BINARY_NAME" "$INSTALL_DIR/"
+  mv "curl-runner-${platform}" "$INSTALL_DIR/${BINARY_NAME}"
   chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
 
   # Cleanup
@@ -179,7 +181,7 @@ main() {
   echo -e "${BLUE}curl-runner installer${NC}"
   echo ""
 
-  local os arch platform version
+  local os arch platform tag version release_info
 
   os=$(detect_os)
   arch=$(detect_arch)
@@ -187,10 +189,12 @@ main() {
 
   info "Detected platform: ${platform}"
 
-  version=$(get_latest_version)
+  release_info=$(get_latest_release)
+  tag=$(echo "$release_info" | cut -d' ' -f1)
+  version=$(echo "$release_info" | cut -d' ' -f2)
   info "Latest version: ${version}"
 
-  download_and_verify "$version" "$platform"
+  download_and_verify "$tag" "$version" "$platform"
   add_to_path
 
   echo ""
