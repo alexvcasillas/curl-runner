@@ -44,11 +44,13 @@ detect_arch() {
 
 # Get latest release version
 get_latest_version() {
-  local version
-  version=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
-  if [ -z "$version" ]; then
+  local tag version
+  tag=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+  if [ -z "$tag" ]; then
     error "Failed to fetch latest version"
   fi
+  # Extract bare version from tag (e.g., "@curl-runner/cli@1.16.0" -> "1.16.0")
+  version=$(echo "$tag" | sed -E 's/.*@([0-9]+\.[0-9]+\.[0-9]+)$/\1/')
   echo "$version"
 }
 

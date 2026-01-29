@@ -32,7 +32,7 @@
     "access": "public"
   },
   "files": [
-    "src",
+    "dist",
     "README.md"
   ],
   "devDependencies": {
