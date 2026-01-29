@@ -18,38 +18,32 @@ function isFileAttachment(value: FormFieldValue): value is FileAttachment {
   return typeof value === 'object' && value !== null && 'file' in value;
 }
 
-/**
- * Escapes a string value for use in curl -F flag.
- */
-function escapeFormValue(value: string): string {
-  return value.replace(/'/g, "'\\''");
-}
-
 // Using class for organization, but could be refactored to functions
 export class CurlBuilder {
-  static buildCommand(config: RequestConfig): string {
-    const parts: string[] = ['curl'];
+  static buildCommand(config: RequestConfig): string[] {
+    const args: string[] = [];
 
-    parts.push('-X', config.method || 'GET');
+    args.push('-X', config.method || 'GET');
 
-    parts.push('-w', '"\\n__CURL_METRICS_START__%{json}__CURL_METRICS_END__"');
+    args.push('-w', '\n__CURL_METRICS_START__%{json}__CURL_METRICS_END__');
 
     if (config.headers) {
       for (const [key, value] of Object.entries(config.headers)) {
-        parts.push('-H', `"${key}: ${value}"`);
+        args.push('-H', `${key}: ${value}`);
       }
     }
 
     if (config.auth) {
       if (config.auth.type === 'basic' && config.auth.username && config.auth.password) {
-        parts.push('-u', `"${config.auth.username}:${config.auth.password}"`);
+        args.push('-u', `${config.auth.username}:${config.auth.password}`);
       } else if (config.auth.type === 'bearer' && config.auth.token) {
-        parts.push('-H', `"Authorization: Bearer ${config.auth.token}"`);
+        args.push('-H', `Authorization: Bearer ${config.auth.token}`);
       }
     }
 
     if (config.formData) {
-      // Use -F flags for multipart/form-data
+      // Use -F for file attachments (need @ interpretation)
+      // Use --form-string for text fields (prevents @ and < interpretation)
       for (const [fieldName, fieldValue] of Object.entries(config.formData)) {
         if (isFileAttachment(fieldValue)) {
           // File attachment: -F "field=@filepath;filename=name;type=mimetype"
@@ -60,62 +54,62 @@ export class CurlBuilder {
           if (fieldValue.contentType) {
             fileSpec += `;type=${fieldValue.contentType}`;
           }
-          parts.push('-F', `'${fieldName}=${escapeFormValue(fileSpec)}'`);
+          args.push('-F', `${fieldName}=${fileSpec}`);
         } else {
-          // Regular form field: -F "field=value"
+          // Regular form field: --form-string prevents @ and < interpretation
           const strValue = String(fieldValue);
-          parts.push('-F', `'${fieldName}=${escapeFormValue(strValue)}'`);
+          args.push('--form-string', `${fieldName}=${strValue}`);
         }
       }
     } else if (config.body) {
       const bodyStr = typeof config.body === 'string' ? config.body : JSON.stringify(config.body);
-      parts.push('-d', `'${bodyStr.replace(/'/g, "'\\''")}'`);
+      args.push('-d', bodyStr);
 
       if (!config.headers?.['Content-Type']) {
-        parts.push('-H', '"Content-Type: application/json"');
+        args.push('-H', 'Content-Type: application/json');
       }
     }
 
     if (config.timeout) {
-      parts.push('--max-time', config.timeout.toString());
+      args.push('--max-time', config.timeout.toString());
     }
 
     if (config.followRedirects !== false) {
-      parts.push('-L');
+      args.push('-L');
       if (config.maxRedirects) {
-        parts.push('--max-redirs', config.maxRedirects.toString());
+        args.push('--max-redirs', config.maxRedirects.toString());
       }
     }
 
     if (config.proxy) {
-      parts.push('-x', config.proxy);
+      args.push('-x', config.proxy);
     }
 
     // SSL/TLS configuration
     // insecure: true takes precedence (backwards compatibility)
     // ssl.verify: false is equivalent to insecure: true
     if (config.insecure || config.ssl?.verify === false) {
-      parts.push('-k');
+      args.push('-k');
     }
 
     // SSL certificate options
     if (config.ssl) {
       if (config.ssl.ca) {
-        parts.push('--cacert', `"${config.ssl.ca}"`);
+        args.push('--cacert', config.ssl.ca);
       }
       if (config.ssl.cert) {
-        parts.push('--cert', `"${config.ssl.cert}"`);
+        args.push('--cert', config.ssl.cert);
       }
       if (config.ssl.key) {
-        parts.push('--key', `"${config.ssl.key}"`);
+        args.push('--key', config.ssl.key);
       }
     }
 
     if (config.output) {
-      parts.push('-o', config.output);
+      args.push('-o', config.output);
     }
 
-    parts.push('-s', '-S');
+    args.push('-s', '-S');
 
     let url = config.url;
     if (config.params && Object.keys(config.params).length > 0) {
@@ -123,12 +117,25 @@ export class CurlBuilder {
       url += (url.includes('?') ? '&' : '?') + queryString;
     }
 
-    parts.push(`"${url}"`);
+    args.push(url);
 
-    return parts.join(' ');
+    return args;
   }
 
-  static async executeCurl(command: string): Promise<{
+  /**
+   * Formats args array as shell-safe command string for display/debugging.
+   */
+  static formatCommandForDisplay(args: string[]): string {
+    return ['curl', ...args]
+      .map((arg) =>
+        arg.includes(' ') || arg.includes('"') || arg.includes("'")
+          ? `'${arg.replace(/'/g, "'\\''")}'`
+          : arg,
+      )
+      .join(' ');
+  }
+
+  static async executeCurl(args: string[]): Promise<{
     success: boolean;
     status?: number;
     headers?: Record<string, string>;
@@ -145,7 +152,7 @@ export class CurlBuilder {
     error?: string;
   }> {
     try {
-      const proc = Bun.spawn(['sh', '-c', command], {
+      const proc = Bun.spawn(['curl', ...args], {
         stdout: 'pipe',
         stderr: 'pipe',
       });

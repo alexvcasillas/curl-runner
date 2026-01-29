@@ -102,8 +102,8 @@ export class RequestExecutor {
       return failedResult;
     }
 
-    const command = CurlBuilder.buildCommand(config);
-    requestLogger.logCommand(command);
+    const args = CurlBuilder.buildCommand(config);
+    requestLogger.logCommand(CurlBuilder.formatCommandForDisplay(args));
 
     let attempt = 0;
     let lastError: string | undefined;
@@ -119,7 +119,7 @@ export class RequestExecutor {
         }
       }
 
-      const result = await CurlBuilder.executeCurl(command);
+      const result = await CurlBuilder.executeCurl(args);
 
       if (result.success) {
         let body = result.body;
