@@ -1,5 +1,13 @@
 # @curl-runner/cli
 
+## 1.16.3
+
+### Patch Changes
+
+- [#80](https://github.com/alexvcasillas/curl-runner/pull/80) [`d398c44`](https://github.com/alexvcasillas/curl-runner/commit/d398c449ece2968d4df5365da14d6a25411ca95b) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - fix: spawn curl directly instead of shell execution
+
+  Removes shell interpretation of ${...} variables in curl commands. Previously, unresolved variables would cause errors on macOS bash 3.2 and Debian dash. Now spawns curl directly with args array, uses --form-string for text form fields to prevent @/< interpretation.
+
 ## 1.16.2
 
 ### Patch Changes
