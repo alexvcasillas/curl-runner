@@ -119,7 +119,9 @@ export class UpgradeCommand {
         return null;
       }
       const data = (await response.json()) as { tag_name: string };
-      return data.tag_name.replace(/^v/, '');
+      const tag = data.tag_name;
+      const match = tag.match(/(\d+\.\d+\.\d+)/);
+      return match ? match[1] : tag.replace(/^v/, '');
     } catch {
       return null;
     }
