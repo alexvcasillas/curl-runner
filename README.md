@@ -8,6 +8,14 @@
 
 A powerful CLI tool and documentation website for HTTP request management using YAML configuration files. Built with [Bun](https://bun.sh) for blazing-fast performance and featuring a modern documentation site powered by Next.js.
 
+## 🏢 Companies using `curl-runner`
+
+<div align="center">
+  <a href="https://tiptap.dev"><img src="https://avatars.githubusercontent.com/u/16939337?v=4" alt="Tiptap" height="40"></a>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://pulsora.co"><img src="https://pulsora.co/favicon.png" alt="Pulsora" height="40"></a>
+</div>
+
 ## ✨ Features
 
 ### 🎯 Core CLI Features
