@@ -1,5 +1,11 @@
 # @curl-runner/cli
 
+## 1.16.4
+
+### Patch Changes
+
+- [#82](https://github.com/alexvcasillas/curl-runner/pull/82) [`2f329ca`](https://github.com/alexvcasillas/curl-runner/commit/2f329cadb4cce5183a325d0f5206179cff35ad40) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - fix: extract semver from monorepo GitHub tags in upgrade command
+
 ## 1.16.3
 
 ### Patch Changes
