@@ -146,9 +146,10 @@ export class YamlParser {
       return dynamicValue;
     }
 
-    // Check for static variable
-    if (varName in variables) {
-      return variables[varName];
+    // Check for static variable or environment variable
+    const value = variables[varName] ?? process.env[varName];
+    if (value !== undefined) {
+      return value;
     }
 
     return null;
