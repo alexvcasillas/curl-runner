@@ -4,30 +4,33 @@ import { CurlBuilder } from './curl-builder';
 describe('CurlBuilder', () => {
   describe('buildCommand', () => {
     test('should build basic GET request', () => {
-      const command = CurlBuilder.buildCommand({
+      const args = CurlBuilder.buildCommand({
         url: 'https://example.com/api',
         method: 'GET',
       });
 
-      expect(command).toContain('curl');
-      expect(command).toContain('-X GET');
-      expect(command).toContain('"https://example.com/api"');
+      expect(args).toContain('-X');
+      expect(args).toContain('GET');
+      expect(args).toContain('https://example.com/api');
     });
 
     test('should build POST request with JSON body', () => {
-      const command = CurlBuilder.buildCommand({
+      const args = CurlBuilder.buildCommand({
         url: 'https://example.com/api',
         method: 'POST',
         body: { name: 'test' },
       });
 
-      expect(command).toContain('-X POST');
-      expect(command).toContain('-d \'{"name":"test"}\'');
-      expect(command).toContain('Content-Type: application/json');
+      expect(args).toContain('-X');
+      expect(args).toContain('POST');
+      expect(args).toContain('-d');
+      expect(args).toContain('{"name":"test"}');
+      expect(args).toContain('-H');
+      expect(args).toContain('Content-Type: application/json');
     });
 
     test('should build POST request with form data', () => {
-      const command = CurlBuilder.buildCommand({
+      const args = CurlBuilder.buildCommand({
         url: 'https://example.com/upload',
         method: 'POST',
         formData: {
@@ -36,14 +39,16 @@ describe('CurlBuilder', () => {
         },
       });
 
-      expect(command).toContain('-X POST');
-      expect(command).toContain("-F 'username=john'");
-      expect(command).toContain("-F 'age=30'");
-      expect(command).not.toContain('-d');
+      expect(args).toContain('-X');
+      expect(args).toContain('POST');
+      expect(args).toContain('--form-string');
+      expect(args).toContain('username=john');
+      expect(args).toContain('age=30');
+      expect(args).not.toContain('-d');
     });
 
     test('should build POST request with file attachment', () => {
-      const command = CurlBuilder.buildCommand({
+      const args = CurlBuilder.buildCommand({
         url: 'https://example.com/upload',
         method: 'POST',
         formData: {
@@ -53,11 +58,12 @@ describe('CurlBuilder', () => {
         },
       });
 
-      expect(command).toContain("-F 'document=@./test.pdf'");
+      expect(args).toContain('-F');
+      expect(args).toContain('document=@./test.pdf');
     });
 
     test('should build POST request with file attachment and custom filename', () => {
-      const command = CurlBuilder.buildCommand({
+      const args = CurlBuilder.buildCommand({
         url: 'https://example.com/upload',
         method: 'POST',
         formData: {
@@ -68,11 +74,12 @@ describe('CurlBuilder', () => {
         },
       });
 
-      expect(command).toContain("-F 'document=@./test.pdf;filename=report.pdf'");
+      expect(args).toContain('-F');
+      expect(args).toContain('document=@./test.pdf;filename=report.pdf');
     });
 
     test('should build POST request with file attachment and content type', () => {
-      const command = CurlBuilder.buildCommand({
+      const args = CurlBuilder.buildCommand({
         url: 'https://example.com/upload',
         method: 'POST',
         formData: {
@@ -83,11 +90,12 @@ describe('CurlBuilder', () => {
         },
       });
 
-      expect(command).toContain("-F 'data=@./data.json;type=application/json'");
+      expect(args).toContain('-F');
+      expect(args).toContain('data=@./data.json;type=application/json');
     });
 
     test('should build POST request with file attachment including all options', () => {
-      const command = CurlBuilder.buildCommand({
+      const args = CurlBuilder.buildCommand({
         url: 'https://example.com/upload',
         method: 'POST',
         formData: {
@@ -99,13 +107,14 @@ describe('CurlBuilder', () => {
         },
       });
 
-      expect(command).toContain(
-        "-F 'document=@./report.pdf;filename=quarterly-report.pdf;type=application/pdf'",
+      expect(args).toContain('-F');
+      expect(args).toContain(
+        'document=@./report.pdf;filename=quarterly-report.pdf;type=application/pdf',
       );
     });
 
     test('should build POST request with mixed form data and files', () => {
-      const command = CurlBuilder.buildCommand({
+      const args = CurlBuilder.buildCommand({
         url: 'https://example.com/upload',
         method: 'POST',
         formData: {
@@ -117,13 +126,15 @@ describe('CurlBuilder', () => {
         },
       });
 
-      expect(command).toContain("-F 'title=My Document'");
-      expect(command).toContain("-F 'description=Test upload'");
-      expect(command).toContain("-F 'file=@./document.pdf'");
+      expect(args).toContain('--form-string');
+      expect(args).toContain('title=My Document');
+      expect(args).toContain('description=Test upload');
+      expect(args).toContain('-F');
+      expect(args).toContain('file=@./document.pdf');
     });
 
-    test('should escape single quotes in form field values', () => {
-      const command = CurlBuilder.buildCommand({
+    test('should pass through single quotes in form field values', () => {
+      const args = CurlBuilder.buildCommand({
         url: 'https://example.com/upload',
         method: 'POST',
         formData: {
@@ -131,11 +142,12 @@ describe('CurlBuilder', () => {
         },
       });
 
-      expect(command).toContain("-F 'message=It'\\''s a test'");
+      expect(args).toContain('--form-string');
+      expect(args).toContain("message=It's a test");
     });
 
     test('should prefer formData over body when both are present', () => {
-      const command = CurlBuilder.buildCommand({
+      const args = CurlBuilder.buildCommand({
         url: 'https://example.com/api',
         method: 'POST',
         formData: {
@@ -144,12 +156,13 @@ describe('CurlBuilder', () => {
         body: { name: 'test' },
       });
 
-      expect(command).toContain("-F 'field=value'");
-      expect(command).not.toContain('-d');
+      expect(args).toContain('--form-string');
+      expect(args).toContain('field=value');
+      expect(args).not.toContain('-d');
     });
 
     test('should handle boolean form field values', () => {
-      const command = CurlBuilder.buildCommand({
+      const args = CurlBuilder.buildCommand({
         url: 'https://example.com/api',
         method: 'POST',
         formData: {
@@ -158,8 +171,47 @@ describe('CurlBuilder', () => {
         },
       });
 
-      expect(command).toContain("-F 'active=true'");
-      expect(command).toContain("-F 'disabled=false'");
+      expect(args).toContain('--form-string');
+      expect(args).toContain('active=true');
+      expect(args).toContain('disabled=false');
+    });
+
+    test('should pass through unresolved ${VAR} without shell interpretation', () => {
+      const args = CurlBuilder.buildCommand({
+        url: 'https://example.com/api/${VAR}',
+        method: 'GET',
+      });
+
+      // The ${VAR} should be in the URL literally, not interpreted
+      expect(args).toContain('https://example.com/api/${VAR}');
+    });
+
+    test('should handle JSON body with curly braces', () => {
+      const args = CurlBuilder.buildCommand({
+        url: 'https://example.com/api',
+        method: 'POST',
+        body: { nested: { key: 'value' } },
+      });
+
+      expect(args).toContain('-d');
+      expect(args).toContain('{"nested":{"key":"value"}}');
+    });
+  });
+
+  describe('formatCommandForDisplay', () => {
+    test('should format simple args', () => {
+      const display = CurlBuilder.formatCommandForDisplay(['-X', 'GET', 'https://example.com']);
+      expect(display).toBe('curl -X GET https://example.com');
+    });
+
+    test('should quote args with spaces', () => {
+      const display = CurlBuilder.formatCommandForDisplay(['-H', 'Content-Type: application/json']);
+      expect(display).toBe("curl -H 'Content-Type: application/json'");
+    });
+
+    test('should escape single quotes in args', () => {
+      const display = CurlBuilder.formatCommandForDisplay(['--form-string', "message=It's a test"]);
+      expect(display).toBe("curl --form-string 'message=It'\\''s a test'");
     });
   });
 });
