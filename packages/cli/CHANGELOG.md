@@ -1,5 +1,11 @@
 # @curl-runner/cli
 
+## 1.16.5
+
+### Patch Changes
+
+- [#84](https://github.com/alexvcasillas/curl-runner/pull/84) [`14dc8aa`](https://github.com/alexvcasillas/curl-runner/commit/14dc8aa736074b1f80a9695da897670196deeedc) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - fix: add process.env fallback in resolveVariable()
+
 ## 1.16.4
 
 ### Patch Changes
