@@ -1,5 +1,11 @@
 # @curl-runner/cli
 
+## 1.16.1
+
+### Patch Changes
+
+- [#75](https://github.com/alexvcasillas/curl-runner/pull/75) [`e0dc09f`](https://github.com/alexvcasillas/curl-runner/commit/e0dc09f0a90ea761aa62036f93d9848d9f139a76) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - fix: include dist folder in npm package and fix install script version parsing
+
 ## 1.16.0
 
 ### Minor Changes
