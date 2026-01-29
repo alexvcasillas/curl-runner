@@ -1,5 +1,11 @@
 # @curl-runner/cli
 
+## 1.16.2
+
+### Patch Changes
+
+- [#78](https://github.com/alexvcasillas/curl-runner/pull/78) [`f093b13`](https://github.com/alexvcasillas/curl-runner/commit/f093b13e07830ef2abe98d9d97d281238b472a4f) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - fix: install script download URL and binary name extraction
+
 ## 1.16.1
 
 ### Patch Changes
