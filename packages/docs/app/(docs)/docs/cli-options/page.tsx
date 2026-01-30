@@ -121,6 +121,14 @@ const optionGroups = [
         description: 'Show curl commands without executing them. Useful for previewing and debugging.',
         example: 'curl-runner api.yaml --dry-run',
       },
+      {
+        short: null,
+        long: '--http2',
+        type: 'boolean',
+        default: 'false',
+        description: 'Use HTTP/2 protocol with multiplexing for improved performance.',
+        example: 'curl-runner api.yaml --http2',
+      },
     ],
   },
   {

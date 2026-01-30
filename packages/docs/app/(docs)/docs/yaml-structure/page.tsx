@@ -279,13 +279,22 @@ export default function YamlStructurePage() {
                           Number of retry attempts
                         </td>
                       </tr>
-                      <tr>
+                      <tr className="border-b">
                         <td className="p-3">
                           <code className="text-sm">validation</code>
                         </td>
                         <td className="p-3 text-sm text-muted-foreground">object</td>
                         <td className="p-3 text-sm text-muted-foreground">
                           Response validation rules
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="p-3">
+                          <code className="text-sm">http2</code>
+                        </td>
+                        <td className="p-3 text-sm text-muted-foreground">boolean</td>
+                        <td className="p-3 text-sm text-muted-foreground">
+                          Use HTTP/2 protocol with multiplexing
                         </td>
                       </tr>
                     </tbody>

@@ -137,6 +137,11 @@ export const docsConfig: SidebarConfig = {
           description: 'Preview curl commands without executing',
         },
         {
+          title: 'HTTP/2 Support',
+          href: '/docs/features/http2',
+          description: 'Enable HTTP/2 protocol with multiplexing',
+        },
+        {
           title: 'Output Formats',
           href: '/docs/features/output-formats',
           description: 'Control output format and logging',
