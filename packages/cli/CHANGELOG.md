@@ -1,5 +1,17 @@
 # @curl-runner/cli
 
+## 1.17.0
+
+### Minor Changes
+
+- [#87](https://github.com/alexvcasillas/curl-runner/pull/87) [`3c23c8c`](https://github.com/alexvcasillas/curl-runner/commit/3c23c8c6856502b2f02fc312157fe22d415af22d) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Add dry-run mode to preview curl commands without executing them
+
+  - New `--dry-run` / `-n` flag to show curl commands without making actual API calls
+  - Status displays as "DRY-RUN" in cyan for all output formats
+  - JSON output includes `dryRun: true` field instead of status code
+  - Environment variable support: `CURL_RUNNER_DRY_RUN=true`
+  - Useful for debugging configurations and validating request setups
+
 ## 1.16.5
 
 ### Patch Changes
