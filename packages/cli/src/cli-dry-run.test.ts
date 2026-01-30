@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 
 /**
  * Tests for CLI dry-run argument parsing and environment variable support.

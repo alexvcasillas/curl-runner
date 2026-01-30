@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { ExecutionResult, GlobalConfig, RequestConfig } from '../types/config';
 import { CurlBuilder } from '../utils/curl-builder';
 import { RequestExecutor } from './request-executor';
@@ -261,7 +261,7 @@ describe('RequestExecutor Dry Run Mode', () => {
         {
           url: 'https://api.example.com/protected',
           method: 'GET',
-          headers: { Authorization: 'Bearer ${store.token}' },
+          headers: { Authorization: `Bearer \${store.token}` },
         },
       ];
 

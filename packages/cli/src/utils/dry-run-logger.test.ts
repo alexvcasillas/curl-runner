@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
-import type { ExecutionResult, ExecutionSummary, GlobalConfig, RequestConfig } from '../types/config';
+import type { ExecutionResult, ExecutionSummary, GlobalConfig } from '../types/config';
 import { Logger } from './logger';
 
 /**
