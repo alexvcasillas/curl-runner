@@ -132,6 +132,11 @@ export const docsConfig: SidebarConfig = {
           description: 'Auto re-run requests on file changes',
         },
         {
+          title: 'Dry Run Mode',
+          href: '/docs/features/dry-run',
+          description: 'Preview curl commands without executing',
+        },
+        {
           title: 'Output Formats',
           href: '/docs/features/output-formats',
           description: 'Control output format and logging',

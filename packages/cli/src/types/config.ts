@@ -316,6 +316,11 @@ export interface GlobalConfig {
   maxConcurrency?: number;
   continueOnError?: boolean;
   /**
+   * Dry run mode: show curl commands without executing them.
+   * Useful for previewing what commands would be run.
+   */
+  dryRun?: boolean;
+  /**
    * CI/CD exit code configuration.
    * Controls when curl-runner should exit with non-zero status codes.
    */
@@ -354,6 +359,8 @@ export interface GlobalConfig {
     format?: 'json' | 'pretty' | 'raw';
     prettyLevel?: 'minimal' | 'standard' | 'detailed';
     saveToFile?: string;
+    /** Internal flag set when dry-run mode is enabled to always show commands */
+    dryRun?: boolean;
   };
   defaults?: Partial<RequestConfig>;
 }
@@ -373,6 +380,8 @@ export interface ExecutionResult {
   headers?: Record<string, string>;
   body?: JsonValue;
   error?: string;
+  /** True if this result is from dry-run mode (no actual request made) */
+  dryRun?: boolean;
   metrics?: {
     duration: number;
     size?: number;

@@ -9,6 +9,7 @@ import {
   Gauge,
   GitBranch,
   RotateCcw,
+  Terminal,
   TrendingUp,
   Upload,
   Zap,
@@ -657,6 +658,69 @@ requests:
       'response comparison',
       'staging vs production',
       'parity testing',
+    ],
+  },
+  'dry-run': {
+    slug: 'dry-run',
+    title: 'Dry Run Mode',
+    shortDescription: 'Preview commands without executing',
+    description:
+      'Preview the exact curl commands that would be executed without making actual API calls. Perfect for debugging configurations and validating request setups.',
+    icon: Terminal,
+    color: 'cyan',
+    gradient: 'from-cyan-400 to-cyan-600',
+    benefits: [
+      {
+        title: 'Preview Commands',
+        description:
+          'See the exact curl command that would be executed, including all headers, body, and options.',
+      },
+      {
+        title: 'Safe Debugging',
+        description:
+          'Debug and validate configurations without making actual API calls or side effects.',
+      },
+      {
+        title: 'Variable Validation',
+        description:
+          'Verify that variable interpolation and environment settings are working correctly.',
+      },
+    ],
+    codeExample: {
+      title: 'Preview curl commands without execution',
+      code: `# Basic dry run
+curl-runner api.yaml --dry-run
+
+# Short form
+curl-runner api.yaml -n
+
+# With verbose output
+curl-runner api.yaml -n -v
+
+# Output example:
+#   Command:
+#     curl -X POST -H 'Authorization: Bearer token' \\
+#       -d '{"name":"test"}' https://api.example.com/users
+#   ✓ Create User [api]
+#      ├─ POST: https://api.example.com/users
+#      ├─ ✓ Status: DRY-RUN
+#      └─ Duration: 0ms | 0 B`,
+    },
+    useCases: [
+      'Debugging request configurations',
+      'Validating authentication headers',
+      'Verifying variable interpolation',
+      'Reviewing commands before production runs',
+    ],
+    keywords: [
+      'dry run',
+      'preview commands',
+      'debug requests',
+      'validate configuration',
+      'command preview',
+      'curl preview',
+      'safe testing',
+      'no execution',
     ],
   },
   snapshots: {

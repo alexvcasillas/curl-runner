@@ -192,6 +192,15 @@ const variables = [
     color: { bg: 'bg-teal-500/10', text: 'text-teal-600 dark:text-teal-400' },
   },
   {
+    name: 'CURL_RUNNER_DRY_RUN',
+    description: 'Show curl commands without executing them (dry run mode)',
+    type: 'boolean',
+    default: 'false',
+    example: 'true',
+    icon: Eye,
+    color: { bg: 'bg-cyan-500/10', text: 'text-cyan-600 dark:text-cyan-400' },
+  },
+  {
     name: 'CURL_RUNNER_OUTPUT_FORMAT',
     description: 'Set output format: json, pretty, or raw',
     type: 'string',
