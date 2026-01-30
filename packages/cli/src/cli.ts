@@ -102,6 +102,10 @@ class CurlRunnerCLI {
       envConfig.dryRun = process.env.CURL_RUNNER_DRY_RUN.toLowerCase() === 'true';
     }
 
+    if (process.env.CURL_RUNNER_HTTP2) {
+      envConfig.http2 = process.env.CURL_RUNNER_HTTP2.toLowerCase() === 'true';
+    }
+
     if (process.env.CURL_RUNNER_MAX_CONCURRENCY) {
       const maxConcurrency = Number.parseInt(process.env.CURL_RUNNER_MAX_CONCURRENCY, 10);
       if (maxConcurrency > 0) {
@@ -395,6 +399,10 @@ class CurlRunnerCLI {
         globalConfig.dryRun = options.dryRun as boolean;
         // Also pass to output config so logger can show commands
         globalConfig.output = { ...globalConfig.output, dryRun: options.dryRun as boolean };
+      }
+      if (options.http2 !== undefined) {
+        globalConfig.http2 = options.http2 as boolean;
+        globalConfig.defaults = { ...globalConfig.defaults, http2: options.http2 as boolean };
       }
       if (options.verbose !== undefined) {
         globalConfig.output = { ...globalConfig.output, verbose: options.verbose as boolean };
@@ -896,6 +904,8 @@ class CurlRunnerCLI {
           options.diffSave = true;
         } else if (key === 'dry-run') {
           options.dryRun = true;
+        } else if (key === 'http2') {
+          options.http2 = true;
         } else if (nextArg && !nextArg.startsWith('--')) {
           if (key === 'continue-on-error') {
             options.continueOnError = nextArg === 'true';
@@ -1195,6 +1205,7 @@ ${this.logger.color('USAGE:', 'yellow')}
 ${this.logger.color('OPTIONS:', 'yellow')}
   -h, --help                    Show this help message
   -n, --dry-run                 Show curl commands without executing
+  --http2                       Use HTTP/2 protocol with multiplexing
   -v, --verbose                 Enable verbose output
   -q, --quiet                   Suppress non-error output
   -p, --execution parallel      Execute requests in parallel
@@ -1281,7 +1292,10 @@ ${this.logger.color('EXAMPLES:', 'yellow')}
 
   # Dry run - show curl commands without executing
   curl-runner api.yaml --dry-run
-  
+
+  # Use HTTP/2 for all requests
+  curl-runner api.yaml --http2
+
   # Run with minimal pretty output (only status and errors)
   curl-runner --output-format pretty --pretty-level minimal test.yaml
   
