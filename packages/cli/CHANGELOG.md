@@ -1,5 +1,17 @@
 # @curl-runner/cli
 
+## 1.19.0
+
+### Minor Changes
+
+- [#92](https://github.com/alexvcasillas/curl-runner/pull/92) [`f8b7744`](https://github.com/alexvcasillas/curl-runner/commit/f8b77447206083b2e91bd7d45fd54ff453b0a3ec) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Add TCP connection pooling with HTTP/2 multiplexing
+
+  - New `connectionPool` global configuration for request batching
+  - Groups requests by host and executes in single curl process
+  - Uses `curl -Z --parallel --http2` for HTTP/2 stream multiplexing
+  - Dramatically reduces TCP/TLS handshake overhead for parallel requests
+  - Configuration options: `enabled`, `maxStreamsPerHost`, `keepaliveTime`, `connectTimeout`
+
 ## 1.18.0
 
 ### Minor Changes
