@@ -201,6 +201,10 @@ export interface RequestConfig {
    */
   ssl?: SSLConfig;
   output?: string;
+  /**
+   * Use HTTP/2 protocol for this request.
+   */
+  http2?: boolean;
   retry?: {
     count: number;
     delay?: number;
@@ -320,6 +324,11 @@ export interface GlobalConfig {
    * Useful for previewing what commands would be run.
    */
   dryRun?: boolean;
+  /**
+   * Use HTTP/2 protocol with multiplexing support.
+   * Passes --http2 flag to curl.
+   */
+  http2?: boolean;
   /**
    * CI/CD exit code configuration.
    * Controls when curl-runner should exit with non-zero status codes.
