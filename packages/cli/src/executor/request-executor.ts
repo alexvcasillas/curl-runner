@@ -105,6 +105,20 @@ export class RequestExecutor {
     const args = CurlBuilder.buildCommand(config);
     requestLogger.logCommand(CurlBuilder.formatCommandForDisplay(args));
 
+    // Dry run mode: show command and return mock result
+    if (this.globalConfig.dryRun) {
+      const dryRunResult: ExecutionResult = {
+        request: config,
+        success: true,
+        dryRun: true,
+        metrics: {
+          duration: 0,
+        },
+      };
+      requestLogger.logRequestComplete(dryRunResult);
+      return dryRunResult;
+    }
+
     let attempt = 0;
     let lastError: string | undefined;
     const maxAttempts = (config.retry?.count || 0) + 1;

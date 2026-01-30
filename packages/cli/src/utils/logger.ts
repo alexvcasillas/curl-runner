@@ -322,7 +322,8 @@ export class Logger {
   }
 
   logCommand(command: string): void {
-    if (this.shouldShowRequestDetails()) {
+    // Always show command in dry-run mode
+    if (this.config.dryRun || this.shouldShowRequestDetails()) {
       console.log(this.color('  Command:', 'dim'));
       console.log(this.color(`    ${command}`, 'dim'));
     }
@@ -351,7 +352,7 @@ export class Logger {
           method: result.request.method || 'GET',
         },
         success: result.success,
-        status: result.status,
+        ...(result.dryRun ? { dryRun: true } : { status: result.status }),
         ...(this.shouldShowHeaders() && result.headers ? { headers: result.headers } : {}),
         ...(this.shouldShowBody() && result.body ? { body: result.body } : {}),
         ...(result.error ? { error: result.error } : {}),
@@ -389,11 +390,11 @@ export class Logger {
         color: 'blue',
       });
 
-      const statusText = result.status ? `${result.status}` : 'ERROR';
+      const statusText = result.dryRun ? 'DRY-RUN' : result.status ? `${result.status}` : 'ERROR';
       treeNodes.push({
         label: `${statusIcon} Status`,
         value: statusText,
-        color: statusColor,
+        color: result.dryRun ? 'cyan' : statusColor,
       });
 
       if (result.metrics) {
@@ -434,8 +435,8 @@ export class Logger {
     treeNodes.push({ label: 'Method', value: result.request.method || 'GET', color: 'yellow' });
     treeNodes.push({
       label: 'Status',
-      value: String(result.status || 'ERROR'),
-      color: statusColor,
+      value: result.dryRun ? 'DRY-RUN' : String(result.status || 'ERROR'),
+      color: result.dryRun ? 'cyan' : statusColor,
     });
 
     if (result.metrics) {
@@ -585,7 +586,7 @@ export class Logger {
             method: result.request.method || 'GET',
           },
           success: result.success,
-          status: result.status,
+          ...(result.dryRun ? { dryRun: true } : { status: result.status }),
           ...(this.shouldShowHeaders() && result.headers ? { headers: result.headers } : {}),
           ...(this.shouldShowBody() && result.body ? { body: result.body } : {}),
           ...(result.error ? { error: result.error } : {}),

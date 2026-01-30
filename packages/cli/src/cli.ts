@@ -98,6 +98,10 @@ class CurlRunnerCLI {
         process.env.CURL_RUNNER_CONTINUE_ON_ERROR.toLowerCase() === 'true';
     }
 
+    if (process.env.CURL_RUNNER_DRY_RUN) {
+      envConfig.dryRun = process.env.CURL_RUNNER_DRY_RUN.toLowerCase() === 'true';
+    }
+
     if (process.env.CURL_RUNNER_MAX_CONCURRENCY) {
       const maxConcurrency = Number.parseInt(process.env.CURL_RUNNER_MAX_CONCURRENCY, 10);
       if (maxConcurrency > 0) {
@@ -386,6 +390,11 @@ class CurlRunnerCLI {
       }
       if (options.continueOnError !== undefined) {
         globalConfig.continueOnError = options.continueOnError as boolean;
+      }
+      if (options.dryRun !== undefined) {
+        globalConfig.dryRun = options.dryRun as boolean;
+        // Also pass to output config so logger can show commands
+        globalConfig.output = { ...globalConfig.output, dryRun: options.dryRun as boolean };
       }
       if (options.verbose !== undefined) {
         globalConfig.output = { ...globalConfig.output, verbose: options.verbose as boolean };
@@ -885,6 +894,8 @@ class CurlRunnerCLI {
           options.diff = true;
         } else if (key === 'diff-save') {
           options.diffSave = true;
+        } else if (key === 'dry-run') {
+          options.dryRun = true;
         } else if (nextArg && !nextArg.startsWith('--')) {
           if (key === 'continue-on-error') {
             options.continueOnError = nextArg === 'true';
@@ -975,6 +986,9 @@ class CurlRunnerCLI {
               break;
             case 'd':
               options.diff = true;
+              break;
+            case 'n':
+              options.dryRun = true;
               break;
             case 'o': {
               // Handle -o flag for output file
@@ -1180,6 +1194,7 @@ ${this.logger.color('USAGE:', 'yellow')}
 
 ${this.logger.color('OPTIONS:', 'yellow')}
   -h, --help                    Show this help message
+  -n, --dry-run                 Show curl commands without executing
   -v, --verbose                 Enable verbose output
   -q, --quiet                   Suppress non-error output
   -p, --execution parallel      Execute requests in parallel
@@ -1263,6 +1278,9 @@ ${this.logger.color('EXAMPLES:', 'yellow')}
 
   # Run with verbose output and continue on errors
   curl-runner tests/*.yaml -vc
+
+  # Dry run - show curl commands without executing
+  curl-runner api.yaml --dry-run
   
   # Run with minimal pretty output (only status and errors)
   curl-runner --output-format pretty --pretty-level minimal test.yaml
