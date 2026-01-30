@@ -113,6 +113,14 @@ const optionGroups = [
         description: 'Disable retry mechanism completely.',
         example: 'curl-runner tests/ --no-retry',
       },
+      {
+        short: '-n',
+        long: '--dry-run',
+        type: 'boolean',
+        default: 'false',
+        description: 'Show curl commands without executing them. Useful for previewing and debugging.',
+        example: 'curl-runner api.yaml --dry-run',
+      },
     ],
   },
   {
@@ -238,6 +246,7 @@ const combinationExamples = `# Basic combinations
 curl-runner tests/ -v                    # Verbose output
 curl-runner tests/ -p                    # Parallel execution
 curl-runner tests/ -c                    # Continue on error
+curl-runner tests/ -n                    # Dry run (preview commands)
 curl-runner tests/ -pv                   # Parallel + verbose
 curl-runner tests/ -pc                   # Parallel + continue on error
 curl-runner tests/ -pvc                  # Parallel + verbose + continue on error
@@ -281,6 +290,7 @@ CURL_RUNNER_RETRY_DELAY=2000 curl-runner tests/
 CURL_RUNNER_VERBOSE=true curl-runner tests/
 CURL_RUNNER_EXECUTION=parallel curl-runner tests/
 CURL_RUNNER_CONTINUE_ON_ERROR=true curl-runner tests/
+CURL_RUNNER_DRY_RUN=true curl-runner tests/
 
 # Output format environment variables
 CURL_RUNNER_OUTPUT_FORMAT=json curl-runner tests/
@@ -531,6 +541,12 @@ export default function CLIOptionsPage() {
                         CURL_RUNNER_RETRIES
                       </code>
                       <span className="text-muted-foreground">maximum retry attempts</span>
+                    </div>
+                    <div className="flex items-center justify-between py-2">
+                      <code className="bg-muted px-2 py-1 rounded font-mono">
+                        CURL_RUNNER_DRY_RUN
+                      </code>
+                      <span className="text-muted-foreground">dry run mode (true/false)</span>
                     </div>
                   </div>
                 </div>
