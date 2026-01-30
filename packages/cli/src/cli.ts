@@ -106,6 +106,35 @@ class CurlRunnerCLI {
       envConfig.http2 = process.env.CURL_RUNNER_HTTP2.toLowerCase() === 'true';
     }
 
+    // Connection pooling configuration
+    if (process.env.CURL_RUNNER_CONNECTION_POOL) {
+      envConfig.connectionPool = {
+        ...envConfig.connectionPool,
+        enabled: process.env.CURL_RUNNER_CONNECTION_POOL.toLowerCase() === 'true',
+      };
+    }
+
+    if (process.env.CURL_RUNNER_MAX_STREAMS_PER_HOST) {
+      envConfig.connectionPool = {
+        ...envConfig.connectionPool,
+        maxStreamsPerHost: Number.parseInt(process.env.CURL_RUNNER_MAX_STREAMS_PER_HOST, 10),
+      };
+    }
+
+    if (process.env.CURL_RUNNER_KEEPALIVE_TIME) {
+      envConfig.connectionPool = {
+        ...envConfig.connectionPool,
+        keepaliveTime: Number.parseInt(process.env.CURL_RUNNER_KEEPALIVE_TIME, 10),
+      };
+    }
+
+    if (process.env.CURL_RUNNER_CONNECT_TIMEOUT) {
+      envConfig.connectionPool = {
+        ...envConfig.connectionPool,
+        connectTimeout: Number.parseInt(process.env.CURL_RUNNER_CONNECT_TIMEOUT, 10),
+      };
+    }
+
     if (process.env.CURL_RUNNER_MAX_CONCURRENCY) {
       const maxConcurrency = Number.parseInt(process.env.CURL_RUNNER_MAX_CONCURRENCY, 10);
       if (maxConcurrency > 0) {
@@ -403,6 +432,34 @@ class CurlRunnerCLI {
       if (options.http2 !== undefined) {
         globalConfig.http2 = options.http2 as boolean;
         globalConfig.defaults = { ...globalConfig.defaults, http2: options.http2 as boolean };
+      }
+      // Connection pooling options
+      if (options.connectionPool !== undefined) {
+        globalConfig.connectionPool = {
+          ...globalConfig.connectionPool,
+          enabled: options.connectionPool as boolean,
+        };
+      }
+      if (options.maxStreams !== undefined) {
+        globalConfig.connectionPool = {
+          ...globalConfig.connectionPool,
+          enabled: true,
+          maxStreamsPerHost: options.maxStreams as number,
+        };
+      }
+      if (options.keepaliveTime !== undefined) {
+        globalConfig.connectionPool = {
+          ...globalConfig.connectionPool,
+          enabled: true,
+          keepaliveTime: options.keepaliveTime as number,
+        };
+      }
+      if (options.connectTimeout !== undefined) {
+        globalConfig.connectionPool = {
+          ...globalConfig.connectionPool,
+          enabled: true,
+          connectTimeout: options.connectTimeout as number,
+        };
       }
       if (options.verbose !== undefined) {
         globalConfig.output = { ...globalConfig.output, verbose: options.verbose as boolean };
@@ -906,6 +963,8 @@ class CurlRunnerCLI {
           options.dryRun = true;
         } else if (key === 'http2') {
           options.http2 = true;
+        } else if (key === 'connection-pool') {
+          options.connectionPool = true;
         } else if (nextArg && !nextArg.startsWith('--')) {
           if (key === 'continue-on-error') {
             options.continueOnError = nextArg === 'true';
@@ -922,6 +981,15 @@ class CurlRunnerCLI {
             if (maxConcurrent > 0) {
               options.maxConcurrent = maxConcurrent;
             }
+          } else if (key === 'max-streams') {
+            const maxStreams = Number.parseInt(nextArg, 10);
+            if (maxStreams > 0) {
+              options.maxStreams = maxStreams;
+            }
+          } else if (key === 'keepalive-time') {
+            options.keepaliveTime = Number.parseInt(nextArg, 10);
+          } else if (key === 'connect-timeout') {
+            options.connectTimeout = Number.parseInt(nextArg, 10);
           } else if (key === 'fail-on') {
             options.failOn = Number.parseInt(nextArg, 10);
           } else if (key === 'fail-on-percentage') {
@@ -1206,6 +1274,10 @@ ${this.logger.color('OPTIONS:', 'yellow')}
   -h, --help                    Show this help message
   -n, --dry-run                 Show curl commands without executing
   --http2                       Use HTTP/2 protocol with multiplexing
+  --connection-pool             Enable TCP connection pooling with HTTP/2 multiplexing
+  --max-streams <n>             Max concurrent streams per host (default: 10)
+  --keepalive-time <sec>        TCP keepalive time in seconds (default: 60)
+  --connect-timeout <sec>       Connection timeout in seconds (default: 30)
   -v, --verbose                 Enable verbose output
   -q, --quiet                   Suppress non-error output
   -p, --execution parallel      Execute requests in parallel
@@ -1295,6 +1367,12 @@ ${this.logger.color('EXAMPLES:', 'yellow')}
 
   # Use HTTP/2 for all requests
   curl-runner api.yaml --http2
+
+  # Enable connection pooling with HTTP/2 multiplexing
+  curl-runner api.yaml -p --connection-pool
+
+  # Connection pooling with custom settings
+  curl-runner api.yaml -p --connection-pool --max-streams 20
 
   # Run with minimal pretty output (only status and errors)
   curl-runner --output-format pretty --pretty-level minimal test.yaml

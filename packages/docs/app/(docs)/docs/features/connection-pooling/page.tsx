@@ -37,6 +37,21 @@ export const metadata: Metadata = {
   },
 };
 
+const cliExample = `# Enable connection pooling via CLI
+curl-runner api.yaml -p --connection-pool
+
+# With custom settings
+curl-runner api.yaml -p --connection-pool --max-streams 20
+
+# Via environment variables
+CURL_RUNNER_CONNECTION_POOL=true curl-runner api.yaml -p
+
+# Full example with env vars
+CURL_RUNNER_CONNECTION_POOL=true \\
+CURL_RUNNER_MAX_STREAMS_PER_HOST=15 \\
+CURL_RUNNER_KEEPALIVE_TIME=120 \\
+curl-runner api.yaml -p`;
+
 const basicExample = `global:
   execution: parallel
   connectionPool:
@@ -134,6 +149,44 @@ const configOptionsTable = [
     type: 'number',
     default: '30',
     description: 'Connection establishment timeout in seconds',
+  },
+];
+
+const cliOptionsTable = [
+  {
+    option: '--connection-pool',
+    description: 'Enable TCP connection pooling with HTTP/2 multiplexing',
+  },
+  {
+    option: '--max-streams <n>',
+    description: 'Max concurrent streams per host (default: 10)',
+  },
+  {
+    option: '--keepalive-time <sec>',
+    description: 'TCP keepalive time in seconds (default: 60)',
+  },
+  {
+    option: '--connect-timeout <sec>',
+    description: 'Connection timeout in seconds (default: 30)',
+  },
+];
+
+const envVarsTable = [
+  {
+    variable: 'CURL_RUNNER_CONNECTION_POOL',
+    description: 'Enable connection pooling (true/false)',
+  },
+  {
+    variable: 'CURL_RUNNER_MAX_STREAMS_PER_HOST',
+    description: 'Max concurrent streams per host',
+  },
+  {
+    variable: 'CURL_RUNNER_KEEPALIVE_TIME',
+    description: 'TCP keepalive time in seconds',
+  },
+  {
+    variable: 'CURL_RUNNER_CONNECT_TIMEOUT',
+    description: 'Connection timeout in seconds',
   },
 ];
 
@@ -250,6 +303,68 @@ export default function ConnectionPoolingPage() {
             <CodeBlockServer language="yaml" filename="Basic Connection Pooling">
               {basicExample}
             </CodeBlockServer>
+          </section>
+
+          {/* CLI Options */}
+          <section>
+            <H2 id="cli-options">CLI Options</H2>
+            <p className="text-muted-foreground text-lg mb-6">
+              Enable and configure connection pooling directly from the command line.
+            </p>
+
+            <div className="rounded-lg border overflow-hidden mb-6">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium">Option</th>
+                    <th className="px-4 py-3 text-left font-medium">Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cliOptionsTable.map((row, idx) => (
+                    <tr key={idx} className="border-t">
+                      <td className="px-4 py-3 font-mono text-amber-600 dark:text-amber-400">
+                        {row.option}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">{row.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <CodeBlockServer language="bash" filename="CLI Examples">
+              {cliExample}
+            </CodeBlockServer>
+          </section>
+
+          {/* Environment Variables */}
+          <section>
+            <H2 id="environment-variables">Environment Variables</H2>
+            <p className="text-muted-foreground text-lg mb-6">
+              Configure connection pooling using environment variables for CI/CD pipelines.
+            </p>
+
+            <div className="rounded-lg border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium">Variable</th>
+                    <th className="px-4 py-3 text-left font-medium">Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {envVarsTable.map((row, idx) => (
+                    <tr key={idx} className="border-t">
+                      <td className="px-4 py-3 font-mono text-amber-600 dark:text-amber-400">
+                        {row.variable}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">{row.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </section>
 
           {/* Configuration Options */}
