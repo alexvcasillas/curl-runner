@@ -1,5 +1,16 @@
 # @curl-runner/cli
 
+## 1.18.0
+
+### Minor Changes
+
+- [#89](https://github.com/alexvcasillas/curl-runner/pull/89) [`6b862c3`](https://github.com/alexvcasillas/curl-runner/commit/6b862c3a57360a068979d0c5a265bc4787b0a500) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Add HTTP/2 support with multiplexing
+
+  - New `--http2` flag to use HTTP/2 protocol for all requests
+  - Per-request `http2: true` option in YAML config
+  - Environment variable support: `CURL_RUNNER_HTTP2=true`
+  - Enables HTTP/2 multiplexing for improved performance
+
 ## 1.17.0
 
 ### Minor Changes
