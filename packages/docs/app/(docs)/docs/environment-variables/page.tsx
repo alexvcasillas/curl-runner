@@ -4,6 +4,7 @@ import {
   Eye,
   FileText,
   Layers,
+  Network,
   RefreshCw,
   RotateCcw,
   Save,
@@ -199,6 +200,15 @@ const variables = [
     example: 'true',
     icon: Eye,
     color: { bg: 'bg-cyan-500/10', text: 'text-cyan-600 dark:text-cyan-400' },
+  },
+  {
+    name: 'CURL_RUNNER_HTTP2',
+    description: 'Use HTTP/2 protocol with multiplexing for improved performance',
+    type: 'boolean',
+    default: 'false',
+    example: 'true',
+    icon: Network,
+    color: { bg: 'bg-sky-500/10', text: 'text-sky-600 dark:text-sky-400' },
   },
   {
     name: 'CURL_RUNNER_OUTPUT_FORMAT',

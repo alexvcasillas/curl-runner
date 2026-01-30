@@ -109,6 +109,10 @@ export class CurlBuilder {
       args.push('-o', config.output);
     }
 
+    if (config.http2) {
+      args.push('--http2');
+    }
+
     args.push('-s', '-S');
 
     let url = config.url;

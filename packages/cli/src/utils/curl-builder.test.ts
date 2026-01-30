@@ -196,6 +196,35 @@ describe('CurlBuilder', () => {
       expect(args).toContain('-d');
       expect(args).toContain('{"nested":{"key":"value"}}');
     });
+
+    test('should add --http2 flag when http2 is enabled', () => {
+      const args = CurlBuilder.buildCommand({
+        url: 'https://example.com/api',
+        method: 'GET',
+        http2: true,
+      });
+
+      expect(args).toContain('--http2');
+    });
+
+    test('should not add --http2 flag when http2 is false', () => {
+      const args = CurlBuilder.buildCommand({
+        url: 'https://example.com/api',
+        method: 'GET',
+        http2: false,
+      });
+
+      expect(args).not.toContain('--http2');
+    });
+
+    test('should not add --http2 flag when http2 is not specified', () => {
+      const args = CurlBuilder.buildCommand({
+        url: 'https://example.com/api',
+        method: 'GET',
+      });
+
+      expect(args).not.toContain('--http2');
+    });
   });
 
   describe('formatCommandForDisplay', () => {

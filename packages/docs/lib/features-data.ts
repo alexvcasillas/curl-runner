@@ -8,6 +8,7 @@ import {
   FileJson,
   Gauge,
   GitBranch,
+  Network,
   RotateCcw,
   Terminal,
   TrendingUp,
@@ -773,6 +774,73 @@ requests:
       'API snapshots',
       'response snapshots',
       'contract testing',
+    ],
+  },
+  http2: {
+    slug: 'http2',
+    title: 'HTTP/2 Support',
+    shortDescription: 'Enable HTTP/2 protocol with multiplexing',
+    description:
+      'Use HTTP/2 protocol for faster, more efficient requests with multiplexing support. Reduce latency and improve throughput for modern APIs.',
+    icon: Network,
+    color: 'sky',
+    gradient: 'from-sky-400 to-sky-600',
+    benefits: [
+      {
+        title: 'Multiplexing',
+        description:
+          'Send multiple requests over a single connection simultaneously, reducing overhead and latency.',
+      },
+      {
+        title: 'Header Compression',
+        description:
+          'HTTP/2 compresses headers automatically, reducing bandwidth usage for repeated requests.',
+      },
+      {
+        title: 'Better Performance',
+        description:
+          'Take advantage of modern server infrastructure with improved connection efficiency.',
+      },
+    ],
+    codeExample: {
+      title: 'Enable HTTP/2 for all requests',
+      code: `# CLI flag
+curl-runner api.yaml --http2
+
+# Environment variable
+CURL_RUNNER_HTTP2=true curl-runner api.yaml
+
+# YAML configuration (global)
+global:
+  defaults:
+    http2: true
+
+requests:
+  - name: Fast API Call
+    url: https://api.example.com/data
+
+# YAML configuration (per-request)
+requests:
+  - name: HTTP/2 Request
+    url: https://api.example.com/data
+    http2: true`,
+    },
+    useCases: [
+      'High-performance API testing',
+      'Testing HTTP/2 enabled servers',
+      'Reducing latency in parallel requests',
+      'Modern microservices communication',
+    ],
+    keywords: [
+      'HTTP/2',
+      'http2',
+      'multiplexing',
+      'protocol',
+      'performance',
+      'latency',
+      'connection pooling',
+      'header compression',
+      'modern APIs',
     ],
   },
 };
