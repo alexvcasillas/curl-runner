@@ -310,6 +310,38 @@ export interface CIExitConfig {
   failOnPercentage?: number;
 }
 
+/**
+ * Configuration for TCP connection pooling with HTTP/2 multiplexing.
+ * Groups requests by host and executes them in batched curl processes
+ * to reuse TCP/TLS connections and leverage HTTP/2 stream multiplexing.
+ */
+export interface ConnectionPoolConfig {
+  /**
+   * Enable connection pooling. When enabled, requests to the same host
+   * are batched into a single curl process with HTTP/2 multiplexing.
+   * Default: false
+   */
+  enabled?: boolean;
+  /**
+   * Maximum concurrent streams per host connection.
+   * Maps to curl's --parallel-max flag.
+   * Default: 10
+   */
+  maxStreamsPerHost?: number;
+  /**
+   * TCP keepalive time in seconds.
+   * Maps to curl's --keepalive-time flag.
+   * Default: 60
+   */
+  keepaliveTime?: number;
+  /**
+   * Connection timeout in seconds for establishing new connections.
+   * Maps to curl's --connect-timeout flag.
+   * Default: 30
+   */
+  connectTimeout?: number;
+}
+
 export interface GlobalConfig {
   execution?: 'sequential' | 'parallel';
   /**
@@ -329,6 +361,11 @@ export interface GlobalConfig {
    * Passes --http2 flag to curl.
    */
   http2?: boolean;
+  /**
+   * TCP connection pooling configuration.
+   * Enables request batching and HTTP/2 multiplexing for same-host requests.
+   */
+  connectionPool?: ConnectionPoolConfig;
   /**
    * CI/CD exit code configuration.
    * Controls when curl-runner should exit with non-zero status codes.

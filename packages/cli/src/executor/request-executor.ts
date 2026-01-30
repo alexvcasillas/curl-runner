@@ -15,16 +15,23 @@ import { evaluateCondition } from '../utils/condition-evaluator';
 import { CurlBuilder } from '../utils/curl-builder';
 import { Logger } from '../utils/logger';
 import { createStoreContext, extractStoreValues } from '../utils/response-store';
+import { PooledCurlExecutor } from './pooled-curl-executor';
 
 export class RequestExecutor {
   private logger: Logger;
   private globalConfig: GlobalConfig;
   private snapshotManager: SnapshotManager;
+  private pooledExecutor: PooledCurlExecutor | null = null;
 
   constructor(globalConfig: GlobalConfig = {}) {
     this.globalConfig = globalConfig;
     this.logger = new Logger(globalConfig.output);
     this.snapshotManager = new SnapshotManager(globalConfig.snapshot);
+
+    // Initialize pooled executor if connection pooling is enabled
+    if (globalConfig.connectionPool?.enabled) {
+      this.pooledExecutor = new PooledCurlExecutor(globalConfig.connectionPool);
+    }
   }
 
   private mergeOutputConfig(config: RequestConfig): GlobalConfig['output'] {
@@ -602,6 +609,12 @@ export class RequestExecutor {
 
   async executeParallel(requests: RequestConfig[]): Promise<ExecutionSummary> {
     const startTime = performance.now();
+
+    // Use pooled execution if enabled (HTTP/2 multiplexing + connection reuse)
+    if (this.pooledExecutor && !this.globalConfig.dryRun) {
+      return this.executePooled(requests, startTime);
+    }
+
     const maxConcurrency = this.globalConfig.maxConcurrency;
 
     // If no concurrency limit, execute all requests simultaneously
@@ -624,6 +637,80 @@ export class RequestExecutor {
       // Check if we should stop on error
       const hasError = chunkResults.some((r) => !r.success);
       if (hasError && !this.globalConfig.continueOnError) {
+        this.logger.logError('Stopping execution due to error');
+        break;
+      }
+    }
+
+    return this.createSummary(results, performance.now() - startTime);
+  }
+
+  /**
+   * Executes requests using connection pooling with HTTP/2 multiplexing.
+   * Groups requests by host and batches them into single curl processes.
+   */
+  private async executePooled(
+    requests: RequestConfig[],
+    startTime: number,
+  ): Promise<ExecutionSummary> {
+    this.logger.logInfo(
+      `Using connection pooling (HTTP/2 multiplexing) for ${requests.length} requests`,
+    );
+
+    // Log host groups for visibility
+    const groups = this.pooledExecutor!.groupRequestsByHost(requests);
+    for (const group of groups) {
+      this.logger.logInfo(`  ${group.host}: ${group.requests.length} request(s) batched`);
+    }
+
+    // Execute all batches
+    const rawResults = await this.pooledExecutor!.executeAll(requests);
+
+    // Post-process results: validation, snapshots, logging
+    const results: ExecutionResult[] = [];
+    for (let i = 0; i < rawResults.length; i++) {
+      const result = rawResults[i];
+      const config = requests[i];
+
+      // Create per-request logger with merged output configuration
+      const outputConfig = this.mergeOutputConfig(config);
+      const requestLogger = new Logger(outputConfig);
+
+      requestLogger.logRequestStart(config, i + 1);
+
+      // Apply validation if configured
+      if (result.success && config.expect) {
+        const validationResult = this.validateResponse(result, config.expect);
+        if (!validationResult.success) {
+          result.success = false;
+          result.error = validationResult.error;
+        }
+      }
+
+      // Snapshot testing
+      const snapshotConfig = this.getSnapshotConfig(config);
+      if (snapshotConfig && config.sourceFile && result.success) {
+        const snapshotResult = await this.snapshotManager.compareAndUpdate(
+          config.sourceFile,
+          config.name || 'Request',
+          result,
+          snapshotConfig,
+        );
+        result.snapshotResult = snapshotResult;
+
+        if (!snapshotResult.match && !snapshotResult.updated) {
+          result.success = false;
+          if (!result.error) {
+            result.error = 'Snapshot mismatch';
+          }
+        }
+      }
+
+      requestLogger.logRequestComplete(result);
+      results.push(result);
+
+      // Check if we should stop on error
+      if (!result.success && !this.globalConfig.continueOnError) {
         this.logger.logError('Stopping execution due to error');
         break;
       }
