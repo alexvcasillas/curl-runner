@@ -8,6 +8,7 @@ import {
   FileJson,
   Gauge,
   GitBranch,
+  Layers,
   Network,
   RotateCcw,
   Terminal,
@@ -841,6 +842,70 @@ requests:
       'connection pooling',
       'header compression',
       'modern APIs',
+    ],
+  },
+  'connection-pooling': {
+    slug: 'connection-pooling',
+    title: 'Connection Pooling',
+    shortDescription: 'Reuse TCP connections with HTTP/2 multiplexing',
+    description:
+      'Keep TCP connections alive and reuse them for requests to the same host. Combined with HTTP/2 multiplexing, dramatically reduce connection overhead and improve performance for parallel requests.',
+    icon: Layers,
+    color: 'amber',
+    gradient: 'from-amber-400 to-amber-600',
+    benefits: [
+      {
+        title: 'Single TCP Handshake',
+        description:
+          'Establish one TCP connection per host instead of N connections, eliminating redundant handshakes.',
+      },
+      {
+        title: 'Single TLS Negotiation',
+        description:
+          'Perform TLS handshake once per host, saving significant time on HTTPS requests.',
+      },
+      {
+        title: 'HTTP/2 Stream Multiplexing',
+        description:
+          'Multiplex multiple requests as streams over a single connection for maximum throughput.',
+      },
+    ],
+    codeExample: {
+      title: 'Enable connection pooling with HTTP/2 multiplexing',
+      code: `global:
+  execution: parallel
+  connectionPool:
+    enabled: true
+    maxStreamsPerHost: 10
+    keepaliveTime: 60
+    connectTimeout: 30
+
+requests:
+  - name: Get Users
+    url: https://api.example.com/users
+  - name: Get Posts
+    url: https://api.example.com/posts
+  - name: Get Comments
+    url: https://api.example.com/comments
+  # All 3 requests share ONE TCP + TLS connection!`,
+    },
+    useCases: [
+      'High-volume API testing with reduced latency',
+      'Parallel requests to the same host',
+      'Performance-critical test suites',
+      'Load testing with connection reuse',
+    ],
+    keywords: [
+      'connection pooling',
+      'TCP reuse',
+      'keep-alive',
+      'HTTP/2 multiplexing',
+      'stream multiplexing',
+      'connection reuse',
+      'performance optimization',
+      'parallel requests',
+      'TLS handshake',
+      'batch requests',
     ],
   },
 };

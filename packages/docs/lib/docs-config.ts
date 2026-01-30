@@ -142,6 +142,11 @@ export const docsConfig: SidebarConfig = {
           description: 'Enable HTTP/2 protocol with multiplexing',
         },
         {
+          title: 'Connection Pooling',
+          href: '/docs/features/connection-pooling',
+          description: 'Reuse TCP connections with HTTP/2 multiplexing',
+        },
+        {
           title: 'Output Formats',
           href: '/docs/features/output-formats',
           description: 'Control output format and logging',
