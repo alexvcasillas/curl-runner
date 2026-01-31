@@ -4,7 +4,6 @@ import {
   CheckCircle,
   Code,
   FileSearch,
-  Info,
   Key,
   Link,
   Settings,
@@ -403,7 +402,9 @@ export default function ValidatePage() {
                   </div>
                   <div>
                     <h4 className="font-medium mb-1">Typo Detection</h4>
-                    <p className="text-sm text-muted-foreground">Smart suggestions for misspellings</p>
+                    <p className="text-sm text-muted-foreground">
+                      Smart suggestions for misspellings
+                    </p>
                   </div>
                 </div>
               </div>
@@ -537,36 +538,18 @@ export default function ValidatePage() {
                   Auto-Fixable Issues
                 </h4>
                 <ul className="text-sm text-muted-foreground space-y-1">
-                  <li>
-                    {'\u2022'} Lowercase HTTP methods → UPPERCASE
-                  </li>
+                  <li>{'\u2022'} Lowercase HTTP methods → UPPERCASE</li>
                   <li>
                     {'\u2022'} Missing <code className="font-mono">https://</code> prefix
                   </li>
-                  <li>
-                    {'\u2022'} Protocol typos (htps, htpp, etc.)
-                  </li>
-                  <li>
-                    {'\u2022'} Hostname typos (locahost, etc.)
-                  </li>
-                  <li>
-                    {'\u2022'} Double slashes in URL paths
-                  </li>
-                  <li>
-                    {'\u2022'} Spaces in URLs → %20
-                  </li>
-                  <li>
-                    {'\u2022'} Header casing (content-type → Content-Type)
-                  </li>
-                  <li>
-                    {'\u2022'} Lowercase execution mode
-                  </li>
-                  <li>
-                    {'\u2022'} Lowercase output format
-                  </li>
-                  <li>
-                    {'\u2022'} Lowercase prettyLevel
-                  </li>
+                  <li>{'\u2022'} Protocol typos (htps, htpp, etc.)</li>
+                  <li>{'\u2022'} Hostname typos (locahost, etc.)</li>
+                  <li>{'\u2022'} Double slashes in URL paths</li>
+                  <li>{'\u2022'} Spaces in URLs → %20</li>
+                  <li>{'\u2022'} Header casing (content-type → Content-Type)</li>
+                  <li>{'\u2022'} Lowercase execution mode</li>
+                  <li>{'\u2022'} Lowercase output format</li>
+                  <li>{'\u2022'} Lowercase prettyLevel</li>
                 </ul>
               </div>
 
@@ -943,9 +926,12 @@ export default function ValidatePage() {
                     <div className="space-y-2 text-sm text-muted-foreground">
                       <div>{'\u2022'} Auto-fix changes files in place</div>
                       <div>{'\u2022'} Some issues require manual intervention</div>
-                      <div>{'\u2022'} Warnings don{"'"}t fail validation (unless --strict)</div>
                       <div>
-                        {'\u2022'} Variables (${'{'}{'{'}VAR{'}'}) are not resolved during validation
+                        {'\u2022'} Warnings don{"'"}t fail validation (unless --strict)
+                      </div>
+                      <div>
+                        {'\u2022'} Variables (${'{'}
+                        {'{'}VAR{'}'}) are not resolved during validation
                       </div>
                       <div>{'\u2022'} Security warnings suggest using env vars</div>
                     </div>
