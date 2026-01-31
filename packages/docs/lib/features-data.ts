@@ -11,6 +11,7 @@ import {
   Layers,
   Network,
   RotateCcw,
+  ShieldCheck,
   Terminal,
   TrendingUp,
   Upload,
@@ -969,6 +970,71 @@ curl-runner init -w -o my-api.yaml`,
       'guided setup',
       'templates',
       'quick start',
+    ],
+  },
+  validate: {
+    slug: 'validate',
+    title: 'YAML Validation',
+    shortDescription: 'Validate YAML files and auto-fix issues',
+    description:
+      'Validate curl-runner YAML configuration files against the schema and curl options. Discover issues, get fix suggestions, and auto-fix common problems with a single command.',
+    icon: ShieldCheck,
+    color: 'lime',
+    gradient: 'from-lime-400 to-lime-600',
+    benefits: [
+      {
+        title: 'Catch Errors Early',
+        description:
+          'Validate YAML files before running them. Catch typos, invalid options, and schema violations immediately.',
+      },
+      {
+        title: 'Auto-Fix Common Issues',
+        description:
+          'Automatically fix common problems like lowercase HTTP methods and missing URL schemes with --fix.',
+      },
+      {
+        title: 'Detailed Error Reports',
+        description:
+          'Get clear, actionable error messages with the exact location and suggested fixes for each issue.',
+      },
+    ],
+    codeExample: {
+      title: 'Validate YAML files and auto-fix issues',
+      code: `# Validate all YAML files in current directory
+curl-runner validate
+
+# Validate specific file
+curl-runner validate api.yaml
+
+# Validate with glob pattern
+curl-runner validate "tests/**/*.yaml"
+
+# Validate and auto-fix issues
+curl-runner validate --fix
+
+# Quiet mode - only show errors
+curl-runner validate -q
+
+# Combine flags
+curl-runner validate -fq tests/`,
+    },
+    useCases: [
+      'Pre-commit validation in CI/CD pipelines',
+      'Catching configuration errors before execution',
+      'Migrating or upgrading YAML configurations',
+      'Onboarding new team members with instant feedback',
+    ],
+    keywords: [
+      'yaml validation',
+      'validate command',
+      'schema validation',
+      'auto-fix',
+      'configuration validation',
+      'syntax checking',
+      'lint yaml',
+      'yaml linter',
+      'error detection',
+      'fix command',
     ],
   },
 };
