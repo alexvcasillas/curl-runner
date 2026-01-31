@@ -1,14 +1,6 @@
+import type { ColorName } from '../core/format';
+import { colorize } from '../core/format';
 import type { DiffCompareResult, DiffSummary, ResponseDiff } from '../types/config';
-
-const COLORS = {
-  reset: '\x1b[0m',
-  red: '\x1b[31m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  cyan: '\x1b[36m',
-  dim: '\x1b[2m',
-  bright: '\x1b[1m',
-};
 
 /**
  * Formats diff comparison results for various outputs.
@@ -20,11 +12,11 @@ export class DiffFormatter {
     this.outputFormat = outputFormat;
   }
 
-  private color(text: string, color: keyof typeof COLORS): string {
+  private color(text: string, color: ColorName): string {
     if (this.outputFormat !== 'terminal') {
       return text;
     }
-    return `${COLORS[color]}${text}${COLORS.reset}`;
+    return colorize(text, color);
   }
 
   /**

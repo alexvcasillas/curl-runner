@@ -1,21 +1,13 @@
+import type { ColorName } from '../core/format';
+import { colorize } from '../core/format';
 import type { SnapshotCompareResult, SnapshotDiff } from '../types/config';
-
-const COLORS = {
-  reset: '\x1b[0m',
-  red: '\x1b[31m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  cyan: '\x1b[36m',
-  dim: '\x1b[2m',
-  bright: '\x1b[1m',
-};
 
 /**
  * Formats snapshot comparison results for terminal output.
  */
 export class SnapshotFormatter {
-  private color(text: string, color: keyof typeof COLORS): string {
-    return `${COLORS[color]}${text}${COLORS.reset}`;
+  private color(text: string, color: ColorName): string {
+    return colorize(text, color);
   }
 
   /**

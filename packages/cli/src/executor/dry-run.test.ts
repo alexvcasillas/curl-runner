@@ -318,9 +318,7 @@ describe('RequestExecutor Dry Run Mode', () => {
       const config: GlobalConfig = { dryRun: true };
       const executor = new RequestExecutor(config);
 
-      const requests: RequestConfig[] = [
-        { url: 'https://api.example.com/users', method: 'GET' },
-      ];
+      const requests: RequestConfig[] = [{ url: 'https://api.example.com/users', method: 'GET' }];
 
       const summary = await executor.execute(requests);
 

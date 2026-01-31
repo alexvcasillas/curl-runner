@@ -1,3 +1,6 @@
+import type { CurlExecutionResult } from '../core/curl';
+import { parseResponseBody } from '../core/curl';
+import { postProcessResult, withRetry } from '../core/execution';
 import { YamlParser } from '../parser/yaml';
 import { SnapshotManager } from '../snapshot/snapshot-manager';
 import type {
@@ -6,7 +9,6 @@ import type {
   FileAttachment,
   FormFieldValue,
   GlobalConfig,
-  JsonValue,
   RequestConfig,
   ResponseStoreContext,
   SnapshotConfig,
@@ -126,408 +128,62 @@ export class RequestExecutor {
       return dryRunResult;
     }
 
-    let attempt = 0;
-    let lastError: string | undefined;
-    const maxAttempts = (config.retry?.count || 0) + 1;
+    // Execute curl with retry logic
+    const retryResult = await withRetry<CurlExecutionResult>(() => CurlBuilder.executeCurl(args), {
+      config: config.retry,
+      shouldRetry: (result) => !result.success,
+      onRetry: (attempt, max) => requestLogger.logRetry(attempt, max),
+    });
 
-    while (attempt < maxAttempts) {
-      if (attempt > 0) {
-        requestLogger.logRetry(attempt, maxAttempts - 1);
-        if (config.retry?.delay) {
-          const backoff = config.retry.backoff ?? 1;
-          const delay = config.retry.delay * backoff ** (attempt - 1);
-          await Bun.sleep(delay);
-        }
-      }
-
-      const result = await CurlBuilder.executeCurl(args);
-
-      if (result.success) {
-        let body = result.body;
-        try {
-          if (
-            result.headers?.['content-type']?.includes('application/json') ||
-            (body && (body.trim().startsWith('{') || body.trim().startsWith('[')))
-          ) {
-            body = JSON.parse(body);
-          }
-        } catch (_e) {}
-
-        const executionResult: ExecutionResult = {
-          request: config,
-          success: true,
-          status: result.status,
-          headers: result.headers,
-          body,
-          metrics: {
-            ...result.metrics,
-            duration: performance.now() - startTime,
-          },
-        };
-
-        if (config.expect) {
-          const validationResult = this.validateResponse(executionResult, config.expect);
-          if (!validationResult.success) {
-            executionResult.success = false;
-            executionResult.error = validationResult.error;
-          }
-        }
-
-        // Snapshot testing
-        const snapshotConfig = this.getSnapshotConfig(config);
-        if (snapshotConfig && config.sourceFile) {
-          const snapshotResult = await this.snapshotManager.compareAndUpdate(
-            config.sourceFile,
-            config.name || 'Request',
-            executionResult,
-            snapshotConfig,
-          );
-          executionResult.snapshotResult = snapshotResult;
-
-          if (!snapshotResult.match && !snapshotResult.updated) {
-            executionResult.success = false;
-            if (!executionResult.error) {
-              executionResult.error = 'Snapshot mismatch';
-            }
-          }
-        }
-
-        requestLogger.logRequestComplete(executionResult);
-        return executionResult;
-      }
-
-      lastError = result.error;
-      attempt++;
+    // Handle curl execution failure (all retries exhausted)
+    if (!retryResult.success || !retryResult.value?.success) {
+      const failedResult: ExecutionResult = {
+        request: config,
+        success: false,
+        error: retryResult.error || retryResult.value?.error,
+        metrics: {
+          duration: performance.now() - startTime,
+        },
+      };
+      requestLogger.logRequestComplete(failedResult);
+      return failedResult;
     }
 
-    const failedResult: ExecutionResult = {
+    // Process successful curl result
+    const curlResult = retryResult.value;
+    const executionResult = this.processCurlResult(config, curlResult, startTime);
+
+    // Apply validation and snapshot testing
+    await postProcessResult(executionResult, config, {
+      snapshotManager: this.snapshotManager,
+      snapshotConfig: this.getSnapshotConfig(config),
+    });
+
+    requestLogger.logRequestComplete(executionResult);
+    return executionResult;
+  }
+
+  /**
+   * Processes a successful curl result into an execution result.
+   */
+  private processCurlResult(
+    config: RequestConfig,
+    curlResult: CurlExecutionResult,
+    startTime: number,
+  ): ExecutionResult {
+    const body = parseResponseBody(curlResult.body, curlResult.headers?.['content-type']);
+
+    return {
       request: config,
-      success: false,
-      error: lastError,
+      success: true,
+      status: curlResult.status,
+      headers: curlResult.headers,
+      body,
       metrics: {
+        ...curlResult.metrics,
         duration: performance.now() - startTime,
       },
     };
-
-    requestLogger.logRequestComplete(failedResult);
-    return failedResult;
-  }
-
-  private validateResponse(
-    result: ExecutionResult,
-    expect: RequestConfig['expect'],
-  ): { success: boolean; error?: string } {
-    if (!expect) {
-      return { success: true };
-    }
-
-    const errors: string[] = [];
-
-    // Validate status
-    if (expect.status !== undefined) {
-      const expectedStatuses = Array.isArray(expect.status) ? expect.status : [expect.status];
-      if (!expectedStatuses.includes(result.status || 0)) {
-        errors.push(`Expected status ${expectedStatuses.join(' or ')}, got ${result.status}`);
-      }
-    }
-
-    // Validate headers
-    if (expect.headers) {
-      for (const [key, value] of Object.entries(expect.headers)) {
-        const actualValue = result.headers?.[key] || result.headers?.[key.toLowerCase()];
-        if (actualValue !== value) {
-          errors.push(`Expected header ${key}="${value}", got "${actualValue}"`);
-        }
-      }
-    }
-
-    // Validate body
-    if (expect.body !== undefined) {
-      const bodyErrors = this.validateBodyProperties(result.body, expect.body, '');
-      if (bodyErrors.length > 0) {
-        errors.push(...bodyErrors);
-      }
-    }
-
-    // Validate response time
-    if (expect.responseTime !== undefined && result.metrics) {
-      const responseTimeMs = result.metrics.duration;
-      if (!this.validateRangePattern(responseTimeMs, expect.responseTime)) {
-        errors.push(
-          `Expected response time to match ${expect.responseTime}ms, got ${responseTimeMs.toFixed(2)}ms`,
-        );
-      }
-    }
-
-    const hasValidationErrors = errors.length > 0;
-
-    // Handle failure expectation logic
-    if (expect.failure === true) {
-      // We expect this request to fail (negative testing)
-      // Success means: validations pass AND status indicates error (4xx/5xx)
-      if (hasValidationErrors) {
-        return { success: false, error: errors.join('; ') };
-      }
-
-      // Check if status indicates an error
-      const status = result.status || 0;
-      if (status >= 400) {
-        // Status indicates error and validations passed - SUCCESS for negative testing
-        return { success: true };
-      } else {
-        // Expected failure but got success status - FAILURE
-        return {
-          success: false,
-          error: `Expected request to fail (4xx/5xx) but got status ${status}`,
-        };
-      }
-    } else {
-      // Normal case: expect success (validations should pass)
-      if (hasValidationErrors) {
-        return { success: false, error: errors.join('; ') };
-      } else {
-        return { success: true };
-      }
-    }
-  }
-
-  private validateBodyProperties(
-    actualBody: JsonValue,
-    expectedBody: JsonValue,
-    path: string,
-  ): string[] {
-    const errors: string[] = [];
-
-    if (typeof expectedBody !== 'object' || expectedBody === null) {
-      // Advanced value validation
-      const validationResult = this.validateValue(actualBody, expectedBody, path || 'body');
-      if (!validationResult.isValid) {
-        errors.push(validationResult.error!);
-      }
-      return errors;
-    }
-
-    // Array validation
-    if (Array.isArray(expectedBody)) {
-      const validationResult = this.validateValue(actualBody, expectedBody, path || 'body');
-      if (!validationResult.isValid) {
-        errors.push(validationResult.error!);
-      }
-      return errors;
-    }
-
-    // Object property comparison with array selector support
-    for (const [key, expectedValue] of Object.entries(expectedBody)) {
-      const currentPath = path ? `${path}.${key}` : key;
-      let actualValue: JsonValue;
-
-      // Handle array selectors like [0], [-1], *, slice(0,3)
-      if (Array.isArray(actualBody) && this.isArraySelector(key)) {
-        actualValue = this.getArrayValue(actualBody, key);
-      } else {
-        actualValue = actualBody?.[key];
-      }
-
-      if (
-        typeof expectedValue === 'object' &&
-        expectedValue !== null &&
-        !Array.isArray(expectedValue)
-      ) {
-        // Recursive validation for nested objects
-        const nestedErrors = this.validateBodyProperties(actualValue, expectedValue, currentPath);
-        errors.push(...nestedErrors);
-      } else {
-        // Advanced value validation
-        const validationResult = this.validateValue(actualValue, expectedValue, currentPath);
-        if (!validationResult.isValid) {
-          errors.push(validationResult.error!);
-        }
-      }
-    }
-
-    return errors;
-  }
-
-  private validateValue(
-    actualValue: JsonValue,
-    expectedValue: JsonValue,
-    path: string,
-  ): { isValid: boolean; error?: string } {
-    // Wildcard validation - accept any value
-    if (expectedValue === '*') {
-      return { isValid: true };
-    }
-
-    // Multiple acceptable values (array)
-    if (Array.isArray(expectedValue)) {
-      const isMatch = expectedValue.some((expected) => {
-        if (expected === '*') {
-          return true;
-        }
-        if (typeof expected === 'string' && this.isRegexPattern(expected)) {
-          return this.validateRegexPattern(actualValue, expected);
-        }
-        if (typeof expected === 'string' && this.isRangePattern(expected)) {
-          return this.validateRangePattern(actualValue, expected);
-        }
-        return actualValue === expected;
-      });
-
-      if (!isMatch) {
-        return {
-          isValid: false,
-          error: `Expected ${path} to match one of ${JSON.stringify(expectedValue)}, got ${JSON.stringify(actualValue)}`,
-        };
-      }
-      return { isValid: true };
-    }
-
-    // Regex pattern validation
-    if (typeof expectedValue === 'string' && this.isRegexPattern(expectedValue)) {
-      if (!this.validateRegexPattern(actualValue, expectedValue)) {
-        return {
-          isValid: false,
-          error: `Expected ${path} to match pattern ${expectedValue}, got ${JSON.stringify(actualValue)}`,
-        };
-      }
-      return { isValid: true };
-    }
-
-    // Numeric range validation
-    if (typeof expectedValue === 'string' && this.isRangePattern(expectedValue)) {
-      if (!this.validateRangePattern(actualValue, expectedValue)) {
-        return {
-          isValid: false,
-          error: `Expected ${path} to match range ${expectedValue}, got ${JSON.stringify(actualValue)}`,
-        };
-      }
-      return { isValid: true };
-    }
-
-    // Null handling
-    if (expectedValue === 'null' || expectedValue === null) {
-      if (actualValue !== null) {
-        return {
-          isValid: false,
-          error: `Expected ${path} to be null, got ${JSON.stringify(actualValue)}`,
-        };
-      }
-      return { isValid: true };
-    }
-
-    // Exact value comparison
-    if (actualValue !== expectedValue) {
-      return {
-        isValid: false,
-        error: `Expected ${path} to be ${JSON.stringify(expectedValue)}, got ${JSON.stringify(actualValue)}`,
-      };
-    }
-
-    return { isValid: true };
-  }
-
-  private isRegexPattern(pattern: string): boolean {
-    return (
-      pattern.startsWith('^') ||
-      pattern.endsWith('$') ||
-      pattern.includes('\\d') ||
-      pattern.includes('\\w') ||
-      pattern.includes('\\s') ||
-      pattern.includes('[') ||
-      pattern.includes('*') ||
-      pattern.includes('+') ||
-      pattern.includes('?')
-    );
-  }
-
-  private validateRegexPattern(actualValue: JsonValue, pattern: string): boolean {
-    // Convert value to string for regex matching
-    const stringValue = String(actualValue);
-    try {
-      const regex = new RegExp(pattern);
-      return regex.test(stringValue);
-    } catch {
-      return false;
-    }
-  }
-
-  private isRangePattern(pattern: string): boolean {
-    // Only match explicit comparison operators, not simple number-dash-number patterns
-    // This prevents matching things like zip codes "92998-3874" as ranges
-    return /^(>=?|<=?|>|<)\s*[\d.-]+(\s*,\s*(>=?|<=?|>|<)\s*[\d.-]+)*$/.test(pattern);
-  }
-
-  private validateRangePattern(actualValue: JsonValue, pattern: string): boolean {
-    const numValue = Number(actualValue);
-    if (Number.isNaN(numValue)) {
-      return false;
-    }
-
-    // Handle range like "10 - 50" or "10-50"
-    const rangeMatch = pattern.match(/^([\d.-]+)\s*-\s*([\d.-]+)$/);
-    if (rangeMatch) {
-      const min = Number(rangeMatch[1]);
-      const max = Number(rangeMatch[2]);
-      return numValue >= min && numValue <= max;
-    }
-
-    // Handle comma-separated conditions like ">= 0, <= 100"
-    const conditions = pattern.split(',').map((c) => c.trim());
-    return conditions.every((condition) => {
-      const match = condition.match(/^(>=?|<=?|>|<)\s*([\d.-]+)$/);
-      if (!match) {
-        return false;
-      }
-
-      const operator = match[1];
-      const targetValue = Number(match[2]);
-
-      switch (operator) {
-        case '>':
-          return numValue > targetValue;
-        case '>=':
-          return numValue >= targetValue;
-        case '<':
-          return numValue < targetValue;
-        case '<=':
-          return numValue <= targetValue;
-        default:
-          return false;
-      }
-    });
-  }
-
-  private isArraySelector(key: string): boolean {
-    return /^\[.*\]$/.test(key) || key === '*' || key.startsWith('slice(');
-  }
-
-  private getArrayValue(array: JsonValue[], selector: string): JsonValue {
-    if (selector === '*') {
-      return array; // Return entire array for * validation
-    }
-
-    if (selector.startsWith('[') && selector.endsWith(']')) {
-      const index = selector.slice(1, -1);
-      if (index === '*') {
-        return array;
-      }
-
-      const numIndex = Number(index);
-      if (!Number.isNaN(numIndex)) {
-        return numIndex >= 0 ? array[numIndex] : array[array.length + numIndex];
-      }
-    }
-
-    if (selector.startsWith('slice(')) {
-      const match = selector.match(/slice\((\d+)(?:,(\d+))?\)/);
-      if (match) {
-        const start = Number(match[1]);
-        const end = match[2] ? Number(match[2]) : undefined;
-        return array.slice(start, end);
-      }
-    }
-
-    return undefined;
   }
 
   async executeSequential(requests: RequestConfig[]): Promise<ExecutionSummary> {
@@ -678,33 +334,11 @@ export class RequestExecutor {
 
       requestLogger.logRequestStart(config, i + 1);
 
-      // Apply validation if configured
-      if (result.success && config.expect) {
-        const validationResult = this.validateResponse(result, config.expect);
-        if (!validationResult.success) {
-          result.success = false;
-          result.error = validationResult.error;
-        }
-      }
-
-      // Snapshot testing
-      const snapshotConfig = this.getSnapshotConfig(config);
-      if (snapshotConfig && config.sourceFile && result.success) {
-        const snapshotResult = await this.snapshotManager.compareAndUpdate(
-          config.sourceFile,
-          config.name || 'Request',
-          result,
-          snapshotConfig,
-        );
-        result.snapshotResult = snapshotResult;
-
-        if (!snapshotResult.match && !snapshotResult.updated) {
-          result.success = false;
-          if (!result.error) {
-            result.error = 'Snapshot mismatch';
-          }
-        }
-      }
+      // Apply validation and snapshot testing
+      await postProcessResult(result, config, {
+        snapshotManager: this.snapshotManager,
+        snapshotConfig: this.getSnapshotConfig(config),
+      });
 
       requestLogger.logRequestComplete(result);
       results.push(result);
