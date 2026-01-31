@@ -504,7 +504,7 @@ export class ValidateCommand {
 
   private validateGlobalConfig(config: GlobalConfig, path: string): void {
     // Check for unknown keys
-    this.checkUnknownKeys(config, VALID_GLOBAL_KEYS, path);
+    this.checkUnknownKeys(config as unknown as Record<string, unknown>, VALID_GLOBAL_KEYS, path);
 
     // Execution mode
     if (config.execution && !VALID_EXECUTION_MODES.includes(config.execution)) {
@@ -537,9 +537,10 @@ export class ValidateCommand {
     }
 
     // Boolean fields
-    this.validateBooleanField(config, 'continueOnError', path);
-    this.validateBooleanField(config, 'dryRun', path);
-    this.validateBooleanField(config, 'http2', path);
+    const configRecord = config as unknown as Record<string, unknown>;
+    this.validateBooleanField(configRecord, 'continueOnError', path);
+    this.validateBooleanField(configRecord, 'dryRun', path);
+    this.validateBooleanField(configRecord, 'http2', path);
 
     // Output config
     if (config.output) {
@@ -694,7 +695,7 @@ export class ValidateCommand {
     path: string,
   ): void {
     const validKeys = ['enabled', 'maxStreamsPerHost', 'keepaliveTime', 'connectTimeout'];
-    this.checkUnknownKeys(pool, validKeys, path);
+    this.checkUnknownKeys(pool as unknown as Record<string, unknown>, validKeys, path);
 
     this.validateBooleanField(pool as Record<string, unknown>, 'enabled', path);
 
@@ -723,7 +724,7 @@ export class ValidateCommand {
 
   private validateCIConfig(ci: NonNullable<GlobalConfig['ci']>, path: string): void {
     const validKeys = ['strictExit', 'failOn', 'failOnPercentage'];
-    this.checkUnknownKeys(ci, validKeys, path);
+    this.checkUnknownKeys(ci as unknown as Record<string, unknown>, validKeys, path);
 
     this.validateBooleanField(ci as Record<string, unknown>, 'strictExit', path);
 
@@ -797,8 +798,8 @@ export class ValidateCommand {
   }
 
   private validateWatchConfig(watch: NonNullable<GlobalConfig['watch']>, path: string): void {
-    const validKeys = ['paths', 'debounce', 'ignore'];
-    this.checkUnknownKeys(watch as Record<string, unknown>, validKeys, path);
+    const validKeys = ['enabled', 'debounce', 'clear'];
+    this.checkUnknownKeys(watch as unknown as Record<string, unknown>, validKeys, path);
 
     if (watch.debounce !== undefined) {
       if (typeof watch.debounce !== 'number' || watch.debounce < 0) {
@@ -806,18 +807,13 @@ export class ValidateCommand {
       }
     }
 
-    if (watch.paths !== undefined && !Array.isArray(watch.paths)) {
-      this.addIssue(`${path}.paths`, 'error', 'Must be an array of paths');
-    }
-
-    if (watch.ignore !== undefined && !Array.isArray(watch.ignore)) {
-      this.addIssue(`${path}.ignore`, 'error', 'Must be an array of patterns');
-    }
+    this.validateBooleanField(watch as unknown as Record<string, unknown>, 'enabled', path);
+    this.validateBooleanField(watch as unknown as Record<string, unknown>, 'clear', path);
   }
 
   private validateProfileConfig(profile: NonNullable<GlobalConfig['profile']>, path: string): void {
     const validKeys = ['iterations', 'warmup', 'concurrency', 'percentiles'];
-    this.checkUnknownKeys(profile as Record<string, unknown>, validKeys, path);
+    this.checkUnknownKeys(profile as unknown as Record<string, unknown>, validKeys, path);
 
     if (profile.iterations !== undefined) {
       if (typeof profile.iterations !== 'number' || profile.iterations < 1) {
@@ -874,7 +870,11 @@ export class ValidateCommand {
   }
 
   private validateCollection(collection: NonNullable<YamlFile['collection']>, path: string): void {
-    this.checkUnknownKeys(collection as Record<string, unknown>, VALID_COLLECTION_KEYS, path);
+    this.checkUnknownKeys(
+      collection as unknown as Record<string, unknown>,
+      VALID_COLLECTION_KEYS,
+      path,
+    );
 
     if (!collection.name) {
       this.addIssue(`${path}.name`, 'warning', 'Collection name is recommended');
