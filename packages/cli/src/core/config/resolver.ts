@@ -16,6 +16,7 @@ export type ExecutionMode =
   | 'upgrade'
   | 'init'
   | 'edit'
+  | 'validate'
   | 'help'
   | 'version';
 
@@ -70,6 +71,15 @@ export async function resolveConfig(
       cliOptions: { files: [] },
       files: [],
       mode: 'edit',
+      rawArgs: args,
+    };
+  }
+  if (subcommand === 'validate') {
+    return {
+      config: {},
+      cliOptions: { files: [] },
+      files: [],
+      mode: 'validate',
       rawArgs: args,
     };
   }
