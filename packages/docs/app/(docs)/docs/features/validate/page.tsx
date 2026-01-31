@@ -945,35 +945,33 @@ export default function ValidatePage() {
           <section>
             <H2 id="severity-levels">Severity Levels</H2>
 
-            <div className="grid gap-2 text-sm">
-              <div className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded">
-                <div className="flex items-center gap-2">
+            <div className="grid gap-3 text-sm">
+              <div className="rounded-lg border bg-card p-4">
+                <div className="flex items-center gap-3 mb-2">
                   <Badge variant="destructive">Error</Badge>
-                  <span className="font-mono">● Red</span>
+                  <span className="font-mono text-red-500">●</span>
                 </div>
-                <span className="text-muted-foreground">Must be fixed. Fails validation.</span>
+                <p className="text-muted-foreground">Must be fixed. Fails validation.</p>
               </div>
-              <div className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded">
-                <div className="flex items-center gap-2">
+              <div className="rounded-lg border bg-card p-4">
+                <div className="flex items-center gap-3 mb-2">
                   <Badge variant="secondary" className="bg-yellow-500/20 text-yellow-600">
                     Warning
                   </Badge>
-                  <span className="font-mono">▲ Yellow</span>
+                  <span className="font-mono text-yellow-500">▲</span>
                 </div>
-                <span className="text-muted-foreground">
+                <p className="text-muted-foreground">
                   Should be fixed. Often auto-fixable. Fails with --strict.
-                </span>
+                </p>
               </div>
-              <div className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded">
-                <div className="flex items-center gap-2">
+              <div className="rounded-lg border bg-card p-4">
+                <div className="flex items-center gap-3 mb-2">
                   <Badge variant="secondary" className="bg-blue-500/20 text-blue-600">
                     Info
                   </Badge>
-                  <span className="font-mono">○ Blue</span>
+                  <span className="font-mono text-blue-500">○</span>
                 </div>
-                <span className="text-muted-foreground">
-                  For awareness. Does not affect exit code.
-                </span>
+                <p className="text-muted-foreground">For awareness. Does not affect exit code.</p>
               </div>
             </div>
           </section>
