@@ -1,3 +1,5 @@
+import type { CurlExecutionResult } from '../core/curl';
+import { withRetry } from '../core/execution';
 import { YamlParser } from '../parser/yaml';
 import { SnapshotManager } from '../snapshot/snapshot-manager';
 import type {
@@ -126,91 +128,96 @@ export class RequestExecutor {
       return dryRunResult;
     }
 
-    let attempt = 0;
-    let lastError: string | undefined;
-    const maxAttempts = (config.retry?.count || 0) + 1;
+    // Execute curl with retry logic
+    const retryResult = await withRetry<CurlExecutionResult>(() => CurlBuilder.executeCurl(args), {
+      config: config.retry,
+      shouldRetry: (result) => !result.success,
+      onRetry: (attempt, max) => requestLogger.logRetry(attempt, max),
+    });
 
-    while (attempt < maxAttempts) {
-      if (attempt > 0) {
-        requestLogger.logRetry(attempt, maxAttempts - 1);
-        if (config.retry?.delay) {
-          const backoff = config.retry.backoff ?? 1;
-          const delay = config.retry.delay * backoff ** (attempt - 1);
-          await Bun.sleep(delay);
-        }
-      }
-
-      const result = await CurlBuilder.executeCurl(args);
-
-      if (result.success) {
-        let body = result.body;
-        try {
-          if (
-            result.headers?.['content-type']?.includes('application/json') ||
-            (body && (body.trim().startsWith('{') || body.trim().startsWith('[')))
-          ) {
-            body = JSON.parse(body);
-          }
-        } catch (_e) {}
-
-        const executionResult: ExecutionResult = {
-          request: config,
-          success: true,
-          status: result.status,
-          headers: result.headers,
-          body,
-          metrics: {
-            ...result.metrics,
-            duration: performance.now() - startTime,
-          },
-        };
-
-        if (config.expect) {
-          const validationResult = this.validateResponse(executionResult, config.expect);
-          if (!validationResult.success) {
-            executionResult.success = false;
-            executionResult.error = validationResult.error;
-          }
-        }
-
-        // Snapshot testing
-        const snapshotConfig = this.getSnapshotConfig(config);
-        if (snapshotConfig && config.sourceFile) {
-          const snapshotResult = await this.snapshotManager.compareAndUpdate(
-            config.sourceFile,
-            config.name || 'Request',
-            executionResult,
-            snapshotConfig,
-          );
-          executionResult.snapshotResult = snapshotResult;
-
-          if (!snapshotResult.match && !snapshotResult.updated) {
-            executionResult.success = false;
-            if (!executionResult.error) {
-              executionResult.error = 'Snapshot mismatch';
-            }
-          }
-        }
-
-        requestLogger.logRequestComplete(executionResult);
-        return executionResult;
-      }
-
-      lastError = result.error;
-      attempt++;
+    // Handle curl execution failure (all retries exhausted)
+    if (!retryResult.success || !retryResult.value?.success) {
+      const failedResult: ExecutionResult = {
+        request: config,
+        success: false,
+        error: retryResult.error || retryResult.value?.error,
+        metrics: {
+          duration: performance.now() - startTime,
+        },
+      };
+      requestLogger.logRequestComplete(failedResult);
+      return failedResult;
     }
 
-    const failedResult: ExecutionResult = {
+    // Process successful curl result
+    const curlResult = retryResult.value;
+    const executionResult = this.processCurlResult(config, curlResult, startTime);
+
+    // Validate response
+    if (config.expect) {
+      const validationResult = this.validateResponse(executionResult, config.expect);
+      if (!validationResult.success) {
+        executionResult.success = false;
+        executionResult.error = validationResult.error;
+      }
+    }
+
+    // Snapshot testing
+    const snapshotConfig = this.getSnapshotConfig(config);
+    if (snapshotConfig && config.sourceFile) {
+      const snapshotResult = await this.snapshotManager.compareAndUpdate(
+        config.sourceFile,
+        config.name || 'Request',
+        executionResult,
+        snapshotConfig,
+      );
+      executionResult.snapshotResult = snapshotResult;
+
+      if (!snapshotResult.match && !snapshotResult.updated) {
+        executionResult.success = false;
+        if (!executionResult.error) {
+          executionResult.error = 'Snapshot mismatch';
+        }
+      }
+    }
+
+    requestLogger.logRequestComplete(executionResult);
+    return executionResult;
+  }
+
+  /**
+   * Processes a successful curl result into an execution result.
+   */
+  private processCurlResult(
+    config: RequestConfig,
+    curlResult: CurlExecutionResult,
+    startTime: number,
+  ): ExecutionResult {
+    let body = curlResult.body;
+
+    // Auto-parse JSON response
+    try {
+      if (
+        curlResult.headers?.['content-type']?.includes('application/json') ||
+        (body && (body.trim().startsWith('{') || body.trim().startsWith('[')))
+      ) {
+        body = JSON.parse(body);
+      }
+    } catch {
+      // Keep body as string if JSON parse fails
+    }
+
+    return {
       request: config,
-      success: false,
-      error: lastError,
+      success: true,
+      status: curlResult.status,
+      headers: curlResult.headers,
+      body,
       metrics: {
+        ...curlResult.metrics,
         duration: performance.now() - startTime,
       },
     };
-
-    requestLogger.logRequestComplete(failedResult);
-    return failedResult;
   }
 
   private validateResponse(
