@@ -1,22 +1,19 @@
+import {
+  buildCurlArgs,
+  type CurlMetrics,
+  createBatchMarker,
+  extractBatchMetrics,
+  formatArgsForDisplay,
+  getStatusCode,
+  isSuccessStatus,
+  parseMetrics,
+} from '../core/curl';
 import type {
   ConnectionPoolConfig,
   ExecutionResult,
-  FileAttachment,
-  FormFieldValue,
   JsonValue,
   RequestConfig,
 } from '../types/config';
-
-interface CurlMetrics {
-  response_code?: number;
-  http_code?: number;
-  time_total?: number;
-  size_download?: number;
-  time_namelookup?: number;
-  time_connect?: number;
-  time_appconnect?: number;
-  time_starttransfer?: number;
-}
 
 interface BatchedRequest {
   index: number;
@@ -31,6 +28,7 @@ interface HostGroup {
 /**
  * Executes curl requests with TCP connection pooling and HTTP/2 multiplexing.
  * Groups requests by host and batches them into single curl processes.
+ * Uses shared argument building logic from core/curl.
  */
 export class PooledCurlExecutor {
   private poolConfig: ConnectionPoolConfig;
@@ -77,106 +75,18 @@ export class PooledCurlExecutor {
   }
 
   /**
-   * Checks if a form field value is a file attachment.
-   */
-  private isFileAttachment(value: FormFieldValue): value is FileAttachment {
-    return typeof value === 'object' && value !== null && 'file' in value;
-  }
-
-  /**
    * Builds curl args for a single request within a batch.
-   * Does NOT include the URL - that's added separately.
+   * Uses shared buildCurlArgs with batch-specific marker.
    */
   private buildRequestArgs(config: RequestConfig, requestIndex: number): string[] {
-    const args: string[] = [];
-
-    args.push('-X', config.method || 'GET');
-
-    // Unique marker per request for output parsing
-    args.push(
-      '-w',
-      `\n__CURL_BATCH_${requestIndex}_START__%{json}__CURL_BATCH_${requestIndex}_END__\n`,
-    );
-
-    if (config.headers) {
-      for (const [key, value] of Object.entries(config.headers)) {
-        args.push('-H', `${key}: ${value}`);
-      }
-    }
-
-    if (config.auth) {
-      if (config.auth.type === 'basic' && config.auth.username && config.auth.password) {
-        args.push('-u', `${config.auth.username}:${config.auth.password}`);
-      } else if (config.auth.type === 'bearer' && config.auth.token) {
-        args.push('-H', `Authorization: Bearer ${config.auth.token}`);
-      }
-    }
-
-    if (config.formData) {
-      for (const [fieldName, fieldValue] of Object.entries(config.formData)) {
-        if (this.isFileAttachment(fieldValue)) {
-          let fileSpec = `@${fieldValue.file}`;
-          if (fieldValue.filename) {
-            fileSpec += `;filename=${fieldValue.filename}`;
-          }
-          if (fieldValue.contentType) {
-            fileSpec += `;type=${fieldValue.contentType}`;
-          }
-          args.push('-F', `${fieldName}=${fileSpec}`);
-        } else {
-          const strValue = String(fieldValue);
-          args.push('--form-string', `${fieldName}=${strValue}`);
-        }
-      }
-    } else if (config.body) {
-      const bodyStr = typeof config.body === 'string' ? config.body : JSON.stringify(config.body);
-      args.push('-d', bodyStr);
-
-      if (!config.headers?.['Content-Type']) {
-        args.push('-H', 'Content-Type: application/json');
-      }
-    }
-
-    if (config.timeout) {
-      args.push('--max-time', config.timeout.toString());
-    }
-
-    if (config.followRedirects !== false) {
-      args.push('-L');
-      if (config.maxRedirects) {
-        args.push('--max-redirs', config.maxRedirects.toString());
-      }
-    }
-
-    if (config.proxy) {
-      args.push('-x', config.proxy);
-    }
-
-    if (config.insecure || config.ssl?.verify === false) {
-      args.push('-k');
-    }
-
-    if (config.ssl) {
-      if (config.ssl.ca) {
-        args.push('--cacert', config.ssl.ca);
-      }
-      if (config.ssl.cert) {
-        args.push('--cert', config.ssl.cert);
-      }
-      if (config.ssl.key) {
-        args.push('--key', config.ssl.key);
-      }
-    }
-
-    // Build URL with params
-    let url = config.url;
-    if (config.params && Object.keys(config.params).length > 0) {
-      const queryString = new URLSearchParams(config.params).toString();
-      url += (url.includes('?') ? '&' : '?') + queryString;
-    }
+    const { args, url } = buildCurlArgs(config, {
+      writeOutMarker: createBatchMarker(requestIndex),
+      includeSilentFlags: false, // Added at batch level
+      includeHttp2Flag: false, // Added at batch level
+      includeOutputFlag: false, // Not used in batching
+    });
 
     args.push(url);
-
     return args;
   }
 
@@ -219,14 +129,9 @@ export class PooledCurlExecutor {
     const results = new Map<number, ExecutionResult>();
 
     for (const req of group.requests) {
-      const markerStart = `__CURL_BATCH_${req.index}_START__`;
-      const markerEnd = `__CURL_BATCH_${req.index}_END__`;
+      const { found, metricsJson, startIdx } = extractBatchMetrics(stdout, req.index);
 
-      const startIdx = stdout.indexOf(markerStart);
-      const endIdx = stdout.indexOf(markerEnd);
-
-      if (startIdx === -1 || endIdx === -1) {
-        // Failed to find markers - request likely failed
+      if (!found) {
         results.set(req.index, {
           request: req.config,
           success: false,
@@ -236,17 +141,14 @@ export class PooledCurlExecutor {
         continue;
       }
 
-      const metricsJson = stdout.substring(startIdx + markerStart.length, endIdx);
-      let metrics: CurlMetrics = {};
-
+      let rawMetrics: CurlMetrics = {};
       try {
-        metrics = JSON.parse(metricsJson);
+        rawMetrics = JSON.parse(metricsJson);
       } catch {
         // Ignore parse errors
       }
 
       // Extract body: everything before the marker for this request
-      // This is tricky with batched output - we need to find the body boundaries
       const bodyEnd = startIdx;
       let bodyStart = 0;
 
@@ -278,20 +180,15 @@ export class PooledCurlExecutor {
         // Keep as string
       }
 
+      const statusCode = getStatusCode(rawMetrics);
+      const metrics = parseMetrics(rawMetrics);
+
       results.set(req.index, {
         request: req.config,
-        success: (metrics.response_code || metrics.http_code || 0) < 400,
-        status: metrics.response_code || metrics.http_code,
+        success: isSuccessStatus(statusCode),
+        status: statusCode,
         body: parsedBody,
-        metrics: {
-          duration: (metrics.time_total || 0) * 1000,
-          size: metrics.size_download,
-          dnsLookup: (metrics.time_namelookup || 0) * 1000,
-          tcpConnection: (metrics.time_connect || 0) * 1000,
-          tlsHandshake: (metrics.time_appconnect || 0) * 1000,
-          firstByte: (metrics.time_starttransfer || 0) * 1000,
-          download: (metrics.time_total || 0) * 1000,
-        },
+        metrics,
       });
     }
 
@@ -316,7 +213,6 @@ export class PooledCurlExecutor {
 
       return this.parseBatchedOutput(stdout, stderr, group, proc.exitCode || 0);
     } catch (error) {
-      // Return error for all requests in batch
       const results = new Map<number, ExecutionResult>();
       for (const req of group.requests) {
         results.set(req.index, {
@@ -338,18 +234,15 @@ export class PooledCurlExecutor {
     const groups = this.groupRequestsByHost(requests);
     const allResults = new Map<number, ExecutionResult>();
 
-    // Execute all host groups in parallel
     const batchPromises = groups.map((group) => this.executeBatch(group));
     const batchResults = await Promise.all(batchPromises);
 
-    // Merge results from all batches
     for (const resultMap of batchResults) {
       for (const [index, result] of resultMap) {
         allResults.set(index, result);
       }
     }
 
-    // Return results in original order
     return requests.map((_, index) => {
       return (
         allResults.get(index) || {
@@ -367,12 +260,6 @@ export class PooledCurlExecutor {
    */
   formatBatchedCommandForDisplay(group: HostGroup): string {
     const args = this.buildBatchedCommand(group);
-    return ['curl', ...args]
-      .map((arg) =>
-        arg.includes(' ') || arg.includes('"') || arg.includes("'")
-          ? `'${arg.replace(/'/g, "'\\''")}'`
-          : arg,
-      )
-      .join(' ');
+    return formatArgsForDisplay(args);
   }
 }
