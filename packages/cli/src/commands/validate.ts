@@ -190,10 +190,8 @@ export class ValidateCommand {
     this.currentFile = file;
 
     let content: YamlFile;
-    let rawContent: string;
 
     try {
-      rawContent = await Bun.file(file).text();
       content = await YamlParser.parseFile(file);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -257,7 +255,11 @@ export class ValidateCommand {
     const hasCollection = 'collection' in content;
 
     if (!hasRequest && !hasRequests && !hasCollection) {
-      this.addIssue('', 'error', 'Missing request(s). Must have "request", "requests", or "collection"');
+      this.addIssue(
+        '',
+        'error',
+        'Missing request(s). Must have "request", "requests", or "collection"',
+      );
     }
 
     if (hasRequest && hasRequests) {
@@ -347,10 +349,7 @@ export class ValidateCommand {
     }
   }
 
-  private validateOutputConfig(
-    output: NonNullable<GlobalConfig['output']>,
-    path: string,
-  ): void {
+  private validateOutputConfig(output: NonNullable<GlobalConfig['output']>, path: string): void {
     if (output.format && !VALID_OUTPUT_FORMATS.includes(output.format)) {
       this.addIssue(
         `${path}.format`,
@@ -390,7 +389,11 @@ export class ValidateCommand {
       this.addIssue(`${path}.failOn`, 'error', 'Must be a non-negative number');
     }
     if (ci.failOnPercentage !== undefined) {
-      if (typeof ci.failOnPercentage !== 'number' || ci.failOnPercentage < 0 || ci.failOnPercentage > 100) {
+      if (
+        typeof ci.failOnPercentage !== 'number' ||
+        ci.failOnPercentage < 0 ||
+        ci.failOnPercentage > 100
+      ) {
         this.addIssue(`${path}.failOnPercentage`, 'error', 'Must be a number between 0 and 100');
       }
     }
@@ -414,10 +417,7 @@ export class ValidateCommand {
     }
   }
 
-  private validateProfileConfig(
-    profile: NonNullable<GlobalConfig['profile']>,
-    path: string,
-  ): void {
+  private validateProfileConfig(profile: NonNullable<GlobalConfig['profile']>, path: string): void {
     if (profile.iterations !== undefined) {
       if (typeof profile.iterations !== 'number' || profile.iterations < 1) {
         this.addIssue(`${path}.iterations`, 'error', 'Must be a positive number');
@@ -451,10 +451,7 @@ export class ValidateCommand {
     }
   }
 
-  private validateDiffConfig(
-    diff: NonNullable<GlobalConfig['diff']>,
-    path: string,
-  ): void {
+  private validateDiffConfig(diff: NonNullable<GlobalConfig['diff']>, path: string): void {
     if (diff.outputFormat && !VALID_DIFF_OUTPUT_FORMATS.includes(diff.outputFormat)) {
       this.addIssue(
         `${path}.outputFormat`,
@@ -467,10 +464,7 @@ export class ValidateCommand {
     }
   }
 
-  private validateCollection(
-    collection: NonNullable<YamlFile['collection']>,
-    path: string,
-  ): void {
+  private validateCollection(collection: NonNullable<YamlFile['collection']>, path: string): void {
     if (!collection.name) {
       this.addIssue(`${path}.name`, 'warning', 'Collection name is recommended');
     }
@@ -511,37 +505,27 @@ export class ValidateCommand {
       if (typeof request.url !== 'string') {
         this.addIssue(`${path}.url`, 'error', 'URL must be a string');
       } else if (!request.url.startsWith('http') && !request.url.includes('${')) {
-        this.addIssue(
-          `${path}.url`,
-          'warning',
-          'URL should start with http:// or https://',
-          {
-            description: 'Prepend https://',
-            apply: () => `https://${request.url}`,
-          },
-        );
+        this.addIssue(`${path}.url`, 'warning', 'URL should start with http:// or https://', {
+          description: 'Prepend https://',
+          apply: () => `https://${request.url}`,
+        });
       }
     }
 
     // Method validation
     if (request.method) {
       const upperMethod = request.method.toUpperCase();
-      if (!VALID_METHODS.includes(upperMethod as typeof VALID_METHODS[number])) {
+      if (!VALID_METHODS.includes(upperMethod as (typeof VALID_METHODS)[number])) {
         this.addIssue(
           `${path}.method`,
           'error',
           `Invalid method "${request.method}". Must be: ${VALID_METHODS.join(', ')}`,
         );
       } else if (request.method !== upperMethod) {
-        this.addIssue(
-          `${path}.method`,
-          'warning',
-          `Method should be uppercase: "${upperMethod}"`,
-          {
-            description: `Change to "${upperMethod}"`,
-            apply: () => upperMethod,
-          },
-        );
+        this.addIssue(`${path}.method`, 'warning', `Method should be uppercase: "${upperMethod}"`, {
+          description: `Change to "${upperMethod}"`,
+          apply: () => upperMethod,
+        });
       }
     }
 
@@ -722,7 +706,10 @@ export class ValidateCommand {
     }
 
     if (hasSingle) {
-      this.validateConditionExpression(when as { left?: string; operator?: string; right?: unknown }, path);
+      this.validateConditionExpression(
+        when as { left?: string; operator?: string; right?: unknown },
+        path,
+      );
     }
   }
 
@@ -736,7 +723,7 @@ export class ValidateCommand {
 
     if (!cond.operator) {
       this.addIssue(`${path}.operator`, 'error', 'Operator is required');
-    } else if (!VALID_OPERATORS.includes(cond.operator as typeof VALID_OPERATORS[number])) {
+    } else if (!VALID_OPERATORS.includes(cond.operator as (typeof VALID_OPERATORS)[number])) {
       this.addIssue(
         `${path}.operator`,
         'error',
@@ -758,7 +745,11 @@ export class ValidateCommand {
       if (Array.isArray(expect.status)) {
         for (const s of expect.status) {
           if (typeof s !== 'number' || s < 100 || s > 599) {
-            this.addIssue(`${path}.status`, 'error', 'Status codes must be numbers between 100-599');
+            this.addIssue(
+              `${path}.status`,
+              'error',
+              'Status codes must be numbers between 100-599',
+            );
             break;
           }
         }
@@ -775,8 +766,16 @@ export class ValidateCommand {
     // Response time validation
     if (expect.responseTime !== undefined) {
       if (typeof expect.responseTime !== 'string') {
-        this.addIssue(`${path}.responseTime`, 'error', 'Response time must be a string (e.g., "< 1000")');
-      } else if (!expect.responseTime.match(/^[<>]=?\s*(\d+|\$\{[^}]+\})(\s*,\s*[<>]=?\s*(\d+|\$\{[^}]+\}))?$/)) {
+        this.addIssue(
+          `${path}.responseTime`,
+          'error',
+          'Response time must be a string (e.g., "< 1000")',
+        );
+      } else if (
+        !expect.responseTime.match(
+          /^[<>]=?\s*(\d+|\$\{[^}]+\})(\s*,\s*[<>]=?\s*(\d+|\$\{[^}]+\}))?$/,
+        )
+      ) {
         this.addIssue(
           `${path}.responseTime`,
           'warning',
@@ -802,7 +801,9 @@ export class ValidateCommand {
   }
 
   private applyFix(data: Record<string, unknown>, path: string, value: unknown): void {
-    if (!path || path === '(root)') return;
+    if (!path || path === '(root)') {
+      return;
+    }
 
     const parts = path.split('.').flatMap((p) => {
       const match = p.match(/^(\w+)\[(\d+)\]$/);
@@ -856,13 +857,18 @@ export class ValidateCommand {
     }
 
     if (Array.isArray(obj)) {
-      if (obj.length === 0) return '[]';
+      if (obj.length === 0) {
+        return '[]';
+      }
       return obj
         .map((item) => {
           if (typeof item === 'object' && item !== null) {
             const serialized = this.serializeYaml(item, indent + 1);
             const lines = serialized.split('\n');
-            return `${spaces}- ${lines[0]}\n${lines.slice(1).map((l) => `${spaces}  ${l}`).join('\n')}`.trimEnd();
+            return `${spaces}- ${lines[0]}\n${lines
+              .slice(1)
+              .map((l) => `${spaces}  ${l}`)
+              .join('\n')}`.trimEnd();
           }
           return `${spaces}- ${this.serializeYaml(item, indent)}`;
         })
@@ -871,7 +877,9 @@ export class ValidateCommand {
 
     if (typeof obj === 'object') {
       const entries = Object.entries(obj).filter(([, v]) => v !== undefined);
-      if (entries.length === 0) return '{}';
+      if (entries.length === 0) {
+        return '{}';
+      }
       return entries
         .map(([key, value]) => {
           if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
