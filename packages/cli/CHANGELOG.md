@@ -1,5 +1,18 @@
 # @curl-runner/cli
 
+## 1.20.0
+
+### Minor Changes
+
+- [#96](https://github.com/alexvcasillas/curl-runner/pull/96) [`022c831`](https://github.com/alexvcasillas/curl-runner/commit/022c831e2509ee23926090aa9c04b183631f1513) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - feat: add YAML wizard for interactive config creation
+
+  - Add `curl-runner init` for quick YAML file creation
+  - Add `curl-runner init --wizard` for full interactive wizard
+  - Add `curl-runner edit <file>` to modify existing YAML files
+  - Support templates: basic-get, basic-post, api-test, file-upload, auth-flow
+  - Preview YAML before saving with option to run immediately
+  - Add 51 new tests for wizard module
+
 ## 1.19.1
 
 ### Patch Changes
