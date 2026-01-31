@@ -17,4 +17,6 @@ export {
   repeatChar,
   truncate,
 } from './formatters';
+export type { TreeNode } from './tree-renderer';
+export { TreeRenderer } from './tree-renderer';
 export type { AnsiColors, ColorName } from './types';

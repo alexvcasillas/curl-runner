@@ -1,3 +1,4 @@
+import { parseResponseBody } from '../core/curl';
 import type {
   ExecutionResult,
   GlobalConfig,
@@ -28,24 +29,12 @@ export class ProfileExecutor {
     const result = await CurlBuilder.executeCurl(command);
 
     if (result.success) {
-      let body = result.body;
-      try {
-        if (
-          result.headers?.['content-type']?.includes('application/json') ||
-          (body && (body.trim().startsWith('{') || body.trim().startsWith('[')))
-        ) {
-          body = JSON.parse(body);
-        }
-      } catch (_e) {
-        // Keep raw body
-      }
-
       return {
         request: config,
         success: true,
         status: result.status,
         headers: result.headers,
-        body,
+        body: parseResponseBody(result.body, result.headers?.['content-type']),
         metrics: {
           ...result.metrics,
           duration: performance.now() - startTime,

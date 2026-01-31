@@ -7,13 +7,9 @@ import {
   getStatusCode,
   isSuccessStatus,
   parseMetrics,
+  parseResponseBody,
 } from '../core/curl';
-import type {
-  ConnectionPoolConfig,
-  ExecutionResult,
-  JsonValue,
-  RequestConfig,
-} from '../types/config';
+import type { ConnectionPoolConfig, ExecutionResult, RequestConfig } from '../types/config';
 
 interface BatchedRequest {
   index: number;
@@ -169,17 +165,6 @@ export class PooledCurlExecutor {
       }
 
       const body: string | undefined = stdout.substring(bodyStart, bodyEnd).trim();
-
-      // Try to parse as JSON
-      let parsedBody: JsonValue = body;
-      try {
-        if (body && (body.startsWith('{') || body.startsWith('['))) {
-          parsedBody = JSON.parse(body) as JsonValue;
-        }
-      } catch {
-        // Keep as string
-      }
-
       const statusCode = getStatusCode(rawMetrics);
       const metrics = parseMetrics(rawMetrics);
 
@@ -187,7 +172,7 @@ export class PooledCurlExecutor {
         request: req.config,
         success: isSuccessStatus(statusCode),
         status: statusCode,
-        body: parsedBody,
+        body: parseResponseBody(body),
         metrics,
       });
     }

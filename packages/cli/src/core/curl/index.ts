@@ -11,6 +11,8 @@ export {
   METRICS_MARKER_END,
   METRICS_MARKER_START,
 } from './args-builder';
+// Body parser
+export { isJsonContentType, looksLikeJson, parseResponseBody } from './body-parser';
 // Response parser
 export {
   extractBatchMetrics,

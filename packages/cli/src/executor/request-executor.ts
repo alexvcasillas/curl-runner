@@ -1,6 +1,6 @@
 import type { CurlExecutionResult } from '../core/curl';
-import { withRetry } from '../core/execution';
-import { validateResponse } from '../core/validation';
+import { parseResponseBody } from '../core/curl';
+import { postProcessResult, withRetry } from '../core/execution';
 import { YamlParser } from '../parser/yaml';
 import { SnapshotManager } from '../snapshot/snapshot-manager';
 import type {
@@ -153,33 +153,11 @@ export class RequestExecutor {
     const curlResult = retryResult.value;
     const executionResult = this.processCurlResult(config, curlResult, startTime);
 
-    // Validate response
-    if (config.expect) {
-      const validationResult = validateResponse(executionResult, config.expect);
-      if (!validationResult.success) {
-        executionResult.success = false;
-        executionResult.error = validationResult.error;
-      }
-    }
-
-    // Snapshot testing
-    const snapshotConfig = this.getSnapshotConfig(config);
-    if (snapshotConfig && config.sourceFile) {
-      const snapshotResult = await this.snapshotManager.compareAndUpdate(
-        config.sourceFile,
-        config.name || 'Request',
-        executionResult,
-        snapshotConfig,
-      );
-      executionResult.snapshotResult = snapshotResult;
-
-      if (!snapshotResult.match && !snapshotResult.updated) {
-        executionResult.success = false;
-        if (!executionResult.error) {
-          executionResult.error = 'Snapshot mismatch';
-        }
-      }
-    }
+    // Apply validation and snapshot testing
+    await postProcessResult(executionResult, config, {
+      snapshotManager: this.snapshotManager,
+      snapshotConfig: this.getSnapshotConfig(config),
+    });
 
     requestLogger.logRequestComplete(executionResult);
     return executionResult;
@@ -193,19 +171,7 @@ export class RequestExecutor {
     curlResult: CurlExecutionResult,
     startTime: number,
   ): ExecutionResult {
-    let body = curlResult.body;
-
-    // Auto-parse JSON response
-    try {
-      if (
-        curlResult.headers?.['content-type']?.includes('application/json') ||
-        (body && (body.trim().startsWith('{') || body.trim().startsWith('[')))
-      ) {
-        body = JSON.parse(body);
-      }
-    } catch {
-      // Keep body as string if JSON parse fails
-    }
+    const body = parseResponseBody(curlResult.body, curlResult.headers?.['content-type']);
 
     return {
       request: config,
@@ -368,33 +334,11 @@ export class RequestExecutor {
 
       requestLogger.logRequestStart(config, i + 1);
 
-      // Apply validation if configured
-      if (result.success && config.expect) {
-        const validationResult = validateResponse(result, config.expect);
-        if (!validationResult.success) {
-          result.success = false;
-          result.error = validationResult.error;
-        }
-      }
-
-      // Snapshot testing
-      const snapshotConfig = this.getSnapshotConfig(config);
-      if (snapshotConfig && config.sourceFile && result.success) {
-        const snapshotResult = await this.snapshotManager.compareAndUpdate(
-          config.sourceFile,
-          config.name || 'Request',
-          result,
-          snapshotConfig,
-        );
-        result.snapshotResult = snapshotResult;
-
-        if (!snapshotResult.match && !snapshotResult.updated) {
-          result.success = false;
-          if (!result.error) {
-            result.error = 'Snapshot mismatch';
-          }
-        }
-      }
+      // Apply validation and snapshot testing
+      await postProcessResult(result, config, {
+        snapshotManager: this.snapshotManager,
+        snapshotConfig: this.getSnapshotConfig(config),
+      });
 
       requestLogger.logRequestComplete(result);
       results.push(result);
