@@ -14,6 +14,7 @@ import {
   Terminal,
   TrendingUp,
   Upload,
+  Wand2,
   Zap,
 } from 'lucide-react';
 
@@ -906,6 +907,68 @@ requests:
       'parallel requests',
       'TLS handshake',
       'batch requests',
+    ],
+  },
+  'yaml-wizard': {
+    slug: 'yaml-wizard',
+    title: 'YAML Wizard',
+    shortDescription: 'Interactive CLI for creating YAML files',
+    description:
+      'Create curl-runner YAML configuration files interactively with a guided wizard. No need to memorize syntax - just answer prompts and get a working configuration file.',
+    icon: Wand2,
+    color: 'fuchsia',
+    gradient: 'from-fuchsia-400 to-fuchsia-600',
+    benefits: [
+      {
+        title: 'Zero Learning Curve',
+        description:
+          'Get started immediately without reading documentation. The wizard guides you through all options step by step.',
+      },
+      {
+        title: 'Template Support',
+        description:
+          'Start from pre-built templates for common use cases like API tests, file uploads, and authentication flows.',
+      },
+      {
+        title: 'Edit Existing Files',
+        description:
+          'Load and modify existing YAML files through the wizard. Perfect for updating configurations without manual editing.',
+      },
+    ],
+    codeExample: {
+      title: 'Create YAML files interactively',
+      code: `# Quick create with prompts
+curl-runner init
+
+# Full interactive wizard
+curl-runner init --wizard
+
+# Quick create with URL
+curl-runner init https://api.example.com/users
+
+# Edit existing file
+curl-runner edit api-test.yaml
+
+# Save to custom file
+curl-runner init -w -o my-api.yaml`,
+    },
+    useCases: [
+      'Getting started with curl-runner quickly',
+      'Creating complex configurations without syntax errors',
+      'Exploring available options and features',
+      'Updating existing YAML files safely',
+    ],
+    keywords: [
+      'yaml wizard',
+      'interactive cli',
+      'configuration generator',
+      'create yaml',
+      'init command',
+      'edit command',
+      'wizard mode',
+      'guided setup',
+      'templates',
+      'quick start',
     ],
   },
 };

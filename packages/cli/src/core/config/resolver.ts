@@ -14,6 +14,8 @@ export type ExecutionMode =
   | 'profile'
   | 'diff-subcommand'
   | 'upgrade'
+  | 'init'
+  | 'edit'
   | 'help'
   | 'version';
 
@@ -50,6 +52,24 @@ export async function resolveConfig(
       cliOptions: { files: [] },
       files: [],
       mode: 'upgrade',
+      rawArgs: args,
+    };
+  }
+  if (subcommand === 'init') {
+    return {
+      config: {},
+      cliOptions: { files: [] },
+      files: [],
+      mode: 'init',
+      rawArgs: args,
+    };
+  }
+  if (subcommand === 'edit') {
+    return {
+      config: {},
+      cliOptions: { files: [] },
+      files: [],
+      mode: 'edit',
       rawArgs: args,
     };
   }

@@ -7,6 +7,8 @@ import {
   buildWatchConfig,
   type CLIOptions,
   mergeGlobalConfigs,
+  parseEditArgs,
+  parseInitArgs,
   resolveConfig,
 } from './core/config';
 import { BaselineManager, DiffFormatter, DiffOrchestrator } from './diff';
@@ -27,6 +29,7 @@ import { exportToCSV, exportToJSON } from './utils/stats';
 import { VersionChecker } from './utils/version-checker';
 import { getVersion } from './version';
 import { FileWatcher } from './watcher/file-watcher';
+import { quickInit, runWizard } from './wizard';
 
 class CurlRunnerCLI {
   private logger = new Logger();
@@ -66,6 +69,14 @@ class CurlRunnerCLI {
 
         case 'diff-subcommand':
           await this.executeDiffSubcommand(rawArgs.slice(1), cliOptions);
+          return;
+
+        case 'init':
+          await this.executeInit(rawArgs);
+          return;
+
+        case 'edit':
+          await this.executeEdit(rawArgs);
           return;
 
         case 'profile':
@@ -304,6 +315,40 @@ class CurlRunnerCLI {
     }
   }
 
+  private async executeInit(rawArgs: string[]): Promise<void> {
+    const options = parseInitArgs(rawArgs);
+
+    if (rawArgs.includes('--help') || rawArgs.includes('-h')) {
+      this.showInitHelp();
+      return;
+    }
+
+    if (options.wizard) {
+      await runWizard({ outputPath: options.outputPath });
+    } else {
+      await quickInit(options.url);
+    }
+  }
+
+  private async executeEdit(rawArgs: string[]): Promise<void> {
+    const options = parseEditArgs(rawArgs);
+
+    if (rawArgs.includes('--help') || rawArgs.includes('-h')) {
+      this.showEditHelp();
+      return;
+    }
+
+    if (!options.file) {
+      this.logger.logError('Usage: curl-runner edit <file.yaml>');
+      process.exit(1);
+    }
+
+    await runWizard({
+      editFile: options.file,
+      outputPath: options.outputPath,
+    });
+  }
+
   private async executeDiffSubcommand(args: string[], options: CLIOptions): Promise<void> {
     const label1 = args[0];
     const label2 = args[1];
@@ -451,6 +496,53 @@ class CurlRunnerCLI {
     return !config.continueOnError ? 1 : 0;
   }
 
+  private showInitHelp(): void {
+    console.log(`
+${this.logger.color('🚀 CURL RUNNER - INIT', 'bright')}
+
+${this.logger.color('USAGE:', 'yellow')}
+  curl-runner init [url] [options]
+
+${this.logger.color('OPTIONS:', 'yellow')}
+  -w, --wizard          Launch full interactive wizard
+  -o, --output <file>   Output file path (default: request.yaml)
+  -h, --help            Show this help
+
+${this.logger.color('EXAMPLES:', 'yellow')}
+  # Quick init with prompts
+  curl-runner init
+
+  # Quick init with URL
+  curl-runner init https://api.example.com/users
+
+  # Full wizard mode
+  curl-runner init --wizard
+
+  # Wizard with custom output
+  curl-runner init -w -o api-test.yaml
+`);
+  }
+
+  private showEditHelp(): void {
+    console.log(`
+${this.logger.color('🚀 CURL RUNNER - EDIT', 'bright')}
+
+${this.logger.color('USAGE:', 'yellow')}
+  curl-runner edit <file.yaml> [options]
+
+${this.logger.color('OPTIONS:', 'yellow')}
+  -o, --output <file>   Save to different file (default: overwrite original)
+  -h, --help            Show this help
+
+${this.logger.color('EXAMPLES:', 'yellow')}
+  # Edit existing file
+  curl-runner edit api-test.yaml
+
+  # Edit and save to new file
+  curl-runner edit api-test.yaml -o api-test-v2.yaml
+`);
+  }
+
   private showHelp(): void {
     console.log(`
 ${this.logger.color('🚀 CURL RUNNER', 'bright')}
@@ -524,6 +616,12 @@ ${this.logger.color('UPGRADE:', 'yellow')}
   curl-runner upgrade           Upgrade to latest version (auto-detects install method)
   curl-runner upgrade --dry-run Preview upgrade command without executing
   curl-runner upgrade --force   Force reinstall even if up to date
+
+${this.logger.color('WIZARD:', 'yellow')}
+  curl-runner init              Quick create a new YAML file
+  curl-runner init --wizard     Full interactive wizard
+  curl-runner init <url>        Quick create with URL
+  curl-runner edit <file.yaml>  Edit existing YAML file
 
 ${this.logger.color('EXAMPLES:', 'yellow')}
   # Run all YAML files in current directory
@@ -618,6 +716,15 @@ ${this.logger.color('EXAMPLES:', 'yellow')}
 
   # Diff with JSON output for CI
   curl-runner api.yaml --diff --diff-compare staging --diff-output json
+
+  # Create new YAML file with wizard
+  curl-runner init --wizard
+
+  # Quick create with URL
+  curl-runner init https://api.example.com/users
+
+  # Edit existing YAML file
+  curl-runner edit api-test.yaml
 
 ${this.logger.color('YAML STRUCTURE:', 'yellow')}
   Single request:
