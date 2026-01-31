@@ -1,3 +1,12 @@
+import {
+  ANSI_COLORS,
+  colorize,
+  formatDuration,
+  formatJson,
+  formatLatency,
+  formatSize,
+  getShortFilename,
+} from '../core/format';
 import { SnapshotFormatter } from '../snapshot/snapshot-formatter';
 import type {
   ExecutionResult,
@@ -16,17 +25,11 @@ interface TreeNode {
 }
 
 class TreeRenderer {
-  private colors: Record<string, string>;
-
-  constructor(colors: Record<string, string>) {
-    this.colors = colors;
-  }
-
   private color(text: string, colorName: string): string {
-    if (!colorName || !this.colors[colorName]) {
+    if (!colorName || !(colorName in ANSI_COLORS)) {
       return text;
     }
-    return `${this.colors[colorName]}${text}${this.colors.reset}`;
+    return colorize(text, colorName as keyof typeof ANSI_COLORS);
   }
 
   render(nodes: TreeNode[], basePrefix: string = '   '): void {
@@ -69,31 +72,6 @@ class TreeRenderer {
 export class Logger {
   private config: GlobalConfig['output'];
 
-  private readonly colors = {
-    reset: '\x1b[0m',
-    bright: '\x1b[1m',
-    dim: '\x1b[2m',
-    underscore: '\x1b[4m',
-
-    black: '\x1b[30m',
-    red: '\x1b[31m',
-    green: '\x1b[32m',
-    yellow: '\x1b[33m',
-    blue: '\x1b[34m',
-    magenta: '\x1b[35m',
-    cyan: '\x1b[36m',
-    white: '\x1b[37m',
-
-    bgBlack: '\x1b[40m',
-    bgRed: '\x1b[41m',
-    bgGreen: '\x1b[42m',
-    bgYellow: '\x1b[43m',
-    bgBlue: '\x1b[44m',
-    bgMagenta: '\x1b[45m',
-    bgCyan: '\x1b[46m',
-    bgWhite: '\x1b[47m',
-  };
-
   constructor(config: GlobalConfig['output'] = {}) {
     this.config = {
       verbose: false,
@@ -106,12 +84,8 @@ export class Logger {
     };
   }
 
-  color(text: string, color: keyof typeof this.colors): string {
-    return `${this.colors[color]}${text}${this.colors.reset}`;
-  }
-
-  private getShortFilename(filePath: string): string {
-    return filePath.replace(/.*\//, '').replace('.yaml', '');
+  color(text: string, color: keyof typeof ANSI_COLORS): string {
+    return colorize(text, color);
   }
 
   private shouldShowOutput(): boolean {
@@ -274,32 +248,6 @@ export class Logger {
     }
   }
 
-  private formatJson(data: unknown): string {
-    if (this.config.format === 'raw') {
-      return typeof data === 'string' ? data : JSON.stringify(data);
-    }
-    if (this.config.format === 'json') {
-      return JSON.stringify(data);
-    }
-    return JSON.stringify(data, null, 2);
-  }
-
-  private formatDuration(ms: number): string {
-    if (ms < 1000) {
-      return `${ms.toFixed(0)}ms`;
-    }
-    return `${(ms / 1000).toFixed(2)}s`;
-  }
-
-  private formatSize(bytes: number | undefined): string {
-    if (!bytes) {
-      return '0 B';
-    }
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return `${(bytes / 1024 ** i).toFixed(2)} ${sizes[i]}`;
-  }
-
   logExecutionStart(count: number, mode: string): void {
     if (!this.shouldShowOutput()) {
       return;
@@ -337,7 +285,7 @@ export class Logger {
     // Handle raw format output - only show response body
     if (this.config.format === 'raw') {
       if (result.success && this.config.showBody && result.body) {
-        const bodyStr = this.formatJson(result.body);
+        const bodyStr = formatJson(result.body, this.config.format);
         console.log(bodyStr);
       }
       return;
@@ -375,14 +323,14 @@ export class Logger {
     if (level === 'minimal') {
       // Minimal format: clean tree structure but compact
       const fileTag = result.request.sourceFile
-        ? this.getShortFilename(result.request.sourceFile)
+        ? getShortFilename(result.request.sourceFile)
         : 'inline';
       console.log(
         `${this.color(statusIcon, statusColor)} ${this.color(name, 'bright')} [${fileTag}]`,
       );
 
       const treeNodes: TreeNode[] = [];
-      const renderer = new TreeRenderer(this.colors);
+      const renderer = new TreeRenderer();
 
       treeNodes.push({
         label: result.request.method || 'GET',
@@ -398,7 +346,7 @@ export class Logger {
       });
 
       if (result.metrics) {
-        const durationSize = `${this.formatDuration(result.metrics.duration)} | ${this.formatSize(result.metrics.size)}`;
+        const durationSize = `${formatDuration(result.metrics.duration)} | ${formatSize(result.metrics.size)}`;
         treeNodes.push({
           label: 'Duration',
           value: durationSize,
@@ -428,7 +376,7 @@ export class Logger {
 
     // Build tree structure
     const treeNodes: TreeNode[] = [];
-    const renderer = new TreeRenderer(this.colors);
+    const renderer = new TreeRenderer();
 
     // Main info nodes
     treeNodes.push({ label: 'URL', value: result.request.url, color: 'blue' });
@@ -442,7 +390,7 @@ export class Logger {
     if (result.metrics) {
       treeNodes.push({
         label: 'Duration',
-        value: this.formatDuration(result.metrics.duration),
+        value: formatDuration(result.metrics.duration),
         color: 'cyan',
       });
     }
@@ -462,7 +410,7 @@ export class Logger {
 
     // Add body section if needed
     if (this.shouldShowBody() && result.body) {
-      const bodyStr = this.formatJson(result.body);
+      const bodyStr = formatJson(result.body, this.config.format);
       const lines = bodyStr.split('\n');
       const maxLines = this.shouldShowRequestDetails() ? Infinity : 10;
       const bodyLines = lines.slice(0, maxLines);
@@ -484,14 +432,14 @@ export class Logger {
 
       metricChildren.push({
         label: 'Request Duration',
-        value: this.formatDuration(metrics.duration),
+        value: formatDuration(metrics.duration),
         color: 'cyan',
       });
 
       if (metrics.size !== undefined) {
         metricChildren.push({
           label: 'Response Size',
-          value: this.formatSize(metrics.size),
+          value: formatSize(metrics.size),
           color: 'cyan',
         });
       }
@@ -499,7 +447,7 @@ export class Logger {
       if (metrics.dnsLookup) {
         metricChildren.push({
           label: 'DNS Lookup',
-          value: this.formatDuration(metrics.dnsLookup),
+          value: formatDuration(metrics.dnsLookup),
           color: 'cyan',
         });
       }
@@ -507,7 +455,7 @@ export class Logger {
       if (metrics.tcpConnection) {
         metricChildren.push({
           label: 'TCP Connection',
-          value: this.formatDuration(metrics.tcpConnection),
+          value: formatDuration(metrics.tcpConnection),
           color: 'cyan',
         });
       }
@@ -515,7 +463,7 @@ export class Logger {
       if (metrics.tlsHandshake) {
         metricChildren.push({
           label: 'TLS Handshake',
-          value: this.formatDuration(metrics.tlsHandshake),
+          value: formatDuration(metrics.tlsHandshake),
           color: 'cyan',
         });
       }
@@ -523,7 +471,7 @@ export class Logger {
       if (metrics.firstByte) {
         metricChildren.push({
           label: 'Time to First Byte',
-          value: this.formatDuration(metrics.firstByte),
+          value: formatDuration(metrics.firstByte),
           color: 'cyan',
         });
       }
@@ -635,7 +583,7 @@ export class Logger {
     const summaryPrefix = isGlobal ? '◆ Global Summary' : 'Summary';
     console.log();
     console.log(
-      `${summaryPrefix}: ${this.color(successText, statusColor)} (${this.color(this.formatDuration(summary.duration), 'cyan')})`,
+      `${summaryPrefix}: ${this.color(successText, statusColor)} (${this.color(formatDuration(summary.duration), 'cyan')})`,
     );
 
     if (summary.failed > 0 && this.shouldShowRequestDetails()) {
@@ -692,7 +640,7 @@ export class Logger {
 
     if (reason) {
       const treeNodes: TreeNode[] = [{ label: 'Reason', value: reason, color: 'yellow' }];
-      const renderer = new TreeRenderer(this.colors);
+      const renderer = new TreeRenderer();
       renderer.render(treeNodes);
     }
 
@@ -797,13 +745,13 @@ export class Logger {
     // Latency stats table
     console.log(this.color('   ┌─────────────────────────────────────┐', 'dim'));
     console.log(
-      `   │ ${this.color('p50', 'cyan')}    ${this.formatLatency(stats.p50).padStart(10)} │ ${this.color('min', 'dim')}   ${this.formatLatency(stats.min).padStart(10)} │`,
+      `   │ ${this.color('p50', 'cyan')}    ${formatLatency(stats.p50).padStart(10)} │ ${this.color('min', 'dim')}   ${formatLatency(stats.min).padStart(10)} │`,
     );
     console.log(
-      `   │ ${this.color('p95', 'yellow')}    ${this.formatLatency(stats.p95).padStart(10)} │ ${this.color('max', 'dim')}   ${this.formatLatency(stats.max).padStart(10)} │`,
+      `   │ ${this.color('p95', 'yellow')}    ${formatLatency(stats.p95).padStart(10)} │ ${this.color('max', 'dim')}   ${formatLatency(stats.max).padStart(10)} │`,
     );
     console.log(
-      `   │ ${this.color('p99', 'red')}    ${this.formatLatency(stats.p99).padStart(10)} │ ${this.color('mean', 'dim')}  ${this.formatLatency(stats.mean).padStart(10)} │`,
+      `   │ ${this.color('p99', 'red')}    ${formatLatency(stats.p99).padStart(10)} │ ${this.color('mean', 'dim')}  ${formatLatency(stats.mean).padStart(10)} │`,
     );
     console.log(this.color('   └─────────────────────────────────────┘', 'dim'));
 
@@ -824,16 +772,6 @@ export class Logger {
         console.log(`   ${this.color(line, 'dim')}`);
       }
     }
-  }
-
-  private formatLatency(ms: number): string {
-    if (ms < 1) {
-      return `${(ms * 1000).toFixed(0)}µs`;
-    }
-    if (ms < 1000) {
-      return `${ms.toFixed(1)}ms`;
-    }
-    return `${(ms / 1000).toFixed(2)}s`;
   }
 
   logProfileSummary(results: ProfileResult[]): void {
