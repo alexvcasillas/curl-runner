@@ -1,5 +1,20 @@
 # @curl-runner/cli
 
+## 1.19.1
+
+### Patch Changes
+
+- [#94](https://github.com/alexvcasillas/curl-runner/pull/94) [`e5a4f15`](https://github.com/alexvcasillas/curl-runner/commit/e5a4f1561ddd311d4118b1f77d19d02bbc034772) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Refactor: modularize core functionality for better testability and maintainability
+
+  - Extract config utilities to `core/config` (CLI parser, env loader)
+  - Extract curl utilities to `core/curl` (args builder, response parser, body parser)
+  - Extract interpolation to `core/interpolator` (variable resolution)
+  - Extract retry logic to `core/execution` (backoff, retry strategies, post-processor)
+  - Extract validation to `core/validation` (response validation, body diffing)
+  - Extract formatting to `core/format` (duration, size, JSON, colors, tree renderer)
+  - Split types/config.ts into domain-specific modules (json, request, execution, snapshot, diff, profile, watch, global)
+  - Add 400+ new unit tests for core modules
+
 ## 1.19.0
 
 ### Minor Changes
