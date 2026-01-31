@@ -1,9 +1,14 @@
 import {
   AlertCircle,
+  AlertTriangle,
   CheckCircle,
   Code,
   FileSearch,
+  Info,
+  Key,
+  Link,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   Terminal,
   Wrench,
@@ -30,6 +35,9 @@ export const metadata: Metadata = {
     'API testing',
     'curl validation',
     'yaml schema',
+    'security validation',
+    'url validation',
+    'header validation',
   ],
   openGraph: {
     title: 'YAML Validation | curl-runner Documentation',
@@ -72,6 +80,15 @@ curl-runner validate -fq
 # Fix specific files
 curl-runner validate api.yaml --fix`;
 
+const strictExample = `# Treat warnings as errors (for CI)
+curl-runner validate --strict
+
+# Short form
+curl-runner validate -s
+
+# Combine with quiet mode
+curl-runner validate --strict --quiet`;
+
 const outputExample = `curl-runner validate
 
 Files: 5 found
@@ -83,11 +100,13 @@ Files: 5 found
     fix: Prepend https://
   ● request.method: Method should be uppercase: "GET"
     fix: Change to "GET"
-  ● request.auth.type: Invalid auth type "oauth". Must be: basic, bearer
+  ▲ request.headers: Header "content-type" should be "Content-Type"
+    fix: Change to "Content-Type"
+  ○ request.ssl: Using insecure mode disables certificate verification
 ✓ api/products.yaml
 ✓ api/orders.yaml
 
-Summary: 1 file(s) with 3 issue(s)`;
+Summary: 1 file(s) with 4 issue(s) (1 error, 2 warnings, 1 info)`;
 
 const fixedOutputExample = `curl-runner validate --fix
 
@@ -98,13 +117,14 @@ Files: 5 found
 ✗ api/invalid.yaml
   ● request.url: URL should start with http:// or https://
   ● request.method: Method should be uppercase: "GET"
-  ● request.auth.type: Invalid auth type "oauth". Must be: basic, bearer
-  ✓ Fixed 2 issue(s)
+  ▲ request.headers: Header "content-type" should be "Content-Type"
+  ○ request.ssl: Using insecure mode disables certificate verification
+  ✓ Fixed 3 issue(s)
 ✓ api/products.yaml
 ✓ api/orders.yaml
 
-Summary: 1 file(s) with 3 issue(s)
-Fixed: 2 issue(s)`;
+Summary: 1 file(s) with 4 issue(s)
+Fixed: 3 issue(s)`;
 
 const validRequestExample = `# Valid request configuration
 request:
@@ -139,6 +159,128 @@ requests:
   - url: https://api.example.com/users
   - url: https://api.example.com/posts`;
 
+const urlValidationExamples = `# URL Validations
+
+# Missing protocol (warning, auto-fixable)
+request:
+  url: api.example.com/users
+  # Warning: URL should start with http:// or https://
+  # Fix: Prepend https://
+
+# Protocol typo (warning, auto-fixable)
+request:
+  url: htps://api.example.com
+  # Warning: URL contains typo "htps", did you mean "https"?
+  # Fix: Change "htps" to "https"
+
+# Hostname typo (warning, auto-fixable)
+request:
+  url: https://locahost:3000/api
+  # Warning: URL contains typo "locahost", did you mean "localhost"?
+  # Fix: Change "locahost" to "localhost"
+
+# Double slash in path (warning, auto-fixable)
+request:
+  url: https://api.example.com//users
+  # Warning: URL contains double slash in path
+  # Fix: Replace "//" with "/"
+
+# Spaces in URL (warning, auto-fixable)
+request:
+  url: https://api.example.com/users /list
+  # Warning: URL contains spaces
+  # Fix: Encode spaces as %20
+
+# Invalid port (error)
+request:
+  url: https://api.example.com:99999/api
+  # Error: Invalid port number: 99999`;
+
+const headerValidationExamples = `# Header Validations
+
+# Wrong casing (warning, auto-fixable)
+request:
+  url: https://api.example.com
+  headers:
+    content-type: application/json
+    authorization: Bearer token
+  # Warning: Header "content-type" should be "Content-Type"
+  # Warning: Header "authorization" should be "Authorization"
+
+# Content-Type mismatch (info)
+request:
+  url: https://api.example.com
+  method: POST
+  headers:
+    Content-Type: application/json
+  formData:
+    field: value
+  # Info: Using formData but Content-Type is not multipart/form-data
+
+# Duplicate headers (warning)
+request:
+  url: https://api.example.com
+  headers:
+    Content-Type: application/json
+    content-type: text/plain
+  # Warning: Duplicate header detected (case-insensitive)`;
+
+const securityValidationExamples = `# Security Validations
+
+# Hardcoded credentials (warning)
+request:
+  url: https://api.example.com
+  auth:
+    type: basic
+    username: admin
+    password: secret123
+  # Warning: Possible hardcoded password detected
+  # Suggestion: Use environment variables
+
+# JWT in header (warning)
+request:
+  url: https://api.example.com
+  headers:
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature
+  # Warning: Possible hardcoded JWT token
+  # Suggestion: Use \${env.TOKEN} instead
+
+# API key patterns (warning)
+request:
+  url: https://api.example.com
+  headers:
+    X-API-Key: sk-live-xxxxxxxxxxxxx
+  # Warning: Possible hardcoded API key
+  # Suggestion: Use environment variables
+
+# Insecure mode (info)
+request:
+  url: https://api.example.com
+  ssl:
+    insecure: true
+  # Info: Using insecure mode disables certificate verification`;
+
+const unknownKeyExamples = `# Unknown Key Detection with Suggestions
+
+# Typo in key name
+request:
+  url: https://api.example.com
+  methood: GET
+  # Error: Unknown key "methood". Did you mean "method"?
+
+# Typo in nested key
+request:
+  url: https://api.example.com
+  auth:
+    tpye: bearer
+    token: \${TOKEN}
+  # Error: Unknown key "tpye" in auth. Did you mean "type"?
+
+# Global config typo
+global:
+  excution: parallel
+  # Error: Unknown key "excution". Did you mean "execution"?`;
+
 const invalidExamples = `# Common validation errors
 
 # Missing URL (error)
@@ -157,11 +299,6 @@ request:
   url: https://api.example.com
   method: get
   # Warning: Method should be uppercase: "GET"
-
-# Missing https:// (warning, auto-fixable)
-request:
-  url: api.example.com/users
-  # Warning: URL should start with http:// or https://
 
 # Invalid auth type (error)
 request:
@@ -183,16 +320,31 @@ request:
   body: { "test": "value" }
   formData:
     field: value
-  # Error: Cannot use both "body" and "formData"`;
+  # Error: Cannot use both "body" and "formData"
+
+# Body with GET (warning)
+request:
+  url: https://api.example.com
+  method: GET
+  body: { "test": "value" }
+  # Warning: GET requests should not have a body
+
+# Duplicate request names (warning)
+requests:
+  - name: GetUser
+    url: https://api.example.com/users/1
+  - name: GetUser
+    url: https://api.example.com/users/2
+  # Warning: Duplicate request name "GetUser"`;
 
 const ciExample = `# GitHub Actions
 - name: Validate YAML configs
   run: curl-runner validate tests/ --quiet
 
-# GitLab CI
+# GitLab CI (strict mode fails on warnings)
 validate:
   script:
-    - curl-runner validate tests/
+    - curl-runner validate tests/ --strict
 
 # Pre-commit hook
 curl-runner validate && curl-runner tests/`;
@@ -211,12 +363,13 @@ export default function ValidatePage() {
           <section>
             <H2 id="overview">Overview</H2>
             <p className="text-muted-foreground text-lg mb-6">
-              The <code className="font-mono">curl-runner validate</code> command checks your YAML
-              configuration files for correctness. It validates the structure, required fields,
-              valid values, and consistency of your configurations before you run them.
+              The <code className="font-mono">curl-runner validate</code> command provides
+              comprehensive validation of your YAML configuration files. It checks structure,
+              required fields, valid values, security issues, and common typos—with intelligent
+              suggestions and auto-fix capabilities.
             </p>
 
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-4">
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-blue-500/10 p-2">
@@ -225,7 +378,7 @@ export default function ValidatePage() {
                   <div>
                     <h4 className="font-medium mb-1">Schema Validation</h4>
                     <p className="text-sm text-muted-foreground">
-                      Validates against the full curl-runner schema
+                      Full curl-runner schema validation
                     </p>
                   </div>
                 </div>
@@ -238,9 +391,7 @@ export default function ValidatePage() {
                   </div>
                   <div>
                     <h4 className="font-medium mb-1">Auto-Fix</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Automatically fix common issues with --fix
-                    </p>
+                    <p className="text-sm text-muted-foreground">15+ auto-fixable issue types</p>
                   </div>
                 </div>
               </div>
@@ -251,9 +402,21 @@ export default function ValidatePage() {
                     <AlertCircle className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                   </div>
                   <div>
-                    <h4 className="font-medium mb-1">Clear Reports</h4>
+                    <h4 className="font-medium mb-1">Typo Detection</h4>
+                    <p className="text-sm text-muted-foreground">Smart suggestions for misspellings</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-card p-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-full bg-red-500/10 p-2">
+                    <ShieldAlert className="h-4 w-4 text-red-600 dark:text-red-400" />
+                  </div>
+                  <div>
+                    <h4 className="font-medium mb-1">Security Checks</h4>
                     <p className="text-sm text-muted-foreground">
-                      Detailed error messages with fix suggestions
+                      Detects hardcoded secrets & keys
                     </p>
                   </div>
                 </div>
@@ -290,8 +453,27 @@ export default function ValidatePage() {
                       </code>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Automatically fix issues where possible. Currently fixes lowercase HTTP
-                      methods and missing URL schemes.
+                      Automatically fix issues where possible. Fixes URL issues, method casing,
+                      header casing, and more.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-card p-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-full bg-red-500/10 p-2">
+                    <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <code className="bg-muted px-2 py-1 rounded text-sm font-mono">
+                        -s, --strict
+                      </code>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Treat warnings as errors. Useful for CI pipelines where you want stricter
+                      validation.
                     </p>
                   </div>
                 </div>
@@ -331,6 +513,10 @@ export default function ValidatePage() {
                 </div>
               </div>
             </div>
+
+            <CodeBlockServer language="bash" filename="Strict Mode">
+              {strictExample}
+            </CodeBlockServer>
           </section>
 
           {/* Auto-Fix */}
@@ -355,7 +541,31 @@ export default function ValidatePage() {
                     {'\u2022'} Lowercase HTTP methods → UPPERCASE
                   </li>
                   <li>
-                    {'\u2022'} Missing <code className="font-mono">https://</code> prefix on URLs
+                    {'\u2022'} Missing <code className="font-mono">https://</code> prefix
+                  </li>
+                  <li>
+                    {'\u2022'} Protocol typos (htps, htpp, etc.)
+                  </li>
+                  <li>
+                    {'\u2022'} Hostname typos (locahost, etc.)
+                  </li>
+                  <li>
+                    {'\u2022'} Double slashes in URL paths
+                  </li>
+                  <li>
+                    {'\u2022'} Spaces in URLs → %20
+                  </li>
+                  <li>
+                    {'\u2022'} Header casing (content-type → Content-Type)
+                  </li>
+                  <li>
+                    {'\u2022'} Lowercase execution mode
+                  </li>
+                  <li>
+                    {'\u2022'} Lowercase output format
+                  </li>
+                  <li>
+                    {'\u2022'} Lowercase prettyLevel
                   </li>
                 </ul>
               </div>
@@ -367,9 +577,13 @@ export default function ValidatePage() {
                 </h4>
                 <ul className="text-sm text-muted-foreground space-y-1">
                   <li>{'\u2022'} Invalid auth types</li>
-                  <li>{'\u2022'} Missing required fields</li>
+                  <li>{'\u2022'} Missing required fields (url)</li>
                   <li>{'\u2022'} Invalid status codes</li>
-                  <li>{'\u2022'} Schema conflicts</li>
+                  <li>{'\u2022'} Schema conflicts (body + formData)</li>
+                  <li>{'\u2022'} Unknown keys with no suggestion</li>
+                  <li>{'\u2022'} Invalid port numbers</li>
+                  <li>{'\u2022'} Hardcoded credentials</li>
+                  <li>{'\u2022'} Invalid JSON body</li>
                 </ul>
               </div>
             </div>
@@ -379,8 +593,8 @@ export default function ValidatePage() {
           <section>
             <H2 id="output">Output Examples</H2>
             <p className="text-muted-foreground text-lg mb-6">
-              The validate command provides clear, colorized output showing what passed and what
-              failed.
+              The validate command provides clear, colorized output showing what passed, what
+              failed, and the severity of each issue.
             </p>
 
             <CodeBlockServer language="text" filename="Validation Output">
@@ -391,6 +605,120 @@ export default function ValidatePage() {
 
             <CodeBlockServer language="text" filename="Output with --fix">
               {fixedOutputExample}
+            </CodeBlockServer>
+          </section>
+
+          {/* URL Validations */}
+          <section>
+            <H2 id="url-validations">URL Validations</H2>
+            <p className="text-muted-foreground text-lg mb-6">
+              Comprehensive URL validation with typo detection and auto-fix capabilities.
+            </p>
+
+            <CodeBlockServer language="yaml" filename="URL Validations">
+              {urlValidationExamples}
+            </CodeBlockServer>
+
+            <div className="mt-6 rounded-lg border bg-card p-4">
+              <h4 className="font-medium mb-2 flex items-center gap-2">
+                <Link className="h-4 w-4" />
+                Detected URL Typos
+              </h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                <div>
+                  <code className="font-mono">htpp</code> → http
+                </div>
+                <div>
+                  <code className="font-mono">htps</code> → https
+                </div>
+                <div>
+                  <code className="font-mono">htp</code> → http
+                </div>
+                <div>
+                  <code className="font-mono">httpss</code> → https
+                </div>
+                <div>
+                  <code className="font-mono">locahost</code> → localhost
+                </div>
+                <div>
+                  <code className="font-mono">localhsot</code> → localhost
+                </div>
+                <div>
+                  <code className="font-mono">localhos</code> → localhost
+                </div>
+                <div>
+                  <code className="font-mono">lcoalhost</code> → localhost
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Header Validations */}
+          <section>
+            <H2 id="header-validations">Header Validations</H2>
+            <p className="text-muted-foreground text-lg mb-6">
+              Validates header names, detects duplicates, and checks Content-Type consistency.
+            </p>
+
+            <CodeBlockServer language="yaml" filename="Header Validations">
+              {headerValidationExamples}
+            </CodeBlockServer>
+
+            <div className="mt-6 rounded-lg border bg-card p-4">
+              <h4 className="font-medium mb-2">Standard Header Casing</h4>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm text-muted-foreground">
+                <div>Content-Type</div>
+                <div>Authorization</div>
+                <div>Accept</div>
+                <div>Cache-Control</div>
+                <div>Content-Length</div>
+                <div>User-Agent</div>
+                <div>X-Requested-With</div>
+                <div>X-API-Key</div>
+                <div>Accept-Encoding</div>
+              </div>
+            </div>
+          </section>
+
+          {/* Security Validations */}
+          <section>
+            <H2 id="security-validations">Security Validations</H2>
+            <p className="text-muted-foreground text-lg mb-6">
+              Detects potential security issues like hardcoded credentials and API keys.
+            </p>
+
+            <CodeBlockServer language="yaml" filename="Security Validations">
+              {securityValidationExamples}
+            </CodeBlockServer>
+
+            <div className="mt-6 rounded-lg border bg-card p-4">
+              <h4 className="font-medium mb-2 flex items-center gap-2">
+                <Key className="h-4 w-4" />
+                Detected Patterns
+              </h4>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                <li>{'\u2022'} JWT tokens (Bearer eyJ...)</li>
+                <li>{'\u2022'} Stripe API keys (sk_live_*, sk_test_*)</li>
+                <li>{'\u2022'} AWS access keys (AKIA...)</li>
+                <li>
+                  {'\u2022'} Common password field names (password, passwd, secret, api_key, etc.)
+                </li>
+                <li>{'\u2022'} Hardcoded bearer tokens</li>
+                <li>{'\u2022'} Insecure SSL mode</li>
+              </ul>
+            </div>
+          </section>
+
+          {/* Unknown Key Detection */}
+          <section>
+            <H2 id="unknown-keys">Unknown Key Detection</H2>
+            <p className="text-muted-foreground text-lg mb-6">
+              Detects unknown configuration keys and suggests corrections using edit distance
+              matching.
+            </p>
+
+            <CodeBlockServer language="yaml" filename="Unknown Key Detection">
+              {unknownKeyExamples}
             </CodeBlockServer>
           </section>
 
@@ -413,8 +741,9 @@ export default function ValidatePage() {
                     <code className="font-mono">requests</code>, or{' '}
                     <code className="font-mono">collection</code>
                   </li>
-                  <li>{'\u2022'} Unknown top-level keys are flagged</li>
+                  <li>{'\u2022'} Unknown keys are flagged with suggestions</li>
                   <li>{'\u2022'} Valid YAML syntax</li>
+                  <li>{'\u2022'} Duplicate request names detected</li>
                 </ul>
               </div>
 
@@ -425,19 +754,18 @@ export default function ValidatePage() {
                 </h4>
                 <ul className="text-sm text-muted-foreground space-y-1">
                   <li>
-                    {'\u2022'} <code className="font-mono">url</code> - Required, valid format
+                    {'\u2022'} <code className="font-mono">url</code> - Required, validated format
                   </li>
                   <li>
                     {'\u2022'} <code className="font-mono">method</code> - GET, POST, PUT, DELETE,
                     PATCH, HEAD, OPTIONS
                   </li>
                   <li>
-                    {'\u2022'} <code className="font-mono">headers</code>,{' '}
-                    <code className="font-mono">params</code> - Must be objects
+                    {'\u2022'} <code className="font-mono">headers</code> - Casing, duplicates
                   </li>
                   <li>
-                    {'\u2022'} <code className="font-mono">body</code> /{' '}
-                    <code className="font-mono">formData</code> - Cannot use both
+                    {'\u2022'} <code className="font-mono">body</code> - JSON validation, method
+                    compatibility
                   </li>
                 </ul>
               </div>
@@ -453,6 +781,7 @@ export default function ValidatePage() {
                   </li>
                   <li>{'\u2022'} basic auth requires username</li>
                   <li>{'\u2022'} bearer auth requires token</li>
+                  <li>{'\u2022'} Hardcoded credential detection</li>
                 </ul>
               </div>
 
@@ -465,6 +794,7 @@ export default function ValidatePage() {
                   <li>{'\u2022'} cert without key is flagged</li>
                   <li>{'\u2022'} key without cert is flagged</li>
                   <li>{'\u2022'} Path values must be strings</li>
+                  <li>{'\u2022'} Insecure mode warning</li>
                 </ul>
               </div>
 
@@ -477,6 +807,7 @@ export default function ValidatePage() {
                   <li>{'\u2022'} Status codes must be 100-599</li>
                   <li>{'\u2022'} Response time format validation</li>
                   <li>{'\u2022'} Headers must be an object</li>
+                  <li>{'\u2022'} Duration format (e.g., &lt;500ms)</li>
                 </ul>
               </div>
 
@@ -490,6 +821,31 @@ export default function ValidatePage() {
                   <li>{'\u2022'} output.format: json, pretty, raw</li>
                   <li>{'\u2022'} output.prettyLevel: minimal, standard, detailed</li>
                   <li>{'\u2022'} ci.failOnPercentage: 0-100</li>
+                </ul>
+              </div>
+
+              <div className="rounded-lg border bg-card p-4">
+                <h4 className="font-medium mb-2 flex items-center gap-2">
+                  <Settings className="h-4 w-4" />
+                  Timeouts & Retries
+                </h4>
+                <ul className="text-sm text-muted-foreground space-y-1">
+                  <li>{'\u2022'} timeout must be positive number</li>
+                  <li>{'\u2022'} retry.count must be non-negative</li>
+                  <li>{'\u2022'} retry.delay must be non-negative</li>
+                  <li>{'\u2022'} retry.maxDelay must be non-negative</li>
+                </ul>
+              </div>
+
+              <div className="rounded-lg border bg-card p-4">
+                <h4 className="font-medium mb-2 flex items-center gap-2">
+                  <Settings className="h-4 w-4" />
+                  Proxy Config
+                </h4>
+                <ul className="text-sm text-muted-foreground space-y-1">
+                  <li>{'\u2022'} proxy.url must be valid URL</li>
+                  <li>{'\u2022'} proxy.auth requires username</li>
+                  <li>{'\u2022'} Proxy URL protocol validation</li>
                 </ul>
               </div>
             </div>
@@ -540,10 +896,14 @@ export default function ValidatePage() {
               <h4 className="font-medium mb-2">Exit Codes</h4>
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li>
-                  {'\u2022'} <code className="font-mono">0</code> - All files valid
+                  {'\u2022'} <code className="font-mono">0</code> - All files valid (no errors)
                 </li>
                 <li>
-                  {'\u2022'} <code className="font-mono">1</code> - One or more files have issues
+                  {'\u2022'} <code className="font-mono">1</code> - One or more files have errors
+                </li>
+                <li>
+                  {'\u2022'} <code className="font-mono">1</code> (with --strict) - Files have
+                  errors OR warnings
                 </li>
               </ul>
             </div>
@@ -563,9 +923,10 @@ export default function ValidatePage() {
                     <h4 className="font-medium mb-2">Recommended</h4>
                     <div className="space-y-2 text-sm text-muted-foreground">
                       <div>{'\u2022'} Run validation before committing changes</div>
-                      <div>{'\u2022'} Add validation to CI/CD pipelines</div>
+                      <div>{'\u2022'} Use --strict in CI pipelines</div>
                       <div>{'\u2022'} Use --quiet in automated scripts</div>
                       <div>{'\u2022'} Review auto-fixes before committing</div>
+                      <div>{'\u2022'} Use environment variables for credentials</div>
                       <div>{'\u2022'} Validate entire test directories at once</div>
                     </div>
                   </div>
@@ -582,8 +943,11 @@ export default function ValidatePage() {
                     <div className="space-y-2 text-sm text-muted-foreground">
                       <div>{'\u2022'} Auto-fix changes files in place</div>
                       <div>{'\u2022'} Some issues require manual intervention</div>
-                      <div>{'\u2022'} Warnings don't fail the validation</div>
-                      <div>{'\u2022'} Variables (${'{VAR}'}) are not resolved during validation</div>
+                      <div>{'\u2022'} Warnings don{"'"}t fail validation (unless --strict)</div>
+                      <div>
+                        {'\u2022'} Variables (${'{'}{'{'}VAR{'}'}) are not resolved during validation
+                      </div>
+                      <div>{'\u2022'} Security warnings suggest using env vars</div>
                     </div>
                   </div>
                 </div>
@@ -599,21 +963,30 @@ export default function ValidatePage() {
               <div className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded">
                 <div className="flex items-center gap-2">
                   <Badge variant="destructive">Error</Badge>
-                  <span className="font-mono">Red dot</span>
+                  <span className="font-mono">● Red</span>
                 </div>
-                <span className="text-muted-foreground">
-                  Must be fixed. Fails validation.
-                </span>
+                <span className="text-muted-foreground">Must be fixed. Fails validation.</span>
               </div>
               <div className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded">
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary" className="bg-yellow-500/20 text-yellow-600">
                     Warning
                   </Badge>
-                  <span className="font-mono">Yellow dot</span>
+                  <span className="font-mono">▲ Yellow</span>
                 </div>
                 <span className="text-muted-foreground">
-                  Should be fixed. Often auto-fixable.
+                  Should be fixed. Often auto-fixable. Fails with --strict.
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded">
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" className="bg-blue-500/20 text-blue-600">
+                    Info
+                  </Badge>
+                  <span className="font-mono">○ Blue</span>
+                </div>
+                <span className="text-muted-foreground">
+                  For awareness. Does not affect exit code.
                 </span>
               </div>
             </div>
