@@ -118,7 +118,8 @@ const optionGroups = [
         long: '--dry-run',
         type: 'boolean',
         default: 'false',
-        description: 'Show curl commands without executing them. Useful for previewing and debugging.',
+        description:
+          'Show curl commands without executing them. Useful for previewing and debugging.',
         example: 'curl-runner api.yaml --dry-run',
       },
       {
