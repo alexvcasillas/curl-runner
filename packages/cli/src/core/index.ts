@@ -4,3 +4,4 @@
 
 export * from './config';
 export * from './curl';
+export * from './interpolator';
