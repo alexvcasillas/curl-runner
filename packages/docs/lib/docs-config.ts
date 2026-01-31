@@ -166,6 +166,11 @@ export const docsConfig: SidebarConfig = {
           href: '/docs/features/yaml-wizard',
           description: 'Interactive CLI for creating YAML configuration files',
         },
+        {
+          title: 'YAML Validation',
+          href: '/docs/features/validate',
+          description: 'Validate YAML configs with auto-fix and security checks',
+        },
       ],
     },
     {

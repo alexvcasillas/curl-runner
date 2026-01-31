@@ -2,6 +2,7 @@
 
 import { Glob } from 'bun';
 import { showUpgradeHelp, UpgradeCommand } from './commands/upgrade';
+import { showValidateHelp, ValidateCommand } from './commands/validate';
 import {
   buildProfileConfig,
   buildWatchConfig,
@@ -65,6 +66,14 @@ class CurlRunnerCLI {
             return;
           }
           await new UpgradeCommand().run(rawArgs.slice(1));
+          return;
+
+        case 'validate':
+          if (rawArgs.includes('--help') || rawArgs.includes('-h')) {
+            showValidateHelp();
+            return;
+          }
+          await new ValidateCommand().run(rawArgs.slice(1));
           return;
 
         case 'diff-subcommand':
@@ -616,6 +625,11 @@ ${this.logger.color('UPGRADE:', 'yellow')}
   curl-runner upgrade           Upgrade to latest version (auto-detects install method)
   curl-runner upgrade --dry-run Preview upgrade command without executing
   curl-runner upgrade --force   Force reinstall even if up to date
+
+${this.logger.color('VALIDATE:', 'yellow')}
+  curl-runner validate          Validate YAML files against curl-runner schema
+  curl-runner validate --fix    Validate and auto-fix issues where possible
+  curl-runner validate -q       Only show files with issues
 
 ${this.logger.color('WIZARD:', 'yellow')}
   curl-runner init              Quick create a new YAML file
