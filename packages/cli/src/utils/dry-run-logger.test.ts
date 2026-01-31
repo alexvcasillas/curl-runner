@@ -158,7 +158,11 @@ describe('Logger Dry Run Output', () => {
     });
 
     test('does not show body for dry-run results', () => {
-      const config: GlobalConfig['output'] = { format: 'pretty', prettyLevel: 'standard', showBody: true };
+      const config: GlobalConfig['output'] = {
+        format: 'pretty',
+        prettyLevel: 'standard',
+        showBody: true,
+      };
       const logger = new Logger(config);
 
       const result: ExecutionResult = {
@@ -223,9 +227,24 @@ describe('Logger Dry Run Output', () => {
         skipped: 0,
         duration: 0,
         results: [
-          { request: { url: 'https://api.example.com/1', method: 'GET' }, success: true, dryRun: true, metrics: { duration: 0 } },
-          { request: { url: 'https://api.example.com/2', method: 'GET' }, success: true, dryRun: true, metrics: { duration: 0 } },
-          { request: { url: 'https://api.example.com/3', method: 'GET' }, success: true, dryRun: true, metrics: { duration: 0 } },
+          {
+            request: { url: 'https://api.example.com/1', method: 'GET' },
+            success: true,
+            dryRun: true,
+            metrics: { duration: 0 },
+          },
+          {
+            request: { url: 'https://api.example.com/2', method: 'GET' },
+            success: true,
+            dryRun: true,
+            metrics: { duration: 0 },
+          },
+          {
+            request: { url: 'https://api.example.com/3', method: 'GET' },
+            success: true,
+            dryRun: true,
+            metrics: { duration: 0 },
+          },
         ],
       };
 
