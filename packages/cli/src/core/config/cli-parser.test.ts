@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { detectEarlyExit, detectSubcommand, parseCliArgs } from './cli-parser';
+import {
+  detectEarlyExit,
+  detectSubcommand,
+  parseCliArgs,
+  parseEditArgs,
+  parseInitArgs,
+} from './cli-parser';
 
 describe('parseCliArgs', () => {
   test('returns empty files array for no args', () => {
@@ -357,9 +363,84 @@ describe('detectSubcommand', () => {
     expect(detectSubcommand(['diff', 'baseline'])).toBeNull();
   });
 
+  test('detects init subcommand', () => {
+    expect(detectSubcommand(['init'])).toBe('init');
+    expect(detectSubcommand(['init', '--wizard'])).toBe('init');
+    expect(detectSubcommand(['init', 'https://api.example.com'])).toBe('init');
+  });
+
+  test('detects edit subcommand', () => {
+    expect(detectSubcommand(['edit'])).toBe('edit');
+    expect(detectSubcommand(['edit', 'api.yaml'])).toBe('edit');
+    expect(detectSubcommand(['edit', 'api.yaml', '-o', 'new.yaml'])).toBe('edit');
+  });
+
   test('returns null for normal args', () => {
     expect(detectSubcommand(['api.yaml'])).toBeNull();
     expect(detectSubcommand(['--help'])).toBeNull();
+  });
+});
+
+describe('parseInitArgs', () => {
+  test('parses --wizard flag', () => {
+    const result = parseInitArgs(['init', '--wizard']);
+    expect(result.wizard).toBe(true);
+  });
+
+  test('parses -w flag', () => {
+    const result = parseInitArgs(['init', '-w']);
+    expect(result.wizard).toBe(true);
+  });
+
+  test('parses URL argument', () => {
+    const result = parseInitArgs(['init', 'https://api.example.com']);
+    expect(result.url).toBe('https://api.example.com');
+  });
+
+  test('parses --output flag', () => {
+    const result = parseInitArgs(['init', '--output', 'api.yaml']);
+    expect(result.outputPath).toBe('api.yaml');
+  });
+
+  test('parses -o flag', () => {
+    const result = parseInitArgs(['init', '-o', 'api.yaml']);
+    expect(result.outputPath).toBe('api.yaml');
+  });
+
+  test('parses all options together', () => {
+    const result = parseInitArgs(['init', '--wizard', '-o', 'api.yaml']);
+    expect(result.wizard).toBe(true);
+    expect(result.outputPath).toBe('api.yaml');
+  });
+
+  test('parses URL with output', () => {
+    const result = parseInitArgs(['init', 'https://api.example.com', '-o', 'api.yaml']);
+    expect(result.url).toBe('https://api.example.com');
+    expect(result.outputPath).toBe('api.yaml');
+  });
+});
+
+describe('parseEditArgs', () => {
+  test('parses file argument', () => {
+    const result = parseEditArgs(['edit', 'api.yaml']);
+    expect(result.file).toBe('api.yaml');
+  });
+
+  test('parses --output flag', () => {
+    const result = parseEditArgs(['edit', 'api.yaml', '--output', 'new.yaml']);
+    expect(result.file).toBe('api.yaml');
+    expect(result.outputPath).toBe('new.yaml');
+  });
+
+  test('parses -o flag', () => {
+    const result = parseEditArgs(['edit', 'api.yaml', '-o', 'new.yaml']);
+    expect(result.file).toBe('api.yaml');
+    expect(result.outputPath).toBe('new.yaml');
+  });
+
+  test('returns empty file for no args', () => {
+    const result = parseEditArgs(['edit']);
+    expect(result.file).toBe('');
   });
 });
 

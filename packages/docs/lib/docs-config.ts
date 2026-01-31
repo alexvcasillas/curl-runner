@@ -161,6 +161,11 @@ export const docsConfig: SidebarConfig = {
           href: '/docs/features/performance-profiling',
           description: 'Run requests N times for p50/p95/p99 latency stats',
         },
+        {
+          title: 'YAML Wizard',
+          href: '/docs/features/yaml-wizard',
+          description: 'Interactive CLI for creating YAML configuration files',
+        },
       ],
     },
     {

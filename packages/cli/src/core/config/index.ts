@@ -4,7 +4,16 @@
  */
 
 // CLI Parser
-export { type CLIOptions, detectEarlyExit, detectSubcommand, parseCliArgs } from './cli-parser';
+export {
+  type CLIOptions,
+  detectEarlyExit,
+  detectSubcommand,
+  type EditOptions,
+  type InitOptions,
+  parseCliArgs,
+  parseEditArgs,
+  parseInitArgs,
+} from './cli-parser';
 // Defaults
 export { CONFIG_DEFAULTS, type ConfigDefaults } from './defaults';
 // Environment Loader

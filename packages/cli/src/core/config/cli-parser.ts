@@ -365,17 +365,84 @@ function parseShortFlags(
   return consumed;
 }
 
+export interface InitOptions {
+  wizard?: boolean;
+  url?: string;
+  outputPath?: string;
+}
+
+export interface EditOptions {
+  file: string;
+  outputPath?: string;
+}
+
 /**
  * Checks if the args indicate a subcommand that should bypass normal config resolution.
  */
-export function detectSubcommand(args: string[]): 'upgrade' | 'diff-subcommand' | null {
+export function detectSubcommand(
+  args: string[],
+): 'upgrade' | 'diff-subcommand' | 'init' | 'edit' | null {
   if (args[0] === 'upgrade') {
     return 'upgrade';
   }
   if (args[0] === 'diff' && args.length >= 3) {
     return 'diff-subcommand';
   }
+  if (args[0] === 'init') {
+    return 'init';
+  }
+  if (args[0] === 'edit') {
+    return 'edit';
+  }
   return null;
+}
+
+/**
+ * Parses init subcommand options.
+ */
+export function parseInitArgs(args: string[]): InitOptions {
+  const options: InitOptions = {};
+
+  for (let i = 1; i < args.length; i++) {
+    const arg = args[i];
+    const nextArg = args[i + 1];
+
+    if (arg === '--wizard' || arg === '-w') {
+      options.wizard = true;
+    } else if (arg === '-o' || arg === '--output') {
+      if (nextArg && !nextArg.startsWith('-')) {
+        options.outputPath = nextArg;
+        i++;
+      }
+    } else if (!arg.startsWith('-') && !options.url) {
+      options.url = arg;
+    }
+  }
+
+  return options;
+}
+
+/**
+ * Parses edit subcommand options.
+ */
+export function parseEditArgs(args: string[]): EditOptions {
+  const options: EditOptions = { file: '' };
+
+  for (let i = 1; i < args.length; i++) {
+    const arg = args[i];
+    const nextArg = args[i + 1];
+
+    if (arg === '-o' || arg === '--output') {
+      if (nextArg && !nextArg.startsWith('-')) {
+        options.outputPath = nextArg;
+        i++;
+      }
+    } else if (!arg.startsWith('-') && !options.file) {
+      options.file = arg;
+    }
+  }
+
+  return options;
 }
 
 /**
