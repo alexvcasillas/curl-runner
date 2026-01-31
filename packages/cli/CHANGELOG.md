@@ -1,5 +1,21 @@
 # @curl-runner/cli
 
+## 1.21.0
+
+### Minor Changes
+
+- [#98](https://github.com/alexvcasillas/curl-runner/pull/98) [`c99f88c`](https://github.com/alexvcasillas/curl-runner/commit/c99f88c00ec64d55e9ededd6408959e7311552d4) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - feat: add validate command for YAML config validation
+
+  New `curl-runner validate` command that:
+
+  - Accepts file paths or glob patterns
+  - Validates YAML syntax and structure
+  - Checks curl-runner API correctness (methods, auth types, operators, etc.)
+  - Validates curl options (SSL, retry, timeout configs)
+  - Reports issues with severity (error/warning)
+  - Proposes fixes for common issues
+  - Auto-fixes with `--fix` flag (uppercase methods, https:// prefix)
+
 ## 1.20.0
 
 ### Minor Changes
