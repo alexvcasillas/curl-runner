@@ -16,6 +16,8 @@ export {
 } from './cli-parser';
 // Defaults
 export { CONFIG_DEFAULTS, type ConfigDefaults } from './defaults';
+// Env File Loader (.env support)
+export { type EnvFileResult, getEnvFilePaths, loadEnvFiles } from './env-file-loader';
 // Environment Loader
 export { loadEnvironmentConfig } from './env-loader';
 // File Loader

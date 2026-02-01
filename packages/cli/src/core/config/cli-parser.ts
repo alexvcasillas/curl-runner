@@ -8,6 +8,10 @@ export interface CLIOptions {
   files: string[];
   all?: boolean;
 
+  // Environment
+  env?: string;
+  noRedact?: boolean;
+
   // Execution Mode
   execution?: 'sequential' | 'parallel';
   maxConcurrency?: number;
@@ -171,6 +175,9 @@ function parseLongFlag(
     case 'strict-exit':
       options.strictExit = true;
       return 0;
+    case 'no-redact':
+      options.noRedact = true;
+      return 0;
   }
 
   // Flags that require a value
@@ -188,6 +195,11 @@ function parseLongFlag(
   }
 
   switch (key) {
+    // Environment
+    case 'env':
+      options.env = nextArg;
+      return 1;
+
     // Execution
     case 'execution':
       if (nextArg === 'sequential' || nextArg === 'parallel') {
@@ -356,6 +368,12 @@ function parseShortFlags(
       case 'P':
         if (hasNextArg) {
           options.profile = Number.parseInt(nextArg!, 10);
+          consumed = 1;
+        }
+        break;
+      case 'e':
+        if (hasNextArg) {
+          options.env = nextArg;
           consumed = 1;
         }
         break;
