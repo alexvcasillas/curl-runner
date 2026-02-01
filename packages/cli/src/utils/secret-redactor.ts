@@ -5,9 +5,44 @@
 
 const REDACTED = '[REDACTED]';
 
+/**
+ * Common secret patterns to auto-detect.
+ * These match known API key formats from popular services.
+ */
+const SECRET_PATTERNS: RegExp[] = [
+  // Stripe
+  /sk_live_[a-zA-Z0-9]{24,}/g,
+  /sk_test_[a-zA-Z0-9]{24,}/g,
+  /pk_live_[a-zA-Z0-9]{24,}/g,
+  /pk_test_[a-zA-Z0-9]{24,}/g,
+  /rk_live_[a-zA-Z0-9]{24,}/g,
+  /rk_test_[a-zA-Z0-9]{24,}/g,
+  // AWS
+  /AKIA[0-9A-Z]{16}/g,
+  // GitHub
+  /ghp_[a-zA-Z0-9]{36,}/g,
+  /gho_[a-zA-Z0-9]{36,}/g,
+  /ghu_[a-zA-Z0-9]{36,}/g,
+  /ghs_[a-zA-Z0-9]{36,}/g,
+  /ghr_[a-zA-Z0-9]{36,}/g,
+  // NPM
+  /npm_[a-zA-Z0-9]{36,}/g,
+  // Slack
+  /xox[baprs]-[a-zA-Z0-9-]{10,}/g,
+  // Paddle
+  /pdl_[a-zA-Z0-9]{20,}/g,
+  // OpenAI
+  /sk-[a-zA-Z0-9]{48,}/g,
+  // Anthropic
+  /sk-ant-[a-zA-Z0-9-]{40,}/g,
+  // Generic Bearer tokens (long alphanumeric)
+  /Bearer [a-zA-Z0-9_-]{40,}/g,
+];
+
 export class SecretRedactor {
   private secrets: Map<string, string> = new Map();
   private sortedSecrets: string[] = [];
+  private patternRedaction = true;
 
   /**
    * Registers secrets for redaction.
@@ -33,6 +68,13 @@ export class SecretRedactor {
   }
 
   /**
+   * Enable/disable pattern-based redaction.
+   */
+  setPatternRedaction(enabled: boolean): void {
+    this.patternRedaction = enabled;
+  }
+
+  /**
    * Clears all registered secrets.
    */
   clear(): void {
@@ -51,45 +93,26 @@ export class SecretRedactor {
 
   /**
    * Redacts all registered secret values from a string.
+   * Also applies pattern-based redaction for common API key formats.
    */
   redact(input: string): string {
-    if (this.sortedSecrets.length === 0) {
-      return input;
-    }
-
     let result = input;
+
+    // First, redact explicit secrets (longest first)
     for (const secret of this.sortedSecrets) {
-      // Use global replace for all occurrences
       result = result.split(secret).join(REDACTED);
     }
-    return result;
-  }
 
-  /**
-   * Redacts secrets from an object (deep).
-   */
-  redactObject<T>(obj: T): T {
-    if (obj === null || obj === undefined) {
-      return obj;
-    }
-
-    if (typeof obj === 'string') {
-      return this.redact(obj) as T;
-    }
-
-    if (Array.isArray(obj)) {
-      return obj.map((item) => this.redactObject(item)) as T;
-    }
-
-    if (typeof obj === 'object') {
-      const result: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(obj)) {
-        result[key] = this.redactObject(value);
+    // Then apply pattern-based redaction
+    if (this.patternRedaction) {
+      for (const pattern of SECRET_PATTERNS) {
+        // Reset lastIndex for global regexes
+        pattern.lastIndex = 0;
+        result = result.replace(pattern, REDACTED);
       }
-      return result as T;
     }
 
-    return obj;
+    return result;
   }
 
   /**

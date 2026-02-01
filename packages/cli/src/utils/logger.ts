@@ -37,16 +37,10 @@ export class Logger {
 
   /**
    * Redacts secret values from output string.
+   * Only used for URLs and curl commands (user's secrets).
    */
   private redact(text: string): string {
     return this.redactor.redact(text);
-  }
-
-  /**
-   * Redacts secrets from an object (deep).
-   */
-  private redactObj<T>(obj: T): T {
-    return this.redactor.redactObject(obj);
   }
 
   color(text: string, color: keyof typeof ANSI_COLORS): string {
@@ -250,7 +244,7 @@ export class Logger {
     // Handle raw format output - only show response body
     if (this.config.format === 'raw') {
       if (result.success && this.config.showBody && result.body) {
-        const bodyStr = this.redact(formatJson(result.body, this.config.format));
+        const bodyStr = formatJson(result.body, this.config.format);
         console.log(bodyStr);
       }
       return;
@@ -266,11 +260,9 @@ export class Logger {
         },
         success: result.success,
         ...(result.dryRun ? { dryRun: true } : { status: result.status }),
-        ...(this.shouldShowHeaders() && result.headers
-          ? { headers: this.redactObj(result.headers) }
-          : {}),
-        ...(this.shouldShowBody() && result.body ? { body: this.redactObj(result.body) } : {}),
-        ...(result.error ? { error: this.redact(result.error) } : {}),
+        ...(this.shouldShowHeaders() && result.headers ? { headers: result.headers } : {}),
+        ...(this.shouldShowBody() && result.body ? { body: result.body } : {}),
+        ...(result.error ? { error: result.error } : {}),
         ...(this.shouldShowMetrics() && result.metrics ? { metrics: result.metrics } : {}),
       };
       console.log(JSON.stringify(jsonResult, null, 2));
@@ -362,11 +354,11 @@ export class Logger {
       });
     }
 
-    // Add headers section if needed
+    // Add response headers section if needed (no redaction - server data)
     if (this.shouldShowHeaders() && result.headers && Object.keys(result.headers).length > 0) {
       const headerChildren: TreeNode[] = Object.entries(result.headers).map(([key, value]) => ({
         label: this.color(key, 'dim'),
-        value: this.redact(String(value)),
+        value: String(value),
       }));
 
       treeNodes.push({
@@ -375,9 +367,9 @@ export class Logger {
       });
     }
 
-    // Add body section if needed
+    // Add body section if needed (no redaction - server data)
     if (this.shouldShowBody() && result.body) {
-      const bodyStr = this.redact(formatJson(result.body, this.config.format));
+      const bodyStr = formatJson(result.body, this.config.format);
       const lines = bodyStr.split('\n');
       const maxLines = this.shouldShowRequestDetails() ? Infinity : 10;
       const bodyLines = lines.slice(0, maxLines);
@@ -502,11 +494,9 @@ export class Logger {
           },
           success: result.success,
           ...(result.dryRun ? { dryRun: true } : { status: result.status }),
-          ...(this.shouldShowHeaders() && result.headers
-            ? { headers: this.redactObj(result.headers) }
-            : {}),
-          ...(this.shouldShowBody() && result.body ? { body: this.redactObj(result.body) } : {}),
-          ...(result.error ? { error: this.redact(result.error) } : {}),
+          ...(this.shouldShowHeaders() && result.headers ? { headers: result.headers } : {}),
+          ...(this.shouldShowBody() && result.body ? { body: result.body } : {}),
+          ...(result.error ? { error: result.error } : {}),
           ...(this.shouldShowMetrics() && result.metrics ? { metrics: result.metrics } : {}),
         })),
       };
@@ -560,7 +550,7 @@ export class Logger {
         .filter((r) => !r.success)
         .forEach((r) => {
           const name = r.request.name || this.redact(r.request.url);
-          console.log(`  ${this.color('•', 'red')} ${name}: ${this.redact(r.error || '')}`);
+          console.log(`  ${this.color('•', 'red')} ${name}: ${r.error || ''}`);
         });
     }
   }
