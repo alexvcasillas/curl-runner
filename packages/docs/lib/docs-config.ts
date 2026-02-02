@@ -171,6 +171,11 @@ export const docsConfig: SidebarConfig = {
           href: '/docs/features/validate',
           description: 'Validate YAML configs with auto-fix and security checks',
         },
+        {
+          title: 'Environment Files',
+          href: '/docs/features/env-files',
+          description: 'Load .env files with automatic secret redaction',
+        },
       ],
     },
     {
