@@ -16,10 +16,12 @@ import type {
   ProfileResult,
   RequestConfig,
 } from '../types/config';
+import { getGlobalRedactor } from './secret-redactor';
 import { generateHistogram } from './stats';
 
 export class Logger {
   private config: GlobalConfig['output'];
+  private redactor = getGlobalRedactor();
 
   constructor(config: GlobalConfig['output'] = {}) {
     this.config = {
@@ -31,6 +33,14 @@ export class Logger {
       prettyLevel: 'minimal',
       ...config,
     };
+  }
+
+  /**
+   * Redacts secret values from output string.
+   * Only used for URLs and curl commands (user's secrets).
+   */
+  private redact(text: string): string {
+    return this.redactor.redact(text);
   }
 
   color(text: string, color: keyof typeof ANSI_COLORS): string {
@@ -222,7 +232,7 @@ export class Logger {
     // Always show command in dry-run mode
     if (this.config.dryRun || this.shouldShowRequestDetails()) {
       console.log(this.color('  Command:', 'dim'));
-      console.log(this.color(`    ${command}`, 'dim'));
+      console.log(this.color(`    ${this.redact(command)}`, 'dim'));
     }
   }
 
@@ -245,7 +255,7 @@ export class Logger {
       const jsonResult = {
         request: {
           name: result.request.name,
-          url: result.request.url,
+          url: this.redact(result.request.url),
           method: result.request.method || 'GET',
         },
         success: result.success,
@@ -283,7 +293,7 @@ export class Logger {
 
       treeNodes.push({
         label: result.request.method || 'GET',
-        value: result.request.url,
+        value: this.redact(result.request.url),
         color: 'blue',
       });
 
@@ -328,7 +338,7 @@ export class Logger {
     const renderer = new TreeRenderer();
 
     // Main info nodes
-    treeNodes.push({ label: 'URL', value: result.request.url, color: 'blue' });
+    treeNodes.push({ label: 'URL', value: this.redact(result.request.url), color: 'blue' });
     treeNodes.push({ label: 'Method', value: result.request.method || 'GET', color: 'yellow' });
     treeNodes.push({
       label: 'Status',
@@ -344,7 +354,7 @@ export class Logger {
       });
     }
 
-    // Add headers section if needed
+    // Add response headers section if needed (no redaction - server data)
     if (this.shouldShowHeaders() && result.headers && Object.keys(result.headers).length > 0) {
       const headerChildren: TreeNode[] = Object.entries(result.headers).map(([key, value]) => ({
         label: this.color(key, 'dim'),
@@ -357,7 +367,7 @@ export class Logger {
       });
     }
 
-    // Add body section if needed
+    // Add body section if needed (no redaction - server data)
     if (this.shouldShowBody() && result.body) {
       const bodyStr = formatJson(result.body, this.config.format);
       const lines = bodyStr.split('\n');
@@ -479,7 +489,7 @@ export class Logger {
         results: summary.results.map((result) => ({
           request: {
             name: result.request.name,
-            url: result.request.url,
+            url: this.redact(result.request.url),
             method: result.request.method || 'GET',
           },
           success: result.success,
@@ -539,8 +549,8 @@ export class Logger {
       summary.results
         .filter((r) => !r.success)
         .forEach((r) => {
-          const name = r.request.name || r.request.url;
-          console.log(`  ${this.color('•', 'red')} ${name}: ${r.error}`);
+          const name = r.request.name || this.redact(r.request.url);
+          console.log(`  ${this.color('•', 'red')} ${name}: ${r.error || ''}`);
         });
     }
   }
@@ -572,7 +582,7 @@ export class Logger {
       const jsonResult = {
         request: {
           name: config.name,
-          url: config.url,
+          url: this.redact(config.url),
           method: config.method || 'GET',
         },
         skipped: true,

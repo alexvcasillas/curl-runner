@@ -73,7 +73,28 @@ export interface ConnectionPoolConfig {
   connectTimeout?: number;
 }
 
+/**
+ * Environment file loading configuration.
+ */
+export interface EnvConfig {
+  /**
+   * Environment name for loading .env.{environment} files.
+   * E.g., 'production', 'staging', 'development'
+   */
+  environment?: string;
+  /**
+   * Redact secret values in output (variables starting with SECRET_).
+   * Default: true
+   */
+  redactSecrets?: boolean;
+}
+
 export interface GlobalConfig {
+  /**
+   * Environment file configuration.
+   * Controls .env file loading and secret redaction.
+   */
+  env?: EnvConfig;
   execution?: 'sequential' | 'parallel';
   /**
    * Maximum number of concurrent requests when using parallel execution.

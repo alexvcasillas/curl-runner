@@ -9,6 +9,7 @@ import {
   Gauge,
   GitBranch,
   Layers,
+  Lock,
   Network,
   RotateCcw,
   ShieldCheck,
@@ -1035,6 +1036,69 @@ curl-runner validate -fq tests/`,
       'yaml linter',
       'error detection',
       'fix command',
+    ],
+  },
+  'env-files': {
+    slug: 'env-files',
+    title: 'Environment Files',
+    shortDescription: 'Load .env files with secret redaction',
+    description:
+      'Automatically load variables from .env files with environment-specific overrides. Secrets are automatically redacted in output to prevent accidental exposure.',
+    icon: Lock,
+    color: 'slate',
+    gradient: 'from-slate-400 to-slate-600',
+    benefits: [
+      {
+        title: 'Automatic .env Loading',
+        description:
+          'Load variables from .env, .env.local, .env.{environment}, and .env.{environment}.local files automatically.',
+      },
+      {
+        title: 'Secret Redaction',
+        description:
+          'Variables prefixed with SECRET_ are automatically redacted in output. Common API key patterns are also detected.',
+      },
+      {
+        title: 'Environment Overrides',
+        description:
+          'Use --env flag to load environment-specific files like .env.staging or .env.production.',
+      },
+    ],
+    codeExample: {
+      title: 'Use .env files with automatic secret protection',
+      code: `# .env file
+API_URL=https://api.example.com
+SECRET_API_KEY=sk_live_abc123def456
+
+# api.yaml
+request:
+  url: \${API_URL}/users
+  headers:
+    Authorization: Bearer \${SECRET_API_KEY}
+
+# Run with environment
+curl-runner api.yaml --env production
+
+# Output shows redacted secrets
+#   curl -H 'Authorization: Bearer [REDACTED]' ...`,
+    },
+    useCases: [
+      'Managing secrets across environments',
+      'Preventing credential leaks in logs',
+      'Environment-specific configuration',
+      'Team collaboration with shared .env.example',
+    ],
+    keywords: [
+      'env files',
+      'dotenv',
+      'secret redaction',
+      'environment variables',
+      'api key protection',
+      'credential masking',
+      'environment overrides',
+      '.env support',
+      'secret masking',
+      'sensitive data',
     ],
   },
 };

@@ -4,7 +4,9 @@
  */
 
 import type { GlobalConfig, ProfileConfig, WatchConfig } from '../../types/config';
+import { getGlobalRedactor } from '../../utils/secret-redactor';
 import { type CLIOptions, detectEarlyExit, detectSubcommand, parseCliArgs } from './cli-parser';
+import { loadEnvFiles } from './env-file-loader';
 import { loadEnvironmentConfig } from './env-loader';
 import { loadConfigFile } from './file-loader';
 
@@ -31,6 +33,8 @@ export interface ResolvedConfig {
   mode: ExecutionMode;
   /** Raw args for subcommand passthrough */
   rawArgs: string[];
+  /** Keys marked as secrets (for redaction) */
+  secretKeys: string[];
 }
 
 export interface ResolverCallbacks {
@@ -54,6 +58,7 @@ export async function resolveConfig(
       files: [],
       mode: 'upgrade',
       rawArgs: args,
+      secretKeys: [],
     };
   }
   if (subcommand === 'init') {
@@ -63,6 +68,7 @@ export async function resolveConfig(
       files: [],
       mode: 'init',
       rawArgs: args,
+      secretKeys: [],
     };
   }
   if (subcommand === 'edit') {
@@ -72,6 +78,7 @@ export async function resolveConfig(
       files: [],
       mode: 'edit',
       rawArgs: args,
+      secretKeys: [],
     };
   }
   if (subcommand === 'validate') {
@@ -81,6 +88,7 @@ export async function resolveConfig(
       files: [],
       mode: 'validate',
       rawArgs: args,
+      secretKeys: [],
     };
   }
 
@@ -96,6 +104,7 @@ export async function resolveConfig(
       files: cliOptions.files,
       mode: earlyExit,
       rawArgs: args,
+      secretKeys: [],
     };
   }
 
@@ -107,6 +116,7 @@ export async function resolveConfig(
       files: args.slice(1), // Pass remaining args (label1, label2, optional file)
       mode: 'diff-subcommand',
       rawArgs: args,
+      secretKeys: [],
     };
   }
 
@@ -118,6 +128,26 @@ export async function resolveConfig(
   let globalConfig = mergeGlobalConfigs(fileConfig, envConfig);
   globalConfig = applyCliOptionsToConfig(globalConfig, cliOptions);
 
+  // Load .env files
+  const environment = cliOptions.env ?? globalConfig.env?.environment;
+  const { variables: envFileVars, secretKeys } = await loadEnvFiles(process.cwd(), environment);
+
+  // Merge env file variables into global config (lower priority than explicit variables)
+  globalConfig.variables = { ...envFileVars, ...globalConfig.variables };
+
+  // Set up secret redaction (unless disabled)
+  const redactSecrets = !cliOptions.noRedact && globalConfig.env?.redactSecrets !== false;
+  if (redactSecrets && secretKeys.length > 0) {
+    const redactor = getGlobalRedactor();
+    const secretValues: Record<string, string> = {};
+    for (const key of secretKeys) {
+      if (globalConfig.variables?.[key]) {
+        secretValues[key] = globalConfig.variables[key];
+      }
+    }
+    redactor.addSecrets(secretValues);
+  }
+
   // Determine execution mode
   const mode = determineExecutionMode(cliOptions, globalConfig);
 
@@ -127,6 +157,7 @@ export async function resolveConfig(
     files: cliOptions.files,
     mode,
     rawArgs: args,
+    secretKeys,
   };
 }
 
@@ -140,6 +171,7 @@ export function mergeGlobalConfigs(
   return {
     ...base,
     ...override,
+    env: { ...base.env, ...override.env },
     variables: { ...base.variables, ...override.variables },
     output: { ...base.output, ...override.output },
     defaults: { ...base.defaults, ...override.defaults },
@@ -156,6 +188,14 @@ export function mergeGlobalConfigs(
  */
 function applyCliOptionsToConfig(config: GlobalConfig, options: CLIOptions): GlobalConfig {
   const result = { ...config };
+
+  // Environment
+  if (options.env) {
+    result.env = { ...result.env, environment: options.env };
+  }
+  if (options.noRedact) {
+    result.env = { ...result.env, redactSecrets: false };
+  }
 
   // Execution
   if (options.execution) {

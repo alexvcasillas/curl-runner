@@ -130,6 +130,24 @@ const optionGroups = [
         description: 'Use HTTP/2 protocol with multiplexing for improved performance.',
         example: 'curl-runner api.yaml --http2',
       },
+      {
+        short: '-e',
+        long: '--env <name>',
+        type: 'string',
+        default: 'none',
+        description:
+          'Select environment to load .env.{name} files. Enables environment-specific variable overrides.',
+        example: 'curl-runner api.yaml --env production',
+      },
+      {
+        short: null,
+        long: '--no-redact',
+        type: 'boolean',
+        default: 'false',
+        description:
+          'Disable automatic secret redaction in output. Not recommended for shared terminals.',
+        example: 'curl-runner api.yaml --no-redact',
+      },
     ],
   },
   {
