@@ -3,15 +3,15 @@
  * Routes: convert curl "...", convert file script.sh, convert yaml test.yaml
  */
 
+import type { RequestConfig, YamlFile } from '../types/config';
 import { extractCurlCommands } from './batch-parser';
-import { parseCurl } from './curl-parser';
 import { generateCurlFromIR } from './curl-generator';
+import { parseCurl } from './curl-parser';
 import { normalize } from './normalizer';
 import { tokenize } from './tokenizer';
+import type { ConvertOptions, CurlRunnerIR } from './types';
 import { serializeBatchToYaml, serializeToYaml } from './yaml-serializer';
 import { yamlToIR } from './yaml-to-ir';
-import type { ConvertOptions, CurlRunnerIR } from './types';
-import type { RequestConfig, YamlFile } from '../types/config';
 
 export interface ConvertResult {
   output: string;

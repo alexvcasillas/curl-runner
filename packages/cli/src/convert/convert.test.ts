@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import type { RequestConfig } from '../types/config';
+import { extractCurlCommands } from './batch-parser';
 import { convertCurlToYaml, parseConvertArgs } from './convert-command';
+import { generateCurlFromIR } from './curl-generator';
 import { parseCurl } from './curl-parser';
 import { normalize } from './normalizer';
-import { generateCurlFromIR } from './curl-generator';
-import { extractCurlCommands } from './batch-parser';
-import { serializeToYaml, serializeBatchToYaml } from './yaml-serializer';
+import { serializeBatchToYaml, serializeToYaml } from './yaml-serializer';
 import { yamlToIR } from './yaml-to-ir';
-import type { RequestConfig } from '../types/config';
 
 describe('convert: curl → YAML → curl round-trip', () => {
   test('simple GET round-trip', () => {

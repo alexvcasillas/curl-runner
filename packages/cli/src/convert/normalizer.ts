@@ -3,7 +3,7 @@
  * Infers methods, detects body types, canonicalizes headers, parses query strings.
  */
 
-import type { CurlAST, AuthIR, BodyIR, CurlRunnerIR, FormFieldIR, FormFileIR } from './types';
+import type { AuthIR, BodyIR, CurlAST, CurlRunnerIR, FormFieldIR, FormFileIR } from './types';
 
 /**
  * Normalize a CurlAST into the canonical CurlRunnerIR.
