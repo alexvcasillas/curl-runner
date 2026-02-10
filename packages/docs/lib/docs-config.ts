@@ -172,6 +172,11 @@ export const docsConfig: SidebarConfig = {
           description: 'Validate YAML configs with auto-fix and security checks',
         },
         {
+          title: 'Curl ⇄ YAML Conversion',
+          href: '/docs/features/convert',
+          description: 'Convert between curl commands and YAML specs',
+        },
+        {
           title: 'Environment Files',
           href: '/docs/features/env-files',
           description: 'Load .env files with automatic secret redaction',
