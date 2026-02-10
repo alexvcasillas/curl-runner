@@ -17,9 +17,13 @@ export function tokenize(input: string): string[] {
     if (ch === '\\' && i + 1 < len && (input[i + 1] === '\n' || input[i + 1] === '\r')) {
       i += 2;
       // Skip \r\n
-      if (i < len && input[i] === '\n') i++;
+      if (i < len && input[i] === '\n') {
+        i++;
+      }
       // Skip leading whitespace on next line
-      while (i < len && (input[i] === ' ' || input[i] === '\t')) i++;
+      while (i < len && (input[i] === ' ' || input[i] === '\t')) {
+        i++;
+      }
       continue;
     }
 
@@ -40,7 +44,9 @@ export function tokenize(input: string): string[] {
         current += input[i];
         i++;
       }
-      if (i < len) i++; // skip closing quote
+      if (i < len) {
+        i++; // skip closing quote
+      }
       continue;
     }
 
@@ -65,7 +71,9 @@ export function tokenize(input: string): string[] {
         current += input[i];
         i++;
       }
-      if (i < len) i++; // skip closing quote
+      if (i < len) {
+        i++; // skip closing quote
+      }
       continue;
     }
 

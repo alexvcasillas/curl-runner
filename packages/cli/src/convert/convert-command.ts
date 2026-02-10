@@ -51,7 +51,10 @@ export function convertCurlToYaml(curlCmd: string, options?: ConvertOptions): Co
 /**
  * Convert a shell script file → YAML (batch).
  */
-export async function convertFileToYaml(filePath: string, options?: ConvertOptions): Promise<ConvertResult> {
+export async function convertFileToYaml(
+  filePath: string,
+  options?: ConvertOptions,
+): Promise<ConvertResult> {
   const content = await Bun.file(filePath).text();
   const curlCommands = extractCurlCommands(content);
 
@@ -76,7 +79,9 @@ export async function convertFileToYaml(filePath: string, options?: ConvertOptio
       lossReport: options?.lossReport ?? true,
     });
     const result: ConvertResult = { output, warnings: allWarnings };
-    if (options?.debug) result.debug = { ir: irs[0] };
+    if (options?.debug) {
+      result.debug = { ir: irs[0] };
+    }
     return result;
   }
 
@@ -86,21 +91,32 @@ export async function convertFileToYaml(filePath: string, options?: ConvertOptio
   });
 
   const result: ConvertResult = { output, warnings: allWarnings };
-  if (options?.debug) result.debug = { ir: irs };
+  if (options?.debug) {
+    result.debug = { ir: irs };
+  }
   return result;
 }
 
 /**
  * Convert a YAML file → curl command(s).
  */
-export async function convertYamlToCurl(filePath: string, _options?: ConvertOptions): Promise<ConvertResult> {
+export async function convertYamlToCurl(
+  filePath: string,
+  _options?: ConvertOptions,
+): Promise<ConvertResult> {
   const content = await Bun.file(filePath).text();
   const yaml = Bun.YAML.parse(content) as YamlFile;
   const requests: RequestConfig[] = [];
 
-  if (yaml.request) requests.push(yaml.request);
-  if (yaml.requests) requests.push(...yaml.requests);
-  if (yaml.collection?.requests) requests.push(...yaml.collection.requests);
+  if (yaml.request) {
+    requests.push(yaml.request);
+  }
+  if (yaml.requests) {
+    requests.push(...yaml.requests);
+  }
+  if (yaml.collection?.requests) {
+    requests.push(...yaml.collection.requests);
+  }
 
   if (requests.length === 0) {
     return { output: '', warnings: ['No requests found in YAML file'] };
@@ -131,10 +147,14 @@ export interface ConvertArgs {
 
 export function parseConvertArgs(args: string[]): ConvertArgs | null {
   // args[0] is 'convert', args[1] is subcommand
-  if (args.length < 3) return null;
+  if (args.length < 3) {
+    return null;
+  }
 
   const sub = args[1];
-  if (sub !== 'curl' && sub !== 'file' && sub !== 'yaml') return null;
+  if (sub !== 'curl' && sub !== 'file' && sub !== 'yaml') {
+    return null;
+  }
 
   const input = args[2];
   const options: ConvertOptions = {};

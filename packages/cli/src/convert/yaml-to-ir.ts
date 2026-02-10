@@ -25,8 +25,12 @@ export function yamlToIR(config: RequestConfig): CurlRunnerIR {
     metadata: { source: 'yaml', warnings },
   };
 
-  if (config.name) ir.name = config.name;
-  if (config.params) ir.params = { ...config.params };
+  if (config.name) {
+    ir.name = config.name;
+  }
+  if (config.params) {
+    ir.params = { ...config.params };
+  }
 
   // Auth
   if (config.auth) {
@@ -77,28 +81,60 @@ export function yamlToIR(config: RequestConfig): CurlRunnerIR {
     ir.formData = formData;
   }
 
-  if (config.timeout) ir.timeout = config.timeout;
-  if (config.followRedirects !== undefined) ir.followRedirects = config.followRedirects;
-  if (config.maxRedirects) ir.maxRedirects = config.maxRedirects;
-  if (config.proxy) ir.proxy = config.proxy;
-  if (config.insecure) ir.insecure = true;
-  if (config.http2) ir.http2 = true;
-  if (config.output) ir.output = config.output;
+  if (config.timeout) {
+    ir.timeout = config.timeout;
+  }
+  if (config.followRedirects !== undefined) {
+    ir.followRedirects = config.followRedirects;
+  }
+  if (config.maxRedirects) {
+    ir.maxRedirects = config.maxRedirects;
+  }
+  if (config.proxy) {
+    ir.proxy = config.proxy;
+  }
+  if (config.insecure) {
+    ir.insecure = true;
+  }
+  if (config.http2) {
+    ir.http2 = true;
+  }
+  if (config.output) {
+    ir.output = config.output;
+  }
 
   if (config.ssl) {
     ir.ssl = {};
-    if (config.ssl.ca) ir.ssl.ca = config.ssl.ca;
-    if (config.ssl.cert) ir.ssl.cert = config.ssl.cert;
-    if (config.ssl.key) ir.ssl.key = config.ssl.key;
+    if (config.ssl.ca) {
+      ir.ssl.ca = config.ssl.ca;
+    }
+    if (config.ssl.cert) {
+      ir.ssl.cert = config.ssl.cert;
+    }
+    if (config.ssl.key) {
+      ir.ssl.key = config.ssl.key;
+    }
   }
 
   // Warn about YAML-only features that don't map to curl
-  if (config.expect) warnings.push('expect block has no curl equivalent');
-  if (config.store) warnings.push('store block has no curl equivalent');
-  if (config.when) warnings.push('when condition has no curl equivalent');
-  if (config.retry) warnings.push('retry config simplified in curl output');
-  if (config.snapshot) warnings.push('snapshot config has no curl equivalent');
-  if (config.diff) warnings.push('diff config has no curl equivalent');
+  if (config.expect) {
+    warnings.push('expect block has no curl equivalent');
+  }
+  if (config.store) {
+    warnings.push('store block has no curl equivalent');
+  }
+  if (config.when) {
+    warnings.push('when condition has no curl equivalent');
+  }
+  if (config.retry) {
+    warnings.push('retry config simplified in curl output');
+  }
+  if (config.snapshot) {
+    warnings.push('snapshot config has no curl equivalent');
+  }
+  if (config.diff) {
+    warnings.push('diff config has no curl equivalent');
+  }
 
   return ir;
 }

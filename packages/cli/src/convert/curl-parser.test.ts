@@ -87,7 +87,9 @@ describe('curl-parser', () => {
   });
 
   test('SSL certificates', () => {
-    const ast = parseCurl('curl --cacert ca.pem --cert client.pem --key client-key.pem https://example.com');
+    const ast = parseCurl(
+      'curl --cacert ca.pem --cert client.pem --key client-key.pem https://example.com',
+    );
     expect(ast.cacert).toBe('ca.pem');
     expect(ast.cert).toBe('client.pem');
     expect(ast.key).toBe('client-key.pem');
@@ -109,7 +111,9 @@ describe('curl-parser', () => {
   });
 
   test('multiline command', () => {
-    const ast = parseCurl(`curl -X POST \\\n  -H "Content-Type: application/json" \\\n  -d '{"test":true}' \\\n  https://api.example.com`);
+    const ast = parseCurl(
+      `curl -X POST \\\n  -H "Content-Type: application/json" \\\n  -d '{"test":true}' \\\n  https://api.example.com`,
+    );
     expect(ast.method).toBe('POST');
     expect(ast.url).toBe('https://api.example.com');
     expect(ast.data).toEqual(['{"test":true}']);

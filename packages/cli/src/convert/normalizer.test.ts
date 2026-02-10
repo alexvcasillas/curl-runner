@@ -76,7 +76,9 @@ describe('normalizer', () => {
   });
 
   test('form data with metadata', () => {
-    const ir = normalize(parseCurl('curl -F "file=@test.png;filename=photo.png;type=image/png" https://example.com'));
+    const ir = normalize(
+      parseCurl('curl -F "file=@test.png;filename=photo.png;type=image/png" https://example.com'),
+    );
     expect(ir.formData!.file).toEqual({
       file: 'test.png',
       filename: 'photo.png',
@@ -111,14 +113,16 @@ describe('normalizer', () => {
   });
 
   test('SSL config', () => {
-    const ir = normalize(parseCurl('curl --cacert ca.pem --cert client.pem --key key.pem https://example.com'));
+    const ir = normalize(
+      parseCurl('curl --cacert ca.pem --cert client.pem --key key.pem https://example.com'),
+    );
     expect(ir.ssl).toEqual({ ca: 'ca.pem', cert: 'client.pem', key: 'key.pem' });
   });
 
   test('unsupported flags generate warnings', () => {
     const ir = normalize(parseCurl('curl --compressed https://example.com'));
     expect(ir.metadata.warnings.length).toBeGreaterThan(0);
-    expect(ir.metadata.warnings.some(w => w.includes('compressed'))).toBe(true);
+    expect(ir.metadata.warnings.some((w) => w.includes('compressed'))).toBe(true);
   });
 
   test('user-agent via -A', () => {
@@ -134,6 +138,6 @@ describe('normalizer', () => {
   test('cookie → header + warning', () => {
     const ir = normalize(parseCurl('curl -b "session=abc" https://example.com'));
     expect(ir.headers.Cookie).toBe('session=abc');
-    expect(ir.metadata.warnings.some(w => w.includes('Cookie'))).toBe(true);
+    expect(ir.metadata.warnings.some((w) => w.includes('Cookie'))).toBe(true);
   });
 });

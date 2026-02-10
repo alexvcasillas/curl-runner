@@ -35,8 +35,12 @@ export function generateCurlFromYaml(config: RequestConfig): string {
     for (const [fieldName, fieldValue] of Object.entries(config.formData)) {
       if (typeof fieldValue === 'object' && fieldValue !== null && 'file' in fieldValue) {
         let fileSpec = `@${fieldValue.file}`;
-        if (fieldValue.filename) fileSpec += `;filename=${fieldValue.filename}`;
-        if (fieldValue.contentType) fileSpec += `;type=${fieldValue.contentType}`;
+        if (fieldValue.filename) {
+          fileSpec += `;filename=${fieldValue.filename}`;
+        }
+        if (fieldValue.contentType) {
+          fileSpec += `;type=${fieldValue.contentType}`;
+        }
         segments.push(`-F ${shellQuote(`${fieldName}=${fileSpec}`)}`);
       } else {
         segments.push(`--form-string ${shellQuote(`${fieldName}=${String(fieldValue)}`)}`);
@@ -61,16 +65,32 @@ export function generateCurlFromYaml(config: RequestConfig): string {
     segments.push(`--max-redirs ${config.maxRedirects}`);
   }
 
-  if (config.proxy) segments.push(`-x ${shellQuote(config.proxy)}`);
-  if (config.insecure) segments.push('-k');
-  if (config.ssl) {
-    if (config.ssl.verify === false) segments.push('-k');
-    if (config.ssl.ca) segments.push(`--cacert ${shellQuote(config.ssl.ca)}`);
-    if (config.ssl.cert) segments.push(`--cert ${shellQuote(config.ssl.cert)}`);
-    if (config.ssl.key) segments.push(`--key ${shellQuote(config.ssl.key)}`);
+  if (config.proxy) {
+    segments.push(`-x ${shellQuote(config.proxy)}`);
   }
-  if (config.http2) segments.push('--http2');
-  if (config.output) segments.push(`-o ${shellQuote(config.output)}`);
+  if (config.insecure) {
+    segments.push('-k');
+  }
+  if (config.ssl) {
+    if (config.ssl.verify === false) {
+      segments.push('-k');
+    }
+    if (config.ssl.ca) {
+      segments.push(`--cacert ${shellQuote(config.ssl.ca)}`);
+    }
+    if (config.ssl.cert) {
+      segments.push(`--cert ${shellQuote(config.ssl.cert)}`);
+    }
+    if (config.ssl.key) {
+      segments.push(`--key ${shellQuote(config.ssl.key)}`);
+    }
+  }
+  if (config.http2) {
+    segments.push('--http2');
+  }
+  if (config.output) {
+    segments.push(`-o ${shellQuote(config.output)}`);
+  }
 
   let url = config.url;
   if (config.params && Object.keys(config.params).length > 0) {
@@ -110,8 +130,12 @@ export function generateCurlFromIR(ir: CurlRunnerIR): string {
         segments.push(`--form-string ${shellQuote(`${fieldName}=${fieldValue}`)}`);
       } else {
         let fileSpec = `@${fieldValue.file}`;
-        if (fieldValue.filename) fileSpec += `;filename=${fieldValue.filename}`;
-        if (fieldValue.contentType) fileSpec += `;type=${fieldValue.contentType}`;
+        if (fieldValue.filename) {
+          fileSpec += `;filename=${fieldValue.filename}`;
+        }
+        if (fieldValue.contentType) {
+          fileSpec += `;type=${fieldValue.contentType}`;
+        }
         segments.push(`-F ${shellQuote(`${fieldName}=${fileSpec}`)}`);
       }
     }
@@ -134,17 +158,35 @@ export function generateCurlFromIR(ir: CurlRunnerIR): string {
     segments.push(`--max-time ${Math.ceil(ir.timeout / 1000)}`);
   }
 
-  if (ir.followRedirects) segments.push('-L');
-  if (ir.maxRedirects !== undefined) segments.push(`--max-redirs ${ir.maxRedirects}`);
-  if (ir.proxy) segments.push(`-x ${shellQuote(ir.proxy)}`);
-  if (ir.insecure) segments.push('-k');
-  if (ir.http2) segments.push('--http2');
-  if (ir.output) segments.push(`-o ${shellQuote(ir.output)}`);
+  if (ir.followRedirects) {
+    segments.push('-L');
+  }
+  if (ir.maxRedirects !== undefined) {
+    segments.push(`--max-redirs ${ir.maxRedirects}`);
+  }
+  if (ir.proxy) {
+    segments.push(`-x ${shellQuote(ir.proxy)}`);
+  }
+  if (ir.insecure) {
+    segments.push('-k');
+  }
+  if (ir.http2) {
+    segments.push('--http2');
+  }
+  if (ir.output) {
+    segments.push(`-o ${shellQuote(ir.output)}`);
+  }
 
   if (ir.ssl) {
-    if (ir.ssl.ca) segments.push(`--cacert ${shellQuote(ir.ssl.ca)}`);
-    if (ir.ssl.cert) segments.push(`--cert ${shellQuote(ir.ssl.cert)}`);
-    if (ir.ssl.key) segments.push(`--key ${shellQuote(ir.ssl.key)}`);
+    if (ir.ssl.ca) {
+      segments.push(`--cacert ${shellQuote(ir.ssl.ca)}`);
+    }
+    if (ir.ssl.cert) {
+      segments.push(`--cert ${shellQuote(ir.ssl.cert)}`);
+    }
+    if (ir.ssl.key) {
+      segments.push(`--key ${shellQuote(ir.ssl.key)}`);
+    }
   }
 
   let url = ir.url;

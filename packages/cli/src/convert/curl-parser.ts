@@ -7,54 +7,83 @@ import type { CurlAST } from './types';
 
 /** Flags that take a value argument */
 const VALUE_FLAGS = new Set([
-  '-X', '--request',
-  '-H', '--header',
-  '-d', '--data', '--data-raw', '--data-binary', '--data-ascii',
+  '-X',
+  '--request',
+  '-H',
+  '--header',
+  '-d',
+  '--data',
+  '--data-raw',
+  '--data-binary',
+  '--data-ascii',
   '--data-urlencode',
-  '-F', '--form',
+  '-F',
+  '--form',
   '--form-string',
-  '-u', '--user',
-  '-o', '--output',
-  '-x', '--proxy',
-  '--max-time', '-m',
+  '-u',
+  '--user',
+  '-o',
+  '--output',
+  '-x',
+  '--proxy',
+  '--max-time',
+  '-m',
   '--max-redirs',
-  '--cacert', '--cert', '--key',
-  '-b', '--cookie',
-  '-c', '--cookie-jar',
-  '-A', '--user-agent',
-  '-e', '--referer',
+  '--cacert',
+  '--cert',
+  '--key',
+  '-b',
+  '--cookie',
+  '-c',
+  '--cookie-jar',
+  '-A',
+  '--user-agent',
+  '-e',
+  '--referer',
   '--connect-timeout',
   '--retry',
   '--retry-delay',
-  '-w', '--write-out',
+  '-w',
+  '--write-out',
   '--resolve',
   '--interface',
   '--local-port',
   '--limit-rate',
   '--ciphers',
   '--proto',
-  '--tlsv1.2', '--tlsv1.3',
+  '--tlsv1.2',
+  '--tlsv1.3',
 ]);
 
 /** Flags that are boolean (no value) */
 const BOOLEAN_FLAGS = new Set([
-  '-G', '--get',
-  '-I', '--head',
-  '-L', '--location',
-  '-k', '--insecure',
-  '-s', '--silent',
-  '-S', '--show-error',
-  '-v', '--verbose',
+  '-G',
+  '--get',
+  '-I',
+  '--head',
+  '-L',
+  '--location',
+  '-k',
+  '--insecure',
+  '-s',
+  '--silent',
+  '-S',
+  '--show-error',
+  '-v',
+  '--verbose',
   '--compressed',
   '--http2',
   '--http2-prior-knowledge',
   '--http1.1',
-  '-N', '--no-buffer',
+  '-N',
+  '--no-buffer',
   '--raw',
-  '-f', '--fail',
+  '-f',
+  '--fail',
   '--fail-early',
   '--globoff',
-  '-#', '--progress-bar',
+  '-#',
+  '--progress-bar',
   '--tr-encoding',
   '--tcp-nodelay',
   '--tcp-fastopen',
@@ -112,7 +141,19 @@ export function parseTokens(tokens: string[]): CurlAST {
       if (VALUE_FLAGS.has(firstFlag)) {
         // e.g., -XPOST → -X POST
         const value = token.slice(2);
-        i = processFlag(firstFlag, value, tokens, i, ast, dataEntries, dataRawEntries, dataBinaryEntries, dataUrlencodeEntries, formEntries, formStringEntries);
+        i = processFlag(
+          firstFlag,
+          value,
+          tokens,
+          i,
+          ast,
+          dataEntries,
+          dataRawEntries,
+          dataBinaryEntries,
+          dataUrlencodeEntries,
+          formEntries,
+          formStringEntries,
+        );
         continue;
       }
 
@@ -128,7 +169,19 @@ export function parseTokens(tokens: string[]): CurlAST {
 
       if (allBoolean) {
         for (let j = 1; j < token.length; j++) {
-          i = processFlag(`-${token[j]}`, undefined, tokens, i, ast, dataEntries, dataRawEntries, dataBinaryEntries, dataUrlencodeEntries, formEntries, formStringEntries);
+          i = processFlag(
+            `-${token[j]}`,
+            undefined,
+            tokens,
+            i,
+            ast,
+            dataEntries,
+            dataRawEntries,
+            dataBinaryEntries,
+            dataUrlencodeEntries,
+            formEntries,
+            formStringEntries,
+          );
         }
         i++;
         continue;
@@ -138,13 +191,37 @@ export function parseTokens(tokens: string[]): CurlAST {
     // Value flags
     if (VALUE_FLAGS.has(token)) {
       const value = tokens[i + 1];
-      i = processFlag(token, value, tokens, i, ast, dataEntries, dataRawEntries, dataBinaryEntries, dataUrlencodeEntries, formEntries, formStringEntries);
+      i = processFlag(
+        token,
+        value,
+        tokens,
+        i,
+        ast,
+        dataEntries,
+        dataRawEntries,
+        dataBinaryEntries,
+        dataUrlencodeEntries,
+        formEntries,
+        formStringEntries,
+      );
       continue;
     }
 
     // Boolean flags
     if (BOOLEAN_FLAGS.has(token)) {
-      i = processFlag(token, undefined, tokens, i, ast, dataEntries, dataRawEntries, dataBinaryEntries, dataUrlencodeEntries, formEntries, formStringEntries);
+      i = processFlag(
+        token,
+        undefined,
+        tokens,
+        i,
+        ast,
+        dataEntries,
+        dataRawEntries,
+        dataBinaryEntries,
+        dataUrlencodeEntries,
+        formEntries,
+        formStringEntries,
+      );
       continue;
     }
 
@@ -165,12 +242,24 @@ export function parseTokens(tokens: string[]): CurlAST {
     i++;
   }
 
-  if (dataEntries.length > 0) ast.data = dataEntries;
-  if (dataRawEntries.length > 0) ast.dataRaw = dataRawEntries;
-  if (dataBinaryEntries.length > 0) ast.dataBinary = dataBinaryEntries;
-  if (dataUrlencodeEntries.length > 0) ast.dataUrlencode = dataUrlencodeEntries;
-  if (formEntries.length > 0) ast.form = formEntries;
-  if (formStringEntries.length > 0) ast.formString = formStringEntries;
+  if (dataEntries.length > 0) {
+    ast.data = dataEntries;
+  }
+  if (dataRawEntries.length > 0) {
+    ast.dataRaw = dataRawEntries;
+  }
+  if (dataBinaryEntries.length > 0) {
+    ast.dataBinary = dataBinaryEntries;
+  }
+  if (dataUrlencodeEntries.length > 0) {
+    ast.dataUrlencode = dataUrlencodeEntries;
+  }
+  if (formEntries.length > 0) {
+    ast.form = formEntries;
+  }
+  if (formStringEntries.length > 0) {
+    ast.formString = formStringEntries;
+  }
 
   return ast;
 }
@@ -178,7 +267,7 @@ export function parseTokens(tokens: string[]): CurlAST {
 function processFlag(
   flag: string,
   value: string | undefined,
-  tokens: string[],
+  _tokens: string[],
   i: number,
   ast: CurlAST,
   data: string[],
@@ -211,28 +300,40 @@ function processFlag(
     case '-d':
     case '--data':
     case '--data-ascii':
-      if (value !== undefined) data.push(value);
+      if (value !== undefined) {
+        data.push(value);
+      }
       return i + 2;
 
     case '--data-raw':
-      if (value !== undefined) dataRaw.push(value);
+      if (value !== undefined) {
+        dataRaw.push(value);
+      }
       return i + 2;
 
     case '--data-binary':
-      if (value !== undefined) dataBinary.push(value);
+      if (value !== undefined) {
+        dataBinary.push(value);
+      }
       return i + 2;
 
     case '--data-urlencode':
-      if (value !== undefined) dataUrlencode.push(value);
+      if (value !== undefined) {
+        dataUrlencode.push(value);
+      }
       return i + 2;
 
     case '-F':
     case '--form':
-      if (value !== undefined) form.push(value);
+      if (value !== undefined) {
+        form.push(value);
+      }
       return i + 2;
 
     case '--form-string':
-      if (value !== undefined) formString.push(value);
+      if (value !== undefined) {
+        formString.push(value);
+      }
       return i + 2;
 
     case '-u':
@@ -252,11 +353,15 @@ function processFlag(
 
     case '--max-time':
     case '-m':
-      if (value) ast.maxTime = Number(value);
+      if (value) {
+        ast.maxTime = Number(value);
+      }
       return i + 2;
 
     case '--max-redirs':
-      if (value) ast.maxRedirs = Number(value);
+      if (value) {
+        ast.maxRedirs = Number(value);
+      }
       return i + 2;
 
     case '--cacert':
@@ -331,7 +436,9 @@ function processFlag(
 
     default:
       // Skip other known value flags
-      if (VALUE_FLAGS.has(flag)) return i + 2;
+      if (VALUE_FLAGS.has(flag)) {
+        return i + 2;
+      }
       return i + 1;
   }
 }

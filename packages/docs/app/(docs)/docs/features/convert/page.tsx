@@ -178,8 +178,8 @@ export default function ConvertPage() {
           <section>
             <H2 id="overview">Overview</H2>
             <p className="text-muted-foreground text-lg mb-6">
-              The convert command provides a deterministic, loss-aware conversion engine between curl
-              commands and curl-runner YAML. Paste a curl command from documentation or browser
+              The convert command provides a deterministic, loss-aware conversion engine between
+              curl commands and curl-runner YAML. Paste a curl command from documentation or browser
               DevTools, get a clean YAML spec. Convert YAML specs back to canonical curl commands.
             </p>
 
@@ -232,9 +232,9 @@ export default function ConvertPage() {
           <section>
             <H2 id="curl-to-yaml">Curl to YAML</H2>
             <p className="text-muted-foreground text-lg mb-6">
-              Convert a raw curl command into a clean, human-editable curl-runner YAML spec.
-              The converter automatically detects JSON bodies, authentication, query parameters,
-              and more.
+              Convert a raw curl command into a clean, human-editable curl-runner YAML spec. The
+              converter automatically detects JSON bodies, authentication, query parameters, and
+              more.
             </p>
 
             <div className="space-y-4">
@@ -252,8 +252,8 @@ export default function ConvertPage() {
           <section>
             <H2 id="yaml-to-curl">YAML to Curl</H2>
             <p className="text-muted-foreground text-lg mb-6">
-              Convert a curl-runner YAML file back to canonical, shell-safe curl commands.
-              Useful for sharing commands with teammates or debugging.
+              Convert a curl-runner YAML file back to canonical, shell-safe curl commands. Useful
+              for sharing commands with teammates or debugging.
             </p>
 
             <div className="space-y-4">
@@ -271,8 +271,9 @@ export default function ConvertPage() {
           <section>
             <H2 id="batch-conversion">Batch Script Conversion</H2>
             <p className="text-muted-foreground text-lg mb-6">
-              Extract and convert all curl commands from a shell script into a single YAML collection.
-              The parser handles multiline commands, ignores non-curl lines, and strips piped output.
+              Extract and convert all curl commands from a shell script into a single YAML
+              collection. The parser handles multiline commands, ignores non-curl lines, and strips
+              piped output.
             </p>
 
             <div className="space-y-4">
@@ -307,36 +308,72 @@ export default function ConvertPage() {
                 </thead>
                 <tbody className="divide-y">
                   <tr>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">-d &apos;{`{"key":"val"}`}&apos;</code></td>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">body.json</code> + infers POST</td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">-d &apos;{`{"key":"val"}`}&apos;</code>
+                    </td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">body.json</code> + infers POST
+                    </td>
                   </tr>
                   <tr>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">-d &apos;key=val&amp;key2=val2&apos;</code></td>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">body.form</code> (urlencoded)</td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">
+                        -d &apos;key=val&amp;key2=val2&apos;
+                      </code>
+                    </td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">body.form</code> (urlencoded)
+                    </td>
                   </tr>
                   <tr>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">-H &apos;Authorization: Bearer T&apos;</code></td>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">auth.type: bearer</code></td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">
+                        -H &apos;Authorization: Bearer T&apos;
+                      </code>
+                    </td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">auth.type: bearer</code>
+                    </td>
                   </tr>
                   <tr>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">-u user:pass</code></td>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">auth.type: basic</code></td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">-u user:pass</code>
+                    </td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">auth.type: basic</code>
+                    </td>
                   </tr>
                   <tr>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">-F &apos;file=@img.png&apos;</code></td>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">formData.file.file: img.png</code></td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">-F &apos;file=@img.png&apos;</code>
+                    </td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">formData.file.file: img.png</code>
+                    </td>
                   </tr>
                   <tr>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">URL?q=test&amp;page=1</code></td>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">params: {`{q: test, page: 1}`}</code></td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">URL?q=test&amp;page=1</code>
+                    </td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">params: {`{q: test, page: 1}`}</code>
+                    </td>
                   </tr>
                   <tr>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">--max-time 30</code></td>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">timeout: 30000</code> (ms)</td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">--max-time 30</code>
+                    </td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">timeout: 30000</code> (ms)
+                    </td>
                   </tr>
                   <tr>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">-A &apos;MyApp/1.0&apos;</code></td>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">headers.User-Agent</code></td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">-A &apos;MyApp/1.0&apos;</code>
+                    </td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">headers.User-Agent</code>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -426,15 +463,23 @@ export default function ConvertPage() {
                 </thead>
                 <tbody className="divide-y">
                   <tr>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">convert curl &quot;&lt;cmd&gt;&quot;</code></td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">
+                        convert curl &quot;&lt;cmd&gt;&quot;
+                      </code>
+                    </td>
                     <td className="py-3 px-4">Convert inline curl command to YAML</td>
                   </tr>
                   <tr>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">convert file &lt;script.sh&gt;</code></td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">convert file &lt;script.sh&gt;</code>
+                    </td>
                     <td className="py-3 px-4">Convert shell script to YAML (batch)</td>
                   </tr>
                   <tr>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">convert yaml &lt;file.yaml&gt;</code></td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">convert yaml &lt;file.yaml&gt;</code>
+                    </td>
                     <td className="py-3 px-4">Convert YAML to curl command(s)</td>
                   </tr>
                 </tbody>
@@ -451,19 +496,29 @@ export default function ConvertPage() {
                 </thead>
                 <tbody className="divide-y">
                   <tr>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">-o, --output &lt;file&gt;</code></td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">-o, --output &lt;file&gt;</code>
+                    </td>
                     <td className="py-3 px-4">Write output to file</td>
                   </tr>
                   <tr>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">--pretty</code></td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">--pretty</code>
+                    </td>
                     <td className="py-3 px-4">Pretty-print output (default)</td>
                   </tr>
                   <tr>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">--loss-report</code></td>
-                    <td className="py-3 px-4">Include warnings for unsupported features (default)</td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">--loss-report</code>
+                    </td>
+                    <td className="py-3 px-4">
+                      Include warnings for unsupported features (default)
+                    </td>
                   </tr>
                   <tr>
-                    <td className="py-3 px-4"><code className="font-mono text-xs">--debug</code></td>
+                    <td className="py-3 px-4">
+                      <code className="font-mono text-xs">--debug</code>
+                    </td>
                     <td className="py-3 px-4">Show token stream, AST, and IR</td>
                   </tr>
                 </tbody>
@@ -485,7 +540,8 @@ export default function ConvertPage() {
                     <h4 className="font-medium mb-2">Recommended</h4>
                     <div className="space-y-2 text-sm text-muted-foreground">
                       <div>
-                        &bull; Use <code className="font-mono">-o</code> to save and immediately run converted YAML
+                        &bull; Use <code className="font-mono">-o</code> to save and immediately run
+                        converted YAML
                       </div>
                       <div>&bull; Review warnings for any lost curl features</div>
                       <div>&bull; Use batch conversion for migrating shell scripts</div>
@@ -505,7 +561,9 @@ export default function ConvertPage() {
                     <div className="space-y-2 text-sm text-muted-foreground">
                       <div>&bull; Shell-specific features (pipes, variables) are stripped</div>
                       <div>&bull; Some curl flags have no YAML equivalent (see warnings)</div>
-                      <div>&bull; YAML-only features (expect, store, when) can&apos;t map to curl</div>
+                      <div>
+                        &bull; YAML-only features (expect, store, when) can&apos;t map to curl
+                      </div>
                       <div>&bull; Round-trip preserves semantics, not exact syntax</div>
                     </div>
                   </div>

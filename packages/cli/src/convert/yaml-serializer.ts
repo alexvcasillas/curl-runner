@@ -3,12 +3,15 @@
  * Produces human-readable YAML with stable key ordering and loss comments.
  */
 
-import type { CurlRunnerIR, FormFieldIR } from './types';
+import type { CurlRunnerIR } from './types';
 
 /**
  * Serialize a single IR to YAML string.
  */
-export function serializeToYaml(ir: CurlRunnerIR, options?: { pretty?: boolean; lossReport?: boolean }): string {
+export function serializeToYaml(
+  ir: CurlRunnerIR,
+  options?: { pretty?: boolean; lossReport?: boolean },
+): string {
   const lines: string[] = [];
   const pretty = options?.pretty ?? true;
   const lossReport = options?.lossReport ?? true;
@@ -22,7 +25,9 @@ export function serializeToYaml(ir: CurlRunnerIR, options?: { pretty?: boolean; 
   }
 
   lines.push('request:');
-  if (ir.name) lines.push(`  name: ${yamlStr(ir.name)}`);
+  if (ir.name) {
+    lines.push(`  name: ${yamlStr(ir.name)}`);
+  }
   lines.push(`  method: ${ir.method}`);
   lines.push(`  url: ${yamlStr(ir.url)}`);
 
@@ -82,30 +87,54 @@ export function serializeToYaml(ir: CurlRunnerIR, options?: { pretty?: boolean; 
       } else {
         lines.push(`    ${yamlKey(k)}:`);
         lines.push(`      file: ${yamlStr(v.file)}`);
-        if (v.filename) lines.push(`      filename: ${yamlStr(v.filename)}`);
-        if (v.contentType) lines.push(`      contentType: ${yamlStr(v.contentType)}`);
+        if (v.filename) {
+          lines.push(`      filename: ${yamlStr(v.filename)}`);
+        }
+        if (v.contentType) {
+          lines.push(`      contentType: ${yamlStr(v.contentType)}`);
+        }
       }
     }
   }
 
   // Optional fields
-  if (ir.timeout !== undefined) lines.push(`  timeout: ${ir.timeout}`);
-  if (ir.followRedirects) lines.push('  followRedirects: true');
-  if (ir.maxRedirects !== undefined) lines.push(`  maxRedirects: ${ir.maxRedirects}`);
-  if (ir.proxy) lines.push(`  proxy: ${yamlStr(ir.proxy)}`);
-  if (ir.insecure) lines.push('  insecure: true');
-  if (ir.http2) lines.push('  http2: true');
-  if (ir.output) lines.push(`  output: ${yamlStr(ir.output)}`);
+  if (ir.timeout !== undefined) {
+    lines.push(`  timeout: ${ir.timeout}`);
+  }
+  if (ir.followRedirects) {
+    lines.push('  followRedirects: true');
+  }
+  if (ir.maxRedirects !== undefined) {
+    lines.push(`  maxRedirects: ${ir.maxRedirects}`);
+  }
+  if (ir.proxy) {
+    lines.push(`  proxy: ${yamlStr(ir.proxy)}`);
+  }
+  if (ir.insecure) {
+    lines.push('  insecure: true');
+  }
+  if (ir.http2) {
+    lines.push('  http2: true');
+  }
+  if (ir.output) {
+    lines.push(`  output: ${yamlStr(ir.output)}`);
+  }
 
   // SSL
   if (ir.ssl) {
     lines.push('  ssl:');
-    if (ir.ssl.ca) lines.push(`    ca: ${yamlStr(ir.ssl.ca)}`);
-    if (ir.ssl.cert) lines.push(`    cert: ${yamlStr(ir.ssl.cert)}`);
-    if (ir.ssl.key) lines.push(`    key: ${yamlStr(ir.ssl.key)}`);
+    if (ir.ssl.ca) {
+      lines.push(`    ca: ${yamlStr(ir.ssl.ca)}`);
+    }
+    if (ir.ssl.cert) {
+      lines.push(`    cert: ${yamlStr(ir.ssl.cert)}`);
+    }
+    if (ir.ssl.key) {
+      lines.push(`    key: ${yamlStr(ir.ssl.key)}`);
+    }
   }
 
-  return lines.join('\n') + '\n';
+  return `${lines.join('\n')}\n`;
 }
 
 /**
@@ -134,10 +163,15 @@ export function serializeBatchToYaml(
 
   for (let idx = 0; idx < irs.length; idx++) {
     const ir = irs[idx];
-    if (idx > 0) lines.push('');
+    if (idx > 0) {
+      lines.push('');
+    }
 
-    if (ir.name) lines.push(`  - name: ${yamlStr(ir.name)}`);
-    else lines.push(`  - name: request_${idx + 1}`);
+    if (ir.name) {
+      lines.push(`  - name: ${yamlStr(ir.name)}`);
+    } else {
+      lines.push(`  - name: request_${idx + 1}`);
+    }
 
     lines.push(`    method: ${ir.method}`);
     lines.push(`    url: ${yamlStr(ir.url)}`);
@@ -193,29 +227,53 @@ export function serializeBatchToYaml(
         } else {
           lines.push(`      ${yamlKey(k)}:`);
           lines.push(`        file: ${yamlStr(v.file)}`);
-          if (v.filename) lines.push(`        filename: ${yamlStr(v.filename)}`);
-          if (v.contentType) lines.push(`        contentType: ${yamlStr(v.contentType)}`);
+          if (v.filename) {
+            lines.push(`        filename: ${yamlStr(v.filename)}`);
+          }
+          if (v.contentType) {
+            lines.push(`        contentType: ${yamlStr(v.contentType)}`);
+          }
         }
       }
     }
 
-    if (ir.timeout !== undefined) lines.push(`    timeout: ${ir.timeout}`);
-    if (ir.followRedirects) lines.push('    followRedirects: true');
-    if (ir.maxRedirects !== undefined) lines.push(`    maxRedirects: ${ir.maxRedirects}`);
-    if (ir.proxy) lines.push(`    proxy: ${yamlStr(ir.proxy)}`);
-    if (ir.insecure) lines.push('    insecure: true');
-    if (ir.http2) lines.push('    http2: true');
-    if (ir.output) lines.push(`    output: ${yamlStr(ir.output)}`);
+    if (ir.timeout !== undefined) {
+      lines.push(`    timeout: ${ir.timeout}`);
+    }
+    if (ir.followRedirects) {
+      lines.push('    followRedirects: true');
+    }
+    if (ir.maxRedirects !== undefined) {
+      lines.push(`    maxRedirects: ${ir.maxRedirects}`);
+    }
+    if (ir.proxy) {
+      lines.push(`    proxy: ${yamlStr(ir.proxy)}`);
+    }
+    if (ir.insecure) {
+      lines.push('    insecure: true');
+    }
+    if (ir.http2) {
+      lines.push('    http2: true');
+    }
+    if (ir.output) {
+      lines.push(`    output: ${yamlStr(ir.output)}`);
+    }
 
     if (ir.ssl) {
       lines.push('    ssl:');
-      if (ir.ssl.ca) lines.push(`      ca: ${yamlStr(ir.ssl.ca)}`);
-      if (ir.ssl.cert) lines.push(`      cert: ${yamlStr(ir.ssl.cert)}`);
-      if (ir.ssl.key) lines.push(`      key: ${yamlStr(ir.ssl.key)}`);
+      if (ir.ssl.ca) {
+        lines.push(`      ca: ${yamlStr(ir.ssl.ca)}`);
+      }
+      if (ir.ssl.cert) {
+        lines.push(`      cert: ${yamlStr(ir.ssl.cert)}`);
+      }
+      if (ir.ssl.key) {
+        lines.push(`      key: ${yamlStr(ir.ssl.key)}`);
+      }
     }
   }
 
-  return lines.join('\n') + '\n';
+  return `${lines.join('\n')}\n`;
 }
 
 /** Serialize JSON value to YAML inline, with proper indentation */
@@ -231,7 +289,9 @@ function serializeJsonToYaml(value: unknown, indent: number): string[] {
   }
 
   if (Array.isArray(value)) {
-    if (value.length === 0) return [`${pad}json: []`];
+    if (value.length === 0) {
+      return [`${pad}json: []`];
+    }
     // For simple arrays, use inline
     if (value.every((v) => typeof v !== 'object' || v === null)) {
       return [`${pad}json: [${value.map((v) => JSON.stringify(v)).join(', ')}]`];
@@ -243,7 +303,9 @@ function serializeJsonToYaml(value: unknown, indent: number): string[] {
   if (typeof value === 'object') {
     const obj = value as Record<string, unknown>;
     const keys = Object.keys(obj);
-    if (keys.length === 0) return [`${pad}json: {}`];
+    if (keys.length === 0) {
+      return [`${pad}json: {}`];
+    }
 
     // Use block style for readability
     const lines: string[] = [];
@@ -269,7 +331,9 @@ function serializeJsonToYaml(value: unknown, indent: number): string[] {
 
 /** Quote a YAML string value if necessary */
 function yamlStr(s: string): string {
-  if (s === '') return '""';
+  if (s === '') {
+    return '""';
+  }
   // Must quote if contains special chars or looks like a YAML keyword
   if (needsQuoting(s)) {
     return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
@@ -279,31 +343,49 @@ function yamlStr(s: string): string {
 
 /** Quote a YAML key if necessary */
 function yamlKey(s: string): string {
-  if (/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(s)) return s;
+  if (/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(s)) {
+    return s;
+  }
   return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
 /** Format a YAML primitive value */
 function yamlValue(v: unknown): string {
-  if (typeof v === 'string') return yamlStr(v);
-  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (typeof v === 'string') {
+    return yamlStr(v);
+  }
+  if (typeof v === 'number' || typeof v === 'boolean') {
+    return String(v);
+  }
   return JSON.stringify(v);
 }
 
 function needsQuoting(s: string): boolean {
   // YAML special characters that need quoting (colon only when followed by space)
-  if (/[{}\[\],&*?|>!%#@`]/.test(s)) return true;
+  if (/[{}[\],&*?|>!%#@`]/.test(s)) {
+    return true;
+  }
   // Colon followed by space or at end of string is a YAML indicator
-  if (/: /.test(s) || s.endsWith(':')) return true;
+  if (/: /.test(s) || s.endsWith(':')) {
+    return true;
+  }
   // Starts with quote char
-  if (s.startsWith("'") || s.startsWith('"')) return true;
+  if (s.startsWith("'") || s.startsWith('"')) {
+    return true;
+  }
   // YAML keywords
   const lower = s.toLowerCase();
-  if (['true', 'false', 'null', 'yes', 'no', 'on', 'off'].includes(lower)) return true;
+  if (['true', 'false', 'null', 'yes', 'no', 'on', 'off'].includes(lower)) {
+    return true;
+  }
   // Pure number
-  if (/^-?\d+(\.\d+)?$/.test(s)) return true;
+  if (/^-?\d+(\.\d+)?$/.test(s)) {
+    return true;
+  }
   // Starts with special
-  if (s.startsWith(' ') || s.endsWith(' ')) return true;
+  if (s.startsWith(' ') || s.endsWith(' ')) {
+    return true;
+  }
   return false;
 }
 

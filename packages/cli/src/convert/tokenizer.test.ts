@@ -7,32 +7,37 @@ describe('tokenizer', () => {
   });
 
   test('single-quoted strings', () => {
-    expect(tokenize("curl -d '{\"key\":\"value\"}'")).toEqual([
-      'curl', '-d', '{"key":"value"}',
-    ]);
+    expect(tokenize('curl -d \'{"key":"value"}\'')).toEqual(['curl', '-d', '{"key":"value"}']);
   });
 
   test('double-quoted strings', () => {
     expect(tokenize('curl -H "Content-Type: application/json"')).toEqual([
-      'curl', '-H', 'Content-Type: application/json',
+      'curl',
+      '-H',
+      'Content-Type: application/json',
     ]);
   });
 
   test('escaped characters in double quotes', () => {
-    expect(tokenize('curl -d "hello \\"world\\""')).toEqual([
-      'curl', '-d', 'hello "world"',
-    ]);
+    expect(tokenize('curl -d "hello \\"world\\""')).toEqual(['curl', '-d', 'hello "world"']);
   });
 
   test('backslash line continuation', () => {
     expect(tokenize('curl \\\n  -X POST \\\n  https://example.com')).toEqual([
-      'curl', '-X', 'POST', 'https://example.com',
+      'curl',
+      '-X',
+      'POST',
+      'https://example.com',
     ]);
   });
 
   test('mixed quoting', () => {
     expect(tokenize(`curl -H 'Accept: */*' -d "test"`)).toEqual([
-      'curl', '-H', 'Accept: */*', '-d', 'test',
+      'curl',
+      '-H',
+      'Accept: */*',
+      '-d',
+      'test',
     ]);
   });
 
@@ -42,7 +47,10 @@ describe('tokenizer', () => {
 
   test('tabs and multiple spaces', () => {
     expect(tokenize('curl   -X   GET\thttps://example.com')).toEqual([
-      'curl', '-X', 'GET', 'https://example.com',
+      'curl',
+      '-X',
+      'GET',
+      'https://example.com',
     ]);
   });
 

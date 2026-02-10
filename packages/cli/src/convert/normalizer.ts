@@ -3,7 +3,7 @@
  * Infers methods, detects body types, canonicalizes headers, parses query strings.
  */
 
-import type { CurlAST, AuthIR, BodyIR, CurlRunnerIR, FormFieldIR } from './types';
+import type { CurlAST, AuthIR, BodyIR, CurlRunnerIR, FormFieldIR, FormFileIR } from './types';
 
 /**
  * Normalize a CurlAST into the canonical CurlRunnerIR.
@@ -61,28 +61,56 @@ export function normalize(ast: CurlAST): CurlRunnerIR {
     },
   };
 
-  if (Object.keys(params).length > 0) ir.params = params;
-  if (body) ir.body = body;
-  if (formData) ir.formData = formData;
-  if (auth) ir.auth = auth;
-  if (ast.insecure) ir.insecure = true;
-  if (ast.location) ir.followRedirects = true;
-  if (ast.maxRedirs !== undefined) ir.maxRedirects = ast.maxRedirs;
-  if (ast.maxTime !== undefined) ir.timeout = ast.maxTime * 1000; // seconds → ms
-  if (ast.proxy) ir.proxy = ast.proxy;
-  if (ast.output) ir.output = ast.output;
-  if (ast.http2) ir.http2 = true;
-  if (ssl) ir.ssl = ssl;
+  if (Object.keys(params).length > 0) {
+    ir.params = params;
+  }
+  if (body) {
+    ir.body = body;
+  }
+  if (formData) {
+    ir.formData = formData;
+  }
+  if (auth) {
+    ir.auth = auth;
+  }
+  if (ast.insecure) {
+    ir.insecure = true;
+  }
+  if (ast.location) {
+    ir.followRedirects = true;
+  }
+  if (ast.maxRedirs !== undefined) {
+    ir.maxRedirects = ast.maxRedirs;
+  }
+  if (ast.maxTime !== undefined) {
+    ir.timeout = ast.maxTime * 1000; // seconds → ms
+  }
+  if (ast.proxy) {
+    ir.proxy = ast.proxy;
+  }
+  if (ast.output) {
+    ir.output = ast.output;
+  }
+  if (ast.http2) {
+    ir.http2 = true;
+  }
+  if (ssl) {
+    ir.ssl = ssl;
+  }
 
   return ir;
 }
 
 function parseUrl(rawUrl: string): { url: string; params: Record<string, string> } {
   const params: Record<string, string> = {};
-  if (!rawUrl) return { url: '', params };
+  if (!rawUrl) {
+    return { url: '', params };
+  }
 
   const qIdx = rawUrl.indexOf('?');
-  if (qIdx === -1) return { url: rawUrl, params };
+  if (qIdx === -1) {
+    return { url: rawUrl, params };
+  }
 
   const base = rawUrl.slice(0, qIdx);
   const query = rawUrl.slice(qIdx + 1);
@@ -172,7 +200,7 @@ function detectAuth(ast: CurlAST, headers: Record<string, string>): AuthIR | und
 
 function detectBody(
   ast: CurlAST,
-  warnings: string[],
+  _warnings: string[],
 ): { body?: BodyIR; formData?: Record<string, FormFieldIR> } {
   // Form data (-F)
   if (ast.form && ast.form.length > 0) {
@@ -228,7 +256,9 @@ function detectBody(
 
 function parseFormEntry(entry: string, formData: Record<string, FormFieldIR>): void {
   const eqIdx = entry.indexOf('=');
-  if (eqIdx <= 0) return;
+  if (eqIdx <= 0) {
+    return;
+  }
 
   const key = entry.slice(0, eqIdx);
   const value = entry.slice(eqIdx + 1);
@@ -236,11 +266,14 @@ function parseFormEntry(entry: string, formData: Record<string, FormFieldIR>): v
   if (value.startsWith('@')) {
     // File attachment: field=@path;filename=x;type=y
     const parts = value.slice(1).split(';');
-    const file: FormFieldIR = { file: parts[0] };
+    const file: FormFileIR = { file: parts[0] };
     for (let i = 1; i < parts.length; i++) {
       const [k, v] = parts[i].split('=');
-      if (k === 'filename') (file as any).filename = v;
-      else if (k === 'type') (file as any).contentType = v;
+      if (k === 'filename') {
+        file.filename = v;
+      } else if (k === 'type') {
+        file.contentType = v;
+      }
     }
     formData[key] = file;
   } else {
@@ -253,28 +286,40 @@ function looksLikeFormUrlencoded(s: string): boolean {
   return /^[^=&]+=[^&]*(&[^=&]+=[^&]*)*$/.test(s);
 }
 
-function inferMethod(
-  ast: CurlAST,
-  body?: BodyIR,
-  formData?: Record<string, FormFieldIR>,
-): string {
+function inferMethod(ast: CurlAST, body?: BodyIR, formData?: Record<string, FormFieldIR>): string {
   // Explicit -X overrides everything
-  if (ast.method) return ast.method;
+  if (ast.method) {
+    return ast.method;
+  }
   // --head / -I
-  if (ast.head) return 'HEAD';
+  if (ast.head) {
+    return 'HEAD';
+  }
   // --get / -G forces GET even with data
-  if (ast.get) return 'GET';
+  if (ast.get) {
+    return 'GET';
+  }
   // Data implies POST
-  if (body || formData) return 'POST';
+  if (body || formData) {
+    return 'POST';
+  }
   // Default
   return 'GET';
 }
 
 function detectSsl(ast: CurlAST): { ca?: string; cert?: string; key?: string } | undefined {
-  if (!ast.cacert && !ast.cert && !ast.key) return undefined;
+  if (!ast.cacert && !ast.cert && !ast.key) {
+    return undefined;
+  }
   const ssl: { ca?: string; cert?: string; key?: string } = {};
-  if (ast.cacert) ssl.ca = ast.cacert;
-  if (ast.cert) ssl.cert = ast.cert;
-  if (ast.key) ssl.key = ast.key;
+  if (ast.cacert) {
+    ssl.ca = ast.cacert;
+  }
+  if (ast.cert) {
+    ssl.cert = ast.cert;
+  }
+  if (ast.key) {
+    ssl.key = ast.key;
+  }
   return ssl;
 }

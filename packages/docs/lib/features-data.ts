@@ -1065,7 +1065,7 @@ curl-runner validate -fq tests/`,
       {
         title: 'Loss-Aware Translation',
         description:
-          'Unsupported curl flags are reported as warnings so you know exactly what was and wasn\'t converted.',
+          "Unsupported curl flags are reported as warnings so you know exactly what was and wasn't converted.",
       },
     ],
     codeExample: {

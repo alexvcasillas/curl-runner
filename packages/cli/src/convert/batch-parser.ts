@@ -30,7 +30,7 @@ export function extractCurlCommands(script: string): string[] {
       while (cmd.endsWith('\\') && i + 1 < lines.length) {
         cmd = cmd.slice(0, -1); // remove trailing backslash
         i++;
-        cmd += ' ' + lines[i].trim();
+        cmd += ` ${lines[i].trim()}`;
       }
 
       // Strip trailing pipe and everything after (e.g., | jq .)
@@ -59,18 +59,20 @@ export function extractCurlCommands(script: string): string[] {
  */
 function findCurlStart(line: string): number {
   // Direct curl command
-  if (line.startsWith('curl ') || line === 'curl') return 0;
+  if (line.startsWith('curl ') || line === 'curl') {
+    return 0;
+  }
 
   // After shell operators: &&, ||, ;, |, $(, `
-  const patterns = [
-    /(?:^|&&\s*|;\s*|\|\|\s*|\$\(\s*|`\s*)curl\s/,
-  ];
+  const patterns = [/(?:^|&&\s*|;\s*|\|\|\s*|\$\(\s*|`\s*)curl\s/];
 
   for (const p of patterns) {
     const match = p.exec(line);
     if (match) {
       const idx = line.indexOf('curl', match.index);
-      if (idx >= 0) return idx;
+      if (idx >= 0) {
+        return idx;
+      }
     }
   }
 

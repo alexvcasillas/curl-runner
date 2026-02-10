@@ -220,7 +220,15 @@ describe('convert: parseConvertArgs', () => {
   });
 
   test('parses options', () => {
-    const result = parseConvertArgs(['convert', 'curl', 'input', '--output', 'out.yaml', '--debug', '--pretty']);
+    const result = parseConvertArgs([
+      'convert',
+      'curl',
+      'input',
+      '--output',
+      'out.yaml',
+      '--debug',
+      '--pretty',
+    ]);
     expect(result!.options.output).toBe('out.yaml');
     expect(result!.options.debug).toBe(true);
     expect(result!.options.pretty).toBe(true);
