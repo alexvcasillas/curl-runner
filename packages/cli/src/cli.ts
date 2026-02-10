@@ -626,7 +626,7 @@ ${this.logger.color('OPTIONS:', 'yellow')}
 
 ${this.logger.color('EXAMPLES:', 'yellow')}
   # Convert inline curl to YAML
-  curl-runner convert curl "curl -X POST https://api.example.com -d '{\"name\":\"Alex\"}'"
+  curl-runner convert curl "curl -X POST https://api.example.com -d '{"name":"Alex"}'"
 
   # Convert and save to file
   curl-runner convert curl "curl https://api.example.com" -o test.yaml

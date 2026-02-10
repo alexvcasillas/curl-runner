@@ -1,10 +1,9 @@
-import { AlertCircle, ArrowLeftRight, CheckCircle, Code, FileText, Terminal } from 'lucide-react';
+import { AlertCircle, ArrowLeftRight, CheckCircle, Code, FileText } from 'lucide-react';
 import type { Metadata } from 'next';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { H2 } from '@/components/docs-heading';
 import { DocsPageHeader } from '@/components/docs-page-header';
 import { TableOfContents } from '@/components/toc';
-import { Badge } from '@/components/ui/badge';
 
 export const metadata: Metadata = {
   title: 'Curl ⇄ YAML Conversion',
