@@ -1,5 +1,20 @@
 # @curl-runner/cli
 
+## 1.23.0
+
+### Minor Changes
+
+- [#102](https://github.com/alexvcasillas/curl-runner/pull/102) [`cbd556f`](https://github.com/alexvcasillas/curl-runner/commit/cbd556fb767d227c663650b9d67c077d73e4a2dd) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - feat: add bidirectional curl ⇄ YAML conversion engine
+
+  - Shell tokenizer with quote/escape/continuation handling
+  - Curl semantic parser supporting 40+ flags
+  - Normalization layer with method inference, body detection, auth detection, query param extraction
+  - YAML serializer with stable key ordering and loss-aware comments
+  - Curl generator producing canonical, shell-safe commands
+  - Batch script parser for converting entire shell scripts
+  - CLI commands: convert curl, convert file, convert yaml
+  - Debug mode exposing token stream, AST, and IR
+
 ## 1.22.0
 
 ### Minor Changes
