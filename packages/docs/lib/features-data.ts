@@ -29,6 +29,8 @@ export interface FeatureData {
   icon: LucideIcon;
   color: string;
   gradient: string;
+  /** Number of trailing words in shortDescription to apply the gradient to. Default: 2 */
+  gradientWords?: number;
   benefits: Array<{
     title: string;
     description: string;
@@ -1043,6 +1045,7 @@ curl-runner validate -fq tests/`,
     slug: 'convert',
     title: 'Curl ⇄ YAML Conversion',
     shortDescription: 'Convert curl commands to YAML and back',
+    gradientWords: 4,
     description:
       'Bidirectional conversion between raw curl commands and curl-runner YAML specs. Paste a curl command from docs or DevTools, get clean YAML. Convert YAML back to canonical curl commands.',
     icon: ArrowLeftRight,

@@ -114,13 +114,13 @@ export default async function FeaturePage({ params }: FeaturePageProps) {
 
             <h1 className="font-bold text-3xl sm:text-5xl md:text-6xl lg:text-7xl">
               <span className="bg-gradient-to-br from-black to-gray-600 bg-clip-text text-transparent dark:from-white dark:to-gray-300">
-                {feature.shortDescription.split(' ').slice(0, -2).join(' ')}
+                {feature.shortDescription.split(' ').slice(0, -(feature.gradientWords ?? 2)).join(' ')}
               </span>
               <br />
               <span
                 className={`bg-gradient-to-br ${feature.gradient} bg-clip-text text-transparent`}
               >
-                {feature.shortDescription.split(' ').slice(-2).join(' ')}
+                {feature.shortDescription.split(' ').slice(-(feature.gradientWords ?? 2)).join(' ')}
               </span>
             </h1>
 
