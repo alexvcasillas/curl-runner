@@ -4,6 +4,12 @@ import { Glob } from 'bun';
 import { showUpgradeHelp, UpgradeCommand } from './commands/upgrade';
 import { showValidateHelp, ValidateCommand } from './commands/validate';
 import {
+  convertCurlToYaml,
+  convertFileToYaml,
+  convertYamlToCurl,
+  parseConvertArgs,
+} from './convert';
+import {
   buildProfileConfig,
   buildWatchConfig,
   type CLIOptions,
@@ -78,6 +84,10 @@ class CurlRunnerCLI {
 
         case 'diff-subcommand':
           await this.executeDiffSubcommand(rawArgs.slice(1), cliOptions);
+          return;
+
+        case 'convert':
+          await this.executeConvert(rawArgs);
           return;
 
         case 'init':
@@ -324,6 +334,52 @@ class CurlRunnerCLI {
     }
   }
 
+  private async executeConvert(rawArgs: string[]): Promise<void> {
+    if (rawArgs.includes('--help') || rawArgs.includes('-h')) {
+      this.showConvertHelp();
+      return;
+    }
+
+    const parsed = parseConvertArgs(rawArgs);
+    if (!parsed) {
+      this.showConvertHelp();
+      process.exit(1);
+    }
+
+    let result: { output: string; warnings: string[]; debug?: unknown };
+
+    switch (parsed.subcommand) {
+      case 'curl':
+        result = convertCurlToYaml(parsed.input, parsed.options);
+        break;
+      case 'file':
+        result = await convertFileToYaml(parsed.input, parsed.options);
+        break;
+      case 'yaml':
+        result = await convertYamlToCurl(parsed.input, parsed.options);
+        break;
+    }
+
+    if (parsed.options.debug && result.debug) {
+      console.log(this.logger.color('DEBUG:', 'yellow'));
+      console.log(JSON.stringify(result.debug, null, 2));
+      console.log();
+    }
+
+    if (result.warnings.length > 0 && !parsed.options.output) {
+      for (const w of result.warnings) {
+        this.logger.logWarning(w);
+      }
+    }
+
+    if (parsed.options.output) {
+      await Bun.write(parsed.options.output, result.output);
+      this.logger.logInfo(`Written to ${parsed.options.output}`);
+    } else {
+      console.log(result.output);
+    }
+  }
+
   private async executeInit(rawArgs: string[]): Promise<void> {
     const options = parseInitArgs(rawArgs);
 
@@ -552,6 +608,40 @@ ${this.logger.color('EXAMPLES:', 'yellow')}
 `);
   }
 
+  private showConvertHelp(): void {
+    console.log(`
+${this.logger.color('CURL RUNNER - CONVERT', 'bright')}
+
+${this.logger.color('USAGE:', 'yellow')}
+  curl-runner convert curl "<curl command>"    Convert curl → YAML
+  curl-runner convert file <script.sh>         Convert shell script → YAML
+  curl-runner convert yaml <test.yaml>         Convert YAML → curl
+
+${this.logger.color('OPTIONS:', 'yellow')}
+  -o, --output <file>   Write output to file
+  --pretty              Pretty-print output (default for YAML)
+  --loss-report         Show warnings for unsupported features (default)
+  --debug               Show token stream, AST, and IR
+  -h, --help            Show this help
+
+${this.logger.color('EXAMPLES:', 'yellow')}
+  # Convert inline curl to YAML
+  curl-runner convert curl "curl -X POST https://api.example.com -d '{\"name\":\"Alex\"}'"
+
+  # Convert and save to file
+  curl-runner convert curl "curl https://api.example.com" -o test.yaml
+
+  # Convert shell script (batch)
+  curl-runner convert file scripts/api-tests.sh
+
+  # Convert YAML back to curl
+  curl-runner convert yaml test.yaml
+
+  # Debug mode
+  curl-runner convert curl "curl https://example.com" --debug
+`);
+  }
+
   private showHelp(): void {
     console.log(`
 ${this.logger.color('🚀 CURL RUNNER', 'bright')}
@@ -630,6 +720,11 @@ ${this.logger.color('VALIDATE:', 'yellow')}
   curl-runner validate          Validate YAML files against curl-runner schema
   curl-runner validate --fix    Validate and auto-fix issues where possible
   curl-runner validate -q       Only show files with issues
+
+${this.logger.color('CONVERT:', 'yellow')}
+  curl-runner convert curl "<cmd>"  Convert curl command to YAML
+  curl-runner convert file <sh>     Convert shell script to YAML (batch)
+  curl-runner convert yaml <yaml>   Convert YAML to curl command(s)
 
 ${this.logger.color('WIZARD:', 'yellow')}
   curl-runner init              Quick create a new YAML file
