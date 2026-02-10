@@ -19,6 +19,7 @@ export type ExecutionMode =
   | 'init'
   | 'edit'
   | 'validate'
+  | 'convert'
   | 'help'
   | 'version';
 
@@ -87,6 +88,16 @@ export async function resolveConfig(
       cliOptions: { files: [] },
       files: [],
       mode: 'validate',
+      rawArgs: args,
+      secretKeys: [],
+    };
+  }
+  if (subcommand === 'convert') {
+    return {
+      config: {},
+      cliOptions: { files: [] },
+      files: [],
+      mode: 'convert',
       rawArgs: args,
       secretKeys: [],
     };

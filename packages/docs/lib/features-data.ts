@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import {
+  ArrowLeftRight,
   Camera,
   CheckCircle,
   Database,
@@ -28,6 +29,8 @@ export interface FeatureData {
   icon: LucideIcon;
   color: string;
   gradient: string;
+  /** Number of trailing words in shortDescription to apply the gradient to. Default: 2 */
+  gradientWords?: number;
   benefits: Array<{
     title: string;
     description: string;
@@ -1036,6 +1039,71 @@ curl-runner validate -fq tests/`,
       'yaml linter',
       'error detection',
       'fix command',
+    ],
+  },
+  convert: {
+    slug: 'convert',
+    title: 'Curl ⇄ YAML Conversion',
+    shortDescription: 'Convert curl commands to YAML and back',
+    gradientWords: 4,
+    description:
+      'Bidirectional conversion between raw curl commands and curl-runner YAML specs. Paste a curl command from docs or DevTools, get clean YAML. Convert YAML back to canonical curl commands.',
+    icon: ArrowLeftRight,
+    color: 'cyan',
+    gradient: 'from-cyan-400 to-teal-600',
+    benefits: [
+      {
+        title: 'Zero Friction Onboarding',
+        description:
+          'Paste any curl command and instantly get a structured, editable YAML spec. No manual translation needed.',
+      },
+      {
+        title: 'Batch Script Migration',
+        description:
+          'Convert entire shell scripts full of curl commands into a single YAML collection with one command.',
+      },
+      {
+        title: 'Loss-Aware Translation',
+        description:
+          "Unsupported curl flags are reported as warnings so you know exactly what was and wasn't converted.",
+      },
+    ],
+    codeExample: {
+      title: 'Paste curl, get clean YAML',
+      code: `# Convert a curl command to YAML
+curl-runner convert curl "curl -X POST \\
+  https://api.example.com/users \\
+  -H 'Authorization: Bearer TOKEN' \\
+  -d '{\\"name\\":\\"Alex\\"}'"
+
+# Output:
+# request:
+#   method: POST
+#   url: https://api.example.com/users
+#   auth:
+#     type: bearer
+#     token: TOKEN
+#   body:
+#     json:
+#       name: Alex`,
+    },
+    useCases: [
+      'Importing curl commands from API documentation',
+      'Migrating shell scripts to structured YAML workflows',
+      'Sharing YAML specs as curl commands with teammates',
+      'Converting browser DevTools network requests to test specs',
+    ],
+    keywords: [
+      'curl to yaml',
+      'yaml to curl',
+      'curl converter',
+      'curl import',
+      'curl parser',
+      'shell script conversion',
+      'batch conversion',
+      'API migration',
+      'postman import',
+      'convert command',
     ],
   },
   'env-files': {

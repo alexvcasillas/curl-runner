@@ -399,12 +399,15 @@ export interface EditOptions {
  */
 export function detectSubcommand(
   args: string[],
-): 'upgrade' | 'diff-subcommand' | 'init' | 'edit' | 'validate' | null {
+): 'upgrade' | 'diff-subcommand' | 'init' | 'edit' | 'validate' | 'convert' | null {
   if (args[0] === 'upgrade') {
     return 'upgrade';
   }
   if (args[0] === 'validate') {
     return 'validate';
+  }
+  if (args[0] === 'convert') {
+    return 'convert';
   }
   if (args[0] === 'diff' && args.length >= 3) {
     return 'diff-subcommand';
