@@ -4,8 +4,11 @@
   "description": "A powerful CLI tool for HTTP request management using YAML configuration",
   "type": "module",
   "main": "./dist/cli.js",
+  "repository": {
+    "url": "git+https://github.com/alexvcasillas/curl-runner.git"
+  },
   "bin": {
-    "curl-runner": "./dist/cli.js"
+    "curl-runner": "dist/cli.js"
   },
   "scripts": {
     "start": "bun run dist/cli.js",
