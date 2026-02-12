@@ -25,7 +25,7 @@
     "test": "bun test || echo 'No tests found'",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "changeset publish",
+    "se": "changeset publish",
     "prepare": "husky"
   },
   "devDependencies": {
