@@ -1,5 +1,11 @@
 # @curl-runner/cli
 
+## 1.23.1
+
+### Patch Changes
+
+- [#108](https://github.com/alexvcasillas/curl-runner/pull/108) [`fa60a11`](https://github.com/alexvcasillas/curl-runner/commit/fa60a11c2f1b6a9ab0311de89444e4a9d552ebb0) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Fix array body validation to use element-wise matching when both expected and actual values are arrays, instead of treating all arrays as "one of" enum validators
+
 ## 1.23.0
 
 ### Minor Changes
