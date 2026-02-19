@@ -278,11 +278,7 @@ export function isRegexPattern(pattern: string): boolean {
     pattern.endsWith('$') ||
     pattern.includes('\\d') ||
     pattern.includes('\\w') ||
-    pattern.includes('\\s') ||
-    pattern.includes('[') ||
-    pattern.includes('*') ||
-    pattern.includes('+') ||
-    pattern.includes('?')
+    pattern.includes('\\s')
   );
 }
 

@@ -277,21 +277,19 @@ describe('isRegexPattern', () => {
     expect(isRegexPattern('test$')).toBe(true);
   });
 
-  test('detects character classes', () => {
+  test('detects escape sequences', () => {
     expect(isRegexPattern('\\d+')).toBe(true);
     expect(isRegexPattern('\\w+')).toBe(true);
     expect(isRegexPattern('\\s+')).toBe(true);
-    expect(isRegexPattern('[a-z]')).toBe(true);
   });
 
-  test('detects quantifiers', () => {
-    expect(isRegexPattern('a*')).toBe(true);
-    expect(isRegexPattern('a+')).toBe(true);
-    expect(isRegexPattern('a?')).toBe(true);
-  });
-
-  test('returns false for plain string', () => {
+  test('returns false for plain strings', () => {
     expect(isRegexPattern('hello')).toBe(false);
+    expect(isRegexPattern('C++')).toBe(false);
+    expect(isRegexPattern('really?')).toBe(false);
+    expect(isRegexPattern('*-')).toBe(false);
+    expect(isRegexPattern('[]')).toBe(false);
+    expect(isRegexPattern('[a-z]')).toBe(false);
   });
 });
 
