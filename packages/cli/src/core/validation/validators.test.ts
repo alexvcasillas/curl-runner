@@ -154,7 +154,7 @@ describe('validateBodyProperties', () => {
   });
 
   test('validates value against array of acceptable values', () => {
-    // Arrays in expected body represent acceptable values list
+    // Scalar actual, array expected → "one of" matching
     const errors = validateBodyProperties(1, [1, 2, 3], '');
     expect(errors).toEqual([]);
   });
@@ -162,6 +162,53 @@ describe('validateBodyProperties', () => {
   test('validates primitive body', () => {
     const errors = validateBodyProperties('hello', 'hello', '');
     expect(errors).toEqual([]);
+  });
+
+  test('array containment with objects (partial fields)', () => {
+    const actual = [
+      { type: 'paragraph', text: 'Hello' },
+      { type: 'heading', text: 'World' },
+    ];
+    const expected = [{ type: 'paragraph' }];
+    const errors = validateBodyProperties(actual, expected, '');
+    expect(errors).toEqual([]);
+  });
+
+  test('array containment with full match', () => {
+    const actual = [
+      { type: 'paragraph', text: 'Hello' },
+      { type: 'heading', text: 'World' },
+    ];
+    const expected = [{ type: 'paragraph' }, { type: 'heading' }];
+    const errors = validateBodyProperties(actual, expected, '');
+    expect(errors).toEqual([]);
+  });
+
+  test('array mismatch when expected item not found', () => {
+    const actual = [{ type: 'paragraph', text: 'Hello' }];
+    const expected = [{ type: 'heading' }];
+    const errors = validateBodyProperties(actual, expected, '');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('no match found');
+  });
+
+  test('primitive array containment', () => {
+    const errors = validateBodyProperties([1, 2, 3], [1, 2], '');
+    expect(errors).toEqual([]);
+  });
+
+  test('nested array field validation', () => {
+    const actual = { content: [{ type: 'paragraph' }, { type: 'heading' }] };
+    const expected = { content: [{ type: 'paragraph' }] };
+    const errors = validateBodyProperties(actual, expected, '');
+    expect(errors).toEqual([]);
+  });
+
+  test('scalar vs array backward compat (one of)', () => {
+    const errors = validateBodyProperties(2, [1, 2, 3], '');
+    expect(errors).toEqual([]);
+    const errorsNoMatch = validateBodyProperties(5, [1, 2, 3], '');
+    expect(errorsNoMatch).toHaveLength(1);
   });
 });
 

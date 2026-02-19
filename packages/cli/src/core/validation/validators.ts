@@ -121,6 +121,38 @@ export function validateBodyProperties(
 
   // Array validation
   if (Array.isArray(expectedBody)) {
+    if (Array.isArray(actualBody)) {
+      // Element-wise: each expected item must find a matching actual item
+      for (let i = 0; i < expectedBody.length; i++) {
+        const expectedItem = expectedBody[i];
+        const itemPath = `${path || 'body'}[${i}]`;
+
+        if (typeof expectedItem === 'object' && expectedItem !== null) {
+          const found = actualBody.some((actualItem) => {
+            const itemErrors = validateBodyProperties(actualItem, expectedItem, itemPath);
+            return itemErrors.length === 0;
+          });
+          if (!found) {
+            errors.push(
+              `Expected ${path || 'body'} to contain item matching ${JSON.stringify(expectedItem)}, but no match found`,
+            );
+          }
+        } else {
+          const found = actualBody.some((actualItem) => {
+            const result = validateValue(actualItem, expectedItem, itemPath);
+            return result.isValid;
+          });
+          if (!found) {
+            errors.push(
+              `Expected ${path || 'body'} to contain item matching ${JSON.stringify(expectedItem)}, but no match found`,
+            );
+          }
+        }
+      }
+      return errors;
+    }
+
+    // Actual is scalar, expected is array → "one of" matching
     const validationResult = validateValue(actualBody, expectedBody, path || 'body');
     if (!validationResult.isValid) {
       errors.push(validationResult.error!);
@@ -140,12 +172,8 @@ export function validateBodyProperties(
       actualValue = (actualBody as Record<string, JsonValue>)?.[key];
     }
 
-    if (
-      typeof expectedValue === 'object' &&
-      expectedValue !== null &&
-      !Array.isArray(expectedValue)
-    ) {
-      // Recursive validation for nested objects
+    if (typeof expectedValue === 'object' && expectedValue !== null) {
+      // Recursive validation for nested objects and arrays
       const nestedErrors = validateBodyProperties(actualValue, expectedValue, currentPath);
       errors.push(...nestedErrors);
     } else {
