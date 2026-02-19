@@ -1,5 +1,11 @@
 # @curl-runner/cli
 
+## 1.23.2
+
+### Patch Changes
+
+- [#111](https://github.com/alexvcasillas/curl-runner/pull/111) [`1df80e6`](https://github.com/alexvcasillas/curl-runner/commit/1df80e67facf1d8a9daa0f6cfeb917961084f18a) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - fix: remove loose char checks from isRegexPattern to prevent false positives on plain strings like "C++", "really?", "\*-", "[]"
+
 ## 1.23.1
 
 ### Patch Changes
