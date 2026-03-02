@@ -253,11 +253,11 @@ global:
     codeExample: {
       title: 'Configure retry behavior with exponential backoff',
       code: `global:
-  retry:
-    count: 3
-    delay: 1000
-    backoff: exponential
-    backoffMultiplier: 2
+  defaults:
+    retry:
+      count: 3
+      delay: 1000
+      backoff: 2
 
 requests:
   - name: Flaky API
@@ -265,7 +265,7 @@ requests:
     retry:
       count: 5
       delay: 2000
-      on: [500, 502, 503]`,
+      retryableStatuses: [429, 500, 502, 503]`,
     },
     useCases: [
       'Handling intermittent network failures',

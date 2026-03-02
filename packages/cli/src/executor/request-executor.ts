@@ -1,6 +1,6 @@
 import type { CurlExecutionResult } from '../core/curl';
 import { parseResponseBody } from '../core/curl';
-import { postProcessResult, withRetry } from '../core/execution';
+import { DEFAULT_RETRYABLE_STATUSES, postProcessResult, withRetry } from '../core/execution';
 import { YamlParser } from '../parser/yaml';
 import { SnapshotManager } from '../snapshot/snapshot-manager';
 import type {
@@ -129,18 +129,51 @@ export class RequestExecutor {
     }
 
     // Execute curl with retry logic
+    const retryableStatuses = config.retry?.retryableStatuses ?? [...DEFAULT_RETRYABLE_STATUSES];
+    const hasRetry = (config.retry?.count ?? 0) > 0;
+
     const retryResult = await withRetry<CurlExecutionResult>(() => CurlBuilder.executeCurl(args), {
       config: config.retry,
-      shouldRetry: (result) => !result.success,
+      shouldRetry: (result) => {
+        if (!result.success) {
+          return true;
+        }
+        if (hasRetry && result.status !== undefined) {
+          return retryableStatuses.includes(result.status);
+        }
+        return false;
+      },
       onRetry: (attempt, max) => requestLogger.logRetry(attempt, max),
+      getDelay: (_attempt, result) => {
+        // Honor Retry-After header on 429 responses
+        if (result?.status === 429 && result.headers) {
+          const retryAfter = result.headers['retry-after'] ?? result.headers['Retry-After'];
+          if (retryAfter) {
+            const seconds = Number(retryAfter);
+            if (!Number.isNaN(seconds)) {
+              return seconds * 1000;
+            }
+          }
+        }
+        return undefined;
+      },
     });
 
     // Handle curl execution failure (all retries exhausted)
-    if (!retryResult.success || !retryResult.value?.success) {
+    const isRetryableStatus =
+      hasRetry &&
+      retryResult.value?.status !== undefined &&
+      retryableStatuses.includes(retryResult.value.status);
+
+    if (!retryResult.success || !retryResult.value?.success || isRetryableStatus) {
       const failedResult: ExecutionResult = {
         request: config,
         success: false,
-        error: retryResult.error || retryResult.value?.error,
+        status: retryResult.value?.status,
+        error:
+          retryResult.error ||
+          retryResult.value?.error ||
+          `Request failed with status ${retryResult.value?.status}`,
         metrics: {
           duration: performance.now() - startTime,
         },

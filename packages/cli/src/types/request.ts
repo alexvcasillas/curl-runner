@@ -213,6 +213,8 @@ export interface RequestConfig {
     /** Exponential backoff multiplier. Default is 1 (no backoff).
      * Example: with delay=1000 and backoff=2, delays are: 1000ms, 2000ms, 4000ms, 8000ms... */
     backoff?: number;
+    /** HTTP status codes that trigger a retry. Default: [429, 500, 502, 503, 504] */
+    retryableStatuses?: number[];
   };
   variables?: Record<string, string>;
   /**

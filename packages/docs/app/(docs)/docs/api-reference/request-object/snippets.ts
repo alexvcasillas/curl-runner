@@ -48,7 +48,8 @@ export const completeRequestExample = `requests:
     retry:
       count: 3
       delay: 1000
-      backoff: exponential  # Coming Soon
+      backoff: 2
+      retryableStatuses: [429, 500, 502, 503, 504]
       
     # Response expectations
     expect:
@@ -418,10 +419,8 @@ export const advancedRequestExample = `requests:
     retry:
       count: 3
       delay: 5000
-      backoff: exponential  # Coming Soon
-      maxDelay: 30000  # Coming Soon
-      jitter: true  # Coming Soon
-      codes: [500, 502, 503, 504]  # Coming Soon
+      backoff: 2
+      retryableStatuses: [429, 500, 502, 503, 504]
       
     # Comprehensive validation
     expect:

@@ -27,13 +27,14 @@ export async function withRetry<T>(
   operation: () => Promise<T>,
   options: RetryOptions<T> = {},
 ): Promise<RetryResult<T>> {
-  const { config, shouldRetry, onRetry } = options;
+  const { config, shouldRetry, onRetry, getDelay } = options;
   const maxAttempts = (config?.count ?? 0) + 1;
   const delay = config?.delay ?? 0;
   const backoff = config?.backoff ?? 1;
 
   let attempt = 0;
   let lastError: string | undefined;
+  let lastResult: T | undefined;
 
   while (attempt < maxAttempts) {
     // Log retry attempt (not the first attempt)
@@ -42,15 +43,20 @@ export async function withRetry<T>(
     }
 
     // Wait before retry (not the first attempt)
-    if (attempt > 0 && delay > 0) {
-      const waitTime = calculateBackoffDelay(attempt, delay, backoff);
-      await Bun.sleep(waitTime);
+    if (attempt > 0) {
+      const overrideDelay = getDelay?.(attempt, lastResult);
+      const waitTime =
+        overrideDelay ?? (delay > 0 ? calculateBackoffDelay(attempt, delay, backoff) : 0);
+      if (waitTime > 0) {
+        await Bun.sleep(waitTime);
+      }
     }
 
     attempt++;
 
     try {
       const result = await operation();
+      lastResult = result;
 
       // Check if we should retry based on result
       if (shouldRetry?.(result)) {
@@ -69,6 +75,7 @@ export async function withRetry<T>(
   }
 
   return {
+    value: lastResult,
     success: false,
     attempts: attempt,
     error: lastError,

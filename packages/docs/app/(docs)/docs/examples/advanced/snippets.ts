@@ -172,8 +172,8 @@ export const retryMechanismExample = `collection:
       retry:
         count: 3
         delay: 1000
-        backoff: exponential
-        codes: [500, 502, 503, 504]
+        backoff: 2
+        retryableStatuses: [429, 500, 502, 503, 504]
       expect:
         status: [200, 500]  # Accept either success or continued failure
         

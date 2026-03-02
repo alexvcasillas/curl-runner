@@ -1,13 +1,4 @@
-import {
-  AlertTriangle,
-  CheckCircle,
-  Clock,
-  Server,
-  Timer,
-  TrendingUp,
-  Wifi,
-  XCircle,
-} from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, Server, Timer, TrendingUp, Wifi } from 'lucide-react';
 import type { Metadata } from 'next';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { H2, H3 } from '@/components/docs-heading';
@@ -57,7 +48,12 @@ request:
   method: GET
   retry:
     count: 3      # Retry up to 3 times
-    delay: 1000   # Wait 1 second between retries`;
+    delay: 1000   # Wait 1 second between retries
+
+# Retries trigger on:
+# - Network errors (connection refused, DNS failures)
+# - Timeouts
+# - Retryable status codes (429, 500, 502, 503, 504 by default)`;
 
 const advancedRetry = `# Advanced retry scenarios
 requests:
@@ -109,29 +105,34 @@ requests:
     retry:
       count: 0      # Disable retries for this request`;
 
-const retryWithValidation = `# Retry with validation rules
+const retryWithValidation = `# Retry and validation are complementary features
+# Retry handles transport failures; validation checks the final response
 request:
-  name: Eventually Consistent API
+  name: Resilient API Call
   url: https://api.example.com/resource
   method: GET
   retry:
     count: 5
-    delay: 3000   # Wait 3 seconds between attempts
+    delay: 2000
+    backoff: 2
   expect:
+    # Validation runs AFTER all retries are exhausted
+    # It checks the final response, not individual attempts
     status: 200
     body:
-      status: "ready"  # Keep retrying until status is "ready"
-      
-# Retry on specific status codes
-requests:
-  - name: Handle Rate Limiting
-    url: https://api.example.com/rate-limited
-    method: GET
-    retry:
-      count: 3
-      delay: 5000   # Back off for 5 seconds
-    expect:
-      status: [200, 201]  # Retry if not 200 or 201`;
+      status: "ready"
+
+---
+
+# Custom retryable status codes
+request:
+  name: Retry on specific codes
+  url: https://api.example.com/custom
+  method: GET
+  retry:
+    count: 3
+    delay: 1000
+    retryableStatuses: [429, 500, 502, 503]  # Customize which codes trigger retries`;
 
 const exponentialBackoff = `# Exponential backoff with backoff multiplier
 request:
@@ -215,7 +216,8 @@ export default function RetryMechanismPage() {
                 </div>
                 <h4 className="font-medium mb-1">Smart Retries</h4>
                 <p className="text-sm text-muted-foreground">
-                  Automatically retry on network errors, timeouts, and 5xx status codes
+                  Automatically retry on network errors, timeouts, and retryable status codes (429,
+                  5xx)
                 </p>
               </div>
 
@@ -288,12 +290,12 @@ export default function RetryMechanismPage() {
                       <code className="text-sm">delay</code>
                     </td>
                     <td className="p-3 text-sm text-muted-foreground">number</td>
-                    <td className="p-3 text-sm text-muted-foreground">1000</td>
+                    <td className="p-3 text-sm text-muted-foreground">0</td>
                     <td className="p-3 text-sm text-muted-foreground">
                       Initial delay between retries (ms)
                     </td>
                   </tr>
-                  <tr>
+                  <tr className="border-b">
                     <td className="p-3">
                       <code className="text-sm">backoff</code>
                     </td>
@@ -302,6 +304,16 @@ export default function RetryMechanismPage() {
                     <td className="p-3 text-sm text-muted-foreground">
                       Exponential backoff multiplier. Delay increases as: delay ×
                       backoff^(attempt-1)
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="p-3">
+                      <code className="text-sm">retryableStatuses</code>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">number[]</td>
+                    <td className="p-3 text-sm text-muted-foreground">[429, 500, 502, 503, 504]</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      HTTP status codes that trigger a retry
                     </td>
                   </tr>
                 </tbody>
@@ -335,9 +347,12 @@ export default function RetryMechanismPage() {
 
           {/* Retry with Validation */}
           <section>
-            <H2 id="retry-with-validation">Retry with Validation</H2>
+            <H2 id="retry-with-validation">Retry and Validation</H2>
             <p className="text-muted-foreground mb-6">
-              Combine retries with validation rules to handle eventually consistent APIs.
+              Retry and validation (
+              <code className="text-sm bg-muted px-1 py-0.5 rounded">expect</code>) are
+              complementary but independent features. Retries handle transport-level failures, while
+              validation checks the final response after all retries are exhausted.
             </p>
 
             <CodeBlockServer language="yaml" filename="retry-validation.yaml">
@@ -346,11 +361,72 @@ export default function RetryMechanismPage() {
 
             <div className="mt-6 rounded-lg border bg-yellow-500/5 dark:bg-yellow-500/10 border-yellow-500/20 p-4">
               <p className="text-sm">
-                <strong className="text-yellow-600 dark:text-yellow-400">Important:</strong> Retries
-                occur when the request fails (network error, timeout) or when validation rules are
-                not met. This is useful for polling APIs that may take time to update.
+                <strong className="text-yellow-600 dark:text-yellow-400">Important:</strong>{' '}
+                Validation (<code className="text-sm bg-muted px-1 py-0.5 rounded">expect</code>)
+                does <strong>not</strong> trigger retries. It runs <strong>after</strong> all retry
+                attempts are exhausted and checks the final response. Retries are triggered only by
+                network errors, timeouts, and retryable HTTP status codes.
               </p>
             </div>
+          </section>
+
+          {/* Retry-After Header */}
+          <section>
+            <H2 id="retry-after-header">Retry-After Header Support</H2>
+            <p className="text-muted-foreground mb-6">
+              When a server responds with HTTP 429 (Too Many Requests) and includes a{' '}
+              <code className="text-sm bg-muted px-1 py-0.5 rounded">Retry-After</code> header,{' '}
+              <code className="font-mono">curl-runner</code> will honor the server&apos;s requested
+              wait time instead of using the configured delay.
+            </p>
+
+            <div className="rounded-lg border bg-muted/50 p-4">
+              <h4 className="text-sm font-medium mb-2">How it works:</h4>
+              <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
+                <li>Request receives HTTP 429 response</li>
+                <li>
+                  If <code className="text-sm bg-muted px-1 py-0.5 rounded">Retry-After</code>{' '}
+                  header is present, its value is used as the delay
+                </li>
+                <li>If the header is absent, the configured delay (with backoff) is used</li>
+                <li>Request is retried after the determined delay</li>
+              </ol>
+            </div>
+          </section>
+
+          {/* Retryable Status Codes */}
+          <section>
+            <H2 id="retryable-status-codes">Custom Retryable Status Codes</H2>
+            <p className="text-muted-foreground mb-6">
+              By default, retries trigger on HTTP 429 and 5xx status codes (500, 502, 503, 504).
+              Customize this with the{' '}
+              <code className="text-sm bg-muted px-1 py-0.5 rounded">retryableStatuses</code>{' '}
+              option.
+            </p>
+
+            <CodeBlockServer language="yaml" filename="retryable-statuses.yaml">
+              {`# Only retry on 503 Service Unavailable
+request:
+  name: Custom Retryable Codes
+  url: https://api.example.com/endpoint
+  method: GET
+  retry:
+    count: 3
+    delay: 1000
+    retryableStatuses: [503]
+
+---
+
+# Include 408 Request Timeout alongside defaults
+request:
+  name: Extended Retryable Codes
+  url: https://api.example.com/endpoint
+  method: GET
+  retry:
+    count: 3
+    delay: 1000
+    retryableStatuses: [408, 429, 500, 502, 503, 504]`}
+            </CodeBlockServer>
           </section>
 
           {/* Retry Strategies */}
@@ -426,23 +502,9 @@ export default function RetryMechanismPage() {
                       <Server className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                     </div>
                     <div>
-                      <h4 className="font-medium mb-2">5xx Errors</h4>
+                      <h4 className="font-medium mb-2">Retryable Status Codes</h4>
                       <p className="text-sm text-muted-foreground">
-                        Server errors like 500, 502, 503, and 504 status codes
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-lg border bg-card p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="rounded-full bg-yellow-500/10 p-2">
-                      <XCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-500" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium mb-2">Validation Failures</h4>
-                      <p className="text-sm text-muted-foreground">
-                        Response doesn't meet the configured validation expectations
+                        HTTP 429 (Too Many Requests) and 5xx server errors (500, 502, 503, 504)
                       </p>
                     </div>
                   </div>

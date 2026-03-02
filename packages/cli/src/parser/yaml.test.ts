@@ -311,4 +311,51 @@ describe('YamlParser.mergeConfigs', () => {
     expect(result.params).toEqual({ a: '1', b: '2' });
     expect(result.variables).toEqual({ x: 'base', y: 'override' });
   });
+
+  test('deep merges retry config', () => {
+    const base = { retry: { count: 3, delay: 1000 } };
+    const override = {
+      url: 'https://api.example.com',
+      method: 'GET' as const,
+      retry: { count: 5 },
+    };
+    const result = YamlParser.mergeConfigs(base, override);
+    expect(result.retry).toEqual({ count: 5, delay: 1000 });
+  });
+
+  test('deep merges retry config with retryableStatuses', () => {
+    const base = { retry: { count: 3, delay: 1000, retryableStatuses: [429, 500] } };
+    const override = {
+      url: 'https://api.example.com',
+      method: 'GET' as const,
+      retry: { count: 2 },
+    };
+    const result = YamlParser.mergeConfigs(base, override);
+    expect(result.retry).toEqual({ count: 2, delay: 1000, retryableStatuses: [429, 500] });
+  });
+
+  test('handles retry only in base', () => {
+    const base = { retry: { count: 3, delay: 500 } };
+    const override = { url: 'https://api.example.com', method: 'GET' as const };
+    const result = YamlParser.mergeConfigs(base, override);
+    expect(result.retry).toEqual({ count: 3, delay: 500 });
+  });
+
+  test('handles retry only in override', () => {
+    const base = {};
+    const override = {
+      url: 'https://api.example.com',
+      method: 'GET' as const,
+      retry: { count: 2, delay: 100 },
+    };
+    const result = YamlParser.mergeConfigs(base, override);
+    expect(result.retry).toEqual({ count: 2, delay: 100 });
+  });
+
+  test('handles no retry in either', () => {
+    const base = {};
+    const override = { url: 'https://api.example.com', method: 'GET' as const };
+    const result = YamlParser.mergeConfigs(base, override);
+    expect(result.retry).toBeUndefined();
+  });
 });

@@ -2,6 +2,9 @@
  * Types for retry configuration and execution.
  */
 
+/** Default HTTP status codes that trigger a retry. */
+export const DEFAULT_RETRYABLE_STATUSES = [429, 500, 502, 503, 504] as const;
+
 /**
  * Retry configuration options.
  */
@@ -12,6 +15,8 @@ export interface RetryConfig {
   delay?: number;
   /** Backoff multiplier for exponential backoff (default: 1 = no backoff) */
   backoff?: number;
+  /** HTTP status codes that trigger a retry. Default: [429, 500, 502, 503, 504] */
+  retryableStatuses?: number[];
 }
 
 /**
@@ -43,4 +48,6 @@ export interface RetryOptions<T> {
   shouldRetry?: (result: T) => boolean;
   /** Callback for logging retry attempts */
   onRetry?: RetryLogger;
+  /** Per-attempt delay override in ms (e.g. from Retry-After header). Falls back to config.delay + backoff. */
+  getDelay?: (attempt: number, result: T | undefined) => number | undefined;
 }
