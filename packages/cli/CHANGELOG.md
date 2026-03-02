@@ -1,5 +1,11 @@
 # @curl-runner/cli
 
+## 1.23.3
+
+### Patch Changes
+
+- [#113](https://github.com/alexvcasillas/curl-runner/pull/113) [`b3c4051`](https://github.com/alexvcasillas/curl-runner/commit/b3c4051376c1fe173089fc6def2306473077305c) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Fix retry mechanism not triggering on HTTP 429/5xx status codes. Adds Retry-After header support, configurable retryable status codes, and proper CLI defaults propagation.
+
 ## 1.23.2
 
 ### Patch Changes
