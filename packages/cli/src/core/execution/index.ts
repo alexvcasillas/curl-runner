@@ -7,3 +7,4 @@ export type { PostProcessOptions } from './post-processor';
 export { postProcessResult } from './post-processor';
 export { calculateBackoffDelay, createRetryOptions, withRetry } from './retry';
 export type { RetryConfig, RetryLogger, RetryOptions, RetryResult } from './types';
+export { DEFAULT_RETRYABLE_STATUSES } from './types';

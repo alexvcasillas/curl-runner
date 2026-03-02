@@ -131,7 +131,7 @@ class CurlRunnerCLI {
 
     for (const file of yamlFiles) {
       this.logger.logInfo(`Processing: ${file}`);
-      const { requests, config } = await this.processYamlFile(file);
+      const { requests, config } = await this.processYamlFile(file, mergedConfig.defaults);
 
       const fileOutputConfig = config?.output || {};
       const requestsWithSource = requests.map((request) => ({
@@ -216,7 +216,7 @@ class CurlRunnerCLI {
     const allRequests: RequestConfig[] = [];
 
     for (const file of yamlFiles) {
-      const { requests, config } = await this.processYamlFile(file);
+      const { requests, config } = await this.processYamlFile(file, globalConfig.defaults);
 
       const fileOutputConfig = config?.output || {};
       const requestsWithSource = requests.map((request) => ({
@@ -493,6 +493,7 @@ class CurlRunnerCLI {
 
   private async processYamlFile(
     filepath: string,
+    globalDefaults: Partial<RequestConfig> = {},
   ): Promise<{ requests: RequestConfig[]; config?: GlobalConfig }> {
     const yamlContent = await YamlParser.parseFile(filepath);
     const requests: RequestConfig[] = [];
@@ -503,7 +504,11 @@ class CurlRunnerCLI {
     }
 
     const variables = { ...yamlContent.global?.variables, ...yamlContent.collection?.variables };
-    const defaults = { ...yamlContent.global?.defaults, ...yamlContent.collection?.defaults };
+    const defaults = {
+      ...globalDefaults,
+      ...yamlContent.global?.defaults,
+      ...yamlContent.collection?.defaults,
+    };
 
     if (yamlContent.request) {
       requests.push(this.prepareRequest(yamlContent.request, variables, defaults));

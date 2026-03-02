@@ -185,7 +185,14 @@ export function mergeGlobalConfigs(
     env: { ...base.env, ...override.env },
     variables: { ...base.variables, ...override.variables },
     output: { ...base.output, ...override.output },
-    defaults: { ...base.defaults, ...override.defaults },
+    defaults: {
+      ...base.defaults,
+      ...override.defaults,
+      retry:
+        base.defaults?.retry || override.defaults?.retry
+          ? { ...base.defaults?.retry, ...override.defaults?.retry }
+          : undefined,
+    },
     ci: { ...base.ci, ...override.ci },
     watch: { ...base.watch, ...override.watch },
     snapshot: { ...base.snapshot, ...override.snapshot },

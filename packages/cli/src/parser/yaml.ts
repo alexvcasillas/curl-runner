@@ -35,6 +35,7 @@ export class YamlParser {
       headers: { ...base.headers, ...override.headers },
       params: { ...base.params, ...override.params },
       variables: { ...base.variables, ...override.variables },
+      retry: base.retry || override.retry ? { ...base.retry, ...override.retry } : undefined,
     };
   }
 }

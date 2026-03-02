@@ -198,6 +198,78 @@ describe('withRetry', () => {
     });
   });
 
+  describe('getDelay callback', () => {
+    test('uses getDelay override instead of backoff', async () => {
+      const startTime = performance.now();
+      let callCount = 0;
+      const operation = mock(() => {
+        callCount++;
+        return Promise.resolve({ status: callCount >= 3 ? 200 : 429 });
+      });
+
+      const result = await withRetry(operation, {
+        config: { count: 3, delay: 1000 },
+        shouldRetry: (res) => res.status === 429,
+        getDelay: () => 50,
+      });
+
+      const elapsed = performance.now() - startTime;
+      expect(result.success).toBe(true);
+      expect(result.attempts).toBe(3);
+      // Should use 50ms delay (not 1000ms)
+      expect(elapsed).toBeLessThan(500);
+      expect(elapsed).toBeGreaterThanOrEqual(90);
+    });
+
+    test('falls back to backoff when getDelay returns undefined', async () => {
+      const startTime = performance.now();
+      const operation = mock(() => Promise.reject(new Error('failed')));
+
+      await withRetry(operation, {
+        config: { count: 2, delay: 50 },
+        getDelay: () => undefined,
+      });
+
+      const elapsed = performance.now() - startTime;
+      // Should use default delay of 50ms x 2 retries
+      expect(elapsed).toBeGreaterThanOrEqual(90);
+    });
+
+    test('receives lastResult from previous attempt', async () => {
+      let callCount = 0;
+      const delayResults: Array<{ status: number } | undefined> = [];
+      const operation = mock(() => {
+        callCount++;
+        return Promise.resolve({ status: callCount >= 3 ? 200 : 429 });
+      });
+
+      await withRetry(operation, {
+        config: { count: 3, delay: 50 },
+        shouldRetry: (res) => res.status === 429,
+        getDelay: (_attempt, result) => {
+          delayResults.push(result);
+          return 10;
+        },
+      });
+
+      expect(delayResults).toHaveLength(2);
+      expect(delayResults[0]).toEqual({ status: 429 });
+      expect(delayResults[1]).toEqual({ status: 429 });
+    });
+
+    test('preserves lastResult in failed return value', async () => {
+      const operation = mock(() => Promise.resolve({ status: 500 }));
+
+      const result = await withRetry(operation, {
+        config: { count: 1 },
+        shouldRetry: (res) => res.status === 500,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.value).toEqual({ status: 500 });
+    });
+  });
+
   describe('edge cases', () => {
     test('handles non-Error exceptions', async () => {
       const operation = mock(() => Promise.reject('string error'));
