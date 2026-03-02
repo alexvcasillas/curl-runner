@@ -33,6 +33,8 @@ global:
     retry:
       count: 2
       delay: 1000
+      backoff: 2
+      retryableStatuses: [429, 500, 502, 503, 504]
     expect:
       headers:
         content-type: "application/json"`;
@@ -223,7 +225,9 @@ global:
     retry:
       count: 3
       delay: 2000
-      
+      backoff: 2
+      retryableStatuses: [429, 500, 502, 503, 504]
+
     # Common headers for all requests
     headers:
       User-Agent: "curl-runner/1.0.0"
@@ -319,7 +323,9 @@ global:
     retry:
       count: 3
       delay: 5000        # 5 second delays
-      
+      backoff: 2
+      retryableStatuses: [429, 500, 502, 503, 504]
+
     # Basic validation
     expect:
       headers:

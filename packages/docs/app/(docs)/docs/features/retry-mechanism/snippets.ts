@@ -39,38 +39,34 @@ export const retryConfigurationExample = `collection:
         backoff: 1.5        # 1s, 1.5s, 2.25s, 3.375s`;
 
 export const statusCodeRetryExample = `collection:
-  name: "Retry with Validation"
+  name: "Retryable Status Codes"
   requests:
-    - name: "Retry until success status"
+    - name: "Default retryable statuses (429, 500, 502, 503, 504)"
       url: "https://httpbin.org/unstable"
       method: GET
       retry:
         count: 3
         delay: 1000
         backoff: 2
-      expect:
-        status: 200           # Retry if status is not 200
+      # Retries on 429, 500, 502, 503, 504 by default
 
-    - name: "Retry with timeout handling"
-      url: "https://httpbin.org/delay/10"
+    - name: "Custom retryable statuses"
+      url: "https://httpbin.org/status/503"
       method: GET
-      timeout: 5000           # 5 second timeout
       retry:
         count: 3
         delay: 2000
         backoff: 1.5
-      expect:
-        status: [200, 201]    # Accept success statuses
+        retryableStatuses: [503, 504]  # Only retry on these codes
 
-    - name: "Critical endpoint with exponential backoff"
-      url: "https://api.example.com/critical"
+    - name: "Rate-limited endpoint with Retry-After support"
+      url: "https://api.example.com/rate-limited"
       method: GET
       retry:
         count: 5
         delay: 1000
-        backoff: 2            # 1s, 2s, 4s, 8s, 16s
-      expect:
-        status: 200`;
+        backoff: 2
+      # On 429 responses, honors the Retry-After header if present`;
 
 export const backoffExamplesSnippet = `collection:
   name: "Backoff Multiplier Examples"
@@ -99,10 +95,13 @@ export const backoffExamplesSnippet = `collection:
         delay: 1000
         backoff: 2          # 1s, 2s, 4s, 8s`;
 
-export const retryWithExpectExample = `collection:
-  name: "Retry with Expect Validation"
+export const retryWithExpectExample = `# Retry and validation are independent features
+# - Retry handles transport failures (network errors, timeouts, retryable status codes)
+# - Validation (expect) checks the FINAL response after all retries are exhausted
+collection:
+  name: "Retry + Validation (Complementary Features)"
   requests:
-    - name: "Retry until body matches"
+    - name: "Retry transport failures, then validate response"
       url: "https://api.example.com/status"
       method: GET
       retry:
@@ -110,32 +109,32 @@ export const retryWithExpectExample = `collection:
         delay: 2000
         backoff: 1.5
       expect:
+        # Runs AFTER retries — validates the final response
         status: 200
         body:
-          status: "ready"     # Retry until status is "ready"
+          status: "ready"
 
-    - name: "Retry with response time check"
-      url: "https://api.example.com/fast"
-      method: GET
-      retry:
-        count: 3
-        delay: 1000
-        backoff: 2
-      expect:
-        status: 200
-        responseTime: "< 1000"  # Retry if response takes > 1s
-
-    - name: "Retry with header validation"
+    - name: "Retry with custom codes and validation"
       url: "https://api.example.com/data"
       method: GET
       retry:
         count: 3
         delay: 1500
         backoff: 2
+        retryableStatuses: [429, 500, 502, 503, 504]
       expect:
+        # Validation runs after all retries exhausted
         status: [200, 201]
         headers:
-          content-type: "application/json"`;
+          content-type: "application/json"
+
+    - name: "Retry-After honored on 429"
+      url: "https://api.example.com/rate-limited"
+      method: GET
+      retry:
+        count: 5
+        delay: 1000
+      # On 429, uses Retry-After header value as delay (falls back to configured delay)`;
 
 export const globalRetryExample = `global:
   defaults:
