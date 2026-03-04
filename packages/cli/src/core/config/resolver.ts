@@ -265,7 +265,7 @@ function applyCliOptionsToConfig(config: GlobalConfig, options: CLIOptions): Glo
     result.output = { ...result.output, verbose: options.verbose };
   }
   if (options.quiet) {
-    result.output = { ...result.output, verbose: false };
+    result.output = { ...result.output, verbose: false, quiet: true };
   }
   if (options.output) {
     result.output = { ...result.output, saveToFile: options.output };

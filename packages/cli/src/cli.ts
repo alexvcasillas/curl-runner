@@ -51,6 +51,9 @@ class CurlRunnerCLI {
 
       const { config, cliOptions, mode, rawArgs } = resolved;
 
+      // Reconfigure logger with resolved output config (respects --quiet)
+      this.logger = new Logger(config.output);
+
       // Check for updates in background (non-blocking)
       if (mode !== 'version' && mode !== 'help') {
         new VersionChecker().checkForUpdates().catch(() => {});
@@ -244,7 +247,7 @@ class CurlRunnerCLI {
         allResults.push(...fileSummary.results);
         totalDuration += fileSummary.duration;
 
-        if (i < fileGroups.length - 1) {
+        if (i < fileGroups.length - 1 && !globalConfig.output?.quiet) {
           console.log();
         }
       }
