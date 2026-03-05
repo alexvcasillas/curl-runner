@@ -10,14 +10,20 @@ import { RequestExecutor } from './request-executor';
 
 describe('RequestExecutor Dry Run Mode', () => {
   let executeCurlSpy: ReturnType<typeof spyOn>;
+  let consoleLogSpy: ReturnType<typeof spyOn>;
+  let consoleErrorSpy: ReturnType<typeof spyOn>;
 
   beforeEach(() => {
     // Spy on CurlBuilder.executeCurl to verify it's not called in dry-run mode
     executeCurlSpy = spyOn(CurlBuilder, 'executeCurl');
+    consoleLogSpy = spyOn(console, 'log').mockImplementation(() => {});
+    consoleErrorSpy = spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
     executeCurlSpy.mockRestore();
+    consoleLogSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
   });
 
   describe('executeRequest with dryRun enabled', () => {
@@ -347,13 +353,19 @@ describe('RequestExecutor Dry Run Mode', () => {
 
 describe('Dry Run with Special Configurations', () => {
   let executeCurlSpy: ReturnType<typeof spyOn>;
+  let consoleLogSpy: ReturnType<typeof spyOn>;
+  let consoleErrorSpy: ReturnType<typeof spyOn>;
 
   beforeEach(() => {
     executeCurlSpy = spyOn(CurlBuilder, 'executeCurl');
+    consoleLogSpy = spyOn(console, 'log').mockImplementation(() => {});
+    consoleErrorSpy = spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
     executeCurlSpy.mockRestore();
+    consoleLogSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
   });
 
   test('works with insecure flag', async () => {
@@ -496,6 +508,19 @@ describe('Dry Run with Special Configurations', () => {
 });
 
 describe('Dry Run Disabled (Normal Mode)', () => {
+  let consoleLogSpy: ReturnType<typeof spyOn>;
+  let consoleErrorSpy: ReturnType<typeof spyOn>;
+
+  beforeEach(() => {
+    consoleLogSpy = spyOn(console, 'log').mockImplementation(() => {});
+    consoleErrorSpy = spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleLogSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
+  });
+
   test('dryRun flag is false by default', () => {
     const config: GlobalConfig = {};
     expect(config.dryRun).toBeUndefined();
@@ -531,6 +556,19 @@ describe('Dry Run Disabled (Normal Mode)', () => {
 });
 
 describe('Dry Run Result Structure', () => {
+  let consoleLogSpy: ReturnType<typeof spyOn>;
+  let consoleErrorSpy: ReturnType<typeof spyOn>;
+
+  beforeEach(() => {
+    consoleLogSpy = spyOn(console, 'log').mockImplementation(() => {});
+    consoleErrorSpy = spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleLogSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
+  });
+
   test('result matches ExecutionResult interface', async () => {
     const config: GlobalConfig = { dryRun: true };
     const executor = new RequestExecutor(config);

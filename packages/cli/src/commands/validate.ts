@@ -283,6 +283,35 @@ export class ValidateCommand {
           console.log(`  ${color('→', 'dim')} ${parts.join(', ')}`);
         }
         console.log();
+      } else if (warnings.length > 0 || infos.length > 0) {
+        totalIssues += result.issues.length;
+        console.log(`${color('✓', 'green')} ${file}`);
+        for (const issue of result.issues) {
+          const icon = issue.severity === 'warning' ? color('●', 'yellow') : color('●', 'blue');
+          console.log(`  ${icon} ${issue.path}: ${issue.message}`);
+          if (issue.fix && !options.fix) {
+            console.log(`    ${color('fix:', 'cyan')} ${issue.fix.description}`);
+          }
+        }
+
+        if (options.fix && result.fixedContent) {
+          await Bun.write(file, result.fixedContent);
+          const fixedCount = result.issues.filter((i) => i.fix).length;
+          totalFixed += fixedCount;
+          console.log(`  ${color('✓', 'green')} Fixed ${fixedCount} issue(s)`);
+        }
+
+        const parts = [];
+        if (warnings.length > 0) {
+          parts.push(`${warnings.length} warning(s)`);
+        }
+        if (infos.length > 0) {
+          parts.push(`${infos.length} info`);
+        }
+        if (parts.length > 0) {
+          console.log(`  ${color('→', 'dim')} ${parts.join(', ')}`);
+        }
+        console.log();
       } else if (!options.quiet) {
         console.log(`${color('✓', 'green')} ${file}`);
       }
@@ -335,10 +364,13 @@ export class ValidateCommand {
         }
       } catch {
         // Treat as glob pattern
-        const globber = new Glob(pattern);
-        for await (const file of globber.scan('.')) {
-          if (file.endsWith('.yaml') || file.endsWith('.yml')) {
-            files.add(file);
+        const isAbsolute = pattern.startsWith('/');
+        const globber = new Glob(isAbsolute ? pattern.slice(1) : pattern);
+        const cwd = isAbsolute ? '/' : '.';
+        for await (const file of globber.scan(cwd)) {
+          const fullPath = isAbsolute ? `/${file}` : file;
+          if (fullPath.endsWith('.yaml') || fullPath.endsWith('.yml')) {
+            files.add(fullPath);
           }
         }
       }
@@ -935,6 +967,12 @@ export class ValidateCommand {
     // Headers validation
     if (request.headers) {
       this.validateHeaders(request.headers, `${path}.headers`, request);
+    } else if (request.body !== undefined) {
+      this.addIssue(
+        `${path}.headers`,
+        'info',
+        'Body present but no Content-Type header; consider adding one',
+      );
     }
 
     // Params validation
@@ -1046,7 +1084,11 @@ export class ValidateCommand {
     let fixedUrl = url;
     let hasTypo = false;
     for (const [typo, fix] of Object.entries(URL_TYPOS)) {
-      if (url.toLowerCase().includes(typo)) {
+      const matches =
+        typo === 'http:/' || typo === 'https:/'
+          ? new RegExp(typo.replace('/', '\\/') + '(?!\\/)', 'i').test(url)
+          : url.toLowerCase().includes(typo);
+      if (matches) {
         fixedUrl = url.replace(new RegExp(typo, 'gi'), fix);
         hasTypo = true;
         this.addIssue(path, 'error', `URL contains typo "${typo}"`, {
@@ -1226,13 +1268,17 @@ export class ValidateCommand {
       this.addIssue(path, 'warning', `Body with ${method} method may be ignored by some servers`);
     }
 
-    // If body is a string, check if it looks like JSON
+    // If body is a string, check if it looks like JSON or Content-Type is JSON
     if (typeof body === 'string') {
       const trimmed = body.trim();
-      if (
+      const contentType = request.headers
+        ? this.getHeaderValue(request.headers as Record<string, string>, 'content-type')
+        : null;
+      const isJsonContentType = contentType?.toLowerCase().includes('json');
+      const looksLikeJson =
         (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
-        (trimmed.startsWith('[') && trimmed.endsWith(']'))
-      ) {
+        (trimmed.startsWith('[') && trimmed.endsWith(']'));
+      if (looksLikeJson || isJsonContentType) {
         try {
           JSON.parse(trimmed);
         } catch {
@@ -1403,7 +1449,7 @@ export class ValidateCommand {
     // Object form
     const hasAll = 'all' in when && when.all;
     const hasAny = 'any' in when && when.any;
-    const hasSingle = 'left' in when;
+    const hasSingle = 'left' in when || 'operator' in when || 'right' in when;
 
     if (!hasAll && !hasAny && !hasSingle) {
       this.addIssue(path, 'error', 'When condition must have "all", "any", or "left"');
@@ -1637,10 +1683,12 @@ export class ValidateCommand {
         this.addIssue(
           `${path}.${key}`,
           'warning',
-          `Unknown key "${key}"`,
+          suggestion
+            ? `Unknown key "${key}" (did you mean "${suggestion}"?)`
+            : `Unknown key "${key}"`,
           suggestion
             ? {
-                description: `Did you mean "${suggestion}"?`,
+                description: `Rename to "${suggestion}"`,
                 apply: () => ({ rename: suggestion }),
               }
             : undefined,

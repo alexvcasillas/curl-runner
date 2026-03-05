@@ -48,13 +48,16 @@ export class Logger {
   }
 
   private shouldShowOutput(): boolean {
+    if (this.config.quiet) {
+      return false;
+    }
     if (this.config.format === 'raw') {
       return false;
     }
     if (this.config.format === 'pretty') {
-      return true; // Pretty format should always show output
+      return true;
     }
-    return this.config.verbose !== false; // For other formats, respect verbose flag
+    return this.config.verbose !== false;
   }
 
   private shouldShowHeaders(): boolean {
@@ -237,10 +240,17 @@ export class Logger {
   }
 
   logRetry(attempt: number, maxRetries: number): void {
+    if (!this.shouldShowOutput()) {
+      return;
+    }
     console.log(this.color(`  ↻ Retry ${attempt}/${maxRetries}...`, 'yellow'));
   }
 
   logRequestComplete(result: ExecutionResult): void {
+    if (this.config.quiet) {
+      return;
+    }
+
     // Handle raw format output - only show response body
     if (this.config.format === 'raw') {
       if (result.success && this.config.showBody && result.body) {
@@ -471,6 +481,10 @@ export class Logger {
   }
 
   logSummary(summary: ExecutionSummary, isGlobal: boolean = false): void {
+    if (this.config.quiet) {
+      return;
+    }
+
     // For raw format, don't show summary
     if (this.config.format === 'raw') {
       return;
@@ -560,14 +574,23 @@ export class Logger {
   }
 
   logWarning(message: string): void {
+    if (!this.shouldShowOutput()) {
+      return;
+    }
     console.warn(this.color(`⚠ ${message}`, 'yellow'));
   }
 
   logInfo(message: string): void {
+    if (!this.shouldShowOutput()) {
+      return;
+    }
     console.log(this.color(`ℹ ${message}`, 'blue'));
   }
 
   logSuccess(message: string): void {
+    if (!this.shouldShowOutput()) {
+      return;
+    }
     console.log(this.color(`✓ ${message}`, 'green'));
   }
 
@@ -620,6 +643,9 @@ export class Logger {
   }
 
   logWatch(files: string[]): void {
+    if (!this.shouldShowOutput()) {
+      return;
+    }
     console.log();
     console.log(
       `${this.color('Watching for changes...', 'cyan')} ${this.color('(press Ctrl+C to stop)', 'dim')}`,
@@ -630,11 +656,17 @@ export class Logger {
   }
 
   logWatchReady(): void {
+    if (!this.shouldShowOutput()) {
+      return;
+    }
     console.log();
     console.log(this.color('Watching for changes...', 'cyan'));
   }
 
   logFileChanged(filename: string): void {
+    if (!this.shouldShowOutput()) {
+      return;
+    }
     const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
     console.log(this.color('-'.repeat(50), 'dim'));
     console.log(

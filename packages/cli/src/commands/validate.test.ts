@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { ValidateCommand } from './validate';
 
 // Helper to create temp YAML file
@@ -26,6 +26,16 @@ async function captureOutput(fn: () => Promise<void>): Promise<string[]> {
 }
 
 describe('ValidateCommand', () => {
+  let exitSpy: ReturnType<typeof spyOn>;
+
+  beforeEach(() => {
+    exitSpy = spyOn(process, 'exit').mockImplementation((() => {}) as never);
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+  });
+
   // ===========================
   // VALID YAML FILES
   // ===========================

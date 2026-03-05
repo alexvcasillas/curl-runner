@@ -151,6 +151,7 @@ export interface GlobalConfig {
   variables?: Record<string, string>;
   output?: {
     verbose?: boolean;
+    quiet?: boolean;
     showHeaders?: boolean;
     showBody?: boolean;
     showMetrics?: boolean;
