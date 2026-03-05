@@ -43,10 +43,13 @@ class CurlRunnerCLI {
 
   async run(args: string[]): Promise<void> {
     try {
+      // Pre-parse quiet flag so resolver callbacks don't emit output
+      const isQuiet = args.includes('--quiet') || args.includes('-q');
+
       // Resolve config from all sources (CLI, env, file)
       const resolved = await resolveConfig(args, {
-        onInfo: (msg) => this.logger.logInfo(msg),
-        onWarning: (msg) => this.logger.logWarning(msg),
+        onInfo: isQuiet ? undefined : (msg) => this.logger.logInfo(msg),
+        onWarning: isQuiet ? undefined : (msg) => this.logger.logWarning(msg),
       });
 
       const { config, cliOptions, mode, rawArgs } = resolved;

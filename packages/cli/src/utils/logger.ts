@@ -247,6 +247,10 @@ export class Logger {
   }
 
   logRequestComplete(result: ExecutionResult): void {
+    if (this.config.quiet) {
+      return;
+    }
+
     // Handle raw format output - only show response body
     if (this.config.format === 'raw') {
       if (result.success && this.config.showBody && result.body) {
@@ -477,6 +481,10 @@ export class Logger {
   }
 
   logSummary(summary: ExecutionSummary, isGlobal: boolean = false): void {
+    if (this.config.quiet) {
+      return;
+    }
+
     // For raw format, don't show summary
     if (this.config.format === 'raw') {
       return;

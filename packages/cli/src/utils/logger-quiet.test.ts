@@ -158,26 +158,29 @@ describe('Logger quiet mode', () => {
     });
   });
 
-  describe('raw format still outputs body when quiet', () => {
-    test('logRequestComplete with raw format outputs body', () => {
+  describe('quiet suppresses all formats', () => {
+    test('logRequestComplete with quiet+raw → no output', () => {
       const logger = quietRawLogger();
       logger.logRequestComplete(makeResult({ body: '{"data":"value"}' }));
-      // Raw format body output is handled before shouldShowOutput check
-      // but quiet + raw = shouldShowOutput returns false, and raw check comes first
-      // Actually raw format has its own early return that outputs body
-      // Let's verify: raw format outputs body regardless of quiet
-      // Looking at the code: raw format check is BEFORE the shouldShowOutput check
-      // But shouldShowOutput now returns false for quiet before the raw check
-      // Wait - the raw format in logRequestComplete has its own early return at the top
-      // that doesn't go through shouldShowOutput. Let me check...
-      // Actually logRequestComplete checks format === 'raw' first (line 245),
-      // then format === 'json' (line 254), then shouldShowOutput for pretty.
-      // So raw format body output is NOT affected by shouldShowOutput.
-      // But wait - with quiet: true, shouldShowOutput returns false before
-      // checking raw. However, logRequestComplete doesn't use shouldShowOutput
-      // for raw format - it has its own direct format checks.
-      // The raw format block just checks showBody, not shouldShowOutput.
-      expect(logOutput.some((line) => line.includes('data'))).toBe(true);
+      expect(logOutput).toHaveLength(0);
+    });
+
+    test('logRequestComplete with quiet+json → no output', () => {
+      const logger = quietJsonLogger();
+      logger.logRequestComplete(makeResult({ body: '{"data":"value"}' }));
+      expect(logOutput).toHaveLength(0);
+    });
+
+    test('logSummary with quiet+raw → no output', () => {
+      const logger = quietRawLogger();
+      logger.logSummary(makeSummary());
+      expect(logOutput).toHaveLength(0);
+    });
+
+    test('logSummary with quiet+json → no output', () => {
+      const logger = quietJsonLogger();
+      logger.logSummary(makeSummary());
+      expect(logOutput).toHaveLength(0);
     });
   });
 
