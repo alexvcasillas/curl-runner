@@ -1,5 +1,19 @@
 # @curl-runner/cli
 
+## 1.23.4
+
+### Patch Changes
+
+- [#115](https://github.com/alexvcasillas/curl-runner/pull/115) [`388cb1c`](https://github.com/alexvcasillas/curl-runner/commit/388cb1cdc55a9fc300fd0ec9107e9caf344ca2e5) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - fix: reconfigure CLI logger after config resolution so --quiet flag suppresses output
+
+  - Fix URL typo detection false positives on valid https:// URLs
+  - Show warnings/info for valid files instead of silently swallowing them
+  - Apply auto-fixes for warnings on valid files
+  - Include "did you mean" suggestion inline in unknown key messages
+  - Detect incomplete when conditions (missing left with operator/right present)
+  - Fix glob file discovery for absolute paths
+  - Validate JSON body when Content-Type is application/json
+
 ## 1.23.3
 
 ### Patch Changes
