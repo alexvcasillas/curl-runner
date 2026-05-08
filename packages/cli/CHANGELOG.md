@@ -1,5 +1,11 @@
 # @curl-runner/cli
 
+## 1.23.5
+
+### Patch Changes
+
+- [#119](https://github.com/alexvcasillas/curl-runner/pull/119) [`078487f`](https://github.com/alexvcasillas/curl-runner/commit/078487fcd469be9e1a426a3873d6baee321fc846) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - fix(cli): capture response headers via `-D -` so `expect.headers` validation works; expose `headerHistory` and multi-value header support
+
 ## 1.23.4
 
 ### Patch Changes
