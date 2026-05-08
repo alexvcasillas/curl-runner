@@ -29,12 +29,14 @@ export class ProfileExecutor {
     const result = await CurlBuilder.executeCurl(command);
 
     if (result.success) {
+      const rawContentType = result.headers?.['content-type'];
+      const contentType = Array.isArray(rawContentType) ? rawContentType[0] : rawContentType;
       return {
         request: config,
         success: true,
         status: result.status,
         headers: result.headers,
-        body: parseResponseBody(result.body, result.headers?.['content-type']),
+        body: parseResponseBody(result.body, contentType),
         metrics: {
           ...result.metrics,
           duration: performance.now() - startTime,

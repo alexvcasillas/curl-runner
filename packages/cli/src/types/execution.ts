@@ -12,7 +12,9 @@ export interface ExecutionResult {
   request: RequestConfig;
   success: boolean;
   status?: number;
-  headers?: Record<string, string>;
+  headers?: Record<string, string | string[]>;
+  /** All response header blocks (informational, redirects, final). Final block last. */
+  headerHistory?: Array<{ status: number; headers: Record<string, string | string[]> }>;
   body?: JsonValue;
   error?: string;
   /** True if this result is from dry-run mode (no actual request made) */

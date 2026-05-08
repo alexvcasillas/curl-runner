@@ -30,7 +30,7 @@ export interface ExpectConfig {
 
 export interface ResponseData {
   status?: number;
-  headers?: Record<string, string>;
+  headers?: Record<string, string | string[]>;
   body?: JsonValue;
   metrics?: {
     duration: number;

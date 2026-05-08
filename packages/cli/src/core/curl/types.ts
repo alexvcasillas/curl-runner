@@ -54,12 +54,22 @@ export interface CurlArgsResult {
 }
 
 /**
+ * A parsed response header block (one per HTTP exchange — redirects yield multiple).
+ */
+export interface ResponseHeaderBlock {
+  status: number;
+  headers: Record<string, string | string[]>;
+}
+
+/**
  * Result of executing curl.
  */
 export interface CurlExecutionResult {
   success: boolean;
   status?: number;
-  headers?: Record<string, string>;
+  headers?: Record<string, string | string[]>;
+  /** All header blocks (informational, redirects, final). Final block last. */
+  headerHistory?: ResponseHeaderBlock[];
   body?: string;
   metrics?: ProcessedMetrics;
   error?: string;

@@ -144,11 +144,12 @@ export class BaselineManager {
   /**
    * Normalizes headers for consistent comparison.
    */
-  private normalizeHeaders(headers: Record<string, string>): Record<string, string> {
+  private normalizeHeaders(headers: Record<string, string | string[]>): Record<string, string> {
     const normalized: Record<string, string> = {};
     const sortedKeys = Object.keys(headers).sort();
     for (const key of sortedKeys) {
-      normalized[key.toLowerCase()] = headers[key];
+      const value = headers[key];
+      normalized[key.toLowerCase()] = Array.isArray(value) ? value.join(', ') : value;
     }
     return normalized;
   }

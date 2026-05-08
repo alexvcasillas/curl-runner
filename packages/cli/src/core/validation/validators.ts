@@ -85,17 +85,25 @@ export function validateStatus(actual: number | undefined, expected: number | nu
 }
 
 /**
- * Validates HTTP headers.
+ * Validates HTTP headers. Actual keys are expected lowercased (parser normalizes).
+ * Multi-value headers (string[]) match if any element equals expected, or if the
+ * comma-joined whole matches.
  */
 export function validateHeaders(
-  actual: Record<string, string> | undefined,
+  actual: Record<string, string | string[]> | undefined,
   expected: Record<string, string>,
 ): string[] {
   const errors: string[] = [];
   for (const [key, value] of Object.entries(expected)) {
-    const actualValue = actual?.[key] || actual?.[key.toLowerCase()];
-    if (actualValue !== value) {
-      errors.push(`Expected header ${key}="${value}", got "${actualValue}"`);
+    const actualValue = actual?.[key.toLowerCase()];
+    const matched = Array.isArray(actualValue)
+      ? actualValue.includes(value) || actualValue.join(', ') === value
+      : actualValue === value;
+    if (!matched) {
+      const display = Array.isArray(actualValue)
+        ? `[${actualValue.map((v) => `"${v}"`).join(', ')}]`
+        : `"${actualValue}"`;
+      errors.push(`Expected header ${key}="${value}", got ${display}`);
     }
   }
   return errors;

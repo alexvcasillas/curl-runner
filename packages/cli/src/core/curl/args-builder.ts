@@ -31,6 +31,9 @@ export function buildCurlArgs(
   // Write-out format for metrics
   args.push('-w', writeOutMarker);
 
+  // Dump response headers to stdout (so validators can read them)
+  args.push('-D', '-');
+
   // Headers
   if (config.headers) {
     for (const [key, value] of Object.entries(config.headers)) {

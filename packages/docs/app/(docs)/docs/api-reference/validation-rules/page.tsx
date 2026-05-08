@@ -868,6 +868,17 @@ export default function ValidationRulesPage() {
               {headerValidationExample}
             </CodeBlockServer>
 
+            <div className="mt-6 rounded-lg border bg-blue-500/5 dark:bg-blue-500/10 border-blue-500/20 p-4">
+              <p className="text-sm">
+                <strong className="text-blue-600 dark:text-blue-400">Multi-value headers:</strong>{' '}
+                When a response header appears more than once (e.g.{' '}
+                <code className="text-xs">Set-Cookie</code>), the validator passes if your expected
+                value matches any element, or matches the comma-joined whole. For example,{' '}
+                <code className="text-xs">set-cookie: "a=1"</code> matches actual{' '}
+                <code className="text-xs">["a=1", "b=2"]</code>.
+              </p>
+            </div>
+
             <div className="mt-6 space-y-3">
               <H3 id="header-patterns">Common Header Validation Patterns</H3>
               <div className="grid gap-4 md:grid-cols-2">

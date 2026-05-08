@@ -6,8 +6,10 @@ import {
   formatArgsForDisplay,
   getStatusCode,
   isSuccessStatus,
+  parseHeaderBlocks,
   parseMetrics,
   parseResponseBody,
+  type ResponseHeaderBlock,
 } from '../core/curl';
 import type { ConnectionPoolConfig, ExecutionResult, RequestConfig } from '../types/config';
 
@@ -164,14 +166,27 @@ export class PooledCurlExecutor {
         }
       }
 
-      const body: string | undefined = stdout.substring(bodyStart, bodyEnd).trim();
-      const statusCode = getStatusCode(rawMetrics);
+      const rawSegment = stdout.substring(bodyStart, bodyEnd);
+      const { blocks, bodyOffset } = parseHeaderBlocks(rawSegment);
+
+      let finalBlock: ResponseHeaderBlock | undefined;
+      for (let k = blocks.length - 1; k >= 0; k--) {
+        if (blocks[k].status >= 200) {
+          finalBlock = blocks[k];
+          break;
+        }
+      }
+
+      const body = rawSegment.slice(bodyOffset).trim();
+      const statusCode = getStatusCode(rawMetrics) ?? finalBlock?.status;
       const metrics = parseMetrics(rawMetrics);
 
       results.set(req.index, {
         request: req.config,
         success: isSuccessStatus(statusCode),
         status: statusCode,
+        headers: finalBlock?.headers ?? {},
+        headerHistory: blocks,
         body: parseResponseBody(body),
         metrics,
       });

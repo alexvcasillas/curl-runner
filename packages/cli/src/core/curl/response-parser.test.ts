@@ -2,9 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import {
   extractBatchMetrics,
   extractMetricsFromOutput,
+  extractResponseFromOutput,
   getStatusCode,
   isSuccessStatus,
-  parseHeadersFromStderr,
+  parseHeaderBlocks,
   parseMetrics,
 } from './response-parser';
 import type { CurlMetrics } from './types';
@@ -181,42 +182,141 @@ __CURL_BATCH_1_START__{"response_code":201}__CURL_BATCH_1_END__`;
   });
 });
 
-describe('parseHeadersFromStderr', () => {
-  test('parses headers from stderr', () => {
-    const stderr = `< HTTP/1.1 200 OK
-< Content-Type: application/json
-< X-Custom-Header: value`;
+describe('parseHeaderBlocks', () => {
+  test('parses HTTP/1.1 block with CRLF', () => {
+    const text = 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Custom: value\r\n\r\nbody';
+    const { blocks, bodyOffset } = parseHeaderBlocks(text);
 
-    const headers = parseHeadersFromStderr(stderr);
-
-    expect(headers['< Content-Type']).toBe('application/json');
-    expect(headers['< X-Custom-Header']).toBe('value');
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].status).toBe(200);
+    expect(blocks[0].headers['content-type']).toBe('application/json');
+    expect(blocks[0].headers['x-custom']).toBe('value');
+    expect(text.slice(bodyOffset)).toBe('body');
   });
 
-  test('handles headers with colons in value', () => {
-    const stderr = '< Date: Mon, 01 Jan 2024 12:00:00 GMT';
-    const headers = parseHeadersFromStderr(stderr);
+  test('parses HTTP/2 status line', () => {
+    const text = 'HTTP/2 200\r\nContent-Type: application/json\r\n\r\n{}';
+    const { blocks } = parseHeaderBlocks(text);
 
-    expect(headers['< Date']).toBe('Mon, 01 Jan 2024 12:00:00 GMT');
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].status).toBe(200);
+    expect(blocks[0].headers['content-type']).toBe('application/json');
   });
 
-  test('returns empty object for no headers', () => {
-    const stderr = 'no headers here';
-    const headers = parseHeadersFromStderr(stderr);
+  test('handles LF-only line endings', () => {
+    const text = 'HTTP/1.1 200 OK\nContent-Type: application/json\n\nbody';
+    const { blocks, bodyOffset } = parseHeaderBlocks(text);
+
+    expect(blocks[0].headers['content-type']).toBe('application/json');
+    expect(text.slice(bodyOffset)).toBe('body');
+  });
+
+  test('parses redirect chain → returns all blocks', () => {
+    const text =
+      'HTTP/1.1 301 Moved Permanently\r\nLocation: /next\r\n\r\nHTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nfinal';
+    const { blocks, bodyOffset } = parseHeaderBlocks(text);
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].status).toBe(301);
+    expect(blocks[1].status).toBe(200);
+    expect(text.slice(bodyOffset)).toBe('final');
+  });
+
+  test('handles 1xx informational preamble', () => {
+    const text =
+      'HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\nbody';
+    const { blocks } = parseHeaderBlocks(text);
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].status).toBe(100);
+    expect(blocks[1].status).toBe(200);
+  });
+
+  test('handles HEAD-style empty body', () => {
+    const text = 'HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n';
+    const { blocks, bodyOffset } = parseHeaderBlocks(text);
+
+    expect(blocks[0].status).toBe(200);
+    expect(text.slice(bodyOffset)).toBe('');
+  });
+
+  test('does not consume body containing \\r\\n\\r\\n', () => {
+    const text = 'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nfirst\r\n\r\nsecond';
+    const { blocks, bodyOffset } = parseHeaderBlocks(text);
+
+    expect(blocks).toHaveLength(1);
+    expect(text.slice(bodyOffset)).toBe('first\r\n\r\nsecond');
+  });
+
+  test('returns no blocks when no status line', () => {
+    const { blocks, bodyOffset } = parseHeaderBlocks('just a body');
+    expect(blocks).toEqual([]);
+    expect(bodyOffset).toBe(0);
+  });
+
+  test('consumes CONNECT proxy preamble', () => {
+    const text =
+      'HTTP/1.1 200 Connection established\r\n\r\nHTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\nbody';
+    const { blocks } = parseHeaderBlocks(text);
+
+    expect(blocks).toHaveLength(2);
+  });
+
+  test('repeated headers become string[]', () => {
+    const text = 'HTTP/1.1 200 OK\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\n\r\nbody';
+    const { blocks } = parseHeaderBlocks(text);
+
+    expect(blocks[0].headers['set-cookie']).toEqual(['a=1', 'b=2']);
+  });
+
+  test('lowercases header keys', () => {
+    const text = 'HTTP/1.1 200 OK\r\nX-CUSTOM: value\r\n\r\n';
+    const { blocks } = parseHeaderBlocks(text);
+
+    expect(blocks[0].headers['x-custom']).toBe('value');
+  });
+});
+
+describe('extractResponseFromOutput', () => {
+  test('extracts headers, body, and metrics in one call', () => {
+    const stdout =
+      'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{"x":1}\n__CURL_METRICS_START__{"http_code":200,"time_total":0.1}__CURL_METRICS_END__';
+    const { headers, status, body, metrics, headerHistory } = extractResponseFromOutput(stdout);
+
+    expect(headers['content-type']).toBe('application/json');
+    expect(status).toBe(200);
+    expect(body).toBe('{"x":1}');
+    expect(metrics.http_code).toBe(200);
+    expect(headerHistory).toHaveLength(1);
+  });
+
+  test('picks last non-informational block on redirect chain', () => {
+    const stdout =
+      'HTTP/1.1 301 Moved\r\nLocation: /next\r\n\r\nHTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\nfinal\n__CURL_METRICS_START__{"http_code":200}__CURL_METRICS_END__';
+    const { headers, status, headerHistory } = extractResponseFromOutput(stdout);
+
+    expect(status).toBe(200);
+    expect(headers['content-type']).toBe('text/html');
+    expect(headerHistory).toHaveLength(2);
+    expect(headerHistory[0].status).toBe(301);
+  });
+
+  test('skips 1xx informational when picking final headers', () => {
+    const stdout =
+      'HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 204 No Content\r\nX-Marker: end\r\n\r\n__CURL_METRICS_START__{"http_code":204}__CURL_METRICS_END__';
+    const { headers, status } = extractResponseFromOutput(stdout);
+
+    expect(status).toBe(204);
+    expect(headers['x-marker']).toBe('end');
+  });
+
+  test('returns empty headers when no header block', () => {
+    const stdout = 'plain\n__CURL_METRICS_START__{"http_code":200}__CURL_METRICS_END__';
+    const { headers, status, body } = extractResponseFromOutput(stdout);
 
     expect(headers).toEqual({});
-  });
-
-  test('handles empty stderr', () => {
-    const headers = parseHeadersFromStderr('');
-    expect(headers).toEqual({});
-  });
-
-  test('trims whitespace', () => {
-    const stderr = '<   Content-Type  :   application/json  ';
-    const headers = parseHeadersFromStderr(stderr);
-
-    expect(headers['<   Content-Type']).toBe('application/json');
+    expect(status).toBeUndefined();
+    expect(body).toBe('plain');
   });
 });
 

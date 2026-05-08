@@ -548,10 +548,22 @@ export default function ResponseObjectPage() {
                       <code className="text-sm">headers</code>
                     </td>
                     <td className="p-3 text-sm text-muted-foreground">
-                      Record&lt;string, string&gt;?
+                      Record&lt;string, string | string[]&gt;?
                     </td>
                     <td className="p-3 text-sm text-muted-foreground">
-                      Response headers (if response received)
+                      Response headers — keys are lowercased; repeated headers (e.g.{' '}
+                      <code className="text-xs">Set-Cookie</code>) are preserved as string[]
+                    </td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="p-3">
+                      <code className="text-sm">headerHistory</code>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      Array&lt;{'{ status, headers }'}&gt;?
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      All response header blocks in order (informational, redirects, final response)
                     </td>
                   </tr>
                   <tr className="border-b">

@@ -17,9 +17,10 @@ export { isJsonContentType, looksLikeJson, parseResponseBody } from './body-pars
 export {
   extractBatchMetrics,
   extractMetricsFromOutput,
+  extractResponseFromOutput,
   getStatusCode,
   isSuccessStatus,
-  parseHeadersFromStderr,
+  parseHeaderBlocks,
   parseMetrics,
 } from './response-parser';
 // Types
@@ -30,4 +31,5 @@ export {
   type CurlMetrics,
   isFileAttachment,
   type ProcessedMetrics,
+  type ResponseHeaderBlock,
 } from './types';
