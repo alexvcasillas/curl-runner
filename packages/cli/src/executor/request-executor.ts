@@ -147,7 +147,8 @@ export class RequestExecutor {
       getDelay: (_attempt, result) => {
         // Honor Retry-After header on 429 responses
         if (result?.status === 429 && result.headers) {
-          const retryAfter = result.headers['retry-after'] ?? result.headers['Retry-After'];
+          const raw = result.headers['retry-after'];
+          const retryAfter = Array.isArray(raw) ? raw[0] : raw;
           if (retryAfter) {
             const seconds = Number(retryAfter);
             if (!Number.isNaN(seconds)) {
@@ -204,13 +205,16 @@ export class RequestExecutor {
     curlResult: CurlExecutionResult,
     startTime: number,
   ): ExecutionResult {
-    const body = parseResponseBody(curlResult.body, curlResult.headers?.['content-type']);
+    const rawContentType = curlResult.headers?.['content-type'];
+    const contentType = Array.isArray(rawContentType) ? rawContentType[0] : rawContentType;
+    const body = parseResponseBody(curlResult.body, contentType);
 
     return {
       request: config,
       success: true,
       status: curlResult.status,
       headers: curlResult.headers,
+      headerHistory: curlResult.headerHistory,
       body,
       metrics: {
         ...curlResult.metrics,

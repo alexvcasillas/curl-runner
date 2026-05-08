@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { CurlBuilder } from './curl-builder';
 
 describe('CurlBuilder', () => {
@@ -224,6 +224,62 @@ describe('CurlBuilder', () => {
       });
 
       expect(args).not.toContain('--http2');
+    });
+  });
+
+  describe('executeCurl', () => {
+    const realSpawn = Bun.spawn;
+
+    afterEach(() => {
+      // biome-ignore lint/suspicious/noExplicitAny: test stub restore
+      (Bun as any).spawn = realSpawn;
+    });
+
+    function mockSpawn(stdout: string, stderr: string = '', exitCode: number = 0) {
+      // biome-ignore lint/suspicious/noExplicitAny: test stub
+      (Bun as any).spawn = () => ({
+        stdout: new Response(stdout).body,
+        stderr: new Response(stderr).body,
+        exited: Promise.resolve(exitCode),
+        exitCode,
+      });
+    }
+
+    test('captures headers, body, and metrics from stdout', async () => {
+      mockSpawn(
+        'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Trace: abc\r\n\r\n{"x":1}\n__CURL_METRICS_START__{"http_code":200,"time_total":0.1}__CURL_METRICS_END__',
+      );
+
+      const result = await CurlBuilder.executeCurl(['https://example.com']);
+
+      expect(result.success).toBe(true);
+      expect(result.status).toBe(200);
+      expect(result.headers?.['content-type']).toBe('application/json');
+      expect(result.headers?.['x-trace']).toBe('abc');
+      expect(result.body).toBe('{"x":1}');
+      expect(result.headerHistory).toHaveLength(1);
+    });
+
+    test('exposes redirect chain via headerHistory', async () => {
+      mockSpawn(
+        'HTTP/1.1 301 Moved\r\nLocation: /next\r\n\r\nHTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nfinal\n__CURL_METRICS_START__{"http_code":200}__CURL_METRICS_END__',
+      );
+
+      const result = await CurlBuilder.executeCurl(['-L', 'https://example.com']);
+
+      expect(result.status).toBe(200);
+      expect(result.headerHistory).toHaveLength(2);
+      expect(result.headerHistory?.[0].status).toBe(301);
+    });
+
+    test('preserves multi-value Set-Cookie headers', async () => {
+      mockSpawn(
+        'HTTP/1.1 200 OK\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\n\r\n{}\n__CURL_METRICS_START__{"http_code":200}__CURL_METRICS_END__',
+      );
+
+      const result = await CurlBuilder.executeCurl(['https://example.com']);
+
+      expect(result.headers?.['set-cookie']).toEqual(['a=1', 'b=2']);
     });
   });
 

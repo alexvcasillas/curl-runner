@@ -32,6 +32,13 @@ describe('buildCurlArgs', () => {
     expect(args[wIdx + 1]).toContain(METRICS_MARKER_END);
   });
 
+  test('dumps response headers to stdout', () => {
+    const { args } = buildCurlArgs({ url: 'https://api.example.com' });
+    const dIdx = args.indexOf('-D');
+    expect(dIdx).toBeGreaterThanOrEqual(0);
+    expect(args[dIdx + 1]).toBe('-');
+  });
+
   test('includes custom write-out marker', () => {
     const customMarker = '__CUSTOM__%{json}__END__';
     const { args } = buildCurlArgs(

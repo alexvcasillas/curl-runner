@@ -423,6 +423,50 @@ __CURL_BATCH_0_START__{"response_code":404,"time_total":0.2}__CURL_BATCH_0_END__
       expect(results.get(0)!.error).toContain('Connection refused');
     });
 
+    test('should parse response headers per request', () => {
+      const executor = new PooledCurlExecutor();
+      const group = {
+        host: 'https://api.example.com',
+        requests: [
+          { index: 0, config: { url: 'https://api.example.com/users', method: 'GET' as const } },
+          { index: 1, config: { url: 'https://api.example.com/items', method: 'GET' as const } },
+        ],
+      };
+
+      const stdout =
+        'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{"u":1}\n__CURL_BATCH_0_START__{"response_code":200,"time_total":0.3}__CURL_BATCH_0_END__\nHTTP/1.1 201 Created\r\nContent-Type: text/plain\r\nLocation: /items/9\r\n\r\nok\n__CURL_BATCH_1_START__{"response_code":201,"time_total":0.4}__CURL_BATCH_1_END__\n';
+
+      const results = executor.parseBatchedOutput(stdout, '', group, 0);
+
+      expect(results.get(0)!.headers?.['content-type']).toBe('application/json');
+      expect(results.get(0)!.body).toEqual({ u: 1 });
+      expect(results.get(1)!.headers?.['content-type']).toBe('text/plain');
+      expect(results.get(1)!.headers?.location).toBe('/items/9');
+      expect(results.get(1)!.body).toBe('ok');
+      expect(results.get(1)!.headerHistory).toHaveLength(1);
+    });
+
+    test('should expose redirect chain on batched request', () => {
+      const executor = new PooledCurlExecutor();
+      const group = {
+        host: 'https://api.example.com',
+        requests: [
+          { index: 0, config: { url: 'https://api.example.com/old', method: 'GET' as const } },
+        ],
+      };
+
+      const stdout =
+        'HTTP/1.1 301 Moved\r\nLocation: /new\r\n\r\nHTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nfinal\n__CURL_BATCH_0_START__{"response_code":200}__CURL_BATCH_0_END__\n';
+
+      const results = executor.parseBatchedOutput(stdout, '', group, 0);
+      const result = results.get(0)!;
+
+      expect(result.status).toBe(200);
+      expect(result.headers?.['content-type']).toBe('text/plain');
+      expect(result.headerHistory).toHaveLength(2);
+      expect(result.headerHistory?.[0].status).toBe(301);
+    });
+
     test('should parse timing metrics', () => {
       const executor = new PooledCurlExecutor();
       const group = {

@@ -1,10 +1,9 @@
 import {
   buildCurlArgs,
   type CurlExecutionResult,
-  extractMetricsFromOutput,
+  extractResponseFromOutput,
   formatArgsForDisplay,
   getStatusCode,
-  parseHeadersFromStderr,
   parseMetrics,
 } from '../core/curl';
 import type { RequestConfig } from '../types/config';
@@ -58,15 +57,21 @@ export class CurlBuilder {
         };
       }
 
-      const { body, metrics: rawMetrics } = extractMetricsFromOutput(stdout);
-      const statusCode = getStatusCode(rawMetrics);
-      const headers = statusCode ? parseHeadersFromStderr(stderr) : {};
+      const {
+        headers,
+        status: blockStatus,
+        headerHistory,
+        body,
+        metrics: rawMetrics,
+      } = extractResponseFromOutput(stdout);
+      const statusCode = getStatusCode(rawMetrics) ?? blockStatus;
       const metrics = parseMetrics(rawMetrics);
 
       return {
         success: true,
         status: statusCode,
         headers,
+        headerHistory,
         body,
         metrics,
       };

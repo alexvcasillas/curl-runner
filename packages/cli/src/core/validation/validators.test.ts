@@ -130,6 +130,34 @@ describe('validateHeaders', () => {
     const errors = validateHeaders({}, { 'x-custom': 'value' });
     expect(errors).toHaveLength(1);
   });
+
+  test('matches expected against array via includes', () => {
+    const errors = validateHeaders({ 'set-cookie': ['a=1', 'b=2'] }, { 'set-cookie': 'b=2' });
+    expect(errors).toEqual([]);
+  });
+
+  test('matches expected against array via comma join', () => {
+    const errors = validateHeaders(
+      { 'cache-control': ['no-store', 'no-cache'] },
+      { 'cache-control': 'no-store, no-cache' },
+    );
+    expect(errors).toEqual([]);
+  });
+
+  test('error message renders array values readably', () => {
+    const errors = validateHeaders({ 'set-cookie': ['a=1', 'b=2'] }, { 'set-cookie': 'c=3' });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('"a=1"');
+    expect(errors[0]).toContain('"b=2"');
+  });
+
+  test('looks up expected key case-insensitively', () => {
+    const errors = validateHeaders(
+      { 'content-type': 'application/json' },
+      { 'CONTENT-TYPE': 'application/json' },
+    );
+    expect(errors).toEqual([]);
+  });
 });
 
 describe('validateBodyProperties', () => {

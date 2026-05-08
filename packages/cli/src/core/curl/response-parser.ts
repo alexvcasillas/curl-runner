@@ -3,7 +3,7 @@
  */
 
 import { METRICS_MARKER_END, METRICS_MARKER_START } from './args-builder';
-import type { CurlMetrics, ProcessedMetrics } from './types';
+import type { CurlMetrics, ProcessedMetrics, ResponseHeaderBlock } from './types';
 
 /**
  * Parses raw curl metrics JSON into processed metrics (in milliseconds).
@@ -76,21 +76,122 @@ export function extractBatchMetrics(
   return { found: true, metricsJson, startIdx, endIdx };
 }
 
-/**
- * Parses headers from curl stderr output.
- */
-export function parseHeadersFromStderr(stderr: string): Record<string, string> {
-  const headers: Record<string, string> = {};
-  const headerLines = stderr.split('\n').filter((line) => line.includes(':'));
+const STATUS_LINE_RE = /^HTTP\/[\d.]+\s+(\d{3})/;
 
-  for (const line of headerLines) {
-    const [key, ...valueParts] = line.split(':');
-    if (key && valueParts.length > 0) {
-      headers[key.trim()] = valueParts.join(':').trim();
+/**
+ * Parses sequential HTTP header blocks emitted by `curl -D -`.
+ * Handles redirects, 1xx informational (empty blocks), and CONNECT proxy preambles.
+ * Header keys are lowercased; repeated keys produce string[] values.
+ */
+export function parseHeaderBlocks(text: string): {
+  blocks: ResponseHeaderBlock[];
+  bodyOffset: number;
+} {
+  const blocks: ResponseHeaderBlock[] = [];
+  let i = 0;
+
+  while (i < text.length) {
+    // Skip leading whitespace between blocks (handles batched-output preamble)
+    while (i < text.length) {
+      const ch = text.charCodeAt(i);
+      if (ch === 13 || ch === 10 || ch === 32 || ch === 9) {
+        i++;
+      } else {
+        break;
+      }
+    }
+    if (i >= text.length) {
+      break;
+    }
+
+    const statusMatch = text.slice(i).match(STATUS_LINE_RE);
+    if (!statusMatch) {
+      break;
+    }
+
+    const status = Number(statusMatch[1]);
+
+    const crlfIdx = text.indexOf('\r\n\r\n', i);
+    const lfIdx = text.indexOf('\n\n', i);
+
+    let endIdx: number;
+    let sepLen: number;
+    if (crlfIdx !== -1 && (lfIdx === -1 || crlfIdx <= lfIdx)) {
+      endIdx = crlfIdx;
+      sepLen = 4;
+    } else if (lfIdx !== -1) {
+      endIdx = lfIdx;
+      sepLen = 2;
+    } else {
+      break;
+    }
+
+    const statusLineNl = text.indexOf('\n', i);
+    const sectionStart = statusLineNl + 1;
+
+    const headers: Record<string, string | string[]> = {};
+    if (sectionStart > 0 && sectionStart < endIdx) {
+      for (const line of text.slice(sectionStart, endIdx).split(/\r?\n/)) {
+        if (!line) {
+          continue;
+        }
+        const colonIdx = line.indexOf(':');
+        if (colonIdx === -1) {
+          continue;
+        }
+        const key = line.slice(0, colonIdx).trim().toLowerCase();
+        if (!key) {
+          continue;
+        }
+        const value = line.slice(colonIdx + 1).trim();
+        const existing = headers[key];
+        if (existing === undefined) {
+          headers[key] = value;
+        } else if (Array.isArray(existing)) {
+          existing.push(value);
+        } else {
+          headers[key] = [existing, value];
+        }
+      }
+    }
+
+    blocks.push({ status, headers });
+    i = endIdx + sepLen;
+  }
+
+  return { blocks, bodyOffset: i };
+}
+
+/**
+ * Extracts headers, status, body and metrics from curl stdout when invoked
+ * with both `-D -` (header dump) and `-w` (metrics marker).
+ */
+export function extractResponseFromOutput(stdout: string): {
+  headers: Record<string, string | string[]>;
+  status?: number;
+  headerHistory: ResponseHeaderBlock[];
+  body: string;
+  metrics: CurlMetrics;
+} {
+  const { blocks, bodyOffset } = parseHeaderBlocks(stdout);
+
+  let finalBlock: ResponseHeaderBlock | undefined;
+  for (let k = blocks.length - 1; k >= 0; k--) {
+    if (blocks[k].status >= 200) {
+      finalBlock = blocks[k];
+      break;
     }
   }
 
-  return headers;
+  const { body, metrics } = extractMetricsFromOutput(stdout.slice(bodyOffset));
+
+  return {
+    headers: finalBlock?.headers ?? {},
+    status: finalBlock?.status,
+    headerHistory: blocks,
+    body,
+    metrics,
+  };
 }
 
 /**
