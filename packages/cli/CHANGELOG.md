@@ -1,5 +1,11 @@
 # @curl-runner/cli
 
+## 1.24.0
+
+### Minor Changes
+
+- [#122](https://github.com/alexvcasillas/curl-runner/pull/122) [`7ea38aa`](https://github.com/alexvcasillas/curl-runner/commit/7ea38aa4e6861f543b23b12cac3a2fa40f2f9cea) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Add `$absent` and `$exists` body-assertion keywords for response validation. `$absent` asserts a key is not present in the response (fails even when the value is `null`); `$exists` asserts a key is present with any value (including `null`), stricter than `*`.
+
 ## 1.23.5
 
 ### Patch Changes
