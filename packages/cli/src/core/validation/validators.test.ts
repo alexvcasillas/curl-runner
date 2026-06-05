@@ -238,6 +238,42 @@ describe('validateBodyProperties', () => {
     const errorsNoMatch = validateBodyProperties(5, [1, 2, 3], '');
     expect(errorsNoMatch).toHaveLength(1);
   });
+
+  test('$absent passes when nested key is missing', () => {
+    const errors = validateBodyProperties(
+      { data: { foo: 1 } },
+      { data: { cssStyles: '$absent' } },
+      '',
+    );
+    expect(errors).toEqual([]);
+  });
+
+  test('$absent fails when nested key exists (even as null)', () => {
+    const errors = validateBodyProperties(
+      { data: { cssStyles: null } },
+      { data: { cssStyles: '$absent' } },
+      '',
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('data.cssStyles');
+    expect(errors[0]).toContain('absent');
+  });
+
+  test('$exists passes when nested key is present', () => {
+    const errors = validateBodyProperties(
+      { data: { token: 'abc' } },
+      { data: { token: '$exists' } },
+      '',
+    );
+    expect(errors).toEqual([]);
+  });
+
+  test('$exists fails when nested key is missing', () => {
+    const errors = validateBodyProperties({ data: {} }, { data: { token: '$exists' } }, '');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('data.token');
+    expect(errors[0]).toContain('exist');
+  });
 });
 
 describe('validateValue', () => {
@@ -245,6 +281,24 @@ describe('validateValue', () => {
     expect(validateValue('anything', '*', 'path').isValid).toBe(true);
     expect(validateValue(123, '*', 'path').isValid).toBe(true);
     expect(validateValue(null, '*', 'path').isValid).toBe(true);
+  });
+
+  test('validates $absent', () => {
+    expect(validateValue(undefined as unknown as null, '$absent', 'path').isValid).toBe(true);
+    expect(validateValue('value', '$absent', 'path').isValid).toBe(false);
+    // Present key with null value still exists → fails
+    expect(validateValue(null, '$absent', 'path').isValid).toBe(false);
+    const result = validateValue('value', '$absent', 'myField');
+    expect(result.error).toContain('myField');
+    expect(result.error).toContain('absent');
+  });
+
+  test('validates $exists', () => {
+    expect(validateValue('value', '$exists', 'path').isValid).toBe(true);
+    expect(validateValue(0, '$exists', 'path').isValid).toBe(true);
+    // Present key with null value still exists → passes
+    expect(validateValue(null, '$exists', 'path').isValid).toBe(true);
+    expect(validateValue(undefined as unknown as null, '$exists', 'path').isValid).toBe(false);
   });
 
   test('validates exact match', () => {

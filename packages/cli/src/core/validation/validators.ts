@@ -204,6 +204,28 @@ export function validateValue(
   expectedValue: JsonValue,
   path: string,
 ): ValueValidationResult {
+  // Property must be absent (key not present in body)
+  if (expectedValue === '$absent') {
+    if (actualValue !== undefined) {
+      return {
+        isValid: false,
+        error: `Expected ${path} to be absent, got ${JSON.stringify(actualValue)}`,
+      };
+    }
+    return { isValid: true };
+  }
+
+  // Property must exist with any value (stricter than '*', which passes when missing)
+  if (expectedValue === '$exists') {
+    if (actualValue === undefined) {
+      return {
+        isValid: false,
+        error: `Expected ${path} to exist, but it was absent`,
+      };
+    }
+    return { isValid: true };
+  }
+
   // Wildcard - accept any value
   if (expectedValue === '*') {
     return { isValid: true };
