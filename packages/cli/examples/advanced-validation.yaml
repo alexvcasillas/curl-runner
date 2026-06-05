@@ -17,6 +17,8 @@ requests:
         id: "^[0-9]+$" # Regex: any number
         userId: "*" # Wildcard: accept any value
         title: "^[a-zA-Z\\s]+" # Regex: letters and spaces
+        body: $exists # Key must be present (any value, incl. null)
+        nonExistentField: $absent # Key must NOT be present in the response
 
   # Multiple acceptable values
   - name: Multiple Acceptable Values

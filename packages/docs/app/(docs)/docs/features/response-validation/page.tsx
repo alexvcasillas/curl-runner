@@ -1,4 +1,4 @@
-import { CheckCircle, Eye, Search, Shield, Target, Zap } from 'lucide-react';
+import { CheckCircle, Eye, Search, Shield, Target, XCircle, Zap } from 'lucide-react';
 import type { Metadata } from 'next';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { H2, H3 } from '@/components/docs-heading';
@@ -81,7 +81,9 @@ request:
       username: "johndoe"
       email: "john@example.com"
       active: true
-      
+      token: $exists      # Key must be present (any value, incl. null)
+      deletedAt: $absent  # Key must NOT be present in the response
+
 # Partial matching
 request:
   name: Check API Response
@@ -319,10 +321,46 @@ export default function ResponseValidationPage() {
                     <div className="flex-1">
                       <h4 className="font-medium mb-2">Wildcard Match</h4>
                       <p className="text-sm text-muted-foreground mb-3">
-                        Use "*" to check for presence of a field with any value.
+                        Use "*" to match a field with any value (does not enforce presence).
                       </p>
                       <code className="text-xs bg-muted px-2 py-1 rounded">
-                        {'body: { token: "*" } # Field must exist'}
+                        {'body: { token: "*" } # Any value'}
+                      </code>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border bg-card p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-full bg-red-500/10 p-2">
+                      <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-medium mb-2">Absence Match</h4>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Use "$absent" to assert a key is NOT present. Fails even if the value is
+                        null.
+                      </p>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        {'body: { cssStyles: $absent } # Key must NOT exist'}
+                      </code>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border bg-card p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-full bg-green-500/10 p-2">
+                      <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-medium mb-2">Existence Match</h4>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Use "$exists" to require a key to be present with any value (incl. null).
+                        Stricter than "*".
+                      </p>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        {'body: { token: $exists } # Key must exist'}
                       </code>
                     </div>
                   </div>
