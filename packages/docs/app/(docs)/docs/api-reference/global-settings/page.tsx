@@ -90,7 +90,12 @@ global:
       delay: 1000
     expect:
       headers:
-        content-type: "application/json"`;
+        content-type: "application/json"
+
+  # Security controls (secure defaults; opt in/out as needed)
+  security:
+    allowedProtocols: [http, https]  # Block file://, ftp://, gopher:// etc.
+    allowPaths: false                # Confine file paths to the working directory`;
 
 const executionModesExample = `# Execution Mode Examples
 
@@ -549,6 +554,30 @@ export default function GlobalSettingsPage() {
                     <td className="p-3 text-sm text-muted-foreground">{}</td>
                     <td className="p-3 text-sm text-muted-foreground">
                       Default settings for all requests
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="p-3">
+                      <code className="text-sm">security.allowedProtocols</code>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">string[]</td>
+                    <td className="p-3 text-sm text-muted-foreground">['http', 'https']</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      URL protocols allowed for requests. Other protocols (file, ftp, gopher, …) are
+                      blocked before curl runs. Override with --allow-protocol or
+                      CURL_RUNNER_ALLOWED_PROTOCOLS.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="p-3">
+                      <code className="text-sm">security.allowPaths</code>
+                    </td>
+                    <td className="p-3 text-sm text-muted-foreground">boolean</td>
+                    <td className="p-3 text-sm text-muted-foreground">false</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      When false, output/saveToFile/formData file paths are confined to the working
+                      directory. Set true (or pass --allow-path) to permit paths outside it. SSL
+                      cert/key/ca paths are always exempt.
                     </td>
                   </tr>
                 </tbody>

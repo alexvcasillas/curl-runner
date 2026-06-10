@@ -393,6 +393,16 @@ describe('validateRegexPattern', () => {
     expect(validateRegexPattern(123, '\\d+')).toBe(true);
     expect(validateRegexPattern(true, 'true')).toBe(true);
   });
+
+  test('caps input at MAX_REGEX_INPUT_LENGTH to prevent ReDoS', () => {
+    // String exceeding 100k chars; pattern matches the sliced prefix.
+    const largeValue = 'abc'.repeat(50_000); // 150k chars
+    const start = Date.now();
+    const result = validateRegexPattern(largeValue, '^abc');
+    const elapsed = Date.now() - start;
+    expect(result).toBe(true);
+    expect(elapsed).toBeLessThan(5000);
+  });
 });
 
 describe('isRangePattern', () => {

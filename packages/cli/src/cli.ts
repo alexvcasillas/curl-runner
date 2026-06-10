@@ -32,6 +32,7 @@ import type {
   RequestConfig,
 } from './types/config';
 import { Logger } from './utils/logger';
+import { registerRequestSecrets } from './utils/secret-redactor';
 import { exportToCSV, exportToJSON } from './utils/stats';
 import { VersionChecker } from './utils/version-checker';
 import { getVersion } from './version';
@@ -158,6 +159,9 @@ class CurlRunnerCLI {
       process.exit(1);
     }
 
+    // Register inline secrets from request configs (after interpolation, before execution)
+    registerRequestSecrets(allRequests);
+
     // Execute based on mode
     if (mode === 'profile') {
       const profileConfig = buildProfileConfig(cliOptions, mergedConfig);
@@ -234,6 +238,9 @@ class CurlRunnerCLI {
       fileGroups.push({ file, requests: requestsWithSource, config });
       allRequests.push(...requestsWithSource);
     }
+
+    // Register inline secrets from all request configs (after interpolation, before execution)
+    registerRequestSecrets(allRequests);
 
     const executor = new RequestExecutor(globalConfig);
     let summary: ExecutionSummary;
@@ -702,6 +709,11 @@ ${this.logger.color('CI/CD OPTIONS:', 'yellow')}
   --strict-exit                 Exit with code 1 if any validation fails (for CI/CD)
   --fail-on <count>             Exit with code 1 if failures exceed this count
   --fail-on-percentage <pct>    Exit with code 1 if failure percentage exceeds this value
+
+${this.logger.color('SECURITY OPTIONS:', 'yellow')}
+  --allow-protocol <proto>      Permit a URL protocol beyond http/https (repeatable, e.g. ftp)
+  --allow-path                  Allow file paths outside the working directory
+  --no-redact                   Disable secret redaction in output and saved files
 
 ${this.logger.color('SNAPSHOT OPTIONS:', 'yellow')}
   -s, --snapshot                Enable snapshot testing

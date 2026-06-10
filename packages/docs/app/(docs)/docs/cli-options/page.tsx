@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle, Eye, Flag, Info } from 'lucide-react';
+import { AlertCircle, CheckCircle, Eye, Flag, Info, Lock } from 'lucide-react';
 import type { Metadata } from 'next';
 import { CodeBlockServer } from '@/components/code-block-server';
 import { H2, H3 } from '@/components/docs-heading';
@@ -264,6 +264,39 @@ const optionGroups = [
         default: 'false',
         description: 'Disable screen clearing between watch mode runs.',
         example: 'curl-runner api.yaml -w --no-watch-clear',
+      },
+    ],
+  },
+  {
+    title: 'Security',
+    icon: Lock,
+    options: [
+      {
+        short: null,
+        long: '--allow-protocol <proto>',
+        type: 'string',
+        default: 'http, https',
+        description:
+          'Permit an additional URL protocol beyond the default http/https allow-list (e.g. ftp, gopher, file). Repeatable. Requests using a non-allowed protocol are blocked before curl runs.',
+        example: 'curl-runner tests/ --allow-protocol ftp --allow-protocol file',
+      },
+      {
+        short: null,
+        long: '--allow-path',
+        type: 'boolean',
+        default: 'false',
+        description:
+          'Allow output, saveToFile, and formData file paths to point outside the working directory. By default these are confined to the current directory to prevent reads/writes of arbitrary files.',
+        example: 'curl-runner upload.yaml --allow-path',
+      },
+      {
+        short: null,
+        long: '--no-redact',
+        type: 'boolean',
+        default: 'false',
+        description:
+          'Disable automatic redaction of secrets (auth tokens/passwords, sensitive headers, and known key patterns) in console output and saved result files.',
+        example: 'curl-runner api.yaml --no-redact',
       },
     ],
   },

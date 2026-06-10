@@ -2,6 +2,14 @@
  * Response validation utilities.
  */
 
+/**
+ * Maximum string length passed to regex.test() to prevent ReDoS: a
+ * catastrophic-backtracking pattern over an unbounded response string can hang
+ * the process. Inputs longer than this are sliced before testing; matches at
+ * the start of the string still work correctly.
+ */
+const MAX_REGEX_INPUT_LENGTH = 100_000;
+
 import type {
   ExpectConfig,
   JsonValue,
@@ -319,7 +327,12 @@ export function validateRegexPattern(actualValue: JsonValue, pattern: string): b
   const stringValue = String(actualValue);
   try {
     const regex = new RegExp(pattern);
-    return regex.test(stringValue);
+    // Slice before testing to prevent ReDoS on large response strings.
+    const testStr =
+      stringValue.length > MAX_REGEX_INPUT_LENGTH
+        ? stringValue.slice(0, MAX_REGEX_INPUT_LENGTH)
+        : stringValue;
+    return regex.test(testStr);
   } catch {
     return false;
   }

@@ -1,6 +1,12 @@
 import type { ExecutionResult, ResponseStoreContext, StoreConfig } from '../types/config';
 
 /**
+ * Object keys that must never be traversed to prevent prototype-pollution
+ * attacks via user-supplied YAML paths or store variable names.
+ */
+const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+
+/**
  * Extracts a value from an object using a dot-notation path.
  * Supports paths like: "body.id", "body.data.token", "headers.content-type", "status"
  *
@@ -25,6 +31,10 @@ export function getValueByPath(obj: unknown, path: string): unknown {
     const arrayMatch = part.match(/^(\w+)\[(\d+)\]$/);
     if (arrayMatch) {
       const [, key, indexStr] = arrayMatch;
+      // Reject forbidden keys to prevent prototype pollution.
+      if (FORBIDDEN_KEYS.has(key)) {
+        return undefined;
+      }
       const index = Number.parseInt(indexStr, 10);
       current = (current as Record<string, unknown>)[key];
       if (Array.isArray(current)) {
@@ -36,6 +46,10 @@ export function getValueByPath(obj: unknown, path: string): unknown {
       // Direct numeric index for arrays
       current = current[Number.parseInt(part, 10)];
     } else {
+      // Reject forbidden keys to prevent prototype pollution.
+      if (FORBIDDEN_KEYS.has(part)) {
+        return undefined;
+      }
       current = (current as Record<string, unknown>)[part];
     }
   }
@@ -82,6 +96,10 @@ export function extractStoreValues(
   };
 
   for (const [varName, path] of Object.entries(storeConfig)) {
+    // Skip forbidden var names to prevent prototype pollution.
+    if (FORBIDDEN_KEYS.has(varName)) {
+      continue;
+    }
     const value = getValueByPath(responseObj, path);
     extracted[varName] = valueToString(value);
   }

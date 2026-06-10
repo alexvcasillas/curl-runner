@@ -15,10 +15,10 @@
     "build": "bun run --filter '*' build",
     "build:cli": "bun run --filter '@curl-runner/cli' build",
     "build:docs": "bun run --filter '@curl-runner/docs' build",
-    "format": "biome format --write .",
-    "lint": "biome lint .",
-    "check": "biome check --write .",
-    "check:ci": "biome ci .",
+    "format": "bunx @biomejs/biome format --write .",
+    "lint": "bunx @biomejs/biome lint .",
+    "check": "bunx @biomejs/biome check --write .",
+    "check:ci": "bunx @biomejs/biome ci .",
     "typecheck": "bun run --filter '*' typecheck",
     "typecheck:docs": "bun run --filter '@curl-runner/docs' typecheck",
     "cli": "bun run packages/cli/src/cli.ts",
@@ -59,7 +59,7 @@
   "license": "MIT",
   "lint-staged": {
     "*.{js,ts,tsx,jsx,json,css,md}": [
-      "biome check --write --no-errors-on-unmatched"
+      "bunx @biomejs/biome check --write --no-errors-on-unmatched"
     ]
   },
   "dependencies": {

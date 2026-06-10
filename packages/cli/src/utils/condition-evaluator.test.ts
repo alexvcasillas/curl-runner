@@ -286,6 +286,25 @@ describe('evaluateExpression', () => {
       const expr: ConditionExpression = { left: 'store.name', operator: 'matches', right: '[' };
       expect(evaluateExpression(expr, context).passed).toBe(false);
     });
+
+    test('should complete promptly against a very large input (ReDoS guard)', () => {
+      // Pathological pattern + large string that would cause catastrophic
+      // backtracking without the MAX_REGEX_INPUT_LENGTH cap.
+      const largeString = 'a'.repeat(150_000);
+      const largeContext: ResponseStoreContext = { body: largeString };
+      const expr: ConditionExpression = {
+        left: 'store.body',
+        operator: 'matches',
+        // This pattern is safe but the input is >100k chars; guard must slice it.
+        right: '^a+$',
+      };
+      const start = Date.now();
+      const result = evaluateExpression(expr, largeContext);
+      const elapsed = Date.now() - start;
+      expect(typeof result.passed).toBe('boolean');
+      // Should finish well under 5 s even with a naive regex engine.
+      expect(elapsed).toBeLessThan(5000);
+    });
   });
 });
 

@@ -39,6 +39,9 @@ export function loadEnvironmentConfig(): Partial<GlobalConfig> {
   // Timeouts & Retries
   loadRetryEnvVars(config);
 
+  // Security
+  loadSecurityEnvVars(config);
+
   return config;
 }
 
@@ -325,6 +328,24 @@ function loadRetryEnvVars(config: Partial<GlobalConfig>): void {
         ...config.defaults?.retry,
         delay: Number.parseInt(process.env.CURL_RUNNER_RETRY_DELAY, 10),
       },
+    };
+  }
+}
+
+function loadSecurityEnvVars(config: Partial<GlobalConfig>): void {
+  if (process.env.CURL_RUNNER_ALLOWED_PROTOCOLS) {
+    const protocols = process.env.CURL_RUNNER_ALLOWED_PROTOCOLS.split(',')
+      .map((p) => p.trim().toLowerCase())
+      .filter(Boolean);
+    if (protocols.length > 0) {
+      config.security = { ...config.security, allowedProtocols: protocols };
+    }
+  }
+
+  if (process.env.CURL_RUNNER_ALLOW_PATHS) {
+    config.security = {
+      ...config.security,
+      allowPaths: process.env.CURL_RUNNER_ALLOW_PATHS.toLowerCase() === 'true',
     };
   }
 }

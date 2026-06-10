@@ -173,7 +173,8 @@ describe('PooledCurlExecutor', () => {
 
       const args = executor.buildBatchedCommand(group);
 
-      expect(args).toContain('-d');
+      expect(args).toContain('--data-raw');
+      expect(args).not.toContain('-d');
       expect(args).toContain('{"name":"John","age":30}');
       expect(args).toContain('Content-Type: application/json');
     });
@@ -332,6 +333,68 @@ describe('PooledCurlExecutor', () => {
 
       expect(args).toContain('-x');
       expect(args).toContain('http://proxy:8080');
+    });
+
+    test('should place -- immediately before the URL for single request', () => {
+      const executor = new PooledCurlExecutor();
+      const url = 'https://api.example.com/users';
+      const group = {
+        host: 'https://api.example.com',
+        requests: [{ index: 0, config: { url, method: 'GET' as const } }],
+      };
+
+      const args = executor.buildBatchedCommand(group);
+
+      const urlIdx = args.lastIndexOf(url);
+      expect(urlIdx).toBeGreaterThan(0);
+      expect(args[urlIdx - 1]).toBe('--');
+    });
+
+    test('should place -- immediately before each URL in batched requests', () => {
+      const executor = new PooledCurlExecutor();
+      const url0 = 'https://api.example.com/users';
+      const url1 = 'https://api.example.com/items';
+      const group = {
+        host: 'https://api.example.com',
+        requests: [
+          { index: 0, config: { url: url0, method: 'GET' as const } },
+          { index: 1, config: { url: url1, method: 'GET' as const } },
+        ],
+      };
+
+      const args = executor.buildBatchedCommand(group);
+
+      const urlIdx0 = args.indexOf(url0);
+      expect(urlIdx0).toBeGreaterThan(0);
+      expect(args[urlIdx0 - 1]).toBe('--');
+
+      const urlIdx1 = args.indexOf(url1);
+      expect(urlIdx1).toBeGreaterThan(urlIdx0);
+      expect(args[urlIdx1 - 1]).toBe('--');
+    });
+
+    test('should pass body starting with @ verbatim via --data-raw', () => {
+      const executor = new PooledCurlExecutor();
+      const group = {
+        host: 'https://api.example.com',
+        requests: [
+          {
+            index: 0,
+            config: {
+              url: 'https://api.example.com/users',
+              method: 'POST' as const,
+              body: '@/etc/passwd',
+            },
+          },
+        ],
+      };
+
+      const args = executor.buildBatchedCommand(group);
+
+      const idx = args.indexOf('--data-raw');
+      expect(idx).toBeGreaterThanOrEqual(0);
+      expect(args[idx + 1]).toBe('@/etc/passwd');
+      expect(args).not.toContain('-d');
     });
   });
 

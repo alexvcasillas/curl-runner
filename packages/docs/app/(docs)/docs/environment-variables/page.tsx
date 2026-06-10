@@ -4,6 +4,7 @@ import {
   Eye,
   FileText,
   Layers,
+  Lock,
   Network,
   RefreshCw,
   RotateCcw,
@@ -290,6 +291,26 @@ const variables = [
     example: 'false',
     icon: Eye,
     color: { bg: 'bg-sky-500/10', text: 'text-sky-600 dark:text-sky-400' },
+  },
+  {
+    name: 'CURL_RUNNER_ALLOWED_PROTOCOLS',
+    description:
+      'Comma-separated URL protocols to allow. Requests using any other protocol (e.g. file, ftp, gopher) are blocked before curl runs.',
+    type: 'string',
+    default: 'http,https',
+    example: 'http,https,ftp',
+    icon: Lock,
+    color: { bg: 'bg-red-500/10', text: 'text-red-600 dark:text-red-400' },
+  },
+  {
+    name: 'CURL_RUNNER_ALLOW_PATHS',
+    description:
+      'Allow output/saveToFile/formData file paths outside the working directory. Defaults to false (paths confined to the current directory).',
+    type: 'boolean',
+    default: 'false',
+    example: 'true',
+    icon: Lock,
+    color: { bg: 'bg-red-500/10', text: 'text-red-600 dark:text-red-400' },
   },
 ];
 

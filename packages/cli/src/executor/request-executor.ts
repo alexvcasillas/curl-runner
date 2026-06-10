@@ -1,6 +1,8 @@
 import type { CurlExecutionResult } from '../core/curl';
 import { parseResponseBody } from '../core/curl';
 import { DEFAULT_RETRYABLE_STATUSES, postProcessResult, withRetry } from '../core/execution';
+import { resolveSafePath } from '../core/security/path-guard';
+import { DEFAULT_ALLOWED_PROTOCOLS, validateUrl } from '../core/security/url-guard';
 import { YamlParser } from '../parser/yaml';
 import { SnapshotManager } from '../snapshot/snapshot-manager';
 import type {
@@ -17,6 +19,7 @@ import { evaluateCondition } from '../utils/condition-evaluator';
 import { CurlBuilder } from '../utils/curl-builder';
 import { Logger } from '../utils/logger';
 import { createStoreContext, extractStoreValues } from '../utils/response-store';
+import { getGlobalRedactor } from '../utils/secret-redactor';
 import { PooledCurlExecutor } from './pooled-curl-executor';
 
 export class RequestExecutor {
@@ -32,7 +35,10 @@ export class RequestExecutor {
 
     // Initialize pooled executor if connection pooling is enabled
     if (globalConfig.connectionPool?.enabled) {
-      this.pooledExecutor = new PooledCurlExecutor(globalConfig.connectionPool);
+      this.pooledExecutor = new PooledCurlExecutor(
+        globalConfig.connectionPool,
+        globalConfig.security?.allowedProtocols ?? DEFAULT_ALLOWED_PROTOCOLS,
+      );
     }
   }
 
@@ -87,6 +93,42 @@ export class RequestExecutor {
     return undefined;
   }
 
+  /**
+   * Validates that all FS-bound paths in the request are confined to cwd
+   * (unless security.allowPaths is true).
+   * Returns an error string on the first violation, or undefined if all pass.
+   */
+  private validateRequestPaths(config: RequestConfig): string | undefined {
+    const allow = this.globalConfig.security?.allowPaths ?? false;
+
+    // output file
+    if (config.output) {
+      const result = resolveSafePath(config.output, { allow });
+      if (!result.valid) {
+        return result.error;
+      }
+    }
+
+    // Note: ssl ca/cert/key are intentionally NOT confined. They are TLS
+    // handshake material (commonly absolute system paths like /etc/ssl/...)
+    // and their contents are never transmitted to the server, so they are
+    // not an exfiltration vector like formData file attachments.
+
+    // formData file attachments
+    if (config.formData) {
+      for (const [fieldName, fieldValue] of Object.entries(config.formData)) {
+        if (this.isFileAttachment(fieldValue)) {
+          const result = resolveSafePath(fieldValue.file, { allow });
+          if (!result.valid) {
+            return `formData field "${fieldName}": ${result.error}`;
+          }
+        }
+      }
+    }
+
+    return undefined;
+  }
+
   async executeRequest(config: RequestConfig, index: number = 0): Promise<ExecutionResult> {
     const startTime = performance.now();
 
@@ -95,6 +137,21 @@ export class RequestExecutor {
     const requestLogger = new Logger(outputConfig);
 
     requestLogger.logRequestStart(config, index);
+
+    // Validate FS-bound paths are confined to working directory (before any filesystem access)
+    const pathError = this.validateRequestPaths(config);
+    if (pathError) {
+      const failedResult: ExecutionResult = {
+        request: config,
+        success: false,
+        error: pathError,
+        metrics: {
+          duration: performance.now() - startTime,
+        },
+      };
+      requestLogger.logRequestComplete(failedResult);
+      return failedResult;
+    }
 
     // Validate file attachments exist before executing
     const fileError = await this.validateFileAttachments(config);
@@ -111,7 +168,24 @@ export class RequestExecutor {
       return failedResult;
     }
 
-    const args = CurlBuilder.buildCommand(config);
+    // Validate URL protocol against allow-list (after interpolation, catches store-injected URLs)
+    const allowedProtocols =
+      this.globalConfig.security?.allowedProtocols ?? DEFAULT_ALLOWED_PROTOCOLS;
+    const urlGuard = validateUrl(config.url, allowedProtocols);
+    if (!urlGuard.valid) {
+      const failedResult: ExecutionResult = {
+        request: config,
+        success: false,
+        error: urlGuard.error,
+        metrics: {
+          duration: performance.now() - startTime,
+        },
+      };
+      requestLogger.logRequestComplete(failedResult);
+      return failedResult;
+    }
+
+    const args = CurlBuilder.buildCommand(config, allowedProtocols);
     requestLogger.logCommand(CurlBuilder.formatCommandForDisplay(args));
 
     // Dry run mode: show command and return mock result
@@ -350,19 +424,62 @@ export class RequestExecutor {
       `Using connection pooling (HTTP/2 multiplexing) for ${requests.length} requests`,
     );
 
+    // Validate all request URLs and FS paths before batching
+    const allowedProtocols =
+      this.globalConfig.security?.allowedProtocols ?? DEFAULT_ALLOWED_PROTOCOLS;
+    const preValidated: ExecutionResult[] = [];
+    const validRequests: RequestConfig[] = [];
+    for (const req of requests) {
+      const guard = validateUrl(req.url, allowedProtocols);
+      if (!guard.valid) {
+        preValidated.push({
+          request: req,
+          success: false,
+          error: guard.error,
+          metrics: { duration: 0 },
+        });
+        continue;
+      }
+      const pathError = this.validateRequestPaths(req);
+      if (pathError) {
+        preValidated.push({
+          request: req,
+          success: false,
+          error: pathError,
+          metrics: { duration: 0 },
+        });
+      } else {
+        validRequests.push(req);
+      }
+    }
+
     // Log host groups for visibility
-    const groups = this.pooledExecutor!.groupRequestsByHost(requests);
+    const groups = this.pooledExecutor!.groupRequestsByHost(validRequests);
     for (const group of groups) {
       this.logger.logInfo(`  ${group.host}: ${group.requests.length} request(s) batched`);
     }
 
-    // Execute all batches
-    const rawResults = await this.pooledExecutor!.executeAll(requests);
+    // Execute all batches (only valid requests)
+    const rawResults =
+      validRequests.length > 0 ? await this.pooledExecutor!.executeAll(validRequests) : [];
+
+    // Build a Set of valid request indices for fast lookup during merge
+    const validIndexSet = new Set(validRequests.map((r) => requests.indexOf(r)));
+
+    // Merge blocked and valid results back in original request order
+    let validIdx = 0;
+    let blockedIdx = 0;
+    const orderedRaw: ExecutionResult[] = requests.map((_req, i) => {
+      if (!validIndexSet.has(i)) {
+        return preValidated[blockedIdx++];
+      }
+      return rawResults[validIdx++];
+    });
 
     // Post-process results: validation, snapshots, logging
     const results: ExecutionResult[] = [];
-    for (let i = 0; i < rawResults.length; i++) {
-      const result = rawResults[i];
+    for (let i = 0; i < orderedRaw.length; i++) {
+      const result = orderedRaw[i];
       const config = requests[i];
 
       // Create per-request logger with merged output configuration
@@ -371,11 +488,13 @@ export class RequestExecutor {
 
       requestLogger.logRequestStart(config, i + 1);
 
-      // Apply validation and snapshot testing
-      await postProcessResult(result, config, {
-        snapshotManager: this.snapshotManager,
-        snapshotConfig: this.getSnapshotConfig(config),
-      });
+      // Skip post-processing for pre-validation failures (no response to validate)
+      if (result.success) {
+        await postProcessResult(result, config, {
+          snapshotManager: this.snapshotManager,
+          snapshotConfig: this.getSnapshotConfig(config),
+        });
+      }
 
       requestLogger.logRequestComplete(result);
       results.push(result);
@@ -428,7 +547,15 @@ export class RequestExecutor {
       return;
     }
 
-    const content = JSON.stringify(summary, null, 2);
+    const allow = this.globalConfig.security?.allowPaths ?? false;
+    const pathCheck = resolveSafePath(file, { allow });
+    if (!pathCheck.valid) {
+      this.logger.logError(`Cannot save results: ${pathCheck.error}`);
+      return;
+    }
+
+    const raw = JSON.stringify(summary, null, 2);
+    const content = getGlobalRedactor().redact(raw);
     await Bun.write(file, content);
     this.logger.logInfo(`Results saved to ${file}`);
   }

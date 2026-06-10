@@ -14,9 +14,9 @@
     "start": "bun run dist/cli.js",
     "dev": "bun run src/cli.ts",
     "build": "bun run scripts/build-with-version.ts",
-    "format": "biome format --write .",
-    "lint": "biome lint .",
-    "check": "biome check --write .",
+    "format": "bunx @biomejs/biome format --write .",
+    "lint": "bunx @biomejs/biome lint .",
+    "check": "bunx @biomejs/biome check --write .",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

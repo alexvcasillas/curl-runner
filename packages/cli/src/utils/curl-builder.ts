@@ -6,6 +6,7 @@ import {
   getStatusCode,
   parseMetrics,
 } from '../core/curl';
+import { DEFAULT_ALLOWED_PROTOCOLS } from '../core/security/url-guard';
 import type { RequestConfig } from '../types/config';
 
 /**
@@ -16,15 +17,20 @@ export class CurlBuilder {
   /**
    * Builds curl command-line arguments from a request config.
    */
-  static buildCommand(config: RequestConfig): string[] {
+  static buildCommand(
+    config: RequestConfig,
+    allowedProtocols: string[] = DEFAULT_ALLOWED_PROTOCOLS,
+  ): string[] {
     const { args, url } = buildCurlArgs(config, {
       includeSilentFlags: true,
       includeHttp2Flag: true,
       includeOutputFlag: true,
+      allowedProtocols,
     });
 
-    // Add URL as the last argument
-    args.push(url);
+    // Add URL as the last argument; -- prevents curl from treating a URL
+    // starting with '-' as an option (argument injection guard)
+    args.push('--', url);
     return args;
   }
 

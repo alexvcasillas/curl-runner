@@ -23,7 +23,8 @@ describe('CurlBuilder', () => {
 
       expect(args).toContain('-X');
       expect(args).toContain('POST');
-      expect(args).toContain('-d');
+      expect(args).toContain('--data-raw');
+      expect(args).not.toContain('-d');
       expect(args).toContain('{"name":"test"}');
       expect(args).toContain('-H');
       expect(args).toContain('Content-Type: application/json');
@@ -159,6 +160,7 @@ describe('CurlBuilder', () => {
       expect(args).toContain('--form-string');
       expect(args).toContain('field=value');
       expect(args).not.toContain('-d');
+      expect(args).not.toContain('--data-raw');
     });
 
     test('should handle boolean form field values', () => {
@@ -193,7 +195,7 @@ describe('CurlBuilder', () => {
         body: { nested: { key: 'value' } },
       });
 
-      expect(args).toContain('-d');
+      expect(args).toContain('--data-raw');
       expect(args).toContain('{"nested":{"key":"value"}}');
     });
 
@@ -224,6 +226,52 @@ describe('CurlBuilder', () => {
       });
 
       expect(args).not.toContain('--http2');
+    });
+
+    test('should place -- immediately before the URL', () => {
+      const args = CurlBuilder.buildCommand({
+        url: 'https://example.com/api',
+        method: 'GET',
+      });
+
+      const urlIdx = args.lastIndexOf('https://example.com/api');
+      expect(urlIdx).toBeGreaterThan(0);
+      expect(args[urlIdx - 1]).toBe('--');
+    });
+
+    test('should place -- before a URL starting with -', () => {
+      const args = CurlBuilder.buildCommand({
+        url: '-K/tmp/evil',
+        method: 'GET',
+      });
+
+      const urlIdx = args.lastIndexOf('-K/tmp/evil');
+      expect(urlIdx).toBeGreaterThan(0);
+      expect(args[urlIdx - 1]).toBe('--');
+    });
+
+    test('should use --data-raw not -d for raw body', () => {
+      const args = CurlBuilder.buildCommand({
+        url: 'https://example.com/api',
+        method: 'POST',
+        body: 'raw payload',
+      });
+
+      expect(args).toContain('--data-raw');
+      expect(args).not.toContain('-d');
+    });
+
+    test('should pass body starting with @ verbatim via --data-raw', () => {
+      const args = CurlBuilder.buildCommand({
+        url: 'https://example.com/api',
+        method: 'POST',
+        body: '@/etc/passwd',
+      });
+
+      const dataRawIdx = args.indexOf('--data-raw');
+      expect(dataRawIdx).toBeGreaterThanOrEqual(0);
+      expect(args[dataRawIdx + 1]).toBe('@/etc/passwd');
+      expect(args).not.toContain('-d');
     });
   });
 

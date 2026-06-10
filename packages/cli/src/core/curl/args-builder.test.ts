@@ -86,7 +86,8 @@ describe('buildCurlArgs', () => {
       method: 'POST',
       body: { name: 'test' },
     });
-    expect(args).toContain('-d');
+    expect(args).toContain('--data-raw');
+    expect(args).not.toContain('-d');
     expect(args).toContain('{"name":"test"}');
     expect(args).toContain('Content-Type: application/json');
   });
@@ -97,8 +98,21 @@ describe('buildCurlArgs', () => {
       method: 'POST',
       body: 'raw data',
     });
-    expect(args).toContain('-d');
+    expect(args).toContain('--data-raw');
+    expect(args).not.toContain('-d');
     expect(args).toContain('raw data');
+  });
+
+  test('passes body starting with @ verbatim via --data-raw', () => {
+    const { args } = buildCurlArgs({
+      url: 'https://api.example.com',
+      method: 'POST',
+      body: '@/etc/passwd',
+    });
+    const idx = args.indexOf('--data-raw');
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(args[idx + 1]).toBe('@/etc/passwd');
+    expect(args).not.toContain('-d');
   });
 
   test('does not add Content-Type if already present', () => {
@@ -274,6 +288,38 @@ describe('buildCurlArgs', () => {
     );
     expect(args).not.toContain('-s');
     expect(args).not.toContain('-S');
+  });
+
+  test('emits --proto-redir with default allowed protocols', () => {
+    const { args } = buildCurlArgs({ url: 'https://api.example.com' });
+    expect(args).toContain('--proto-redir');
+    const idx = args.indexOf('--proto-redir');
+    expect(args[idx + 1]).toBe('-all,http,https');
+  });
+
+  test('emits --proto with default allowed protocols', () => {
+    const { args } = buildCurlArgs({ url: 'https://api.example.com' });
+    expect(args).toContain('--proto');
+    const idx = args.indexOf('--proto');
+    expect(args[idx + 1]).toBe('-all,http,https');
+  });
+
+  test('emits --proto-redir with custom allowed protocols', () => {
+    const { args } = buildCurlArgs(
+      { url: 'ftp://files.example.com' },
+      { allowedProtocols: ['http', 'https', 'ftp'] },
+    );
+    expect(args).toContain('--proto-redir');
+    const idx = args.indexOf('--proto-redir');
+    expect(args[idx + 1]).toBe('-all,http,https,ftp');
+  });
+
+  test('emits --proto and --proto-redir each exactly once', () => {
+    const { args } = buildCurlArgs({ url: 'https://api.example.com' });
+    const protoCount = args.filter((a) => a === '--proto').length;
+    const protoRedirCount = args.filter((a) => a === '--proto-redir').length;
+    expect(protoCount).toBe(1);
+    expect(protoRedirCount).toBe(1);
   });
 
   test('appends query params to URL', () => {

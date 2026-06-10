@@ -11,6 +11,7 @@ import {
   parseResponseBody,
   type ResponseHeaderBlock,
 } from '../core/curl';
+import { DEFAULT_ALLOWED_PROTOCOLS } from '../core/security/url-guard';
 import type { ConnectionPoolConfig, ExecutionResult, RequestConfig } from '../types/config';
 
 interface BatchedRequest {
@@ -30,8 +31,12 @@ interface HostGroup {
  */
 export class PooledCurlExecutor {
   private poolConfig: ConnectionPoolConfig;
+  private allowedProtocols: string[];
 
-  constructor(poolConfig: ConnectionPoolConfig = {}) {
+  constructor(
+    poolConfig: ConnectionPoolConfig = {},
+    allowedProtocols: string[] = DEFAULT_ALLOWED_PROTOCOLS,
+  ) {
     this.poolConfig = {
       enabled: true,
       maxStreamsPerHost: 10,
@@ -39,6 +44,7 @@ export class PooledCurlExecutor {
       connectTimeout: 30,
       ...poolConfig,
     };
+    this.allowedProtocols = allowedProtocols;
   }
 
   /**
@@ -82,9 +88,11 @@ export class PooledCurlExecutor {
       includeSilentFlags: false, // Added at batch level
       includeHttp2Flag: false, // Added at batch level
       includeOutputFlag: false, // Not used in batching
+      allowedProtocols: this.allowedProtocols,
     });
 
-    args.push(url);
+    // -- prevents curl from treating a URL starting with '-' as an option
+    args.push('--', url);
     return args;
   }
 

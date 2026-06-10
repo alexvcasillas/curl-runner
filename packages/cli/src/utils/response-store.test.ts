@@ -187,6 +187,45 @@ describe('createStoreContext', () => {
   });
 });
 
+describe('prototype pollution guards', () => {
+  test('getValueByPath returns undefined for __proto__ path segment', () => {
+    const obj = { a: { b: 1 } };
+    expect(getValueByPath(obj, '__proto__.polluted')).toBeUndefined();
+  });
+
+  test('getValueByPath returns undefined for prototype path segment', () => {
+    const obj = { a: 1 };
+    expect(getValueByPath(obj, 'prototype.x')).toBeUndefined();
+  });
+
+  test('getValueByPath returns undefined for constructor path segment', () => {
+    const obj = { a: 1 };
+    expect(getValueByPath(obj, 'constructor.name')).toBeUndefined();
+  });
+
+  test('getValueByPath does not pollute Object.prototype', () => {
+    const obj = {};
+    getValueByPath(obj, '__proto__.polluted');
+    // biome-ignore lint/suspicious/noExplicitAny: testing prototype pollution
+    expect((Object.prototype as any).polluted).toBeUndefined();
+  });
+
+  test('extractStoreValues skips __proto__ var name', () => {
+    const mockResult: ExecutionResult = {
+      request: { url: 'https://example.com', method: 'GET' },
+      success: true,
+      status: 200,
+      headers: {},
+      body: { x: 1 },
+      metrics: { duration: 10, size: 0 },
+    };
+    const extracted = extractStoreValues(mockResult, { __proto__: 'body.x' });
+    expect(Object.hasOwn(extracted, '__proto__')).toBe(false);
+    // biome-ignore lint/suspicious/noExplicitAny: testing prototype pollution
+    expect((Object.prototype as any).x).toBeUndefined();
+  });
+});
+
 describe('mergeStoreContext', () => {
   test('should merge contexts', () => {
     const existing = { a: '1', b: '2' };

@@ -43,6 +43,11 @@ export interface CurlArgsOptions {
   includeHttp2Flag?: boolean;
   /** Whether to include output file flag */
   includeOutputFlag?: boolean;
+  /**
+   * Allowed URL protocols for --proto and --proto-redir curl flags.
+   * Defaults to ['http', 'https'] when unset.
+   */
+  allowedProtocols?: string[];
 }
 
 /**

@@ -148,6 +148,23 @@ export interface GlobalConfig {
    * Compare responses between environments or runs to detect API drift.
    */
   diff?: GlobalDiffConfig;
+  /**
+   * Security configuration.
+   * Controls URL protocol allow-lists and other security constraints.
+   */
+  security?: {
+    /**
+     * Allowed URL protocols. Requests using other protocols are rejected.
+     * Defaults to ['http', 'https'] when unset.
+     */
+    allowedProtocols?: string[];
+    /**
+     * Allow filesystem paths outside the working directory.
+     * When false (default), output/ssl/formData paths are confined to cwd.
+     * Set to true or pass --allow-path to opt out of confinement.
+     */
+    allowPaths?: boolean;
+  };
   variables?: Record<string, string>;
   output?: {
     verbose?: boolean;
