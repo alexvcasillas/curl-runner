@@ -86,7 +86,8 @@ describe('buildCurlArgs', () => {
       method: 'POST',
       body: { name: 'test' },
     });
-    expect(args).toContain('-d');
+    expect(args).toContain('--data-raw');
+    expect(args).not.toContain('-d');
     expect(args).toContain('{"name":"test"}');
     expect(args).toContain('Content-Type: application/json');
   });
@@ -97,8 +98,21 @@ describe('buildCurlArgs', () => {
       method: 'POST',
       body: 'raw data',
     });
-    expect(args).toContain('-d');
+    expect(args).toContain('--data-raw');
+    expect(args).not.toContain('-d');
     expect(args).toContain('raw data');
+  });
+
+  test('passes body starting with @ verbatim via --data-raw', () => {
+    const { args } = buildCurlArgs({
+      url: 'https://api.example.com',
+      method: 'POST',
+      body: '@/etc/passwd',
+    });
+    const idx = args.indexOf('--data-raw');
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(args[idx + 1]).toBe('@/etc/passwd');
+    expect(args).not.toContain('-d');
   });
 
   test('does not add Content-Type if already present', () => {

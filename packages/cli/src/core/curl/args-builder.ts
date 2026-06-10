@@ -71,7 +71,7 @@ export function buildCurlArgs(
     }
   } else if (config.body) {
     const bodyStr = typeof config.body === 'string' ? config.body : JSON.stringify(config.body);
-    args.push('-d', bodyStr);
+    args.push('--data-raw', bodyStr);
 
     // Auto-add Content-Type if not present
     if (!config.headers?.['Content-Type']) {

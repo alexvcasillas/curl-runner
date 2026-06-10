@@ -23,8 +23,9 @@ export class CurlBuilder {
       includeOutputFlag: true,
     });
 
-    // Add URL as the last argument
-    args.push(url);
+    // Add URL as the last argument; -- prevents curl from treating a URL
+    // starting with '-' as an option (argument injection guard)
+    args.push('--', url);
     return args;
   }
 

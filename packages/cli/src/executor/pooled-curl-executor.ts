@@ -84,7 +84,8 @@ export class PooledCurlExecutor {
       includeOutputFlag: false, // Not used in batching
     });
 
-    args.push(url);
+    // -- prevents curl from treating a URL starting with '-' as an option
+    args.push('--', url);
     return args;
   }
 
