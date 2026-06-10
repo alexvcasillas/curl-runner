@@ -81,6 +81,11 @@ export const docsConfig: SidebarConfig = {
           href: '/docs/global-settings',
           description: 'Configure global execution settings',
         },
+        {
+          title: 'Security',
+          href: '/docs/security',
+          description: 'Protocol allow-list, path confinement, and secret redaction',
+        },
       ],
     },
     {

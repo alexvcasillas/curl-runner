@@ -710,6 +710,11 @@ ${this.logger.color('CI/CD OPTIONS:', 'yellow')}
   --fail-on <count>             Exit with code 1 if failures exceed this count
   --fail-on-percentage <pct>    Exit with code 1 if failure percentage exceeds this value
 
+${this.logger.color('SECURITY OPTIONS:', 'yellow')}
+  --allow-protocol <proto>      Permit a URL protocol beyond http/https (repeatable, e.g. ftp)
+  --allow-path                  Allow file paths outside the working directory
+  --no-redact                   Disable secret redaction in output and saved files
+
 ${this.logger.color('SNAPSHOT OPTIONS:', 'yellow')}
   -s, --snapshot                Enable snapshot testing
   -u, --update-snapshots        Update all snapshots
