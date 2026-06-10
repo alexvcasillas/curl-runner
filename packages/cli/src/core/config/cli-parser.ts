@@ -72,6 +72,9 @@ export interface CLIOptions {
   failOn?: number;
   failOnPercentage?: number;
 
+  // Security
+  allowProtocols?: string[];
+
   // Meta
   help?: boolean;
   version?: boolean;
@@ -310,6 +313,13 @@ function parseLongFlag(
       if (percentage >= 0 && percentage <= 100) {
         options.failOnPercentage = percentage;
       }
+      return 1;
+    }
+
+    // Security
+    case 'allow-protocol': {
+      const proto = nextArg!.toLowerCase();
+      options.allowProtocols = options.allowProtocols ? [...options.allowProtocols, proto] : [proto];
       return 1;
     }
 

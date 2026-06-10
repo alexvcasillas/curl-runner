@@ -290,6 +290,38 @@ describe('buildCurlArgs', () => {
     expect(args).not.toContain('-S');
   });
 
+  test('emits --proto-redir with default allowed protocols', () => {
+    const { args } = buildCurlArgs({ url: 'https://api.example.com' });
+    expect(args).toContain('--proto-redir');
+    const idx = args.indexOf('--proto-redir');
+    expect(args[idx + 1]).toBe('-all,http,https');
+  });
+
+  test('emits --proto with default allowed protocols', () => {
+    const { args } = buildCurlArgs({ url: 'https://api.example.com' });
+    expect(args).toContain('--proto');
+    const idx = args.indexOf('--proto');
+    expect(args[idx + 1]).toBe('-all,http,https');
+  });
+
+  test('emits --proto-redir with custom allowed protocols', () => {
+    const { args } = buildCurlArgs(
+      { url: 'ftp://files.example.com' },
+      { allowedProtocols: ['http', 'https', 'ftp'] },
+    );
+    expect(args).toContain('--proto-redir');
+    const idx = args.indexOf('--proto-redir');
+    expect(args[idx + 1]).toBe('-all,http,https,ftp');
+  });
+
+  test('emits --proto and --proto-redir each exactly once', () => {
+    const { args } = buildCurlArgs({ url: 'https://api.example.com' });
+    const protoCount = args.filter((a) => a === '--proto').length;
+    const protoRedirCount = args.filter((a) => a === '--proto-redir').length;
+    expect(protoCount).toBe(1);
+    expect(protoRedirCount).toBe(1);
+  });
+
   test('appends query params to URL', () => {
     const { url } = buildCurlArgs({
       url: 'https://api.example.com/search',

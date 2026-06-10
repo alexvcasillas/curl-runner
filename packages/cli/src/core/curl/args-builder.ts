@@ -4,6 +4,7 @@
  */
 
 import type { RequestConfig } from '../../types/config';
+import { DEFAULT_ALLOWED_PROTOCOLS } from '../security/url-guard';
 import { type CurlArgsOptions, type CurlArgsResult, isFileAttachment } from './types';
 
 const DEFAULT_WRITE_OUT = '\n__CURL_METRICS_START__%{json}__CURL_METRICS_END__';
@@ -21,6 +22,7 @@ export function buildCurlArgs(
     includeSilentFlags = true,
     includeHttp2Flag = true,
     includeOutputFlag = true,
+    allowedProtocols = DEFAULT_ALLOWED_PROTOCOLS,
   } = options;
 
   const args: string[] = [];
@@ -123,6 +125,11 @@ export function buildCurlArgs(
   if (includeHttp2Flag && config.http2) {
     args.push('--http2');
   }
+
+  // Restrict allowed transfer and redirect protocols (security: prevent SSRF via unexpected protos)
+  const protoList = `-all,${allowedProtocols.join(',')}`;
+  args.push('--proto', protoList);
+  args.push('--proto-redir', protoList);
 
   // Silent mode (suppress progress but show errors)
   if (includeSilentFlags) {

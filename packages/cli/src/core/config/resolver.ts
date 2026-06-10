@@ -4,6 +4,7 @@
  */
 
 import type { GlobalConfig, ProfileConfig, WatchConfig } from '../../types/config';
+import { DEFAULT_ALLOWED_PROTOCOLS } from '../security/url-guard';
 import { getGlobalRedactor } from '../../utils/secret-redactor';
 import { type CLIOptions, detectEarlyExit, detectSubcommand, parseCliArgs } from './cli-parser';
 import { loadEnvFiles } from './env-file-loader';
@@ -198,6 +199,7 @@ export function mergeGlobalConfigs(
     snapshot: { ...base.snapshot, ...override.snapshot },
     diff: { ...base.diff, ...override.diff },
     connectionPool: { ...base.connectionPool, ...override.connectionPool },
+    security: { ...base.security, ...override.security },
   } as GlobalConfig;
 }
 
@@ -347,6 +349,16 @@ function applyCliOptionsToConfig(config: GlobalConfig, options: CLIOptions): Glo
   }
   if (options.diffOutput !== undefined) {
     result.diff = { ...result.diff, outputFormat: options.diffOutput };
+  }
+
+  // Security
+  if (options.allowProtocols && options.allowProtocols.length > 0) {
+    result.security = { ...result.security, allowedProtocols: options.allowProtocols };
+  }
+
+  // Ensure security.allowedProtocols always has a default
+  if (!result.security?.allowedProtocols || result.security.allowedProtocols.length === 0) {
+    result.security = { ...result.security, allowedProtocols: DEFAULT_ALLOWED_PROTOCOLS };
   }
 
   return result;

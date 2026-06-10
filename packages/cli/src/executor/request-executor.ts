@@ -1,6 +1,7 @@
 import type { CurlExecutionResult } from '../core/curl';
 import { parseResponseBody } from '../core/curl';
 import { DEFAULT_RETRYABLE_STATUSES, postProcessResult, withRetry } from '../core/execution';
+import { DEFAULT_ALLOWED_PROTOCOLS, validateUrl } from '../core/security/url-guard';
 import { YamlParser } from '../parser/yaml';
 import { SnapshotManager } from '../snapshot/snapshot-manager';
 import type {
@@ -32,7 +33,10 @@ export class RequestExecutor {
 
     // Initialize pooled executor if connection pooling is enabled
     if (globalConfig.connectionPool?.enabled) {
-      this.pooledExecutor = new PooledCurlExecutor(globalConfig.connectionPool);
+      this.pooledExecutor = new PooledCurlExecutor(
+        globalConfig.connectionPool,
+        globalConfig.security?.allowedProtocols ?? DEFAULT_ALLOWED_PROTOCOLS,
+      );
     }
   }
 
@@ -111,7 +115,24 @@ export class RequestExecutor {
       return failedResult;
     }
 
-    const args = CurlBuilder.buildCommand(config);
+    // Validate URL protocol against allow-list (after interpolation, catches store-injected URLs)
+    const allowedProtocols =
+      this.globalConfig.security?.allowedProtocols ?? DEFAULT_ALLOWED_PROTOCOLS;
+    const urlGuard = validateUrl(config.url, allowedProtocols);
+    if (!urlGuard.valid) {
+      const failedResult: ExecutionResult = {
+        request: config,
+        success: false,
+        error: urlGuard.error,
+        metrics: {
+          duration: performance.now() - startTime,
+        },
+      };
+      requestLogger.logRequestComplete(failedResult);
+      return failedResult;
+    }
+
+    const args = CurlBuilder.buildCommand(config, allowedProtocols);
     requestLogger.logCommand(CurlBuilder.formatCommandForDisplay(args));
 
     // Dry run mode: show command and return mock result
@@ -350,19 +371,51 @@ export class RequestExecutor {
       `Using connection pooling (HTTP/2 multiplexing) for ${requests.length} requests`,
     );
 
+    // Validate all request URLs before batching (catches store-injected URLs)
+    const allowedProtocols =
+      this.globalConfig.security?.allowedProtocols ?? DEFAULT_ALLOWED_PROTOCOLS;
+    const preValidated: ExecutionResult[] = [];
+    const validRequests: RequestConfig[] = [];
+    for (const req of requests) {
+      const guard = validateUrl(req.url, allowedProtocols);
+      if (!guard.valid) {
+        preValidated.push({
+          request: req,
+          success: false,
+          error: guard.error,
+          metrics: { duration: 0 },
+        });
+      } else {
+        validRequests.push(req);
+      }
+    }
+
     // Log host groups for visibility
-    const groups = this.pooledExecutor!.groupRequestsByHost(requests);
+    const groups = this.pooledExecutor!.groupRequestsByHost(validRequests);
     for (const group of groups) {
       this.logger.logInfo(`  ${group.host}: ${group.requests.length} request(s) batched`);
     }
 
-    // Execute all batches
-    const rawResults = await this.pooledExecutor!.executeAll(requests);
+    // Execute all batches (only valid requests)
+    const rawResults = validRequests.length > 0
+      ? await this.pooledExecutor!.executeAll(validRequests)
+      : [];
+
+    // Merge blocked and valid results back in original request order
+    let validIdx = 0;
+    let blockedIdx = 0;
+    const orderedRaw: ExecutionResult[] = requests.map((req) => {
+      const guard = validateUrl(req.url, allowedProtocols);
+      if (!guard.valid) {
+        return preValidated[blockedIdx++];
+      }
+      return rawResults[validIdx++];
+    });
 
     // Post-process results: validation, snapshots, logging
     const results: ExecutionResult[] = [];
-    for (let i = 0; i < rawResults.length; i++) {
-      const result = rawResults[i];
+    for (let i = 0; i < orderedRaw.length; i++) {
+      const result = orderedRaw[i];
       const config = requests[i];
 
       // Create per-request logger with merged output configuration
@@ -371,11 +424,13 @@ export class RequestExecutor {
 
       requestLogger.logRequestStart(config, i + 1);
 
-      // Apply validation and snapshot testing
-      await postProcessResult(result, config, {
-        snapshotManager: this.snapshotManager,
-        snapshotConfig: this.getSnapshotConfig(config),
-      });
+      // Skip post-processing for pre-validation failures (no response to validate)
+      if (result.success) {
+        await postProcessResult(result, config, {
+          snapshotManager: this.snapshotManager,
+          snapshotConfig: this.getSnapshotConfig(config),
+        });
+      }
 
       requestLogger.logRequestComplete(result);
       results.push(result);
