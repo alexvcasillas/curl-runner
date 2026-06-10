@@ -7,6 +7,14 @@ import type {
 import { getValueByPath, valueToString } from './response-store';
 
 /**
+ * Maximum string length passed to regex.test() to prevent ReDoS: a
+ * catastrophic-backtracking pattern over an unbounded response string can hang
+ * the process. Inputs longer than this are sliced before testing; matches at
+ * the start of the string still work correctly.
+ */
+const MAX_REGEX_INPUT_LENGTH = 100_000;
+
+/**
  * Result of evaluating a condition.
  */
 export interface ConditionResult {
@@ -240,7 +248,12 @@ export function evaluateExpression(
       try {
         const flags = caseSensitive ? '' : 'i';
         const regex = new RegExp(pattern, flags);
-        const passed = regex.test(leftStr);
+        // Slice before testing to prevent ReDoS on large response strings.
+        const testStr =
+          leftStr.length > MAX_REGEX_INPUT_LENGTH
+            ? leftStr.slice(0, MAX_REGEX_INPUT_LENGTH)
+            : leftStr;
+        const passed = regex.test(testStr);
         return { passed, description };
       } catch {
         // Invalid regex pattern

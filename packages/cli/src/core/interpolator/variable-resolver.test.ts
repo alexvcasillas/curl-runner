@@ -39,6 +39,35 @@ describe('interpolate', () => {
     });
   });
 
+  describe('prototype pollution guard', () => {
+    test('skips __proto__ key when interpolating objects', () => {
+      const malicious = Object.create(null) as Record<string, unknown>;
+      malicious.__proto__ = { polluted: true };
+      malicious.safe = 'value';
+      const result = interpolate(malicious, {}) as Record<string, unknown>;
+      expect(result.safe).toBe('value');
+      expect(Object.prototype.hasOwnProperty.call(result, '__proto__')).toBe(false);
+      // biome-ignore lint/suspicious/noExplicitAny: testing prototype pollution
+      expect((Object.prototype as any).polluted).toBeUndefined();
+    });
+
+    test('skips prototype key when interpolating objects', () => {
+      // biome-ignore lint/suspicious/noExplicitAny: constructing a malicious object
+      const malicious: any = { prototype: { evil: true }, normal: 'ok' };
+      const result = interpolate(malicious, {}) as Record<string, unknown>;
+      expect(result.normal).toBe('ok');
+      expect(Object.prototype.hasOwnProperty.call(result, 'prototype')).toBe(false);
+    });
+
+    test('skips constructor key when interpolating objects', () => {
+      // biome-ignore lint/suspicious/noExplicitAny: constructing a malicious object
+      const malicious: any = { constructor: 'overwrite', normal: 'ok' };
+      const result = interpolate(malicious, {}) as Record<string, unknown>;
+      expect(result.normal).toBe('ok');
+      expect(Object.prototype.hasOwnProperty.call(result, 'constructor')).toBe(false);
+    });
+  });
+
   describe('objects and arrays', () => {
     test('interpolates nested objects', () => {
       const obj = {

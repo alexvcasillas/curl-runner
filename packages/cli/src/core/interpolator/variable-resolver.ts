@@ -12,6 +12,12 @@ import type { InterpolateOptions, StoreContext, VariableRef, Variables } from '.
 const DYNAMIC_PREFIXES = ['DATE', 'TIME', 'UUID', 'RANDOM'] as const;
 
 /**
+ * Object keys that must never be copied during interpolation to prevent
+ * prototype-pollution attacks via user-supplied YAML keys.
+ */
+const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+
+/**
  * Interpolates variables in an object recursively.
  *
  * Supports:
@@ -36,6 +42,8 @@ export function interpolate(obj: unknown, options: InterpolateOptions = {}): unk
   if (obj && typeof obj === 'object') {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
+      // Skip forbidden keys to prevent prototype-pollution via YAML keys.
+      if (FORBIDDEN_KEYS.has(key)) continue;
       result[key] = interpolate(value, options);
     }
     return result;
