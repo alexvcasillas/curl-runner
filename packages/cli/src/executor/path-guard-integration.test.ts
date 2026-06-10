@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
-import { resolve } from 'node:path';
+import type { GlobalConfig, RequestConfig } from '../types/config';
 import { CurlBuilder } from '../utils/curl-builder';
 import { RequestExecutor } from './request-executor';
-import type { GlobalConfig, RequestConfig } from '../types/config';
 
 /**
  * Integration tests: FS-path-escaping requests yield success:false without

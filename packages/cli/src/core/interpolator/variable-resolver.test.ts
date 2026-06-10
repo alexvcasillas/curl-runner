@@ -46,7 +46,7 @@ describe('interpolate', () => {
       malicious.safe = 'value';
       const result = interpolate(malicious, {}) as Record<string, unknown>;
       expect(result.safe).toBe('value');
-      expect(Object.prototype.hasOwnProperty.call(result, '__proto__')).toBe(false);
+      expect(Object.hasOwn(result, '__proto__')).toBe(false);
       // biome-ignore lint/suspicious/noExplicitAny: testing prototype pollution
       expect((Object.prototype as any).polluted).toBeUndefined();
     });
@@ -56,7 +56,7 @@ describe('interpolate', () => {
       const malicious: any = { prototype: { evil: true }, normal: 'ok' };
       const result = interpolate(malicious, {}) as Record<string, unknown>;
       expect(result.normal).toBe('ok');
-      expect(Object.prototype.hasOwnProperty.call(result, 'prototype')).toBe(false);
+      expect(Object.hasOwn(result, 'prototype')).toBe(false);
     });
 
     test('skips constructor key when interpolating objects', () => {
@@ -64,7 +64,7 @@ describe('interpolate', () => {
       const malicious: any = { constructor: 'overwrite', normal: 'ok' };
       const result = interpolate(malicious, {}) as Record<string, unknown>;
       expect(result.normal).toBe('ok');
-      expect(Object.prototype.hasOwnProperty.call(result, 'constructor')).toBe(false);
+      expect(Object.hasOwn(result, 'constructor')).toBe(false);
     });
   });
 

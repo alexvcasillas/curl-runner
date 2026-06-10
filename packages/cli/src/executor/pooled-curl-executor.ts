@@ -33,7 +33,10 @@ export class PooledCurlExecutor {
   private poolConfig: ConnectionPoolConfig;
   private allowedProtocols: string[];
 
-  constructor(poolConfig: ConnectionPoolConfig = {}, allowedProtocols: string[] = DEFAULT_ALLOWED_PROTOCOLS) {
+  constructor(
+    poolConfig: ConnectionPoolConfig = {},
+    allowedProtocols: string[] = DEFAULT_ALLOWED_PROTOCOLS,
+  ) {
     this.poolConfig = {
       enabled: true,
       maxStreamsPerHost: 10,

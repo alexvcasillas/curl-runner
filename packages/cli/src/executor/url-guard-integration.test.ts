@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import type { GlobalConfig, RequestConfig } from '../types/config';
 import { CurlBuilder } from '../utils/curl-builder';
 import { RequestExecutor } from './request-executor';
-import type { GlobalConfig, RequestConfig } from '../types/config';
 
 /**
  * Integration tests: blocked-protocol requests yield success:false without
@@ -126,9 +126,7 @@ describe('URL protocol enforcement in RequestExecutor', () => {
   describe('executeSequential', () => {
     test('blocked request in sequential run yields success:false', async () => {
       const executor = new RequestExecutor({});
-      const requests: RequestConfig[] = [
-        { url: 'file:///etc/passwd', method: 'GET' },
-      ];
+      const requests: RequestConfig[] = [{ url: 'file:///etc/passwd', method: 'GET' }];
       const summary = await executor.executeSequential(requests);
       expect(summary.failed).toBe(1);
       expect(summary.successful).toBe(0);
@@ -162,9 +160,7 @@ describe('URL protocol enforcement in RequestExecutor', () => {
   describe('executeParallel (non-pooled)', () => {
     test('blocked request in parallel run yields success:false', async () => {
       const executor = new RequestExecutor({});
-      const requests: RequestConfig[] = [
-        { url: 'gopher://evil.example.com/', method: 'GET' },
-      ];
+      const requests: RequestConfig[] = [{ url: 'gopher://evil.example.com/', method: 'GET' }];
       const summary = await executor.executeParallel(requests);
       expect(summary.failed).toBe(1);
       expect(summary.results[0].success).toBe(false);

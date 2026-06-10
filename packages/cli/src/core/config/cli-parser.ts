@@ -323,7 +323,9 @@ function parseLongFlag(
     // Security
     case 'allow-protocol': {
       const proto = nextArg!.toLowerCase();
-      options.allowProtocols = options.allowProtocols ? [...options.allowProtocols, proto] : [proto];
+      options.allowProtocols = options.allowProtocols
+        ? [...options.allowProtocols, proto]
+        : [proto];
       return 1;
     }
 

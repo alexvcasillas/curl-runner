@@ -32,7 +32,9 @@ export function getValueByPath(obj: unknown, path: string): unknown {
     if (arrayMatch) {
       const [, key, indexStr] = arrayMatch;
       // Reject forbidden keys to prevent prototype pollution.
-      if (FORBIDDEN_KEYS.has(key)) return undefined;
+      if (FORBIDDEN_KEYS.has(key)) {
+        return undefined;
+      }
       const index = Number.parseInt(indexStr, 10);
       current = (current as Record<string, unknown>)[key];
       if (Array.isArray(current)) {
@@ -45,7 +47,9 @@ export function getValueByPath(obj: unknown, path: string): unknown {
       current = current[Number.parseInt(part, 10)];
     } else {
       // Reject forbidden keys to prevent prototype pollution.
-      if (FORBIDDEN_KEYS.has(part)) return undefined;
+      if (FORBIDDEN_KEYS.has(part)) {
+        return undefined;
+      }
       current = (current as Record<string, unknown>)[part];
     }
   }
@@ -93,7 +97,9 @@ export function extractStoreValues(
 
   for (const [varName, path] of Object.entries(storeConfig)) {
     // Skip forbidden var names to prevent prototype pollution.
-    if (FORBIDDEN_KEYS.has(varName)) continue;
+    if (FORBIDDEN_KEYS.has(varName)) {
+      continue;
+    }
     const value = getValueByPath(responseObj, path);
     extracted[varName] = valueToString(value);
   }

@@ -36,8 +36,7 @@ export function resolveSafePath(
   }
 
   // Accept exact match (baseDir itself) or paths strictly inside it
-  const isInside =
-    resolved === normalizedBase || resolved.startsWith(normalizedBase + sep);
+  const isInside = resolved === normalizedBase || resolved.startsWith(normalizedBase + sep);
 
   if (!isInside) {
     return {

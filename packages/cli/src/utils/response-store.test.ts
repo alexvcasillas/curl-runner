@@ -220,7 +220,7 @@ describe('prototype pollution guards', () => {
       metrics: { duration: 10, size: 0 },
     };
     const extracted = extractStoreValues(mockResult, { __proto__: 'body.x' });
-    expect(Object.prototype.hasOwnProperty.call(extracted, '__proto__')).toBe(false);
+    expect(Object.hasOwn(extracted, '__proto__')).toBe(false);
     // biome-ignore lint/suspicious/noExplicitAny: testing prototype pollution
     expect((Object.prototype as any).x).toBeUndefined();
   });

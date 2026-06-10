@@ -43,7 +43,9 @@ export function interpolate(obj: unknown, options: InterpolateOptions = {}): unk
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
       // Skip forbidden keys to prevent prototype-pollution via YAML keys.
-      if (FORBIDDEN_KEYS.has(key)) continue;
+      if (FORBIDDEN_KEYS.has(key)) {
+        continue;
+      }
       result[key] = interpolate(value, options);
     }
     return result;

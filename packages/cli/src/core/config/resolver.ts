@@ -4,8 +4,8 @@
  */
 
 import type { GlobalConfig, ProfileConfig, WatchConfig } from '../../types/config';
-import { DEFAULT_ALLOWED_PROTOCOLS } from '../security/url-guard';
 import { getGlobalRedactor } from '../../utils/secret-redactor';
+import { DEFAULT_ALLOWED_PROTOCOLS } from '../security/url-guard';
 import { type CLIOptions, detectEarlyExit, detectSubcommand, parseCliArgs } from './cli-parser';
 import { loadEnvFiles } from './env-file-loader';
 import { loadEnvironmentConfig } from './env-loader';
