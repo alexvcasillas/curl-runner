@@ -355,6 +355,9 @@ function applyCliOptionsToConfig(config: GlobalConfig, options: CLIOptions): Glo
   if (options.allowProtocols && options.allowProtocols.length > 0) {
     result.security = { ...result.security, allowedProtocols: options.allowProtocols };
   }
+  if (options.allowPath) {
+    result.security = { ...result.security, allowPaths: true };
+  }
 
   // Ensure security.allowedProtocols always has a default
   if (!result.security?.allowedProtocols || result.security.allowedProtocols.length === 0) {

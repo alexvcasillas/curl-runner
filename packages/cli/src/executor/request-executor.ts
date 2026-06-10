@@ -1,6 +1,7 @@
 import type { CurlExecutionResult } from '../core/curl';
 import { parseResponseBody } from '../core/curl';
 import { DEFAULT_RETRYABLE_STATUSES, postProcessResult, withRetry } from '../core/execution';
+import { resolveSafePath } from '../core/security/path-guard';
 import { DEFAULT_ALLOWED_PROTOCOLS, validateUrl } from '../core/security/url-guard';
 import { YamlParser } from '../parser/yaml';
 import { SnapshotManager } from '../snapshot/snapshot-manager';
@@ -91,6 +92,42 @@ export class RequestExecutor {
     return undefined;
   }
 
+  /**
+   * Validates that all FS-bound paths in the request are confined to cwd
+   * (unless security.allowPaths is true).
+   * Returns an error string on the first violation, or undefined if all pass.
+   */
+  private validateRequestPaths(config: RequestConfig): string | undefined {
+    const allow = this.globalConfig.security?.allowPaths ?? false;
+
+    // output file
+    if (config.output) {
+      const result = resolveSafePath(config.output, { allow });
+      if (!result.valid) {
+        return result.error;
+      }
+    }
+
+    // Note: ssl ca/cert/key are intentionally NOT confined. They are TLS
+    // handshake material (commonly absolute system paths like /etc/ssl/...)
+    // and their contents are never transmitted to the server, so they are
+    // not an exfiltration vector like formData file attachments.
+
+    // formData file attachments
+    if (config.formData) {
+      for (const [fieldName, fieldValue] of Object.entries(config.formData)) {
+        if (this.isFileAttachment(fieldValue)) {
+          const result = resolveSafePath(fieldValue.file, { allow });
+          if (!result.valid) {
+            return `formData field "${fieldName}": ${result.error}`;
+          }
+        }
+      }
+    }
+
+    return undefined;
+  }
+
   async executeRequest(config: RequestConfig, index: number = 0): Promise<ExecutionResult> {
     const startTime = performance.now();
 
@@ -99,6 +136,21 @@ export class RequestExecutor {
     const requestLogger = new Logger(outputConfig);
 
     requestLogger.logRequestStart(config, index);
+
+    // Validate FS-bound paths are confined to working directory (before any filesystem access)
+    const pathError = this.validateRequestPaths(config);
+    if (pathError) {
+      const failedResult: ExecutionResult = {
+        request: config,
+        success: false,
+        error: pathError,
+        metrics: {
+          duration: performance.now() - startTime,
+        },
+      };
+      requestLogger.logRequestComplete(failedResult);
+      return failedResult;
+    }
 
     // Validate file attachments exist before executing
     const fileError = await this.validateFileAttachments(config);
@@ -371,7 +423,7 @@ export class RequestExecutor {
       `Using connection pooling (HTTP/2 multiplexing) for ${requests.length} requests`,
     );
 
-    // Validate all request URLs before batching (catches store-injected URLs)
+    // Validate all request URLs and FS paths before batching
     const allowedProtocols =
       this.globalConfig.security?.allowedProtocols ?? DEFAULT_ALLOWED_PROTOCOLS;
     const preValidated: ExecutionResult[] = [];
@@ -383,6 +435,16 @@ export class RequestExecutor {
           request: req,
           success: false,
           error: guard.error,
+          metrics: { duration: 0 },
+        });
+        continue;
+      }
+      const pathError = this.validateRequestPaths(req);
+      if (pathError) {
+        preValidated.push({
+          request: req,
+          success: false,
+          error: pathError,
           metrics: { duration: 0 },
         });
       } else {
@@ -401,12 +463,14 @@ export class RequestExecutor {
       ? await this.pooledExecutor!.executeAll(validRequests)
       : [];
 
+    // Build a Set of valid request indices for fast lookup during merge
+    const validIndexSet = new Set(validRequests.map((r) => requests.indexOf(r)));
+
     // Merge blocked and valid results back in original request order
     let validIdx = 0;
     let blockedIdx = 0;
-    const orderedRaw: ExecutionResult[] = requests.map((req) => {
-      const guard = validateUrl(req.url, allowedProtocols);
-      if (!guard.valid) {
+    const orderedRaw: ExecutionResult[] = requests.map((_req, i) => {
+      if (!validIndexSet.has(i)) {
         return preValidated[blockedIdx++];
       }
       return rawResults[validIdx++];
@@ -480,6 +544,13 @@ export class RequestExecutor {
   private async saveSummaryToFile(summary: ExecutionSummary): Promise<void> {
     const file = this.globalConfig.output?.saveToFile;
     if (!file) {
+      return;
+    }
+
+    const allow = this.globalConfig.security?.allowPaths ?? false;
+    const pathCheck = resolveSafePath(file, { allow });
+    if (!pathCheck.valid) {
+      this.logger.logError(`Cannot save results: ${pathCheck.error}`);
       return;
     }
 

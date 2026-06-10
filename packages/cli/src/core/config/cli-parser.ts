@@ -74,6 +74,7 @@ export interface CLIOptions {
 
   // Security
   allowProtocols?: string[];
+  allowPath?: boolean;
 
   // Meta
   help?: boolean;
@@ -180,6 +181,9 @@ function parseLongFlag(
       return 0;
     case 'no-redact':
       options.noRedact = true;
+      return 0;
+    case 'allow-path':
+      options.allowPath = true;
       return 0;
   }
 

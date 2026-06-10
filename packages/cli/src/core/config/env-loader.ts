@@ -341,4 +341,11 @@ function loadSecurityEnvVars(config: Partial<GlobalConfig>): void {
       config.security = { ...config.security, allowedProtocols: protocols };
     }
   }
+
+  if (process.env.CURL_RUNNER_ALLOW_PATHS) {
+    config.security = {
+      ...config.security,
+      allowPaths: process.env.CURL_RUNNER_ALLOW_PATHS.toLowerCase() === 'true',
+    };
+  }
 }
