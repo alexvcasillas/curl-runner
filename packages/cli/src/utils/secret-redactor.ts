@@ -3,7 +3,14 @@
  * Replaces secret values with [REDACTED] to prevent accidental exposure.
  */
 
+import type { RequestConfig } from '../types/config';
+
 const REDACTED = '[REDACTED]';
+
+/**
+ * Header names whose values should be treated as secrets.
+ */
+const SENSITIVE_HEADER_RE = /authorization|api[-_]?key|token|secret|cookie/i;
 
 /**
  * Common secret patterns to auto-detect.
@@ -37,6 +44,12 @@ const SECRET_PATTERNS: RegExp[] = [
   /sk-ant-[a-zA-Z0-9-]{40,}/g,
   // Generic Bearer tokens (long alphanumeric)
   /Bearer [a-zA-Z0-9_-]{40,}/g,
+  // JWT (three base64url segments)
+  /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
+  // Google API key
+  /AIza[0-9A-Za-z_-]{35}/g,
+  // Generic api_key / token / secret query/form assignment — redact value only
+  /(?:api[_-]?key|token|secret)=([^&\s"']+)/g,
 ];
 
 export class SecretRedactor {
@@ -108,7 +121,14 @@ export class SecretRedactor {
       for (const pattern of SECRET_PATTERNS) {
         // Reset lastIndex for global regexes
         pattern.lastIndex = 0;
-        result = result.replace(pattern, REDACTED);
+        // Patterns with capture groups: redact only the captured value (group 1)
+        if (pattern.source.includes('(')) {
+          result = result.replace(pattern, (match, group1) =>
+            group1 ? match.replace(group1, REDACTED) : REDACTED,
+          );
+        } else {
+          result = result.replace(pattern, REDACTED);
+        }
       }
     }
 
@@ -142,4 +162,43 @@ export function getGlobalRedactor(): SecretRedactor {
 
 export function resetGlobalRedactor(): void {
   globalRedactor = null;
+}
+
+/**
+ * Registers inline secrets found in request configs into the global redactor.
+ * Call after variable interpolation and before execution/logging.
+ */
+export function registerRequestSecrets(requests: RequestConfig[]): void {
+  const redactor = getGlobalRedactor();
+
+  for (const req of requests) {
+    const auth = req.auth;
+    if (auth) {
+      if (auth.type === 'bearer' && auth.token) {
+        redactor.addSecret(`__req_bearer_${auth.token.slice(0, 8)}`, auth.token);
+      } else if (auth.type === 'basic') {
+        if (auth.password) {
+          redactor.addSecret(`__req_basic_pass_${auth.password.slice(0, 8)}`, auth.password);
+        }
+        if (auth.username && auth.password) {
+          const combined = `${auth.username}:${auth.password}`;
+          redactor.addSecret(`__req_basic_combined_${combined.slice(0, 8)}`, combined);
+        }
+      }
+    }
+
+    if (req.headers) {
+      for (const [name, value] of Object.entries(req.headers)) {
+        if (SENSITIVE_HEADER_RE.test(name) && value) {
+          redactor.addSecret(`__req_header_${name.toLowerCase()}_${value.slice(0, 8)}`, value);
+          // For Authorization: Bearer <tok>, also register the bare token
+          const bearerMatch = /^Bearer\s+(\S+)$/i.exec(value);
+          if (bearerMatch) {
+            const bare = bearerMatch[1];
+            redactor.addSecret(`__req_header_bearer_bare_${bare.slice(0, 8)}`, bare);
+          }
+        }
+      }
+    }
+  }
 }

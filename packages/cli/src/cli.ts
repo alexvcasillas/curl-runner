@@ -32,6 +32,7 @@ import type {
   RequestConfig,
 } from './types/config';
 import { Logger } from './utils/logger';
+import { registerRequestSecrets } from './utils/secret-redactor';
 import { exportToCSV, exportToJSON } from './utils/stats';
 import { VersionChecker } from './utils/version-checker';
 import { getVersion } from './version';
@@ -158,6 +159,9 @@ class CurlRunnerCLI {
       process.exit(1);
     }
 
+    // Register inline secrets from request configs (after interpolation, before execution)
+    registerRequestSecrets(allRequests);
+
     // Execute based on mode
     if (mode === 'profile') {
       const profileConfig = buildProfileConfig(cliOptions, mergedConfig);
@@ -234,6 +238,9 @@ class CurlRunnerCLI {
       fileGroups.push({ file, requests: requestsWithSource, config });
       allRequests.push(...requestsWithSource);
     }
+
+    // Register inline secrets from all request configs (after interpolation, before execution)
+    registerRequestSecrets(allRequests);
 
     const executor = new RequestExecutor(globalConfig);
     let summary: ExecutionSummary;

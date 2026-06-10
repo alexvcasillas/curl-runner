@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { getGlobalRedactor, resetGlobalRedactor, SecretRedactor } from './secret-redactor';
+import {
+  getGlobalRedactor,
+  registerRequestSecrets,
+  resetGlobalRedactor,
+  SecretRedactor,
+} from './secret-redactor';
 
 // Helper to build test keys at runtime to bypass GitHub secret scanning
 const testKey = (prefix: string, suffix: string) => prefix + suffix;
@@ -269,6 +274,105 @@ describe('SecretRedactor', () => {
       const r2 = getGlobalRedactor();
 
       expect(r2.hasSecrets()).toBe(false);
+    });
+  });
+
+  describe('new patterns', () => {
+    test('redacts JWT tokens', () => {
+      const redactor = new SecretRedactor();
+      const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+      const result = redactor.redact(`token: ${jwt}`);
+      expect(result).toBe('token: [REDACTED]');
+    });
+
+    test('redacts Google API keys', () => {
+      const redactor = new SecretRedactor();
+      const key = 'AIzaSyD-9tSrke72I6e0dvos8Fy7T5EeHzNs9MA';
+      const result = redactor.redact(`key=${key}`);
+      expect(result).toBe('key=[REDACTED]');
+    });
+
+    test('redacts api_key query param value', () => {
+      const redactor = new SecretRedactor();
+      const result = redactor.redact('https://api.example.com?api_key=supersecret123&other=ok');
+      expect(result).toBe('https://api.example.com?api_key=[REDACTED]&other=ok');
+    });
+
+    test('redacts token query param value', () => {
+      const redactor = new SecretRedactor();
+      const result = redactor.redact('url?token=abc123xyz');
+      expect(result).toBe('url?token=[REDACTED]');
+    });
+
+    test('redacts secret query param value', () => {
+      const redactor = new SecretRedactor();
+      const result = redactor.redact('body: secret=mysecretvalue');
+      expect(result).toBe('body: secret=[REDACTED]');
+    });
+
+    test('does not over-redact benign text', () => {
+      const redactor = new SecretRedactor();
+      const benign = 'Hello world, the count is 42, status=ok';
+      expect(redactor.redact(benign)).toBe(benign);
+    });
+  });
+
+  describe('registerRequestSecrets', () => {
+    afterEach(() => {
+      resetGlobalRedactor();
+    });
+
+    test('registers bearer token and redacts it', () => {
+      registerRequestSecrets([{ url: 'https://example.com', auth: { type: 'bearer', token: 'mysupersecretbearertoken123' } }]);
+      const result = getGlobalRedactor().redact('Authorization: Bearer mysupersecretbearertoken123');
+      expect(result).toBe('Authorization: Bearer [REDACTED]');
+    });
+
+    test('registers basic password and redacts it', () => {
+      registerRequestSecrets([{ url: 'https://example.com', auth: { type: 'basic', username: 'admin', password: 'p@ssw0rd!' } }]);
+      const result = getGlobalRedactor().redact('password is p@ssw0rd!');
+      expect(result).toBe('password is [REDACTED]');
+    });
+
+    test('registers basic user:pass combined and redacts it', () => {
+      registerRequestSecrets([{ url: 'https://example.com', auth: { type: 'basic', username: 'admin', password: 'p@ssw0rd!' } }]);
+      const result = getGlobalRedactor().redact('-u admin:p@ssw0rd!');
+      expect(result).toBe('-u [REDACTED]');
+    });
+
+    test('registers sensitive header value and redacts it', () => {
+      registerRequestSecrets([{ url: 'https://example.com', headers: { 'X-Api-Key': 'header-secret-value-xyz' } }]);
+      const result = getGlobalRedactor().redact('x-api-key: header-secret-value-xyz');
+      expect(result).toBe('x-api-key: [REDACTED]');
+    });
+
+    test('registers bare token from Authorization Bearer header', () => {
+      registerRequestSecrets([{ url: 'https://example.com', headers: { Authorization: 'Bearer rawtoken987654' } }]);
+      const redactor = getGlobalRedactor();
+      expect(redactor.redact('token rawtoken987654 found')).toBe('token [REDACTED] found');
+    });
+
+    test('does not register non-sensitive headers', () => {
+      registerRequestSecrets([{ url: 'https://example.com', headers: { 'Content-Type': 'application/json' } }]);
+      const result = getGlobalRedactor().redact('Content-Type: application/json');
+      expect(result).toBe('Content-Type: application/json');
+    });
+
+    test('handles multiple requests', () => {
+      registerRequestSecrets([
+        { url: 'https://a.example.com', auth: { type: 'bearer', token: 'tokenAAA' } },
+        { url: 'https://b.example.com', auth: { type: 'bearer', token: 'tokenBBB' } },
+      ]);
+      const redactor = getGlobalRedactor();
+      expect(redactor.redact('a=tokenAAA b=tokenBBB')).toBe('a=[REDACTED] b=[REDACTED]');
+    });
+
+    test('summary JSON string is redacted', () => {
+      registerRequestSecrets([{ url: 'https://example.com', auth: { type: 'bearer', token: 'json-secret-token' } }]);
+      const summaryJson = JSON.stringify({ request: { auth: { token: 'json-secret-token' } } }, null, 2);
+      const redacted = getGlobalRedactor().redact(summaryJson);
+      expect(redacted).not.toContain('json-secret-token');
+      expect(redacted).toContain('[REDACTED]');
     });
   });
 

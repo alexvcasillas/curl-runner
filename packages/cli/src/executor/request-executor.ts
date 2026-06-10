@@ -19,6 +19,7 @@ import { evaluateCondition } from '../utils/condition-evaluator';
 import { CurlBuilder } from '../utils/curl-builder';
 import { Logger } from '../utils/logger';
 import { createStoreContext, extractStoreValues } from '../utils/response-store';
+import { getGlobalRedactor } from '../utils/secret-redactor';
 import { PooledCurlExecutor } from './pooled-curl-executor';
 
 export class RequestExecutor {
@@ -459,9 +460,8 @@ export class RequestExecutor {
     }
 
     // Execute all batches (only valid requests)
-    const rawResults = validRequests.length > 0
-      ? await this.pooledExecutor!.executeAll(validRequests)
-      : [];
+    const rawResults =
+      validRequests.length > 0 ? await this.pooledExecutor!.executeAll(validRequests) : [];
 
     // Build a Set of valid request indices for fast lookup during merge
     const validIndexSet = new Set(validRequests.map((r) => requests.indexOf(r)));
@@ -554,7 +554,8 @@ export class RequestExecutor {
       return;
     }
 
-    const content = JSON.stringify(summary, null, 2);
+    const raw = JSON.stringify(summary, null, 2);
+    const content = getGlobalRedactor().redact(raw);
     await Bun.write(file, content);
     this.logger.logInfo(`Results saved to ${file}`);
   }
