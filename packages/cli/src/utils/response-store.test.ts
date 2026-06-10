@@ -211,7 +211,7 @@ describe('prototype pollution guards', () => {
   });
 
   test('extractStoreValues skips __proto__ var name', () => {
-    const mockResult = {
+    const mockResult: ExecutionResult = {
       request: { url: 'https://example.com', method: 'GET' },
       success: true,
       status: 200,

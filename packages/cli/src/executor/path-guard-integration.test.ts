@@ -130,7 +130,7 @@ describe('Filesystem path confinement in RequestExecutor', () => {
         url: 'https://api.example.com/upload',
         method: 'POST',
         formData: {
-          attachment: { file: '../secret.txt', type: 'text/plain' },
+          attachment: { file: '../secret.txt', contentType: 'text/plain' },
         },
       });
       expect(result.success).toBe(false);
@@ -144,7 +144,7 @@ describe('Filesystem path confinement in RequestExecutor', () => {
         url: 'https://api.example.com/upload',
         method: 'POST',
         formData: {
-          leak: { file: '/etc/passwd', type: 'text/plain' },
+          leak: { file: '/etc/passwd', contentType: 'text/plain' },
         },
       });
       expect(result.success).toBe(false);
@@ -160,7 +160,7 @@ describe('Filesystem path confinement in RequestExecutor', () => {
         url: 'https://api.example.com/upload',
         method: 'POST',
         formData: {
-          attachment: { file: '../nonexistent-test-file.txt', type: 'text/plain' },
+          attachment: { file: '../nonexistent-test-file.txt', contentType: 'text/plain' },
         },
       });
       // Path guard passes, but file existence check will fail (file not found)
