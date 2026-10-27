@@ -85,15 +85,17 @@ export function SiteFooter() {
           </div>
           <p className="text-center text-sm text-muted-foreground">
             © {new Date().getFullYear()} Built by{' '}
-            <a
-              href="https://github.com/alexvcasillas"
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium hover:text-foreground"
-            >
-              @alexvcasillas
+            <a href="https://alexvcasillas.com" className="font-medium hover:text-foreground">
+              Alex Casillas
             </a>
             . All rights reserved.
+          </p>
+          <p className="text-center text-sm text-muted-foreground">
+            Also by Alex:{' '}
+            <a href="https://supatools.app" className="font-medium hover:text-foreground">
+              SupaTools
+            </a>
+            , small Mac apps you pay for once.
           </p>
         </div>
       </div>
