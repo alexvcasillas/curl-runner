@@ -28,7 +28,19 @@ fn platform() -> (&'static str, &'static str) {
     }
 }
 
-fn archive(platform: &str) -> Vec<u8> {
+/// The release archive for `platform`: a `.zip` holding the `.exe` on
+/// Windows, a `.tar.gz` elsewhere, as the release workflow packages them.
+fn archive(platform: &str, ext: &str) -> Vec<u8> {
+    if ext == "zip" {
+        let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        z.start_file(
+            format!("curl-runner-{platform}.exe"),
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+        z.write_all(NEW).unwrap();
+        return z.finish().unwrap().into_inner();
+    }
     let mut tar_bytes = Vec::new();
     let mut b = tar::Builder::new(&mut tar_bytes);
     let mut h = tar::Header::new_gnu();
@@ -45,9 +57,9 @@ fn archive(platform: &str) -> Vec<u8> {
 }
 
 fn github(good_sum: bool) -> TestServer {
-    let (plat, _) = platform();
-    let data = archive(plat);
-    let name = format!("curl-runner-cli-99.0.0-{plat}.tar.gz");
+    let (plat, ext) = platform();
+    let data = archive(plat, ext);
+    let name = format!("curl-runner-cli-99.0.0-{plat}.{ext}");
     let sum: String = if good_sum {
         Sha256::digest(&data)
             .iter()
