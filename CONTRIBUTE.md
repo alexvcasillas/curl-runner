@@ -475,6 +475,27 @@ crates.io are skipped, and `@curl-runner/cli` is only published after all platfo
 packages. The version PR bumps `packages/cli/package.json` and, through
 `scripts/sync-cargo-version.sh`, the Cargo workspace version.
 
+### Writing a changeset
+
+`packages/cli/CHANGELOG.md` is generated from changesets, and the website's
+[/changelog](https://www.curl-runner.com/changelog) page and `/rss.xml` feed are
+built from it. Start each changeset summary with a short bold headline on its own
+line, then a blank line, then the details in Markdown:
+
+```markdown
+---
+"@curl-runner/cli": minor
+---
+
+**Install with Homebrew**
+
+Homebrew: install with `brew install alexvcasillas/tap/curl-runner` ...
+```
+
+The headline becomes the release title on the site and in the feed; without it
+the entry shows only its text. A `### Migration: ...` heading in the details is
+shown as a highlighted box that is never collapsed.
+
 ## 🐛 Issue Guidelines
 
 ### Bug Reports

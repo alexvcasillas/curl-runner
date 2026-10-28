@@ -1,52 +1,64 @@
 import { NextResponse } from 'next/server';
+import { getReleaseDates, getReleases } from '@/lib/changelog';
+import { entrySummary } from '@/lib/changelog-markdown';
+
+// Prerendered from packages/cli/CHANGELOG.md like /changelog (see next.config.ts).
+export const dynamic = 'force-static';
+
+const SITE_URL = 'https://www.curl-runner.com';
+const FEED_ITEMS = 20;
+
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
 
 export async function GET() {
+  const releases = getReleases().slice(0, FEED_ITEMS);
+  const dates = await getReleaseDates();
+
+  const items = releases
+    .map((release) => {
+      const url = `${SITE_URL}/changelog#${release.version}`;
+      const first = release.entries[0];
+      const headline = first?.headline ? entrySummary(first) : null;
+      const title = headline
+        ? `curl-runner ${release.version}: ${headline}`
+        : `curl-runner ${release.version}`;
+      const description = release.entries
+        .map((entry) => entrySummary({ ...entry, headline: null }))
+        .join(' ');
+      const date = dates[release.version] ? new Date(dates[release.version]) : null;
+      const pubDate =
+        date && !Number.isNaN(date.getTime())
+          ? `\n      <pubDate>${date.toUTCString()}</pubDate>`
+          : '';
+      return `    <item>
+      <title>${escapeXml(title)}</title>
+      <link>${url}</link>
+      <description>${escapeXml(description)}</description>
+      <guid isPermaLink="true">${url}</guid>${pubDate}
+    </item>`;
+    })
+    .join('\n');
+
   const rss = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>curl-runner Documentation</title>
-    <description>A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance.</description>
-    <link>https://www.curl-runner.com</link>
+    <title>curl-runner releases</title>
+    <description>Release notes for curl-runner, a CLI that runs HTTP requests and API tests described in YAML files.</description>
+    <link>${SITE_URL}/changelog</link>
     <language>en-us</language>
-    <managingEditor>noreply@curl-runner.com (curl-runner Team)</managingEditor>
-    <webMaster>noreply@curl-runner.com (curl-runner Team)</webMaster>
     <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
-    <atom:link href="https://www.curl-runner.com/rss.xml" rel="self" type="application/rss+xml"/>
-
-    <item>
-      <title>curl-runner Documentation</title>
-      <link>https://www.curl-runner.com/docs</link>
-      <description>Complete documentation for curl-runner CLI tool</description>
-      <guid>https://www.curl-runner.com/docs</guid>
-      <pubDate>${new Date().toUTCString()}</pubDate>
-    </item>
-
-    <item>
-      <title>Quick Start Guide</title>
-      <link>https://www.curl-runner.com/docs/quick-start</link>
-      <description>Get started with curl-runner in minutes</description>
-      <guid>https://www.curl-runner.com/docs/quick-start</guid>
-      <pubDate>${new Date().toUTCString()}</pubDate>
-    </item>
-
-    <item>
-      <title>Installation Guide</title>
-      <link>https://www.curl-runner.com/docs/installation</link>
-      <description>Install curl-runner using your preferred package manager</description>
-      <guid>https://www.curl-runner.com/docs/installation</guid>
-      <pubDate>${new Date().toUTCString()}</pubDate>
-    </item>
-
-    <item>
-      <title>Examples</title>
-      <link>https://www.curl-runner.com/docs/examples/basic</link>
-      <description>Learn curl-runner with practical examples</description>
-      <guid>https://www.curl-runner.com/docs/examples/basic</guid>
-      <pubDate>${new Date().toUTCString()}</pubDate>
-    </item>
-
+    <atom:link href="${SITE_URL}/rss.xml" rel="self" type="application/rss+xml"/>
+${items}
   </channel>
-</rss>`;
+</rss>
+`;
 
   return new NextResponse(rss, {
     status: 200,

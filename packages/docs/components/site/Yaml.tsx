@@ -1,6 +1,6 @@
 import { codeToHtml, type ThemeRegistration } from 'shiki';
 
-const YAML_THEME: ThemeRegistration = {
+export const YAML_THEME: ThemeRegistration = {
   name: 'curl-runner-monochrome',
   type: 'dark',
   fg: '#EDEDED',

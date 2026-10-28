@@ -4,13 +4,17 @@
 
 ### Minor Changes
 
-- [#133](https://github.com/alexvcasillas/curl-runner/pull/133) [`b5f26d3`](https://github.com/alexvcasillas/curl-runner/commit/b5f26d392216c7794ab3854b11c6d7c111230e56) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Homebrew: install with `brew install alexvcasillas/tap/curl-runner` (prebuilt binaries for macOS and Linux, arm64 and x64). `curl-runner upgrade` now detects Homebrew installs and runs `brew upgrade curl-runner` instead of refusing to upgrade them.
+- [#133](https://github.com/alexvcasillas/curl-runner/pull/133) [`b5f26d3`](https://github.com/alexvcasillas/curl-runner/commit/b5f26d392216c7794ab3854b11c6d7c111230e56) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **Install with Homebrew**
+
+  Homebrew: install with `brew install alexvcasillas/tap/curl-runner` (prebuilt binaries for macOS and Linux, arm64 and x64). `curl-runner upgrade` now detects Homebrew installs and runs `brew upgrade curl-runner` instead of refusing to upgrade them.
 
 ## 2.0.0
 
 ### Major Changes
 
-- [#127](https://github.com/alexvcasillas/curl-runner/pull/127) [`bec01c6`](https://github.com/alexvcasillas/curl-runner/commit/bec01c646216e99a5b7618cf75e42da6d072d91a) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - curl-runner 2.0 is a rewrite of the CLI in Rust. YAML files, flags, subcommands, environment variables, config discovery and exit codes stay the same, with the bug fixes and behavior changes listed below.
+- [#127](https://github.com/alexvcasillas/curl-runner/pull/127) [`bec01c6`](https://github.com/alexvcasillas/curl-runner/commit/bec01c646216e99a5b7618cf75e42da6d072d91a) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **Rewritten in Rust, on libcurl**
+
+  curl-runner 2.0 is a rewrite of the CLI in Rust. YAML files, flags, subcommands, environment variables, config discovery and exit codes stay the same, with the bug fixes and behavior changes listed below.
 
   ### Runtime
 
@@ -96,7 +100,9 @@
 
 ### Minor Changes
 
-- [#124](https://github.com/alexvcasillas/curl-runner/pull/124) [`c1ce517`](https://github.com/alexvcasillas/curl-runner/commit/c1ce517195ee50c4298e55441de8225cdcf1a7d0) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Security hardening for curl execution, SSRF/file-access, and secret handling.
+- [#124](https://github.com/alexvcasillas/curl-runner/pull/124) [`c1ce517`](https://github.com/alexvcasillas/curl-runner/commit/c1ce517195ee50c4298e55441de8225cdcf1a7d0) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **Security hardening**
+
+  Security hardening for curl execution, SSRF/file-access, and secret handling.
 
   This release closes several attack vectors that arise when curl-runner processes
   untrusted server responses (via `store` → `${store.x}` chaining) or shared YAML
@@ -131,7 +137,9 @@
 
 ### Minor Changes
 
-- [#122](https://github.com/alexvcasillas/curl-runner/pull/122) [`7ea38aa`](https://github.com/alexvcasillas/curl-runner/commit/7ea38aa4e6861f543b23b12cac3a2fa40f2f9cea) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Add `$absent` and `$exists` body-assertion keywords for response validation. `$absent` asserts a key is not present in the response (fails even when the value is `null`); `$exists` asserts a key is present with any value (including `null`), stricter than `*`.
+- [#122](https://github.com/alexvcasillas/curl-runner/pull/122) [`7ea38aa`](https://github.com/alexvcasillas/curl-runner/commit/7ea38aa4e6861f543b23b12cac3a2fa40f2f9cea) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **`$absent` and `$exists` assertions**
+
+  Add `$absent` and `$exists` body-assertion keywords for response validation. `$absent` asserts a key is not present in the response (fails even when the value is `null`); `$exists` asserts a key is present with any value (including `null`), stricter than `*`.
 
 ## 1.23.5
 
