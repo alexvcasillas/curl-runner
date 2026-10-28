@@ -56,7 +56,7 @@ Mockups (`website-mockups/*.dc.html`) are the reference for layout, copy and sty
 
 | Route | Mockup | Notes |
 |---|---|---|
-| `/` | `Main.dc.html` | Install box tabs (curl, Homebrew, npm, cargo) with copy; YAML + real terminal output; feature grid; "libcurl inside"; CI; footer. The `[N] ms startup` tile stays a placeholder until measured; drop the tile if no benchmark exists at launch. |
+| `/` | `Main.dc.html` | Install box tabs (curl, Homebrew, npm, cargo) with copy; YAML + real terminal output; feature grid; "libcurl inside"; CI; footer. The "libcurl inside" tiles show `< 7 ms` startup and `13.5 MB` peak memory, measured with `scripts/bench.sh` on an Apple M2 Max (2.0.0: startup median 6.1–6.9 ms, peak memory 13.3–13.5 MB over 100 local requests); re-run the script before launch and keep the footnote naming the machine and the script. |
 | `/features/[slug]` | `Feature.dc.html` | One template for all 19 features in `lib/features-data.ts`; sidebar lists every feature; previous/next links. Rewrite each feature's copy in the mockup's voice; remove the "up to 10x" claim and other unsourced speed claims. Every YAML example must use real config keys (check against `crates/curl-runner-core/src/model`). |
 | `/alternatives` | `Alternatives.dc.html` | Descriptive cells, not ✓/✗. Resolve every `[VERIFY]` cell against each tool's current docs before launch, and set the "Checked" date. |
 | `/downloads` | `Downloads.dc.html` | Install tabs with a note each; binaries table filled live from the latest GitHub release (`lib/github-release.ts` logic, cached). |
