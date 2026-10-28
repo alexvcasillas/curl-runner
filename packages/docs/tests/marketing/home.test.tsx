@@ -47,7 +47,21 @@ describe('homepage', () => {
   });
 
   it('exports metadata', () => {
-    expect(metadata.title).toBe('curl-runner — API tests as YAML, run anywhere');
+    expect(metadata.title).toEqual({ absolute: 'curl-runner — API tests as YAML, run anywhere' });
     expect(metadata.description).toContain('plain YAML');
+    expect(metadata.alternates?.canonical).toBe('/');
+    expect(metadata.openGraph).toMatchObject({ url: '/', type: 'website' });
+    expect(metadata.twitter).toMatchObject({ card: 'summary_large_image' });
+  });
+
+  it('embeds SoftwareApplication JSON-LD with no invented claims', async () => {
+    const html = await renderHome();
+    const match = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+    expect(match).not.toBeNull();
+    const data = JSON.parse(match?.[1] ?? '{}');
+    expect(data['@type']).toBe('SoftwareApplication');
+    expect(data.offers.price).toBe('0');
+    expect(data.featureList.length).toBeGreaterThan(0);
+    expect(JSON.stringify(data)).not.toMatch(/blazing|fastest/i);
   });
 });

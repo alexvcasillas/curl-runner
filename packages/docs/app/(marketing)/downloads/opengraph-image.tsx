@@ -22,7 +22,7 @@ export default async function Image() {
         justifyContent: 'center',
         padding: '0 96px',
         color: '#ededed',
-        fontFamily: 'Inter',
+        fontFamily: 'Geist',
       }}
     >
       <div style={{ display: 'flex', fontSize: 24, color: '#22d3ee', letterSpacing: '0.04em' }}>

@@ -26,3 +26,8 @@ export async function getLLMText(page: DocsPage): Promise<string> {
   parts.push(body.trim());
   return `${parts.join('\n\n')}\n`;
 }
+
+/** The generated Open Graph image of a docs page (app/og/docs/[...slug]/route.tsx). */
+export function getDocsOgUrl(page: Pick<DocsPage, 'slugs'>): string {
+  return `/og/docs/${[...page.slugs, 'image.png'].join('/')}`;
+}

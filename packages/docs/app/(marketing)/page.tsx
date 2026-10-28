@@ -7,14 +7,29 @@ import { Eyebrow } from '@/components/site/Eyebrow';
 import { InstallTabs } from '@/components/site/InstallTabs';
 import { GITHUB_URL, SiteHeader } from '@/components/site/SiteHeader';
 import { Yaml } from '@/components/site/Yaml';
+import { SoftwareApplicationSchema } from '@/components/structured-data';
 import { HOME_FEATURES } from '@/lib/home-features';
+import { SITE_DESCRIPTION } from '@/lib/site';
 
-const DESCRIPTION =
-  'Describe requests in plain YAML, validate every response, and run whole suites in parallel — on your laptop or in CI. One native binary, no runtime.';
+const TITLE = 'curl-runner — API tests as YAML, run anywhere';
 
 export const metadata: Metadata = {
-  title: 'curl-runner — API tests as YAML, run anywhere',
-  description: DESCRIPTION,
+  title: { absolute: TITLE },
+  description: SITE_DESCRIPTION,
+  alternates: { canonical: '/' },
+  openGraph: {
+    type: 'website',
+    url: '/',
+    title: TITLE,
+    description: SITE_DESCRIPTION,
+    images: [{ url: '/opengraph-image', width: 1200, height: 630, alt: TITLE }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: TITLE,
+    description: SITE_DESCRIPTION,
+    images: ['/opengraph-image'],
+  },
 };
 
 const API_YAML = `
@@ -70,6 +85,7 @@ function PaneHeader({ icon, children }: { icon: 'file' | 'terminal'; children: s
 export default function Home() {
   return (
     <>
+      <SoftwareApplicationSchema />
       <SiteHeader />
 
       <section className="mx-auto flex max-w-[1200px] flex-col items-center gap-7 px-6 pt-24 pb-16 text-center">
@@ -86,7 +102,7 @@ export default function Home() {
           <br />
           Run them anywhere.
         </h1>
-        <p className="m-0 max-w-160 text-xl leading-[1.55] text-fg-secondary">{DESCRIPTION}</p>
+        <p className="m-0 max-w-160 text-xl leading-[1.55] text-fg-secondary">{SITE_DESCRIPTION}</p>
         <div className="flex flex-wrap justify-center gap-3">
           <ButtonLink href="/docs/quick-start" variant="primary" size="lg">
             Get started

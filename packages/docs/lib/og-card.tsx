@@ -1,10 +1,7 @@
 import { ImageResponse } from 'next/og';
 import { getOgFonts } from '@/lib/og-fonts';
 
-export const runtime = 'nodejs';
-export const alt = 'curl-runner Documentation';
-export const size = { width: 1200, height: 630 };
-export const contentType = 'image/png';
+export const OG_SIZE = { width: 1200, height: 630 };
 
 // Monochrome tokens (app/globals.css).
 const GROUND = '#0A0A0A';
@@ -13,7 +10,15 @@ const FG_SECONDARY = '#A1A1A1';
 const HAIRLINE = '#1F1F1F';
 const BRAND = '#22D3EE';
 
-export default async function Image() {
+interface OgCardProps {
+  eyebrow: string;
+  headline: string;
+  footerLeft: string;
+  footerRight: string;
+}
+
+/** The dark Monochrome social card shared by the site and docs Open Graph images. */
+export async function renderOgCard({ eyebrow, headline, footerLeft, footerRight }: OgCardProps) {
   const fonts = await getOgFonts();
 
   return new ImageResponse(
@@ -27,7 +32,7 @@ export default async function Image() {
         padding: '72px 80px',
         background: GROUND,
         color: FG,
-        fontFamily: 'Inter',
+        fontFamily: 'Geist',
       }}
     >
       <div
@@ -50,9 +55,12 @@ export default async function Image() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-        <div style={{ fontSize: 24, letterSpacing: '0.06em', color: BRAND }}>DOCUMENTATION</div>
+        <div style={{ display: 'flex', fontSize: 24, letterSpacing: '0.06em', color: BRAND }}>
+          {eyebrow.toUpperCase()}
+        </div>
         <div
           style={{
+            display: 'flex',
             fontSize: 68,
             fontWeight: 800,
             lineHeight: 1.05,
@@ -60,7 +68,7 @@ export default async function Image() {
             maxWidth: 1000,
           }}
         >
-          HTTP requests as YAML. Run them anywhere.
+          {headline}
         </div>
       </div>
 
@@ -74,10 +82,10 @@ export default async function Image() {
           color: FG_SECONDARY,
         }}
       >
-        <span>Install, configure and run curl-runner</span>
-        <span>curl-runner.com/docs</span>
+        <span>{footerLeft}</span>
+        <span>{footerRight}</span>
       </div>
     </div>,
-    { ...size, fonts },
+    { ...OG_SIZE, fonts },
   );
 }

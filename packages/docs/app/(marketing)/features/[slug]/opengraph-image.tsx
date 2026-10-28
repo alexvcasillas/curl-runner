@@ -18,7 +18,7 @@ const FG_SECONDARY = '#A1A1A1';
 const HAIRLINE = '#1F1F1F';
 const BRAND = '#22D3EE';
 
-/** The bundled Inter subset has no ⇄, and Satori would fetch a font for it. */
+/** The bundled Geist subset has no ⇄, and Satori would fetch a font for it. */
 function eyebrow(title: string): string {
   return title.replace('⇄', '/').toUpperCase();
 }
@@ -39,7 +39,7 @@ export default async function Image({ params }: { params: Promise<{ slug: string
         padding: '72px 80px',
         background: GROUND,
         color: FG,
-        fontFamily: 'Inter',
+        fontFamily: 'Geist',
       }}
     >
       <div

@@ -10,6 +10,7 @@ const DESCRIPTION =
 export const metadata: Metadata = {
   title: 'curl-runner alternatives: Postman, Insomnia, curl, HTTPie',
   description: DESCRIPTION,
+  alternates: { canonical: '/alternatives' },
 };
 
 const H2 = 'm-0 text-[clamp(30px,4vw,44px)] leading-[1.1] font-bold tracking-[-0.035em] text-fg';

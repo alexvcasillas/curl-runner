@@ -2,10 +2,10 @@ import { Analytics } from '@vercel/analytics/next';
 import { GeistMono } from 'geist/font/mono';
 import { GeistSans } from 'geist/font/sans';
 import type { Metadata } from 'next';
-import { ThemeProvider } from 'next-themes';
 import './globals.css';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import { PulsoraAnalytics } from '@/components/pulsora-analytics';
+import { SITE_DESCRIPTION } from '@/lib/site';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.curl-runner.com'),
@@ -13,8 +13,7 @@ export const metadata: Metadata = {
     default: 'curl-runner Documentation',
     template: '%s | curl-runner Documentation',
   },
-  description:
-    'Complete documentation for curl-runner - A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance.',
+  description: SITE_DESCRIPTION,
   keywords: [
     'curl-runner',
     'API testing tool',
@@ -60,7 +59,6 @@ export const metadata: Metadata = {
   },
   manifest: '/manifest.json',
   alternates: {
-    canonical: 'https://www.curl-runner.com',
     types: {
       'application/rss+xml': [{ url: '/rss.xml', title: 'curl-runner Documentation RSS' }],
     },
@@ -68,35 +66,22 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    url: 'https://www.curl-runner.com',
     title: 'curl-runner Documentation',
-    description:
-      'Complete documentation for curl-runner - A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance.',
+    description: SITE_DESCRIPTION,
     siteName: 'curl-runner Documentation',
-    images: [
-      {
-        url: '/opengraph-image',
-        width: 1200,
-        height: 630,
-        alt: 'curl-runner Documentation',
-        type: 'image/png',
-      },
-    ],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'curl-runner Documentation',
-    description:
-      'Complete documentation for curl-runner - A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance.',
-    images: ['/opengraph-image'],
+    description: SITE_DESCRIPTION,
     creator: '@curl_runner',
     site: '@curl_runner',
   },
   verification: {
-    google: process.env.GOOGLE_SITE_VERIFICATION || 'google-site-verification-placeholder',
-    other: {
-      'msvalidate.01': process.env.BING_SITE_VERIFICATION || 'bing-verification-placeholder',
-    },
+    google: process.env.GOOGLE_SITE_VERIFICATION,
+    other: process.env.BING_SITE_VERIFICATION
+      ? { 'msvalidate.01': process.env.BING_SITE_VERIFICATION }
+      : undefined,
   },
   category: 'technology',
   icons: {
@@ -175,9 +160,7 @@ export default function RootLayout({
         <meta name="color-scheme" content="dark" />
       </head>
       <body suppressHydrationWarning>
-        <ThemeProvider attribute="class" forcedTheme="dark" disableTransitionOnChange>
-          <PulsoraAnalytics>{children}</PulsoraAnalytics>
-        </ThemeProvider>
+        <PulsoraAnalytics>{children}</PulsoraAnalytics>
         <Analytics />
         <SpeedInsights />
       </body>
