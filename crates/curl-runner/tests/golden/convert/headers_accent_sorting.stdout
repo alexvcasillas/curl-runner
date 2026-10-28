@@ -1,0 +1,10 @@
+request:
+  method: GET
+  url: https://x.test
+  headers:
+    X-E: "2"
+    "X-É": "1"
+    "X-È": "3"
+    "X-Ünï": "4"
+    X-Z: "5"
+

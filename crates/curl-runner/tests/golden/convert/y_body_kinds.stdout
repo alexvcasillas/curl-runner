@@ -1,0 +1,44 @@
+curl \
+  -X POST \
+  --data-urlencode 'a=1&b=2' \
+  https://a.test/form
+
+curl \
+  -X POST \
+  -d 'hello world' \
+  https://a.test/raw
+
+curl \
+  -X POST \
+  --data-binary @file.bin \
+  https://a.test/bin
+
+curl \
+  -X POST \
+  -d '"plain string"' \
+  -H 'Content-Type: application/json' \
+  https://a.test/str
+
+curl \
+  -X POST \
+  -d '[1,2]' \
+  -H 'Content-Type: application/json' \
+  https://a.test/arr
+
+curl \
+  -X POST \
+  -d 42 \
+  -H 'Content-Type: application/json' \
+  https://a.test/num
+
+curl \
+  -X POST \
+  -d null \
+  -H 'Content-Type: application/json' \
+  https://a.test/null
+
+curl \
+  -X POST \
+  -d false \
+  -H 'Content-Type: application/json' \
+  https://a.test/bool

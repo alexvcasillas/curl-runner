@@ -1,0 +1,7 @@
+request:
+  method: GET
+  url: https://example.com/api
+  params:
+    key: val
+    page: "2"
+

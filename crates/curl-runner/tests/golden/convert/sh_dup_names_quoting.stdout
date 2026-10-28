@@ -1,0 +1,14 @@
+requests:
+  - name: request_1
+    method: GET
+    url: https://a.test/1
+    headers:
+      X-A: a:b
+      X-B: "12"
+
+  - name: request_2
+    method: GET
+    url: https://a.test/2
+    params:
+      x: "true"
+

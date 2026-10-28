@@ -1,0 +1,4 @@
+curl \
+  -H '0: a' \
+  -H '1: b' \
+  https://a.test

@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "label": "production",
+  "capturedAt": "2026-10-27T21:30:11.190Z",
+  "baselines": {
+    "Get User": {
+      "hash": "11cb4689",
+      "capturedAt": "2026-10-27T21:30:11.190Z",
+      "status": 200,
+      "headers": {
+        "content-length": "75",
+        "content-type": "application/json",
+        "date": "Tue, 27 Oct 2026 21:30:11 GMT",
+        "server": "tiny-http (Rust)"
+      },
+      "body": {
+        "email": "user2@example.com",
+        "id": 2,
+        "name": "User 2",
+        "username": "Antonette"
+      },
+      "timing": 9.047834000000002
+    },
+    "http://127.0.0.1:62333/json/user": {
+      "hash": "fc892039",
+      "capturedAt": "2026-10-27T21:30:11.190Z",
+      "status": 200,
+      "headers": {
+        "content-length": "68",
+        "content-type": "application/json",
+        "date": "Tue, 27 Oct 2026 21:30:11 GMT",
+        "server": "tiny-http (Rust)"
+      },
+      "body": {
+        "active": true,
+        "email": "test@example.com",
+        "id": 1,
+        "name": "Test User"
+      },
+      "timing": 6.543875
+    },
+    "Only Here": {
+      "hash": "955eefde",
+      "capturedAt": "2026-10-27T21:30:11.190Z",
+      "status": 200,
+      "headers": {
+        "content-length": "63",
+        "content-type": "application/json",
+        "date": "Tue, 27 Oct 2026 21:30:11 GMT",
+        "server": "tiny-http (Rust)"
+      },
+      "body": {
+        "body": "post body 1",
+        "id": 1,
+        "title": "post title 1",
+        "userId": 1
+      },
+      "timing": 6.941833000000003
+    }
+  }
+}

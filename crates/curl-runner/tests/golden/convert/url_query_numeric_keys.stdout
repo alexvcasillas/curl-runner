@@ -1,0 +1,9 @@
+request:
+  method: GET
+  url: https://x.test/s
+  params:
+    "0": c
+    "10": a
+    "2": b
+    z: "1"
+

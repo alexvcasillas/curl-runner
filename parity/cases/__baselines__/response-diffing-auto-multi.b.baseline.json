@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "label": "b",
+  "capturedAt": "2026-10-27T21:30:01.086Z",
+  "baselines": {
+    "Get User": {
+      "hash": "28f89aac",
+      "capturedAt": "2026-10-27T21:30:01.085Z",
+      "status": 200,
+      "headers": {
+        "content-length": "70",
+        "content-type": "application/json",
+        "date": "Tue, 27 Oct 2026 21:30:01 GMT",
+        "server": "tiny-http (Rust)"
+      },
+      "body": {
+        "email": "user1@example.com",
+        "id": 1,
+        "name": "User 1",
+        "username": "Bret"
+      },
+      "timing": 9.394832999999998
+    }
+  }
+}

@@ -1,0 +1,6 @@
+request:
+  method: PUT
+  url: https://x.test/y
+  headers:
+    A: b
+

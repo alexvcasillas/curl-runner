@@ -1,0 +1,60 @@
+version: 1
+global:
+    continueOnError: true
+    execution: parallel
+    output:
+        format: json
+        verbose: false
+    variables:
+        2: two
+        BASE: "https://api.example.com"
+        empty: ""
+        num: "123abc"
+        flag: "true"
+        hash: "#x"
+        colon: "a: b"
+        dollar: "$HOME"
+        nl: "a\nb"
+    defaults:
+        timeout: 3000
+collection:
+    name: Coll
+    requests:
+      -       url: "htpp://localhsot:3000//a%20b"
+              method: POST
+              headers:
+                  Content-Type: application/json
+                  Accept: "*/*"
+              body:
+                  list:
+                    - 1
+                    - 2.5
+                    - true
+                    - null
+                    - x
+                  nested:
+                      deep:
+                          a: 1
+                      empty: {}
+                      emptyList: []
+                  items:
+                    -             a: 1
+                                  b:
+                                    - x
+                                    - y
+                    -             - 1
+                                  - 2
+              expect:
+                  status: 201
+                  headers: {}
+requests:
+  -     url: "https://api.example.com"
+        when:
+            left: store.x
+            operator: equals
+            right: 1
+        insecure: true
+        method: GET
+  -     url: "https://x.com/p//q"
+        method: GET
+        timeout: 42

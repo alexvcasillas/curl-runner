@@ -16,13 +16,13 @@ import { basicUsageExample, quickInstallExample } from './snippets';
 export const metadata: Metadata = {
   title: 'curl-runner Documentation',
   description:
-    'A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance, parallel execution, and comprehensive validation.',
+    'A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance, parallel execution, and comprehensive validation.',
   keywords: [
     'curl-runner documentation',
     'HTTP request management',
     'YAML configuration',
     'API testing tool',
-    'Bun CLI tool',
+    'Rust CLI tool',
     'parallel HTTP requests',
     'response validation',
     'API automation',
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'curl-runner Documentation',
     description:
-      'A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance, parallel execution, and comprehensive validation.',
+      'A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance, parallel execution, and comprehensive validation.',
     url: 'https://www.curl-runner.com/docs',
     type: 'article',
   },
@@ -42,7 +42,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'curl-runner Documentation',
     description:
-      'A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance.',
+      'A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance.',
   },
   alternates: {
     canonical: 'https://www.curl-runner.com/docs',
@@ -61,7 +61,7 @@ const features = [
     icon: Zap,
     title: 'Fast Execution',
     description:
-      'Built with Bun for blazing-fast performance. Execute requests sequentially or in parallel.',
+      'Built in Rust (a native binary) for blazing-fast performance. Execute requests sequentially or in parallel.',
     color: 'yellow',
   },
   {
@@ -86,7 +86,7 @@ export default function DocsPage() {
       <SoftwareDocumentationSchema />
       <DocumentationArticleSchema
         title="curl-runner Documentation"
-        description="A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance, parallel execution, and comprehensive validation."
+        description="A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance, parallel execution, and comprehensive validation."
         url="https://www.curl-runner.com/docs"
         section="Documentation"
       />
@@ -99,7 +99,7 @@ export default function DocsPage() {
       <div className="mx-auto w-full min-w-0">
         <DocsPageHeader
           heading="curl-runner Documentation"
-          text="A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance."
+          text="A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance."
         />
 
         <div className="space-y-12">
@@ -148,7 +148,7 @@ export default function DocsPage() {
               variable templating.
             </p>
             <p className="text-muted-foreground text-lg">
-              Built with Bun for exceptional performance, curl-runner is perfect for API testing,
+              Built with Rust for exceptional performance, curl-runner is perfect for API testing,
               automation workflows, CI/CD pipelines, and development environments where speed and
               reliability matter.
             </p>
@@ -172,18 +172,9 @@ export default function DocsPage() {
                   <h3 className="text-sm font-medium text-foreground">Prerequisites</h3>
                   <div className="mt-2 text-sm text-muted-foreground space-y-2">
                     <p>
-                      <strong>For npm/yarn/pnpm installation:</strong> Bun runtime must be installed
-                      on your system.
-                    </p>
-                    <p>
-                      Install Bun:{' '}
-                      <code className="bg-muted px-1 rounded">
-                        curl -fsSL https://bun.sh/install | bash
-                      </code>
-                    </p>
-                    <p className="mt-3">
-                      <strong>For standalone builds:</strong> No prerequisites needed! The
-                      standalone executable includes Bun bundled within it.
+                      <strong>No prerequisites.</strong> curl-runner is a single native binary: no
+                      Bun, Node.js or curl is needed to run it, whether you install it with
+                      npm/yarn/pnpm/bun or as a standalone executable.
                     </p>
                   </div>
                 </div>

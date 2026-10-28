@@ -1,0 +1,11 @@
+request:
+  method: GET
+  url: https://x.test
+  headers:
+    A_b: "4"
+    A-B: "3"
+    Accept: x
+    Accept-Charset: y
+    X-A: "2"
+    X-B: "1"
+

@@ -1,0 +1,3 @@
+curl \
+  -u 'alice:s3 cr3t' \
+  https://a.test

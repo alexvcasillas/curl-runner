@@ -1,0 +1,6 @@
+request:
+  method: GET
+  url: https://example.com
+  headers:
+    User-Agent: MyApp/1.0
+

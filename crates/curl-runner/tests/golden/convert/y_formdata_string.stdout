@@ -1,0 +1,5 @@
+curl \
+  -X GET \
+  --form-string 0=a \
+  --form-string 1=b \
+  https://a.test

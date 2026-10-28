@@ -1,0 +1,20 @@
+# Warning: Flag --compressed has no YAML equivalent; curl handles decompression natively
+# Warning: Cookie flag (-b a=1) stored as header; manual review recommended
+# Warning: Cookie jar flag (-c j) has no YAML equivalent
+# Warning: Unsupported curl flag: --foo bar
+
+requests:
+  - name: request_1
+    method: GET
+    url: https://a.test/1
+
+  - name: request_2
+    method: GET
+    url: https://a.test/2
+    headers:
+      Cookie: a=1
+
+  - name: request_3
+    method: GET
+    url: https://a.test/3
+

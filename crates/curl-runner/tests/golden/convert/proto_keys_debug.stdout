@@ -1,0 +1,44 @@
+[33mDEBUG:[0m
+{
+  "tokens": [
+    "curl",
+    "https://x.com/?__proto__=1&a=2",
+    "-H",
+    "__proto__: v",
+    "-F",
+    "__proto__=z"
+  ],
+  "ast": {
+    "url": "https://x.com/?__proto__=1&a=2",
+    "headers": [
+      {
+        "key": "__proto__",
+        "value": "v"
+      }
+    ],
+    "unsupportedFlags": [],
+    "form": [
+      "__proto__=z"
+    ]
+  },
+  "ir": {
+    "method": "POST",
+    "url": "https://x.com/",
+    "headers": {},
+    "metadata": {
+      "source": "curl",
+      "warnings": []
+    },
+    "params": {
+      "a": "2"
+    },
+    "formData": {}
+  }
+}
+
+request:
+  method: POST
+  url: https://x.com/
+  params:
+    a: "2"
+

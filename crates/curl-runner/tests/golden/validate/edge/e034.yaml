@@ -1,0 +1,1 @@
+request: {url: https://a.com, method: POST, retry: {count: "5", delay: -1, backoff: 0.5, max: 1}}

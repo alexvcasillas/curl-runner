@@ -1,0 +1,9 @@
+# Custom baseline directory.
+global:
+  diff:
+    save: true
+    label: l
+    dir: .bl/nested
+requests:
+  - name: Get User
+    url: ${BASE_URL}/jp/users/1

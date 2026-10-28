@@ -1,0 +1,1 @@
+request: {url: "http://127.0.0.0:0/a b", proxy: "SOCKS5://x"}

@@ -1,0 +1,11 @@
+request:
+  url: "https://api.example.com/users"
+  method: POST
+  body:
+    items:
+      - id: 1
+        name: a
+      - id: 2
+        name: b
+        extra:
+          k: v

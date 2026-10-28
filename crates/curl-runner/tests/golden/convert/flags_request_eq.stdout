@@ -1,0 +1,6 @@
+# Warning: Unsupported curl flag: --request=PATCH https://x.test/1
+
+request:
+  method: GET
+  url: ""
+

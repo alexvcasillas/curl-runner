@@ -1,0 +1,5 @@
+curl \
+  -X GET \
+  -H 'X: y' \
+  --form-string f=g \
+  'https://a.test?__proto__=1&b=2'

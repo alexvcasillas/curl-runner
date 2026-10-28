@@ -1,0 +1,2 @@
+curl \
+  'https://api.example.com/search?q=hello+world&page=1&a%26b=c%3Dd&emoji=%F0%9F%98%80&plus=a%2Bb&tilde=%7E*-._%21'

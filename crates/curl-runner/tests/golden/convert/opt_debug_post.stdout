@@ -1,0 +1,69 @@
+[33mDEBUG:[0m
+{
+  "tokens": [
+    "curl",
+    "-X",
+    "POST",
+    "-H",
+    "A: b",
+    "-F",
+    "f=@x.png;type=image/png;filename=y.png",
+    "-F",
+    "t=1",
+    "https://x.test/u?a=1&2=b"
+  ],
+  "ast": {
+    "url": "https://x.test/u?a=1&2=b",
+    "headers": [
+      {
+        "key": "A",
+        "value": "b"
+      }
+    ],
+    "unsupportedFlags": [],
+    "method": "POST",
+    "form": [
+      "f=@x.png;type=image/png;filename=y.png",
+      "t=1"
+    ]
+  },
+  "ir": {
+    "method": "POST",
+    "url": "https://x.test/u",
+    "headers": {
+      "A": "b"
+    },
+    "metadata": {
+      "source": "curl",
+      "warnings": []
+    },
+    "params": {
+      "2": "b",
+      "a": "1"
+    },
+    "formData": {
+      "f": {
+        "file": "x.png",
+        "contentType": "image/png",
+        "filename": "y.png"
+      },
+      "t": "1"
+    }
+  }
+}
+
+request:
+  method: POST
+  url: https://x.test/u
+  params:
+    "2": b
+    a: "1"
+  headers:
+    A: b
+  formData:
+    f:
+      file: x.png
+      filename: y.png
+      contentType: image/png
+    t: "1"
+

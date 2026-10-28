@@ -1,0 +1,15 @@
+# CI mode: a missing snapshot fails, existing ones are still compared.
+global:
+  continueOnError: true
+  snapshot:
+    ci: true
+
+collection:
+  name: Snapshot CI
+  requests:
+    - name: Stored User
+      url: ${BASE_URL}/jp/users/1
+      snapshot: true
+    - name: Missing In CI
+      url: ${BASE_URL}/jp/posts/1
+      snapshot: true

@@ -1,0 +1,4 @@
+request:
+  method: HEAD
+  url: https://example.com
+

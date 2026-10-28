@@ -1,0 +1,8 @@
+request:
+  method: POST
+  url: https://api.example.com/bulk
+  headers:
+    Content-Type: application/json
+  body:
+    json: [{"id":1},{"id":2}]
+

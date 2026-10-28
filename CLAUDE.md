@@ -2,7 +2,8 @@
 - Commits must follow Conventional Commits specification.
 - Commits should be one liners.
 - Performance is a must.
-- Always follow bun's best practices and latest API.
+- Rust (CLI): always `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` before committing. Follow Rust API guidelines and latest stable idioms.
+- Bun only for docs site/tooling: follow bun's best practices and latest API there.
 - At the end of each plan give me a list of unresolved questions if any. Make the questions extremely concise. Sacrifice grammar for concision.
 - ALWAYS create unit tests
 - ALWAYS run unit tests to validate code changes

@@ -1,0 +1,3 @@
+curl \
+  -H "X-A: it's \`x\` \$y \\ \"q\"" \
+  "https://a.test/it's"

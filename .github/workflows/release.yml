@@ -5,13 +5,74 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      smoke:
+        description: "Build all release artifacts and smoke-test them WITHOUT publishing (skips the changesets release)"
+        type: boolean
+        default: false
+
+# Flow: meta -> build (matrix) -> release (changesets: version PR, or publish
+# the five @curl-runner/cli-<platform> npm packages with the built binaries,
+# then @curl-runner/cli) -> package -> upload (GitHub Release assets).
+# Binaries are built only when a publish is due (no pending changesets and the
+# version is not on npm yet) or for smoke runs. If a job fails after npm
+# publishing, re-run the failed jobs: scripts/npm-publish.sh skips versions
+# already on npm, and changeset publish does the same.
+permissions:
+  contents: read
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
+  meta:
+    name: Release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      TAG: ${{ steps.meta.outputs.TAG }}
+      VERSION: ${{ steps.meta.outputs.VERSION }}
+      FILE_PREFIX: ${{ steps.meta.outputs.FILE_PREFIX }}
+      BUILD: ${{ steps.meta.outputs.BUILD }}
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Compute release tag + build metadata for CLI
+        id: meta
+        env:
+          SMOKE: ${{ inputs.smoke }}
+        run: |
+          VERSION=$(jq -r .version packages/cli/package.json)
+          pending=$(find .changeset -name '*.md' ! -name README.md | wc -l)
+          if [ "$SMOKE" = "true" ]; then
+            BUILD=true
+          elif [ "$pending" -gt 0 ]; then
+            BUILD=false  # changesets opens/updates the version PR; nothing to publish
+          else
+            # 0 published, 1 not published, 2 lookup failed: fail the run
+            # rather than guess (a wrong "published" would skip the release).
+            status=0
+            scripts/npm-published.sh @curl-runner/cli "$VERSION" || status=$?
+            case "$status" in
+              0) BUILD=false ;;  # already published
+              1) BUILD=true ;;
+              *) echo "::error::npm lookup for @curl-runner/cli@$VERSION failed"; exit 1 ;;
+            esac
+          fi
+          {
+            echo "TAG=@curl-runner/cli@${VERSION}"
+            echo "VERSION=$VERSION"
+            echo "FILE_PREFIX=curl-runner-cli-${VERSION}"
+            echo "BUILD=$BUILD"
+          } >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION pending_changesets=$pending build=$BUILD"
+
   release:
     name: Release
+    needs: [meta, build]
+    if: ${{ !inputs.smoke && !cancelled() && needs.meta.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.changesets.outputs.published }}
     environment:
       name: Production
     permissions:
@@ -42,94 +103,310 @@ jobs:
       - name: Install Dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build
-        run: bun run --filter @curl-runner/cli build
+      - name: Download binaries
+        if: ${{ needs.build.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bin-*
+          path: dist-bin
+          merge-multiple: true
 
+      # Publishes the platform packages (version stamped from packages/cli),
+      # then `changeset publish`. See packages/cli/README.md.
       - name: Create Release Pull Request or Publish to npm
         id: changesets
         uses: changesets/action@v1
         with:
           version: bun run version
-          publish: bun run release
+          publish: bash scripts/npm-publish.sh dist-bin
           commit: "chore: version packages"
           title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
 
-      # ---------- Everything below runs ONLY when a real release was published ----------
-      - name: Compute release tag + build metadata for CLI
-        id: meta
-        if: steps.changesets.outputs.published == 'true'
-        run: |
-          VERSION=$(jq -r .version packages/cli/package.json)
-          TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          TAG="@curl-runner/cli@${VERSION}"
-          FILE_PREFIX="curl-runner-cli-${VERSION}"
-          echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "TIME=$TIME" >> "$GITHUB_OUTPUT"
-          echo "FILE_PREFIX=$FILE_PREFIX" >> "$GITHUB_OUTPUT"
+      # crates.io trusted publishing (OIDC token), then curl-runner-core and
+      # curl-runner at the version the version PR synced into Cargo.toml.
+      - name: Install Rust toolchain
+        if: ${{ steps.changesets.outputs.published == 'true' }}
+        run: rustup show active-toolchain || rustup toolchain install
 
-      - name: Build cross-platform Bun binaries
-        if: steps.changesets.outputs.published == 'true'
+      - name: Authenticate to crates.io
+        if: ${{ steps.changesets.outputs.published == 'true' }}
+        id: crates-auth
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Publish crates
+        if: ${{ steps.changesets.outputs.published == 'true' }}
+        run: scripts/crates-publish.sh
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: meta
+    if: ${{ needs.meta.outputs.BUILD == 'true' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            exe: ""
+          # Native arm64 runner instead of `cross`: the musl-tools toolchain used
+          # for linux-x64 works unchanged and no Docker-in-Docker is needed.
+          - platform: linux-arm64
+            target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+            exe: ""
+          # Cross-compiled from the arm64 runner (macos-13 is retired).
+          - platform: darwin-x64
+            target: x86_64-apple-darwin
+            os: macos-latest
+            exe: ""
+          - platform: darwin-arm64
+            target: aarch64-apple-darwin
+            os: macos-latest
+            exe: ""
+          - platform: windows-x64
+            target: x86_64-pc-windows-msvc
+            os: windows-latest
+            exe: ".exe"
+    env:
+      CURL_RUNNER_VERSION: ${{ needs.meta.outputs.VERSION }}
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      # aws-lc-sys (rustls crypto) needs a C toolchain + cmake; musl needs musl-gcc.
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
         run: |
-          bun build src/cli.ts --compile --minify --sourcemap --bytecode \
-            --define BUILD_VERSION='"${{ steps.meta.outputs.VERSION }}"' \
-            --define BUILD_TIME='"${{ steps.meta.outputs.TIME }}"' \
-            --target=bun-linux-x64    --outfile curl-runner-linux-x64
-          bun build src/cli.ts --compile --minify --sourcemap --bytecode \
-            --define BUILD_VERSION='"${{ steps.meta.outputs.VERSION }}"' \
-            --define BUILD_TIME='"${{ steps.meta.outputs.TIME }}"' \
-            --target=bun-linux-arm64  --outfile curl-runner-linux-arm64
-          bun build src/cli.ts --compile --minify --sourcemap --bytecode \
-            --define BUILD_VERSION='"${{ steps.meta.outputs.VERSION }}"' \
-            --define BUILD_TIME='"${{ steps.meta.outputs.TIME }}"' \
-            --target=bun-darwin-x64   --outfile curl-runner-darwin-x64
-          bun build src/cli.ts --compile --minify --sourcemap --bytecode \
-            --define BUILD_VERSION='"${{ steps.meta.outputs.VERSION }}"' \
-            --define BUILD_TIME='"${{ steps.meta.outputs.TIME }}"' \
-            --target=bun-darwin-arm64 --outfile curl-runner-darwin-arm64
-          bun build src/cli.ts --compile --minify --sourcemap --bytecode \
-            --define BUILD_VERSION='"${{ steps.meta.outputs.VERSION }}"' \
-            --define BUILD_TIME='"${{ steps.meta.outputs.TIME }}"' \
-            --target=bun-windows-x64  --outfile curl-runner-windows-x64.exe
-        working-directory: packages/cli
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools cmake clang build-essential pkg-config
+
+      - name: Install Windows build dependencies
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          choco install nasm -y --no-progress
+          echo "C:/Program Files/NASM" >> "$GITHUB_PATH"
+
+      - name: Install Rust target
+        shell: bash
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build Rust binary
+        shell: bash
+        env:
+          # Windows: link the CRT statically so users need no VC++ redistributable.
+          RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
+        run: cargo build --release --locked -p curl-runner --target ${{ matrix.target }}
+
+      - name: Stage binary as curl-runner-${{ matrix.platform }}
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/curl-runner${{ matrix.exe }}" \
+             "dist/curl-runner-${{ matrix.platform }}${{ matrix.exe }}"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.platform }}
+          path: dist/curl-runner-${{ matrix.platform }}${{ matrix.exe }}
+          if-no-files-found: error
+
+  package:
+    name: Package archives + checksums
+    needs: [meta, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      FILE_PREFIX: ${{ needs.meta.outputs.FILE_PREFIX }}
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bin-*
+          path: packages/cli
+          merge-multiple: true
 
       - name: Package binaries
-        if: steps.changesets.outputs.published == 'true'
         run: |
           cd packages/cli
-          tar -czf ${{ steps.meta.outputs.FILE_PREFIX }}-linux-x64.tar.gz    curl-runner-linux-x64
-          tar -czf ${{ steps.meta.outputs.FILE_PREFIX }}-linux-arm64.tar.gz  curl-runner-linux-arm64
-          tar -czf ${{ steps.meta.outputs.FILE_PREFIX }}-darwin-x64.tar.gz   curl-runner-darwin-x64
-          tar -czf ${{ steps.meta.outputs.FILE_PREFIX }}-darwin-arm64.tar.gz curl-runner-darwin-arm64
-          zip        ${{ steps.meta.outputs.FILE_PREFIX }}-windows-x64.zip   curl-runner-windows-x64.exe
+          chmod +x curl-runner-linux-* curl-runner-darwin-*
+          tar -czf "${FILE_PREFIX}-linux-x64.tar.gz"    curl-runner-linux-x64
+          tar -czf "${FILE_PREFIX}-linux-arm64.tar.gz"  curl-runner-linux-arm64
+          tar -czf "${FILE_PREFIX}-darwin-x64.tar.gz"   curl-runner-darwin-x64
+          tar -czf "${FILE_PREFIX}-darwin-arm64.tar.gz" curl-runner-darwin-arm64
+          zip        "${FILE_PREFIX}-windows-x64.zip"   curl-runner-windows-x64.exe
 
       - name: Generate checksums
-        if: steps.changesets.outputs.published == 'true'
         run: |
           cd packages/cli
           shasum -a 256 \
-            ${{ steps.meta.outputs.FILE_PREFIX }}-linux-x64.tar.gz \
-            ${{ steps.meta.outputs.FILE_PREFIX }}-linux-arm64.tar.gz \
-            ${{ steps.meta.outputs.FILE_PREFIX }}-darwin-x64.tar.gz \
-            ${{ steps.meta.outputs.FILE_PREFIX }}-darwin-arm64.tar.gz \
-            ${{ steps.meta.outputs.FILE_PREFIX }}-windows-x64.zip \
+            "${FILE_PREFIX}-linux-x64.tar.gz" \
+            "${FILE_PREFIX}-linux-arm64.tar.gz" \
+            "${FILE_PREFIX}-darwin-x64.tar.gz" \
+            "${FILE_PREFIX}-darwin-arm64.tar.gz" \
+            "${FILE_PREFIX}-windows-x64.zip" \
             > SHA256SUMS.txt
 
-      - name: Upload binaries + checksums to GitHub Release
-        if: steps.changesets.outputs.published == 'true'
-        uses: softprops/action-gh-release@v1
+      - name: Upload release assets artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ steps.meta.outputs.TAG }}
+          name: release-assets
+          path: |
+            packages/cli/${{ needs.meta.outputs.FILE_PREFIX }}-*.tar.gz
+            packages/cli/${{ needs.meta.outputs.FILE_PREFIX }}-*.zip
+            packages/cli/SHA256SUMS.txt
+          if-no-files-found: error
+
+  upload:
+    name: Upload to GitHub Release
+    needs: [release, meta, package]
+    if: ${{ needs.release.outputs.published == 'true' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: Production
+    permissions:
+      contents: write
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: packages/cli
+
+      - name: Upload binaries + checksums to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.meta.outputs.TAG }}
           files: |
-            packages/cli/${{ steps.meta.outputs.FILE_PREFIX }}-linux-x64.tar.gz
-            packages/cli/${{ steps.meta.outputs.FILE_PREFIX }}-linux-arm64.tar.gz
-            packages/cli/${{ steps.meta.outputs.FILE_PREFIX }}-darwin-x64.tar.gz
-            packages/cli/${{ steps.meta.outputs.FILE_PREFIX }}-darwin-arm64.tar.gz
-            packages/cli/${{ steps.meta.outputs.FILE_PREFIX }}-windows-x64.zip
+            packages/cli/${{ needs.meta.outputs.FILE_PREFIX }}-linux-x64.tar.gz
+            packages/cli/${{ needs.meta.outputs.FILE_PREFIX }}-linux-arm64.tar.gz
+            packages/cli/${{ needs.meta.outputs.FILE_PREFIX }}-darwin-x64.tar.gz
+            packages/cli/${{ needs.meta.outputs.FILE_PREFIX }}-darwin-arm64.tar.gz
+            packages/cli/${{ needs.meta.outputs.FILE_PREFIX }}-windows-x64.zip
             packages/cli/SHA256SUMS.txt
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Manual only (smoke=true): packages both crates and builds them from the
+  # packaged sources, as crates.io and `cargo install` will. Never uploads.
+  crates-smoke:
+    name: crates.io dry run
+    needs: meta
+    if: ${{ inputs.smoke }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake clang build-essential pkg-config
+
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: cargo publish --dry-run
+        run: cargo publish --workspace --dry-run --locked
+
+  # Manual only (workflow_dispatch with smoke=true): never publishes.
+  release-smoke:
+    name: Smoke (${{ matrix.name }})
+    needs: [meta, package]
+    if: ${{ inputs.smoke && !cancelled() && needs.package.result == 'success' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64 / bookworm-slim
+            os: ubuntu-latest
+            platform: linux-x64
+          - name: linux-arm64 / bookworm-slim
+            os: ubuntu-24.04-arm
+            platform: linux-arm64
+          - name: windows-x64
+            os: windows-latest
+            platform: windows-x64
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: assets
+
+      - name: Verify checksums
+        if: runner.os == 'Linux'
+        run: cd assets && grep "${{ matrix.platform }}" SHA256SUMS.txt | sha256sum -c -
+
+      - name: Install + run on pristine bookworm-slim
+        if: runner.os == 'Linux'
+        run: .github/scripts/release-smoke-linux.sh assets "${{ needs.meta.outputs.VERSION }}" "${{ matrix.platform }}"
+
+      # Runs the real install.ps1. Downloads are stubbed (functions shadow the
+      # cmdlets) to serve the locally built assets, like the Linux curl shim.
+      - name: Run install.ps1 on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $v = "${{ needs.meta.outputs.VERSION }}"
+          $assets = (Resolve-Path assets).Path
+          $env:CURL_RUNNER_INSTALL_DIR = Join-Path $PWD "installed"
+          function Invoke-RestMethod { param($Uri, [switch]$UseBasicParsing) [pscustomobject]@{ tag_name = "@curl-runner/cli@$v" } }
+          function Invoke-WebRequest { param($Uri, $OutFile, [switch]$UseBasicParsing) Copy-Item (Join-Path $assets ($Uri -split '/')[-1]) $OutFile }
+          & packages/docs/public/install.ps1
+          $exe = Join-Path $env:CURL_RUNNER_INSTALL_DIR "curl-runner.exe"
+          if (-not (Test-Path $exe)) { throw "curl-runner.exe not installed" }
+          $out = & $exe --version
+          Write-Host $out
+          if ($out -notmatch [regex]::Escape($v)) { throw "version mismatch" }
+          Set-Content -Path gh.yaml -Value "request:`n  name: github`n  url: https://api.github.com/zen`n  method: GET`n  headers:`n    User-Agent: curl-runner-release-smoke"
+          & $exe gh.yaml
+          if ($LASTEXITCODE -ne 0) { throw "https request failed" }
+
+  # Manual only (smoke=true): npm packaging end to end against a local
+  # verdaccio (bun without node, npm without bun, pnpm). Never publishes.
+  npm-smoke:
+    name: npm smoke (${{ matrix.platform }})
+    needs: [meta, build]
+    if: ${{ inputs.smoke && !cancelled() && needs.build.result == 'success' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            os: ubuntu-latest
+          - platform: linux-arm64
+            os: ubuntu-24.04-arm
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: bin-${{ matrix.platform }}
+          path: dist-bin
+
+      - name: Install + run from npm tarballs (bun, npm, pnpm)
+        run: scripts/npm-smoke.sh dist-bin

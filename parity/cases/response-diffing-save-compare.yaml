@@ -1,0 +1,13 @@
+# Saves the current label and compares against the seeded 'stored' baseline.
+global:
+  diff:
+    save: true
+    label: fresh
+    compareWith: stored
+    exclude:
+      - "*.date"
+requests:
+  - name: Get User
+    url: ${BASE_URL}/jp/users/1
+  - name: Status Change
+    url: ${BASE_URL}/jp/users/1

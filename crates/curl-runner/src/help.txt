@@ -1,0 +1,218 @@
+🚀 CURL RUNNER
+
+USAGE:
+  curl-runner [files...] [options]
+
+OPTIONS:
+  -h, --help                    Show this help message
+  -n, --dry-run                 Show curl commands without executing
+  --http2                       Use HTTP/2 protocol with multiplexing
+  --connection-pool             Enable TCP connection pooling with HTTP/2 multiplexing
+  --max-streams <n>             Max concurrent streams per host (default: 10)
+  --keepalive-time <sec>        TCP keepalive time in seconds (default: 60)
+  --connect-timeout <sec>       Connection timeout in seconds (default: 30)
+  -v, --verbose                 Enable verbose output
+  -q, --quiet                   Suppress non-error output
+  -p, --execution parallel      Execute requests in parallel
+  --max-concurrent <n>          Limit concurrent requests in parallel mode
+  -c, --continue-on-error       Continue execution on errors
+  -o, --output <file>           Save results to file
+  --all                         Find all YAML files recursively
+  --timeout <ms>                Set request timeout in milliseconds
+  --retries <count>             Set maximum retry attempts
+  --retry-delay <ms>            Set delay between retries in milliseconds
+  --no-retry                    Disable retry mechanism
+  --output-format <format>      Set output format (json|pretty|raw)
+  --pretty-level <level>        Set pretty format level (minimal|standard|detailed)
+  --show-headers                Include response headers in output
+  --show-body                   Include response body in output
+  --show-metrics                Include performance metrics in output
+  --version                     Show version
+
+WATCH MODE:
+  -w, --watch                   Watch files and re-run on changes
+  --watch-debounce <ms>         Debounce delay for watch mode (default: 300)
+  --no-watch-clear              Don't clear screen between watch runs
+
+PROFILE MODE:
+  -P, --profile <n>             Run each request N times for latency stats
+  --profile-warmup <n>          Warmup iterations to exclude from stats (default: 1)
+  --profile-concurrency <n>     Concurrent iterations (default: 1 = sequential)
+  --profile-histogram           Show ASCII histogram of latency distribution
+  --profile-export <file>       Export raw timings to file (.json or .csv)
+
+CI/CD OPTIONS:
+  --strict-exit                 Exit with code 1 if any validation fails (for CI/CD)
+  --fail-on <count>             Exit with code 1 if failures exceed this count
+  --fail-on-percentage <pct>    Exit with code 1 if failure percentage exceeds this value
+
+SECURITY OPTIONS:
+  --allow-protocol <proto>      Permit a URL protocol beyond http/https (repeatable, e.g. ftp)
+  --allow-path                  Allow file paths outside the working directory
+  --no-redact                   Disable secret redaction in output and saved files
+
+SNAPSHOT OPTIONS:
+  -s, --snapshot                Enable snapshot testing
+  -u, --update-snapshots        Update all snapshots
+  --update-failing              Update only failing snapshots
+  --snapshot-dir <dir>          Custom snapshot directory (default: __snapshots__)
+  --ci-snapshot                 Fail if snapshot is missing (CI mode)
+
+DIFF OPTIONS:
+  -d, --diff                    Enable response diffing (compare with baseline)
+  --diff-save                   Save current run as baseline
+  --diff-label <name>           Label for current run (e.g., 'staging', 'v1.0')
+  --diff-compare <label>        Compare against this baseline label
+  --diff-dir <dir>              Baseline storage directory (default: __baselines__)
+  --diff-output <format>        Output format (terminal|json|markdown)
+
+DIFF SUBCOMMAND:
+  curl-runner diff <label1> <label2> [file.yaml]
+                                Compare two stored baselines without making requests
+
+UPGRADE:
+  curl-runner upgrade           Upgrade to latest version (auto-detects install method)
+  curl-runner upgrade --dry-run Preview upgrade command without executing
+  curl-runner upgrade --force   Force reinstall even if up to date
+
+VALIDATE:
+  curl-runner validate          Validate YAML files against curl-runner schema
+  curl-runner validate --fix    Validate and auto-fix issues where possible
+  curl-runner validate -q       Only show files with issues
+
+CONVERT:
+  curl-runner convert curl "<cmd>"  Convert curl command to YAML
+  curl-runner convert file <sh>     Convert shell script to YAML (batch)
+  curl-runner convert yaml <yaml>   Convert YAML to curl command(s)
+
+WIZARD:
+  curl-runner init              Quick create a new YAML file
+  curl-runner init --wizard     Full interactive wizard
+  curl-runner init <url>        Quick create with URL
+  curl-runner edit <file.yaml>  Edit existing YAML file
+
+EXAMPLES:
+  # Run all YAML files in current directory
+  curl-runner
+
+  # Run specific file
+  curl-runner api-tests.yaml
+
+  # Run all files in a directory
+  curl-runner examples/
+
+  # Run all files in multiple directories
+  curl-runner tests/ examples/
+
+  # Run all files recursively in parallel
+  curl-runner --all -p
+
+  # Run in parallel with max 5 concurrent requests
+  curl-runner -p --max-concurrent 5 tests.yaml
+
+  # Run directory recursively
+  curl-runner --all examples/
+
+  # Run with verbose output and continue on errors
+  curl-runner tests/*.yaml -vc
+
+  # Dry run - show curl commands without executing
+  curl-runner api.yaml --dry-run
+
+  # Use HTTP/2 for all requests
+  curl-runner api.yaml --http2
+
+  # Enable connection pooling with HTTP/2 multiplexing
+  curl-runner api.yaml -p --connection-pool
+
+  # Connection pooling with custom settings
+  curl-runner api.yaml -p --connection-pool --max-streams 20
+
+  # Run with minimal pretty output (only status and errors)
+  curl-runner --output-format pretty --pretty-level minimal test.yaml
+
+  # Run with detailed pretty output (show all information)
+  curl-runner --output-format pretty --pretty-level detailed test.yaml
+
+  # CI/CD: Fail if any validation fails (strict mode)
+  curl-runner tests/ --strict-exit
+
+  # CI/CD: Run all tests but fail if any validation fails
+  curl-runner tests/ --continue-on-error --strict-exit
+
+  # CI/CD: Allow up to 2 failures
+  curl-runner tests/ --fail-on 2
+
+  # CI/CD: Allow up to 10% failures
+  curl-runner tests/ --fail-on-percentage 10
+
+  # Watch mode - re-run on file changes
+  curl-runner api.yaml --watch
+
+  # Watch with custom debounce
+  curl-runner tests/ -w --watch-debounce 500
+
+  # Profile mode - run request 100 times for latency stats
+  curl-runner api.yaml -P 100
+
+  # Profile with 5 warmup iterations and histogram
+  curl-runner api.yaml --profile 50 --profile-warmup 5 --profile-histogram
+
+  # Profile with concurrent iterations and export
+  curl-runner api.yaml -P 100 --profile-concurrency 10 --profile-export results.json
+
+  # Snapshot testing - save and compare responses
+  curl-runner api.yaml --snapshot
+
+  # Update all snapshots
+  curl-runner api.yaml -su
+
+  # CI mode - fail if snapshot missing
+  curl-runner api.yaml --snapshot --ci-snapshot
+
+  # Response diffing - save baseline for staging
+  curl-runner api.yaml --diff-save --diff-label staging
+
+  # Compare current run against staging baseline
+  curl-runner api.yaml --diff --diff-compare staging
+
+  # Compare staging vs production baselines (offline)
+  curl-runner diff staging production api.yaml
+
+  # Auto-diff: creates baseline on first run, compares on subsequent runs
+  curl-runner api.yaml --diff
+
+  # Diff with JSON output for CI
+  curl-runner api.yaml --diff --diff-compare staging --diff-output json
+
+  # Create new YAML file with wizard
+  curl-runner init --wizard
+
+  # Quick create with URL
+  curl-runner init https://api.example.com/users
+
+  # Edit existing YAML file
+  curl-runner edit api-test.yaml
+
+YAML STRUCTURE:
+  Single request:
+    request:
+      url: https://api.example.com
+      method: GET
+
+  Multiple requests:
+    requests:
+      - url: https://api.example.com/users
+        method: GET
+      - url: https://api.example.com/posts
+        method: POST
+        body: { title: "Test" }
+
+  With global config:
+    global:
+      execution: parallel
+      variables:
+        BASE_URL: https://api.example.com
+    requests:
+      - url: ${BASE_URL}/users
+        method: GET

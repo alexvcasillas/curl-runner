@@ -1,0 +1,6 @@
+request:
+  method: GET
+  url: "A: 1"
+  followRedirects: true
+  insecure: true
+

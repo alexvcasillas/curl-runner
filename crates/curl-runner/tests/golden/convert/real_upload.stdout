@@ -1,0 +1,12 @@
+request:
+  method: POST
+  url: https://api.example.com/upload
+  auth:
+    type: bearer
+    token: tok
+  formData:
+    description: Q3 report
+    file:
+      file: /tmp/report.pdf
+      contentType: application/pdf
+

@@ -1,0 +1,4 @@
+[33m⚠ Unsupported curl flag: --weird x[0m
+[33m⚠ Flag --compressed has no YAML equivalent; curl handles decompression natively[0m
+[33m⚠ Cookie flag (-b a=1) stored as header; manual review recommended[0m
+[33m⚠ Cookie jar flag (-c jar) has no YAML equivalent[0m

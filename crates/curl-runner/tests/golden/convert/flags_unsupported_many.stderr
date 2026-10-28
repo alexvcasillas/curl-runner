@@ -1,0 +1,3 @@
+[33m⚠ Unsupported curl flag: --foo[0m
+[33m⚠ Unsupported curl flag: --bar baz[0m
+[33m⚠ Unsupported curl flag: -Z https://x.test[0m

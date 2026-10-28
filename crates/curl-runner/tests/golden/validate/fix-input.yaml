@@ -1,0 +1,53 @@
+version: 1
+extra: drop me
+global:
+  excecution: parallel
+  continueOnError: "TRUE"
+  execution: paralel
+  output:
+    format: jsn
+    verbose: "false"
+  variables:
+    BASE: https://api.example.com
+    "2": two
+    empty: ""
+    num: "123abc"
+    flag: "true"
+    hash: "#x"
+    colon: "a: b"
+    dollar: "$HOME"
+    nl: "a\nb"
+  defaults:
+    timeout: "3000"
+collection:
+  name: Coll
+  requests:
+    - url: htpp://localhsot:3000//a b
+      method: post
+      headers:
+        content-type: application/json
+        accept: "*/*"
+      body:
+        list: [1, 2.5, true, null, "x"]
+        nested:
+          deep: {a: 1}
+          empty: {}
+          emptyList: []
+        items:
+          - a: 1
+            b: [x, y]
+          - [1, 2]
+      expect:
+        status: "201"
+        headers: {}
+requests:
+  - url: api.example.com
+    metod: GET
+    when:
+      left: store.x
+      operator: equals
+      right: 1
+    insecure: "true"
+  - url: "https://x.com//p//q"
+    method: get
+    timeout: "  42ms"

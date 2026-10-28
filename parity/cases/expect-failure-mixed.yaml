@@ -1,0 +1,40 @@
+# Mixed success and failure expectations
+# Usage: curl-runner expect-failure-mixed.yaml
+
+global:
+  output:
+    format: pretty
+    prettyLevel: standard
+
+requests:
+  - name: Normal Success Test
+    url: ${BASE_URL}/jp/posts/1
+    method: GET
+    expect:
+      status: 200  # Normal success expectation
+      
+  - name: Test Authentication Failure
+    url: ${BASE_URL}/api/test/auth/basic
+    method: GET
+    auth:
+      type: basic
+      username: user
+      password: incorrectpassword
+    expect:
+      failure: true  # We expect auth to fail
+      status: 401    # Should be Unauthorized
+      
+  - name: Another Normal Success
+    url: ${BASE_URL}/jp/users/1
+    method: GET
+    expect:
+      status: 200
+      body:
+        id: 1
+        
+  - name: Test Error Response Body
+    url: ${BASE_URL}/api/test/status/500
+    method: GET
+    expect:
+      failure: true  # We expect this to fail
+      status: 500    # Should be Internal Server Error

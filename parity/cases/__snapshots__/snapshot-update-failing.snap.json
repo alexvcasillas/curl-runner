@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "snapshots": {
+    "Stale Post": {
+      "hash": "00000000",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "status": 404,
+      "body": "old"
+    }
+  }
+}

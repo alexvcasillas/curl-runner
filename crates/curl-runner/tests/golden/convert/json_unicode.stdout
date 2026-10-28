@@ -1,0 +1,11 @@
+request:
+  method: POST
+  url: https://x.test/j
+  headers:
+    Content-Type: application/json
+  body:
+    json:
+      name: José
+      emoji: 😀
+      jp: 日本語
+

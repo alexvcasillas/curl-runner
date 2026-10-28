@@ -1,0 +1,63 @@
+[33mDEBUG:[0m
+{
+  "tokens": [
+    "curl",
+    "--foo",
+    "bar",
+    "--baz",
+    "https://x.test",
+    "-Z"
+  ],
+  "ast": {
+    "url": "",
+    "headers": [],
+    "unsupportedFlags": [
+      {
+        "flag": "--foo",
+        "value": "bar"
+      },
+      {
+        "flag": "--baz",
+        "value": "https://x.test"
+      },
+      {
+        "flag": "-Z"
+      }
+    ]
+  },
+  "ir": {
+    "method": "GET",
+    "url": "",
+    "headers": {},
+    "metadata": {
+      "source": "curl",
+      "warnings": [
+        "Unsupported curl flag: --foo bar",
+        "Unsupported curl flag: --baz https://x.test",
+        "Unsupported curl flag: -Z"
+      ],
+      "unsupportedFlags": [
+        {
+          "flag": "--foo",
+          "value": "bar"
+        },
+        {
+          "flag": "--baz",
+          "value": "https://x.test"
+        },
+        {
+          "flag": "-Z"
+        }
+      ]
+    }
+  }
+}
+
+# Warning: Unsupported curl flag: --foo bar
+# Warning: Unsupported curl flag: --baz https://x.test
+# Warning: Unsupported curl flag: -Z
+
+request:
+  method: GET
+  url: ""
+

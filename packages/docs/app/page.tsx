@@ -26,7 +26,7 @@ import { exampleYaml, installCommand, runCommand } from './snippets';
 export const metadata: Metadata = {
   title: 'curl-runner - Powerful CLI Tool for HTTP Request Management & API Testing',
   description:
-    'curl-runner is a blazing-fast CLI tool for HTTP request management using YAML configuration. Perfect alternative to Postman and curl for API testing, automation, CI/CD, and load testing. Built with Bun.',
+    'curl-runner is a blazing-fast CLI tool for HTTP request management using YAML configuration. Perfect alternative to Postman and curl for API testing, automation, CI/CD, and load testing. Built in Rust as a native binary.',
   keywords: [
     'curl-runner',
     'API testing tool',
@@ -36,7 +36,7 @@ export const metadata: Metadata = {
     'alternative to curl',
     'alternative to Insomnia',
     'CLI tool',
-    'Bun runtime',
+    'Rust CLI',
     'REST API testing',
     'HTTP request automation',
     'parallel execution',
@@ -78,7 +78,7 @@ export default function Home() {
         <section className="space-y-6 pb-8 pt-6 md:pb-12 md:pt-10 lg:py-32">
           <div className="container mx-auto flex max-w-[64rem] flex-col items-center gap-4 text-center px-4 sm:px-6 lg:px-8">
             <Badge className="text-sm bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20">
-              Built with Bun for Maximum Performance
+              Built with Rust for Maximum Performance
             </Badge>
 
             <h1 className="font-bold text-3xl sm:text-5xl md:text-6xl lg:text-7xl">
@@ -275,7 +275,7 @@ export default function Home() {
                         Blazing Fast
                       </Badge>
                     </div>
-                    <p className="text-lg font-semibold tracking-tight">Built with Bun</p>
+                    <p className="text-lg font-semibold tracking-tight">Built with Rust</p>
                     <p className="mt-2 text-sm text-muted-foreground">
                       Exceptional performance for sequential and parallel request execution.
                     </p>

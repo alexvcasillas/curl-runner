@@ -1,0 +1,11 @@
+request:
+  method: POST
+  url: https://x.test/up
+  formData:
+    avatar:
+      file: me.png
+      filename: photo.png
+      contentType: image/png
+    name: Alex
+    note: hi there
+

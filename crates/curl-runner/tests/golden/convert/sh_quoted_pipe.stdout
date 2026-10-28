@@ -1,0 +1,13 @@
+requests:
+  - name: request_1
+    method: POST
+    url: https://a.test
+    body:
+      raw: "a|b"
+
+  - name: request_2
+    method: GET
+    url: https://b.test
+    headers:
+      X: "a|b"
+

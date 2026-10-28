@@ -1,0 +1,12 @@
+# Simple single request example
+global:
+  output:
+    verbose: true
+    format: pretty
+
+request:
+  name: Get JSONPlaceholder User
+  url: ${BASE_URL}/jp/users/1
+  method: GET
+  expect:
+    status: 200

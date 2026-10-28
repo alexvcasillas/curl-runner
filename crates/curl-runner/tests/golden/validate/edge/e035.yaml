@@ -1,0 +1,1 @@
+request: {url: https://a.com, method: patch, retry: {count: 0, backoff: 6}}

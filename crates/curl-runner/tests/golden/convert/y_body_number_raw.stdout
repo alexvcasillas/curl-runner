@@ -1,0 +1,4 @@
+curl \
+  -X GET \
+  -d 123 \
+  https://a.test

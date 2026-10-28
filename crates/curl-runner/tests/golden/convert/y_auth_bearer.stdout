@@ -1,0 +1,3 @@
+curl \
+  -H 'Authorization: Bearer mytoken' \
+  https://a.test

@@ -26,6 +26,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # caches
 .eslintcache
 .cache
+.superpowers/
+.worktrees/
 *.tsbuildinfo
 
 # IntelliJ based IDEs
@@ -45,4 +47,10 @@ packages/docs/next-env.d.ts
 packages/docs/public/docs/
 
 # Build
-curl-runner
+/curl-runner
+
+# rust
+/target
+
+# staged by scripts/npm-stage.sh, never committed
+npm/*/bin/

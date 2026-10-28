@@ -1,0 +1,2 @@
+global: [1, 2, 3]
+request: {url: https://a.com}

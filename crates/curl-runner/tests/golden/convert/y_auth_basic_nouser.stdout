@@ -1,0 +1,3 @@
+curl \
+  -u : \
+  https://a.test

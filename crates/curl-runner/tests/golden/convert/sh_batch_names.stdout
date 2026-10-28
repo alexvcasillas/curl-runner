@@ -1,0 +1,31 @@
+requests:
+  - name: request_1
+    method: GET
+    url: https://a.test/1
+
+  - name: request_2
+    method: POST
+    url: https://a.test/2
+    body:
+      json:
+        a: 1
+
+  - name: request_3
+    method: POST
+    url: https://a.test/3
+    formData:
+      f:
+        file: x
+      g: "1"
+
+  - name: request_4
+    method: GET
+    url: https://a.test/4
+    headers:
+      A: "1"
+    auth:
+      type: basic
+      username: u
+      password: p
+    insecure: true
+

@@ -1,0 +1,8 @@
+request:
+  method: POST
+  url: https://example.com
+  formData:
+    file:
+      file: test.png
+    name: test
+

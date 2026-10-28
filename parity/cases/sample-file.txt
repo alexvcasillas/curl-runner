@@ -1,0 +1,2 @@
+This is a sample file for testing file uploads with curl-runner.
+It can be used with the file-upload.yaml example.

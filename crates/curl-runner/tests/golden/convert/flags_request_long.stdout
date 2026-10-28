@@ -1,0 +1,4 @@
+request:
+  method: DELETE
+  url: https://x.test/1
+

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "snapshots": {
+    "Stale User": {
+      "hash": "00000000",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "body": {
+        "id": 2
+      }
+    },
+    "Fresh User": {
+      "hash": "00000000",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "status": 200
+    }
+  }
+}

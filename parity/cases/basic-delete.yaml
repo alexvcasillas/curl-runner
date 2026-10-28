@@ -1,0 +1,7 @@
+# Basic DELETE request example
+# Usage: curl-runner basic-delete.yaml
+
+request:
+  name: Basic DELETE Request
+  url: ${BASE_URL}/jp/posts/1
+  method: DELETE

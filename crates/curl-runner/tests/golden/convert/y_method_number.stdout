@@ -1,0 +1,3 @@
+curl \
+  -X 5 \
+  https://a.test

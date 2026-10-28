@@ -1,0 +1,7 @@
+# Baseline label that does not exist: warns and saves the run under that label.
+global:
+  diff:
+    compareWith: nothing-here
+requests:
+  - name: Get User
+    url: ${BASE_URL}/jp/users/1

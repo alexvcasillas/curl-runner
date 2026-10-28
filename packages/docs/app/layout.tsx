@@ -23,14 +23,14 @@ export const metadata: Metadata = {
     template: '%s | curl-runner Documentation',
   },
   description:
-    'Complete documentation for curl-runner - A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance.',
+    'Complete documentation for curl-runner - A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance.',
   keywords: [
     'curl-runner',
     'API testing tool',
     'HTTP client CLI',
     'YAML configuration',
     'CLI tool',
-    'Bun runtime',
+    'Rust CLI',
     'REST API testing',
     'HTTP client',
     'API automation',
@@ -80,7 +80,7 @@ export const metadata: Metadata = {
     url: 'https://www.curl-runner.com',
     title: 'curl-runner Documentation',
     description:
-      'Complete documentation for curl-runner - A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance.',
+      'Complete documentation for curl-runner - A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance.',
     siteName: 'curl-runner Documentation',
     images: [
       {
@@ -96,7 +96,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'curl-runner Documentation',
     description:
-      'Complete documentation for curl-runner - A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance.',
+      'Complete documentation for curl-runner - A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance.',
     images: ['/opengraph-image'],
     creator: '@curl_runner',
     site: '@curl_runner',

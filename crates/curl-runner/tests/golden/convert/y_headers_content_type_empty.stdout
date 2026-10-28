@@ -1,0 +1,6 @@
+curl \
+  -X GET \
+  -H 'Content-Type: ' \
+  -d '{"a":1}' \
+  -H 'Content-Type: application/json' \
+  https://a.test

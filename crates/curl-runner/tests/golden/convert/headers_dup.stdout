@@ -1,0 +1,7 @@
+request:
+  method: GET
+  url: https://x.test
+  headers:
+    X-A: "4"
+    X-B: "3"
+

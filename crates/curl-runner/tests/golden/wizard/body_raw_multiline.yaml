@@ -1,0 +1,4 @@
+request:
+  url: "https://api.example.com/users"
+  method: POST
+  body: "line one\nline two"

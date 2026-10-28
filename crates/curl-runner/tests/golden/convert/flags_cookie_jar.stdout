@@ -1,0 +1,9 @@
+# Warning: Cookie flag (-b a=1; b=2) stored as header; manual review recommended
+# Warning: Cookie jar flag (-c jar.txt) has no YAML equivalent
+
+request:
+  method: GET
+  url: https://x.test
+  headers:
+    Cookie: a=1; b=2
+

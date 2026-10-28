@@ -1,0 +1,6 @@
+request:
+  method: POST
+  url: ""
+  body:
+    raw: abc https://x.test
+

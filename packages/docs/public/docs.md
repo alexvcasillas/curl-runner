@@ -1,6 +1,6 @@
 ---
 title: "curl-runner Documentation"
-description: "A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance."
+description: "A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance."
 path: "/docs"
 generated_at: "2025-09-03T14:32:03.404Z"
 generator: "curl-runner-advanced-extractor"
@@ -8,7 +8,7 @@ generator: "curl-runner-advanced-extractor"
 
 # curl-runner Documentation
 
-A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance.
+A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance.
 
 ## Table of Contents
 

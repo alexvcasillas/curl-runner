@@ -17,23 +17,57 @@ on:
         type: string
 
 jobs:
-  test:
-    name: Run Tests
-    runs-on: ubuntu-latest
-    environment: production
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          bun-version: latest
+          toolchain: 1.99.1
+          components: rustfmt, clippy
 
-      - name: Install Dependencies
-        run: bun install --frozen-lockfile
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
 
-      - name: Run Tests
-        run: bun run test
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --no-fail-fast
+
+  rust-musl:
+    name: Rust musl build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1
+          targets: x86_64-unknown-linux-musl
+
+      - name: Install musl tools
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: cargo build --release --target x86_64-unknown-linux-musl
+
+      - name: Smoke test
+        run: ./target/x86_64-unknown-linux-musl/release/curl-runner --version

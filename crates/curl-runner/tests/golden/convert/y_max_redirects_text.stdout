@@ -1,0 +1,3 @@
+curl \
+  --max-redirs x \
+  https://a.test

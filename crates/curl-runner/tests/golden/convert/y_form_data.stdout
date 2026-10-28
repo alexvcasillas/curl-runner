@@ -1,0 +1,8 @@
+curl \
+  -X POST \
+  --form-string name=Alex \
+  --form-string n=5 \
+  -F 'file=@./a.png;filename=b.png;type=image/png' \
+  -F bare=@./c.txt \
+  -F empty_meta=@./d.txt \
+  https://a.test/u

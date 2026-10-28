@@ -1,0 +1,33 @@
+[package]
+name = "curl-runner-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Engine behind the curl-runner CLI: YAML request suites, libcurl execution, validation, snapshots and diffs"
+keywords = ["http", "curl", "api-testing", "yaml"]
+categories = ["development-tools::testing", "web-programming::http-client"]
+
+[dependencies]
+curl = { version = "0.4", default-features = false, features = ["static-curl", "http2", "rustls"] }
+curl-sys = { version = "0.4", default-features = false }
+form_urlencoded = "1"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+indexmap = { version = "2.14.2", features = ["serde"] }
+rand = "0.10.3"
+regex = "1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip"] }
+serde_path_to_error = "0.1.20"
+serde_yaml_ng = "0.10.0"
+unsafe-libyaml = "0.2.11"
+thiserror = "2.0.21"
+url = "2"
+uuid = { version = "1.29.0", features = ["v4"] }
+fancy-regex = "0.20.0"
+md-5 = "0.10"
+
+[dev-dependencies]
+testkit = { path = "../testkit" }
+tempfile = "3.27.0"

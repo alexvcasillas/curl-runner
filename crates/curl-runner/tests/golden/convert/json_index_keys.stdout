@@ -1,0 +1,13 @@
+request:
+  method: POST
+  url: https://x.test/j
+  headers:
+    Content-Type: application/json
+  body:
+    json:
+      "1": one
+      "2": two
+      "10": ten
+      b: 1
+      a: 2
+

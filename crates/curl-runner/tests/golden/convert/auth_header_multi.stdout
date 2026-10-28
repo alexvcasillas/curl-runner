@@ -1,0 +1,9 @@
+request:
+  method: GET
+  url: https://x.test
+  headers:
+    Authorization: Token a
+  auth:
+    type: bearer
+    token: b
+

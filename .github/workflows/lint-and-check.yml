@@ -41,6 +41,3 @@ jobs:
 
       - name: Typecheck
         run: bun run typecheck
-
-      - name: Build CLI
-        run: bun run build:cli

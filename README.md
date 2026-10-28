@@ -1,12 +1,12 @@
 # 🚀 curl-runner
 
-[![Bun](https://img.shields.io/badge/Bun-%23000000.svg?style=for-the-badge&logo=bun&logoColor=white)](https://bun.sh)
+[![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next-black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
 [![YAML](https://img.shields.io/badge/yaml-%23ffffff.svg?style=for-the-badge&logo=yaml&logoColor=151515)](https://yaml.org/)
 [![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-A powerful CLI tool and documentation website for HTTP request management using YAML configuration files. Built with [Bun](https://bun.sh) for blazing-fast performance and featuring a modern documentation site powered by Next.js.
+A powerful CLI tool and documentation website for HTTP request management using YAML configuration files. The CLI is a single native Rust binary (libcurl statically linked, no Bun, Node or curl needed at runtime), and the documentation site is powered by Next.js.
 
 ## 🏢 Companies using `curl-runner`
 
@@ -39,22 +39,34 @@ A powerful CLI tool and documentation website for HTTP request management using 
 
 ## 📦 Installation
 
-### Prerequisites
-
-- **[Bun](https://bun.sh)** v1.2.21 or higher
-
-### Quick Install
+### Install the CLI
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/curl-runner.git
+npm i -g @curl-runner/cli     # or: bun i -g @curl-runner/cli, pnpm add -g @curl-runner/cli
+curl-runner --version
+```
+
+Or build it from crates.io with `cargo install curl-runner --locked` (needs a C compiler
+and `cmake`).
+
+The npm package ships a prebuilt native binary per platform; no Node, Bun or curl is
+needed to run it. See [packages/cli/README.md](packages/cli/README.md) for the install
+script, Windows notes and how the npm package works.
+
+### Build from source
+
+Prerequisites: [Rust](https://rustup.rs) (the toolchain is pinned in `rust-toolchain.toml`).
+[Bun](https://bun.sh) is only needed for the documentation site.
+
+```bash
+git clone https://github.com/alexvcasillas/curl-runner.git
 cd curl-runner
 
-# Install all dependencies
-bun install
+# Build the CLI (target/release/curl-runner)
+cargo build --release -p curl-runner
 
-# Build the CLI tool
-bun run build:cli
+# Documentation site only
+bun install
 ```
 
 ## 🚀 Quick Start
@@ -63,13 +75,13 @@ bun run build:cli
 
 ```bash
 # Run a single YAML file
-bun run cli examples/simple.yaml
+curl-runner examples/simple.yaml
 
 # Run all YAML files in a directory
-bun run cli examples/
+curl-runner examples/
 
 # Run with options
-bun run cli -pv examples/  # Parallel + Verbose mode
+curl-runner -pv examples/  # Parallel + Verbose mode
 ```
 
 ### Your First Request
@@ -89,7 +101,7 @@ request:
 Run it:
 
 ```bash
-bun run cli my-request.yaml
+curl-runner my-request.yaml
 ```
 
 ### Multiple Requests (Collection)
@@ -135,14 +147,16 @@ collection:
 ```
 curl-runner/
 ├── packages/
-│   ├── cli/                 # CLI tool package
-│   │   ├── src/            # Source code
+│   ├── cli/                 # npm wrapper (launcher + platform packages)
+│   │   ├── bin/            # curl-runner launcher
 │   │   ├── examples/       # Example YAML files
 │   │   └── package.json
 │   └── docs/               # Documentation website
 │       ├── app/            # Next.js app directory
 │       ├── components/     # React components
 │       └── package.json
+├── crates/                 # Rust CLI (curl-runner, curl-runner-core, testkit)
+├── parity/                 # TS vs Rust parity harness
 ├── package.json            # Root workspace configuration
 ├── biome.json             # Code formatting and linting
 ├── @README.md             # This file
@@ -158,25 +172,22 @@ curl-runner/
 # Install dependencies for all packages
 bun install
 
-# Development mode
-bun run dev              # Run all packages in dev mode
-bun run dev:cli          # CLI only (watch mode)
-bun run dev:docs         # Documentation site only
+# CLI (Rust)
+cargo run -p curl-runner -- packages/cli/examples/simple.yaml
+cargo build --release -p curl-runner               # or: bun run build:cli
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace                             # or: bun run test
 
-# Building
-bun run build            # Build all packages
-bun run build:cli        # Build CLI to binary
+# Documentation site
+bun run dev:docs         # Development server
 bun run build:docs       # Build documentation site
 
-# Code quality
+# Code quality (TypeScript: docs site and tooling)
 bun run format           # Format code with Biome
 bun run lint             # Lint code with Biome
 bun run check            # Format and fix all issues
 bun run check:ci         # CI-friendly check
-
-# Testing
-bun test                 # Run all tests
-bun test:cli             # Run CLI tests only
 ```
 
 ### Running the Documentation Site
@@ -326,13 +337,13 @@ request:
 
 ```bash
 # Test a REST API with authentication
-bun run cli examples/api-auth.yaml
+curl-runner examples/api-auth.yaml
 
 # Load test with parallel requests
-bun run cli -p examples/load-test/
+curl-runner -p examples/load-test/
 
 # Integration test suite
-bun run cli --verbose examples/integration/
+curl-runner --verbose examples/integration/
 ```
 
 ### Environment-Specific Testing
@@ -343,25 +354,24 @@ export API_KEY=your-api-key
 export BASE_URL=https://api.staging.example.com
 
 # Run tests with environment variables
-bun run cli examples/staging-tests.yaml
+curl-runner examples/staging-tests.yaml
 ```
 
 ### Continuous Integration
 
 ```bash
 # CI-friendly execution with JSON output
-bun run cli --quiet --output results.json --continue examples/
+curl-runner --quiet --output results.json --continue examples/
 
 # Validate API contract
-bun run cli --fail-fast examples/contract-tests/
+curl-runner --fail-fast examples/contract-tests/
 ```
 
 ## 🏗️ Architecture
 
-### CLI Package (`@curl-runner/cli`)
+### CLI (`crates/`, published as `@curl-runner/cli`)
 
-- **TypeScript** for type safety
-- **Bun** runtime for performance
+- **Rust** with libcurl linked statically (rustls); one native binary per platform
 - **YAML parsing** for configuration
 - **HTTP client** with retry logic
 - **Validation engine** for assertions
@@ -391,7 +401,8 @@ This project is licensed under the MIT License. See [LICENSE.md](LICENSE.md) for
 
 ## 🙏 Acknowledgments
 
-- **[Bun](https://bun.sh)** - The fast all-in-one JavaScript runtime
+- **[Rust](https://www.rust-lang.org/)** and **[libcurl](https://curl.se/libcurl/)** - The CLI runtime
+- **[Bun](https://bun.sh)** - JavaScript runtime and package manager for the docs site
 - **[Next.js](https://nextjs.org/)** - The React framework for production
 - **[Biome](https://biomejs.dev/)** - Fast formatter and linter
 - **[Tailwind CSS](https://tailwindcss.com/)** - Utility-first CSS framework

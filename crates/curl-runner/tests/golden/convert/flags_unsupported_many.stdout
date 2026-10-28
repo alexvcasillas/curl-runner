@@ -1,0 +1,8 @@
+# Warning: Unsupported curl flag: --foo
+# Warning: Unsupported curl flag: --bar baz
+# Warning: Unsupported curl flag: -Z https://x.test
+
+request:
+  method: GET
+  url: ""
+

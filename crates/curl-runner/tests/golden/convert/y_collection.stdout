@@ -1,0 +1,5 @@
+curl \
+  https://c.test/1
+
+curl \
+  https://c.test/2

@@ -1,0 +1,6 @@
+request:
+  method: POST
+  url: https://example.com
+  body:
+    raw: hello world
+

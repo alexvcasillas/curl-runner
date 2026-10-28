@@ -1,0 +1,8 @@
+request:
+  method: GET
+  url: https://x.test
+  auth:
+    type: basic
+    username: Ã©
+    password: Ã±
+

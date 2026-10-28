@@ -1,0 +1,8 @@
+request:
+  method: GET
+  url: https://example.com
+  ssl:
+    ca: ca.pem
+    cert: client.pem
+    key: key.pem
+

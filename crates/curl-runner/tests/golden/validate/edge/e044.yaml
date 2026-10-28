@@ -1,0 +1,1 @@
+request: {url: https://a.com, expect: {status: null, responseTime: ">= 5 ,<= ${X}"}}

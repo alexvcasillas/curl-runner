@@ -1,0 +1,6 @@
+request:
+  method: GET
+  url: https://example.com
+  followRedirects: true
+  maxRedirects: 5
+

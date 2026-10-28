@@ -1,0 +1,5 @@
+request:
+  method: GET
+  url: https://x.test
+  proxy: "http://u:p@proxy:8080"
+

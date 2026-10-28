@@ -1,0 +1,6 @@
+request:
+  method: DELETE
+  url: https://api.example.com/users/42
+  headers:
+    X-Api-Key: abc123
+

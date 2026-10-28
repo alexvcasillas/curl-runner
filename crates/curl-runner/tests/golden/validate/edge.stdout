@@ -1,0 +1,443 @@
+
+[1mcurl-runner validate[0m
+
+[36mFiles:[0m 74 found
+
+[31m✗[0m edge/e001.yaml
+  [33m●[0m request.0: Unknown key "0"
+  [33m●[0m request.1: Unknown key "1"
+  [33m●[0m request.2: Unknown key "2"
+  [31m●[0m request.url: URL is required
+  [2m→[0m 1 error(s), 3 warning(s)
+
+[31m✗[0m edge/e002.yaml
+  [31m●[0m requests: Must be an array
+  [2m→[0m 1 error(s)
+
+[31m✗[0m edge/e003.yaml
+  [31m●[0m requests[0].url: URL is required
+  [31m●[0m requests[1].url: URL is required
+  [33m●[0m requests[2].0: Unknown key "0"
+  [31m●[0m requests[2].url: URL is required
+  [33m●[0m requests[3].0: Unknown key "0"
+  [31m●[0m requests[3].url: URL is required
+  [2m→[0m 4 error(s), 2 warning(s)
+
+[31m✗[0m edge/e004.yaml
+  [33m●[0m collection.0: Unknown key "0"
+  [33m●[0m collection.1: Unknown key "1"
+  [33m●[0m collection.2: Unknown key "2"
+  [33m●[0m collection.name: Collection name is recommended
+  [31m●[0m collection.requests: Collection must have a requests array
+  [2m→[0m 1 error(s), 4 warning(s)
+
+[31m✗[0m edge/e005.yaml
+  [33m●[0m collection.0: Unknown key "0"
+  [33m●[0m collection.1: Unknown key "1"
+  [33m●[0m collection.name: Collection name is recommended
+  [31m●[0m collection.requests: Collection must have a requests array
+  [2m→[0m 1 error(s), 3 warning(s)
+
+[32m✓[0m edge/e006.yaml
+  [33m●[0m global.0: Unknown key "0" (did you mean "ci"?)
+    [36mfix:[0m Rename to "ci"
+  [33m●[0m global.1: Unknown key "1" (did you mean "ci"?)
+    [36mfix:[0m Rename to "ci"
+  [33m●[0m global.2: Unknown key "2" (did you mean "ci"?)
+    [36mfix:[0m Rename to "ci"
+  [2m→[0m 3 warning(s)
+
+[32m✓[0m edge/e007.yaml
+  [33m●[0m global.0: Unknown key "0" (did you mean "ci"?)
+    [36mfix:[0m Rename to "ci"
+  [33m●[0m global.1: Unknown key "1" (did you mean "ci"?)
+    [36mfix:[0m Rename to "ci"
+  [33m●[0m global.2: Unknown key "2" (did you mean "ci"?)
+    [36mfix:[0m Rename to "ci"
+  [2m→[0m 3 warning(s)
+
+[31m✗[0m edge/e008.yaml
+  [31m●[0m global.ci.failOnPercentage: Must be a number between 0 and 100
+  [34m●[0m global.ci: Both failOn and failOnPercentage are set; failOn takes precedence
+  [33m●[0m global.snapshot.0: Unknown key "0"
+  [33m●[0m global.diff.0: Unknown key "0"
+  [31m●[0m global.variables: Must be an object
+  [33m●[0m global.defaults.0: Unknown key "0"
+  [33m●[0m global.defaults.1: Unknown key "1"
+  [2m→[0m 2 error(s), 4 warning(s), 1 info
+
+[31m✗[0m edge/e009.yaml
+  [31m●[0m global.maxConcurrency: Must be a positive number
+  [33m●[0m global.maxConcurrency: maxConcurrency has no effect with sequential execution
+  [31m●[0m global.watch.debounce: Must be a non-negative number
+  [31m●[0m global.watch.enabled: Must be a boolean
+  [33m●[0m global.watch.clear: Should be boolean, not string "FALSE"
+    [36mfix:[0m Convert to false
+  [33m●[0m global.profile.extra: Unknown key "extra"
+  [33m●[0m global.profile.iterations: Very high iteration count may take long
+  [31m●[0m global.profile.warmup: Must be a non-negative number
+  [31m●[0m global.profile.concurrency: Must be a positive number
+  [2m→[0m 5 error(s), 4 warning(s)
+
+[31m✗[0m edge/e010.yaml
+  [31m●[0m request.url: URL must be a string
+  [2m→[0m 1 error(s)
+
+[31m✗[0m edge/e011.yaml
+  [31m●[0m request.url: URL must be a string
+  [31m●[0m request.proxy: Proxy must be a string URL
+  [2m→[0m 2 error(s)
+
+[31m✗[0m edge/e012.yaml
+  [31m●[0m request.url: URL contains typo "127.0.0.0"
+    [36mfix:[0m Fix to "127.0.0.1"
+  [31m●[0m request.url: URL contains spaces
+    [36mfix:[0m Encode spaces as %20
+  [34m●[0m request.url: Using HTTP instead of HTTPS; consider using HTTPS for security
+  [31m●[0m request.url: Invalid port number 0. Must be 1-65535
+  [2m→[0m 3 error(s), 1 info
+
+[31m✗[0m edge/e013.yaml
+  [31m●[0m request.url: URL contains typo "http:/"
+    [36mfix:[0m Fix to "http://"
+  [33m●[0m request.method: Method should be uppercase: "GET"
+    [36mfix:[0m Change to "GET"
+  [2m→[0m 1 error(s), 1 warning(s)
+
+[31m✗[0m edge/e014.yaml
+  [31m●[0m request.url: URL contains typo "https:/"
+    [36mfix:[0m Fix to "https://"
+  [31m●[0m request.method: Invalid method "pöst". Must be: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS
+    [36mfix:[0m Change to "POST"
+  [2m→[0m 2 error(s)
+
+[31m✗[0m edge/e015.yaml
+  [33m●[0m request.url: URL should start with http:// or https://
+    [36mfix:[0m Prepend https://
+  [31m●[0m request.url: Invalid port number 1e+23. Must be 1-65535
+  [2m→[0m 1 error(s), 1 warning(s)
+
+[31m✗[0m edge/e016.yaml
+  [31m●[0m request.url: URL contains spaces
+    [36mfix:[0m Encode spaces as %20
+  [2m→[0m 1 error(s)
+
+[31m✗[0m edge/e017.yaml
+  [31m●[0m request.headers: Headers must be an object
+  [33m●[0m request.body: Body with GET method may be ignored by some servers
+  [2m→[0m 1 error(s), 1 warning(s)
+
+[31m✗[0m edge/e018.yaml
+  [31m●[0m request.headers: Headers must be an object
+  [33m●[0m request.body: Body with GET method may be ignored by some servers
+  [2m→[0m 1 error(s), 1 warning(s)
+
+[31m✗[0m edge/e019.yaml
+  [31m●[0m request.headers.Content-Type: Header value must be a string or number
+  [34m●[0m request.headers: Body present but no Content-Type header; consider adding one
+  [2m→[0m 1 error(s), 1 info
+
+[32m✓[0m edge/e020.yaml
+  [33m●[0m request.body: Body looks like JSON but is invalid; check syntax
+  [2m→[0m 1 warning(s)
+
+[31m✗[0m edge/e021.yaml
+  [34m●[0m request.headers.x-api-key: Header "x-api-key" should be "X-API-Key" for consistency
+    [36mfix:[0m Rename to "X-API-Key"
+  [33m●[0m request.headers.x-api-key: Potentially sensitive header value. Consider using variables like "${env.TOKEN}"
+  [33m●[0m request.headers.Authorization: Potentially sensitive header value. Consider using variables like "${env.TOKEN}"
+  [34m●[0m request.headers.AUTHORIZATION: Header "AUTHORIZATION" should be "Authorization" for consistency
+    [36mfix:[0m Rename to "Authorization"
+  [33m●[0m request.headers.AUTHORIZATION: Duplicate header "AUTHORIZATION" (case-insensitive match with "Authorization")
+  [31m●[0m request.headers.X: Header value must be a string or number
+  [31m●[0m request.headers.Y: Header value must be a string or number
+  [33m●[0m request.headers: Both auth block and Authorization header present; auth block may be ignored
+  [33m●[0m request.auth.token: Hardcoded token. Consider using "${env.TOKEN}"
+  [2m→[0m 2 error(s), 5 warning(s), 2 info
+
+[31m✗[0m edge/e022.yaml
+  [34m●[0m request.headers: Body present but no Content-Type header; consider adding one
+  [31m●[0m request: Cannot use both "body" and "formData"
+  [33m●[0m request.body: Body with GET method may be ignored by some servers
+  [31m●[0m request.formData.a.file: File path must be a string
+  [31m●[0m request.formData.a.contentType: contentType must be a string
+  [31m●[0m request.formData.a.filename: filename must be a string
+  [34m●[0m request.formData.b.file: Path contains ".."; ensure this is intentional
+  [2m→[0m 4 error(s), 1 warning(s), 2 info
+
+[31m✗[0m edge/e023.yaml
+  [31m●[0m request.params: Params must be an object
+  [31m●[0m request.formData: FormData must be an object
+  [31m●[0m request.store: Store must be an object
+  [2m→[0m 3 error(s)
+
+[31m✗[0m edge/e024.yaml
+  [31m●[0m request.timeout: Timeout must be a positive number
+  [33m●[0m request.maxRedirects: Very high redirect limit
+  [33m●[0m request.followRedirects: Should be boolean, not string "TRUE"
+    [36mfix:[0m Convert to true
+  [31m●[0m request.http2: Must be a boolean
+  [2m→[0m 2 error(s), 2 warning(s)
+
+[31m✗[0m edge/e025.yaml
+  [31m●[0m request.timeout: Timeout must be a positive number
+  [2m→[0m 1 error(s)
+
+[31m✗[0m edge/e026.yaml
+  [31m●[0m request.timeout: Timeout must be a positive number
+  [2m→[0m 1 error(s)
+
+[32m✓[0m edge/e027.yaml
+  [33m●[0m request.timeout: Very short timeout (<100ms) may cause failures
+  [2m→[0m 1 warning(s)
+
+[31m✗[0m edge/e028.yaml
+  [31m●[0m request.auth.type: Auth type is required
+  [2m→[0m 1 error(s)
+
+[31m✗[0m edge/e029.yaml
+  [31m●[0m request.auth.type: Invalid auth type "BASIC". Must be: basic, bearer, digest, ntlm, oauth2
+    [36mfix:[0m Change to "basic"
+  [2m→[0m 1 error(s)
+
+[32m✓[0m edge/e030.yaml
+  [33m●[0m request.auth.user: Unknown key "user" (did you mean "username"?)
+    [36mfix:[0m Rename to "username"
+  [2m→[0m 1 warning(s)
+
+[32m✓[0m edge/e031.yaml
+[31m✗[0m edge/e032.yaml
+  [33m●[0m request.ssl.extra: Unknown key "extra"
+  [31m●[0m request.ssl.verify: Must be a boolean
+  [31m●[0m request.ssl.ca: Must be a string path
+  [34m●[0m request.ssl.key: Path contains ".."; ensure this is intentional
+  [2m→[0m 2 error(s), 1 warning(s), 1 info
+
+[32m✓[0m edge/e033.yaml
+  [33m●[0m request.insecure: Should be boolean, not string "true"
+    [36mfix:[0m Convert to true
+  [2m→[0m 1 warning(s)
+
+[31m✗[0m edge/e034.yaml
+  [33m●[0m request.retry.max: Unknown key "max"
+  [31m●[0m request.retry.count: Retry count must be a non-negative number
+  [31m●[0m request.retry.delay: Retry delay must be a non-negative number
+  [31m●[0m request.retry.backoff: Retry backoff must be >= 1
+  [34m●[0m request.retry: Retrying POST requests may cause duplicate operations
+  [2m→[0m 3 error(s), 1 warning(s), 1 info
+
+[32m✓[0m edge/e035.yaml
+  [33m●[0m request.method: Method should be uppercase: "PATCH"
+    [36mfix:[0m Change to "PATCH"
+  [33m●[0m request.retry.backoff: High backoff multiplier may cause very long delays
+  [2m→[0m 2 warning(s)
+
+[31m✗[0m edge/e036.yaml
+  [33m●[0m request.retry.0: Unknown key "0"
+  [31m●[0m request.retry.count: Retry count is required
+  [2m→[0m 1 error(s), 1 warning(s)
+
+[32m✓[0m edge/e037.yaml
+  [33m●[0m request.when: When string should contain a valid operator (==, !=, >, <, >=, <=, contains, matches, exists)
+  [2m→[0m 1 warning(s)
+
+[31m✗[0m edge/e038.yaml
+  [33m●[0m request.when: When condition has multiple forms; behavior may be unexpected
+  [31m●[0m request.when.all: Must be an array
+  [33m●[0m request.when.any: Empty "any" array - condition always false
+  [2m→[0m 1 error(s), 2 warning(s)
+
+[31m✗[0m edge/e039.yaml
+  [33m●[0m request.when.any[0].left: Left operand should start with "store." or "env."
+  [31m●[0m request.when.any[0].operator: Invalid operator "=". Must be: ==, !=, >, <, >=, <=, contains, matches, exists, not-exists
+    [36mfix:[0m Change to "=="
+  [31m●[0m request.when.any[1].left: Left operand is required
+  [31m●[0m request.when.any[1].operator: Operator is required
+  [31m●[0m request.when.any[1].right: Right operand is required
+  [31m●[0m request.when.any[2].left: Left operand is required
+  [31m●[0m request.when.any[2].operator: Operator is required
+  [31m●[0m request.when.any[2].right: Right operand is required
+  [2m→[0m 7 error(s), 1 warning(s)
+
+[31m✗[0m edge/e040.yaml
+  [31m●[0m request.when.left: Left operand is required
+  [31m●[0m request.when.operator: Operator is required
+  [2m→[0m 2 error(s)
+
+[31m✗[0m edge/e041.yaml
+  [31m●[0m request.when.left: Left operand is required
+  [2m→[0m 1 error(s)
+
+[31m✗[0m edge/e042.yaml
+  [33m●[0m request.expect.extra: Unknown key "extra"
+  [33m●[0m request.expect.failure: Should be boolean, not string "false"
+    [36mfix:[0m Convert to false
+  [31m●[0m request.expect.status: Status codes must be numbers between 100-599
+  [31m●[0m request.expect.headers: Expected headers must be an object
+  [31m●[0m request.expect.responseTime: Response time must be a string (e.g., "< 1000")
+  [2m→[0m 3 error(s), 2 warning(s)
+
+[31m✗[0m edge/e043.yaml
+  [31m●[0m request.expect.status: Status code must be a number between 100-599
+  [2m→[0m 1 error(s)
+
+[31m✗[0m edge/e044.yaml
+  [31m●[0m request.expect.status: Status code must be a number between 100-599
+  [2m→[0m 1 error(s)
+
+[32m✓[0m edge/e045.yaml
+  [33m●[0m request.expect.responseTime: Response time should be like "< 1000", "> 500, < 2000"
+  [2m→[0m 1 warning(s)
+
+[31m✗[0m edge/e046.yaml
+  [33m●[0m request.store.a.b: Store variable names should use alphanumeric characters and underscores
+  [31m●[0m request.store.a.b: Store path must be a string
+  [2m→[0m 1 error(s), 1 warning(s)
+
+[31m✗[0m edge/e047.yaml
+  [33m●[0m request.snapshot.0: Unknown key "0"
+  [31m●[0m request.diff.outputFormat: Invalid outputFormat "1". Must be: terminal, json, markdown
+  [31m●[0m request.diff.dir: Must be a string
+  [2m→[0m 2 error(s), 1 warning(s)
+
+[31m✗[0m edge/e048.yaml
+  [31m●[0m request.snapshot.updateMode: Invalid updateMode "[object Object]". Must be: none, all, failing
+  [31m●[0m request.snapshot.dir: Must be a string
+  [2m→[0m 2 error(s)
+
+[32m✓[0m edge/e049.yaml
+  [33m●[0m requests[1]: Duplicate request name "a" (also at requests[0])
+  [33m●[0m requests[4]: Duplicate request name "5" (also at requests[3])
+  [2m→[0m 2 warning(s)
+
+[32m✓[0m edge/e050.yaml
+  [33m●[0m collection.extra: Unknown key "extra"
+  [33m●[0m collection.descriptio: Unknown key "descriptio" (did you mean "description"?)
+    [36mfix:[0m Rename to "description"
+  [33m●[0m collection.name: Collection name is recommended
+  [33m●[0m collection.variables.password: Potentially sensitive value hardcoded. Consider using environment variables like "${env.VAR}"
+  [33m●[0m collection.variables.1x: Variable names should use alphanumeric characters and underscores
+  [33m●[0m collection.variables.1x: Potentially sensitive value hardcoded. Consider using environment variables like "${env.VAR}"
+  [33m●[0m collection.variables.t: Potentially sensitive value hardcoded. Consider using environment variables like "${env.VAR}"
+  [33m●[0m collection.defaults.timeout: Very short timeout (<100ms) may cause failures
+  [2m→[0m 8 warning(s)
+
+[32m✓[0m edge/e051.yaml
+  [33m●[0m (root): Both "request" and "requests" defined; both will be executed
+  [33m●[0m (root): Collection mixed with request/requests; may cause confusion
+  [33m●[0m collection.requests: Collection has no requests
+  [2m→[0m 3 warning(s)
+
+[31m✗[0m edge/e052.yaml
+  [31m●[0m (root): Missing request(s). Must have "request", "requests", or "collection"
+  [33m●[0m 0: Unknown top-level key "0"
+    [36mfix:[0m Remove unknown key "0"
+  [33m●[0m 1: Unknown top-level key "1"
+    [36mfix:[0m Remove unknown key "1"
+  [2m→[0m 1 error(s), 2 warning(s)
+
+[31m✗[0m edge/e053.yaml
+  [31m●[0m (root): Missing request(s). Must have "request", "requests", or "collection"
+  [2m→[0m 1 error(s)
+
+[31m✗[0m edge/e054.yaml
+  [31m●[0m (root): Missing request(s). Must have "request", "requests", or "collection"
+  [2m→[0m 1 error(s)
+
+[32m✓[0m edge/e061.yaml
+  [33m●[0m (root): Collection mixed with request/requests; may cause confusion
+  [2m→[0m 1 warning(s)
+
+[31m✗[0m edge/e062.yaml
+  [31m●[0m request.when: When condition must have "all", "any", or "left"
+  [2m→[0m 1 error(s)
+
+[32m✓[0m edge/e072.yaml
+[31m✗[0m edge/e075.yaml
+  [33m●[0m global.connectionPool.x: Unknown key "x"
+  [31m●[0m global.connectionPool.enabled: Must be a boolean
+  [31m●[0m global.connectionPool.maxStreamsPerHost: Must be a positive number
+  [31m●[0m global.connectionPool.keepaliveTime: Must be a non-negative number
+  [31m●[0m global.connectionPool.connectTimeout: Must be a non-negative number
+  [2m→[0m 4 error(s), 1 warning(s)
+
+[32m✓[0m edge/e076.yaml
+  [34m●[0m request.headers.content-type: Header "content-type" should be "Content-Type" for consistency
+    [36mfix:[0m Rename to "Content-Type"
+  [33m●[0m request.headers.Content-Type: Duplicate header "Content-Type" (case-insensitive match with "content-type")
+  [34m●[0m request.headers.CONTENT-TYPE: Header "CONTENT-TYPE" should be "Content-Type" for consistency
+    [36mfix:[0m Rename to "Content-Type"
+  [33m●[0m request.headers.CONTENT-TYPE: Duplicate header "CONTENT-TYPE" (case-insensitive match with "Content-Type")
+  [2m→[0m 2 warning(s), 2 info
+
+[31m✗[0m edge/e077.yaml
+  [33m●[0m request.url: URL contains double slashes in path
+    [36mfix:[0m Remove extra slashes
+  [31m●[0m request.url: URL contains spaces
+    [36mfix:[0m Encode spaces as %20
+  [33m●[0m request.method: Method should be uppercase: "DELETE"
+    [36mfix:[0m Change to "DELETE"
+  [2m→[0m 1 error(s), 2 warning(s)
+
+[31m✗[0m edge/e078.yaml
+  [31m●[0m request.url: URL contains typo "htp"
+    [36mfix:[0m Fix to "http"
+  [2m→[0m 1 error(s)
+
+[31m✗[0m edge/e079.yaml
+  [31m●[0m request.url: Invalid port number 0. Must be 1-65535
+  [2m→[0m 1 error(s)
+
+[32m✓[0m edge/e080.yaml
+[31m✗[0m edge/e081.yaml
+  [33m●[0m (root): Both "request" and "requests" defined; both will be executed
+  [33m●[0m request.0: Unknown key "0"
+  [33m●[0m request.1: Unknown key "1"
+  [31m●[0m request.url: URL is required
+  [2m→[0m 1 error(s), 3 warning(s)
+
+[32m✓[0m edge/e082.yaml
+  [33m●[0m request.0: Unknown key "0"
+  [33m●[0m request.2: Unknown key "2"
+  [33m●[0m request.10: Unknown key "10"
+  [2m→[0m 3 warning(s)
+
+[32m✓[0m edge/e083.yaml
+[32m✓[0m edge/e084.yaml
+[31m✗[0m edge/e085.yaml
+  [31m●[0m (root): Missing request(s). Must have "request", "requests", or "collection"
+  [33m●[0m 0: Unknown top-level key "0"
+    [36mfix:[0m Remove unknown key "0"
+  [33m●[0m 1: Unknown top-level key "1"
+    [36mfix:[0m Remove unknown key "1"
+  [2m→[0m 1 error(s), 2 warning(s)
+
+[31m✗[0m edge/e086.yaml
+  [31m●[0m (root): Missing request(s). Must have "request", "requests", or "collection"
+  [33m●[0m 0: Unknown top-level key "0"
+    [36mfix:[0m Remove unknown key "0"
+  [33m●[0m 1: Unknown top-level key "1"
+    [36mfix:[0m Remove unknown key "1"
+  [2m→[0m 1 error(s), 2 warning(s)
+
+[32m✓[0m edge/e087.yaml
+[32m✓[0m edge/e088.yaml
+  [33m●[0m request.expect.status: Empty status array - no status will match
+  [2m→[0m 1 warning(s)
+
+[32m✓[0m edge/e089.yaml
+  [33m●[0m request.: Unknown key "" (did you mean "name"?)
+    [36mfix:[0m Rename to "name"
+  [2m→[0m 1 warning(s)
+
+[31m✗[0m edge/e090.yaml
+  [31m●[0m request.params: Params must be an object
+  [31m●[0m request.maxRedirects: Must be a non-negative number
+  [2m→[0m 2 error(s)
+
+[31m✗[0m edge/e091.yaml
+  [31m●[0m request.maxRedirects: Must be a non-negative number
+  [2m→[0m 1 error(s)
+
+
+[36mSummary:[0m 51 file(s) with 188 issue(s)

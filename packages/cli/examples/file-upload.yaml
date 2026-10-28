@@ -2,7 +2,7 @@
 # Usage: curl-runner file-upload.yaml
 #
 # This example demonstrates how to upload files using formData.
-# File paths are relative to the YAML file location or absolute paths.
+# File paths are relative to the working directory, or absolute.
 
 request:
   name: File Upload Example

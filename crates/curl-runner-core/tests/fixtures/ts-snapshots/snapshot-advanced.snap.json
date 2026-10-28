@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "snapshots": {
+    "Get Posts with Status": {
+      "hash": "122b97bd",
+      "updatedAt": "2026-10-27T21:14:30.658Z",
+      "status": 200,
+      "body": {
+        "body": "post body 1",
+        "id": 1,
+        "title": "post title 1",
+        "userId": 1
+      }
+    },
+    "Get User with Headers": {
+      "hash": "666e5a7d",
+      "updatedAt": "2026-10-27T21:14:30.665Z",
+      "status": 200,
+      "headers": {
+        "content-length": "70",
+        "content-type": "application/json",
+        "date": "Tue, 27 Oct 2026 21:14:30 GMT",
+        "server": "tiny-http (Rust)"
+      },
+      "body": {
+        "email": "user1@example.com",
+        "id": 1,
+        "name": "User 1",
+        "username": "Bret"
+      }
+    },
+    "Get Comments": {
+      "hash": "2028b6b5",
+      "updatedAt": "2026-10-27T21:14:30.672Z",
+      "body": [
+        {
+          "id": 1,
+          "postId": 1
+        },
+        {
+          "id": 2,
+          "postId": 1
+        },
+        {
+          "id": 3,
+          "postId": 1
+        },
+        {
+          "id": 4,
+          "postId": 1
+        },
+        {
+          "id": 5,
+          "postId": 1
+        }
+      ]
+    }
+  }
+}

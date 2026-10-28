@@ -1,0 +1,30 @@
+# Compare against the seeded baseline __baselines__/response-diffing-compare-markdown.stored.baseline.json.
+global:
+  continueOnError: true
+  diff:
+    compareWith: stored
+    outputFormat: markdown
+    label: now
+    exclude:
+      - "*.date"
+      - "body[*].userId"
+    match:
+      "body.name": "regex:^User \\d+$"
+      "headers.content-length": "*"
+
+requests:
+  # unchanged
+  - name: Get User
+    url: ${BASE_URL}/jp/users/1
+  # body changes: title edited, an element missing, an element the baseline lacks
+  - name: List Posts
+    url: ${BASE_URL}/jp/posts
+  # stored status 201, live 200
+  - name: Status Change
+    url: ${BASE_URL}/jp/users/1
+  # stored body is a string: type mismatch
+  - name: Type Change
+    url: ${BASE_URL}/jp/users/1
+  # not in the baseline
+  - name: Brand New
+    url: ${BASE_URL}/jp/posts/1

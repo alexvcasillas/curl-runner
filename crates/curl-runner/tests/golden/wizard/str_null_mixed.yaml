@@ -1,0 +1,5 @@
+request:
+  url: "https://api.example.com/users"
+  method: POST
+  body:
+    k: "Null"

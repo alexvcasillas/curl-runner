@@ -1,0 +1,8 @@
+# Warning: Cookie flag (-b session=abc) stored as header; manual review recommended
+
+request:
+  method: GET
+  url: https://example.com
+  headers:
+    Cookie: session=abc
+

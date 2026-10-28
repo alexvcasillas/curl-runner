@@ -1,0 +1,6 @@
+request:
+  url: https://a.com
+  method: POST
+  body: |
+    {"a": 1e400, "b": "\ud800"}
+  headers: {Content-Type: application/json}

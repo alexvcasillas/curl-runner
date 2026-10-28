@@ -1,0 +1,27 @@
+[33mDEBUG:[0m
+{
+  "tokens": [
+    "curl",
+    "https://x.test",
+    "-X"
+  ],
+  "ast": {
+    "url": "https://x.test",
+    "headers": [],
+    "unsupportedFlags": []
+  },
+  "ir": {
+    "method": "GET",
+    "url": "https://x.test",
+    "headers": {},
+    "metadata": {
+      "source": "curl",
+      "warnings": []
+    }
+  }
+}
+
+request:
+  method: GET
+  url: https://x.test
+

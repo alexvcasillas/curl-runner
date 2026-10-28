@@ -18,6 +18,7 @@ import { DownloadsSection } from '@/components/downloads-section';
 import { Badge } from '@/components/ui/badge';
 import {
   bunInstallExample,
+  cargoInstallExample,
   curlInstallerExample,
   linuxBinaryInstallExample,
   npmInstallExample,
@@ -37,6 +38,7 @@ export const metadata: Metadata = {
     'curl-runner installation',
     'bun install curl-runner',
     'npm install curl-runner',
+    'cargo install curl-runner',
     'CLI tool installation',
     'HTTP client setup',
     'package manager installation',
@@ -78,19 +80,17 @@ export default function InstallationPage() {
             <div className="space-y-3">
               <div className="flex items-center space-x-2">
                 <CheckCircle className="h-5 w-5 text-green-500" />
-                <h3 className="text-xl font-semibold">Bun Runtime</h3>
-                <Badge variant="secondary">Mandatory</Badge>
+                <h3 className="text-xl font-semibold">None</h3>
+                <Badge variant="secondary">No runtime required</Badge>
               </div>
               <p className="text-muted-foreground">
-                <code className="font-mono">curl-runner</code> is optimized for Bun and provides the
-                best performance when used with Bun runtime.
+                <code className="font-mono">curl-runner</code> is a single native binary (libcurl is
+                linked statically). It needs no Bun, Node.js or curl installation. HTTPS uses your
+                system CA certificates.
               </p>
               <CodeBlockServer language="bash">
-                {`# Install Bun (if not already installed)
-curl -fsSL https://bun.sh/install | bash
-
-# Verify Bun installation
-bun --version`}
+                {`# Verify the installation
+curl-runner --version`}
               </CodeBlockServer>
             </div>
           </section>
@@ -128,8 +128,8 @@ bun --version`}
                 <div className="ml-3">
                   <h3 className="text-sm font-medium text-foreground">No Prerequisites</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    The installer downloads a standalone binary with Bun bundled. No runtime
-                    dependencies required.
+                    The installer downloads a standalone native binary. No runtime dependencies
+                    required.
                   </p>
                 </div>
               </div>
@@ -147,7 +147,8 @@ bun --version`}
                   <h3 className="text-xl font-semibold">Bun Package Manager</h3>
                 </div>
                 <p className="text-muted-foreground">
-                  Install using Bun for optimal performance and compatibility.
+                  Install the prebuilt native binary through Bun. Bun is only the package manager
+                  here, not a runtime requirement.
                 </p>
                 <CodeBlockServer language="bash">{bunInstallExample}</CodeBlockServer>
               </div>
@@ -169,23 +170,35 @@ bun --version`}
                       <h3 className="text-sm font-medium text-foreground">Prerequisites</h3>
                       <div className="mt-2 text-sm text-muted-foreground space-y-2">
                         <p>
-                          <strong>For npm/yarn/pnpm installation:</strong> Bun runtime must be
-                          installed on your system.
+                          <strong>Linux / macOS:</strong> none. The npm package installs a native
+                          binary for your platform; neither Node.js nor Bun is needed to run it.
                         </p>
                         <p>
-                          Install Bun:{' '}
-                          <code className="bg-muted px-1 rounded">
-                            curl -fsSL https://bun.sh/install | bash
-                          </code>
+                          <strong>Windows:</strong> the npm/bun/pnpm/yarn command runs through a
+                          small <code className="bg-muted px-1 rounded">sh</code> launcher, so{' '}
+                          <code className="bg-muted px-1 rounded">sh</code> must be on your PATH
+                          (for example Git for Windows with its Unix tools on PATH, MSYS2 or
+                          Cygwin). Otherwise, install with PowerShell instead:
                         </p>
-                        <p className="mt-3">
-                          <strong>For standalone builds:</strong> No prerequisites needed! The
-                          standalone executable includes Bun bundled within it.
-                        </p>
+                        <CodeBlockServer language="powershell">
+                          {powershellInstallerExample}
+                        </CodeBlockServer>
                       </div>
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* Cargo Installation */}
+              <div className="space-y-3">
+                <h3 className="text-xl font-semibold">Cargo (crates.io)</h3>
+                <p className="text-muted-foreground">
+                  Build from source with Rust. This compiles libcurl and the TLS library, so it
+                  needs a C compiler and <code className="bg-muted px-1 rounded">cmake</code>.{' '}
+                  <code className="bg-muted px-1 rounded">curl-runner upgrade</code> reruns the same
+                  command.
+                </p>
+                <CodeBlockServer language="bash">{cargoInstallExample}</CodeBlockServer>
               </div>
 
               {/* Binary Downloads */}
@@ -334,7 +347,7 @@ bun --version`}
 which curl-runner
 
 # Add to PATH if needed (replace with your installation path)
-export PATH="$PATH:~/.bun/bin"`}
+export PATH="$PATH:~/.local/bin"`}
                   </CodeBlockServer>
                 </div>
 

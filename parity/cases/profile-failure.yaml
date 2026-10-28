@@ -1,0 +1,8 @@
+# Profile mode only (see PROFILE_FLAGSETS in parity/run.sh). The second request cannot connect:
+# Rust counts every iteration as a failure, TS counted them as successful samples (CHANGES: Profile failures).
+requests:
+  - name: Up
+    url: ${BASE_URL}/json/user
+  - name: Down
+    url: http://127.0.0.1:1/unreachable
+    timeout: 2000

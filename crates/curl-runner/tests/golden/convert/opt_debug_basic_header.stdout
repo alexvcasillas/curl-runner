@@ -1,0 +1,42 @@
+[33mDEBUG:[0m
+{
+  "tokens": [
+    "curl",
+    "-H",
+    "Authorization: Basic dXNlcjpwYXNz",
+    "https://x.test"
+  ],
+  "ast": {
+    "url": "https://x.test",
+    "headers": [
+      {
+        "key": "Authorization",
+        "value": "Basic dXNlcjpwYXNz"
+      }
+    ],
+    "unsupportedFlags": []
+  },
+  "ir": {
+    "method": "GET",
+    "url": "https://x.test",
+    "headers": {},
+    "metadata": {
+      "source": "curl",
+      "warnings": []
+    },
+    "auth": {
+      "type": "basic",
+      "username": "user",
+      "password": "pass"
+    }
+  }
+}
+
+request:
+  method: GET
+  url: https://x.test
+  auth:
+    type: basic
+    username: user
+    password: pass
+

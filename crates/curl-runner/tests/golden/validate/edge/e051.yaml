@@ -1,0 +1,4 @@
+version: "1"
+request: {url: https://a.com}
+requests: [{url: https://b.com}]
+collection: {name: c, requests: []}

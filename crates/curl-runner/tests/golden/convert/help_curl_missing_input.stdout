@@ -1,0 +1,31 @@
+
+[1mCURL RUNNER - CONVERT[0m
+
+[33mUSAGE:[0m
+  curl-runner convert curl "<curl command>"    Convert curl → YAML
+  curl-runner convert file <script.sh>         Convert shell script → YAML
+  curl-runner convert yaml <test.yaml>         Convert YAML → curl
+
+[33mOPTIONS:[0m
+  -o, --output <file>   Write output to file
+  --pretty              Pretty-print output (default for YAML)
+  --loss-report         Show warnings for unsupported features (default)
+  --debug               Show token stream, AST, and IR
+  -h, --help            Show this help
+
+[33mEXAMPLES:[0m
+  # Convert inline curl to YAML
+  curl-runner convert curl "curl -X POST https://api.example.com -d '{"name":"Alex"}'"
+
+  # Convert and save to file
+  curl-runner convert curl "curl https://api.example.com" -o test.yaml
+
+  # Convert shell script (batch)
+  curl-runner convert file scripts/api-tests.sh
+
+  # Convert YAML back to curl
+  curl-runner convert yaml test.yaml
+
+  # Debug mode
+  curl-runner convert curl "curl https://example.com" --debug
+

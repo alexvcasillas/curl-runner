@@ -1,0 +1,9 @@
+request:
+  method: GET
+  url: https://x.test/s
+  params:
+    e: a+b
+    plus: a+b
+    q: hello world
+    u: é
+

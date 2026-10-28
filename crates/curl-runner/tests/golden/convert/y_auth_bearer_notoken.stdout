@@ -1,0 +1,3 @@
+curl \
+  -H 'Authorization: Bearer ' \
+  https://a.test

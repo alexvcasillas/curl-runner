@@ -1,0 +1,28 @@
+# Golden fixture for --output JSON (BASE_URL comes from the environment).
+requests:
+  - name: Get user
+    url: ${BASE_URL}/json/user
+    method: GET
+    expect:
+      status: 200
+      body:
+        name: Test User
+    store:
+      userId: body.id
+  - name: Wrong status
+    url: ${BASE_URL}/status/404
+    expect:
+      status: 200
+  - name: Body mismatch
+    url: ${BASE_URL}/json/users
+    expect:
+      status: 200
+      body:
+        "[0].name": Nobody
+  - name: Uses store
+    url: ${BASE_URL}/json/nested?id=${store.userId}
+    expect:
+      status: [200, 201]
+  - name: Skipped
+    url: ${BASE_URL}/json/user
+    when: store.userId == 99

@@ -1,0 +1,1021 @@
+[
+  {
+    "name": "minimal_get",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET"
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "method_post",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST"
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "method_options",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "OPTIONS"
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "name",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "name": "My Request"
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "name_quoted",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "name": "Users: list #1"
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "headers",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer token",
+        "Accept": "application/json",
+        "User-Agent": "curl-runner",
+        "X-Custom-Header": "value"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "params",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "params": {
+        "page": "1",
+        "q": "hello world",
+        "sort": "name"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "body_json_flat",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "name": "test",
+        "value": 123
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "body_json_nested",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "user": {
+          "name": "ann",
+          "age": 31,
+          "admin": false,
+          "nick": null,
+          "tags": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        "nums": [
+          1,
+          2.5,
+          -3,
+          1e+21,
+          0.1
+        ],
+        "ok": true,
+        "deep": {
+          "a": {
+            "b": {
+              "c": "x"
+            }
+          }
+        }
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "body_json_array_of_objects",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "items": [
+          {
+            "id": 1,
+            "name": "a"
+          },
+          {
+            "id": 2,
+            "name": "b",
+            "extra": {
+              "k": "v"
+            }
+          }
+        ]
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "body_json_array_single_object_item",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "items": [
+          {
+            "id": 1
+          }
+        ]
+      }
+    },
+    "tsRoundTrips": false
+  },
+  {
+    "name": "body_json_array_nested_arrays",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "grid": [
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            4
+          ]
+        ],
+        "mixed": [
+          {
+            "a": [
+              1,
+              2
+            ]
+          },
+          [
+            {
+              "b": 1
+            },
+            {
+              "c": 2
+            }
+          ]
+        ]
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "body_json_top_level_array",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": [
+        {
+          "a": 1,
+          "b": 2
+        },
+        {
+          "a": 3
+        }
+      ]
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "body_json_empty_containers",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "a": {},
+        "b": [],
+        "c": "x"
+      }
+    },
+    "tsRoundTrips": false
+  },
+  {
+    "name": "body_json_integer_keys",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "1": "one",
+        "2": "two",
+        "b": 1,
+        "a": 2
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "body_json_number_body",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": 42
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "body_json_zero_is_dropped",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": 0
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "body_json_string_with_colon",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "message": "hello: world"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "form_data",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "form",
+      "formData": {
+        "field1": "value1",
+        "file": {
+          "file": "./upload.txt"
+        }
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "form_data_empty",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "form",
+      "formData": {}
+    },
+    "tsRoundTrips": false
+  },
+  {
+    "name": "body_raw",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "raw",
+      "body": "plain text content"
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "body_raw_multiline",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "raw",
+      "body": "line one\nline two"
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "body_raw_dash_item",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "raw",
+      "body": "- item"
+    },
+    "tsRoundTrips": false
+  },
+  {
+    "name": "body_raw_empty_dropped",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "raw",
+      "body": ""
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "body_none_ignores_body",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "none",
+      "body": {
+        "a": 1
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "auth_bearer",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "authType": "bearer",
+      "token": "my-token"
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "auth_basic",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "authType": "basic",
+      "username": "user",
+      "password": "pass"
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "auth_basic_no_password",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "authType": "basic",
+      "username": "user"
+    },
+    "tsRoundTrips": false
+  },
+  {
+    "name": "auth_bearer_without_token",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "authType": "bearer"
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "advanced",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "timeout": 5000,
+      "followRedirects": false,
+      "maxRedirects": 3,
+      "insecure": true,
+      "http2": true
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "follow_redirects_true_omitted",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "followRedirects": true
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "timeout_zero_omitted",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "timeout": 0
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "retry_full",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "retryEnabled": true,
+      "retryCount": 3,
+      "retryDelay": 1000,
+      "retryBackoff": 2
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "retry_count_only",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "retryEnabled": true,
+      "retryCount": 5
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "retry_disabled",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "retryEnabled": false,
+      "retryCount": 5
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "expect_both",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "expectStatus": 200,
+      "expectResponseTime": "< 2000"
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "expect_status_array",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "expectStatus": [
+        200,
+        201
+      ]
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "expect_time_only",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "expectResponseTime": "< 500"
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "output_file",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "GET",
+      "outputFile": "out/result.json"
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "everything",
+    "answers": {
+      "name": "Full request",
+      "url": "https://api.example.com/v1/items?x=1",
+      "method": "PUT",
+      "headers": {
+        "Content-Type": "application/json",
+        "X-Trace": "abc"
+      },
+      "params": {
+        "a": "1"
+      },
+      "bodyType": "json",
+      "body": {
+        "title": "hello",
+        "n": 2,
+        "list": [
+          1,
+          2,
+          3
+        ],
+        "nested": {
+          "ok": true
+        }
+      },
+      "authType": "bearer",
+      "token": "tok_123",
+      "timeout": 10000,
+      "followRedirects": false,
+      "maxRedirects": 2,
+      "insecure": true,
+      "http2": true,
+      "retryEnabled": true,
+      "retryCount": 3,
+      "retryDelay": 500,
+      "retryBackoff": 2,
+      "expectStatus": [
+        200,
+        204
+      ],
+      "expectResponseTime": "< 1500",
+      "outputFile": "result.json"
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "template_basic_get",
+    "template": "basic-get",
+    "answers": {
+      "url": "https://api.example.com/users"
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "template_basic_post",
+    "template": "basic-post",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "body": {
+        "name": "test"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "template_api_test",
+    "template": "api-test",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "name": "Health"
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "template_file_upload",
+    "template": "file-upload",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "formData": {
+        "avatar": {
+          "file": "./me.png"
+        },
+        "kind": "avatar"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "template_auth_flow",
+    "template": "auth-flow",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "token": "secret",
+      "body": {
+        "user": "a",
+        "pass": "b"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_colon",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "a: b"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_hash",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "x#y"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_leading_space",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": " x"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_trailing_space",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "x "
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_digit_start",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "1abc"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_version",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "2.0.1"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_true",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "true"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_false_upper",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "FALSE"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_null_mixed",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "Null"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_yes",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "yes"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_no_cap",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "No"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_quote_and_backslash",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "a\"b\\c: d"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_tab_colon",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "a\tb: c"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_unicode",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "café: üñî"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_url_value",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "https://example.com/path?x=1&y=2"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_plain",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "hello world"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_on_word",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "on"
+      }
+    },
+    "tsRoundTrips": false
+  },
+  {
+    "name": "str_tilde",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "~"
+      }
+    },
+    "tsRoundTrips": false
+  },
+  {
+    "name": "str_accept_any",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "*/*"
+      }
+    },
+    "tsRoundTrips": false
+  },
+  {
+    "name": "str_at_sign",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "@handle"
+      }
+    },
+    "tsRoundTrips": false
+  },
+  {
+    "name": "str_negative_number",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "-1"
+      }
+    },
+    "tsRoundTrips": false
+  },
+  {
+    "name": "str_flow_chars",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "a [b] {c}"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_leading_quote",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "'q'"
+      }
+    },
+    "tsRoundTrips": false
+  },
+  {
+    "name": "str_empty",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": ""
+      }
+    },
+    "tsRoundTrips": false
+  },
+  {
+    "name": "str_dollar_var",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "${BASE_URL}/x"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_percent",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "50%"
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_pipe_start",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "| x"
+      }
+    },
+    "tsRoundTrips": false
+  },
+  {
+    "name": "str_bang",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "!x"
+      }
+    },
+    "tsRoundTrips": false
+  },
+  {
+    "name": "str_question",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "k": "? x"
+      }
+    },
+    "tsRoundTrips": false
+  },
+  {
+    "name": "str_in_inline_array",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "list": [
+          "a",
+          "b c",
+          "x: y",
+          "1",
+          "true"
+        ]
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "str_in_inline_array_comma",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "list": [
+          "a,b",
+          "c"
+        ]
+      }
+    },
+    "tsRoundTrips": false
+  },
+  {
+    "name": "keys_special",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "my key": 1,
+        "Content-Type": 2,
+        "a.b": 3,
+        "$ref": 4,
+        "k:v": 5
+      }
+    },
+    "tsRoundTrips": true
+  },
+  {
+    "name": "key_empty",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "": 1
+      }
+    },
+    "tsRoundTrips": false
+  },
+  {
+    "name": "key_yes",
+    "answers": {
+      "url": "https://api.example.com/users",
+      "method": "POST",
+      "bodyType": "json",
+      "body": {
+        "yes": 1,
+        "010": 2
+      }
+    },
+    "tsRoundTrips": false
+  }
+]

@@ -1,0 +1,2 @@
+global: {defaults: null, connectionPool: {enabled: "on", maxStreamsPerHost: 0, keepaliveTime: -1, connectTimeout: "1", x: 1}}
+request: {url: https://a.com}

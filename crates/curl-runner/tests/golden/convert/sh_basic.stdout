@@ -1,0 +1,12 @@
+requests:
+  - name: request_1
+    method: GET
+    url: https://api.example.com/health
+
+  - name: request_2
+    method: POST
+    url: https://api.example.com/users
+    body:
+      json:
+        name: test
+

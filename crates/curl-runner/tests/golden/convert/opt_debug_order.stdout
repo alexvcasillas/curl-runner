@@ -1,0 +1,76 @@
+[33mDEBUG:[0m
+{
+  "tokens": [
+    "curl",
+    "-k",
+    "-u",
+    "a:b",
+    "-X",
+    "post",
+    "-L",
+    "https://x.test",
+    "--data-binary",
+    "@f",
+    "-d",
+    "x",
+    "-F",
+    "a=b",
+    "--form-string",
+    "c=d"
+  ],
+  "ast": {
+    "url": "https://x.test",
+    "headers": [],
+    "unsupportedFlags": [],
+    "insecure": true,
+    "user": "a:b",
+    "method": "POST",
+    "location": true,
+    "data": [
+      "x"
+    ],
+    "dataBinary": [
+      "@f"
+    ],
+    "form": [
+      "a=b"
+    ],
+    "formString": [
+      "c=d"
+    ]
+  },
+  "ir": {
+    "method": "POST",
+    "url": "https://x.test",
+    "headers": {},
+    "metadata": {
+      "source": "curl",
+      "warnings": []
+    },
+    "formData": {
+      "a": "b",
+      "c": "d"
+    },
+    "auth": {
+      "type": "basic",
+      "username": "a",
+      "password": "b"
+    },
+    "insecure": true,
+    "followRedirects": true
+  }
+}
+
+request:
+  method: POST
+  url: https://x.test
+  auth:
+    type: basic
+    username: a
+    password: b
+  formData:
+    a: b
+    c: d
+  followRedirects: true
+  insecure: true
+

@@ -1,0 +1,6 @@
+requests:
+  - {name: "a:b", url: https://a.com}
+  - {name: a, url: https://b.com}
+  - {name: a, url: https://c.com}
+  - {name: 5, url: https://d.com}
+  - {name: 5, url: https://e.com}

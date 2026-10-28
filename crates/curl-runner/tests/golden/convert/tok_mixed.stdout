@@ -1,0 +1,8 @@
+request:
+  method: POST
+  url: ""
+  headers:
+    Accept: "*/*"
+  body:
+    raw: test
+

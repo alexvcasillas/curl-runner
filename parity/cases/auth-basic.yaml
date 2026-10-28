@@ -1,0 +1,11 @@
+# Basic authentication example
+# Usage: curl-runner auth-basic.yaml
+
+request:
+  name: Basic Auth Request
+  url: ${BASE_URL}/api/test/auth/basic
+  method: GET
+  auth:
+    type: basic
+    username: user
+    password: pass

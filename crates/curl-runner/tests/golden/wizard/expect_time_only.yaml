@@ -1,0 +1,4 @@
+request:
+  url: "https://api.example.com/users"
+  expect:
+    responseTime: < 500

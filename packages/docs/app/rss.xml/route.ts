@@ -5,7 +5,7 @@ export async function GET() {
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>curl-runner Documentation</title>
-    <description>A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance.</description>
+    <description>A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance.</description>
     <link>https://www.curl-runner.com</link>
     <language>en-us</language>
     <managingEditor>noreply@curl-runner.com (curl-runner Team)</managingEditor>

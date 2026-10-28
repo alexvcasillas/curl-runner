@@ -1,0 +1,10 @@
+request:
+  method: POST
+  url: https://x.test/j
+  headers:
+    Content-Type: application/json
+  body:
+    json:
+      c: 
+      u2028:  
+

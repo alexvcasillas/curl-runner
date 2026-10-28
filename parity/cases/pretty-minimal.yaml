@@ -1,0 +1,11 @@
+# Pretty format - minimal level example
+# Shows only request name, method, URL, and status
+global:
+  output:
+    format: pretty
+    prettyLevel: minimal
+
+request:
+  name: Minimal Output Example
+  url: ${BASE_URL}/jp/users/1
+  method: GET

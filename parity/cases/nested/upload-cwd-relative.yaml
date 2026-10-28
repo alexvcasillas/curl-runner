@@ -1,0 +1,14 @@
+# A YAML in a subdirectory uploading a file by a cwd-relative path (a
+# <dir>/<area>/*.yaml layout referencing ./fixtures/... from the repo root). Relative formData paths resolve against the working directory, not
+# the YAML file's directory.
+
+request:
+  name: Upload from a nested YAML
+  url: ${BASE_URL}/httpbin/post
+  method: POST
+  formData:
+    note: "nested"
+    document:
+      file: "./sample-file.txt"
+  expect:
+    status: 200
