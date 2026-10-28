@@ -1,0 +1,8 @@
+- Be extremely concise in every reply; sacrifice grammar for concision.
+- Commits: Conventional Commits, one line.
+- Performance is a must.
+- Rust: before committing run `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace`. Follow the Rust API guidelines and latest stable idioms.
+- Every code change ships with unit tests, run green before you report done.
+- End every plan with its unresolved questions, extremely concise.
+- After a feature or fix is human-verified, ask whether to bump the version with changesets.
+- Public repo: keep employer and customer details (internal repos, CI setups, local paths) out of code, docs, commits and PRs.
