@@ -15,7 +15,13 @@ PLATFORM="$3"
 DPLAT="${4:-}"
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="$(mktemp -d)"
-trap 'rm -rf "$OUT"' EXIT
+# The containers write $OUT/home as root: clear it from a container first.
+cleanup() {
+  docker run --rm -v "$OUT/home:/home/out" debian:bookworm-slim \
+    find /home/out -mindepth 1 -delete 2>/dev/null || true
+  rm -rf "$OUT"
+}
+trap cleanup EXIT
 mkdir -p "$OUT/shim" "$OUT/home"
 PFLAG=()
 [ -n "$DPLAT" ] && PFLAG=(--platform "$DPLAT")
