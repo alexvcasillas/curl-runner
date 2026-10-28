@@ -37,11 +37,10 @@ docker pull curlrunner/curl-runner:latest
 # Run tests using Docker
 docker run --rm -v "$(pwd)":/workspace curlrunner/curl-runner:latest my-tests.yaml`;
 
-export const homebrewInstallExample = `# Add the tap
-brew tap curl-runner/tap
+export const homebrewInstallExample = `brew install alexvcasillas/tap/curl-runner
 
-# Install curl-runner
-brew install curl-runner`;
+# Upgrade later
+brew upgrade curl-runner`;
 
 export const chocolateyInstallExample = `# Install via Chocolatey (Windows)
 choco install curl-runner`;

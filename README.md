@@ -46,6 +46,8 @@ npm i -g @curl-runner/cli     # or: bun i -g @curl-runner/cli, pnpm add -g @curl
 curl-runner --version
 ```
 
+On macOS or Linux with Homebrew: `brew install alexvcasillas/tap/curl-runner`.
+
 Or build it from crates.io with `cargo install curl-runner --locked` (needs a C compiler
 and `cmake`).
 

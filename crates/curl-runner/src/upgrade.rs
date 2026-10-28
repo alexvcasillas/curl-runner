@@ -112,6 +112,7 @@ fn format_method(m: InstallMethod) -> &'static str {
         InstallMethod::Bun => "bun (global)",
         InstallMethod::Npm => "npm (global)",
         InstallMethod::Cargo => "cargo (crates.io)",
+        InstallMethod::Homebrew => "homebrew",
         InstallMethod::Standalone => "standalone binary",
         InstallMethod::Unknown => "unknown (development build)",
     }
@@ -159,7 +160,7 @@ pub fn run(args: &[String], color: bool, ctx: &Ctx, out: &mut Console) -> i32 {
     }
     if ctx.method == InstallMethod::Unknown {
         out.out(&p.c(
-            "Cannot upgrade: this executable is a development build, lives in Homebrew's tree or its location is unknown.",
+            "Cannot upgrade: this executable is a development build or its location is unknown.",
             Color::Red,
         ));
         out.out(&format!("  {}", p.c(&manual_command(ctx), Color::Cyan)));
