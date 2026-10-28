@@ -2,8 +2,8 @@
 //! connectionPool, ci, watch, profile, snapshot, diff, variables).
 
 use super::issues::{
-    Ctx, Res, Severity, as_num, entries, is_identifier, is_sensitive_value, js_string,
-    not_num_at_least, not_plain_object, prop, truthy_prop,
+    Ctx, Res, Severity, as_num, entries, is_identifier, is_interpolated, is_sensitive_value,
+    js_string, not_num_at_least, not_plain_object, prop, truthy_prop,
 };
 use super::{request, security};
 use curl_runner_core::model::Json;
@@ -252,7 +252,9 @@ fn validate_ci(cx: &mut Ctx, ci: &Json, path: &str) -> Res {
     cx.boolean_field(ci, "strictExit", path);
     number_at_least(cx, ci, "failOn", 0.0, path, NON_NEGATIVE);
     let pct = prop(ci, "failOnPercentage");
-    if pct.is_some_and(|v| as_num(v).is_none_or(|n| !(0.0..=100.0).contains(&n))) {
+    if pct.is_some_and(|v| {
+        !is_interpolated(v) && as_num(v).is_none_or(|n| !(0.0..=100.0).contains(&n))
+    }) {
         cx.add(
             &format!("{path}.failOnPercentage"),
             Severity::Error,

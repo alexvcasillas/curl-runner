@@ -253,9 +253,17 @@ pub fn not_plain_object(v: &Json) -> bool {
     !is_object(v) || v.is_array()
 }
 
-/// `typeof v !== 'number' || v < min`.
+/// A string holding a `${...}` reference (same detection as the
+/// interpolator); its numeric value is only known at run time.
+pub fn is_interpolated(v: &Json) -> bool {
+    v.as_str()
+        .is_some_and(|s| !curl_runner_core::interpolate::extract_variables(s).is_empty())
+}
+
+/// `typeof v !== 'number' || v < min`; interpolated values are resolved at
+/// run time and never fail.
 pub fn not_num_at_least(v: &Json, min: f64) -> bool {
-    as_num(v).is_none_or(|n| n < min)
+    !is_interpolated(v) && as_num(v).is_none_or(|n| n < min)
 }
 
 /// JS `String(v)`.

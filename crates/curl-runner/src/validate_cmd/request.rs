@@ -3,8 +3,8 @@
 
 use super::issues::{
     Crash, Ctx, Fix, FixValue, Res, Severity, as_num, as_str, change_to, entries,
-    find_closest_match, has_key, is_identifier, is_object, is_sensitive_value, js_number,
-    js_string, not_num_at_least, not_plain_object, prop, truthy, truthy_prop,
+    find_closest_match, has_key, is_identifier, is_interpolated, is_object, is_sensitive_value,
+    js_number, js_string, not_num_at_least, not_plain_object, prop, truthy, truthy_prop,
 };
 use super::{conditions, global, security, url};
 use curl_runner_core::jsval::{num_to_string, parse_int, trim};
@@ -408,6 +408,9 @@ fn validate_form_data(cx: &mut Ctx, fd: &Json, path: &str) {
 }
 
 fn validate_timeout(cx: &mut Ctx, timeout: &Json, path: &str) {
+    if is_interpolated(timeout) {
+        return;
+    }
     let Some(t) = as_num(timeout) else {
         if let Some(s) = timeout.as_str() {
             let parsed = parse_int(s);

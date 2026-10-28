@@ -1374,3 +1374,57 @@ request:
     assert_eq!(o.code, 0, "{}", o.stdout);
     assert_eq!(unknown_warnings(&o), 0, "{}", o.stdout);
 }
+
+#[test]
+fn interpolated_numeric_values_are_accepted_everywhere() {
+    let ok = |label: &str, yaml: &str| {
+        let o = validate(yaml, &["--strict"]);
+        assert_eq!(o.code, 0, "{label}: {}", o.stdout);
+        assert!(!has(&o, contains("must be")), "{label}: {}", o.stdout);
+        assert!(!has(&o, contains("Must be")), "{label}: {}", o.stdout);
+    };
+    let req = |extra: &str| format!("request:\n  name: r\n  url: https://example.com\n{extra}\n");
+    ok("timeout", &req("  timeout: ${TIMEOUT}"));
+    ok("timeout default", &req("  timeout: \"${TIMEOUT:5000}\""));
+    ok("maxRedirects", &req("  maxRedirects: \"${R}\""));
+    ok(
+        "retry.count",
+        &req("  retry: { count: \"${N}\", delay: \"${D:500}\", backoff: \"${B}\" }"),
+    );
+    let global = |extra: &str| {
+        format!("global:\n{extra}\nrequest:\n  name: r\n  url: https://example.com\n")
+    };
+    ok("maxConcurrency", &global("  maxConcurrency: \"${C}\""));
+    ok(
+        "profile",
+        &global("  profile: { iterations: \"${I}\", warmup: \"${W}\", concurrency: \"${C:2}\" }"),
+    );
+    ok(
+        "pool",
+        &global(
+            "  connectionPool: { maxStreamsPerHost: \"${S}\", keepaliveTime: \"${K}\", connectTimeout: \"${T}\" }",
+        ),
+    );
+    ok("watch", &global("  watch: { debounce: \"${D}\" }"));
+    ok(
+        "ci",
+        &global("  ci: { failOn: \"${F}\", failOnPercentage: \"${P}\" }"),
+    );
+    ok(
+        "defaults",
+        &global("  defaults:\n    timeout: \"${T}\"\n    retry: { count: \"${N}\" }"),
+    );
+}
+
+#[test]
+fn non_numeric_and_negative_values_still_error() {
+    for yaml in [
+        "request:\n  name: r\n  url: https://example.com\n  timeout: abc\n",
+        "request:\n  name: r\n  url: https://example.com\n  timeout: -1\n",
+        "request:\n  name: r\n  url: https://example.com\n  retry: { count: abc }\n",
+        "global:\n  maxConcurrency: abc\nrequest:\n  name: r\n  url: https://example.com\n",
+    ] {
+        let o = validate(yaml, &[]);
+        assert_eq!(o.code, 1, "{yaml}: {}", o.stdout);
+    }
+}
