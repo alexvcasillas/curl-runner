@@ -14,7 +14,6 @@
       "!build",
       "!**/*.min.js",
       "!curl-runner",
-      "!bun.lockb",
       "!packages/cli/examples",
       "!crates/**/*",
       "!parity/**/*",
@@ -25,7 +24,7 @@
       "!**/out",
       "!packages/docs/.next",
       "!packages/cli/build",
-      "!packages/docs/scripts/jsx-to-markdown-with-frontmatter.ts",
+      "!packages/docs/.source",
       "!packages/docs/app/globals.css",
       "!.claude/settings.local.json"
     ]

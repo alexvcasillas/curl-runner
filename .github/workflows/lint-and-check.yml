@@ -22,22 +22,29 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
         with:
-          bun-version: latest
+          node-version: "24"
+          cache: pnpm
 
       - name: Install Dependencies
-        run: bun install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Format Check
-        run: bun run format
+        run: pnpm format
 
       - name: Lint
-        run: bun run lint
+        run: pnpm lint
 
       - name: Biome Check
-        run: bun run check:ci
+        run: pnpm check:ci
 
       - name: Typecheck
-        run: bun run typecheck
+        run: pnpm typecheck
+
+      - name: Docs Tests
+        run: pnpm --filter @curl-runner/docs test

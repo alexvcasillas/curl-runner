@@ -48,6 +48,30 @@ jobs:
       - name: Test
         run: cargo test --workspace --no-fail-fast
 
+      # The website's feature examples must pass `curl-runner validate --strict`.
+      - name: Build CLI for docs examples
+        if: runner.os == 'Linux'
+        run: cargo build -p curl-runner
+
+      - name: Setup pnpm
+        if: runner.os == 'Linux'
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        if: runner.os == 'Linux'
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install Dependencies
+        if: runner.os == 'Linux'
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate docs examples
+        if: runner.os == 'Linux'
+        run: CURL_RUNNER_BIN=$PWD/target/debug/curl-runner pnpm --filter @curl-runner/docs test examples
+
   rust-musl:
     name: Rust musl build
     runs-on: ubuntu-latest

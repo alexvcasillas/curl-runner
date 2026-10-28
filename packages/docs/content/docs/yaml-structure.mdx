@@ -1,0 +1,165 @@
+---
+title: YAML Structure
+description: Learn the structure and syntax of curl-runner YAML configuration files. Request properties, collections, and global configuration patterns.
+---
+
+Learn the structure and syntax of curl-runner YAML configuration files.
+
+## Basic Structure
+
+`curl-runner` uses YAML files to define HTTP requests. There are several ways to structure your configuration files.
+
+### Single Request
+
+The simplest form: define a single HTTP request.
+
+```yaml title="single-request.yaml"
+# Single HTTP request
+request:
+  name: Get User Profile
+  url: https://api.example.com/users/123
+  method: GET
+  headers:
+    Authorization: Bearer ${API_TOKEN}
+    Content-Type: application/json
+```
+
+### Multiple Requests
+
+Execute multiple HTTP requests in sequence or parallel.
+
+```yaml title="multiple-requests.yaml"
+# Multiple requests collection
+requests:
+  - name: Create User
+    url: https://api.example.com/users
+    method: POST
+    headers:
+      Content-Type: application/json
+    body:
+      name: John Doe
+      email: john@example.com
+
+  - name: Get Created User
+    url: https://api.example.com/users/${USER_ID}
+    method: GET
+    headers:
+      Authorization: Bearer ${API_TOKEN}
+```
+
+### Collection
+
+Advanced structure with global settings, variables, and defaults.
+
+```yaml title="collection.yaml"
+# Advanced collection with global settings
+global:
+  variables:
+    BASE_URL: https://api.example.com
+    API_TOKEN: your-api-token-here
+  execution: parallel
+  continueOnError: true
+  output:
+    verbose: true
+    saveToFile: results.json
+
+collection:
+  name: User Management API Tests
+  variables:
+    USER_ID: 123
+  defaults:
+    headers:
+      Authorization: Bearer ${API_TOKEN}
+      Content-Type: application/json
+
+  requests:
+    - name: List Users
+      url: ${BASE_URL}/users
+      method: GET
+
+    - name: Get Specific User
+      url: ${BASE_URL}/users/${USER_ID}
+      method: GET
+
+    - name: Update User
+      url: ${BASE_URL}/users/${USER_ID}
+      method: PATCH
+      body:
+        name: Updated Name
+```
+
+## Request Properties
+
+Each request can have the following properties:
+
+### Required Properties
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `url` | string | The URL to send the request to |
+| `method` | string | HTTP method (GET, POST, PUT, DELETE, etc.) |
+
+### Optional Properties
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `name` | string | Display name for the request |
+| `headers` | object | HTTP headers to send with the request |
+| `body` | object \| string | Request body data |
+| `timeout` | number | Request timeout in milliseconds |
+| `retry` | object | Retry settings: `count`, `delay` (milliseconds), `backoff` |
+| `expect` | object | Response validation rules |
+| `http2` | boolean | Use HTTP/2 protocol with multiplexing |
+
+## Global Configuration
+
+The `global` section allows you to configure settings that apply to all requests in the file.
+
+| Setting | Type | Description |
+| --- | --- | --- |
+| `variables` | object | Global variables available to all requests |
+| `execution` | string | "sequential" or "parallel" execution mode |
+| `continueOnError` | boolean | Continue execution if a request fails |
+| `output.verbose` | boolean | Show detailed output during execution |
+| `output.saveToFile` | string | Save results to a JSON file |
+
+## Response Validation
+
+Add validation rules to verify that responses meet your expectations.
+
+```yaml title="validation-example.yaml"
+# Request with response validation
+request:
+  name: API Health Check
+  url: https://api.example.com/health
+  method: GET
+  expect:
+    status: 200
+    headers:
+      content-type: application/json
+    body:
+      status: ok
+      version: "^1.0.0"
+  timeout: 5000
+  retry:
+    count: 3
+```
+
+## Related Topics
+
+Dive deeper into specific aspects of curl-runner configuration.
+
+<Cards>
+  <Card title="Variables & Templating" href="/docs/variables">
+    Make your YAML files dynamic with variables, environment values, and computed expressions.
+  </Card>
+  <Card title="Global Settings" href="/docs/global-settings">
+    Configure execution behavior, default headers, and shared settings for all requests.
+  </Card>
+  <Card title="Response Validation" href="/docs/features/response-validation">
+    Complete guide to validating API responses with detailed rules and patterns.
+  </Card>
+  <Card title="Request Object API" href="/docs/api-reference/request-object">
+    Complete reference for all available request properties and configuration options.
+  </Card>
+</Cards>

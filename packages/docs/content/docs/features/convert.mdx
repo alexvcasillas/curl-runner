@@ -1,0 +1,239 @@
+---
+title: "Curl ⇄ YAML Conversion"
+description: "Convert curl commands to curl-runner YAML and back. Paste a curl command, get clean YAML. Convert YAML specs to canonical curl commands."
+---
+
+Bidirectional conversion between raw curl commands and curl-runner YAML specs.
+
+## Overview
+
+The convert command provides a deterministic, loss-aware conversion engine between curl commands and curl-runner YAML. Paste a curl command from documentation or browser DevTools, get a clean YAML spec. Convert YAML specs back to canonical curl commands.
+
+- **Bidirectional**: curl → YAML and YAML → curl
+- **Batch Scripts**: Convert entire shell scripts at once
+- **Loss-Aware**: Warns about unsupported features
+
+## Curl to YAML
+
+Convert a raw curl command into a clean, human-editable curl-runner YAML spec. The converter automatically detects JSON bodies, authentication, query parameters, and more.
+
+```bash title="Command"
+# Convert a curl command to YAML
+curl-runner convert curl "curl -X POST https://api.example.com/users \
+  -H 'Authorization: Bearer TOKEN' \
+  -H 'Content-Type: application/json' \
+  -d '{\"name\":\"Alex\",\"role\":\"admin\"}'"
+```
+
+```yaml title="Output"
+request:
+  method: POST
+  url: https://api.example.com/users
+  headers:
+    Content-Type: application/json
+  auth:
+    type: bearer
+    token: TOKEN
+  body:
+    json:
+      name: Alex
+      role: admin
+```
+
+## YAML to Curl
+
+Convert a curl-runner YAML file back to canonical, shell-safe curl commands. Useful for sharing commands with teammates or debugging.
+
+```bash title="Command"
+# Convert a YAML file back to curl
+curl-runner convert yaml api-test.yaml
+```
+
+```bash title="Output"
+curl \
+  -X POST \
+  -H 'Authorization: Bearer TOKEN' \
+  -d '{"name":"Alex","role":"admin"}' \
+  -H 'Content-Type: application/json' \
+  https://api.example.com/users
+```
+
+## Batch Script Conversion [#batch-conversion]
+
+Extract and convert all curl commands from a shell script into a single YAML collection. The parser handles multiline commands, ignores non-curl lines, and strips piped output.
+
+```bash title="api-tests.sh"
+#!/bin/bash
+# api-tests.sh
+
+# Health check
+curl https://api.example.com/health
+
+# Create user
+curl -X POST https://api.example.com/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Alex"}'
+
+# Get users
+curl -H "Authorization: Bearer TOKEN" \
+  https://api.example.com/users
+```
+
+```bash title="Command"
+# Convert all curl commands from a shell script
+curl-runner convert file api-tests.sh
+```
+
+```yaml title="Output"
+requests:
+  - name: request_1
+    method: GET
+    url: https://api.example.com/health
+
+  - name: request_2
+    method: POST
+    url: https://api.example.com/users
+    body:
+      json:
+        name: Alex
+
+  - name: request_3
+    method: GET
+    url: https://api.example.com/users
+    auth:
+      type: bearer
+      token: TOKEN
+```
+
+## Automatic Detection [#detection]
+
+The converter automatically normalizes and detects semantic intent from curl flags.
+
+| Curl Input | YAML Output |
+| --- | --- |
+| `-d '{"key":"val"}'` | `body.json` + infers POST |
+| `-d 'key=val&key2=val2'` | `body.form` (urlencoded) |
+| `-H 'Authorization: Bearer T'` | `auth.type: bearer` |
+| `-u user:pass` | `auth.type: basic` |
+| `-F 'file=@img.png'` | `formData.file.file: img.png` |
+| `URL?q=test&page=1` | `params: {q: test, page: 1}` |
+| `--max-time 30` | `timeout: 30000` (ms) |
+| `-A 'MyApp/1.0'` | `headers.User-Agent` |
+
+## Save to File
+
+Write conversion output directly to a file with `-o`. The output is immediately usable by curl-runner.
+
+```bash title="Save and Run"
+# Save conversion output to a file
+curl-runner convert curl "curl https://api.example.com/users" -o test.yaml
+
+# Then run it immediately
+curl-runner test.yaml
+```
+
+## Real-World Example [#real-world]
+
+Convert complex real-world curl commands with authentication, form data, and more.
+
+```bash title="Stripe API"
+# Real-world: Stripe API call
+curl-runner convert curl "curl -X POST https://api.stripe.com/v1/charges \
+  -u sk_test_key: \
+  -d amount=2000 \
+  -d currency=usd \
+  -d source=tok_visa"
+```
+
+```yaml title="Output"
+request:
+  method: POST
+  url: https://api.stripe.com/v1/charges
+  auth:
+    type: basic
+    username: sk_test_key
+    password: ""
+  body:
+    form: "amount=2000&currency=usd&source=tok_visa"
+```
+
+## Loss Handling
+
+Some curl flags don't have YAML equivalents. The converter emits YAML comments and warnings so you know exactly what was lost.
+
+```bash title="Command"
+# Unsupported flags produce warnings
+curl-runner convert curl "curl --compressed https://api.example.com"
+```
+
+```yaml title="Output with Warnings"
+# Warning: Flag --compressed has no YAML equivalent; curl handles decompression natively
+request:
+  method: GET
+  url: https://api.example.com
+```
+
+## Debug Mode
+
+Use `--debug` to inspect the full conversion pipeline: token stream, AST, and intermediate representation (IR).
+
+```bash title="Command"
+# Debug mode shows the full conversion pipeline
+curl-runner convert curl "curl -u admin:secret https://api.example.com" --debug
+```
+
+```json title="Debug Output"
+DEBUG:
+{
+  "tokens": ["curl", "-u", "admin:secret", "https://api.example.com"],
+  "ast": {
+    "url": "https://api.example.com",
+    "headers": [],
+    "user": "admin:secret",
+    "unsupportedFlags": []
+  },
+  "ir": {
+    "method": "GET",
+    "url": "https://api.example.com",
+    "headers": {},
+    "auth": { "type": "basic", "username": "admin", "password": "secret" },
+    "metadata": { "source": "curl", "warnings": [] }
+  }
+}
+
+request:
+  method: GET
+  url: https://api.example.com
+  auth:
+    type: basic
+    username: admin
+    password: secret
+```
+
+## CLI Reference
+
+| Command | Description |
+| --- | --- |
+| `convert curl "<cmd>"` | Convert inline curl command to YAML |
+| `convert file <script.sh>` | Convert shell script to YAML (batch) |
+| `convert yaml <file.yaml>` | Convert YAML to curl command(s) |
+
+| Flag | Description |
+| --- | --- |
+| `-o, --output <file>` | Write output to file |
+| `--pretty` | Pretty-print output (default) |
+| `--loss-report` | Include warnings for unsupported features (default) |
+| `--debug` | Show token stream, AST, and IR |
+
+## Best Practices
+
+- **Recommended**
+  - Use `-o` to save and immediately run converted YAML
+  - Review warnings for any lost curl features
+  - Use batch conversion for migrating shell scripts
+  - Use debug mode to understand complex conversions
+- **Notes**
+  - Shell-specific features (pipes, variables) are stripped
+  - Some curl flags have no YAML equivalent (see warnings)
+  - YAML-only features (expect, store, when) can't map to curl
+  - Round-trip preserves semantics, not exact syntax

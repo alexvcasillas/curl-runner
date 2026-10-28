@@ -1,0 +1,149 @@
+---
+title: "Upgrade"
+description: "Easily upgrade curl-runner to the latest version with automatic installation source detection."
+---
+
+Upgrade curl-runner to the latest version. The command detects how the binary was installed and uses the matching method.
+
+## Overview
+
+The `curl-runner upgrade` command works out how curl-runner was installed (from the path of the running executable) and upgrades it the way that install method expects.
+
+- **Auto-Detection**: Detects standalone, Homebrew, cargo, npm and bun global setups
+- **One Command**: Simple upgrade regardless of install method
+- **Version Check**: Automatic notification when updates are available
+
+## Basic Usage
+
+Run the upgrade command to update to the latest version.
+
+```bash title="Upgrade Commands"
+# Upgrade to latest version (auto-detects installation method)
+curl-runner upgrade
+
+# Preview what would happen without executing
+curl-runner upgrade --dry-run
+
+# Force reinstall even if already on latest version
+curl-runner upgrade --force
+```
+
+## Options
+
+Available options for the upgrade command.
+
+- `-n, --dry-run`: Preview the upgrade without executing it. Useful for seeing what would happen.
+- `-f, --force`: Force reinstall even if already on the latest version. Useful for troubleshooting or reinstalling a clean copy.
+
+## Installation Detection
+
+curl-runner detects the installation source and uses the appropriate upgrade method.
+
+| Install method | Detected from | What `upgrade` does |
+| --- | --- | --- |
+| Standalone binary (install script, manual download) | Any other location, including `~/.local/bin` | Downloads the release archive and replaces the running binary |
+| Homebrew | A `Cellar` path | Runs `brew upgrade curl-runner` |
+| cargo | `$CARGO_HOME/bin` (default `~/.cargo/bin`) | Runs `cargo install curl-runner --locked` |
+| npm (also pnpm and yarn global installs) | A `node_modules` path | Runs `npm install -g @curl-runner/cli@latest` |
+| bun | A `.bun` / `BUN_INSTALL` path | Runs `bun install -g @curl-runner/cli@latest` |
+
+```bash title="Detection Logic"
+# curl-runner detects how it was installed:
+#
+# standalone / install.sh → downloads the new binary and replaces itself
+# Homebrew                → runs: brew upgrade curl-runner
+# cargo                   → runs: cargo install curl-runner --locked
+# npm (global)            → runs: npm install -g @curl-runner/cli@latest
+# bun (global)            → runs: bun install -g @curl-runner/cli@latest
+```
+
+<Callout title="Development builds">
+  A binary under `target/debug` or `target/release`, or one whose location cannot be determined,
+  is never upgraded. `upgrade` says so and exits with code 1.
+</Callout>
+
+## Standalone Self-Replace [#standalone]
+
+Standalone installs (the install script or a binary you downloaded) upgrade themselves. There is no shell script involved:
+
+1. curl-runner reads the latest release from GitHub.
+2. It downloads the archive for your platform and `SHA256SUMS.txt`.
+3. It verifies the archive's SHA-256 checksum before doing anything else.
+4. It writes the new binary next to the running one and renames it over the old one. On Windows the old file is renamed aside first and restored if the swap fails.
+
+If anything fails (download, missing checksum, checksum mismatch, bad archive, no write permission), the existing binary is left untouched. `--dry-run` prints the archive URL and the file that would be replaced.
+
+## Automatic Version Check [#version-check]
+
+When you run a command in a terminal, curl-runner checks whether a newer version is available and prints a notice after the command finishes.
+
+```text title="Update Notification"
+╭───────────────────────────────────────────────╮
+│                                               │
+│  Update available! 2.0.0 → 2.1.0              │
+│                                               │
+│  Run curl-runner upgrade to update            │
+│                                               │
+╰───────────────────────────────────────────────╯
+```
+
+- **Non-blocking Check**: The lookup runs in the background and doesn't slow down your commands. Results are cached for 24 hours.
+- **Quiet in scripts**: The check is skipped in CI (when `CI` is set) and when output is piped or redirected, and every failure is silent.
+
+## Output Example
+
+Here is what an upgrade of a Homebrew install looks like.
+
+```text title="Upgrade Output"
+$ curl-runner upgrade
+
+curl-runner upgrade
+
+Installation: homebrew
+Current version: 2.0.0
+Latest version: 2.1.0
+
+Upgrading...
+
+(output of brew upgrade curl-runner)
+
+Upgrade complete!
+
+Run `curl-runner --version` to verify.
+```
+
+## Manual Upgrade
+
+If the automatic upgrade does not work, run the command for your install method yourself.
+
+```bash title="Manual Upgrade Commands"
+# Standalone installs (Linux / macOS)
+curl -fsSL https://www.curl-runner.com/install.sh | bash
+
+# Standalone installs (Windows PowerShell)
+irm https://www.curl-runner.com/install.ps1 | iex
+
+# Homebrew
+brew upgrade curl-runner
+
+# cargo
+cargo install curl-runner --locked
+
+# npm
+npm install -g @curl-runner/cli@latest
+
+# bun
+bun install -g @curl-runner/cli@latest
+```
+
+## Permission Issues [#permissions]
+
+If the upgrade cannot write to the install location, curl-runner prints the command to retry with `sudo`.
+
+```bash title="Permission Solutions"
+# Standalone binary in a system directory
+sudo curl-runner upgrade
+
+# npm global install
+sudo npm install -g @curl-runner/cli@latest
+```

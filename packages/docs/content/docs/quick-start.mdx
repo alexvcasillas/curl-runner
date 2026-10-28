@@ -1,0 +1,162 @@
+---
+title: Quick Start
+description: Get started with curl-runner in minutes. Create your first YAML configuration, run HTTP requests, and read the results.
+---
+
+Get up and running with curl-runner in just a few minutes. Follow these simple steps to make your first HTTP request.
+
+## 1. Install curl-runner
+
+Install using your preferred method. See [Installation](/docs/installation) for every option.
+
+```bash
+curl -fsSL https://www.curl-runner.com/install.sh | bash
+```
+
+On Windows, use `irm https://www.curl-runner.com/install.ps1 | iex`. With Homebrew: `brew install alexvcasillas/tap/curl-runner`. With npm: `npm i -g @curl-runner/cli`.
+
+## 2. Create your first YAML file
+
+Define your HTTP request configuration.
+
+```yaml title="simple.yaml"
+# simple.yaml
+request:
+  name: Get JSONPlaceholder Post
+  url: https://jsonplaceholder.typicode.com/posts/1
+  method: GET
+```
+
+## 3. Run the request
+
+Execute your configuration file.
+
+```bash
+curl-runner simple.yaml
+```
+
+## 4. View the results
+
+See the formatted output in your terminal.
+
+```text
+ℹ Found 1 YAML file(s)
+ℹ Processing: simple.yaml
+
+✓ Get JSONPlaceholder Post [simple]
+   ├─ GET: https://jsonplaceholder.typicode.com/posts/1
+   ├─ ✓ Status: 200
+   └─ Duration: 245ms | 292.00 B
+
+Summary: 1 request completed successfully
+```
+
+## More Examples
+
+Try these more advanced examples to explore `curl-runner`'s capabilities.
+
+### Request Collection
+
+Execute multiple requests in sequence with shared variables.
+
+```yaml title="collection.yaml"
+# collection.yaml
+global:
+  variables:
+    BASE_URL: https://jsonplaceholder.typicode.com
+  execution: sequential
+
+requests:
+  - name: Get All Posts
+    url: ${BASE_URL}/posts
+    method: GET
+
+  - name: Get Specific Post
+    url: ${BASE_URL}/posts/1
+    method: GET
+
+  - name: Get Post Comments
+    url: ${BASE_URL}/posts/1/comments
+    method: GET
+```
+
+```bash
+curl-runner collection.yaml
+```
+
+### Parallel Execution
+
+Run multiple requests simultaneously for faster execution.
+
+```yaml title="parallel.yaml"
+# parallel.yaml
+global:
+  execution: parallel
+  continueOnError: true
+
+requests:
+  - name: Check API Health
+    url: https://jsonplaceholder.typicode.com/posts/1
+    method: GET
+
+  - name: Check Users Endpoint
+    url: https://jsonplaceholder.typicode.com/users/1
+    method: GET
+
+  - name: Check Albums Endpoint
+    url: https://jsonplaceholder.typicode.com/albums/1
+    method: GET
+```
+
+```bash
+curl-runner parallel.yaml -v
+```
+
+## Tips & Tricks
+
+### CLI Options
+
+- `-v`: enable verbose output
+- `-p`: run requests in parallel
+- `-c`: continue on errors
+- `--output results.json`: save results
+
+### File Patterns
+
+- `*.yaml`: run all YAML files
+- `tests/`: run all files in a directory
+- `--all`: search recursively
+- `api-*.yaml`: pattern matching
+
+## What's Next?
+
+<Cards>
+  <Card title="Learn YAML Structure" href="/docs/yaml-structure">
+    Understand the full configuration format.
+  </Card>
+  <Card title="Explore Variables" href="/docs/variables">
+    Use variables and templating.
+  </Card>
+  <Card title="Browse Examples" href="/docs/examples/basic">
+    Real-world use cases and patterns.
+  </Card>
+</Cards>
+
+## Continue Learning
+
+Now that you've made your first request, explore these advanced features.
+
+<Cards>
+  <Card title="Response Validation" href="/docs/features/response-validation">
+    Automatically validate API responses to ensure they meet your expectations.
+  </Card>
+  <Card title="Request Collections" href="/docs/examples/collection">
+    Organize multiple related requests into collections for better workflow management.
+  </Card>
+  <Card title="CLI Commands" href="/docs/cli-commands">
+    Master all command-line options and flags for advanced usage.
+  </Card>
+  <Card title="Parallel Execution" href="/docs/features/parallel-execution">
+    Execute multiple requests concurrently for performance testing and faster workflows.
+  </Card>
+</Cards>

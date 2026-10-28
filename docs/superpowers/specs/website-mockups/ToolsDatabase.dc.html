@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>curl-runner — fact sheet</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0A0A0A}
+a{color:#EDEDED;text-decoration:none}a:hover{color:#FFFFFF}
+</style>
+</helmet>
+<div style="background: #0A0A0A; color: #EDEDED; font-family: 'Geist', system-ui, sans-serif; min-height: 100vh;">
+
+<header style="border-bottom: 1px solid #1F1F1F;">
+<nav aria-label="Main" style="max-width: 1200px; margin: 0 auto; padding: 16px 24px; display: flex; align-items: center; gap: 32px; flex-wrap: wrap;">
+<a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px;">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+curl-runner
+</a>
+<div style="display: flex; gap: 24px; flex-wrap: wrap; font-size: 14px; flex-grow: 1;">
+<a href="#" style="color: #A1A1A1;">Docs</a>
+<a href="Feature.dc.html" style="color: #A1A1A1;">Features</a>
+<a href="Alternatives.dc.html" style="color: #A1A1A1;">Alternatives</a>
+<a href="Downloads.dc.html" style="color: #A1A1A1;">Downloads</a>
+<a href="#" style="color: #A1A1A1;">Changelog</a>
+</div>
+<a href="#" style="display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 8px; background: #EDEDED; color: #0A0A0A; font-size: 14px; font-weight: 500;">Get started</a>
+</nav>
+</header>
+
+<main style="max-width: 880px; margin: 0 auto; padding: 96px 24px;">
+<p style="margin: 0 0 16px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; color: {{accent}}; letter-spacing: 0.04em;">FACT SHEET</p>
+<h1 style="margin: 0; font-size: clamp(36px, 5vw, 56px); line-height: 1.04; letter-spacing: -0.04em; font-weight: 700;">curl-runner at a glance</h1>
+<p style="margin: 20px 0 0; font-size: 18px; line-height: 1.6; color: #A1A1A1;">A command-line tool for running HTTP request suites defined in YAML: validation, retries, parallel execution, snapshots and diffs. Everything on this page is checkable in the repository.</p>
+
+<dl style="margin: 56px 0 0; border-top: 1px solid #1F1F1F;">
+<sc-for list="{{facts}}" as="f" hint-placeholder-count="12">
+<div style="display: flex; flex-wrap: wrap; gap: 8px 32px; padding: 18px 0; border-bottom: 1px solid #1F1F1F;">
+<dt style="flex: 0 0 200px; font-size: 14px; color: #8A8A8A;">{{f.k}}</dt>
+<dd style="flex: 1 1 360px; margin: 0; font-size: 16px; line-height: 1.6;">{{f.v}}</dd>
+</div>
+</sc-for>
+</dl>
+
+<div style="margin-top: 48px; display: flex; gap: 12px; flex-wrap: wrap;">
+<a href="Downloads.dc.html" style="display: inline-flex; align-items: center; height: 44px; padding: 0 20px; border-radius: 10px; background: #EDEDED; color: #0A0A0A; font-weight: 500; font-size: 15px;">Install</a>
+<a href="Alternatives.dc.html" style="display: inline-flex; align-items: center; height: 44px; padding: 0 20px; border-radius: 10px; border: 1px solid #262626; font-weight: 500; font-size: 15px;">Compare with alternatives</a>
+</div>
+</main>
+
+<footer style="border-top: 1px solid #1F1F1F;">
+<div style="max-width: 1200px; margin: 0 auto; padding: 40px 24px; display: flex; flex-wrap: wrap; gap: 16px 40px; font-size: 14px; color: #A1A1A1;">
+<span style="font-weight: 600; color: #EDEDED; flex-grow: 1;">curl-runner</span>
+<a href="#" style="color: #A1A1A1;">Docs</a><a href="Downloads.dc.html" style="color: #A1A1A1;">Downloads</a><a href="#" style="color: #A1A1A1;">GitHub</a><span>MIT licensed</span>
+</div>
+</footer>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#22D3EE","options":["#22D3EE","#A3E635","#F97316","#EDEDED"]},"$preview":{"width":1440,"height":2200}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#22D3EE';
+    const facts = [
+      { k: 'Category', v: 'API testing · HTTP client · CLI' },
+      { k: 'Latest version', v: '2.1.0 (live from GitHub Releases)' },
+      { k: 'Written in', v: 'Rust, with libcurl statically linked' },
+      { k: 'Runtime needed', v: 'None — a single native binary' },
+      { k: 'Platforms', v: 'macOS (arm64, x64), Linux (x64, arm64, static musl), Windows (x64)' },
+      { k: 'Install', v: 'install.sh, install.ps1, Homebrew, npm / bun / pnpm, cargo, direct download' },
+      { k: 'Test format', v: 'YAML files: requests, variables, expectations, retries, stored values' },
+      { k: 'Protocols', v: 'HTTP/1.1, HTTP/2, TLS via the operating system trust store' },
+      { k: 'CI use', v: 'Exit codes for pass and fail, failure thresholds, JSON / raw / pretty output' },
+      { k: 'License', v: 'MIT' },
+      { k: 'Source', v: 'github.com/alexvcasillas/curl-runner' },
+      { k: 'Package names', v: '@curl-runner/cli (npm), curl-runner (crates.io), alexvcasillas/tap/curl-runner (Homebrew)' }
+    ];
+    return { accent, facts };
+  }
+}
+</script>
+</body>
+</html>

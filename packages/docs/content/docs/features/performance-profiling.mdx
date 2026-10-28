@@ -1,0 +1,174 @@
+---
+title: "Performance Profiling"
+description: "Run HTTP requests multiple times to collect p50/p95/p99 latency statistics. Lightweight performance testing without full load testing tools."
+---
+
+Run requests multiple times to collect latency statistics. Lightweight performance testing without full load testing tools.
+
+## Overview
+
+Profile mode runs each request N times and calculates p50/p95/p99 percentile latencies. Ideal for quick performance checks without setting up dedicated load testing infrastructure.
+
+- **Percentile Stats**: p50, p95, p99 latency metrics
+- **Warmup Support**: Exclude cold-start iterations
+- **Histogram**: Visual latency distribution
+
+## Basic Usage
+
+Use the `-P` or `--profile` flag followed by the number of iterations.
+
+```bash title="Basic Profile Mode"
+# Run request 100 times
+curl-runner api.yaml -P 100
+
+# Short form equivalent
+curl-runner api.yaml --profile 100
+
+# Profile all requests in a directory
+curl-runner tests/ -P 50
+```
+
+## Advanced Options
+
+Fine-tune profiling behavior with additional flags.
+
+- `--profile-warmup <n>` *(default: 1)*: Exclude first N iterations from statistics. Useful for eliminating cold-start latency spikes.
+
+- `--profile-concurrency <n>` *(default: 1)*: Run N iterations in parallel. Higher values simulate concurrent load.
+
+- `--profile-histogram` *(default: off)*: Display ASCII histogram showing latency distribution across buckets.
+
+- `--profile-export <file>`: Export raw timings and stats to JSON or CSV file for further analysis.
+
+```bash title="Advanced Options"
+# With warmup iterations (exclude first 5 from stats)
+curl-runner api.yaml --profile 100 --profile-warmup 5
+
+# Concurrent iterations (10 parallel)
+curl-runner api.yaml -P 100 --profile-concurrency 10
+
+# Show histogram distribution
+curl-runner api.yaml -P 100 --profile-histogram
+
+# Export raw timings to file
+curl-runner api.yaml -P 100 --profile-export results.json
+curl-runner api.yaml -P 100 --profile-export results.csv
+```
+
+## YAML Configuration
+
+Configure profiling in your YAML files for repeatable benchmarks.
+
+Put the profile settings in a `curl-runner.yaml` config file next to your tests. Its `global.profile` block turns profile mode on.
+
+```yaml title="curl-runner.yaml"
+global:
+  profile:
+    iterations: 100     # Run each request 100 times
+    warmup: 5           # Exclude first 5 from stats
+    concurrency: 1      # Sequential (default)
+    histogram: true     # Show distribution
+    exportFile: results.json
+```
+
+```yaml title="api.yaml"
+requests:
+  - name: Health Check
+    url: https://api.example.com/health
+    method: GET
+```
+
+<Callout title="Profile mode is chosen before test files are read">
+  A `global.profile` block inside a test file only supplies settings. To switch the mode on, use
+  `--profile`, `CURL_RUNNER_PROFILE`, or `global.profile.iterations` in `curl-runner.yaml`. In profile
+  mode, `expect`, `retry`, `when`, `store` and `snapshot` are ignored, and `--dry-run` has no effect.
+</Callout>
+
+## Environment Variables
+
+Control profiling via environment variables for CI/CD integration.
+
+- `CURL_RUNNER_PROFILE`: Number of iterations
+- `CURL_RUNNER_PROFILE_WARMUP`: Warmup iterations to exclude
+- `CURL_RUNNER_PROFILE_CONCURRENCY`: Parallel iteration count
+- `CURL_RUNNER_PROFILE_HISTOGRAM`: Show histogram (true/false)
+- `CURL_RUNNER_PROFILE_EXPORT`: Export file path
+
+```bash title="Environment Variables"
+# Enable profile mode via environment
+CURL_RUNNER_PROFILE=100 curl-runner api.yaml
+
+# Configure all options
+CURL_RUNNER_PROFILE=50 \
+CURL_RUNNER_PROFILE_WARMUP=5 \
+CURL_RUNNER_PROFILE_CONCURRENCY=10 \
+CURL_RUNNER_PROFILE_HISTOGRAM=true \
+curl-runner api.yaml
+```
+
+## Output Example
+
+Profile mode output includes percentile stats, standard deviation, and optional histogram.
+
+```text title="Profile Output"
+⚡ PROFILING Health Check
+   100 iterations, 5 warmup, concurrency: 1
+
+✓ Health Check
+   ┌─────────────────────────────────────┐
+   │ p50        45.2ms │ min       38.1ms │
+   │ p95        89.4ms │ max      142.3ms │
+   │ p99       128.7ms │ mean      52.3ms │
+   └─────────────────────────────────────┘
+   σ 18.42ms | 95 samples | 0 failures (0%)
+
+   Distribution:
+    38ms -    51ms │████████████████████████████ 42
+    51ms -    64ms │██████████████████████ 33
+    64ms -    77ms │████████ 12
+    77ms -    90ms │████ 6
+    90ms -   103ms │█ 1
+   103ms -   116ms │ 0
+   116ms -   129ms │█ 1
+   129ms -   142ms │ 0
+```
+
+## Export Format
+
+Export results to JSON for programmatic analysis or CSV for spreadsheets.
+
+```json title="results.json"
+[{
+  "request": "Health Check",
+  "summary": {
+    "iterations": 95,
+    "warmup": 5,
+    "failures": 0,
+    "failureRate": 0,
+    "min": 38.1,
+    "max": 142.3,
+    "mean": 52.3,
+    "median": 45.2,
+    "p50": 45.2,
+    "p95": 89.4,
+    "p99": 128.7,
+    "stdDev": 18.42
+  },
+  "timings": [42.1, 45.3, 44.8, ...]
+}]
+```
+
+The JSON file holds one entry per profiled request. CSV export writes one row per iteration with the columns `iteration,latency_ms`.
+
+## Best Practices
+
+- **Recommended**
+  - Use 5-10 warmup iterations to exclude cold starts
+  - Run 50-100 iterations for statistically meaningful results
+  - Export results for tracking over time
+  - Profile individual endpoints, not entire test suites
+- **Considerations**
+  - Not a replacement for dedicated load testing tools
+  - High concurrency may trigger rate limiting
+  - Results vary with network conditions
+  - Cannot be combined with watch mode

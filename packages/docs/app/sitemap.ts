@@ -1,176 +1,32 @@
 import type { MetadataRoute } from 'next';
 import { getAllFeatures } from '@/lib/features-data';
+import { SITE_URL, source } from '@/lib/source';
+
+const MARKETING_ROUTES = ['', '/alternatives', '/downloads', '/tools-database', '/changelog'];
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = 'https://www.curl-runner.com';
-  const currentDate = new Date();
+  const lastModified = new Date();
 
-  // Static pages
-  const staticRoutes = [
-    {
-      url: baseUrl,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 1,
-    },
-  ];
+  const marketing = MARKETING_ROUTES.map((path) => ({
+    url: `${SITE_URL}${path}`,
+    lastModified,
+    changeFrequency: 'monthly' as const,
+    priority: path === '' ? 1 : 0.8,
+  }));
 
-  // Documentation routes
-  const docsRoutes = [
-    // Main docs
-    {
-      url: `${baseUrl}/docs`,
-      lastModified: currentDate,
-      changeFrequency: 'weekly' as const,
-      priority: 0.9,
-    },
-
-    // Getting Started
-    {
-      url: `${baseUrl}/docs/installation`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.8,
-    },
-    {
-      url: `${baseUrl}/docs/quick-start`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.8,
-    },
-    {
-      url: `${baseUrl}/docs/use-cases`,
-      lastModified: currentDate,
-      changeFrequency: 'weekly' as const,
-      priority: 0.8,
-    },
-    {
-      url: `${baseUrl}/docs/tutorials`,
-      lastModified: currentDate,
-      changeFrequency: 'weekly' as const,
-      priority: 0.8,
-    },
-
-    // Core Configuration
-    {
-      url: `${baseUrl}/docs/yaml-structure`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.8,
-    },
-    {
-      url: `${baseUrl}/docs/global-settings`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.7,
-    },
-    {
-      url: `${baseUrl}/docs/variables`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.7,
-    },
-
-    // CLI Interface
-    {
-      url: `${baseUrl}/docs/cli-commands`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.7,
-    },
-    {
-      url: `${baseUrl}/docs/cli-options`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.7,
-    },
-    {
-      url: `${baseUrl}/docs/environment-variables`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.7,
-    },
-
-    // Features
-    {
-      url: `${baseUrl}/docs/features/parallel-execution`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.6,
-    },
-    {
-      url: `${baseUrl}/docs/features/response-validation`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.6,
-    },
-    {
-      url: `${baseUrl}/docs/features/retry-mechanism`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.6,
-    },
-    {
-      url: `${baseUrl}/docs/features/output-formats`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.6,
-    },
-
-    // Examples
-    {
-      url: `${baseUrl}/docs/examples/basic`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.6,
-    },
-    {
-      url: `${baseUrl}/docs/examples/collection`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.6,
-    },
-    {
-      url: `${baseUrl}/docs/examples/advanced`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.6,
-    },
-
-    // API Reference
-    {
-      url: `${baseUrl}/docs/api-reference/global-settings`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.5,
-    },
-    {
-      url: `${baseUrl}/docs/api-reference/request-object`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.5,
-    },
-    {
-      url: `${baseUrl}/docs/api-reference/response-object`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.5,
-    },
-    {
-      url: `${baseUrl}/docs/api-reference/validation-rules`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly' as const,
-      priority: 0.5,
-    },
-  ];
-
-  // Feature landing pages
-  const featureRoutes = getAllFeatures().map((feature) => ({
-    url: `${baseUrl}/features/${feature.slug}`,
-    lastModified: currentDate,
+  const features = getAllFeatures().map((feature) => ({
+    url: `${SITE_URL}/features/${feature.slug}`,
+    lastModified,
     changeFrequency: 'monthly' as const,
     priority: 0.8,
   }));
 
-  return [...staticRoutes, ...docsRoutes, ...featureRoutes];
+  const docs = source.getPages().map((page) => ({
+    url: `${SITE_URL}${page.url}`,
+    lastModified,
+    changeFrequency: 'monthly' as const,
+    priority: page.url === '/docs' ? 0.9 : 0.7,
+  }));
+
+  return [...marketing, ...features, ...docs];
 }

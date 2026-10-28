@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>curl-runner — Retry mechanism</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0A0A0A}
+a{color:#EDEDED;text-decoration:none}a:hover{color:#FFFFFF}
+</style>
+</helmet>
+<div style="background: #0A0A0A; color: #EDEDED; font-family: 'Geist', system-ui, sans-serif; min-height: 100vh;">
+
+<header style="border-bottom: 1px solid #1F1F1F;">
+<nav aria-label="Main" style="max-width: 1200px; margin: 0 auto; padding: 16px 24px; display: flex; align-items: center; gap: 32px; flex-wrap: wrap;">
+<a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px;">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+curl-runner
+</a>
+<div style="display: flex; gap: 24px; flex-wrap: wrap; font-size: 14px; flex-grow: 1;">
+<a href="#" style="color: #A1A1A1;">Docs</a>
+<a href="Feature.dc.html" style="color: #EDEDED;">Features</a>
+<a href="Alternatives.dc.html" style="color: #A1A1A1;">Alternatives</a>
+<a href="Downloads.dc.html" style="color: #A1A1A1;">Downloads</a>
+<a href="#" style="color: #A1A1A1;">Changelog</a>
+</div>
+<a href="#" style="display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 8px; background: #EDEDED; color: #0A0A0A; font-size: 14px; font-weight: 500;">Get started</a>
+</nav>
+</header>
+
+<div style="max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; flex-wrap: wrap; gap: 48px;">
+
+<aside aria-label="Features" style="flex: 1 1 220px; max-width: 240px; padding-top: 72px;">
+<p style="margin: 0 0 14px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #8A8A8A; letter-spacing: 0.06em;">FEATURES</p>
+<div style="display: flex; flex-direction: column; gap: 2px; font-size: 14px;">
+<sc-for list="{{nav}}" as="n" hint-placeholder-count="12">
+<a href="#" style="{{n.style}}">{{n.label}}</a>
+</sc-for>
+</div>
+</aside>
+
+<main style="flex: 999 1 560px; min-width: 0; padding: 72px 0 96px;">
+<p style="margin: 0 0 16px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; color: {{accent}}; letter-spacing: 0.04em;">RETRY MECHANISM</p>
+<h1 style="margin: 0; font-size: clamp(40px, 5.6vw, 64px); line-height: 1.03; letter-spacing: -0.045em; font-weight: 700; max-width: 18ch;">Flaky networks shouldn’t fail your suite.</h1>
+<p style="margin: 24px 0 0; font-size: 19px; line-height: 1.6; color: #A1A1A1; max-width: 40rem;">Retry failed requests with a count, a delay and exponential backoff — per request or for the whole file — and choose exactly which status codes deserve another try.</p>
+<div style="margin-top: 32px; display: flex; gap: 12px; flex-wrap: wrap;">
+<a href="#" style="display: inline-flex; align-items: center; height: 44px; padding: 0 20px; border-radius: 10px; background: #EDEDED; color: #0A0A0A; font-weight: 500; font-size: 15px;">Read the docs</a>
+<a href="Downloads.dc.html" style="display: inline-flex; align-items: center; height: 44px; padding: 0 20px; border-radius: 10px; border: 1px solid #262626; font-weight: 500; font-size: 15px;">Install curl-runner</a>
+</div>
+
+<div style="margin-top: 64px; border: 1px solid #262626; border-radius: 14px; background: #0F0F0F; overflow: hidden;">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 16px; border-bottom: 1px solid #1F1F1F; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; color: #A1A1A1;">
+<span>retry.yaml</span>
+<button aria-label="Copy example" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin-right: -12px; border: 0; background: transparent; color: #A1A1A1;">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+</button>
+</div>
+<pre style="margin: 0; padding: 20px 22px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; line-height: 1.75; color: #EDEDED; overflow-x: auto;"><span style="color: {{accent}};">global</span>:
+  <span style="color: {{accent}};">defaults</span>:
+    <span style="color: {{accent}};">retry</span>: { <span style="color: {{accent}};">count</span>: 3, <span style="color: {{accent}};">delay</span>: 1000, <span style="color: {{accent}};">backoff</span>: 2 }
+
+<span style="color: {{accent}};">requests</span>:
+  - <span style="color: {{accent}};">name</span>: Flaky upstream
+    <span style="color: {{accent}};">url</span>: https://api.example.com/data
+    <span style="color: {{accent}};">retry</span>:
+      <span style="color: {{accent}};">count</span>: 5
+      <span style="color: {{accent}};">delay</span>: 2000
+      <span style="color: {{accent}};">retryableStatuses</span>: [429, 500, 502, 503]</pre>
+</div>
+
+<div style="margin-top: 80px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); border-top: 1px solid #1F1F1F; border-left: 1px solid #1F1F1F;">
+<div style="padding: 28px; border-right: 1px solid #1F1F1F; border-bottom: 1px solid #1F1F1F;">
+<h2 style="margin: 0 0 10px; font-size: 17px; font-weight: 600;">Exponential backoff</h2>
+<p style="margin: 0; font-size: 15px; line-height: 1.6; color: #A1A1A1;">Each attempt waits longer than the last, so a struggling server gets room to recover.</p>
+</div>
+<div style="padding: 28px; border-right: 1px solid #1F1F1F; border-bottom: 1px solid #1F1F1F;">
+<h2 style="margin: 0 0 10px; font-size: 17px; font-weight: 600;">Per request or global</h2>
+<p style="margin: 0; font-size: 15px; line-height: 1.6; color: #A1A1A1;">Set a default for the file, override it on the one endpoint that needs more patience.</p>
+</div>
+<div style="padding: 28px; border-right: 1px solid #1F1F1F; border-bottom: 1px solid #1F1F1F;">
+<h2 style="margin: 0 0 10px; font-size: 17px; font-weight: 600;">Only the right failures</h2>
+<p style="margin: 0; font-size: 15px; line-height: 1.6; color: #A1A1A1;">Retry on 429 and 5xx, never on a 400 your request deserved. Timeouts and dropped connections retry too.</p>
+</div>
+</div>
+
+<h2 style="margin: 80px 0 24px; font-size: 28px; letter-spacing: -0.025em; font-weight: 700;">Good for</h2>
+<div style="display: flex; flex-direction: column; border-top: 1px solid #1F1F1F;">
+<div style="display: flex; gap: 16px; padding: 18px 0; border-bottom: 1px solid #1F1F1F; font-size: 16px;"><span style="font-family: 'Geist Mono', ui-monospace, monospace; color: #8A8A8A;">01</span>Intermittent network failures in CI</div>
+<div style="display: flex; gap: 16px; padding: 18px 0; border-bottom: 1px solid #1F1F1F; font-size: 16px;"><span style="font-family: 'Geist Mono', ui-monospace, monospace; color: #8A8A8A;">02</span>Rate-limited APIs that answer 429</div>
+<div style="display: flex; gap: 16px; padding: 18px 0; border-bottom: 1px solid #1F1F1F; font-size: 16px;"><span style="font-family: 'Geist Mono', ui-monospace, monospace; color: #8A8A8A;">03</span>Services that take a moment to warm up after a deploy</div>
+<div style="display: flex; gap: 16px; padding: 18px 0; border-bottom: 1px solid #1F1F1F; font-size: 16px;"><span style="font-family: 'Geist Mono', ui-monospace, monospace; color: #8A8A8A;">04</span>Smoke tests against shared staging environments</div>
+</div>
+
+<div style="margin-top: 80px; display: flex; flex-wrap: wrap; gap: 16px;">
+<a href="#" style="flex: 1 1 260px; display: flex; flex-direction: column; gap: 6px; padding: 22px; border: 1px solid #262626; border-radius: 12px;">
+<span style="font-size: 13px; color: #8A8A8A;">Previous</span>
+<span style="font-size: 17px; font-weight: 600;">← Response validation</span>
+</a>
+<a href="#" style="flex: 1 1 260px; display: flex; flex-direction: column; gap: 6px; padding: 22px; border: 1px solid #262626; border-radius: 12px; text-align: right;">
+<span style="font-size: 13px; color: #8A8A8A;">Next</span>
+<span style="font-size: 17px; font-weight: 600;">Watch mode →</span>
+</a>
+</div>
+</main>
+</div>
+
+<footer style="border-top: 1px solid #1F1F1F;">
+<div style="max-width: 1200px; margin: 0 auto; padding: 40px 24px; display: flex; flex-wrap: wrap; gap: 16px 40px; font-size: 14px; color: #A1A1A1;">
+<span style="font-weight: 600; color: #EDEDED; flex-grow: 1;">curl-runner</span>
+<a href="#" style="color: #A1A1A1;">Docs</a><a href="Downloads.dc.html" style="color: #A1A1A1;">Downloads</a><a href="#" style="color: #A1A1A1;">GitHub</a><span>MIT licensed</span>
+</div>
+</footer>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#22D3EE","options":["#22D3EE","#A3E635","#F97316","#EDEDED"]},"$preview":{"width":1440,"height":3000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#22D3EE';
+    const items = ['Parallel execution', 'Response validation', 'Retry mechanism', 'Watch mode', 'CI integration', 'File uploads', 'Output formats', 'Response storage', 'Conditional execution', 'Performance profiling', 'Response diffing', 'Snapshots', 'Dry run', 'HTTP/2', 'Connection pooling', 'YAML wizard', 'YAML validation', 'curl ⇄ YAML', 'Environment files'];
+    const base = 'display: block; padding: 8px 12px; border-radius: 8px; ';
+    const nav = items.map((label) => ({
+      label,
+      style: base + (label === 'Retry mechanism' ? 'background: #171717; color: #EDEDED;' : 'color: #A1A1A1;')
+    }));
+    return { accent, nav };
+  }
+}
+</script>
+</body>
+</html>

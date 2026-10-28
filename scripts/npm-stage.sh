@@ -4,7 +4,7 @@
 #   - stamp the @curl-runner/cli version into every npm/cli-<platform> package
 #   - copy the release binaries into npm/cli-<platform>/bin/
 #   - add the platform packages as exact-version optionalDependencies of
-#     packages/cli (not committed: keeps bun.lock free of unpublished versions)
+#     packages/cli (not committed: keeps pnpm-lock.yaml free of unpublished versions)
 # Usage: npm-stage.sh <root> <bin-dir>
 #   <root>    holds packages/cli and npm/ (the repo checkout in CI)
 #   <bin-dir> holds the build job's curl-runner-<platform>[.exe] artifacts

@@ -1,0 +1,140 @@
+---
+title: Real-World Use Cases
+description: Discover how to use curl-runner for API testing, CI/CD automation, load testing, microservices monitoring, and development workflows.
+---
+
+Discover how curl-runner fits API testing, automation, and monitoring work.
+
+## Why Use curl-runner
+
+curl-runner is built for reliable, automated API testing and validation. Here is where it fits.
+
+<Cards>
+  <Card title="Faster development cycles">
+    Automated testing reduces manual effort and speeds up delivery. Reduce manual testing effort, accelerate deployment cycles and streamline development workflows.
+  </Card>
+  <Card title="Better API quality">
+    Comprehensive validation ensures robust and reliable APIs.
+  </Card>
+  <Card title="Reduced downtime">
+    Early detection of issues prevents production failures.
+  </Card>
+  <Card title="Cost savings">
+    Prevent expensive post-deployment fixes and rollbacks. Avoid rollbacks by catching issues before deployment, and reduce hotfixes.
+  </Card>
+</Cards>
+
+## Popular Use Cases
+
+### API Testing & Validation
+
+Comprehensive testing of REST APIs, GraphQL endpoints, and microservices.
+
+- End-to-end API testing suites
+- Status, header and body assertions
+- Authentication flow testing
+- Error handling verification
+
+[Learn more](/docs/features/response-validation).
+
+### CI/CD Pipeline Integration
+
+Automated testing and validation in continuous integration workflows.
+
+- Pre-deployment API health checks
+- Integration test automation
+- Environment smoke testing
+- Release validation pipelines
+
+[Learn more](/docs/examples/advanced).
+
+### Load Testing & Performance
+
+Stress testing APIs and measuring performance under various loads.
+
+- Concurrent request load testing
+- Performance benchmarking
+- Stress testing scenarios
+- Capacity planning validation
+
+[Learn more](/docs/features/parallel-execution).
+
+### Microservices Monitoring
+
+Health checks and monitoring for distributed microservices architectures.
+
+- Service health monitoring
+- Inter-service communication testing
+- Circuit breaker validation
+- Dependency health checks
+
+[Learn more](/docs/examples/collection).
+
+### Development Workflows
+
+Streamline development processes with automated request execution.
+
+- Local development testing
+- API documentation validation
+- Mock server interaction
+- Development environment setup
+
+[Learn more](/docs/examples/basic).
+
+### Security Testing
+
+Validate authentication, authorization, and security protocols.
+
+- OAuth flow validation
+- JWT token testing
+- Rate limiting verification
+- Security header validation
+
+[Learn more](/docs/variables).
+
+## Example Scenarios
+
+### E-commerce platform
+
+Validate checkout, payment processing, and inventory update APIs across many microservices in every deployment.
+
+**Key features:** parallel execution, response validation, CI/CD integration.
+
+### Cloud platform
+
+Run health checks on a schedule across many API endpoints to confirm service availability and performance.
+
+**Key features:** monitoring automation, environment variables, error reporting.
+
+### Fintech
+
+Validate OAuth flows, rate limiting, and API security policies automatically.
+
+**Key features:** security testing, authentication validation, compliance checks.
+
+## Frequently Asked Questions
+
+### Can curl-runner replace Postman for API testing?
+
+Yes, curl-runner is designed for automated, configuration-driven API testing that's perfect for CI/CD pipelines. While Postman excels at manual testing and exploration, curl-runner excels at automated, repeatable testing workflows.
+
+### How does curl-runner handle authentication in real-world scenarios?
+
+curl-runner supports various authentication methods including Basic Auth, Bearer tokens, OAuth flows, and custom headers. You can use environment variables and templates to manage credentials securely across different environments.
+
+### Is curl-runner suitable for load testing production systems?
+
+curl-runner can perform load testing with parallel execution, but it's primarily designed for functional testing and moderate load scenarios. For extensive load testing, consider specialized tools like k6 or Artillery alongside curl-runner for validation.
+
+### How do I migrate existing API tests to curl-runner?
+
+Existing curl commands and shell scripts of curl calls can be converted to YAML configuration. Start with simple requests and gradually add validation rules, variables, and parallel execution as needed. See [Curl and YAML conversion](/docs/features/convert).
+
+## Ready to Get Started?
+
+Get up and running in minutes.
+
+<Cards>
+  <Card title="Install curl-runner" href="/docs/installation" />
+  <Card title="Quick Start Guide" href="/docs/quick-start" />
+</Cards>

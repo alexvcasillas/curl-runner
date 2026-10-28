@@ -1,0 +1,226 @@
+---
+title: "YAML Wizard"
+description: "Create curl-runner YAML configuration files interactively with a guided wizard. No need to memorize syntax - just answer prompts."
+---
+
+Create YAML configuration files interactively without memorizing syntax.
+
+## Overview
+
+The YAML Wizard is an interactive CLI that guides you through creating curl-runner configuration files. Instead of writing YAML by hand, answer prompts for URL, method, headers, body, authentication, and more. The wizard handles all the formatting and syntax for you.
+
+- **Guided Prompts**: Step-by-step prompts walk you through every option
+- **Pre-built Templates**: Start from templates for common use cases
+- **Modify Existing**: Edit existing YAML files through the wizard
+
+## Quick Init
+
+The fastest way to create a new YAML file. Just run `curl-runner init` and answer a few prompts.
+
+```bash title="Terminal"
+# Quick init - prompts for URL and method
+curl-runner init
+
+# Quick init with URL
+curl-runner init https://api.example.com/users
+
+# The wizard will prompt for method and filename
+```
+
+**Quick init prompts for:**
+
+- Request URL (or pass as argument)
+- HTTP method (GET, POST, PUT, DELETE)
+- Output filename
+- Whether to run immediately
+
+## Full Wizard Mode [#full-wizard]
+
+For more control, use the full wizard with `--wizard` or `-w`. This guides you through all available options.
+
+```bash title="Terminal"
+# Full interactive wizard
+curl-runner init --wizard
+
+# Or short form
+curl-runner init -w
+
+# With custom output file
+curl-runner init --wizard -o api-test.yaml
+```
+
+### Wizard Flow
+
+The wizard takes you through these steps:
+
+```text title="Wizard Flow"
+┌─ curl-runner wizard v2.x.x ──────────────────┐
+│                                              │
+│  ? Start from a template?                    │
+│    ○ Blank - Start from scratch              │
+│    ● Basic GET Request                       │
+│    ○ Basic POST Request                      │
+│    ○ API Test                                │
+│    ○ File Upload                             │
+│    ○ Auth Flow                               │
+│                                              │
+│  ? Request URL                               │
+│    https://api.example.com/users             │
+│                                              │
+│  ? HTTP method                               │
+│    GET                                       │
+│                                              │
+│  ? Request name (optional)                   │
+│    Get All Users                             │
+│                                              │
+│  ? Add headers?                              │
+│    Yes                                       │
+│                                              │
+│  ... (continues through all options)         │
+│                                              │
+└──────────────────────────────────────────────┘
+```
+
+## Templates
+
+Start from a pre-built template to save time. Templates come with sensible defaults for common scenarios.
+
+- **Basic GET**: Simple GET request with follow redirects enabled
+- **Basic POST**: POST with JSON content-type header preset
+- **API Test**: Includes validation, response time checks, verbose output
+- **File Upload**: Multipart form data with file attachment support
+- **Auth Flow**: Bearer token authentication pre-configured
+
+```bash title="templates-info.txt"
+# Available templates:
+
+# 1. Basic GET Request
+# - Simple GET with default settings
+# - Follow redirects enabled
+
+# 2. Basic POST Request
+# - POST method with JSON content-type
+# - Prompts for JSON body
+
+# 3. API Test
+# - Includes response validation
+# - Response time assertions
+# - Verbose output enabled
+
+# 4. File Upload
+# - Multipart form data
+# - File attachment support
+
+# 5. Auth Flow
+# - Bearer token authentication
+# - Pre-configured headers
+```
+
+## Edit Existing Files [#edit-mode]
+
+Use the `edit` command to modify existing YAML files through the wizard. The current values are pre-filled so you can quickly make changes.
+
+```bash title="Terminal"
+# Edit an existing YAML file
+curl-runner edit api-test.yaml
+
+# Edit and save to a new file
+curl-runner edit api-test.yaml -o api-test-v2.yaml
+```
+
+**Edit Mode Features**
+
+- Pre-fills all prompts with existing values
+- Skip through unchanged options quickly
+- Save to original or new file
+- Preview changes before saving
+
+## Advanced Options
+
+The wizard prompts for advanced options when you select "Configure advanced options". These include timeout, retry, SSL, and validation settings.
+
+```text title="Advanced Options"
+# The wizard prompts for these advanced options:
+
+# Timeout
+? Timeout (ms): 30000
+
+# Redirects
+? Follow redirects? Yes
+
+# SSL
+? Skip SSL verification? No
+
+# HTTP/2
+? Use HTTP/2? Yes
+
+# Retry configuration
+? Configure retry strategy? Yes
+? Max retry attempts: 3
+? Retry delay (ms): 1000
+? Backoff multiplier: 2
+
+# Response validation
+? Add response validation? Yes
+? Expected status code(s): 200
+? Response time constraint: < 2000
+```
+
+## Preview and Run
+
+Before saving, the wizard shows a preview of your YAML configuration. You can then choose to run the request immediately to verify it works.
+
+```text title="Preview"
+# After creating the file, the wizard asks:
+
+┌─ Preview ──────────────────────────────────────┐
+│                                                │
+│  request:                                      │
+│    url: "https://api.example.com/users"        │
+│    headers:                                    │
+│      Accept: application/json                  │
+│    expect:                                     │
+│      status: 200                               │
+│                                                │
+└────────────────────────────────────────────────┘
+
+? Save to: api-test.yaml
+? Run request after creating? Yes
+
+# If you say yes, the request executes immediately
+# so you can verify your configuration works
+```
+
+## Generated Output [#output]
+
+The wizard generates clean, well-formatted YAML that follows curl-runner conventions.
+
+```yaml title="generated-config.yaml"
+request:
+  name: Get All Users
+  url: "https://api.example.com/users"
+  headers:
+    Accept: application/json
+    Authorization: Bearer my-token
+  expect:
+    status: 200
+    responseTime: "< 2000"
+```
+
+## CLI Reference
+
+| Command | Description |
+| --- | --- |
+| `curl-runner init` | Quick create with minimal prompts |
+| `curl-runner init [url]` | Quick create with URL pre-filled |
+| `curl-runner init --wizard` | Full interactive wizard |
+| `curl-runner init -w -o file.yaml` | Wizard with custom output file |
+| `curl-runner edit file.yaml` | Edit existing YAML file |
+| `curl-runner edit file.yaml -o new.yaml` | Edit and save to new file |
+
+## Tips
+
+- **Use Templates**: Start from a template when possible. It sets sensible defaults and saves time.
+- **Run After Create**: Always run after creating to verify your configuration works as expected.
+- **Edit Mode for Updates**: Use edit mode instead of manual YAML editing to avoid syntax errors.
+- **Quick Init for Simple Cases**: For simple GET/POST requests, quick init is faster than the full wizard.

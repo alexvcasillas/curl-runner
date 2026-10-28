@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>curl-runner — downloads</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0A0A0A}
+a{color:#EDEDED;text-decoration:none}a:hover{color:#FFFFFF}
+</style>
+</helmet>
+<div style="background: #0A0A0A; color: #EDEDED; font-family: 'Geist', system-ui, sans-serif; min-height: 100vh;">
+
+<header style="border-bottom: 1px solid #1F1F1F;">
+<nav aria-label="Main" style="max-width: 1200px; margin: 0 auto; padding: 16px 24px; display: flex; align-items: center; gap: 32px; flex-wrap: wrap;">
+<a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px;">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+curl-runner
+</a>
+<div style="display: flex; gap: 24px; flex-wrap: wrap; font-size: 14px; flex-grow: 1;">
+<a href="#" style="color: #A1A1A1;">Docs</a>
+<a href="Feature.dc.html" style="color: #A1A1A1;">Features</a>
+<a href="Alternatives.dc.html" style="color: #A1A1A1;">Alternatives</a>
+<a href="Downloads.dc.html" style="color: #EDEDED;">Downloads</a>
+<a href="#" style="color: #A1A1A1;">Changelog</a>
+</div>
+<a href="#" style="display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 8px; background: #EDEDED; color: #0A0A0A; font-size: 14px; font-weight: 500;">Get started</a>
+</nav>
+</header>
+
+<section style="max-width: 1200px; margin: 0 auto; padding: 96px 24px 48px;">
+<p style="margin: 0 0 16px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; color: {{accent}}; letter-spacing: 0.04em;">DOWNLOAD · v2.1.0 · OCT 28, 2026</p>
+<h1 style="margin: 0; font-size: clamp(40px, 6vw, 72px); line-height: 1.02; letter-spacing: -0.045em; font-weight: 700;">One binary. Every platform.</h1>
+<p style="margin: 24px 0 0; font-size: 19px; line-height: 1.6; color: #A1A1A1; max-width: 40rem;">A single static executable with libcurl built in. Nothing else to install — no Node, no Bun, no curl.</p>
+</section>
+
+<section aria-label="Install" style="max-width: 1200px; margin: 0 auto; padding: 0 24px 72px;">
+<div style="border: 1px solid #262626; border-radius: 14px; background: #0F0F0F; overflow: hidden;">
+<div role="tablist" aria-label="Install method" style="display: flex; gap: 4px; padding: 6px; border-bottom: 1px solid #1F1F1F; flex-wrap: wrap;">
+<sc-for list="{{tabs}}" as="tab" hint-placeholder-count="5">
+<button role="tab" aria-selected="{{tab.selected}}" onClick="{{tab.pick}}" style="{{tab.style}}">{{tab.label}}</button>
+</sc-for>
+</div>
+<div style="display: flex; align-items: center; gap: 12px; padding: 18px 20px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 15px;">
+<span style="color: #6B6B6B;" aria-hidden="true">$</span>
+<code style="flex-grow: 1; overflow-x: auto; white-space: nowrap;">{{cmd}}</code>
+<button aria-label="Copy install command" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin: -12px -10px -12px 0; border: 0; background: transparent; color: #A1A1A1;">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+</button>
+</div>
+<p style="margin: 0; padding: 0 20px 18px; font-size: 14px; color: #8A8A8A;">{{note}}</p>
+</div>
+</section>
+
+<section aria-label="Binaries" style="max-width: 1200px; margin: 0 auto; padding: 0 24px 96px;">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px;">
+<h2 style="margin: 0; font-size: 28px; letter-spacing: -0.025em; font-weight: 700;">Pre-built binaries</h2>
+<a href="#" style="font-size: 14px; color: #A1A1A1;">SHA256SUMS.txt</a>
+</div>
+<div style="border: 1px solid #262626; border-radius: 14px; overflow: hidden;">
+<sc-for list="{{assets}}" as="a" hint-placeholder-count="5">
+<a href="#" style="display: flex; align-items: center; gap: 20px; padding: 20px 24px; border-bottom: 1px solid #1F1F1F; flex-wrap: wrap;">
+<span style="flex: 1 1 200px; font-weight: 600; font-size: 16px;">{{a.os}}</span>
+<span style="flex: 1 1 260px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; color: #8A8A8A;">{{a.file}}</span>
+<span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; color: #A1A1A1; width: 64px; text-align: right;">{{a.size}}</span>
+<span style="display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid #262626; font-size: 14px;">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+Download
+</span>
+</a>
+</sc-for>
+</div>
+<p style="margin: 16px 0 0; font-size: 14px; color: #8A8A8A;">Verify with <code style="font-family: 'Geist Mono', ui-monospace, monospace; color: #D4D4D4;">shasum -a 256 -c SHA256SUMS.txt</code>. Older versions and release notes on <a href="#" style="color: #EDEDED; text-decoration: underline;">GitHub Releases</a>.</p>
+</section>
+
+<footer style="border-top: 1px solid #1F1F1F;">
+<div style="max-width: 1200px; margin: 0 auto; padding: 40px 24px; display: flex; flex-wrap: wrap; gap: 16px 40px; font-size: 14px; color: #A1A1A1;">
+<span style="font-weight: 600; color: #EDEDED; flex-grow: 1;">curl-runner</span>
+<a href="#" style="color: #A1A1A1;">Docs</a><a href="Downloads.dc.html" style="color: #A1A1A1;">Downloads</a><a href="#" style="color: #A1A1A1;">GitHub</a><span>MIT licensed</span>
+</div>
+</footer>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#22D3EE","options":["#22D3EE","#A3E635","#F97316","#EDEDED"]},"$preview":{"width":1440,"height":2400}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { tab: 'sh' };
+  }
+  renderVals() {
+    const accent = this.props.accent ?? '#22D3EE';
+    const methods = {
+      sh: { label: 'macOS / Linux', cmd: 'curl -fsSL https://www.curl-runner.com/install.sh | bash', note: 'Installs to ~/.local/bin and verifies the checksum. Upgrade later with curl-runner upgrade.' },
+      ps: { label: 'Windows', cmd: 'irm https://www.curl-runner.com/install.ps1 | iex', note: 'PowerShell installer. Verifies the checksum and adds curl-runner to your PATH.' },
+      brew: { label: 'Homebrew', cmd: 'brew install alexvcasillas/tap/curl-runner', note: 'macOS and Linux. Upgrade with brew upgrade curl-runner.' },
+      npm: { label: 'npm', cmd: 'npm i -g @curl-runner/cli', note: 'Ships the native binary for your platform; works with bun and pnpm too. Node is not needed to run it.' },
+      cargo: { label: 'cargo', cmd: 'cargo install curl-runner --locked', note: 'Builds from source; needs a C compiler and cmake.' }
+    };
+    const base = 'height: 36px; padding: 0 12px; border-radius: 6px; border: 0; font-family: inherit; font-size: 13px; cursor: pointer; ';
+    const tabs = Object.keys(methods).map((id) => {
+      const selected = this.state.tab === id;
+      return {
+        label: methods[id].label,
+        selected: selected ? 'true' : 'false',
+        style: base + (selected ? 'background: #1F1F1F; color: #EDEDED;' : 'background: transparent; color: #A1A1A1;'),
+        pick: () => this.setState({ tab: id })
+      };
+    });
+    const m = methods[this.state.tab];
+    const assets = [
+      { os: 'macOS — Apple Silicon', file: 'curl-runner-cli-2.1.0-darwin-arm64.tar.gz', size: '4.3 MB' },
+      { os: 'macOS — Intel', file: 'curl-runner-cli-2.1.0-darwin-x64.tar.gz', size: '4.6 MB' },
+      { os: 'Linux — x64', file: 'curl-runner-cli-2.1.0-linux-x64.tar.gz', size: '5.1 MB' },
+      { os: 'Linux — ARM64', file: 'curl-runner-cli-2.1.0-linux-arm64.tar.gz', size: '4.8 MB' },
+      { os: 'Windows — x64', file: 'curl-runner-cli-2.1.0-windows-x64.zip', size: '4.1 MB' }
+    ];
+    return { accent, tabs, cmd: m.cmd, note: m.note, assets };
+  }
+}
+</script>
+</body>
+</html>

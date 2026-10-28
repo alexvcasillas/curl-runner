@@ -1,0 +1,323 @@
+---
+title: "Response Object"
+description: "Complete reference for curl-runner response objects including the ExecutionResult and ExecutionSummary structures, metrics, and headers."
+---
+
+Complete reference for the response objects returned by curl-runner, including the `ExecutionResult` and `ExecutionSummary` structures.
+
+## Overview [#overview]
+
+curl-runner provides detailed response information through structured objects. Every request produces an `ExecutionResult`, and a run produces an `ExecutionSummary` containing all results with aggregate statistics.
+
+**Note:** Response objects appear in the JSON output format (`--output-format json`), in files saved with `-o`/`--output`, and in the `saveToFile` output option. Headers and metrics are included when `--show-headers` and `--show-metrics` are on (or `showHeaders` / `showMetrics` in `global.output`).
+
+## ExecutionResult Interface [#execution-result]
+
+The `ExecutionResult` contains complete information about a single request execution, including the original request configuration, response data, and performance metrics. This is real output of `curl-runner get-user.yaml --output-format json --show-headers --show-metrics`:
+
+```json title="execution-result.json"
+{
+  "request": {
+    "name": "Get User",
+    "url": "https://api.example.com/users/1",
+    "method": "GET"
+  },
+  "success": true,
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "content-length": "144",
+    "x-request-id": "req_123",
+    "set-cookie": ["a=1", "b=2"]
+  },
+  "body": {
+    "id": 1,
+    "name": "Leanne Graham",
+    "email": "leanne@example.com",
+    "active": true,
+    "role": "user",
+    "profile": { "firstName": "Leanne", "age": 34 }
+  },
+  "metrics": {
+    "duration": 0.879583,
+    "size": 144,
+    "dnsLookup": 0.063,
+    "tcpConnection": 0.259,
+    "tlsHandshake": 0,
+    "firstByte": 0.588,
+    "download": 0.611
+  }
+}
+```
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `request` | RequestConfig | Original request configuration that was executed |
+| `success` | boolean | Whether the request completed successfully (transport worked and every `expect` rule passed) |
+| `status` | number? | HTTP status code (if a response was received) |
+| `headers` | Record&lt;string, string \| string[]&gt;? | Response headers. Keys are lowercased; repeated headers (for example `Set-Cookie`) are preserved as string[] |
+| `headerHistory` | Array&lt;\{ status, headers \}&gt;? | All response header blocks in order (informational, redirects, final response) |
+| `body` | JSON? | Response body content (parsed if JSON, otherwise a string) |
+| `error` | string? | Error message (if the request failed) |
+| `metrics` | Metrics? | Performance timing information |
+| `dryRun` | boolean? | `true` when the request was only previewed with `--dry-run` |
+| `skipped` | boolean? | `true` when a `when` condition skipped the request |
+| `skipReason` | string? | Why the request was skipped |
+| `snapshotResult` | object? | Result of the snapshot comparison, when snapshots are on |
+| `diffResult` | object? | Result of the response diff, when diffing is on |
+
+## Error Response Structure [#error-responses]
+
+When a request fails because of network issues, timeouts, or other transport errors, the `ExecutionResult` carries `success: false` and an `error` message instead of a status:
+
+```json title="error-result.json"
+{
+  "request": {
+    "name": "Slow endpoint",
+    "url": "https://api.example.com/slow",
+    "method": "GET",
+    "timeout": 1000
+  },
+  "success": false,
+  "error": "Request timeout after 1000ms",
+  "metrics": {
+    "duration": 1005.6163750000001
+  }
+}
+```
+
+An `expect` mismatch keeps the response and adds the reason:
+
+```json title="validation-failure.json"
+{
+  "request": {
+    "name": "Missing",
+    "url": "https://api.example.com/missing",
+    "method": "GET"
+  },
+  "success": false,
+  "status": 404,
+  "body": {
+    "error": "Not Found",
+    "code": 404
+  },
+  "error": "Expected status 200, got 404"
+}
+```
+
+- **Network errors:** connection refused, DNS failures, and timeouts give `success: false` with a message such as `curl: (7) Failed to connect to ...` or `Request timeout after 1000ms`. They are retried when `retry` is set.
+- **HTTP error status:** a 4xx or 5xx response is a successful request unless an `expect` rule says otherwise. `success` is `false` only when validation fails (or when `expect.failure: true` is set and the status is below 400).
+
+## ExecutionSummary Interface [#execution-summary]
+
+The `ExecutionSummary` provides aggregate information about a run, including overall statistics and all individual results. With `--output-format json` the CLI prints each result as it completes, then the summary (`summary` counters plus `results`). A file saved with `-o results.json` holds the summary fields at the top level.
+
+```json title="execution-summary.json"
+{
+  "total": 3,
+  "successful": 2,
+  "failed": 1,
+  "skipped": 0,
+  "duration": 5.586208,
+  "results": [
+    {
+      "request": { "name": "Get Users List", "url": "https://api.example.com/users", "method": "GET" },
+      "success": true,
+      "status": 200,
+      "body": [
+        { "id": 1, "username": "user1" },
+        { "id": 2, "username": "user2" }
+      ],
+      "metrics": { "duration": 234, "size": 124 }
+    },
+    {
+      "request": { "name": "Get Invalid User", "url": "https://api.example.com/users/999", "method": "GET" },
+      "success": false,
+      "status": 404,
+      "body": { "error": "User not found", "code": "USER_NOT_FOUND" },
+      "error": "Expected status 200, got 404",
+      "metrics": { "duration": 123, "size": 45 }
+    },
+    {
+      "request": { "name": "Timeout Request", "url": "https://api.slow.example.com/data", "method": "GET" },
+      "success": false,
+      "error": "Request timeout after 5000ms",
+      "metrics": { "duration": 5000 }
+    }
+  ]
+}
+```
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `total` | number | Total number of requests in the run |
+| `successful` | number | Number of successful requests |
+| `failed` | number | Number of failed requests |
+| `skipped` | number | Number of requests skipped by a `when` condition |
+| `duration` | number | Total execution time in milliseconds |
+| `results` | ExecutionResult[] | Array of individual request results |
+
+## Response Body Types [#response-body-types]
+
+curl-runner parses JSON responses and preserves the original data types. A response that is not JSON is stored as a plain string.
+
+```json title="body-types.json"
+{ "body": { "user": { "id": 123, "name": "John Doe" } } }
+{ "body": [ { "id": 1, "name": "Item 1" }, { "id": 2, "name": "Item 2" } ] }
+{ "body": "This is a plain text response from the server" }
+{ "body": 42 }
+{ "body": true }
+{ "body": null }
+{ "status": 204, "headers": { "content-length": "0" } }
+```
+
+The first six lines are possible values of `body`. The last is a result with no body at all: a `204 No Content` or empty response omits the `body` field.
+
+### JSON Response Parsing [#json-parsing]
+
+- **Automatic Parsing:** JSON responses are parsed into objects and arrays.
+- **Type Preservation:** numbers, booleans and null values keep their original types.
+- **Text Fallback:** non-JSON responses are stored as plain text strings.
+- **Empty Responses:** 204 No Content and empty responses omit the body field.
+
+## Performance Metrics [#metrics-object]
+
+Detailed timing information for analyzing request performance and identifying bottlenecks. All values are milliseconds, except `size`.
+
+```json title="metrics-details.json"
+{
+  "metrics": {
+    "duration": 1245.3,
+    "size": 2048,
+    "dnsLookup": 23.1,
+    "tcpConnection": 45.7,
+    "tlsHandshake": 127.2,
+    "firstByte": 856.4,
+    "download": 67.5
+  }
+}
+```
+
+| Metric | Unit | Description |
+| --- | --- | --- |
+| `duration` | milliseconds | Total request time from start to finish (including retries and their delays) |
+| `size` | bytes | Response body size |
+| `dnsLookup` | milliseconds | DNS resolution time |
+| `tcpConnection` | milliseconds | TCP connection establishment time |
+| `tlsHandshake` | milliseconds | TLS handshake time (`0` for plain HTTP) |
+| `firstByte` | milliseconds | Time to first response byte (TTFB) |
+| `download` | milliseconds | libcurl's total transfer time, until the body was fully downloaded |
+
+The timing values are cumulative points reported by libcurl, measured from the start of the transfer, not slices that add up to `duration`. Some metrics are `0` when the work was not needed, for example DNS for an IP address or a reused connection. A failed request only has `duration` (and sometimes the phases it reached).
+
+## HTTP Status Code Handling [#status-codes]
+
+Without an `expect` block, any HTTP response, including 4xx and 5xx, is a successful request: curl-runner only fails it when the transfer itself fails. Add `expect.status` to decide which codes are acceptable.
+
+```json title="status-codes.json"
+{ "success": true,  "status": 200, "body": "data" }
+{ "success": true,  "status": 201, "headers": { "location": "/users/123" } }
+{ "success": true,  "status": 204, "headers": { "content-length": "0" } }
+{ "success": true,  "status": 404, "body": { "error": "Resource not found" } }
+{ "success": false, "status": 404, "error": "Expected status 200, got 404" }
+```
+
+The last two lines show the same 404 response without and with `expect: { status: 200 }`.
+
+| Class | Codes |
+| --- | --- |
+| 2xx Success | 200 OK, 201 Created, 204 No Content |
+| 3xx Redirect | 301 Moved, 302 Found, 304 Not Modified |
+| 4xx Client error | 400 Bad Request, 401 Unauthorized, 404 Not Found |
+| 5xx Server error | 500 Internal Error, 502 Bad Gateway, 503 Unavailable |
+
+Redirects are followed by default, so the result shows the final response. Set `followRedirects: false` to see the 3xx itself.
+
+## Response Headers [#response-headers]
+
+Header names are lowercased in results. A header that appears more than once is an array.
+
+```json title="response-headers.json"
+{
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "content-length": "1024",
+    "content-encoding": "gzip",
+    "cache-control": "public, max-age=3600",
+    "etag": "W/\"686897696a7c876b7e\"",
+    "last-modified": "Wed, 21 Oct 2026 07:30:00 GMT",
+    "strict-transport-security": "max-age=31536000",
+    "x-rate-limit-remaining": "999",
+    "x-request-id": "req_123456789",
+    "set-cookie": ["session=abc; Path=/", "theme=dark; Path=/"],
+    "location": "https://api.example.com/users/123"
+  }
+}
+```
+
+### Header Categories [#header-categories]
+
+- **Content headers:** describe the body: `content-type`, `content-length`
+- **Caching headers:** control client-side caching: `cache-control`, `etag`
+- **Security headers:** enforce security policies: `strict-transport-security`
+- **API headers:** API-specific metadata: `x-rate-limit-remaining`, `x-api-version`
+
+## Processing Response Data [#processing-responses]
+
+Save a response to a file with `output`, check it with `expect`, and pass values to later requests with `store`.
+
+```yaml title="response-processing.yaml"
+# Process response data
+collection:
+  name: Response Processing
+  requests:
+    # Save the response body to a file for post-processing
+    - name: Get Large Dataset
+      url: https://api.example.com/dataset
+      output: dataset.json
+
+    # Check the structure of a response
+    - name: Validate API Response
+      url: https://api.example.com/user/profile
+      expect:
+        status: 200
+        headers:
+          content-type: application/json
+        body:
+          id: "^[0-9]+$"                      # Validate ID format
+          email: '.*@.*\..*'                  # Validate email format
+          created_at: '^\d{4}-\d{2}-\d{2}'    # ISO date format
+
+    # Chain requests: store a value and use it in the next request
+    - name: Login User
+      url: https://api.example.com/auth/login
+      method: POST
+      body:
+        username: testuser
+        password: password
+      expect:
+        status: 200
+        body:
+          token: "*"
+      store:
+        token: body.token
+        userId: body.user_id
+
+    - name: Get User Data
+      url: https://api.example.com/users/${store.userId}
+      headers:
+        Authorization: Bearer ${store.token}
+      expect:
+        status: 200
+```
+
+See [Response Storage](/docs/features/response-storage) for the `store` paths.
+
+**Pro Tip:** Save responses to JSON files for post-processing with tools like `jq`, or import them into data analysis tools.
+
+## Response Handling Best Practices [#best-practices]
+
+- **Validate Critical Fields:** use response validation to ensure critical fields are present and correctly formatted, especially for automated testing.
+- **Monitor Performance Metrics:** track response times and identify bottlenecks using the metrics in each result. `expect.responseTime` can enforce a limit.
+- **Handle Errors Gracefully:** check both the `success` flag and the HTTP status to categorize and handle different types of failures.
+- **Use Response Headers:** use response headers for pagination, rate limiting, caching, and API versioning information.

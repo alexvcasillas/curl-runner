@@ -1,0 +1,244 @@
+---
+title: "Snapshot Testing"
+description: "Save HTTP response snapshots and compare future runs against them. Perfect for regression testing APIs."
+---
+
+Save HTTP response snapshots and compare future runs against them. Perfect for regression testing APIs - like Jest snapshots for HTTP requests.
+
+## Overview
+
+Snapshot testing captures API responses and compares them against stored baselines. When responses change unexpectedly, you'll know immediately. This is ideal for regression testing and API contract validation.
+
+- **Capture Responses**: Save status, headers, and body as snapshots
+- **Detect Changes**: Automatically compare against stored snapshots
+- **Regression Testing**: Catch unexpected API changes in CI/CD
+
+## Basic Usage
+
+Enable snapshot testing with the `-s` or `--snapshot` flag.
+
+```bash title="CLI Usage"
+# Enable snapshot testing with CLI flag
+curl-runner api.yaml --snapshot
+
+# Short form
+curl-runner api.yaml -s
+
+# Update all snapshots
+curl-runner api.yaml --snapshot --update-snapshots
+
+# Short form for update
+curl-runner api.yaml -su
+```
+
+Enable snapshots per-request in your YAML file:
+
+```yaml title="Basic Snapshot"
+# Simple snapshot - saves and compares response body
+request:
+  name: Get User
+  url: https://api.example.com/users/1
+  method: GET
+  snapshot: true
+```
+
+## CLI Options
+
+- `-s, --snapshot`: Enable snapshot testing. Creates new snapshots if they don't exist, compares against existing ones.
+
+- `-u, --update-snapshots`: Update all snapshots with current responses. Use when API changes are intentional.
+
+- `--update-failing`: Only update snapshots that are currently failing. Useful for targeted updates.
+
+- `--snapshot-dir <dir>` *(default: `__snapshots__`)*: Custom directory for snapshot files.
+
+- `--ci-snapshot`: CI mode: fail if snapshot is missing instead of creating it. Ensures all snapshots are committed.
+
+## Configuration Options [#configuration]
+
+Configure what to include in snapshots and what to exclude from comparison.
+
+```yaml title="Advanced Configuration"
+# Advanced snapshot configuration
+request:
+  name: Get User Details
+  url: https://api.example.com/users/1
+  method: GET
+  snapshot:
+    include:
+      - status     # Include HTTP status code
+      - headers    # Include response headers
+      - body       # Include response body
+    exclude:
+      - body.timestamp        # Ignore this field
+      - body.lastLogin        # Ignore this field
+      - headers.date          # Ignore Date header
+      - headers.x-request-id  # Ignore request ID
+    match:
+      body.id: "*"                        # Accept any value
+      body.version: "regex:^v\\d+\\.\\d+"  # Match pattern
+```
+
+**include**
+
+What to capture in the snapshot:
+
+- `status` - HTTP status code
+- `headers` - Response headers
+- `body` - Response body (default)
+
+**exclude**
+
+Paths to ignore during comparison:
+
+- `body.timestamp` - Exact path
+- `*.createdAt` - Wildcard
+- `body[*].id` - Array wildcard
+
+**match**
+
+Custom matching rules for dynamic values:
+
+- `"body.id": "*"` - Accept any value
+- `"body.email": "regex:^[\\w.-]+@[\\w.-]+$"` - Match pattern
+
+## Global Configuration
+
+Configure defaults in the `global` section of a test file or in your `curl-runner.yaml`.
+
+```yaml title="api.yaml"
+# Global snapshot config
+global:
+  snapshot:
+    dir: "__snapshots__"    # Snapshot directory
+    updateMode: "none"       # none | all | failing
+    include:
+      - body
+    exclude:
+      - "*.createdAt"        # Exclude all createdAt fields
+      - "*.updatedAt"        # Exclude all updatedAt fields
+
+requests:
+  - name: Get Users
+    url: https://api.example.com/users
+    snapshot: true  # Uses global config
+```
+
+## Collection Testing [#collections]
+
+Test multiple endpoints with snapshots in a single collection.
+
+```yaml title="Collection with Snapshots"
+# Collection with snapshot testing
+global:
+  snapshot:
+    exclude:
+      - "*.timestamp"
+
+collection:
+  name: User API Tests
+  requests:
+    - name: List Users
+      url: https://api.example.com/users
+      snapshot: true
+
+    - name: Get User by ID
+      url: https://api.example.com/users/1
+      snapshot:
+        include: [status, body]
+        match:
+          body.id: "*"
+
+    - name: Search Users
+      url: https://api.example.com/users?q=john
+      snapshot:
+        exclude:
+          - "body[*].score"  # Exclude search scores
+```
+
+## Snapshot File Format [#snapshot-files]
+
+Snapshots are stored as JSON files in the `__snapshots__` directory.
+
+```json title="__snapshots__/api.snap.json"
+{
+  "version": 1,
+  "snapshots": {
+    "Get User": {
+      "status": 200,
+      "body": {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      "headers": {
+        "content-type": "application/json"
+      },
+      "hash": "a1b2c3d4",
+      "updatedAt": "2024-01-15T10:30:00Z"
+    }
+  }
+}
+```
+
+## CI/CD Integration [#ci-integration]
+
+Use snapshots in CI/CD pipelines for automated regression testing.
+
+```bash title="CI Configuration"
+# CI/CD - Fail if snapshots are missing
+curl-runner tests/ --snapshot --ci-snapshot --strict-exit
+
+# Environment variables
+CURL_RUNNER_SNAPSHOT=true
+CURL_RUNNER_SNAPSHOT_CI=true
+CURL_RUNNER_SNAPSHOT_DIR=__snapshots__
+```
+
+## Output Examples [#output]
+
+Snapshot testing provides clear, colorized output showing what changed.
+
+```text title="Snapshot Output"
+# Snapshot match
+  PASS Snapshot matches for "Get User"
+
+# Snapshot mismatch
+  FAIL Snapshot mismatch for "Get User"
+
+  - Expected
+  + Received
+
+  body.email:
+    - "john@example.com"
+    + "john.doe@example.com"
+
+  Run with --update-snapshots (-u) to update
+
+# New snapshot created
+  NEW Snapshot created for "Get User"
+
+# Snapshot updated
+  UPDATED Snapshot updated for "Get User"
+```
+
+## Best Practices
+
+- **Recommended**
+  - Commit snapshot files to version control
+  - Exclude dynamic fields (timestamps, IDs)
+  - Use `--ci-snapshot` in CI pipelines
+  - Review snapshot changes in code reviews
+  - Use meaningful request names
+- **Considerations**
+  - Don't snapshot volatile data without exclusions
+  - Keep snapshots focused and readable
+  - Update snapshots intentionally, not automatically
+  - Use `--update-failing` for targeted fixes
+
+## Environment Variables
+
+- `CURL_RUNNER_SNAPSHOT`: Enable snapshot testing (true/false)
+- `CURL_RUNNER_SNAPSHOT_UPDATE`: Update mode (none/all/failing)
+- `CURL_RUNNER_SNAPSHOT_DIR`: Snapshot directory
+- `CURL_RUNNER_SNAPSHOT_CI`: CI mode (true/false)

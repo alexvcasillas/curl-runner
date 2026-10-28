@@ -58,4 +58,4 @@ case "$status" in
 esac
 
 cd "$REPO_ROOT"
-bun run release
+pnpm release

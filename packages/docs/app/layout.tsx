@@ -1,29 +1,19 @@
 import { Analytics } from '@vercel/analytics/next';
+import { GeistMono } from 'geist/font/mono';
+import { GeistSans } from 'geist/font/sans';
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
-import { ThemeProvider } from 'next-themes';
 import './globals.css';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import { PulsoraAnalytics } from '@/components/pulsora-analytics';
-
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-});
-
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-});
+import { SITE_DESCRIPTION } from '@/lib/site';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.curl-runner.com'),
   title: {
-    default: 'curl-runner Documentation',
-    template: '%s | curl-runner Documentation',
+    default: 'curl-runner',
+    template: '%s — curl-runner',
   },
-  description:
-    'Complete documentation for curl-runner - A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance.',
+  description: SITE_DESCRIPTION,
   keywords: [
     'curl-runner',
     'API testing tool',
@@ -69,43 +59,29 @@ export const metadata: Metadata = {
   },
   manifest: '/manifest.json',
   alternates: {
-    canonical: 'https://www.curl-runner.com',
     types: {
-      'application/rss+xml': [{ url: '/rss.xml', title: 'curl-runner Documentation RSS' }],
+      'application/rss+xml': [{ url: '/rss.xml', title: 'curl-runner changelog RSS' }],
     },
   },
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    url: 'https://www.curl-runner.com',
-    title: 'curl-runner Documentation',
-    description:
-      'Complete documentation for curl-runner - A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance.',
-    siteName: 'curl-runner Documentation',
-    images: [
-      {
-        url: '/opengraph-image',
-        width: 1200,
-        height: 630,
-        alt: 'curl-runner Documentation',
-        type: 'image/png',
-      },
-    ],
+    title: 'curl-runner',
+    description: SITE_DESCRIPTION,
+    siteName: 'curl-runner',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'curl-runner Documentation',
-    description:
-      'Complete documentation for curl-runner - A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance.',
-    images: ['/opengraph-image'],
+    title: 'curl-runner',
+    description: SITE_DESCRIPTION,
     creator: '@curl_runner',
     site: '@curl_runner',
   },
   verification: {
-    google: process.env.GOOGLE_SITE_VERIFICATION || 'google-site-verification-placeholder',
-    other: {
-      'msvalidate.01': process.env.BING_SITE_VERIFICATION || 'bing-verification-placeholder',
-    },
+    google: process.env.GOOGLE_SITE_VERIFICATION,
+    other: process.env.BING_SITE_VERIFICATION
+      ? { 'msvalidate.01': process.env.BING_SITE_VERIFICATION }
+      : undefined,
   },
   category: 'technology',
   icons: {
@@ -172,28 +148,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`dark ${GeistSans.variable} ${GeistMono.variable}`}
+      suppressHydrationWarning
+    >
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link rel="dns-prefetch" href="https://vercel-insights.com" />
         <link rel="dns-prefetch" href="https://vitals.vercel-insights.com" />
-        <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
-        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000" />
-        <meta name="color-scheme" content="light dark" />
+        <meta name="theme-color" content="#0A0A0A" />
+        <meta name="color-scheme" content="dark" />
       </head>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-        suppressHydrationWarning
-      >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <PulsoraAnalytics>{children}</PulsoraAnalytics>
-        </ThemeProvider>
+      <body suppressHydrationWarning>
+        <PulsoraAnalytics>{children}</PulsoraAnalytics>
         <Analytics />
         <SpeedInsights />
       </body>

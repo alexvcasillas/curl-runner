@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>curl-runner — alternatives</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0A0A0A}
+a{color:#EDEDED;text-decoration:none}a:hover{color:#FFFFFF}
+</style>
+</helmet>
+<div style="background: #0A0A0A; color: #EDEDED; font-family: 'Geist', system-ui, sans-serif; min-height: 100vh;">
+
+<header style="border-bottom: 1px solid #1F1F1F;">
+<nav aria-label="Main" style="max-width: 1200px; margin: 0 auto; padding: 16px 24px; display: flex; align-items: center; gap: 32px; flex-wrap: wrap;">
+<a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px;">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+curl-runner
+</a>
+<div style="display: flex; gap: 24px; flex-wrap: wrap; font-size: 14px; flex-grow: 1;">
+<a href="#" style="color: #A1A1A1;">Docs</a>
+<a href="Feature.dc.html" style="color: #A1A1A1;">Features</a>
+<a href="Alternatives.dc.html" style="color: #EDEDED;">Alternatives</a>
+<a href="Downloads.dc.html" style="color: #A1A1A1;">Downloads</a>
+<a href="#" style="color: #A1A1A1;">Changelog</a>
+</div>
+<a href="#" style="display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 8px; background: #EDEDED; color: #0A0A0A; font-size: 14px; font-weight: 500;">Get started</a>
+</nav>
+</header>
+
+<section style="max-width: 1200px; margin: 0 auto; padding: 96px 24px 56px;">
+<p style="margin: 0 0 16px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; color: {{accent}}; letter-spacing: 0.04em;">ALTERNATIVES</p>
+<h1 style="margin: 0; font-size: clamp(40px, 6vw, 72px); line-height: 1.02; letter-spacing: -0.045em; font-weight: 700; max-width: 18ch;">The right tool depends on the job.</h1>
+<p style="margin: 24px 0 0; font-size: 19px; line-height: 1.6; color: #A1A1A1; max-width: 42rem;">curl-runner is built for API suites that live in your repo and run in CI. Here is how it compares with the tools you might already use — including when they are the better choice.</p>
+</section>
+
+<section aria-label="Comparison" style="max-width: 1200px; margin: 0 auto; padding: 0 24px 24px;">
+<div style="border: 1px solid #262626; border-radius: 14px; overflow-x: auto;">
+<table style="width: 100%; min-width: 880px; border-collapse: collapse; font-size: 14px;">
+<thead>
+<tr style="text-align: left;">
+<th scope="col" style="padding: 16px 20px; border-bottom: 1px solid #262626; font-weight: 500; color: #8A8A8A; width: 18%;"></th>
+<th scope="col" style="padding: 16px 20px; border-bottom: 1px solid #262626; font-weight: 600; background: #111111; color: #EDEDED;">curl-runner</th>
+<th scope="col" style="padding: 16px 20px; border-bottom: 1px solid #262626; font-weight: 600;">Postman</th>
+<th scope="col" style="padding: 16px 20px; border-bottom: 1px solid #262626; font-weight: 600;">Insomnia</th>
+<th scope="col" style="padding: 16px 20px; border-bottom: 1px solid #262626; font-weight: 600;">curl</th>
+<th scope="col" style="padding: 16px 20px; border-bottom: 1px solid #262626; font-weight: 600;">HTTPie</th>
+</tr>
+</thead>
+<tbody>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="7">
+<tr>
+<th scope="row" style="padding: 16px 20px; border-bottom: 1px solid #1F1F1F; text-align: left; font-weight: 500; color: #A1A1A1;">{{r.label}}</th>
+<td style="padding: 16px 20px; border-bottom: 1px solid #1F1F1F; background: #111111; color: #EDEDED;">{{r.cr}}</td>
+<td style="padding: 16px 20px; border-bottom: 1px solid #1F1F1F; color: #A1A1A1;">{{r.postman}}</td>
+<td style="padding: 16px 20px; border-bottom: 1px solid #1F1F1F; color: #A1A1A1;">{{r.insomnia}}</td>
+<td style="padding: 16px 20px; border-bottom: 1px solid #1F1F1F; color: #A1A1A1;">{{r.curl}}</td>
+<td style="padding: 16px 20px; border-bottom: 1px solid #1F1F1F; color: #A1A1A1;">{{r.httpie}}</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+<p style="margin: 14px 0 0; font-size: 13px; color: #8A8A8A;">Checked [DATE]. Spot something out of date? <a href="#" style="color: #EDEDED; text-decoration: underline;">Open an issue</a>.</p>
+</section>
+
+<section aria-label="Side by side" style="max-width: 1200px; margin: 0 auto; padding: 96px 24px;">
+<h2 style="margin: 0 0 40px; font-size: clamp(30px, 4vw, 44px); letter-spacing: -0.035em; font-weight: 700;">Side by side</h2>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); gap: 16px;">
+<sc-for list="{{cards}}" as="c" hint-placeholder-count="4">
+<div style="border: 1px solid #262626; border-radius: 14px; padding: 28px; display: flex; flex-direction: column; gap: 18px;">
+<div>
+<h3 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.015em;">curl-runner vs {{c.name}}</h3>
+<p style="margin: 6px 0 0; font-size: 14px; color: #8A8A8A;">{{c.what}}</p>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; font-size: 14px; line-height: 1.6;">
+<div>
+<p style="margin: 0 0 8px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: {{accent}};">PICK CURL-RUNNER FOR</p>
+<p style="margin: 0; color: #D4D4D4;">{{c.us}}</p>
+</div>
+<div>
+<p style="margin: 0 0 8px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #8A8A8A;">PICK {{c.upper}} FOR</p>
+<p style="margin: 0; color: #A1A1A1;">{{c.them}}</p>
+</div>
+</div>
+</div>
+</sc-for>
+</div>
+</section>
+
+<section aria-label="Get started" style="border-top: 1px solid #1F1F1F;">
+<div style="max-width: 1200px; margin: 0 auto; padding: 112px 24px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 24px;">
+<h2 style="margin: 0; font-size: clamp(34px, 5vw, 56px); line-height: 1.04; letter-spacing: -0.04em; font-weight: 700;">Try it on one endpoint.</h2>
+<p style="margin: 0; font-size: 18px; color: #A1A1A1; max-width: 34rem;">Install, write a five-line YAML file, run it. Keep it if it earns its place.</p>
+<div style="display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;">
+<a href="#" style="display: inline-flex; align-items: center; height: 48px; padding: 0 22px; border-radius: 10px; background: #EDEDED; color: #0A0A0A; font-weight: 500; font-size: 15px;">Quick start</a>
+<a href="Downloads.dc.html" style="display: inline-flex; align-items: center; height: 48px; padding: 0 22px; border-radius: 10px; border: 1px solid #262626; font-weight: 500; font-size: 15px;">Install</a>
+</div>
+</div>
+</section>
+
+<footer style="border-top: 1px solid #1F1F1F;">
+<div style="max-width: 1200px; margin: 0 auto; padding: 40px 24px; display: flex; flex-wrap: wrap; gap: 16px 40px; font-size: 14px; color: #A1A1A1;">
+<span style="font-weight: 600; color: #EDEDED; flex-grow: 1;">curl-runner</span>
+<a href="#" style="color: #A1A1A1;">Docs</a><a href="Downloads.dc.html" style="color: #A1A1A1;">Downloads</a><a href="#" style="color: #A1A1A1;">GitHub</a><span>MIT licensed</span>
+</div>
+</footer>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#22D3EE","options":["#22D3EE","#A3E635","#F97316","#EDEDED"]},"$preview":{"width":1440,"height":3400}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#22D3EE';
+    const rows = [
+      { label: 'Primary interface', cr: 'CLI', postman: 'Desktop and web app', insomnia: 'Desktop app', curl: 'CLI', httpie: 'CLI and desktop app' },
+      { label: 'Tests are written as', cr: 'YAML files in your repo', postman: 'Collections + JS test scripts', insomnia: 'Collections + JS test scripts', curl: 'Shell commands', httpie: 'Shell commands' },
+      { label: 'Built-in assertions', cr: 'Status, headers, body, timing', postman: 'Yes, in JS', insomnia: 'Yes, in JS', curl: 'No', httpie: 'No' },
+      { label: 'Headless / CI', cr: 'Native, one binary', postman: 'Via Newman or Postman CLI', insomnia: 'Via the inso CLI', curl: 'Yes', httpie: 'Yes' },
+      { label: 'Parallel runs', cr: 'Built in', postman: '[VERIFY]', insomnia: '[VERIFY]', curl: '--parallel for transfers', httpie: '[VERIFY]' },
+      { label: 'Account needed', cr: 'No', postman: '[VERIFY]', insomnia: '[VERIFY]', curl: 'No', httpie: 'No (CLI)' },
+      { label: 'Open source', cr: 'Yes, MIT', postman: 'App no; Newman yes', insomnia: '[VERIFY]', curl: 'Yes', httpie: 'Yes (CLI)' }
+    ];
+    const cards = [
+      { name: 'Postman', upper: 'POSTMAN', what: 'GUI platform for designing, exploring and sharing APIs.', us: 'Suites reviewed in pull requests, CI without accounts or exports, one binary on any runner.', them: 'Exploring an unfamiliar API by clicking, shared workspaces, mock servers and published docs.' },
+      { name: 'curl', upper: 'CURL', what: 'The universal command-line transfer tool — and the engine inside curl-runner.', us: 'Many requests with assertions, variables, retries and a report at the end.', them: 'One-off requests, scripts that only need the bytes, and anywhere you cannot install anything.' },
+      { name: 'Insomnia', upper: 'INSOMNIA', what: 'Desktop API client with design and testing features.', us: 'Configuration as code, headless servers and terminal-first workflows.', them: 'A polished desktop client for GraphQL and gRPC exploration and design-first work.' },
+      { name: 'HTTPie', upper: 'HTTPIE', what: 'Human-friendly HTTP client for the terminal.', us: 'Repeatable suites with validation, chaining and parallel runs.', them: 'Quick, readable ad-hoc requests while you poke at an API.' }
+    ];
+    return { accent, rows, cards };
+  }
+}
+</script>
+</body>
+</html>

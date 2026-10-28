@@ -1,0 +1,120 @@
+---
+title: "HTTP/2 Support"
+description: "Enable HTTP/2 protocol with multiplexing for faster, more efficient API requests with curl-runner."
+---
+
+Enable HTTP/2 protocol with multiplexing for faster, more efficient API requests.
+
+## Overview
+
+HTTP/2 offers significant performance improvements over HTTP/1.1 including multiplexing, header compression, and better connection utilization. Enable it with the `--http2` flag to take advantage of modern server infrastructure.
+
+- **Multiplexing**: Multiple requests over a single connection
+- **Lower Latency**: Reduced connection overhead and faster responses
+- **Header Compression**: Automatic HPACK compression for headers
+
+## Basic Usage
+
+Enable HTTP/2 with the `--http2` CLI flag.
+
+```bash title="CLI Usage"
+# Enable HTTP/2 for all requests
+curl-runner api.yaml --http2
+
+# Combine with other flags
+curl-runner api.yaml --http2 -p -v
+
+# Run a directory with HTTP/2
+curl-runner tests/ --http2
+```
+
+## YAML Configuration
+
+Configure HTTP/2 in your YAML files globally or per-request.
+
+### Global Configuration
+
+```yaml title="Global HTTP/2"
+# Enable HTTP/2 globally via defaults
+global:
+  defaults:
+    http2: true
+
+requests:
+  - name: Get Users
+    url: https://api.example.com/users
+    method: GET
+
+  - name: Get Posts
+    url: https://api.example.com/posts
+    method: GET
+```
+
+### Per-Request Configuration
+
+```yaml title="Per-Request HTTP/2"
+# Enable HTTP/2 per request
+requests:
+  - name: HTTP/2 Request
+    url: https://api.example.com/data
+    http2: true
+
+  - name: HTTP/1.1 Request
+    url: https://legacy-api.example.com/data
+    http2: false
+```
+
+## Environment Variables
+
+Enable HTTP/2 via environment variable for scripted workflows and CI/CD pipelines.
+
+- `CURL_RUNNER_HTTP2`: Enable HTTP/2 protocol (true/false)
+
+```bash title="Environment Variables"
+# Enable HTTP/2 via environment variable
+CURL_RUNNER_HTTP2=true curl-runner api.yaml
+
+# Useful in scripts or CI/CD
+export CURL_RUNNER_HTTP2=true
+curl-runner tests/
+```
+
+## With Parallel Execution [#parallel-execution]
+
+Combine HTTP/2 with parallel execution for maximum performance. HTTP/2 multiplexing works particularly well with concurrent requests.
+
+```bash title="HTTP/2 + Parallel"
+# Combine HTTP/2 with parallel execution for maximum performance
+curl-runner api.yaml --http2 -p --max-concurrent 10
+```
+
+Or configure it in YAML:
+
+```yaml title="parallel-http2.yaml"
+global:
+  execution: parallel
+  maxConcurrency: 10
+  defaults:
+    http2: true
+
+requests:
+  - name: Request 1
+    url: https://api.example.com/endpoint1
+  - name: Request 2
+    url: https://api.example.com/endpoint2
+  - name: Request 3
+    url: https://api.example.com/endpoint3
+```
+
+## Best Practices
+
+- **Recommended**
+  - Use HTTP/2 for modern APIs that support it
+  - Combine with parallel execution for best results
+  - Enable globally when testing HTTP/2 servers
+  - Use environment variable in CI/CD pipelines
+- **Notes**
+  - Server must support HTTP/2 (most modern servers do)
+  - Falls back to HTTP/1.1 if server doesn't support it
+  - Requires HTTPS for most servers (HTTP/2 over TLS)
+  - Per-request config overrides global setting

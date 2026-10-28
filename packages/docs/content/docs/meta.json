@@ -1,0 +1,32 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "---Getting Started---",
+    "index",
+    "installation",
+    "quick-start",
+    "use-cases",
+    "tutorials",
+    "---Configuration---",
+    "yaml-structure",
+    "variables",
+    "global-settings",
+    "security",
+    "---Features---",
+    "...features",
+    "---CLI Reference---",
+    "cli-commands",
+    "cli-options",
+    "environment-variables",
+    "features/upgrade",
+    "---Examples---",
+    "examples/basic",
+    "examples/collection",
+    "examples/advanced",
+    "---API Reference---",
+    "api-reference/request-object",
+    "api-reference/response-object",
+    "api-reference/global-settings",
+    "api-reference/validation-rules"
+  ]
+}

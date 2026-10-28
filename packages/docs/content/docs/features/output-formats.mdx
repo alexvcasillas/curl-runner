@@ -1,0 +1,377 @@
+---
+title: "Output Formats"
+description: "Control how curl-runner displays and saves request results with different output formats including JSON, pretty-printed, and raw."
+---
+
+Control how curl-runner displays and saves request results.
+
+## Overview
+
+`curl-runner` provides flexible output options to suit different use cases, from human-readable terminal output to machine-parseable JSON for CI/CD pipelines.
+
+- **Structured Data**: Machine-readable format for automation
+- **Human Readable**: Formatted output for terminal viewing
+- **Unprocessed**: Raw response body without formatting
+
+## Output Configuration
+
+Configure output settings in the global section of your YAML file.
+
+```yaml title="output-config.yaml"
+# Different output format configurations
+global:
+  output:
+    format: pretty      # Output format (json, pretty, raw)
+    prettyLevel: standard  # Pretty format detail level (minimal, standard, detailed)
+    verbose: true       # Show detailed information
+    showHeaders: true   # Include response headers
+    showBody: true      # Include response body (default: true)
+    showMetrics: true   # Include performance metrics
+
+requests:
+  - name: API Test
+    url: https://api.example.com/data
+    method: GET
+```
+
+### Configuration Options
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `format` | string | pretty | "json", "pretty", or "raw" |
+| `verbose` | boolean | false | Show detailed output |
+| `showHeaders` | boolean | false | Include response headers |
+| `showBody` | boolean | true | Include response body |
+| `showMetrics` | boolean | false | Include performance metrics |
+| `prettyLevel` | string | minimal | "minimal", "standard", or "detailed" (for pretty format) |
+| `saveToFile` | string | - | File path to save results |
+
+## Format Types
+
+### JSON Format
+
+Structured JSON output ideal for parsing and automation.
+
+**Configuration**
+
+```yaml title="json-config.yaml"
+# JSON format configuration
+global:
+  output:
+    format: json
+    showHeaders: true
+    showBody: true
+    showMetrics: true
+
+request:
+  name: Get User Profile
+  url: https://api.example.com/users/123
+  method: GET
+```
+
+**Output Example**
+
+```json title="output.json"
+{
+  "summary": {
+    "total": 1,
+    "successful": 1,
+    "failed": 0,
+    "skipped": 0,
+    "duration": 4.77
+  },
+  "results": [
+    {
+      "request": {
+        "name": "Get User Profile",
+        "url": "https://api.example.com/users/123",
+        "method": "GET"
+      },
+      "success": true,
+      "status": 200,
+      "headers": {
+        "content-type": "application/json",
+        "content-length": "76"
+      },
+      "body": {
+        "id": 123,
+        "name": "John Doe",
+        "email": "john@example.com",
+        "active": true
+      },
+      "metrics": {
+        "duration": 125,
+        "size": 76,
+        "dnsLookup": 5,
+        "tcpConnection": 10,
+        "tlsHandshake": 15,
+        "firstByte": 95,
+        "download": 110
+      }
+    }
+  ]
+}
+```
+
+### Pretty Format
+
+Human-readable format with colors and tree-structured output for terminal viewing. Three detail levels available: minimal, standard, and detailed.
+
+#### Minimal Format
+
+Compact output showing only essential information
+
+**Configuration**
+
+```yaml title="pretty-minimal.yaml"
+# Pretty format - Minimal level
+global:
+  output:
+    format: pretty
+    prettyLevel: minimal  # Compact output
+
+request:
+  name: Get User Profile
+  url: https://api.example.com/users/123
+  method: GET
+```
+
+**Output Example**
+
+```text title="terminal"
+ℹ Found 1 YAML file(s)
+ℹ Processing: api-test.yaml
+
+✓ Get User Profile [api-test]
+   ├─ GET: https://api.example.com/users/123
+   ├─ ✓ Status: 200
+   └─ Duration: 125ms | 76.00 B
+
+Summary: 1 request completed successfully
+```
+
+#### Standard Format
+
+Balanced detail with response body but without headers/metrics (unless specified)
+
+**Configuration**
+
+```yaml title="pretty-standard.yaml"
+# Pretty format - Standard level  
+global:
+  output:
+    format: pretty
+    prettyLevel: standard  # Balanced detail
+    showBody: true
+
+request:
+  name: Get User Profile
+  url: https://api.example.com/users/123
+  method: GET
+```
+
+**Output Example**
+
+```text title="terminal"
+ℹ Found 1 YAML file(s)
+ℹ Processing: api-test.yaml
+
+Executing 1 request(s) in sequential mode
+
+✓ Get User Profile
+   ├─ URL: https://api.example.com/users/123
+   ├─ Method: GET
+   ├─ Status: 200
+   ├─ Duration: 125ms
+   └─ Response Body:
+      {
+        "id": 123,
+        "name": "John Doe",
+        "email": "john@example.com",
+        "active": true
+      }
+
+
+Summary: 1 request completed successfully (125ms)
+```
+
+#### Detailed Format
+
+Full information including headers, body, and performance metrics
+
+**Configuration**
+
+```yaml title="pretty-detailed.yaml"
+# Pretty format - Detailed level
+global:
+  output:
+    format: pretty
+    prettyLevel: detailed  # Full information
+    # Headers, body and metrics are shown automatically
+
+request:
+  name: Get User Profile
+  url: https://api.example.com/users/123
+  method: GET
+```
+
+**Output Example**
+
+```text title="terminal"
+ℹ Found 1 YAML file(s)
+ℹ Processing: api-test.yaml
+
+Executing 1 request(s) in sequential mode
+
+  Command:
+    curl -X GET -w
+__CURL_METRICS_START__%{json}__CURL_METRICS_END__ -D - -L --proto -all,http,https --proto-redir -all,http,https -s -S -- https://api.example.com/users/123
+✓ Get User Profile
+   ├─ URL: https://api.example.com/users/123
+   ├─ Method: GET
+   ├─ Status: 200
+   ├─ Duration: 125ms
+   ├─ Headers:
+   │  ├─ content-type: application/json
+   │  └─ content-length: 76
+   ├─ Response Body:
+   │  {
+   │    "id": 123,
+   │    "name": "John Doe",
+   │    "email": "john@example.com",
+   │    "active": true
+   │  }
+   └─ Metrics:
+      ├─ Request Duration: 125ms
+      ├─ Response Size: 76.00 B
+      ├─ DNS Lookup: 5ms
+      ├─ TCP Connection: 10ms
+      ├─ TLS Handshake: 15ms
+      └─ Time to First Byte: 95ms
+
+
+Summary: 1 request completed successfully (125ms)
+```
+
+### Raw Format
+
+Unprocessed response body, useful for binary data or custom formats.
+
+**Configuration**
+
+```yaml title="raw-config.yaml"
+# Raw format configuration
+global:
+  output:
+    format: raw
+    showBody: true
+
+request:
+  name: Get User Profile
+  url: https://api.example.com/users/123
+  method: GET
+```
+
+**Output Example**
+
+```json title="response.json"
+{"id":123,"name":"John Doe","email":"john@example.com","active":true}
+```
+
+## Saving Results
+
+Save test results to files for later analysis or reporting.
+
+```yaml title="save-to-file.yaml"
+# Save results to file
+global:
+  output:
+    format: json
+    saveToFile: test-results.json  # Save all results to file
+    verbose: false                  # Quiet terminal output
+  variables:
+    API_URL: https://api.example.com
+
+requests:
+  - name: Test Suite
+    url: ${API_URL}/test
+    method: GET
+```
+
+**Tip:** Use `saveToFile` with JSON format to create test reports that can be processed by other tools or stored for historical analysis.
+
+## CLI Options
+
+Control output format from the command line.
+
+```bash title="terminal"
+# Command line output options
+# JSON format (machine-readable)
+curl-runner tests.yaml --output-format json
+
+# Pretty format with different detail levels
+curl-runner tests.yaml --output-format pretty --pretty-level minimal
+curl-runner tests.yaml --output-format pretty --pretty-level standard
+curl-runner tests.yaml --output-format pretty --pretty-level detailed
+
+# Raw format (response body only)
+curl-runner tests.yaml --output-format raw
+
+# Save to file
+curl-runner tests.yaml --output results.json
+
+# Verbose mode
+curl-runner tests.yaml --verbose
+
+# Show specific components
+curl-runner tests.yaml --show-headers --show-metrics
+
+# Quiet mode (errors only)
+curl-runner tests.yaml --quiet
+```
+
+### Output Flags [#cli-flags]
+
+| Flag | Description |
+| --- | --- |
+| `--output-format` | Set output format (json/pretty/raw) |
+| `--pretty-level` | Set pretty format detail level (minimal/standard/detailed) |
+| `--output, -o` | Save results to file |
+| `--verbose, -v` | Enable verbose output |
+| `--quiet, -q` | Suppress non-error output |
+| `--show-headers` | Include response headers |
+| `--show-body` | Include response body |
+| `--show-metrics` | Include performance metrics |
+
+## Use Cases
+
+**Continuous Integration**
+
+Use JSON format with file output for test reporting in CI pipelines. Perfect for automated testing and build systems.
+
+```bash
+curl-runner tests.yaml --output-format json -o results.json --quiet
+```
+
+**Local Testing**
+
+Use pretty format with verbose output for debugging. Ideal for development and troubleshooting.
+
+```bash
+curl-runner tests.yaml --output-format pretty -v --show-metrics
+```
+
+**Health Checks & Monitoring**
+
+Use raw format for simple status checks and monitoring scripts. Extract specific data without extra formatting.
+
+```bash
+curl-runner health.yaml --output-format raw --quiet
+```
+
+## Best Practices
+
+- **Choose the Right Format**: Use JSON for automation, pretty for debugging, and raw for specific data formats.
+- **Save Important Results**: Always save test results to files in CI/CD environments for audit trails.
+- **Use Quiet Mode in Scripts**: Reduce noise in automated scripts by using quiet mode with file output.
+- **Enable Metrics for Performance Testing**: Include metrics in output when analyzing API performance.
