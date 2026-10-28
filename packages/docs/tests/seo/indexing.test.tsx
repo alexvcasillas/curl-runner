@@ -115,6 +115,22 @@ describe('breadcrumbs', () => {
   });
 });
 
+describe('breadcrumb URLs resolve', () => {
+  it('every emitted docs breadcrumb item is a real page', () => {
+    const real = new Set<string>([
+      SITE_URL,
+      ...source.getPages().map((p) => `${SITE_URL}${p.url}`),
+    ]);
+    for (const page of source.getPages()) {
+      const items = docsBreadcrumbs(page).itemListElement as { item: string; position: number }[];
+      expect(items.map((i) => i.position)).toEqual(items.map((_, i) => i + 1));
+      for (const entry of items) {
+        expect(real.has(entry.item), `${page.url}: ${entry.item}`).toBe(true);
+      }
+    }
+  });
+});
+
 describe('canonical URLs', () => {
   it('feature pages canonicalise to themselves', async () => {
     for (const f of getAllFeatures()) {

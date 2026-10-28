@@ -30,45 +30,19 @@ export function featureBreadcrumbs(feature: Pick<FeatureData, 'slug' | 'title'>)
   ]);
 }
 
-interface TreeNode {
-  type: string;
-  name?: unknown;
-  url?: string;
-  children?: TreeNode[];
-}
-
-/** Title of the page-tree folder whose pages live under `url/`. */
-function folderName(nodes: TreeNode[], url: string): string | null {
-  for (const node of nodes) {
-    if (node.type !== 'folder') {
-      continue;
-    }
-    if (typeof node.name === 'string' && node.children?.some((c) => c.url?.startsWith(`${url}/`))) {
-      return node.name;
-    }
-    const nested = node.children ? folderName(node.children, url) : null;
-    if (nested) {
-      return nested;
-    }
-  }
-  return null;
-}
-
-/** Home → Docs → intermediate sections (real titles) → the page. */
+/** Home → Docs → intermediate pages that exist (folders without an index page are skipped) → the page. */
 export function docsBreadcrumbs(page: Pick<DocsPage, 'url' | 'slugs' | 'data'>) {
   const items: BreadcrumbItem[] = [
     { name: 'Home', url: SITE_URL },
     { name: 'Docs', url: `${SITE_URL}/docs` },
   ];
-  const tree = (source.pageTree as unknown as { children: TreeNode[] }).children;
   for (let i = 1; i <= page.slugs.length; i++) {
     const slugs = page.slugs.slice(0, i);
     const isLast = i === page.slugs.length;
     const found = isLast ? page : source.getPage(slugs);
     const url = `/docs/${slugs.join('/')}`;
-    const name = found ? found.data.title : folderName(tree, url);
-    if (name) {
-      items.push({ name, url: `${SITE_URL}${url}` });
+    if (found) {
+      items.push({ name: found.data.title, url: `${SITE_URL}${url}` });
     }
   }
   return breadcrumbList(items);

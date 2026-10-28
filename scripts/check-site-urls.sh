@@ -87,21 +87,31 @@ t="${out#* }"
 awk -v t="$t" 'BEGIN { exit !(t >= 1.0) }' || fail "/api/test/delay/1 took ${t}s (want >= 1s)"
 
 # Canonical-host redirects. Production only: other deployments have their own hostname.
-# One permanent hop (301/308) straight to the canonical URL; redirects are not followed.
-expect_redirect() { # url expected-location
+# Redirects are followed by hand (no -L): every hop must be 301/308 and the chain must end
+# at the canonical URL within max_hops hops. http://curl-runner.com/ may take two (Vercel's
+# fixed HTTPS hop, then the domain redirect); the other hosts must take one.
+CANON="https://www.curl-runner.com/"
+expect_redirect() { # url max_hops
   CHECKS=$((CHECKS + 1))
-  local out code loc
-  out="$(get '%{http_code} %{redirect_url}' "$1")"
-  code="${out%% *}"
-  loc="${out#* }"
-  { [ "$code" = 301 ] || [ "$code" = 308 ]; } || fail "$1 -> $code (want 301 or 308)"
-  [ "$loc" = "$2" ] || fail "$1 -> Location '$loc' (want $2)"
+  local url="$1" max="$2" hop out code next
+  for hop in $(seq 1 "$max"); do
+    out="$(get '%{http_code} %{redirect_url}' "$url")"
+    code="${out%% *}"
+    next="${out#* }"
+    if [ "$code" != 301 ] && [ "$code" != 308 ]; then
+      fail "$url (hop $hop of chain from $1) -> $code (want 301 or 308)"
+      return
+    fi
+    url="$next"
+    [ "$url" = "$CANON" ] && return
+  done
+  fail "$1 did not reach $CANON in $max hop(s); last Location '$url'"
 }
 
 if [ "$BASE" = "https://www.curl-runner.com" ]; then
-  for u in http://curl-runner.com/ http://www.curl-runner.com/ https://curl-runner.com/; do
-    expect_redirect "$u" "https://www.curl-runner.com/"
-  done
+  expect_redirect http://curl-runner.com/ 2
+  expect_redirect http://www.curl-runner.com/ 1
+  expect_redirect https://curl-runner.com/ 1
 else
   echo "skip: canonical-host redirect checks run only against https://www.curl-runner.com"
 fi
