@@ -2,6 +2,8 @@
 //!
 //! Filesystem event latency differs per platform (FSEvents, inotify), so
 //! every wait polls the child's output with a generous timeout.
+//! The live watch tests send signals, so they and their helpers are Unix-only.
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
 
 use std::io::Read;
 use std::process::{Child, Command, Stdio};

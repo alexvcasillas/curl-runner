@@ -170,17 +170,15 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn symlinks_are_not_resolved_like_ts() {
         // Lexical check only (matches TS `path.resolve`): a symlink inside
         // cwd pointing outside is NOT detected. Documented in CHANGES.
         let d = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
-        #[cfg(unix)]
-        {
-            std::os::unix::fs::symlink(outside.path(), d.path().join("link")).unwrap();
-            assert!(resolve_safe("link/x", d.path(), d.path(), false).is_ok());
-        }
+        std::os::unix::fs::symlink(outside.path(), d.path().join("link")).unwrap();
+        assert!(resolve_safe("link/x", d.path(), d.path(), false).is_ok());
     }
 
     #[test]
