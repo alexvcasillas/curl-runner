@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>curl-runner — home</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0A0A0A}
+a{color:#EDEDED;text-decoration:none}a:hover{color:#FFFFFF}
+</style>
+</helmet>
+<div style="background: #0A0A0A; color: #EDEDED; font-family: 'Geist', system-ui, sans-serif; min-height: 100vh;">
+
+<header style="border-bottom: 1px solid #1F1F1F;">
+<nav aria-label="Main" style="max-width: 1200px; margin: 0 auto; padding: 16px 24px; display: flex; align-items: center; gap: 32px; flex-wrap: wrap;">
+<a href="#" style="display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; letter-spacing: -0.01em;">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+curl-runner
+</a>
+<div style="display: flex; gap: 24px; flex-wrap: wrap; font-size: 14px; color: #A1A1A1; flex-grow: 1;">
+<a href="#" style="color: #A1A1A1;">Docs</a>
+<a href="#features" style="color: #A1A1A1;">Features</a>
+<a href="#" style="color: #A1A1A1;">Alternatives</a>
+<a href="#" style="color: #A1A1A1;">Downloads</a>
+<a href="#" style="color: #A1A1A1;">Changelog</a>
+</div>
+<div style="display: flex; gap: 12px; align-items: center;">
+<a href="#" aria-label="GitHub" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; color: #A1A1A1;">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+</a>
+<a href="#" style="display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 8px; background: #EDEDED; color: #0A0A0A; font-size: 14px; font-weight: 500;">Get started</a>
+</div>
+</nav>
+</header>
+
+<section style="max-width: 1200px; margin: 0 auto; padding: 96px 24px 64px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 28px;">
+<a href="#" style="display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px; border: 1px solid #262626; border-radius: 999px; font-size: 13px; color: #A1A1A1;">
+<span style="width: 6px; height: 6px; border-radius: 999px; background: {{accent}};"></span>
+curl-runner 2.0 — rewritten in Rust on libcurl
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+</a>
+<h1 style="margin: 0; font-size: clamp(44px, 7vw, 84px); line-height: 1.02; letter-spacing: -0.045em; font-weight: 700; max-width: 16ch;">API tests as YAML.<br>Run them anywhere.</h1>
+<p style="margin: 0; font-size: 20px; line-height: 1.55; color: #A1A1A1; max-width: 40rem;">Describe requests in plain YAML, validate every response, and run whole suites in parallel — on your laptop or in CI. One native binary, no runtime.</p>
+<div style="display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;">
+<a href="#" style="display: inline-flex; align-items: center; height: 48px; padding: 0 22px; border-radius: 10px; background: #EDEDED; color: #0A0A0A; font-weight: 500; font-size: 15px;">Get started</a>
+<a href="#" style="display: inline-flex; align-items: center; height: 48px; padding: 0 22px; border-radius: 10px; border: 1px solid #262626; color: #EDEDED; font-weight: 500; font-size: 15px;">Read the docs</a>
+</div>
+
+<div style="width: 100%; max-width: 640px; border: 1px solid #262626; border-radius: 12px; background: #0F0F0F; text-align: left; overflow: hidden;">
+<div role="tablist" aria-label="Install method" style="display: flex; gap: 4px; padding: 6px; border-bottom: 1px solid #1F1F1F; flex-wrap: wrap;">
+<sc-for list="{{tabs}}" as="tab" hint-placeholder-count="4">
+<button role="tab" aria-selected="{{tab.selected}}" onClick="{{tab.pick}}" style="{{tab.style}}">{{tab.label}}</button>
+</sc-for>
+</div>
+<div style="display: flex; align-items: center; gap: 12px; padding: 16px 18px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px;">
+<span style="color: #6B6B6B;" aria-hidden="true">$</span>
+<code style="flex-grow: 1; color: #EDEDED; overflow-x: auto; white-space: nowrap;">{{cmd}}</code>
+<button aria-label="Copy install command" onClick="{{copy}}" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin: -12px -10px -12px 0; border: 0; background: transparent; color: #A1A1A1; cursor: pointer;">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+</button>
+</div>
+</div>
+</section>
+
+<section aria-label="Example" style="max-width: 1200px; margin: 0 auto; padding: 0 24px 96px;">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); border: 1px solid #262626; border-radius: 14px; overflow: hidden; background: #0F0F0F;">
+<div style="border-right: 1px solid #1F1F1F; min-width: 0;">
+<div style="display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; border-bottom: 1px solid #1F1F1F; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; color: #A1A1A1;">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+api.yaml
+</div>
+<pre style="margin: 0; padding: 20px 22px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13.5px; line-height: 1.75; color: #EDEDED; overflow-x: auto;"><span style="color: {{accent}};">global</span>:
+  <span style="color: {{accent}};">variables</span>:
+    <span style="color: {{accent}};">BASE</span>: https://api.example.com
+  <span style="color: {{accent}};">execution</span>: parallel
+
+<span style="color: {{accent}};">requests</span>:
+  - <span style="color: {{accent}};">name</span>: List users
+    <span style="color: {{accent}};">url</span>: ${BASE}/users
+    <span style="color: {{accent}};">expect</span>:
+      <span style="color: {{accent}};">status</span>: 200
+      <span style="color: {{accent}};">responseTime</span>: <span style="color: #F5A97F;">"&lt; 500"</span>
+
+  - <span style="color: {{accent}};">name</span>: Create user
+    <span style="color: {{accent}};">url</span>: ${BASE}/users
+    <span style="color: {{accent}};">method</span>: POST
+    <span style="color: {{accent}};">body</span>: { <span style="color: {{accent}};">name</span>: Ada }
+    <span style="color: {{accent}};">retry</span>: { <span style="color: {{accent}};">count</span>: 3 }
+    <span style="color: {{accent}};">expect</span>:
+      <span style="color: {{accent}};">status</span>: 201</pre>
+</div>
+<div style="min-width: 0; background: #0A0A0A;">
+<div style="display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; border-bottom: 1px solid #1F1F1F; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; color: #A1A1A1;">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+terminal
+</div>
+<pre style="margin: 0; padding: 20px 22px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13.5px; line-height: 1.75; color: #A1A1A1; overflow-x: auto;"><span style="color: #EDEDED;">$ curl-runner api.yaml</span>
+<span style="color: {{accent}};">ℹ</span> Found 1 YAML file(s)
+
+<span style="color: #4ADE80;">✓</span> <span style="color: #EDEDED;">List users</span> [api]
+   ├─ GET: https://api.example.com/users
+   ├─ ✓ Status: <span style="color: #4ADE80;">200</span>
+   └─ Duration: 84ms | 2.1 KB
+
+<span style="color: #4ADE80;">✓</span> <span style="color: #EDEDED;">Create user</span> [api]
+   ├─ POST: https://api.example.com/users
+   ├─ ✓ Status: <span style="color: #4ADE80;">201</span>
+   └─ Duration: 112ms | 96.00 B
+
+Summary: <span style="color: #4ADE80;">2 requests completed successfully</span></pre>
+</div>
+</div>
+<p style="margin: 14px 0 0; text-align: center; font-size: 13px; color: #8A8A8A;">Example request timings are illustrative.</p>
+</section>
+
+<section aria-label="Install anywhere" style="border-top: 1px solid #1F1F1F; border-bottom: 1px solid #1F1F1F;">
+<div style="max-width: 1200px; margin: 0 auto; padding: 28px 24px; display: flex; flex-wrap: wrap; gap: 16px 40px; align-items: center; justify-content: center; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; color: #A1A1A1;">
+<span style="color: #8A8A8A; font-family: 'Geist', system-ui, sans-serif;">Install with</span>
+<span>brew</span><span>npm</span><span>bun</span><span>pnpm</span><span>cargo</span><span>install.sh</span><span>PowerShell</span>
+</div>
+</section>
+
+<section id="features" style="max-width: 1200px; margin: 0 auto; padding: 112px 24px 48px;">
+<p style="margin: 0 0 12px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; color: {{accent}}; letter-spacing: 0.04em;">FEATURES</p>
+<h2 style="margin: 0; font-size: clamp(32px, 4.4vw, 48px); line-height: 1.08; letter-spacing: -0.035em; font-weight: 700; max-width: 22ch;">Everything an API suite needs. Nothing it doesn’t.</h2>
+<div style="margin-top: 56px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); border-top: 1px solid #1F1F1F; border-left: 1px solid #1F1F1F;">
+<sc-for list="{{features}}" as="f" hint-placeholder-count="9">
+<div style="padding: 28px; border-right: 1px solid #1F1F1F; border-bottom: 1px solid #1F1F1F; display: flex; flex-direction: column; gap: 10px;">
+<p style="margin: 0; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; color: #8A8A8A;">{{f.key}}</p>
+<h3 style="margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em;">{{f.title}}</h3>
+<p style="margin: 0; font-size: 15px; line-height: 1.6; color: #A1A1A1;">{{f.body}}</p>
+</div>
+</sc-for>
+</div>
+</section>
+
+<section aria-label="Performance" style="max-width: 1200px; margin: 0 auto; padding: 96px 24px;">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 48px; align-items: center;">
+<div style="display: flex; flex-direction: column; gap: 20px;">
+<p style="margin: 0; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; color: {{accent}}; letter-spacing: 0.04em;">NATIVE</p>
+<h2 style="margin: 0; font-size: clamp(32px, 4.4vw, 48px); line-height: 1.08; letter-spacing: -0.035em; font-weight: 700;">libcurl inside.<br>Rust around it.</h2>
+<p style="margin: 0; font-size: 17px; line-height: 1.65; color: #A1A1A1; max-width: 34rem;">The same battle-tested transfer engine as curl, statically linked into a single binary. HTTP/2, the operating system’s trust store, and nothing to install first — not Node, not Bun, not even curl.</p>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid #262626; border-radius: 14px; overflow: hidden;">
+<div style="padding: 28px; border-right: 1px solid #1F1F1F; border-bottom: 1px solid #1F1F1F;">
+<p style="margin: 0; font-size: 34px; font-weight: 600; letter-spacing: -0.03em;">1</p>
+<p style="margin: 6px 0 0; font-size: 14px; color: #A1A1A1;">static binary per platform</p>
+</div>
+<div style="padding: 28px; border-bottom: 1px solid #1F1F1F;">
+<p style="margin: 0; font-size: 34px; font-weight: 600; letter-spacing: -0.03em;">0</p>
+<p style="margin: 6px 0 0; font-size: 14px; color: #A1A1A1;">runtime dependencies</p>
+</div>
+<div style="padding: 28px; border-right: 1px solid #1F1F1F;">
+<p style="margin: 0; font-size: 34px; font-weight: 600; letter-spacing: -0.03em;">5</p>
+<p style="margin: 6px 0 0; font-size: 14px; color: #A1A1A1;">platforms: macOS, Linux, Windows</p>
+</div>
+<div style="padding: 28px;">
+<p style="margin: 0; font-size: 34px; font-weight: 600; letter-spacing: -0.03em;">[N] ms</p>
+<p style="margin: 6px 0 0; font-size: 14px; color: #A1A1A1;">startup — [BENCHMARK TO MEASURE]</p>
+</div>
+</div>
+</div>
+</section>
+
+<section aria-label="CI" style="border-top: 1px solid #1F1F1F;">
+<div style="max-width: 1200px; margin: 0 auto; padding: 112px 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 48px; align-items: center;">
+<div style="border: 1px solid #262626; border-radius: 14px; background: #0F0F0F; overflow: hidden; min-width: 0;">
+<div style="display: flex; align-items: center; height: 44px; padding: 0 16px; border-bottom: 1px solid #1F1F1F; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; color: #A1A1A1;">.github/workflows/api.yml</div>
+<pre style="margin: 0; padding: 20px 22px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13.5px; line-height: 1.75; color: #EDEDED; overflow-x: auto;"><span style="color: {{accent}};">steps</span>:
+  - <span style="color: {{accent}};">uses</span>: actions/checkout@v7
+  - <span style="color: {{accent}};">run</span>: curl -fsSL https://www.curl-runner.com/install.sh | bash
+  - <span style="color: {{accent}};">run</span>: curl-runner tests/ --strict-exit --output results.json</pre>
+</div>
+<div style="display: flex; flex-direction: column; gap: 20px;">
+<p style="margin: 0; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; color: {{accent}}; letter-spacing: 0.04em;">CI-READY</p>
+<h2 style="margin: 0; font-size: clamp(32px, 4.4vw, 48px); line-height: 1.08; letter-spacing: -0.035em; font-weight: 700;">Smoke tests that fail the build — for the right reasons.</h2>
+<p style="margin: 0; font-size: 17px; line-height: 1.65; color: #A1A1A1; max-width: 34rem;">Deterministic exit codes, failure thresholds, retries for flaky networks, and one JSON report for every file in the run. Drop it into any pipeline.</p>
+</div>
+</div>
+</section>
+
+<section aria-label="Get started" style="border-top: 1px solid #1F1F1F;">
+<div style="max-width: 1200px; margin: 0 auto; padding: 120px 24px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 24px;">
+<h2 style="margin: 0; font-size: clamp(36px, 5vw, 60px); line-height: 1.04; letter-spacing: -0.04em; font-weight: 700;">Write your first suite in a minute.</h2>
+<div style="display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;">
+<a href="#" style="display: inline-flex; align-items: center; height: 48px; padding: 0 22px; border-radius: 10px; background: #EDEDED; color: #0A0A0A; font-weight: 500; font-size: 15px;">Get started</a>
+<a href="#" style="display: inline-flex; align-items: center; height: 48px; padding: 0 22px; border-radius: 10px; border: 1px solid #262626; color: #EDEDED; font-weight: 500; font-size: 15px;">View on GitHub</a>
+</div>
+</div>
+</section>
+
+<footer style="border-top: 1px solid #1F1F1F;">
+<div style="max-width: 1200px; margin: 0 auto; padding: 48px 24px; display: flex; flex-wrap: wrap; gap: 32px 64px; font-size: 14px; color: #A1A1A1;">
+<div style="flex: 1 1 240px; display: flex; flex-direction: column; gap: 10px;">
+<span style="font-weight: 600; color: #EDEDED;">curl-runner</span>
+<span>MIT licensed. Built on libcurl.</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 10px;">
+<span style="color: #EDEDED;">Product</span>
+<a href="#" style="color: #A1A1A1;">Features</a><a href="#" style="color: #A1A1A1;">Downloads</a><a href="#" style="color: #A1A1A1;">Changelog</a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 10px;">
+<span style="color: #EDEDED;">Resources</span>
+<a href="#" style="color: #A1A1A1;">Docs</a><a href="#" style="color: #A1A1A1;">Alternatives</a><a href="#" style="color: #A1A1A1;">Tools database</a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 10px;">
+<span style="color: #EDEDED;">Community</span>
+<a href="#" style="color: #A1A1A1;">GitHub</a><a href="#" style="color: #A1A1A1;">Issues</a>
+</div>
+</div>
+</footer>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#22D3EE","options":["#22D3EE","#A3E635","#F97316","#EDEDED"]},"$preview":{"width":1440,"height":4200}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { tab: 'curl' };
+  }
+  renderVals() {
+    const accent = this.props.accent ?? '#22D3EE';
+    const cmds = {
+      curl: 'curl -fsSL https://www.curl-runner.com/install.sh | bash',
+      brew: 'brew install alexvcasillas/tap/curl-runner',
+      npm: 'npm i -g @curl-runner/cli',
+      cargo: 'cargo install curl-runner --locked'
+    };
+    const labels = { curl: 'curl', brew: 'Homebrew', npm: 'npm', cargo: 'cargo' };
+    const base = 'height: 36px; padding: 0 12px; border-radius: 6px; border: 0; font-family: inherit; font-size: 13px; cursor: pointer; ';
+    const tabs = Object.keys(cmds).map((id) => {
+      const selected = this.state.tab === id;
+      return {
+        label: labels[id],
+        selected: selected ? 'true' : 'false',
+        style: base + (selected ? 'background: #1F1F1F; color: #EDEDED;' : 'background: transparent; color: #A1A1A1;'),
+        pick: () => this.setState({ tab: id })
+      };
+    });
+    const cmd = cmds[this.state.tab];
+    const features = [
+      { key: 'yaml', title: 'Plain YAML suites', body: 'Requests, headers, bodies and uploads in files your team can review in a pull request.' },
+      { key: 'expect', title: 'Response validation', body: 'Assert status, headers, body fields and response time. Failures say exactly what differed.' },
+      { key: 'parallel', title: 'Parallel or sequential', body: 'Run a whole directory at once, or in order when requests depend on each other.' },
+      { key: 'store / when', title: 'Chained requests', body: 'Store values from one response, reuse them in the next, and run steps conditionally.' },
+      { key: 'retry', title: 'Retries and timeouts', body: 'Per-request retries with delays, and real millisecond timeouts for slow endpoints.' },
+      { key: 'snapshot', title: 'Snapshots and diffs', body: 'Save a baseline, then see what changed between runs or environments.' },
+      { key: '--profile', title: 'Performance profiling', body: 'Repeat requests, measure latency percentiles and export the results.' },
+      { key: '--watch', title: 'Watch mode', body: 'Re-run the suite every time a YAML file changes while you build the API.' },
+      { key: 'convert', title: 'From curl to YAML', body: 'Paste a curl command or a shell script and get a ready-to-run suite back.' }
+    ];
+    const copy = () => {
+      try { navigator.clipboard.writeText(cmd); } catch (e) {}
+    };
+    return { accent, tabs, cmd, copy, features };
+  }
+}
+</script>
+</body>
+</html>

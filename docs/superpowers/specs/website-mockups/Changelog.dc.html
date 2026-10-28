@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>curl-runner — changelog</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0A0A0A}
+a{color:#EDEDED;text-decoration:none}a:hover{color:#FFFFFF}
+</style>
+</helmet>
+<div style="background: #0A0A0A; color: #EDEDED; font-family: 'Geist', system-ui, sans-serif; min-height: 100vh;">
+
+<header style="border-bottom: 1px solid #1F1F1F;">
+<nav aria-label="Main" style="max-width: 1200px; margin: 0 auto; padding: 16px 24px; display: flex; align-items: center; gap: 32px; flex-wrap: wrap;">
+<a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px;">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+curl-runner
+</a>
+<div style="display: flex; gap: 24px; flex-wrap: wrap; font-size: 14px; flex-grow: 1;">
+<a href="#" style="color: #A1A1A1;">Docs</a>
+<a href="Feature.dc.html" style="color: #A1A1A1;">Features</a>
+<a href="Alternatives.dc.html" style="color: #A1A1A1;">Alternatives</a>
+<a href="Downloads.dc.html" style="color: #A1A1A1;">Downloads</a>
+<a href="Changelog.dc.html" style="color: #EDEDED;">Changelog</a>
+</div>
+<a href="#" style="display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 8px; background: #EDEDED; color: #0A0A0A; font-size: 14px; font-weight: 500;">Get started</a>
+</nav>
+</header>
+
+<section style="max-width: 1200px; margin: 0 auto; padding: 96px 24px 56px; display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-end; justify-content: space-between;">
+<div>
+<p style="margin: 0 0 16px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; color: {{accent}}; letter-spacing: 0.04em;">CHANGELOG</p>
+<h1 style="margin: 0; font-size: clamp(40px, 6vw, 72px); line-height: 1.02; letter-spacing: -0.045em; font-weight: 700;">What’s new in curl-runner.</h1>
+<p style="margin: 20px 0 0; font-size: 18px; line-height: 1.6; color: #A1A1A1; max-width: 38rem;">Every release, straight from the project’s changelog. Upgrade any install with <code style="font-family: 'Geist Mono', ui-monospace, monospace; color: #EDEDED;">curl-runner upgrade</code>.</p>
+</div>
+<a href="#" style="display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 10px; border: 1px solid #262626; font-size: 14px;">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11a9 9 0 0 1 9 9"></path><path d="M4 4a16 16 0 0 1 16 16"></path><circle cx="5" cy="19" r="1"></circle></svg>
+RSS
+</a>
+</section>
+
+<section aria-label="Releases" style="max-width: 1200px; margin: 0 auto; padding: 0 24px 96px;">
+
+<article id="2.1.0" style="display: flex; flex-wrap: wrap; gap: 16px 48px; padding: 48px 0; border-top: 1px solid #1F1F1F;">
+<div style="flex: 0 0 220px; display: flex; flex-direction: column; gap: 10px;">
+<a href="#2.1.0" style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 22px; font-weight: 500;">2.1.0</a>
+<span style="font-size: 14px; color: #8A8A8A;">October 28, 2026</span>
+<span style="align-self: flex-start; height: 24px; display: inline-flex; align-items: center; padding: 0 10px; border-radius: 999px; border: 1px solid #262626; font-size: 12px; color: #D4D4D4;">Minor</span>
+</div>
+<div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px;">
+<h2 style="margin: 0; font-size: 26px; letter-spacing: -0.02em; font-weight: 700;">Install with Homebrew</h2>
+<p style="margin: 0; font-size: 16px; line-height: 1.7; color: #D4D4D4;">Prebuilt binaries for macOS and Linux, arm64 and x64. <code style="font-family: 'Geist Mono', ui-monospace, monospace; color: #EDEDED;">curl-runner upgrade</code> now detects Homebrew installs and runs <code style="font-family: 'Geist Mono', ui-monospace, monospace; color: #EDEDED;">brew upgrade curl-runner</code> instead of refusing to upgrade them.</p>
+<pre style="margin: 0; padding: 16px 18px; border: 1px solid #262626; border-radius: 12px; background: #0F0F0F; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; color: #EDEDED; overflow-x: auto;">brew install alexvcasillas/tap/curl-runner</pre>
+<p style="margin: 0; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #8A8A8A;"><a href="#" style="color: #A1A1A1;">#133</a> · <a href="#" style="color: #A1A1A1;">b5f26d3</a></p>
+</div>
+</article>
+
+<article id="2.0.0" style="display: flex; flex-wrap: wrap; gap: 16px 48px; padding: 48px 0; border-top: 1px solid #1F1F1F;">
+<div style="flex: 0 0 220px; display: flex; flex-direction: column; gap: 10px;">
+<a href="#2.0.0" style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 22px; font-weight: 500;">2.0.0</a>
+<span style="font-size: 14px; color: #8A8A8A;">October 28, 2026</span>
+<span style="align-self: flex-start; height: 24px; display: inline-flex; align-items: center; padding: 0 10px; border-radius: 999px; background: {{accent}}; color: #0A0A0A; font-size: 12px; font-weight: 600;">Major</span>
+</div>
+<div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 18px;">
+<h2 style="margin: 0; font-size: 26px; letter-spacing: -0.02em; font-weight: 700;">Rewritten in Rust, on libcurl</h2>
+<p style="margin: 0; font-size: 16px; line-height: 1.7; color: #D4D4D4;">curl-runner 2.0 is a rewrite of the CLI in Rust. YAML files, flags, subcommands, environment variables, config discovery and exit codes stay the same, with the bug fixes and behavior changes below.</p>
+
+<div style="border: 1px solid #262626; border-radius: 12px; padding: 18px 20px; background: #0F0F0F; display: flex; flex-direction: column; gap: 8px;">
+<p style="margin: 0; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: {{accent}}; letter-spacing: 0.04em;">MIGRATION · TIMEOUTS ARE NOW MILLISECONDS</p>
+<p style="margin: 0; font-size: 15px; line-height: 1.7; color: #D4D4D4;">1.x passed <code style="font-family: 'Geist Mono', ui-monospace, monospace; color: #EDEDED;">timeout</code> to curl as seconds. 2.0 honors milliseconds, as documented. Multiply values you wrote for the old behavior by 1000: <code style="font-family: 'Geist Mono', ui-monospace, monospace; color: #EDEDED;">--timeout 30</code> becomes <code style="font-family: 'Geist Mono', ui-monospace, monospace; color: #EDEDED;">--timeout 30000</code>.</p>
+</div>
+
+<h3 style="margin: 8px 0 0; font-size: 17px; font-weight: 600;">Runtime</h3>
+<ul style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 1.7; color: #D4D4D4;">
+<li>A native Rust binary with libcurl linked statically. No Bun, Node.js or <code style="font-family: 'Geist Mono', ui-monospace, monospace;">curl</code> binary needed at runtime; HTTPS uses the operating system trust store.</li>
+<li><code style="font-family: 'Geist Mono', ui-monospace, monospace;">curl-runner upgrade</code> replaces the binary in place, checksum verified.</li>
+</ul>
+
+<sc-if value="{{expanded}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 18px;">
+<h3 style="margin: 8px 0 0; font-size: 17px; font-weight: 600;">Install changes</h3>
+<ul style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 1.7; color: #D4D4D4;">
+<li><code style="font-family: 'Geist Mono', ui-monospace, monospace;">@curl-runner/cli</code> ships the binary through one optional dependency per platform; no JavaScript, no postinstall.</li>
+<li>Linux binaries are static musl builds.</li>
+<li>New: <code style="font-family: 'Geist Mono', ui-monospace, monospace;">cargo install curl-runner --locked</code> installs from crates.io.</li>
+</ul>
+<h3 style="margin: 8px 0 0; font-size: 17px; font-weight: 600;">Fixed</h3>
+<ul style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 1.7; color: #D4D4D4;">
+<li>Transport failures (connection refused, DNS, timeout) now fail the request and are retried; 1.x reported them as success with status 0.</li>
+<li>Settings resolve as documented: CLI flags beat environment variables, which beat the test file’s <code style="font-family: 'Geist Mono', ui-monospace, monospace;">global</code>.</li>
+<li>With several test files, <code style="font-family: 'Geist Mono', ui-monospace, monospace;">--output</code> now holds the results of all of them, written atomically.</li>
+<li>Parallel runs keep a sliding window of live requests instead of waiting for the slowest of each chunk.</li>
+</ul>
+<p style="margin: 0; font-size: 14px; color: #8A8A8A;">[Remaining 2.0.0 notes render here in full.]</p>
+</div>
+</sc-if>
+
+<button onClick="{{toggle}}" aria-expanded="{{expandedAttr}}" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 10px; border: 1px solid #262626; background: transparent; color: #EDEDED; font-family: inherit; font-size: 14px; cursor: pointer;">{{toggleLabel}}</button>
+<p style="margin: 0; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #8A8A8A;"><a href="#" style="color: #A1A1A1;">#127</a> · <a href="#" style="color: #A1A1A1;">bec01c6</a></p>
+</div>
+</article>
+
+<article id="1.25.0" style="display: flex; flex-wrap: wrap; gap: 16px 48px; padding: 48px 0; border-top: 1px solid #1F1F1F;">
+<div style="flex: 0 0 220px; display: flex; flex-direction: column; gap: 10px;">
+<a href="#1.25.0" style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 22px; font-weight: 500;">1.25.0</a>
+<span style="font-size: 14px; color: #8A8A8A;">June 10, 2026</span>
+<span style="align-self: flex-start; height: 24px; display: inline-flex; align-items: center; padding: 0 10px; border-radius: 999px; border: 1px solid #262626; font-size: 12px; color: #D4D4D4;">Minor</span>
+</div>
+<div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px;">
+<h2 style="margin: 0; font-size: 26px; letter-spacing: -0.02em; font-weight: 700;">Security hardening</h2>
+<p style="margin: 0; font-size: 16px; line-height: 1.7; color: #D4D4D4;">Secure defaults for curl execution, SSRF and file access, and secret handling — each with an explicit opt-out.</p>
+<ul style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 1.7; color: #D4D4D4;">
+<li>Only <code style="font-family: 'Geist Mono', ui-monospace, monospace;">http</code> and <code style="font-family: 'Geist Mono', ui-monospace, monospace;">https</code> URLs by default; opt in with <code style="font-family: 'Geist Mono', ui-monospace, monospace;">--allow-protocol</code>.</li>
+<li>Output and upload paths are confined to the working directory; opt out with <code style="font-family: 'Geist Mono', ui-monospace, monospace;">--allow-path</code>.</li>
+<li>Inline credentials are redacted automatically, including in saved results.</li>
+</ul>
+<p style="margin: 0; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #8A8A8A;"><a href="#" style="color: #A1A1A1;">#124</a> · <a href="#" style="color: #A1A1A1;">c1ce517</a></p>
+</div>
+</article>
+
+<article id="1.24.0" style="display: flex; flex-wrap: wrap; gap: 16px 48px; padding: 48px 0; border-top: 1px solid #1F1F1F; border-bottom: 1px solid #1F1F1F;">
+<div style="flex: 0 0 220px; display: flex; flex-direction: column; gap: 10px;">
+<a href="#1.24.0" style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 22px; font-weight: 500;">1.24.0</a>
+<span style="font-size: 14px; color: #8A8A8A;">June 5, 2026</span>
+<span style="align-self: flex-start; height: 24px; display: inline-flex; align-items: center; padding: 0 10px; border-radius: 999px; border: 1px solid #262626; font-size: 12px; color: #D4D4D4;">Minor</span>
+</div>
+<div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px;">
+<h2 style="margin: 0; font-size: 26px; letter-spacing: -0.02em; font-weight: 700;"><code style="font-family: 'Geist Mono', ui-monospace, monospace;">$absent</code> and <code style="font-family: 'Geist Mono', ui-monospace, monospace;">$exists</code> assertions</h2>
+<p style="margin: 0; font-size: 16px; line-height: 1.7; color: #D4D4D4;">New body-assertion keywords. <code style="font-family: 'Geist Mono', ui-monospace, monospace; color: #EDEDED;">$absent</code> asserts a key is not in the response — failing even when the value is <code style="font-family: 'Geist Mono', ui-monospace, monospace; color: #EDEDED;">null</code>.</p>
+<p style="margin: 0; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #8A8A8A;"><a href="#" style="color: #A1A1A1;">#122</a> · <a href="#" style="color: #A1A1A1;">7ea38aa</a></p>
+</div>
+</article>
+
+<div style="padding-top: 40px; display: flex; justify-content: center;">
+<a href="#" style="display: inline-flex; align-items: center; height: 44px; padding: 0 20px; border-radius: 10px; border: 1px solid #262626; font-size: 15px;">Older releases</a>
+</div>
+</section>
+
+<footer style="border-top: 1px solid #1F1F1F;">
+<div style="max-width: 1200px; margin: 0 auto; padding: 40px 24px; display: flex; flex-wrap: wrap; gap: 16px 40px; font-size: 14px; color: #A1A1A1;">
+<span style="font-weight: 600; color: #EDEDED; flex-grow: 1;">curl-runner</span>
+<a href="#" style="color: #A1A1A1;">Docs</a><a href="Downloads.dc.html" style="color: #A1A1A1;">Downloads</a><a href="#" style="color: #A1A1A1;">GitHub</a><span>MIT licensed</span>
+</div>
+</footer>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#22D3EE","options":["#22D3EE","#A3E635","#F97316","#EDEDED"]},"$preview":{"width":1440,"height":3400}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { expanded: false };
+  }
+  renderVals() {
+    const accent = this.props.accent ?? '#22D3EE';
+    const expanded = this.state.expanded;
+    return {
+      accent,
+      expanded,
+      expandedAttr: expanded ? 'true' : 'false',
+      toggleLabel: expanded ? 'Show fewer changes' : 'Show all 2.0.0 changes',
+      toggle: () => this.setState({ expanded: !expanded })
+    };
+  }
+}
+</script>
+</body>
+</html>
