@@ -1139,3 +1139,130 @@ fn fix_skips_files_that_are_not_one_mapping() {
         assert_eq!(code, 1);
     }
 }
+
+// ---- #136: validator key lists track the config model -----------------
+
+/// serde (camelCase) field names of each model struct, kept by hand so a
+/// model change without a validator change fails here.
+const MODEL_RETRY: &[&str] = &["count", "delay", "backoff", "retryableStatuses"];
+const MODEL_PROFILE: &[&str] = &[
+    "iterations",
+    "warmup",
+    "concurrency",
+    "histogram",
+    "exportFile",
+];
+const MODEL_ENV: &[&str] = &["environment", "redactSecrets"];
+const MODEL_SECURITY: &[&str] = &["allowedProtocols", "allowPaths"];
+// SnapshotConfig + GlobalSnapshotConfig (`match` is renamed from match_rules).
+const MODEL_SNAPSHOT: &[&str] = &[
+    "enabled",
+    "name",
+    "include",
+    "exclude",
+    "match",
+    "dir",
+    "updateMode",
+    "ci",
+];
+// DiffConfig + GlobalDiffConfig.
+const MODEL_DIFF: &[&str] = &[
+    "enabled",
+    "exclude",
+    "match",
+    "includeTimings",
+    "dir",
+    "label",
+    "compareWith",
+    "save",
+    "outputFormat",
+];
+
+fn sorted(a: &[&str]) -> Vec<String> {
+    let mut v: Vec<String> = a.iter().map(|s| s.to_string()).collect();
+    v.sort();
+    v
+}
+
+#[test]
+fn validator_key_lists_match_model() {
+    use super::global::*;
+    assert_eq!(
+        sorted(super::request::VALID_RETRY_KEYS),
+        sorted(MODEL_RETRY)
+    );
+    assert_eq!(sorted(VALID_PROFILE_KEYS), sorted(MODEL_PROFILE));
+    assert_eq!(sorted(VALID_ENV_KEYS), sorted(MODEL_ENV));
+    assert_eq!(sorted(VALID_SECURITY_KEYS), sorted(MODEL_SECURITY));
+    assert_eq!(sorted(VALID_SNAPSHOT_KEYS), sorted(MODEL_SNAPSHOT));
+    assert_eq!(sorted(VALID_DIFF_KEYS), sorted(MODEL_DIFF));
+}
+
+fn unknown_warnings(o: &Out) -> usize {
+    o.lines.iter().filter(|l| l.contains("Unknown key")).count()
+}
+
+/// Minimal valid value for each key, as inline YAML.
+fn sample(key: &str) -> &'static str {
+    match key {
+        "iterations" | "warmup" | "concurrency" | "count" | "delay" => "1",
+        "backoff" => "2",
+        "histogram" | "redactSecrets" | "allowPaths" | "enabled" | "includeTimings" | "save"
+        | "ci" => "true",
+        "retryableStatuses" => "[503]",
+        "allowedProtocols" | "include" | "exclude" => "[http]",
+        "match" => "{a: \"*\"}",
+        "updateMode" => "none",
+        "outputFormat" => "json",
+        _ => "x",
+    }
+}
+
+fn section_yaml(prefix: &str, keys: &[&str], extra: Option<&str>) -> String {
+    let mut body: Vec<String> = keys.iter().map(|k| format!("{k}: {}", sample(k))).collect();
+    if let Some(e) = extra {
+        body.push(format!("{e}: 1"));
+    }
+    let obj = format!("{{ {} }}", body.join(", "));
+    match prefix {
+        "retry" => format!("request:\n  url: https://example.com\n  retry: {obj}\n"),
+        p => format!("global:\n  {p}: {obj}\nrequest:\n  url: https://example.com\n"),
+    }
+}
+
+#[test]
+fn every_model_key_is_accepted_and_bogus_key_warns_once() {
+    let cases: [(&str, &[&str]); 6] = [
+        ("retry", MODEL_RETRY),
+        ("profile", MODEL_PROFILE),
+        ("env", MODEL_ENV),
+        ("security", MODEL_SECURITY),
+        ("snapshot", MODEL_SNAPSHOT),
+        ("diff", MODEL_DIFF),
+    ];
+    for (section, keys) in cases {
+        let ok = validate(&section_yaml(section, keys, None), &["--strict"]);
+        assert_eq!(unknown_warnings(&ok), 0, "{section}: {}", ok.stdout);
+        assert_eq!(ok.code, 0, "{section}: {}", ok.stdout);
+        let bad = validate(&section_yaml(section, keys, Some("bogusKey")), &[]);
+        assert_eq!(unknown_warnings(&bad), 1, "{section}: {}", bad.stdout);
+    }
+}
+
+#[test]
+fn issue_136_repro_is_clean_under_strict() {
+    let yaml = "global:
+  env: { redactSecrets: true }
+  security: { allowedProtocols: [http, https] }
+  profile: { iterations: 5, histogram: true, exportFile: out.json }
+  snapshot: { enabled: true, include: [body], exclude: [headers] }
+  diff: { enabled: true }
+request:
+  name: r
+  url: https://example.com
+  retry: { count: 2, retryableStatuses: [503] }
+";
+    let o = validate(yaml, &["--strict"]);
+    assert_eq!(o.code, 0, "{}", o.stdout);
+    assert_eq!(unknown_warnings(&o), 0, "{}", o.stdout);
+}

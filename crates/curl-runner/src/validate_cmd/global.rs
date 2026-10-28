@@ -9,6 +9,8 @@ use super::{request, security};
 use curl_runner_core::model::Json;
 
 const VALID_GLOBAL_KEYS: &[&str] = &[
+    "env",
+    "security",
     "execution",
     "maxConcurrency",
     "continueOnError",
@@ -24,6 +26,39 @@ const VALID_GLOBAL_KEYS: &[&str] = &[
     "variables",
     "output",
     "defaults",
+];
+pub(super) const VALID_ENV_KEYS: &[&str] = &["environment", "redactSecrets"];
+pub(super) const VALID_SECURITY_KEYS: &[&str] = &["allowedProtocols", "allowPaths"];
+pub(super) const VALID_PROFILE_KEYS: &[&str] = &[
+    "iterations",
+    "warmup",
+    "concurrency",
+    "histogram",
+    "exportFile",
+];
+/// Request-level `snapshot:` shares this check with `global.snapshot`, so it
+/// is the union of `SnapshotConfig` and `GlobalSnapshotConfig`.
+pub(super) const VALID_SNAPSHOT_KEYS: &[&str] = &[
+    "enabled",
+    "name",
+    "include",
+    "exclude",
+    "match",
+    "dir",
+    "updateMode",
+    "ci",
+];
+/// Union of `DiffConfig` and `GlobalDiffConfig` (see `VALID_SNAPSHOT_KEYS`).
+pub(super) const VALID_DIFF_KEYS: &[&str] = &[
+    "enabled",
+    "exclude",
+    "match",
+    "includeTimings",
+    "dir",
+    "label",
+    "compareWith",
+    "save",
+    "outputFormat",
 ];
 const VALID_EXECUTION_MODES: &[&str] = &["sequential", "parallel"];
 const VALID_OUTPUT_FORMATS: &[&str] = &["json", "pretty", "raw"];
@@ -66,6 +101,12 @@ pub fn validate_global(cx: &mut Ctx, config: &Json, path: &str) -> Res {
         cx.boolean_field(config, f, path);
     }
 
+    if let Some(e) = truthy_prop(config, "env") {
+        cx.check_unknown_keys(e, VALID_ENV_KEYS, &format!("{path}.env"))?;
+    }
+    if let Some(s) = truthy_prop(config, "security") {
+        cx.check_unknown_keys(s, VALID_SECURITY_KEYS, &format!("{path}.security"))?;
+    }
     if let Some(o) = truthy_prop(config, "output") {
         validate_output(cx, o, &format!("{path}.output"))?;
     }
@@ -227,11 +268,7 @@ fn validate_watch(cx: &mut Ctx, watch: &Json, path: &str) -> Res {
 }
 
 fn validate_profile(cx: &mut Ctx, profile: &Json, path: &str) -> Res {
-    cx.check_unknown_keys(
-        profile,
-        &["iterations", "warmup", "concurrency", "percentiles"],
-        path,
-    )?;
+    cx.check_unknown_keys(profile, VALID_PROFILE_KEYS, path)?;
     number_at_least(cx, profile, "iterations", 1.0, path, POSITIVE);
     if num_above(profile, "iterations", 10_000.0) {
         cx.add(
@@ -264,11 +301,7 @@ fn choice_and_dir(cx: &mut Ctx, obj: &Json, field: &str, valid: &[&str], path: &
 }
 
 pub fn validate_snapshot(cx: &mut Ctx, snapshot: &Json, path: &str) -> Res {
-    cx.check_unknown_keys(
-        snapshot,
-        &["updateMode", "dir", "ignoreFields", "ignoreHeaders"],
-        path,
-    )?;
+    cx.check_unknown_keys(snapshot, VALID_SNAPSHOT_KEYS, path)?;
     choice_and_dir(
         cx,
         snapshot,
@@ -280,17 +313,7 @@ pub fn validate_snapshot(cx: &mut Ctx, snapshot: &Json, path: &str) -> Res {
 }
 
 pub fn validate_diff(cx: &mut Ctx, diff: &Json, path: &str) -> Res {
-    cx.check_unknown_keys(
-        diff,
-        &[
-            "outputFormat",
-            "dir",
-            "ignoreFields",
-            "ignoreHeaders",
-            "baselineUrl",
-        ],
-        path,
-    )?;
+    cx.check_unknown_keys(diff, VALID_DIFF_KEYS, path)?;
     choice_and_dir(cx, diff, "outputFormat", VALID_DIFF_OUTPUT_FORMATS, path);
     Ok(())
 }

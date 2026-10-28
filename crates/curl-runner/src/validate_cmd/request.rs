@@ -12,6 +12,7 @@ use curl_runner_core::model::Json;
 
 pub const VALID_METHODS: &[&str] = &["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
 
+pub(super) const VALID_RETRY_KEYS: &[&str] = &["count", "delay", "backoff", "retryableStatuses"];
 pub const VALID_REQUEST_KEYS: &[&str] = &[
     "name",
     "url",
@@ -449,7 +450,7 @@ pub fn convert_to(n: f64) -> Fix {
 }
 
 fn validate_retry(cx: &mut Ctx, retry: &Json, path: &str, method: Option<&Json>) -> Res {
-    cx.check_unknown_keys(retry, &["count", "delay", "backoff"], path)?;
+    cx.check_unknown_keys(retry, VALID_RETRY_KEYS, path)?;
 
     let count = prop(retry, "count");
     let cp = format!("{path}.count");

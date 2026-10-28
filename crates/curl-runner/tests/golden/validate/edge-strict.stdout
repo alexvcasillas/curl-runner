@@ -59,7 +59,8 @@
 [31m✗[0m edge/e008.yaml
   [31m●[0m global.ci.failOnPercentage: Must be a number between 0 and 100
   [34m●[0m global.ci: Both failOn and failOnPercentage are set; failOn takes precedence
-  [33m●[0m global.snapshot.0: Unknown key "0"
+  [33m●[0m global.snapshot.0: Unknown key "0" (did you mean "ci"?)
+    [36mfix:[0m Rename to "ci"
   [33m●[0m global.diff.0: Unknown key "0"
   [31m●[0m global.variables: Must be an object
   [33m●[0m global.defaults.0: Unknown key "0"
@@ -294,7 +295,8 @@
   [2m→[0m 1 error(s), 1 warning(s)
 
 [31m✗[0m edge/e047.yaml
-  [33m●[0m request.snapshot.0: Unknown key "0"
+  [33m●[0m request.snapshot.0: Unknown key "0" (did you mean "ci"?)
+    [36mfix:[0m Rename to "ci"
   [31m●[0m request.diff.outputFormat: Invalid outputFormat "1". Must be: terminal, json, markdown
   [31m●[0m request.diff.dir: Must be a string
   [2m→[0m 2 error(s), 1 warning(s)
