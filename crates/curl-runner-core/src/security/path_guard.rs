@@ -59,7 +59,8 @@ pub fn resolve_safe(
     Ok(resolved)
 }
 
-#[cfg(test)]
+// Unix path semantics; Windows paths are covered by `windows_tests`.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
@@ -184,5 +185,57 @@ mod tests {
     #[test]
     fn relative_cwd_is_rejected_when_confining() {
         assert!(resolve_safe("a", Path::new("."), Path::new("."), false).is_err());
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    const CWD: &str = r"C:\work\proj";
+    fn rs(p: &str) -> Result<PathBuf, GuardError> {
+        resolve_safe(p, Path::new(CWD), Path::new(CWD), false)
+    }
+
+    #[test]
+    fn in_cwd_paths_pass() {
+        assert_eq!(
+            rs("output.json"),
+            Ok(PathBuf::from(r"C:\work\proj\output.json"))
+        );
+        assert_eq!(
+            rs("sub/nested/out.json"),
+            Ok(PathBuf::from(r"C:\work\proj\sub\nested\out.json"))
+        );
+        assert_eq!(
+            rs(r"C:\work\proj\x.txt"),
+            Ok(PathBuf::from(r"C:\work\proj\x.txt"))
+        );
+        assert_eq!(rs(r"a\..\b.txt"), Ok(PathBuf::from(r"C:\work\proj\b.txt")));
+    }
+
+    #[test]
+    fn escaping_paths_are_rejected() {
+        for p in [
+            "../escape.json",
+            r"..\escape.json",
+            r"C:\Windows\win.ini",
+            // Root-relative: resolves on the cwd's drive, outside the cwd.
+            r"\Windows\win.ini",
+            "/etc/passwd",
+            r"D:\work\proj\x",
+            r"C:\work\proj-evil\x",
+            r"sub\..\..\escape.json",
+        ] {
+            let e = rs(p).unwrap_err().to_string();
+            assert!(e.contains("escapes the working directory"), "{p}: {e}");
+        }
+    }
+
+    #[test]
+    fn base_dir_inside_cwd_resolves_relative_to_base() {
+        let r = resolve_safe("a.txt", Path::new("sub"), Path::new(CWD), false);
+        assert_eq!(r, Ok(PathBuf::from(r"C:\work\proj\sub\a.txt")));
+        assert!(resolve_safe("a.txt", Path::new(r"D:\x"), Path::new(CWD), false).is_err());
     }
 }

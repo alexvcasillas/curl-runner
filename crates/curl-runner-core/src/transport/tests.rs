@@ -14,8 +14,18 @@ fn req(url: String) -> RequestConfig {
     }
 }
 
+/// The filesystem root holding the temp dir (`/`, or `C:\` on Windows): an
+/// absolute cwd that every tempdir path lies inside.
+fn root() -> PathBuf {
+    std::env::temp_dir()
+        .ancestors()
+        .last()
+        .unwrap()
+        .to_path_buf()
+}
+
 fn go(r: &RequestConfig) -> Result<Response, TransportError> {
-    send(r, &GlobalConfig::default(), Path::new("/"))
+    send(r, &GlobalConfig::default(), &root())
 }
 
 #[test]
@@ -170,7 +180,7 @@ fn missing_form_file_is_an_error() {
         )])),
         ..req("http://127.0.0.1:1/".into())
     };
-    let err = build_easy(&r, &GlobalConfig::default(), Path::new("/"))
+    let err = build_easy(&r, &GlobalConfig::default(), &root())
         .err()
         .unwrap();
     assert_eq!(err.message, "File(s) not found: doc: nope.txt");
@@ -315,7 +325,7 @@ fn connection_pool_and_http2_options_apply() {
         http2: Some(true),
         ..req("https://example.invalid/".into())
     };
-    assert!(build_easy(&r, &g, Path::new("/")).is_ok());
+    assert!(build_easy(&r, &g, &root()).is_ok());
 }
 
 #[test]
@@ -342,7 +352,7 @@ fn build_easy_then_finish_without_send() {
     let r = req(format!("{}/json/users", srv.base_url));
     let multi = curl::multi::Multi::new();
     let h = multi
-        .add2(build_easy(&r, &GlobalConfig::default(), Path::new("/")).unwrap())
+        .add2(build_easy(&r, &GlobalConfig::default(), &root()).unwrap())
         .unwrap();
     while multi.perform().unwrap() > 0 {
         multi
@@ -465,7 +475,7 @@ fn request_timeout_during_connect_reports_request_timeout() {
         timeout: Some(200),
         ..req(url)
     };
-    let err = send(&r, &pool(30), Path::new("/")).unwrap_err();
+    let err = send(&r, &pool(30), &root()).unwrap_err();
     assert_eq!(err.message, "Request timeout after 200ms");
 }
 
@@ -476,7 +486,7 @@ fn connect_timeout_smaller_than_request_timeout_reports_connection_timeout() {
         timeout: Some(5000),
         ..req(url)
     };
-    let err = send(&r, &pool(1), Path::new("/")).unwrap_err();
+    let err = send(&r, &pool(1), &root()).unwrap_err();
     assert_eq!(err.message, "Connection timeout after 1000ms");
 }
 
@@ -655,7 +665,7 @@ fn blocked_url_protocols_are_refused_before_any_transfer() {
         ("gopher://internal.example.com/", "gopher"),
         ("ftp://files.example.com/data.csv", "ftp"),
     ] {
-        let m = guard_msg(&req(url.into()), &g, Path::new("/"));
+        let m = guard_msg(&req(url.into()), &g, &root());
         assert_eq!(
             m,
             format!(
@@ -663,25 +673,18 @@ fn blocked_url_protocols_are_refused_before_any_transfer() {
             )
         );
     }
-    let m = guard_msg(&req("not-a-url".into()), &g, Path::new("/"));
+    let m = guard_msg(&req("not-a-url".into()), &g, &root());
     assert_eq!(m, "Invalid URL: \"not-a-url\"");
 }
 
 #[test]
 fn ftp_passes_the_guard_when_allowed() {
     let g = sec(Some(&["http", "https", "ftp"]), None);
-    assert!(
-        build_easy(
-            &req("ftp://files.example.com/data.csv".into()),
-            &g,
-            Path::new("/")
-        )
-        .is_ok()
-    );
+    assert!(build_easy(&req("ftp://files.example.com/data.csv".into()), &g, &root()).is_ok());
     // Empty list falls back to http/https.
     let g = sec(Some(&[]), None);
-    assert!(build_easy(&req("http://127.0.0.1:1/".into()), &g, Path::new("/")).is_ok());
-    assert!(build_easy(&req("ftp://x/".into()), &g, Path::new("/")).is_err());
+    assert!(build_easy(&req("http://127.0.0.1:1/".into()), &g, &root()).is_ok());
+    assert!(build_easy(&req("ftp://x/".into()), &g, &root()).is_err());
 }
 
 #[test]
@@ -689,14 +692,14 @@ fn unsupported_or_odd_allow_list_entries_fail_closed() {
     // `gopher`/`ftp` may be missing from this libcurl build, and an empty
     // intersection must still block everything rather than widen.
     let g = sec(Some(&["ftp", "nonsense"]), None);
-    let err = send(&req("http://127.0.0.1:1/".into()), &g, Path::new("/")).unwrap_err();
+    let err = send(&req("http://127.0.0.1:1/".into()), &g, &root()).unwrap_err();
     assert!(
         err.message.contains("Blocked protocol \"http\""),
         "{}",
         err.message
     );
     let g = sec(Some(&["ftp", "http"]), None);
-    let m = send(&req("http://127.0.0.1:1/".into()), &g, Path::new("/")).unwrap_err();
+    let m = send(&req("http://127.0.0.1:1/".into()), &g, &root()).unwrap_err();
     assert_eq!(m.code, Some(7), "{}", m.message);
 }
 
@@ -726,7 +729,7 @@ fn redirect_to_disallowed_protocol_fails() {
         ("gopher://127.0.0.1:1/x", "gopher"),
     ] {
         let (url, h) = redirect_server(loc);
-        let err = send(&req(url), &GlobalConfig::default(), Path::new("/")).unwrap_err();
+        let err = send(&req(url), &GlobalConfig::default(), &root()).unwrap_err();
         h.join().unwrap();
         // CURLE_UNSUPPORTED_PROTOCOL
         assert_eq!(err.code, Some(1), "{loc}: {}", err.message);
@@ -740,12 +743,12 @@ fn redirect_protocol_follows_the_allow_list() {
     // https is disallowed here: redirect to it is refused (code 1), whereas
     // with the default list libcurl attempts it and fails to connect (code 7).
     let (url, h) = redirect_server("https://127.0.0.1:1/");
-    let err = send(&req(url), &sec(Some(&["http"]), None), Path::new("/")).unwrap_err();
+    let err = send(&req(url), &sec(Some(&["http"]), None), &root()).unwrap_err();
     h.join().unwrap();
     assert_eq!(err.code, Some(1), "{}", err.message);
 
     let (url, h) = redirect_server("https://127.0.0.1:1/");
-    let err = send(&req(url), &GlobalConfig::default(), Path::new("/")).unwrap_err();
+    let err = send(&req(url), &GlobalConfig::default(), &root()).unwrap_err();
     h.join().unwrap();
     assert_eq!(err.code, Some(7), "{}", err.message);
 }
