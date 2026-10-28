@@ -158,37 +158,32 @@ export function getReleases(): Release[] {
   return releases;
 }
 
-async function fetchPublishedDates(): Promise<Record<string, string> | null> {
-  try {
-    const headers: HeadersInit = { Accept: 'application/vnd.github.v3+json' };
-    if (process.env.GITHUB_TOKEN) {
-      headers.Authorization = `token ${process.env.GITHUB_TOKEN}`;
-    }
-    const response = await fetch(RELEASES_API_URL, { headers, next: { revalidate: false } });
-    if (!response.ok) {
-      console.error(`GitHub API error: ${response.status}`);
-      return null;
-    }
-    const json: unknown = await response.json();
-    if (!Array.isArray(json)) {
-      return null;
-    }
-    const dates: Record<string, string> = {};
-    for (const item of json) {
-      if (typeof item !== 'object' || item === null) {
-        continue;
-      }
-      const { tag_name: tag, published_at: publishedAt } = item as Record<string, unknown>;
-      const match = typeof tag === 'string' ? tag.match(/^@curl-runner\/cli@(\S+)$/) : null;
-      if (match && typeof publishedAt === 'string') {
-        dates[match[1]] = publishedAt;
-      }
-    }
-    return dates;
-  } catch (error) {
-    console.error('Failed to fetch release dates:', error);
-    return null;
+/** Throws on any failure so that `unstable_cache` never stores it. */
+async function fetchPublishedDates(): Promise<Record<string, string>> {
+  const headers: HeadersInit = { Accept: 'application/vnd.github.v3+json' };
+  if (process.env.GITHUB_TOKEN) {
+    headers.Authorization = `token ${process.env.GITHUB_TOKEN}`;
   }
+  const response = await fetch(RELEASES_API_URL, { headers, next: { revalidate: false } });
+  if (!response.ok) {
+    throw new Error(`GitHub API error: ${response.status}`);
+  }
+  const json: unknown = await response.json();
+  if (!Array.isArray(json)) {
+    throw new Error('Unexpected GitHub releases payload');
+  }
+  const dates: Record<string, string> = {};
+  for (const item of json) {
+    if (typeof item !== 'object' || item === null) {
+      continue;
+    }
+    const { tag_name: tag, published_at: publishedAt } = item as Record<string, unknown>;
+    const match = typeof tag === 'string' ? tag.match(/^@curl-runner\/cli@(\S+)$/) : null;
+    if (match && typeof publishedAt === 'string') {
+      dates[match[1]] = publishedAt;
+    }
+  }
+  return dates;
 }
 
 const getPublishedDates = unstable_cache(fetchPublishedDates, ['github-release-dates'], {
@@ -219,8 +214,12 @@ function lastChangelogCommitDate(): string | null {
  * git history). Other versions missing from the API have no date.
  */
 export async function getReleaseDates(): Promise<Record<string, string>> {
-  const published = await getPublishedDates();
-  if (!published) {
+  let published: Record<string, string>;
+  try {
+    published = await getPublishedDates();
+  } catch (error) {
+    // Not cached: the next request retries.
+    console.error('Failed to fetch release dates:', error);
     return {};
   }
   const dates = { ...published };

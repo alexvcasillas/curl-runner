@@ -93,42 +93,50 @@ export function parseRelease(json: unknown): LatestRelease | null {
   };
 }
 
-async function fetchLatestReleaseUncached(): Promise<LatestRelease | null> {
-  try {
-    const headers: HeadersInit = {
-      Accept: 'application/vnd.github.v3+json',
-    };
+/** Throws on any failure so that `unstable_cache` never stores it. */
+async function fetchLatestReleaseOrThrow(): Promise<LatestRelease | null> {
+  const headers: HeadersInit = {
+    Accept: 'application/vnd.github.v3+json',
+  };
 
-    // Use GITHUB_TOKEN if available for higher rate limits
-    if (process.env.GITHUB_TOKEN) {
-      headers.Authorization = `token ${process.env.GITHUB_TOKEN}`;
-    }
-
-    const response = await fetch(GITHUB_API_URL, {
-      headers,
-      next: { revalidate: false }, // Cache handled by unstable_cache
-    });
-
-    if (!response.ok) {
-      console.error(`GitHub API error: ${response.status}`);
-      return null;
-    }
-
-    return parseRelease(await response.json());
-  } catch (error) {
-    console.error('Failed to fetch latest release:', error);
-    return null;
+  // Use GITHUB_TOKEN if available for higher rate limits
+  if (process.env.GITHUB_TOKEN) {
+    headers.Authorization = `token ${process.env.GITHUB_TOKEN}`;
   }
+
+  const response = await fetch(GITHUB_API_URL, {
+    headers,
+    next: { revalidate: false }, // Cache handled by unstable_cache
+  });
+
+  if (!response.ok) {
+    throw new Error(`GitHub API error: ${response.status}`);
+  }
+
+  return parseRelease(await response.json());
 }
 
-export const getLatestRelease = unstable_cache(
-  async () => fetchLatestReleaseUncached(),
+const getCachedLatestRelease = unstable_cache(
+  fetchLatestReleaseOrThrow,
   ['github-latest-release'],
   {
     revalidate: 3600, // 1 hour
     tags: ['github-release'],
   },
 );
+
+/**
+ * The latest CLI release, cached for an hour. A failed fetch resolves null but
+ * is not cached, so the next request retries instead of waiting out the hour.
+ */
+export async function getLatestRelease(): Promise<LatestRelease | null> {
+  try {
+    return await getCachedLatestRelease();
+  } catch (error) {
+    console.error('Failed to fetch latest release:', error);
+    return null;
+  }
+}
 
 export function getPlatformLabel(os: string, arch: string): string {
   const labels: Record<string, string> = {
