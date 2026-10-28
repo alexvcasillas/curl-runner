@@ -14,5 +14,6 @@
     "runner"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "private": true
 }
