@@ -1,3 +1,5 @@
+# Warning: Body references a file (@body.json): file references are not read, so the body is the literal text "@body.json"; fill in the body with the file's contents
+
 request:
   method: POST
   url: https://x.test

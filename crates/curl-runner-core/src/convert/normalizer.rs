@@ -21,6 +21,7 @@ pub fn normalize(ast: &CurlAst) -> Result<CurlRunnerIr, NormalizeError> {
     let mut headers = normalize_headers(ast);
     let auth = detect_auth(ast, &mut headers);
     let (body, form_data) = detect_body(ast);
+    warn_file_references(ast, &mut warnings);
     // curl labels `-d`/`--data*` text as form data unless told otherwise, while the
     // runner defaults a body to JSON: keep what curl would have sent.
     if matches!(
@@ -254,6 +255,25 @@ fn basic(user: &str, pass: &str) -> Auth {
         username: Some(user.to_string()),
         password: Some(pass.to_string()),
         token: None,
+    }
+}
+
+/// `-d @file` / `--data-binary @file` make curl read the body from a file; the
+/// converter keeps the text `@file`, so say so and let the user fill it in.
+fn warn_file_references(ast: &CurlAst, warnings: &mut Vec<String>) {
+    if !ast.form.is_empty() || !ast.data_urlencode.is_empty() {
+        return;
+    }
+    let sources = if ast.data_binary.is_empty() {
+        &ast.data
+    } else {
+        &ast.data_binary
+    };
+    for d in sources.iter().filter(|d| d.starts_with('@')) {
+        warnings.push(format!(
+            "Body references a file ({d}): file references are not read, \
+             so the body is the literal text \"{d}\"; fill in the body with the file's contents"
+        ));
     }
 }
 

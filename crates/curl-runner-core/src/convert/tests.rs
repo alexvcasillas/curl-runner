@@ -586,3 +586,30 @@ fn retry_round_trips() {
     let retry = parsed.requests[0].retry.clone().unwrap();
     assert_eq!((retry.count, retry.delay), (Some(3), Some(2000)));
 }
+
+#[test]
+fn data_file_references_warn_and_keep_the_literal_body() {
+    for flag in ["-d", "--data", "--data-binary"] {
+        let r = conv(&format!("curl {flag} @body.json https://x.test"));
+        assert!(
+            warned(&r, "file references are not read"),
+            "{flag}: {:?}",
+            r.warnings
+        );
+        assert!(warned(&r, "@body.json"), "{flag}: {:?}", r.warnings);
+        assert!(
+            r.output.contains("body: \"@body.json\"") || r.output.contains("body: '@body.json'"),
+            "{flag}: {}",
+            r.output
+        );
+    }
+    // Literal `@` data and inline bodies stay silent.
+    for cmd in [
+        "curl --data-raw @body.json https://x.test",
+        "curl -d 'a=1' https://x.test",
+        "curl --data-binary 'x' https://x.test",
+    ] {
+        let r = conv(cmd);
+        assert!(r.warnings.is_empty(), "{cmd}: {:?}", r.warnings);
+    }
+}
