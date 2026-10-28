@@ -16,7 +16,7 @@ async function getMarkdown(slug: string[]): Promise<Response> {
 }
 
 describe('/llms.txt', () => {
-  it('is plain text listing /docs.md and the .md URL of every docs page', async () => {
+  it('is plain text listing /docs.md and the .md URL of every sidebar docs page', async () => {
     const res = await getLlmsTxt();
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toMatch(/^text\/plain/);
@@ -25,7 +25,8 @@ describe('/llms.txt', () => {
     expect(body).toMatch(/^# curl-runner/);
     expect(body).toContain(`${SITE}/docs.md`);
 
-    const pages = source.getPages();
+    // The coming-soon placeholder is deliberately not in the sidebar, so it is not indexed.
+    const pages = source.getPages().filter((p) => p.url !== '/docs/tutorials/coming-soon');
     expect(pages.length).toBeGreaterThan(0);
     for (const page of pages) {
       expect(body).toContain(markdownUrl(page.url));

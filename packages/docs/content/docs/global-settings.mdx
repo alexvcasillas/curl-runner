@@ -1,0 +1,401 @@
+---
+title: Global Settings
+description: Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files. Execution modes, timeouts, retries, output and SSL.
+---
+
+Configure global execution settings, defaults, and behaviors that apply to all requests in your YAML files.
+
+Global settings allow you to configure default behavior for all requests in a YAML file. These settings can be overridden by individual requests when needed.
+
+```yaml title="basic-global-config.yaml"
+# Basic global configuration
+global:
+  # Execution settings
+  execution: sequential
+  continueOnError: false
+
+  # Output settings
+  output:
+    verbose: true
+    saveToFile: "results.json"
+
+  # Default request settings
+  defaults:
+    headers:
+      User-Agent: "curl-runner/2.0"
+      Accept: "application/json"
+    timeout: 10000
+    retry:
+      count: 3
+
+requests:
+  - name: Example Request
+    url: https://api.example.com/data
+    method: GET
+```
+
+## Execution Settings
+
+Control how requests are executed and how errors are handled.
+
+<Cards>
+  <Card title="Sequential mode (default)">
+    Requests execute one after another in the order they appear. Useful for dependent requests or when order matters.
+  </Card>
+  <Card title="Parallel mode">
+    All requests execute simultaneously for maximum speed. Best for independent requests that don't depend on each other.
+  </Card>
+</Cards>
+
+```yaml title="execution-modes.yaml"
+# Sequential execution (default)
+global:
+  execution: sequential  # Requests run one after another
+
+# Parallel execution
+global:
+  execution: parallel   # All requests run simultaneously
+
+# With error handling
+global:
+  execution: parallel
+  continueOnError: true  # Don't stop if some requests fail
+  maxConcurrency: 5      # Limit concurrent requests in parallel mode
+```
+
+## Timeout & Retry Settings
+
+Configure timeout and retry behavior for robust request handling. Timeouts and delays are in milliseconds. Set them under `global.defaults` to apply to every request, or on a single request to override.
+
+<Cards>
+  <Card title="Timeout">
+    Maximum time to wait for a request to complete (milliseconds).
+  </Card>
+  <Card title="Retry count">
+    Number of retry attempts for failed requests. Transport failures and timeouts are retried.
+  </Card>
+  <Card title="Retry delay">
+    Wait time between retry attempts (milliseconds).
+  </Card>
+  <Card title="Backoff">
+    Exponential backoff multiplier for retry delays.
+  </Card>
+</Cards>
+
+```yaml title="timeout-retry-config.yaml"
+# Global timeout and retry settings
+global:
+  defaults:
+    timeout: 10000        # Default per-request timeout (ms)
+    retry:
+      count: 3            # Maximum retries for failed requests
+      delay: 1000         # Initial delay between retries (ms)
+      backoff: 2.0        # Exponential backoff multiplier
+
+requests:
+  - name: Standard Request
+    url: https://api.example.com/data
+    method: GET
+    # Uses global defaults
+
+  - name: Custom Timeout Request
+    url: https://slow-api.example.com/data
+    method: GET
+    timeout: 30000        # Overrides global default
+    retry:
+      count: 5            # Overrides the retry count, keeps delay and backoff
+```
+
+See [Retry Mechanism](/docs/features/retry-mechanism) for the full behavior.
+
+## Output Configuration
+
+Customize how `curl-runner` displays results and saves output data.
+
+```yaml title="output-config.yaml"
+# Output configuration options
+global:
+  output:
+    # Verbose output with request/response details
+    verbose: true
+
+    # Save results to JSON file
+    saveToFile: "test-results.json"
+
+    # Show response headers, body and performance metrics
+    showHeaders: true
+    showBody: true
+    showMetrics: true
+
+    # Format for console output: json, pretty or raw
+    format: pretty
+
+    # Detail level of the pretty format: minimal, standard or detailed
+    prettyLevel: detailed
+```
+
+## Global Defaults
+
+Set default values that are automatically applied to all requests unless overridden.
+
+**Common defaults**
+
+- **Headers:** authentication, content types, user agents
+- **Timeouts:** request timeouts
+- **Validation:** expected status codes, response times
+- **Query params:** API versions, formats
+
+**Override behavior**
+
+- Individual requests can override any default.
+- `headers`, `params`, `variables` and `retry` are merged key by key (new ones are added, existing ones replaced).
+- Every other value (for example `timeout`) is replaced.
+
+```yaml title="global-defaults.yaml"
+# Global defaults applied to all requests
+global:
+  defaults:
+    # Default headers for all requests
+    headers:
+      User-Agent: "MyApp/1.0.0"
+      Accept: "application/json"
+      Content-Type: "application/json"
+      X-Client-Version: "1.2.3"
+
+    # Default timeout and retry settings
+    timeout: 8000
+    retry:
+      count: 2
+
+    # Default validation rules
+    expect:
+      status: [200, 201, 202]
+      responseTime: "<5000"
+
+    # Default query parameters
+    params:
+      api_version: "2023-01-01"
+      format: "json"
+
+requests:
+  - name: Inherits All Defaults
+    url: https://api.example.com/users
+    method: GET
+    # All global defaults are applied
+
+  - name: Overrides Some Defaults
+    url: https://api.example.com/posts
+    method: POST
+    headers:
+      Content-Type: "application/xml"  # Overrides default
+      # Other headers from defaults still apply
+    timeout: 15000  # Overrides default timeout
+```
+
+## Global Variables
+
+Define reusable variables that can be referenced throughout your request configurations.
+
+```yaml title="global-variables.yaml"
+# Global variables for reuse across requests
+global:
+  variables:
+    # API configuration
+    BASE_URL: "https://api.example.com"
+    API_VERSION: "v1"
+    API_KEY: "${API_KEY}"
+
+    # Computed variables
+    API_ENDPOINT: "${BASE_URL}/${API_VERSION}"
+    AUTH_HEADER: "Bearer ${API_KEY}"
+
+    # Default values when environment variable not set
+    TIMEOUT: "${REQUEST_TIMEOUT:5000}"
+
+  defaults:
+    headers:
+      Authorization: "${AUTH_HEADER}"
+    timeout: "${TIMEOUT}"
+
+requests:
+  - name: Get Users
+    url: "${API_ENDPOINT}/users"
+    method: GET
+
+  - name: Create User
+    url: "${API_ENDPOINT}/users"
+    method: POST
+    body:
+      name: "John Doe"
+```
+
+## Advanced Configuration
+
+Advanced global settings for complex scenarios including SSL and proxies.
+
+<Callout title="Advanced features">
+  The proxy is set per request or in `global.defaults` (`proxy: "http://host:port"`). SSL/TLS certificate configuration is fully supported.
+</Callout>
+
+```yaml title="advanced-global-config.yaml"
+# Advanced global configuration
+global:
+  # Execution control
+  execution: parallel
+  continueOnError: true
+  maxConcurrency: 5  # Limit concurrent requests in parallel mode
+
+  # SSL/TLS settings
+  ssl:
+    verify: true
+    ca: "./certs/ca.pem"
+    cert: "./certs/client.pem"
+    key: "./certs/client-key.pem"
+
+  # Output configuration
+  output:
+    verbose: true
+    saveToFile: "results.json"
+    format: pretty
+    prettyLevel: detailed
+    showMetrics: true
+
+  # Global variables
+  variables:
+    BASE_URL: "${API_BASE_URL:https://api.example.com}"
+    API_KEY: "${API_KEY}"
+    TRACE_ID: "${UUID}"
+
+  # Global defaults
+  defaults:
+    proxy: "http://proxy.company.com:8080"
+    headers:
+      User-Agent: "curl-runner/2.0"
+      X-Trace-ID: "${TRACE_ID}"
+      Authorization: "Bearer ${API_KEY}"
+    timeout: 8000
+    retry:
+      count: 3
+      delay: 1000
+      backoff: 2.0
+
+requests:
+  - name: Example
+    url: "${BASE_URL}/data"
+```
+
+## SSL/TLS Configuration
+
+Configure SSL/TLS certificates globally for all requests. Individual requests can override these settings.
+
+```yaml title="ssl-config.yaml"
+# Global SSL/TLS Configuration
+global:
+  # Apply SSL settings to all requests
+  ssl:
+    # Verify SSL certificates (default: true)
+    verify: true
+
+    # Custom CA certificate for enterprise environments
+    ca: "./certs/company-ca.pem"
+
+    # Client certificate for mutual TLS (mTLS)
+    cert: "./certs/client.pem"
+    key: "./certs/client-key.pem"
+
+requests:
+  # This request uses global SSL settings
+  - name: "Uses Global SSL"
+    url: "https://internal-api.company.com/data"
+    method: GET
+
+  # This request overrides global SSL settings
+  - name: "Different SSL Config"
+    url: "https://partner-api.example.com/data"
+    method: GET
+    ssl:
+      ca: "./certs/partner-ca.pem"  # Override with different CA
+```
+
+### SSL Configuration Properties
+
+| Property | Type | Default | Description |
+| --- | --- | --- | --- |
+| `verify` | boolean | `true` | Whether to verify SSL certificates |
+| `ca` | string | - | Path to CA certificate file |
+| `cert` | string | - | Path to client certificate file for mTLS |
+| `key` | string | - | Path to client private key file for mTLS |
+
+**Note:** Global SSL settings apply to all requests. Individual requests can override these settings by specifying their own `ssl` configuration.
+
+## Setting Precedence
+
+Understanding how individual request settings override global settings.
+
+1. **Command-line flags and `CURL_RUNNER_*` environment variables** win over everything in the file. See [CLI Options](/docs/cli-options#configuration-precedence).
+2. **Individual request settings** always take precedence over defaults in the file.
+3. **Collection-level defaults** (`collection.defaults`) override global defaults.
+4. **Global defaults** (`global.defaults`) apply when not overridden.
+
+```yaml title="setting-precedence.yaml"
+# How individual requests override global settings
+global:
+  execution: sequential
+  defaults:
+    timeout: 5000
+    retry:
+      count: 2
+    headers:
+      Accept: "application/json"
+      User-Agent: "curl-runner/2.0"
+
+requests:
+  - name: Uses Global Settings
+    url: https://api.example.com/users
+    method: GET
+    # Inherits: timeout=5000, retry.count=2, headers from defaults
+
+  - name: Overrides Global Settings
+    url: https://slow-api.example.com/data
+    method: GET
+    timeout: 30000     # Overrides global timeout
+    retry:
+      count: 5         # Overrides global retry count
+    headers:
+      Accept: "application/xml"  # Overrides global default
+      User-Agent: "MyApp/2.0.0"  # Overrides global default
+      Custom-Header: "value"     # Adds new header
+```
+
+## Best Practices
+
+**Recommended**
+
+- Set reasonable global timeouts (5-10 seconds)
+- Use environment variables for sensitive data
+- Group related settings logically
+- Define common headers in global defaults
+- Use descriptive variable names
+- Document complex configurations
+
+**Common pitfalls**
+
+- Don't set timeouts too low (causes false failures)
+- Avoid too many concurrent requests in parallel mode
+- Don't hard-code sensitive information
+- Be careful with global retry settings
+- Test configurations thoroughly
+- Consider server rate limits
+
+## Alternative Configuration
+
+You can also configure these settings using other methods.
+
+<Cards>
+  <Card title="Environment Variables" href="/docs/environment-variables">
+    Override global settings using CURL_RUNNER_* environment variables without modifying YAML files.
+  </Card>
+  <Card title="CLI Options" href="/docs/cli-options">
+    Override settings temporarily using command-line flags and options.
+  </Card>
+</Cards>

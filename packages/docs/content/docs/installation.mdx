@@ -1,0 +1,215 @@
+---
+title: Installation
+description: Install curl-runner on your system with the install script, Homebrew, npm, cargo or a pre-built binary.
+---
+
+## Prerequisites
+
+None. `curl-runner` is a single native binary (libcurl is linked statically). It needs no Bun, Node.js or curl installation. HTTPS uses your system CA certificates.
+
+```bash
+# Verify the installation
+curl-runner --version
+```
+
+## Quick Install
+
+The fastest way to install `curl-runner`. It downloads the latest pre-compiled binary, verifies the checksum, and adds it to your PATH.
+
+### Linux / macOS (recommended)
+
+```bash
+curl -fsSL https://www.curl-runner.com/install.sh | bash
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm https://www.curl-runner.com/install.ps1 | iex
+```
+
+<Callout title="No prerequisites">
+  The installer downloads a standalone native binary. No runtime dependencies are required.
+</Callout>
+
+## Package Managers
+
+### Homebrew (macOS, Linux)
+
+Install the prebuilt binary from the `alexvcasillas/tap` tap. `curl-runner upgrade` runs `brew upgrade curl-runner` for you.
+
+```bash
+brew install alexvcasillas/tap/curl-runner
+
+# Upgrade later
+brew upgrade curl-runner
+```
+
+### npm, pnpm, yarn and bun
+
+The npm package installs the prebuilt native binary for your platform. The package manager is only the delivery mechanism, so it works with npm, pnpm, yarn and bun alike.
+
+```bash
+npm i -g @curl-runner/cli
+
+# or
+pnpm add -g @curl-runner/cli
+yarn global add @curl-runner/cli
+bun add -g @curl-runner/cli
+```
+
+<Callout title="Prerequisites">
+  **Linux / macOS:** none. Neither Node.js nor Bun is needed to run the installed binary.
+
+  **Windows:** the package manager command runs through a small `sh` launcher, so `sh` must be on your PATH (for example Git for Windows with its Unix tools on PATH, MSYS2 or Cygwin). Otherwise, install with PowerShell instead:
+
+  ```powershell
+  irm https://www.curl-runner.com/install.ps1 | iex
+  ```
+</Callout>
+
+### Cargo (crates.io)
+
+Build from source with Rust. This compiles libcurl and the TLS library, so it needs a C compiler and `cmake`. `curl-runner upgrade` reruns the same command.
+
+```bash
+cargo install curl-runner --locked
+```
+
+## Binary Downloads
+
+Standalone executables with no dependencies are attached to every release. Pick your platform on the [downloads page](/downloads), or from [GitHub Releases](https://github.com/alexvcasillas/curl-runner/releases/latest).
+
+### Installation Instructions
+
+#### Linux / macOS
+
+```bash
+# Download the binary (replace VERSION with the actual version, and linux-x64
+# with darwin-arm64, darwin-x64 or linux-arm64 for your platform)
+curl -LO https://github.com/alexvcasillas/curl-runner/releases/latest/download/curl-runner-cli-VERSION-linux-x64.tar.gz
+
+# Extract the archive
+tar -xzf curl-runner-cli-VERSION-linux-x64.tar.gz
+
+# Rename and make executable
+mv curl-runner-linux-x64 curl-runner
+chmod +x curl-runner
+
+# Move to PATH (optional)
+sudo mv curl-runner /usr/local/bin/
+
+# Verify installation
+curl-runner --version
+```
+
+#### Windows (PowerShell)
+
+```powershell
+# Download the binary (replace VERSION with the actual version)
+Invoke-WebRequest -Uri "https://github.com/alexvcasillas/curl-runner/releases/latest/download/curl-runner-cli-VERSION-windows-x64.zip" -OutFile "curl-runner.zip"
+
+# Extract the archive
+Expand-Archive -Path curl-runner.zip -DestinationPath .
+
+# Rename the binary
+Rename-Item curl-runner-windows-x64.exe curl-runner.exe
+
+# Add to PATH (optional - run as Administrator)
+$env:PATH += ";$PWD"
+
+# Verify installation
+curl-runner --version
+```
+
+#### Verify Checksum (recommended)
+
+Always verify the download integrity using SHA256 checksums.
+
+Linux:
+
+```bash
+# Download checksums file
+curl -LO https://github.com/alexvcasillas/curl-runner/releases/latest/download/SHA256SUMS.txt
+
+# Verify the download
+sha256sum -c SHA256SUMS.txt --ignore-missing
+```
+
+macOS:
+
+```bash
+# Download checksums file
+curl -LO https://github.com/alexvcasillas/curl-runner/releases/latest/download/SHA256SUMS.txt
+
+# Verify the download
+shasum -a 256 -c SHA256SUMS.txt
+```
+
+Windows (PowerShell):
+
+```powershell
+# Download checksums file
+Invoke-WebRequest -Uri "https://github.com/alexvcasillas/curl-runner/releases/latest/download/SHA256SUMS.txt" -OutFile "SHA256SUMS.txt"
+
+# Get file hash
+$hash = (Get-FileHash -Algorithm SHA256 curl-runner-cli-VERSION-windows-x64.zip).Hash
+
+# Compare with expected hash from SHA256SUMS.txt
+# (Manually compare the hash output)
+```
+
+## Verify Installation
+
+After installation, verify that `curl-runner` is working correctly:
+
+```bash
+curl-runner --version
+```
+
+## Platform Support
+
+- **Linux:** Ubuntu 20.04+, CentOS 8+, Alpine Linux
+- **macOS:** macOS 11+ (Intel and Apple Silicon)
+- **Windows:** Windows 10+, WSL2 supported
+
+## Troubleshooting
+
+### Command not found
+
+If you get "curl-runner: command not found", ensure that the installation directory is in your PATH.
+
+```bash
+# Check if curl-runner is in PATH
+which curl-runner
+
+# Add to PATH if needed (replace with your installation path)
+export PATH="$PATH:~/.local/bin"
+```
+
+### Permission denied
+
+On Unix systems, you may need to make the binary executable:
+
+```bash
+chmod +x /path/to/curl-runner
+```
+
+## Next Steps
+
+Now that curl-runner is installed, here's how to get started.
+
+<Cards>
+  <Card title="Quick Start Guide" href="/docs/quick-start">
+    Create and run your first HTTP request in minutes.
+  </Card>
+  <Card title="YAML Configuration" href="/docs/yaml-structure">
+    Learn the configuration file format and structure.
+  </Card>
+  <Card title="Basic Examples" href="/docs/examples/basic">
+    Copy-paste examples for common HTTP operations.
+  </Card>
+  <Card title="CLI Reference" href="/docs/cli-commands">
+    Complete command-line options and usage guide.
+  </Card>
+</Cards>

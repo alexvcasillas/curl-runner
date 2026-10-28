@@ -1,0 +1,202 @@
+---
+title: Environment Variables
+description: Configure curl-runner behavior using environment variables for consistent settings across different environments.
+---
+
+Configure curl-runner behavior using environment variables for consistent settings across different environments.
+
+## Overview
+
+Environment variables provide a way to configure `curl-runner` without modifying YAML files or using command-line options. This is particularly useful for CI/CD pipelines, containerized environments, and maintaining consistent settings across teams.
+
+<Callout title="Configuration precedence">
+  Settings are applied in the following order (later overrides earlier):
+
+  1. Default values
+  2. Configuration file (`curl-runner.yaml`)
+  3. The `global` block of the test file
+  4. Environment variables
+  5. Command-line options
+</Callout>
+
+## Basic Usage
+
+Set environment variables in your shell or include them inline when running commands.
+
+```bash
+# Set verbose output
+export CURL_RUNNER_VERBOSE=true
+curl-runner tests/
+
+# Set parallel execution
+export CURL_RUNNER_EXECUTION=parallel
+curl-runner api-tests.yaml
+
+# Set multiple variables
+export CURL_RUNNER_VERBOSE=true
+export CURL_RUNNER_EXECUTION=parallel
+export CURL_RUNNER_CONTINUE_ON_ERROR=true
+curl-runner tests/
+
+# Inline environment variables (one-time use)
+CURL_RUNNER_VERBOSE=true curl-runner tests/
+```
+
+## Available Variables
+
+All curl-runner environment variables follow the `CURL_RUNNER_*` naming convention.
+
+| Variable | Type | Default | Description | Example |
+| --- | --- | --- | --- | --- |
+| `CURL_RUNNER_VERBOSE` | boolean | `false` | Enable verbose output with detailed request/response information | `true` |
+| `CURL_RUNNER_EXECUTION` | string | `sequential` | Set execution mode: sequential or parallel | `parallel` |
+| `CURL_RUNNER_CONTINUE_ON_ERROR` | boolean | `false` | Continue execution when individual requests fail | `true` |
+| `CURL_RUNNER_MAX_CONCURRENCY` | number | unlimited | Maximum number of concurrent requests in parallel mode | `5` |
+| `CURL_RUNNER_DRY_RUN` | boolean | `false` | Show curl commands without executing them (dry run mode) | `true` |
+| `CURL_RUNNER_HTTP2` | boolean | `false` | Use HTTP/2 protocol with multiplexing for improved performance | `true` |
+| `CURL_RUNNER_OUTPUT_FORMAT` | string | `pretty` | Set output format: json, pretty, or raw | `json` |
+| `CURL_RUNNER_PRETTY_LEVEL` | string | `minimal` | Set pretty format detail level: minimal, standard, or detailed | `detailed` |
+| `CURL_RUNNER_OUTPUT_FILE` | string | `undefined` | Save execution results to specified file | `results.json` |
+| `CURL_RUNNER_TIMEOUT` | number | `undefined` | Set global timeout for all requests in milliseconds | `10000` |
+| `CURL_RUNNER_RETRIES` | number | `0` | Set maximum number of retries for failed requests | `3` |
+| `CURL_RUNNER_RETRY_DELAY` | number | `1000` | Set delay between retry attempts in milliseconds | `2000` |
+| `CURL_RUNNER_WATCH` | boolean | `false` | Enable watch mode to automatically re-run when files change | `true` |
+| `CURL_RUNNER_WATCH_DEBOUNCE` | number | `300` | Debounce delay for watch mode in milliseconds | `500` |
+| `CURL_RUNNER_WATCH_CLEAR` | boolean | `true` | Clear screen between watch mode runs | `false` |
+| `CURL_RUNNER_ALLOWED_PROTOCOLS` | string | `http,https` | Comma-separated URL protocols to allow. Requests using any other protocol (e.g. file, ftp, gopher) are blocked before curl runs. | `http,https,ftp` |
+| `CURL_RUNNER_ALLOW_PATHS` | boolean | `false` | Allow output/saveToFile/formData file paths outside the working directory. Defaults to false (paths confined to the current directory). | `true` |
+
+## Output Configuration
+
+Control how results are displayed and saved using output-related environment variables.
+
+```bash
+# Set output format
+export CURL_RUNNER_OUTPUT_FORMAT=json
+curl-runner tests/
+
+# Set pretty level for detailed output
+export CURL_RUNNER_OUTPUT_FORMAT=pretty
+export CURL_RUNNER_PRETTY_LEVEL=detailed
+curl-runner tests/
+
+# Save output to file
+export CURL_RUNNER_OUTPUT_FILE=results.json
+curl-runner tests/
+
+# Enable verbose logging
+export CURL_RUNNER_VERBOSE=true
+curl-runner tests/
+```
+
+## Request Configuration
+
+Configure default request behavior including timeouts and retry logic.
+
+```bash
+# Set global timeout (milliseconds)
+export CURL_RUNNER_TIMEOUT=10000
+curl-runner tests/
+
+# Configure retry behavior
+export CURL_RUNNER_RETRIES=3
+export CURL_RUNNER_RETRY_DELAY=2000
+curl-runner tests/
+
+# Disable retries
+export CURL_RUNNER_RETRIES=0
+curl-runner tests/
+```
+
+## Execution Configuration
+
+Control how requests are executed and how errors are handled.
+
+```bash
+# Set execution mode
+export CURL_RUNNER_EXECUTION=parallel
+curl-runner tests/
+
+# Continue on errors
+export CURL_RUNNER_CONTINUE_ON_ERROR=true
+curl-runner tests/
+
+# Limit concurrent requests in parallel mode
+export CURL_RUNNER_MAX_CONCURRENCY=5
+curl-runner tests/
+
+# Combine execution settings
+export CURL_RUNNER_EXECUTION=parallel
+export CURL_RUNNER_CONTINUE_ON_ERROR=true
+export CURL_RUNNER_MAX_CONCURRENCY=10
+curl-runner tests/
+```
+
+## Docker & Containers
+
+Environment variables are ideal for containerized deployments where configuration should be injected at runtime.
+
+```dockerfile title="Dockerfile"
+# Dockerfile example
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && curl -fsSL https://www.curl-runner.com/install.sh | bash
+
+ENV PATH="/root/.local/bin:${PATH}"
+ENV CURL_RUNNER_VERBOSE=false
+ENV CURL_RUNNER_OUTPUT_FORMAT=json
+ENV CURL_RUNNER_EXECUTION=sequential
+
+WORKDIR /app
+CMD ["curl-runner", "/tests"]
+```
+
+## CI/CD Integration
+
+Examples of using environment variables in popular CI/CD platforms.
+
+```yaml title="CI/CD Examples"
+# GitHub Actions
+- name: Run API Tests
+  env:
+    CURL_RUNNER_VERBOSE: true
+    CURL_RUNNER_OUTPUT_FORMAT: json
+    CURL_RUNNER_CONTINUE_ON_ERROR: true
+  run: curl-runner tests/
+
+# GitLab CI
+test:
+  variables:
+    CURL_RUNNER_EXECUTION: parallel
+    CURL_RUNNER_TIMEOUT: "30000"
+  script:
+    - curl-runner api-tests.yaml
+
+# Jenkins Pipeline
+pipeline {
+  environment {
+    CURL_RUNNER_VERBOSE = 'true'
+    CURL_RUNNER_OUTPUT_FILE = 'test-results.json'
+  }
+  stages {
+    stage('Test') {
+      steps {
+        sh 'curl-runner tests/'
+      }
+    }
+  }
+}
+```
+
+## Best Practices
+
+**Use for environment-specific settings.** Environment variables are perfect for settings that change between development, staging, and production environments.
+
+**Keep secrets secure.** While curl-runner doesn't directly handle secrets, avoid logging verbose output in production when sensitive data might be exposed. See [Security](/docs/security) for secret redaction.
+
+**Document your variables.** Create a `.env.example` file in your project to document required environment variables for your team.
+
+**Prefer explicit over implicit.** For critical settings like timeouts and retries, consider using explicit command-line options for clarity in scripts and CI pipelines.

@@ -19,9 +19,11 @@ const nextConfig: NextConfig = {
     ],
   },
   // Every docs page as Markdown: /docs.md and /docs/<page>.md, rendered by app/llms.mdx.
+  // /docs/index.md is the same page as /docs.md.
   async rewrites() {
     return [
       { source: '/docs.md', destination: '/llms.mdx' },
+      { source: '/docs/index.md', destination: '/llms.mdx' },
       { source: '/docs/:path*.md', destination: '/llms.mdx/:path*' },
     ];
   },

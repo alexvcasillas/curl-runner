@@ -1,0 +1,227 @@
+---
+title: CLI Commands
+description: Complete command-line interface reference for curl-runner with all available commands, options, and usage examples.
+---
+
+Complete command-line interface reference for curl-runner with all available commands, options, and usage examples.
+
+## Basic Usage
+
+The `curl-runner` CLI provides a simple interface for executing HTTP requests defined in YAML files.
+
+```bash title="Basic Usage Examples"
+# Run a single YAML file
+curl-runner simple.yaml
+
+# Run with verbose output
+curl-runner simple.yaml --verbose
+
+# Run multiple files
+curl-runner file1.yaml file2.yaml file3.yaml
+
+# Run all YAML files in current directory
+curl-runner *.yaml
+
+# Run all files in a directory
+curl-runner tests/
+
+# Run with short options
+curl-runner tests/ -pvc
+```
+
+## Commands
+
+### `curl-runner`
+
+Main command to execute HTTP requests from YAML files.
+
+**Usage**
+
+```bash
+curl-runner [files...] [options]
+```
+
+**Examples**
+
+```bash
+curl-runner simple.yaml
+curl-runner tests/ -pv
+curl-runner *.yaml --output results.json
+```
+
+### Subcommands
+
+| Command | Description |
+| --- | --- |
+| `curl-runner init [url]` | Quick create a new YAML file; add `--wizard` for the full interactive wizard. See [YAML Wizard](/docs/features/yaml-wizard) |
+| `curl-runner edit <file.yaml>` | Edit an existing YAML file |
+| `curl-runner validate` | Validate YAML files against the curl-runner schema. See [YAML Validation](/docs/features/validate) |
+| `curl-runner convert` | Convert between curl commands, shell scripts and YAML. See [Curl and YAML Conversion](/docs/features/convert) |
+| `curl-runner diff <label1> <label2> [file.yaml]` | Compare two stored baselines without making requests. See [Response Diffing](/docs/features/response-diffing) |
+| `curl-runner upgrade` | Upgrade to the latest version. See [Upgrade](/docs/features/upgrade) |
+
+## Options
+
+Available command-line options to customize `curl-runner`'s behavior. The full reference, with types, defaults and examples, is on the [CLI Options](/docs/cli-options) page.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-h`, `--help` | boolean | `false` | Show help information and usage examples |
+| `-v`, `--verbose` | boolean | `false` | Enable verbose output with detailed request/response information |
+| `-q`, `--quiet` | boolean | `false` | Suppress non-error output (opposite of verbose) |
+| `-p`, `--execution parallel` | string | `sequential` | Execute requests in parallel instead of sequential |
+| `-c`, `--continue-on-error` | boolean | `false` | Continue execution when individual requests fail |
+| `--all` | boolean | `false` | Recursively find all YAML files in directories |
+| `-o`, `--output <file>` | string | `undefined` | Save execution results to a file |
+| `--output-format <format>` | string | `pretty` | Set output format: json, pretty, or raw |
+| `--pretty-level <level>` | string | `minimal` | Set pretty format detail level: minimal, standard, or detailed |
+| `--show-headers` | boolean | `false` | Include response headers in output |
+| `--show-body` | boolean | `true` | Include response body in output |
+| `--show-metrics` | boolean | `false` | Include performance metrics in output |
+| `--timeout <ms>` | number | `undefined` | Set global timeout for all requests in milliseconds |
+| `--retries <count>` | number | `0` | Set maximum number of retries for failed requests |
+| `--retry-delay <ms>` | number | `1000` | Set delay between retry attempts in milliseconds |
+| `--no-retry` | boolean | `false` | Disable retry mechanism completely |
+| `--version` | boolean | `false` | Display the curl-runner version |
+
+## File Patterns
+
+`curl-runner` supports various file patterns and glob expressions for flexible file selection.
+
+```bash title="File Pattern Examples"
+# Glob patterns
+curl-runner "api-*.yaml"        # Files starting with "api-"
+curl-runner "**/*.yaml"         # All YAML files recursively
+curl-runner "tests/**/*.yml"    # All YML files in tests/ recursively
+
+# Directory patterns
+curl-runner tests/              # All YAML/YML files in tests/
+curl-runner tests/ --all        # Recursive search in tests/
+curl-runner . --all             # All files recursively from current dir
+
+# Multiple patterns
+curl-runner "api-*.yaml" "user-*.yaml" tests/
+```
+
+## Execution Modes
+
+**Sequential (default).** Requests are executed one after another in the order they appear in the YAML file. Useful for dependent requests or when order matters.
+
+**Parallel.** All requests are executed simultaneously. Significantly faster for independent requests but may overwhelm the target server.
+
+```bash title="Execution Mode Examples"
+# Sequential execution (default)
+curl-runner tests/
+
+# Parallel execution
+curl-runner tests/ --execution parallel
+curl-runner tests/ -p
+
+# Continue on errors
+curl-runner tests/ --continue-on-error
+curl-runner tests/ -c
+
+# Parallel + continue on error
+curl-runner tests/ -pc
+```
+
+## Output Options
+
+Control how `curl-runner` displays results and saves output data.
+
+```bash title="Output Examples"
+# Verbose output
+curl-runner tests/ --verbose
+curl-runner tests/ -v
+
+# Quiet mode (suppress output)
+curl-runner tests/ --quiet
+curl-runner tests/ -q
+
+# Save results to file
+curl-runner tests/ --output results.json
+curl-runner tests/ -o results.json
+
+# Output format options
+curl-runner tests/ --output-format json     # JSON output
+curl-runner tests/ --output-format pretty   # Pretty output (default)
+curl-runner tests/ --output-format raw      # Raw response bodies only
+
+# Pretty level options (when using pretty format)
+curl-runner tests/ --pretty-level minimal   # Compact output (default)
+curl-runner tests/ --pretty-level standard  # Standard detail
+curl-runner tests/ --pretty-level detailed  # Full detail with metrics
+
+# Control what's shown
+curl-runner tests/ --show-headers           # Include headers
+curl-runner tests/ --show-metrics           # Include metrics
+curl-runner tests/ --show-body false        # Hide response body
+
+# Combine options
+curl-runner tests/ --output-format pretty --pretty-level detailed --show-metrics
+```
+
+## Timeout & Retry Options
+
+Configure timeout and retry behavior for robust request handling.
+
+```bash title="Timeout Examples"
+# Set global timeout (milliseconds)
+curl-runner tests/ --timeout 10000
+
+# Set maximum retries
+curl-runner tests/ --retries 3
+
+# Set retry delay (milliseconds)
+curl-runner tests/ --retry-delay 2000
+
+# Disable retries completely
+curl-runner tests/ --no-retry
+
+# Combine timeout and retry options
+curl-runner tests/ --timeout 5000 --retries 3 --retry-delay 1000
+```
+
+## Advanced Usage
+
+Complex examples combining multiple options and environment variables.
+
+```bash title="Advanced Examples"
+# Environment-specific execution (loads .env.production)
+curl-runner api-tests.yaml --env production
+
+# Using environment variables
+API_KEY=secret123 curl-runner auth-tests.yaml
+
+# Complex execution with all options
+curl-runner tests/ \
+  --execution parallel \
+  --continue-on-error \
+  --verbose \
+  --timeout 30000 \
+  --retries 3 \
+  --output test-results.json \
+  --all
+```
+
+## Exit Codes
+
+`curl-runner` returns specific exit codes to indicate execution results.
+
+- **`0` Success:** all requests completed successfully, or `--continue-on-error` was used.
+- **`1` Error:** one or more requests failed and `--continue-on-error` was not used.
+
+For CI/CD, `--strict-exit`, `--fail-on <count>` and `--fail-on-percentage <pct>` control when a run exits with `1`. See [CI/CD Integration](/docs/features/ci-integration).
+
+## Configuration Alternatives
+
+Many CLI options can also be configured using files or environment variables.
+
+<Cards>
+  <Card title="Environment Variables" href="/docs/environment-variables">
+    Configure curl-runner behavior using CURL_RUNNER_* environment variables.
+  </Card>
+  <Card title="Global Settings" href="/docs/global-settings">
+    Set default behavior in YAML files using global configuration.
+  </Card>
+</Cards>

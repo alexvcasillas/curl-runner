@@ -1,0 +1,305 @@
+---
+title: Variables
+description: Use variables and templating to create reusable, dynamic HTTP request configurations. Scopes, precedence, defaults, dynamic values and string transforms.
+---
+
+Use variables and templating to create reusable, dynamic HTTP request configurations.
+
+Variables in curl-runner allow you to create flexible, reusable configurations. You can define variables at different scopes and use them throughout your request definitions with template interpolation.
+
+<Callout title="Variable interpolation syntax">
+  Variables are interpolated using the `${VARIABLE_NAME}` syntax. You can also use default values with `${VAR:default}`.
+</Callout>
+
+## Variable Scopes
+
+Variables can be defined at different levels, each with its own scope and precedence rules.
+
+### Global Variables
+
+Global variables are available to all requests in the file and have the lowest precedence.
+
+```yaml title="global-variables.yaml"
+global:
+  variables:
+    BASE_URL: "https://api.example.com"
+    API_VERSION: "v1"
+
+collection:
+  name: "API Tests"
+  requests:
+    - name: "Get users"
+      url: "${BASE_URL}/${API_VERSION}/users"
+      method: GET
+```
+
+### Collection Variables
+
+Collection variables are scoped to a specific collection and override global variables.
+
+```yaml title="collection-variables.yaml"
+global:
+  variables:
+    TIMEOUT: "5000"      # Global level
+    ENV: "production"
+
+collection:
+  variables:
+    TIMEOUT: "10000"     # Overrides global
+    COLLECTION_ID: "api_tests"
+
+  requests:
+    - name: "Test with overrides"
+      url: "https://api.example.com/test"
+      timeout: ${TIMEOUT}  # Uses 10000
+```
+
+### Environment Variables
+
+Environment variables from your system can be accessed using the same `${VAR_NAME}` syntax. They are used as a fallback when a name is not defined in `global.variables` or `collection.variables`. Values from `.env` files are also available; see [Environment Files](/docs/features/env-files).
+
+```bash
+# Set environment variables
+export API_KEY="your-secret-key"
+export BASE_URL="https://api.staging.com"
+```
+
+```yaml title="env-variables.yaml"
+# Reference in YAML
+global:
+  variables:
+    API_TOKEN: "${API_KEY}"     # From environment
+    API_BASE: "${BASE_URL}"     # From environment
+    TIMEOUT: "5000"             # Static value
+```
+
+## Variable Precedence
+
+When variables are defined at multiple levels, curl-runner follows a specific precedence order.
+
+<Callout type="warn" title="Precedence order (highest to lowest)">
+  1. **Collection variables:** `collection.variables`
+  2. **Global variables:** `global.variables`
+  3. **Environment variables:** `${VAR_NAME}` (from the process environment), used only when the name is not defined above
+</Callout>
+
+```yaml title="variable-precedence.yaml"
+global:
+  variables:
+    TIMEOUT: "5000"      # Global level
+    ENV: "production"
+
+collection:
+  variables:
+    TIMEOUT: "10000"     # Overrides global
+    COLLECTION_ID: "api_tests"
+
+  requests:
+    - name: "Test with overrides"
+      url: "https://api.example.com/test"
+      timeout: ${TIMEOUT}  # Uses 10000
+```
+
+## Default Values
+
+Provide fallback values for variables that may not be set using the `${VAR:default}` syntax.
+
+<Callout title="Default value syntax">
+  `${VAR:default}`: uses "default" if VAR is not set.
+
+  `${VAR:${OTHER:fallback}}`: nested defaults. Tries VAR, then OTHER, then "fallback".
+
+  `${VAR:}`: uses an empty string if VAR is not set.
+</Callout>
+
+```yaml title="default-values.yaml"
+global:
+  variables:
+    # Basic default value - uses "5000" if API_TIMEOUT is not set
+    API_TIMEOUT: "${API_TIMEOUT:5000}"
+
+    # Default with URL - uses the URL if API_BASE is not set
+    API_BASE: "${API_BASE:https://api.example.com}"
+
+    # Nested defaults - tries DATABASE_HOST, then DB_HOST, then "localhost"
+    DB_HOST: "${DATABASE_HOST:${DB_HOST:localhost}}"
+
+    # Empty default - uses empty string if OPTIONAL_PARAM is not set
+    OPTIONAL_PARAM: "${OPTIONAL_PARAM:}"
+
+collection:
+  requests:
+    - name: "Request with defaults"
+      url: "${API_BASE}/data"
+      timeout: ${API_TIMEOUT}
+      headers:
+        X-DB-Host: "${DB_HOST}"
+```
+
+<Callout title="Note on reserved prefixes">
+  The colon syntax is also used for dynamic variables like `DATE:format` and `TIME:format`. These reserved prefixes (`DATE`, `TIME`, `UUID`, `RANDOM`) are handled specially and won't conflict with default value syntax.
+</Callout>
+
+Use default value syntax to provide fallback values when variables are not set. For environment-specific configurations, use separate YAML files per environment or set environment variables directly.
+
+```yaml title="default-values.yaml"
+global:
+  variables:
+    # Default value if environment variable not set
+    API_TIMEOUT: "${API_TIMEOUT:5000}"
+
+    # Nested default values
+    DB_HOST: "${DATABASE_HOST:${DB_HOST:localhost}}"
+
+collection:
+  requests:
+    - name: "Request with defaults"
+      url: "${BASE_URL}/data"
+      timeout: ${API_TIMEOUT}
+```
+
+## Dynamic Variables
+
+Create dynamic values using built-in functions.
+
+### Built-in Functions
+
+**Date and time**
+
+- `${DATE:YYYY-MM-DD}`: formatted date
+- `${TIME:HH:mm:ss}`: formatted time
+- `${TIMESTAMP}`: Unix timestamp in milliseconds
+
+**Random values**
+
+- `${UUID}`: UUID v4
+- `${UUID:short}`: short UUID
+- `${RANDOM:1-1000}`: random integer
+- `${RANDOM:string:10}`: random string of the given length
+
+```yaml title="dynamic-variables.yaml"
+global:
+  variables:
+    # Dynamic timestamp
+    TIMESTAMP: "${DATE:YYYY-MM-DD}"
+    REQUEST_TIME: "${TIME:HH:mm:ss}"
+
+    # UUID generation
+    REQUEST_ID: "${UUID}"
+    SESSION_ID: "${UUID:short}"
+
+    # Random values
+    RANDOM_NUM: "${RANDOM:1-1000}"
+    RANDOM_STR: "${RANDOM:string:10}"
+
+collection:
+  requests:
+    - name: "Request with dynamic values"
+      url: "https://api.example.com/requests"
+      headers:
+        X-Request-ID: "${REQUEST_ID}"
+        X-Timestamp: "${TIMESTAMP}"
+        X-Session: "${SESSION_ID}"
+```
+
+## String Transforms
+
+Transform variable values using built-in string modifiers for case manipulation.
+
+- `${VAR:upper}`: convert the value to UPPERCASE
+- `${VAR:lower}`: convert the value to lowercase
+
+```yaml title="string-transforms.yaml"
+global:
+  variables:
+    ENV: "production"
+    RESOURCE: "Users"
+
+    # Transform to uppercase
+    UPPER_ENV: "${ENV:upper}"           # Results in "PRODUCTION"
+
+    # Transform to lowercase
+    LOWER_RESOURCE: "${RESOURCE:lower}" # Results in "users"
+
+collection:
+  requests:
+    - name: "Request with case transforms"
+      url: "https://api.example.com/${RESOURCE:lower}"
+      headers:
+        X-Environment: "${ENV:upper}"
+        X-Resource-Type: "${RESOURCE:lower}"
+```
+
+## Complex Interpolation
+
+Combine multiple variables and expressions to create complex, computed values.
+
+```yaml title="complex-interpolation.yaml"
+global:
+  variables:
+    BASE_PATH: "/api/v1"
+    RESOURCE: "users"
+
+    # Computed from other variables
+    FULL_ENDPOINT: "${BASE_URL}${BASE_PATH}/${RESOURCE}"
+
+    # String manipulation
+    UPPER_ENV: "${ENV:upper}"
+    LOWER_RESOURCE: "${RESOURCE:lower}"
+
+collection:
+  requests:
+    - name: "Using computed variables"
+      url: "${FULL_ENDPOINT}"
+      headers:
+        X-Environment: "${UPPER_ENV}"
+        X-Resource-Type: "${LOWER_RESOURCE}"
+```
+
+## Best Practices
+
+**Do**
+
+- Use descriptive variable names
+- Define common values as variables
+- Use environment variables for secrets
+- Group related variables logically
+- Document complex expressions
+
+**Avoid**
+
+- Hard-coding sensitive information
+- Using overly complex expressions
+- Creating circular references
+- Overusing dynamic variables
+- Ignoring variable naming conventions
+
+## Common Patterns
+
+### API Authentication
+
+```yaml title="API Authentication Pattern"
+global:
+  variables:
+    # Use environment variables for configuration
+    BASE_URL: "${API_BASE_URL:https://api-staging.example.com}"
+    API_KEY: "${API_KEY}"
+collection:
+  requests:
+    - name: "Authenticated request"
+      url: "${BASE_URL}/users"
+      headers:
+        Authorization: "Bearer ${API_KEY}"
+```
+
+### Request Correlation IDs
+
+```yaml title="Request Correlation IDs"
+global:
+  variables:
+    CORRELATION_ID: "${UUID}"
+  defaults:
+    headers:
+      X-Correlation-ID: "${CORRELATION_ID}"
+      X-Request-Time: "${TIMESTAMP}"
+```
