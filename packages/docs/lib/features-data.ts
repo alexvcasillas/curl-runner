@@ -1,884 +1,762 @@
-import type { LucideIcon } from 'lucide-react';
-import {
-  ArrowLeftRight,
-  Camera,
-  CheckCircle,
-  Database,
-  Diff,
-  Eye,
-  FileJson,
-  Gauge,
-  GitBranch,
-  Layers,
-  Lock,
-  Network,
-  RotateCcw,
-  ShieldCheck,
-  Terminal,
-  TrendingUp,
-  Upload,
-  Wand2,
-  Zap,
-} from 'lucide-react';
+export interface Benefit {
+  title: string;
+  description: string;
+}
 
 export interface FeatureData {
   slug: string;
   title: string;
-  shortDescription: string;
+  /** H1: the benefit, as a sentence. */
+  headline: string;
   description: string;
-  icon: LucideIcon;
-  color: string;
-  gradient: string;
-  /** Number of trailing words in shortDescription to apply the gradient to. Default: 2 */
-  gradientWords?: number;
-  benefits: Array<{
-    title: string;
-    description: string;
-  }>;
-  codeExample: {
-    title: string;
-    code: string;
-  };
-  useCases: string[];
+  /** Must pass `curl-runner validate --strict` (tests/features/examples.test.ts). */
+  example: { filename: string; yaml: string };
+  benefits: [Benefit, Benefit, Benefit];
+  goodFor: [string, string, string, string];
   keywords: string[];
 }
 
-export const featuresData: Record<string, FeatureData> = {
-  'parallel-execution': {
+/** Trim the template's outer blank lines and end with one newline, like a file. */
+function yaml(source: string): string {
+  return `${source.replace(/^\n+|\s+$/g, '')}\n`;
+}
+
+/** Sidebar order (the `items` of the Feature mockup). */
+const FEATURES: FeatureData[] = [
+  {
     slug: 'parallel-execution',
     title: 'Parallel Execution',
-    shortDescription: 'Execute multiple HTTP requests simultaneously',
+    headline: 'Run the whole suite at once, not one request at a time.',
     description:
-      'Run multiple HTTP requests in parallel for dramatically faster test execution. Perfect for load testing, concurrent API validation, and performance optimization.',
-    icon: Gauge,
-    color: 'cyan',
-    gradient: 'from-cyan-400 to-cyan-600',
-    benefits: [
-      {
-        title: 'Blazing Fast Performance',
-        description:
-          'Execute hundreds of requests simultaneously, reducing total execution time by up to 10x compared to sequential execution.',
-      },
-      {
-        title: 'Concurrency Control',
-        description:
-          'Fine-tune parallel execution with maxConcurrency limits to respect API rate limits and prevent overwhelming servers.',
-      },
-      {
-        title: 'Smart Error Handling',
-        description:
-          'Continue execution even when individual requests fail, ensuring you get complete test results every time.',
-      },
-    ],
-    codeExample: {
-      title: 'Run requests in parallel with concurrency control',
-      code: `global:
+      'Switch a file to parallel execution and every request goes out together on one libcurl multi handle. Cap concurrency to stay inside rate limits, and keep going past failures so one broken endpoint never hides the rest.',
+    example: {
+      filename: 'parallel.yaml',
+      yaml: yaml(`
+global:
   execution: parallel
   maxConcurrency: 5
   continueOnError: true
   variables:
-    API_URL: https://api.example.com
+    BASE: https://api.example.com
 
 requests:
-  - name: Get Users
-    url: \${API_URL}/users
-  - name: Get Posts
-    url: \${API_URL}/posts
-  - name: Get Products
-    url: \${API_URL}/products
-  - name: Get Orders
-    url: \${API_URL}/orders`,
+  - name: List users
+    url: \${BASE}/users
+    expect:
+      status: 200
+
+  - name: List orders
+    url: \${BASE}/orders
+    expect:
+      status: 200
+
+  - name: List invoices
+    url: \${BASE}/invoices
+    expect:
+      status: 200
+`),
     },
-    useCases: [
-      'Load testing and performance validation',
-      'Running independent API tests simultaneously',
-      'Fetching data from multiple endpoints concurrently',
-      'Stress testing API rate limits',
+    benefits: [
+      {
+        title: 'One switch',
+        description:
+          'Set execution: parallel in the file, or pass -p on the command line. The requests stay exactly as they are.',
+      },
+      {
+        title: 'Bounded concurrency',
+        description:
+          'maxConcurrency caps how many requests are in flight. Leave it unset and everything starts together.',
+      },
+      {
+        title: 'Complete results',
+        description:
+          'With continueOnError, a failure doesn’t stop the run. You get a result for every request in one report.',
+      },
+    ],
+    goodFor: [
+      'Smoke-testing many independent endpoints',
+      'Large regression suites in CI',
+      'Checking that every service in a stack answers',
+      'Respecting a rate limit while still running concurrently',
     ],
     keywords: [
       'parallel execution',
       'concurrent requests',
-      'performance testing',
-      'load testing',
-      'async HTTP',
-      'concurrent API calls',
-      'parallel testing',
-      'fast request execution',
-      'simultaneous requests',
       'maxConcurrency',
+      'parallel API tests',
+      'continueOnError',
     ],
   },
-  'response-validation': {
+  {
     slug: 'response-validation',
     title: 'Response Validation',
-    shortDescription: 'Validate status, headers, and body content',
+    headline: 'Assert on what the API actually returned.',
     description:
-      'Automatically validate HTTP response status codes, headers, and body content. Ensure your APIs return exactly what you expect with powerful assertion capabilities.',
-    icon: CheckCircle,
-    color: 'green',
-    gradient: 'from-green-400 to-green-600',
+      'Describe the response you expect — status, headers, body fields and response time — and curl-runner checks every one. Match exact values, regex patterns, numeric ranges, a list of allowed values, or just that a field exists.',
+    example: {
+      filename: 'user.yaml',
+      yaml: yaml(`
+request:
+  name: Get user
+  url: https://api.example.com/users/1
+  expect:
+    status: 200
+    headers:
+      content-type: application/json
+    responseTime: "< 500"
+    body:
+      id: 1
+      email: "^[^@]+@[^@]+$"
+      role: [admin, editor]
+      age: ">= 18"
+      createdAt: "*"
+`),
+    },
     benefits: [
       {
-        title: 'Comprehensive Validation',
+        title: 'More than equality',
         description:
-          'Validate status codes, headers, and JSON body content with exact, partial, or pattern matching.',
+          'Regex patterns, ranges like ">= 18", one-of lists and "*" wildcards cover the values that change on every call.',
       },
       {
-        title: 'Regex Pattern Support',
+        title: 'Status, headers, body, time',
         description:
-          'Use powerful regex patterns to validate dynamic values like IDs, timestamps, and tokens.',
+          'Check the whole response in one expect block, including nested objects, arrays and a response-time budget.',
       },
       {
-        title: 'Clear Failure Reports',
+        title: 'Failures that explain themselves',
         description:
-          'Get detailed reports showing exactly what failed and what was expected vs actual.',
+          'Each failed check names the path, what was expected and what came back, so you fix the right thing first.',
       },
     ],
-    codeExample: {
-      title: 'Validate API responses with multiple criteria',
-      code: `requests:
-  - name: Get User Profile
-    url: https://api.example.com/users/1
-    method: GET
-    expect:
-      status: 200
-      headers:
-        content-type: application/json
-      body:
-        id: 1
-        username: "johndoe"
-        email: "^[a-z]+@[a-z]+\\\\.[a-z]+$"
-        active: true`,
-    },
-    useCases: [
-      'API contract testing and validation',
-      'Ensuring response format compliance',
-      'Regression testing for API changes',
-      'Validating error responses',
+    goodFor: [
+      'Contract checks against a running API',
+      'Catching a field that silently changed type',
+      'Holding endpoints to a response-time budget',
+      'Post-deploy smoke tests',
     ],
     keywords: [
       'response validation',
-      'API testing',
-      'status code validation',
-      'header validation',
-      'body validation',
-      'response assertions',
-      'validation rules',
-      'automated testing',
-      'contract testing',
+      'API assertions',
+      'expect status',
+      'regex validation',
+      'responseTime',
     ],
   },
-  'watch-mode': {
-    slug: 'watch-mode',
-    title: 'Watch Mode',
-    shortDescription: 'Auto-rerun on file changes',
-    description:
-      'Automatically re-execute HTTP requests when YAML files change. Perfect for rapid development and testing workflows with instant feedback.',
-    icon: Eye,
-    color: 'purple',
-    gradient: 'from-purple-400 to-purple-600',
-    benefits: [
-      {
-        title: 'Instant Feedback Loop',
-        description:
-          'See results immediately after saving your YAML file. No need to manually re-run commands.',
-      },
-      {
-        title: 'Smart Debouncing',
-        description:
-          'Configurable debounce delay prevents duplicate runs when files are saved rapidly.',
-      },
-      {
-        title: 'Clean Terminal Output',
-        description: 'Optional screen clearing keeps your terminal organized between runs.',
-      },
-    ],
-    codeExample: {
-      title: 'Enable watch mode for rapid development',
-      code: `# Terminal command
-curl-runner api.yaml --watch
-
-# With options
-curl-runner tests/ -w --watch-debounce 500
-
-# YAML configuration
-global:
-  watch:
-    enabled: true
-    debounce: 300
-    clear: true`,
-    },
-    useCases: [
-      'API development with instant feedback',
-      'Iterative test writing and debugging',
-      'Rapid prototyping and exploration',
-      'Live API monitoring during development',
-    ],
-    keywords: [
-      'watch mode',
-      'file watching',
-      'auto re-run',
-      'live reload',
-      'development workflow',
-      'instant feedback',
-      'rapid development',
-      'hot reload',
-    ],
-  },
-  'retry-mechanism': {
+  {
     slug: 'retry-mechanism',
     title: 'Retry Mechanism',
-    shortDescription: 'Automatic retry with backoff',
+    headline: 'Flaky networks shouldn’t fail your suite.',
     description:
-      'Automatically retry failed requests with configurable retry count, delay, and exponential backoff. Handle transient failures gracefully.',
-    icon: RotateCcw,
-    color: 'orange',
-    gradient: 'from-orange-400 to-orange-600',
-    benefits: [
-      {
-        title: 'Exponential Backoff',
-        description:
-          'Intelligent retry strategy with exponential backoff prevents overwhelming servers during failures.',
-      },
-      {
-        title: 'Configurable Policies',
-        description:
-          'Fine-tune retry count, delay, and backoff multiplier per request or globally.',
-      },
-      {
-        title: 'Selective Retry',
-        description: 'Choose which HTTP status codes or error types should trigger retries.',
-      },
-    ],
-    codeExample: {
-      title: 'Configure retry behavior with exponential backoff',
-      code: `global:
+      'Retry failed requests with a count, a delay and exponential backoff — per request or for the whole file. Rate limits and gateway errors get another try; a bad request doesn’t.',
+    example: {
+      filename: 'retry.yaml',
+      yaml: yaml(`
+global:
   defaults:
-    retry:
-      count: 3
-      delay: 1000
-      backoff: 2
+    retry: { count: 3, delay: 1000, backoff: 2 }
 
 requests:
-  - name: Flaky API
+  - name: Flaky upstream
     url: https://api.example.com/data
     retry:
       count: 5
       delay: 2000
-      retryableStatuses: [429, 500, 502, 503]`,
+`),
     },
-    useCases: [
-      'Handling intermittent network failures',
-      'Working with flaky or unreliable APIs',
-      'Rate limit recovery',
-      'Production API monitoring',
-    ],
-    keywords: [
-      'retry mechanism',
-      'exponential backoff',
-      'automatic retry',
-      'failure recovery',
-      'resilient requests',
-      'retry policy',
-      'error handling',
-      'transient failures',
-    ],
-  },
-  'ci-integration': {
-    slug: 'ci-integration',
-    title: 'CI/CD Integration',
-    shortDescription: 'Seamless pipeline integration',
-    description:
-      'Integrate curl-runner with any CI/CD platform using CI-friendly exit codes, configurable failure thresholds, and JSON output for easy reporting.',
-    icon: GitBranch,
-    color: 'blue',
-    gradient: 'from-blue-400 to-blue-600',
     benefits: [
       {
-        title: 'Smart Exit Codes',
+        title: 'Exponential backoff',
         description:
-          'Configurable exit codes with strict mode, failure count, and percentage thresholds.',
+          'Each attempt waits longer than the last, so a struggling server gets room to recover.',
       },
       {
-        title: 'Platform Agnostic',
+        title: 'Per request or global',
         description:
-          'Works seamlessly with GitHub Actions, GitLab CI, Jenkins, CircleCI, and more.',
+          'Set a default for the file, override it on the one endpoint that needs more patience.',
       },
       {
-        title: 'Artifact Generation',
+        title: 'Only the right failures',
         description:
-          'Export test results as JSON for integration with reporting and analytics tools.',
+          'Retries 429, 500, 502, 503 and 504, never a 400 your request deserved. Dropped connections and timeouts retry too, and a 429’s Retry-After is honoured.',
       },
     ],
-    codeExample: {
-      title: 'CI-friendly configuration with strict exit codes',
-      code: `# GitHub Actions
-- name: Run API Tests
-  env:
-    CURL_RUNNER_STRICT_EXIT: true
-  run: |
-    curl-runner tests/ \\
-      --continue-on-error \\
-      --strict-exit \\
-      --output-format json \\
-      --output results.json`,
-    },
-    useCases: [
-      'Automated API testing in CI/CD pipelines',
-      'Pre-deployment validation',
-      'Continuous integration testing',
-      'Regression test automation',
+    goodFor: [
+      'Intermittent network failures in CI',
+      'Rate-limited APIs that answer 429',
+      'Services that take a moment to warm up after a deploy',
+      'Smoke tests against shared staging environments',
     ],
-    keywords: [
-      'CI/CD integration',
-      'GitHub Actions',
-      'GitLab CI',
-      'Jenkins',
-      'CircleCI',
-      'exit codes',
-      'pipeline testing',
-      'automated testing',
-      'continuous integration',
-    ],
+    keywords: ['retry', 'exponential backoff', 'flaky tests', 'rate limiting', 'Retry-After'],
   },
-  'file-uploads': {
-    slug: 'file-uploads',
-    title: 'File Uploads',
-    shortDescription: 'Multipart form data support',
+  {
+    slug: 'watch-mode',
+    title: 'Watch Mode',
+    headline: 'Save the file, see the result.',
     description:
-      'Upload files and multipart form data with ease. Support for binary files, multiple file uploads, and custom content types.',
-    icon: Upload,
-    color: 'pink',
-    gradient: 'from-pink-400 to-pink-600',
-    benefits: [
-      {
-        title: 'Multipart Form Support',
-        description: 'Full support for multipart/form-data with mixed text and binary content.',
-      },
-      {
-        title: 'Multiple Files',
-        description: 'Upload multiple files in a single request with custom field names.',
-      },
-      {
-        title: 'Auto Content-Type',
-        description: 'Automatic content-type detection and header management for file uploads.',
-      },
-    ],
-    codeExample: {
-      title: 'Upload files with multipart form data',
-      code: `requests:
-  - name: Upload Avatar
-    url: https://api.example.com/upload
-    method: POST
-    files:
-      avatar: ./images/profile.jpg
-      document: ./docs/resume.pdf
-    body:
-      userId: 123
-      description: "User profile update"`,
-    },
-    useCases: [
-      'Testing file upload endpoints',
-      'Uploading images and documents',
-      'Multipart form data validation',
-      'Binary content uploads',
-    ],
-    keywords: [
-      'file upload',
-      'multipart form',
-      'form data',
-      'binary upload',
-      'image upload',
-      'file attachment',
-      'POST files',
-      'upload testing',
-    ],
-  },
-  'output-formats': {
-    slug: 'output-formats',
-    title: 'Output Formats',
-    shortDescription: 'Multiple export formats',
-    description:
-      'Export test results in multiple formats including JSON, CSV, HTML, and custom templates. Perfect for reporting and integration with other tools.',
-    icon: FileJson,
-    color: 'yellow',
-    gradient: 'from-yellow-400 to-yellow-600',
-    benefits: [
-      {
-        title: 'Multiple Formats',
-        description:
-          'Export results as JSON, CSV, HTML, or create custom templates for your needs.',
-      },
-      {
-        title: 'Rich Reporting',
-        description:
-          'Generate comprehensive reports with request/response details, timing, and validation results.',
-      },
-      {
-        title: 'CI/CD Ready',
-        description:
-          'Machine-readable formats for easy integration with CI/CD and analytics tools.',
-      },
-    ],
-    codeExample: {
-      title: 'Export results in various formats',
-      code: `# JSON output
-curl-runner tests/ --output-format json --output results.json
-
-# CSV output
-curl-runner tests/ --output-format csv --output report.csv
-
-# Pretty formatted output
-curl-runner tests/ --output-format pretty --pretty-level detailed`,
-    },
-    useCases: [
-      'Generating test reports',
-      'Exporting data for analysis',
-      'CI/CD artifact creation',
-      'Custom reporting workflows',
-    ],
-    keywords: [
-      'output formats',
-      'JSON export',
-      'CSV export',
-      'HTML report',
-      'test reporting',
-      'export results',
-      'format conversion',
-      'data export',
-    ],
-  },
-  'response-storage': {
-    slug: 'response-storage',
-    title: 'Response Storage',
-    shortDescription: 'Save responses to disk',
-    description:
-      'Automatically save HTTP responses to disk for later analysis, debugging, or archival. Support for binary content and custom file naming.',
-    icon: Database,
-    color: 'indigo',
-    gradient: 'from-indigo-400 to-indigo-600',
-    benefits: [
-      {
-        title: 'Automatic Persistence',
-        description: 'Save all responses or selectively store specific ones based on criteria.',
-      },
-      {
-        title: 'Binary Support',
-        description: 'Store images, PDFs, and other binary content with proper file extensions.',
-      },
-      {
-        title: 'Custom Naming',
-        description:
-          'Configure file naming patterns with variables and timestamps for organization.',
-      },
-    ],
-    codeExample: {
-      title: 'Save responses to disk automatically',
-      code: `global:
-  output:
-    saveResponses: true
-    responseDir: ./responses
+      'Watch mode runs your requests, then runs them again every time a watched YAML file changes. Edits are debounced, the screen is cleared between runs, and a failing run never stops the watcher.',
+    example: {
+      filename: 'health.yaml',
+      yaml: yaml(`
+# Same as: curl-runner health.yaml --watch
+global:
+  watch:
+    enabled: true
+    debounce: 300
+    clear: true
 
 requests:
-  - name: Download Report
-    url: https://api.example.com/report.pdf
-    saveResponse: report-\${timestamp}.pdf
-
-  - name: Get Data
-    url: https://api.example.com/data
-    saveResponse: data.json`,
+  - name: Health check
+    url: http://localhost:3000/health
+    expect:
+      status: 200
+`),
     },
-    useCases: [
-      'Archiving API responses',
-      'Debugging response content',
-      'Downloading files and reports',
-      'Response comparison over time',
+    benefits: [
+      {
+        title: 'A tight loop',
+        description:
+          'Change a header, a body or an assertion and the run starts again on its own. No switching windows.',
+      },
+      {
+        title: 'Debounced',
+        description:
+          'A burst of saves becomes one run. A change during a run queues exactly one more.',
+      },
+      {
+        title: 'Flag or file',
+        description:
+          'Start it with --watch for a session, or set global.watch in the file so the suite always watches.',
+      },
+    ],
+    goodFor: [
+      'Building a new endpoint against a local server',
+      'Writing assertions for an unfamiliar API',
+      'Debugging a request until it passes',
+      'Keeping a health check on screen while you work',
+    ],
+    keywords: ['watch mode', 'file watcher', 'live reload', 'debounce', 'development loop'],
+  },
+  {
+    slug: 'ci-integration',
+    title: 'CI Integration',
+    headline: 'Exit codes your pipeline can trust.',
+    description:
+      'curl-runner is one binary that exits non-zero when requests fail. Decide how strict to be — any failure, more than N, or more than a percentage — and save the results as JSON for the build to keep.',
+    example: {
+      filename: 'ci.yaml',
+      yaml: yaml(`
+# curl-runner tests/ --output results.json
+global:
+  continueOnError: true
+  ci:
+    failOnPercentage: 5
+
+requests:
+  - name: Checkout is up
+    url: https://staging.example.com/api/checkout/health
+    expect:
+      status: 200
+      responseTime: "< 1000"
+`),
+    },
+    benefits: [
+      {
+        title: 'Your failure threshold',
+        description:
+          'strictExit fails on any failed request; failOn and failOnPercentage tolerate a known amount of noise.',
+      },
+      {
+        title: 'Runs anywhere',
+        description:
+          'A single static binary with no runtime to install — GitHub Actions, GitLab CI, Jenkins or a cron job.',
+      },
+      {
+        title: 'Results as an artifact',
+        description:
+          '--output writes the run to a file, with secrets redacted, ready to upload or parse.',
+      },
+    ],
+    goodFor: [
+      'Blocking a deploy when the API breaks',
+      'Nightly checks against production',
+      'Post-deploy verification in a pipeline',
+      'Tolerating a known-flaky endpoint without ignoring it',
+    ],
+    keywords: ['CI/CD', 'GitHub Actions', 'exit codes', 'strict exit', 'API testing pipeline'],
+  },
+  {
+    slug: 'file-uploads',
+    title: 'File Uploads',
+    headline: 'Multipart uploads without the curl flags.',
+    description:
+      'Send multipart/form-data with formData: plain fields and file attachments side by side. Set a filename and content type when the server cares, and let curl-runner build the request.',
+    example: {
+      filename: 'upload.yaml',
+      yaml: yaml(`
+request:
+  name: Upload invoice
+  url: https://api.example.com/invoices
+  method: POST
+  formData:
+    customerId: 42
+    paid: false
+    invoice:
+      file: ./fixtures/invoice.pdf
+      filename: invoice-2026-10.pdf
+      contentType: application/pdf
+  expect:
+    status: 201
+`),
+    },
+    benefits: [
+      {
+        title: 'Fields and files together',
+        description:
+          'Strings, numbers and booleans sit next to file attachments in one formData map.',
+      },
+      {
+        title: 'Control the part',
+        description: 'Override the filename the server sees and the part’s content type, per file.',
+      },
+      {
+        title: 'Paths stay in the project',
+        description:
+          'File paths resolve against the working directory and can’t escape it unless you pass --allow-path.',
+      },
+    ],
+    goodFor: [
+      'Testing avatar and document upload endpoints',
+      'Import endpoints that take a CSV',
+      'Forms that mix metadata with an attachment',
+      'Regression tests for file-size and type limits',
+    ],
+    keywords: ['file upload', 'multipart', 'form data', 'formData', 'multipart/form-data'],
+  },
+  {
+    slug: 'output-formats',
+    title: 'Output Formats',
+    headline: 'Readable in a terminal, parseable in a pipeline.',
+    description:
+      'Pretty output for people, JSON for tools, raw response bodies for piping. Choose how much detail to show, and save the full results to a file in the same run.',
+    example: {
+      filename: 'report.yaml',
+      yaml: yaml(`
+# Override per run: curl-runner report.yaml --output-format json
+global:
+  output:
+    format: pretty
+    prettyLevel: detailed
+    showHeaders: true
+    showMetrics: true
+    saveToFile: results.json
+
+requests:
+  - name: List users
+    url: https://api.example.com/users
+`),
+    },
+    benefits: [
+      {
+        title: 'Three formats',
+        description:
+          'pretty for reading, json for jq and dashboards, raw for response bodies only.',
+      },
+      {
+        title: 'Three levels of detail',
+        description:
+          'minimal prints one line per request; standard and detailed add more, up to a full timing breakdown.',
+      },
+      {
+        title: 'Saved and redacted',
+        description:
+          'saveToFile or --output writes the results to disk, with secrets redacted as in the terminal.',
+      },
+    ],
+    goodFor: [
+      'Feeding results into jq or a dashboard',
+      'Quiet CI logs that only show failures',
+      'Inspecting headers and timings while debugging',
+      'Piping a response body into another tool',
+    ],
+    keywords: ['output formats', 'JSON output', 'pretty output', 'raw output', 'test reports'],
+  },
+  {
+    slug: 'response-storage',
+    title: 'Response Storage',
+    headline: 'Use one response in the next request.',
+    description: `Store values from a response — a body field, a header, the status — and reference them later as \${store.name}. Chain create-then-read, log in once and reuse the token, all in one file.`,
+    example: {
+      filename: 'signup.yaml',
+      yaml: yaml(`
+requests:
+  - name: Create user
+    url: https://api.example.com/users
+    method: POST
+    headers:
+      Content-Type: application/json
+    body: { name: Ada }
+    store:
+      userId: body.id
+      requestId: headers.x-request-id
+
+  - name: Fetch the new user
+    url: https://api.example.com/users/\${store.userId}
+    headers:
+      X-Request-ID: \${store.requestId}
+    expect:
+      status: 200
+`),
+    },
+    benefits: [
+      {
+        title: 'Real workflows',
+        description:
+          'Create a resource, then read, update and delete it using the ID the API just returned.',
+      },
+      {
+        title: 'Any part of the response',
+        description:
+          'Paths like body.data.items[0].id, headers.x-request-id and status pick exactly the value you need.',
+      },
+      {
+        title: 'Plain interpolation',
+        description: `\${store.name} works anywhere a variable does — URLs, headers, bodies — in sequential runs, the default.`,
+      },
+    ],
+    goodFor: [
+      'Login flows that hand out a token',
+      'CRUD tests that need a fresh ID',
+      'Following a pagination cursor',
+      'Correlating requests by ID',
     ],
     keywords: [
       'response storage',
-      'save responses',
-      'download files',
-      'archive responses',
-      'store output',
-      'persist responses',
-      'file download',
+      'request chaining',
+      'store values',
+      'auth token reuse',
+      'API workflows',
     ],
   },
-  'conditional-execution': {
+  {
     slug: 'conditional-execution',
     title: 'Conditional Execution',
-    shortDescription: 'Run requests based on conditions',
+    headline: 'Run a request only when it makes sense.',
     description:
-      'Execute requests conditionally based on previous responses, environment variables, or custom logic. Build complex test flows with ease.',
-    icon: Zap,
-    color: 'violet',
-    gradient: 'from-violet-400 to-violet-600',
+      'Add when: to a request and it runs only if the condition holds against values stored earlier. Write a one-line expression, or combine checks with all and any. Skipped requests are reported with the reason.',
+    example: {
+      filename: 'account.yaml',
+      yaml: yaml(`
+requests:
+  - name: Get account
+    url: https://api.example.com/account
+    store:
+      plan: body.plan
+      status: status
+
+  - name: Load premium reports
+    url: https://api.example.com/reports/premium
+    when: store.plan == premium
+
+  - name: Open an incident
+    url: https://api.example.com/incidents
+    method: POST
+    headers:
+      Content-Type: application/json
+    body: { source: smoke-test }
+    when:
+      any:
+        - { left: store.status, operator: ">=", right: 500 }
+        - { left: store.plan, operator: not-exists }
+`),
+    },
     benefits: [
       {
-        title: 'Dynamic Workflows',
-        description: 'Create complex test scenarios that adapt based on API responses and state.',
-      },
-      {
-        title: 'Conditional Logic',
-        description: 'Use if/else conditions, comparisons, and boolean logic to control execution.',
-      },
-      {
-        title: 'Variable Dependencies',
+        title: 'Readable conditions',
         description:
-          'Make requests conditional on environment variables or previous response data.',
+          'store.plan == premium reads like what it does. Comparisons, contains, matches, exists and not-exists are built in.',
+      },
+      {
+        title: 'Combine checks',
+        description:
+          'all requires every condition, any needs just one — enough for real branching without a scripting language.',
+      },
+      {
+        title: 'Visible skips',
+        description:
+          'A skipped request shows up in the output and the summary, so nothing silently disappears from the run.',
       },
     ],
-    codeExample: {
-      title: 'Execute requests conditionally',
-      code: `requests:
-  - name: Login
-    url: https://api.example.com/login
-    method: POST
-    body:
-      username: testuser
-      password: testpass
-
-  - name: Get Protected Resource
-    url: https://api.example.com/protected
-    condition: \${login.status} == 200
-    headers:
-      Authorization: Bearer \${login.body.token}`,
-    },
-    useCases: [
-      'Multi-step authentication flows',
-      'Environment-specific testing',
-      'Dependent request chains',
-      'Complex integration scenarios',
+    goodFor: [
+      'Feature-flagged or plan-gated endpoints',
+      'Cleanup steps that only run after a create',
+      'Branching on an earlier status code',
+      'Suites shared between environments',
     ],
     keywords: [
       'conditional execution',
-      'if conditions',
-      'dynamic workflows',
-      'request chaining',
-      'conditional logic',
-      'flow control',
-      'dependent requests',
+      'when condition',
+      'API workflows',
+      'skip requests',
+      'branching tests',
     ],
   },
-  'performance-profiling': {
+  {
     slug: 'performance-profiling',
     title: 'Performance Profiling',
-    shortDescription: 'Detailed timing metrics',
+    headline: 'Latency percentiles from the YAML you already have.',
     description:
-      'Get comprehensive performance metrics including DNS lookup, TCP connection, TLS handshake, and response times. Identify bottlenecks and optimize API performance.',
-    icon: TrendingUp,
-    color: 'emerald',
-    gradient: 'from-emerald-400 to-emerald-600',
-    benefits: [
-      {
-        title: 'Detailed Metrics',
-        description: 'Track DNS, TCP, TLS, TTFB, and total response times for every request.',
-      },
-      {
-        title: 'Performance Insights',
-        description:
-          'Identify slow endpoints and bottlenecks with comprehensive timing breakdowns.',
-      },
-      {
-        title: 'Trend Analysis',
-        description: 'Export metrics for historical analysis and performance trend tracking.',
-      },
-    ],
-    codeExample: {
-      title: 'Enable performance profiling',
-      code: `global:
-  output:
-    showMetrics: true
-    showTimings: true
-    saveMetrics: performance-\${timestamp}.json
+      'Profile mode sends each request many times and reports min, max, mean, median, p95, p99 and standard deviation. Exclude warmup runs, add concurrency, and export the raw timings.',
+    example: {
+      filename: 'search.yaml',
+      yaml: yaml(`
+# curl-runner search.yaml --profile-histogram --profile-export timings.csv
+global:
+  profile:
+    iterations: 100
+    warmup: 5
+    concurrency: 4
 
 requests:
-  - name: API Endpoint
-    url: https://api.example.com/data
-    profile: true`,
+  - name: Search
+    url: https://api.example.com/search?q=shoes
+`),
     },
-    useCases: [
-      'API performance testing',
-      'Identifying latency issues',
-      'Network performance analysis',
-      'Load testing metrics',
+    benefits: [
+      {
+        title: 'Percentiles, not one number',
+        description:
+          'p50, p95 and p99 show the tail a single timing hides, alongside the failure rate.',
+      },
+      {
+        title: 'Honest numbers',
+        description:
+          'Warmup iterations are left out of the statistics, so a cold start doesn’t skew the result.',
+      },
+      {
+        title: 'Take the data with you',
+        description:
+          'Print an ASCII histogram in the terminal, or export every timing as JSON or CSV.',
+      },
     ],
-    keywords: [
-      'performance profiling',
-      'timing metrics',
-      'API performance',
-      'latency analysis',
-      'TTFB',
-      'response time',
-      'performance testing',
-      'metrics tracking',
+    goodFor: [
+      'Comparing an endpoint before and after a change',
+      'Spotting tail latency on a slow route',
+      'Quick checks under light concurrent load',
+      'Collecting timings for a spreadsheet or chart',
     ],
+    keywords: ['performance profiling', 'latency percentiles', 'p95', 'p99', 'API benchmarking'],
   },
-  'response-diffing': {
+  {
     slug: 'response-diffing',
     title: 'Response Diffing',
-    shortDescription: 'Compare responses across environments',
+    headline: 'See what changed between two runs.',
     description:
-      'Compare API responses between different environments (staging vs production) to detect inconsistencies and ensure parity.',
-    icon: Diff,
-    color: 'teal',
-    gradient: 'from-teal-400 to-teal-600',
-    benefits: [
-      {
-        title: 'Environment Parity',
-        description: 'Ensure staging and production APIs return consistent responses.',
-      },
-      {
-        title: 'Visual Diffs',
-        description: 'See color-coded differences highlighting additions, deletions, and changes.',
-      },
-      {
-        title: 'Automated Comparison',
-        description: 'Automatically compare responses and flag discrepancies in CI/CD.',
-      },
-    ],
-    codeExample: {
-      title: 'Compare responses across environments',
-      code: `global:
+      'Save a run as a labelled baseline, then compare later runs — or another environment — against it. curl-runner reports every added, removed and changed field, in the terminal, as JSON or as Markdown.',
+    example: {
+      filename: 'product.yaml',
+      yaml: yaml(`
+# curl-runner product.yaml --diff-save --diff-label staging
+# curl-runner product.yaml --diff --diff-compare staging
+global:
   diff:
-    enabled: true
-    environments:
-      - staging
-      - production
+    dir: __baselines__
+    outputFormat: markdown
 
 requests:
-  - name: Get User
-    url:
-      staging: https://staging.api.com/user/1
-      production: https://api.com/user/1`,
+  - name: Get product
+    url: https://api.example.com/products/7
+    diff: true
+`),
     },
-    useCases: [
-      'Staging vs production validation',
-      'API version comparison',
-      'Environment parity testing',
-      'Migration validation',
+    benefits: [
+      {
+        title: 'Labelled baselines',
+        description:
+          'Save runs as staging, production or v1.4 and compare any run against any label.',
+      },
+      {
+        title: 'Offline comparison',
+        description:
+          'curl-runner diff staging production compares two stored baselines without sending a request.',
+      },
+      {
+        title: 'Reports for humans and tools',
+        description:
+          'Terminal output while you work, JSON for scripts, Markdown to paste into a pull request.',
+      },
+    ],
+    goodFor: [
+      'Checking staging matches production',
+      'Reviewing what a refactor changed in responses',
+      'Catching unannounced upstream API changes',
+      'Attaching a response diff to a pull request',
     ],
     keywords: [
       'response diffing',
-      'environment comparison',
-      'diff tool',
-      'API comparison',
-      'response comparison',
-      'staging vs production',
-      'parity testing',
+      'API diff',
+      'baseline comparison',
+      'environment parity',
+      'regression detection',
     ],
   },
-  'dry-run': {
-    slug: 'dry-run',
-    title: 'Dry Run Mode',
-    shortDescription: 'Preview commands without executing',
-    description:
-      'Preview the exact curl commands that would be executed without making actual API calls. Perfect for debugging configurations and validating request setups.',
-    icon: Terminal,
-    color: 'cyan',
-    gradient: 'from-cyan-400 to-cyan-600',
-    benefits: [
-      {
-        title: 'Preview Commands',
-        description:
-          'See the exact curl command that would be executed, including all headers, body, and options.',
-      },
-      {
-        title: 'Safe Debugging',
-        description:
-          'Debug and validate configurations without making actual API calls or side effects.',
-      },
-      {
-        title: 'Variable Validation',
-        description:
-          'Verify that variable interpolation and environment settings are working correctly.',
-      },
-    ],
-    codeExample: {
-      title: 'Preview curl commands without execution',
-      code: `# Basic dry run
-curl-runner api.yaml --dry-run
-
-# Short form
-curl-runner api.yaml -n
-
-# With verbose output
-curl-runner api.yaml -n -v
-
-# Output example:
-#   Command:
-#     curl -X POST -H 'Authorization: Bearer token' \\
-#       -d '{"name":"test"}' https://api.example.com/users
-#   ✓ Create User [api]
-#      ├─ POST: https://api.example.com/users
-#      ├─ ✓ Status: DRY-RUN
-#      └─ Duration: 0ms | 0 B`,
-    },
-    useCases: [
-      'Debugging request configurations',
-      'Validating authentication headers',
-      'Verifying variable interpolation',
-      'Reviewing commands before production runs',
-    ],
-    keywords: [
-      'dry run',
-      'preview commands',
-      'debug requests',
-      'validate configuration',
-      'command preview',
-      'curl preview',
-      'safe testing',
-      'no execution',
-    ],
-  },
-  snapshots: {
+  {
     slug: 'snapshots',
     title: 'Snapshots',
-    shortDescription: 'Snapshot testing for APIs',
+    headline: 'Catch every change to a response.',
     description:
-      'Create and compare response snapshots to detect unintended API changes. Perfect for regression testing and change detection.',
-    icon: Camera,
-    color: 'rose',
-    gradient: 'from-rose-400 to-rose-600',
-    benefits: [
-      {
-        title: 'Regression Detection',
-        description: 'Automatically detect unintended changes in API responses over time.',
-      },
-      {
-        title: 'Easy Updates',
-        description: 'Review and update snapshots when intentional changes are made.',
-      },
-      {
-        title: 'Version Control',
-        description: 'Store snapshots in version control for team collaboration and history.',
-      },
-    ],
-    codeExample: {
-      title: 'Create and compare response snapshots',
-      code: `global:
-  snapshots:
-    enabled: true
-    dir: ./__snapshots__
-    updateSnapshots: false
+      'The first run saves the response to a snapshot file next to your tests; every later run compares against it. Review intentional changes, update the snapshot and commit it with your code.',
+    example: {
+      filename: 'me.yaml',
+      yaml: yaml(`
+# curl-runner me.yaml --snapshot --ci-snapshot
+global:
+  snapshot:
+    dir: __snapshots__
+    updateMode: failing
 
 requests:
-  - name: Get User Profile
-    url: https://api.example.com/users/1
-    snapshot: true`,
+  - name: Get profile
+    url: https://api.example.com/me
+    snapshot: true
+`),
     },
-    useCases: [
-      'Regression testing',
-      'API contract validation',
-      'Change detection',
-      'Documentation of expected responses',
-    ],
-    keywords: [
-      'snapshots',
-      'snapshot testing',
-      'regression testing',
-      'change detection',
-      'API snapshots',
-      'response snapshots',
-      'contract testing',
-    ],
-  },
-  http2: {
-    slug: 'http2',
-    title: 'HTTP/2 Support',
-    shortDescription: 'Enable HTTP/2 protocol with multiplexing',
-    description:
-      'Use HTTP/2 protocol for faster, more efficient requests with multiplexing support. Reduce latency and improve throughput for modern APIs.',
-    icon: Network,
-    color: 'sky',
-    gradient: 'from-sky-400 to-sky-600',
     benefits: [
       {
-        title: 'Multiplexing',
+        title: 'No expectations to write',
         description:
-          'Send multiple requests over a single connection simultaneously, reducing overhead and latency.',
+          'The whole response body becomes the assertion. Any field that changes shows up as a diff.',
       },
       {
-        title: 'Header Compression',
+        title: 'Deliberate updates',
         description:
-          'HTTP/2 compresses headers automatically, reducing bandwidth usage for repeated requests.',
+          'Use -u to update every snapshot, or --update-failing to refresh only the ones that changed.',
       },
       {
-        title: 'Better Performance',
+        title: 'Strict in CI',
         description:
-          'Take advantage of modern server infrastructure with improved connection efficiency.',
+          '--ci-snapshot fails the run when a snapshot is missing instead of quietly writing a new one.',
       },
     ],
-    codeExample: {
-      title: 'Enable HTTP/2 for all requests',
-      code: `# CLI flag
-curl-runner api.yaml --http2
+    goodFor: [
+      'Large responses that are tedious to assert field by field',
+      'Locking down a public API’s shape',
+      'Refactors that must not change output',
+      'Reviewing response changes in code review',
+    ],
+    keywords: [
+      'snapshot testing',
+      'API snapshots',
+      'regression testing',
+      'golden files',
+      'response comparison',
+    ],
+  },
+  {
+    slug: 'dry-run',
+    title: 'Dry Run',
+    headline: 'See the exact curl command before it runs.',
+    description:
+      'Dry run resolves variables, builds every request and prints the equivalent curl command — without sending anything. Secrets in the output are redacted.',
+    example: {
+      filename: 'create-user.yaml',
+      yaml: yaml(`
+# Same as: curl-runner create-user.yaml --dry-run
+global:
+  dryRun: true
 
-# Environment variable
-CURL_RUNNER_HTTP2=true curl-runner api.yaml
-
-# YAML configuration (global)
+requests:
+  - name: Create user
+    url: https://api.example.com/users
+    method: POST
+    headers:
+      Authorization: Bearer \${API_TOKEN}
+      Content-Type: application/json
+    body: { name: Ada }
+`),
+    },
+    benefits: [
+      {
+        title: 'Nothing is sent',
+        description: 'Safe to point at production: requests are built and printed, never executed.',
+      },
+      {
+        title: 'Copy-paste curl',
+        description:
+          'Each request prints as a curl command you can run by hand or share in a bug report.',
+      },
+      {
+        title: 'Variables resolved',
+        description:
+          'See the final URL, headers and body after interpolation — the fastest way to find a typo in a variable.',
+      },
+    ],
+    goodFor: [
+      'Checking a new file before it touches a real API',
+      'Debugging variable interpolation',
+      'Sharing a reproducible request with a teammate',
+      'Reviewing destructive requests before running them',
+    ],
+    keywords: ['dry run', 'preview requests', 'curl command', 'debugging', 'safe testing'],
+  },
+  {
+    slug: 'http2',
+    title: 'HTTP/2',
+    headline: 'Test over the protocol you ship.',
+    description:
+      'Ask libcurl for HTTP/2 on one request, on every request in a file, or for a whole run with --http2. Servers that don’t support it fall back to HTTP/1.1.',
+    example: {
+      filename: 'feed.yaml',
+      yaml: yaml(`
+# Or for a whole run: curl-runner feed.yaml --http2
 global:
   defaults:
     http2: true
 
 requests:
-  - name: Fast API Call
-    url: https://api.example.com/data
+  - name: Feed over HTTP/2
+    url: https://api.example.com/feed
 
-# YAML configuration (per-request)
-requests:
-  - name: HTTP/2 Request
-    url: https://api.example.com/data
-    http2: true`,
+  - name: Legacy endpoint
+    url: https://legacy.example.com/feed
+    http2: false
+`),
     },
-    useCases: [
-      'High-performance API testing',
-      'Testing HTTP/2 enabled servers',
-      'Reducing latency in parallel requests',
-      'Modern microservices communication',
-    ],
-    keywords: [
-      'HTTP/2',
-      'http2',
-      'multiplexing',
-      'protocol',
-      'performance',
-      'latency',
-      'connection pooling',
-      'header compression',
-      'modern APIs',
-    ],
-  },
-  'connection-pooling': {
-    slug: 'connection-pooling',
-    title: 'Connection Pooling',
-    shortDescription: 'Reuse TCP connections with HTTP/2 multiplexing',
-    description:
-      'Keep TCP connections alive and reuse them for requests to the same host. Combined with HTTP/2 multiplexing, dramatically reduce connection overhead and improve performance for parallel requests.',
-    icon: Layers,
-    color: 'amber',
-    gradient: 'from-amber-400 to-amber-600',
     benefits: [
       {
-        title: 'Single TCP Handshake',
+        title: 'Production parity',
         description:
-          'Establish one TCP connection per host instead of N connections, eliminating redundant handshakes.',
+          'Exercise the same protocol your clients use, including the server’s HTTP/2 configuration.',
       },
       {
-        title: 'Single TLS Negotiation',
+        title: 'Granular control',
         description:
-          'Perform TLS handshake once per host, saving significant time on HTTPS requests.',
+          'A file default, a per-request override, or a flag for one run — whichever fits.',
       },
       {
-        title: 'HTTP/2 Stream Multiplexing',
+        title: 'Built on libcurl',
         description:
-          'Multiplex multiple requests as streams over a single connection for maximum throughput.',
+          'Negotiation and fallback come from libcurl’s mature HTTP/2 support, not a custom client.',
       },
     ],
-    codeExample: {
-      title: 'Enable connection pooling with HTTP/2 multiplexing',
-      code: `global:
+    goodFor: [
+      'APIs served behind HTTP/2 load balancers',
+      'Verifying a server’s HTTP/2 setup',
+      'Comparing HTTP/1.1 and HTTP/2 behaviour',
+      'Testing gRPC-adjacent HTTP/2 gateways',
+    ],
+    keywords: ['HTTP/2', 'http2', 'multiplexing', 'libcurl', 'protocol testing'],
+  },
+  {
+    slug: 'connection-pooling',
+    title: 'Connection Pooling',
+    headline: 'Reuse connections across parallel requests.',
+    description:
+      'With pooling on, parallel requests share connections to the same host instead of each opening its own, and HTTP/2 multiplexing is switched on. Tune per-host limits, keepalive and connect timeout.',
+    example: {
+      filename: 'pool.yaml',
+      yaml: yaml(`
+global:
   execution: parallel
   connectionPool:
     enabled: true
@@ -887,294 +765,247 @@ requests:
     connectTimeout: 30
 
 requests:
-  - name: Get Users
+  - name: Users
     url: https://api.example.com/users
-  - name: Get Posts
+  - name: Posts
     url: https://api.example.com/posts
-  - name: Get Comments
+  - name: Comments
     url: https://api.example.com/comments
-  # All 3 requests share ONE TCP + TLS connection!`,
+`),
     },
-    useCases: [
-      'High-volume API testing with reduced latency',
-      'Parallel requests to the same host',
-      'Performance-critical test suites',
-      'Load testing with connection reuse',
+    benefits: [
+      {
+        title: 'Fewer handshakes',
+        description:
+          'Requests to the same host reuse open connections, so TCP and TLS setup isn’t repeated for each one.',
+      },
+      {
+        title: 'HTTP/2 multiplexing',
+        description:
+          'Many requests share one connection as separate streams when the server supports HTTP/2.',
+      },
+      {
+        title: 'Tunable',
+        description:
+          'maxStreamsPerHost, keepaliveTime and connectTimeout in YAML, or --connection-pool and friends on the command line.',
+      },
+    ],
+    goodFor: [
+      'Large parallel suites against a single API host',
+      'Hosts with expensive TLS setup',
+      'Keeping the connection count low on shared environments',
+      'Mirroring how a pooled production client behaves',
     ],
     keywords: [
       'connection pooling',
-      'TCP reuse',
-      'keep-alive',
+      'keepalive',
       'HTTP/2 multiplexing',
-      'stream multiplexing',
-      'connection reuse',
-      'performance optimization',
-      'parallel requests',
+      'TCP reuse',
       'TLS handshake',
-      'batch requests',
     ],
   },
-  'yaml-wizard': {
+  {
     slug: 'yaml-wizard',
     title: 'YAML Wizard',
-    shortDescription: 'Interactive CLI for creating YAML files',
+    headline: 'Answer a few questions, get a working test.',
     description:
-      'Create curl-runner YAML configuration files interactively with a guided wizard. No need to memorize syntax - just answer prompts and get a working configuration file.',
-    icon: Wand2,
-    color: 'fuchsia',
-    gradient: 'from-fuchsia-400 to-fuchsia-600',
+      'curl-runner init asks for a URL, a method and a name and writes the file. The full wizard walks through headers, body, auth, retries and validation, starting from a template if you like — then offers to run it.',
+    example: {
+      filename: 'request.yaml',
+      yaml: yaml(`
+# curl-runner init --wizard, "API Test" template
+request:
+  name: List users
+  url: https://api.example.com/users
+  method: GET
+  expect:
+    status: 200
+    responseTime: "< 2000"
+`),
+    },
     benefits: [
       {
-        title: 'Zero Learning Curve',
+        title: 'Start from a template',
         description:
-          'Get started immediately without reading documentation. The wizard guides you through all options step by step.',
+          'Basic GET, basic POST, API test, file upload and auth flow templates fill in sensible defaults.',
       },
       {
-        title: 'Template Support',
+        title: 'Edit what you have',
         description:
-          'Start from pre-built templates for common use cases like API tests, file uploads, and authentication flows.',
+          'curl-runner edit opens an existing file in the wizard and keeps the keys it doesn’t ask about.',
       },
       {
-        title: 'Edit Existing Files',
+        title: 'Run it straight away',
         description:
-          'Load and modify existing YAML files through the wizard. Perfect for updating configurations without manual editing.',
+          'The wizard saves the file and offers to run it, so you see a real response in the first minute.',
       },
     ],
-    codeExample: {
-      title: 'Create YAML files interactively',
-      code: `# Quick create with prompts
-curl-runner init
-
-# Full interactive wizard
-curl-runner init --wizard
-
-# Quick create with URL
-curl-runner init https://api.example.com/users
-
-# Edit existing file
-curl-runner edit api-test.yaml
-
-# Save to custom file
-curl-runner init -w -o my-api.yaml`,
-    },
-    useCases: [
-      'Getting started with curl-runner quickly',
-      'Creating complex configurations without syntax errors',
-      'Exploring available options and features',
-      'Updating existing YAML files safely',
+    goodFor: [
+      'Writing your first curl-runner file',
+      'Teammates new to the YAML format',
+      'Scaffolding a test for a new endpoint',
+      'Adding auth or retries to an existing file',
     ],
-    keywords: [
-      'yaml wizard',
-      'interactive cli',
-      'configuration generator',
-      'create yaml',
-      'init command',
-      'edit command',
-      'wizard mode',
-      'guided setup',
-      'templates',
-      'quick start',
-    ],
+    keywords: ['YAML wizard', 'curl-runner init', 'interactive CLI', 'scaffolding', 'templates'],
   },
-  validate: {
+  {
     slug: 'validate',
     title: 'YAML Validation',
-    shortDescription: 'Validate YAML files and auto-fix issues',
+    headline: 'Catch the typo before the run.',
     description:
-      'Validate curl-runner YAML configuration files against the schema and curl options. Discover issues, get fix suggestions, and auto-fix common problems with a single command.',
-    icon: ShieldCheck,
-    color: 'lime',
-    gradient: 'from-lime-400 to-lime-600',
+      'curl-runner validate checks every file against the schema: unknown keys with suggestions, invalid values, risky settings. --fix repairs what it safely can, and --strict turns warnings into failures.',
+    example: {
+      filename: 'user.yaml',
+      yaml: yaml(`
+# curl-runner validate --strict tests/
+#   ● request.timout: Unknown key "timout" (did you mean "timeout"?)
+#     fix: Rename to "timeout"
+request:
+  name: Get user
+  url: https://api.example.com/users/1
+  timeout: 5000
+  expect:
+    status: 200
+`),
+    },
     benefits: [
       {
-        title: 'Catch Errors Early',
-        description:
-          'Validate YAML files before running them. Catch typos, invalid options, and schema violations immediately.',
+        title: 'Suggestions, not just errors',
+        description: 'A misspelled key comes back with the key you meant, and the path to find it.',
       },
       {
-        title: 'Auto-Fix Common Issues',
+        title: 'Auto-fix',
         description:
-          'Automatically fix common problems like lowercase HTTP methods and missing URL schemes with --fix.',
+          '--fix renames misspelled keys and normalises values in place where the fix is unambiguous.',
       },
       {
-        title: 'Detailed Error Reports',
+        title: 'A gate for CI',
         description:
-          'Get clear, actionable error messages with the exact location and suggested fixes for each issue.',
+          'Run validate --strict before the suite so a broken file fails fast with a clear message.',
       },
     ],
-    codeExample: {
-      title: 'Validate YAML files and auto-fix issues',
-      code: `# Validate all YAML files in current directory
-curl-runner validate
-
-# Validate specific file
-curl-runner validate api.yaml
-
-# Validate with glob pattern
-curl-runner validate "tests/**/*.yaml"
-
-# Validate and auto-fix issues
-curl-runner validate --fix
-
-# Quiet mode - only show errors
-curl-runner validate -q
-
-# Combine flags
-curl-runner validate -fq tests/`,
-    },
-    useCases: [
-      'Pre-commit validation in CI/CD pipelines',
-      'Catching configuration errors before execution',
-      'Migrating or upgrading YAML configurations',
-      'Onboarding new team members with instant feedback',
+    goodFor: [
+      'Pre-commit hooks',
+      'A first CI step before the real run',
+      'Reviewing files written by hand or by tools',
+      'Migrating a large suite to a new version',
     ],
-    keywords: [
-      'yaml validation',
-      'validate command',
-      'schema validation',
-      'auto-fix',
-      'configuration validation',
-      'syntax checking',
-      'lint yaml',
-      'yaml linter',
-      'error detection',
-      'fix command',
-    ],
+    keywords: ['YAML validation', 'schema validation', 'lint', 'auto-fix', 'curl-runner validate'],
   },
-  convert: {
+  {
     slug: 'convert',
-    title: 'Curl ⇄ YAML Conversion',
-    shortDescription: 'Convert curl commands to YAML and back',
-    gradientWords: 4,
+    title: 'curl ⇄ YAML',
+    headline: 'Paste a curl command, get a test.',
     description:
-      'Bidirectional conversion between raw curl commands and curl-runner YAML specs. Paste a curl command from docs or DevTools, get clean YAML. Convert YAML back to canonical curl commands.',
-    icon: ArrowLeftRight,
-    color: 'cyan',
-    gradient: 'from-cyan-400 to-teal-600',
+      'curl-runner convert turns a curl command — or a whole shell script of them — into YAML, and turns YAML back into curl. curl flags it doesn’t recognise come back as warnings instead of breaking the conversion.',
+    example: {
+      filename: 'users.yaml',
+      yaml: yaml(`
+# curl-runner convert curl "curl https://api.example.com/users?page=2 \\
+#   -H 'Accept: application/json' -H 'Authorization: Bearer \${API_TOKEN}' -m 10"
+request:
+  method: GET
+  url: https://api.example.com/users
+  params:
+    page: "2"
+  headers:
+    Accept: application/json
+  auth:
+    type: bearer
+    token: "\${API_TOKEN}"
+  timeout: 10000
+`),
+    },
     benefits: [
       {
-        title: 'Zero Friction Onboarding',
+        title: 'From the docs to a test',
         description:
-          'Paste any curl command and instantly get a structured, editable YAML spec. No manual translation needed.',
+          'Copy the curl example from API docs or your browser’s network tab and turn it into a file in one command.',
       },
       {
-        title: 'Batch Script Migration',
+        title: 'Understands curl',
         description:
-          'Convert entire shell scripts full of curl commands into a single YAML collection with one command.',
+          'Query strings become params, bearer headers become auth, -m becomes a timeout in milliseconds.',
       },
       {
-        title: 'Loss-Aware Translation',
+        title: 'Both directions',
         description:
-          "Unsupported curl flags are reported as warnings so you know exactly what was and wasn't converted.",
+          'convert yaml prints the curl command for a file — handy for bug reports and teammates without curl-runner.',
       },
     ],
-    codeExample: {
-      title: 'Paste curl, get clean YAML',
-      code: `# Convert a curl command to YAML
-curl-runner convert curl "curl -X POST \\
-  https://api.example.com/users \\
-  -H 'Authorization: Bearer TOKEN' \\
-  -d '{\\"name\\":\\"Alex\\"}'"
-
-# Output:
-# request:
-#   method: POST
-#   url: https://api.example.com/users
-#   auth:
-#     type: bearer
-#     token: TOKEN
-#   body:
-#     json:
-#       name: Alex`,
-    },
-    useCases: [
-      'Importing curl commands from API documentation',
-      'Migrating shell scripts to structured YAML workflows',
-      'Sharing YAML specs as curl commands with teammates',
-      'Converting browser DevTools network requests to test specs',
+    goodFor: [
+      'Turning API documentation examples into tests',
+      'Migrating a folder of shell scripts',
+      'Sharing a test as a one-line curl command',
+      'Reproducing a request from browser dev tools',
     ],
-    keywords: [
-      'curl to yaml',
-      'yaml to curl',
-      'curl converter',
-      'curl import',
-      'curl parser',
-      'shell script conversion',
-      'batch conversion',
-      'API migration',
-      'postman import',
-      'convert command',
-    ],
+    keywords: ['curl to YAML', 'convert curl', 'curl converter', 'shell script migration', 'curl'],
   },
-  'env-files': {
+  {
     slug: 'env-files',
     title: 'Environment Files',
-    shortDescription: 'Load .env files with secret redaction',
+    headline: 'Keep secrets in .env, out of your YAML.',
     description:
-      'Automatically load variables from .env files with environment-specific overrides. Secrets are automatically redacted in output to prevent accidental exposure.',
-    icon: Lock,
-    color: 'slate',
-    gradient: 'from-slate-400 to-slate-600',
-    benefits: [
-      {
-        title: 'Automatic .env Loading',
-        description:
-          'Load variables from .env, .env.local, .env.{environment}, and .env.{environment}.local files automatically.',
-      },
-      {
-        title: 'Secret Redaction',
-        description:
-          'Variables prefixed with SECRET_ are automatically redacted in output. Common API key patterns are also detected.',
-      },
-      {
-        title: 'Environment Overrides',
-        description:
-          'Use --env flag to load environment-specific files like .env.staging or .env.production.',
-      },
-    ],
-    codeExample: {
-      title: 'Use .env files with automatic secret protection',
-      code: `# .env file
-API_URL=https://api.example.com
-SECRET_API_KEY=sk_live_abc123def456
-
-# api.yaml
+      'curl-runner loads .env and .env.local, plus .env.<name> and .env.<name>.local when you pass --env <name>. Values become variables, and anything named SECRET_* is redacted from output.',
+    example: {
+      filename: 'api.yaml',
+      yaml: yaml(`
+# .env.staging
+#   API_URL=https://staging.example.com
+#   SECRET_API_KEY=...
+#
+# curl-runner api.yaml --env staging
 request:
+  name: List users
   url: \${API_URL}/users
   headers:
-    Authorization: Bearer \${SECRET_API_KEY}
-
-# Run with environment
-curl-runner api.yaml --env production
-
-# Output shows redacted secrets
-#   curl -H 'Authorization: Bearer [REDACTED]' ...`,
+    X-API-Key: \${SECRET_API_KEY}
+  expect:
+    status: 200
+`),
     },
-    useCases: [
-      'Managing secrets across environments',
-      'Preventing credential leaks in logs',
-      'Environment-specific configuration',
-      'Team collaboration with shared .env.example',
+    benefits: [
+      {
+        title: 'One file per environment',
+        description:
+          '--env staging layers .env.staging over .env; .local files override both and stay out of git.',
+      },
+      {
+        title: 'Redacted by default',
+        description:
+          'SECRET_* values, and common token formats, show as [REDACTED] in the terminal and in saved results.',
+      },
+      {
+        title: 'The same YAML everywhere',
+        description:
+          'Point one suite at local, staging and production by switching the --env name.',
+      },
     ],
-    keywords: [
-      'env files',
-      'dotenv',
-      'secret redaction',
-      'environment variables',
-      'api key protection',
-      'credential masking',
-      'environment overrides',
-      '.env support',
-      'secret masking',
-      'sensitive data',
+    goodFor: [
+      'API keys and tokens that must not be committed',
+      'Switching between staging and production',
+      'Per-developer overrides in .env.local',
+      'CI logs that must not leak credentials',
     ],
+    keywords: ['env files', 'dotenv', 'secret redaction', 'environment variables', 'API keys'],
   },
-};
+];
 
-export const getAllFeatures = (): FeatureData[] => {
-  return Object.values(featuresData);
-};
+export function getAllFeatures(): FeatureData[] {
+  return FEATURES;
+}
 
-export const getFeatureBySlug = (slug: string): FeatureData | null => {
-  return featuresData[slug] || null;
-};
+export function getFeatureBySlug(slug: string): FeatureData | null {
+  return FEATURES.find((f) => f.slug === slug) ?? null;
+}
+
+export function getAdjacentFeatures(slug: string): {
+  prev: FeatureData | null;
+  next: FeatureData | null;
+} {
+  const index = FEATURES.findIndex((f) => f.slug === slug);
+  if (index === -1) {
+    return { prev: null, next: null };
+  }
+  return { prev: FEATURES[index - 1] ?? null, next: FEATURES[index + 1] ?? null };
+}
