@@ -8,7 +8,7 @@
 //!   without a value and `-1` is parsed as short flags.
 //! - Numbers use JS `parseInt`/`parseFloat` prefix semantics (`30ms` is 30).
 //!   Where TS stores `NaN` (or an overflowing number) the Rust field stays unset.
-//! - Short `-c` is accepted and ignored; `--continue-on-error` is the real flag.
+//! - Short `-c` is an alias of `--continue-on-error` (1.x ignored it).
 //! - Invalid enum values (`--output-format xml`) are consumed and ignored.
 
 pub use curl_runner_core::config::CliOptions;
@@ -292,7 +292,7 @@ fn parse_short(flags: &str, next: Option<&str>, has_next: bool, o: &mut CliOptio
                     consumed = 1;
                 }
             }
-            // `-c` (and any unknown short flag) is accepted and ignored.
+            // Any unknown short flag is accepted and ignored.
             _ => {}
         }
     }
