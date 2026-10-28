@@ -323,7 +323,8 @@ fn global_http2_reaches_dry_run_commands() {
     assert_eq!(code, 0);
     assert_eq!(out.matches("--http2").count(), 1, "{out}");
     let (_, out, _) = e.run(&["t.yaml", "--dry-run", "--http2"]);
-    assert_eq!(out.matches("--http2").count(), 2, "{out}");
+    // request `http2: false` stays false even with `--http2`
+    assert_eq!(out.matches("--http2").count(), 1, "{out}");
 }
 
 #[test]

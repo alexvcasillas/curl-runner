@@ -1266,12 +1266,10 @@ mod tests {
     }
 
     #[test]
-    fn cli_http2_beats_request_defaults_and_global() {
-        let y = "global:\n  http2: false\n  defaults:\n    http2: false\nrequests:\n  - url: http://a\n    http2: false\n";
-        assert_eq!(
-            http2_of(y, &cli(|c| c.http2 = Some(true))),
-            vec![Some(true)]
-        );
+    fn cli_http2_is_a_default_above_global_and_below_request() {
+        let y = "global:\n  http2: false\n  defaults:\n    http2: false\nrequests:\n  - url: http://a\n  - url: http://b\n    http2: false\n";
+        let on = cli(|c| c.http2 = Some(true));
+        assert_eq!(http2_of(y, &on), vec![Some(true), Some(false)]);
     }
 
     #[test]

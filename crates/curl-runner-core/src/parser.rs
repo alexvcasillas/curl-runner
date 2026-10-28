@@ -397,11 +397,6 @@ pub fn prepare_raw(
             };
             let mut m = merge_request_json(&defaults, &r);
             if let Json::Object(o) = &mut m {
-                // `--http2` is an explicit command-line choice: it beats the
-                // request's own `http2`.
-                if let Some(h) = layers.overrides.http2 {
-                    o.insert("http2".into(), Json::Bool(h));
-                }
                 o.insert("sourceFile".into(), source_file.clone());
                 o.insert("sourceOutputConfig".into(), stamp_output.clone());
             }

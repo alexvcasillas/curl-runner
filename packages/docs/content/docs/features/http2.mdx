@@ -117,4 +117,4 @@ requests:
   - Server must support HTTP/2 (most modern servers do)
   - Falls back to HTTP/1.1 if server doesn't support it
   - Requires HTTPS for most servers (HTTP/2 over TLS)
-  - Per-request `http2` overrides the global setting; the `--http2` flag applies to every request and wins over both
+  - Per-request `http2` overrides the global setting; the `--http2` flag enables it for requests that do not set `http2`
