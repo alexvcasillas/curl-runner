@@ -133,9 +133,9 @@ request:
     status: 200
     body:
       status: "ready"
+```
 
----
-
+```yaml title="retry-statuses.yaml"
 # Custom retryable status codes
 request:
   name: Retry on specific codes
@@ -164,7 +164,7 @@ When a server responds with HTTP 429 (Too Many Requests) and includes a `Retry-A
 
 By default, retries trigger on HTTP 429 and 5xx status codes (500, 502, 503, 504). Customize this with the `retryableStatuses` option.
 
-```yaml title="retryable-statuses.yaml"
+```yaml title="retryable-503.yaml"
 # Only retry on 503 Service Unavailable
 request:
   name: Custom Retryable Codes
@@ -174,9 +174,9 @@ request:
     count: 3
     delay: 1000
     retryableStatuses: [503]
+```
 
----
-
+```yaml title="retryable-extended.yaml"
 # Include 408 Request Timeout alongside defaults
 request:
   name: Extended Retryable Codes
@@ -231,9 +231,9 @@ request:
 # Attempt 2: 2000ms (2s)
 # Attempt 3: 4000ms (4s)
 # Attempt 4: 8000ms (8s)
+```
 
----
-
+```yaml title="gentle-backoff.yaml"
 # Gentler backoff with 1.5x multiplier
 request:
   name: Gentle Backoff

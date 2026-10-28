@@ -23,8 +23,9 @@ request:
   method: GET
   expect:
     status: 200  # Expect exactly 200
+```
 
----
+```yaml title="status-list.yaml"
 # Multiple accepted status codes
 request:
   name: Get User
@@ -80,8 +81,9 @@ request:
       active: true
       token: $exists      # Key must be present (any value, incl. null)
       deletedAt: $absent  # Key must NOT be present in the response
+```
 
----
+```yaml title="partial-match.yaml"
 # Partial matching
 request:
   name: Check API Response

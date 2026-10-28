@@ -1,40 +1,28 @@
 ---
 title: "Connection Pooling"
-description: "Reuse TCP connections and leverage HTTP/2 multiplexing for faster, more efficient API requests with curl-runner."
+description: "Configure HTTP/2, TCP keepalive, connect timeout and per-host connection limits for parallel runs with curl-runner."
 ---
 
-Reuse TCP connections and leverage HTTP/2 multiplexing for dramatically faster parallel requests.
+Tune HTTP/2, keepalive, connect timeout and per-host connection limits for parallel runs.
 
 ## Overview
 
-Connection pooling reuses connections per host and multiplexes parallel requests over HTTP/2. This eliminates redundant TCP handshakes and TLS negotiations, dramatically improving performance for parallel requests to the same host.
+Connection pooling is a set of connection settings for runs that send many requests. When `connectionPool.enabled` is true, curl-runner forces HTTP/2 for every request, applies your keepalive and connect-timeout settings, and caps how many connections a parallel run opens per host.
 
-- **1 TCP Handshake**: Per host instead of per request
-- **1 TLS Negotiation**: Single handshake for HTTPS
-- **HTTP/2 Streams**: Multiplexed on single connection
-- **1 DNS Lookup**: Cached for all requests
+- **HTTP/2 forced**: Every request negotiates HTTP/2 (falls back to HTTP/1.1 if the server does not support it)
+- **Keepalive**: TCP keepalive interval from `keepaliveTime` (default 60 seconds)
+- **Connect timeout**: `connectTimeout` (default 30 seconds) limits connection establishment
+- **Host connection cap**: In parallel runs, `maxStreamsPerHost` (default 10) limits the connections opened to each host
 
 ## How It Works
 
-When connection pooling is enabled, curl-runner runs parallel requests through one shared libcurl multi handle with HTTP/2 multiplexing on. Requests to the same host share a connection (up to `maxStreamsPerHost` concurrent connections or streams per host).
+Parallel runs already execute through one shared libcurl multi handle, so requests to the same host can reuse connections and multiplex over HTTP/2 with or without pooling. Enabling the pool adds these settings:
 
-```bash title="Before vs After"
-# WITHOUT Connection Pooling (default)
-# Each request = new TCP + new TLS
+- Every request uses HTTP/2.
+- Every request, sequential or parallel, gets the pool's `keepaliveTime` and `connectTimeout`.
+- In parallel runs, `maxStreamsPerHost` is passed to libcurl as the maximum number of connections per host.
 
-Request 1 → TCP handshake → TLS → HTTP
-Request 2 → TCP handshake → TLS → HTTP
-Request 3 → TCP handshake → TLS → HTTP
-# Total: 3 TCP handshakes, 3 TLS negotiations
-
-# WITH Connection Pooling
-# All same-host requests share ONE connection
-
-Requests 1,2,3 → one HTTP/2 connection → TCP → TLS → [stream1, stream2, stream3]
-# Total: 1 TCP handshake, 1 TLS negotiation
-```
-
-- **Performance Impact**: For 10 requests to the same host over HTTPS, connection pooling can save ~200ms of TCP/TLS overhead per request, resulting in up to 2 seconds of total time saved.
+Retries, `maxConcurrency` and `expect` work exactly as in any other run. Status codes are judged only through `expect`.
 
 ## Basic Usage
 
@@ -62,7 +50,7 @@ Enable and configure connection pooling directly from the command line.
 | Option | Description |
 | --- | --- |
 | `--connection-pool` | Enable TCP connection pooling with HTTP/2 multiplexing |
-| `--max-streams <n>` | Max concurrent streams per host (default: 10) |
+| `--max-streams <n>` | Max connections per host in parallel runs (default: 10) |
 | `--keepalive-time <sec>` | TCP keepalive time in seconds (default: 60) |
 | `--connect-timeout <sec>` | Connection timeout in seconds (default: 30) |
 
@@ -90,7 +78,7 @@ Configure connection pooling using environment variables for CI/CD pipelines.
 | Variable | Description |
 | --- | --- |
 | `CURL_RUNNER_CONNECTION_POOL` | Enable connection pooling (true/false) |
-| `CURL_RUNNER_MAX_STREAMS_PER_HOST` | Max concurrent streams per host |
+| `CURL_RUNNER_MAX_STREAMS_PER_HOST` | Max connections per host in parallel runs |
 | `CURL_RUNNER_KEEPALIVE_TIME` | TCP keepalive time in seconds |
 | `CURL_RUNNER_CONNECT_TIMEOUT` | Connection timeout in seconds |
 
@@ -101,7 +89,7 @@ Fine-tune connection pooling behavior with these configuration options.
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `enabled` | boolean | `false` | Enable connection pooling and HTTP/2 multiplexing |
-| `maxStreamsPerHost` | number | `10` | Maximum concurrent HTTP/2 streams per host connection |
+| `maxStreamsPerHost` | number | `10` | Maximum connections per host in parallel runs |
 | `keepaliveTime` | number | `60` | TCP keepalive probe interval in seconds |
 | `connectTimeout` | number | `30` | Connection establishment timeout in seconds |
 
@@ -110,7 +98,7 @@ global:
   execution: parallel
   connectionPool:
     enabled: true
-    maxStreamsPerHost: 10    # Max concurrent streams per connection
+    maxStreamsPerHost: 10    # Max connections per host (parallel runs)
     keepaliveTime: 60        # TCP keepalive in seconds
     connectTimeout: 30       # Connection timeout in seconds
 
@@ -131,51 +119,25 @@ requests:
     method: GET
 ```
 
-## Multi-Host Behavior [#multi-host]
+## Connection Timeout Errors
 
-Requests are grouped by host (scheme + hostname + port). Each host gets its own pooled connection, and different hosts run in parallel.
-
-```yaml title="Multi-Host Grouping"
-# Requests are automatically grouped by host
-# Each host group uses its own pooled connection
-
-global:
-  execution: parallel
-  connectionPool:
-    enabled: true
-    maxStreamsPerHost: 5
-
-requests:
-  # Group 1: api.example.com (1 connection, 3 streams)
-  - url: https://api.example.com/users
-  - url: https://api.example.com/posts
-  - url: https://api.example.com/comments
-
-  # Group 2: auth.example.com (1 connection, 2 streams)
-  - url: https://auth.example.com/token
-  - url: https://auth.example.com/validate
-
-  # Group 3: cdn.example.com (1 connection, 1 stream)
-  - url: https://cdn.example.com/assets
-```
+When a request fails while resolving or connecting and the pool's `connectTimeout` is shorter than the request `timeout`, the error reads `Connection timeout after <ms>ms` instead of the request timeout message.
 
 ## When to Use
 
 - **Recommended For**
-  - Multiple parallel requests to the same host
-  - Performance-critical test suites
-  - Load testing with many concurrent requests
-  - APIs with high TLS negotiation overhead
+  - Parallel runs with many requests to the same host
+  - Test suites that benefit from HTTP/2 multiplexing
+  - Tuning keepalive or connect timeouts for slow or flaky networks
 - **Not Needed For**
-  - Sequential execution (requests run one at a time)
-  - Single request executions
-  - Requests to many different hosts
-  - When request isolation is required
+  - A single request
+  - Servers that only speak HTTP/1.1
+  - Runs where the defaults already work for you
 
 ## Limitations
 
-- **Parallel mode only:** Connection pooling applies to `execution: parallel`. Sequential runs reuse connections between requests on their own.
-- **Retries and concurrency:** Retries and `maxConcurrency` apply to pooled requests like any other parallel run. Status codes are judged only through `expect`.
+- **Host cap applies to parallel runs:** `maxStreamsPerHost` only matters with `execution: parallel`. Keepalive, connect timeout and HTTP/2 apply to sequential runs as well.
+- **HTTP/2 is forced:** Servers without HTTP/2 support are used over HTTP/1.1.
 - **Idle connections:** Idle keep-alive connections stay open until the run ends.
 
 ## Related Features [#related]
