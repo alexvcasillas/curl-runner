@@ -123,6 +123,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
+          PNPM_CONFIG_PROVENANCE: true
 
       # crates.io trusted publishing (OIDC token), then curl-runner-core and
       # curl-runner at the version the version PR synced into Cargo.toml.
