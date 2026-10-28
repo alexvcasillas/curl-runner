@@ -24,7 +24,7 @@
 1. **Validator, reverse direction:** a key the runner ignores must not become "valid" while fixing false positives. Pinned in Task 1 (the model-field test also asserts a made-up key still warns).
 2. **Interpolated values of every numeric field, not just `timeout`** (`retry.count`, `delay`, `maxConcurrency`), e.g. `${VAR}` and `${VAR:500}`. Pinned in Task 2.
 3. **`convert` round trip:** curl → YAML → run must send the same body bytes, including JSON arrays, nested objects, and non-JSON `-d` with a JSON content type. Pinned in Task 3.
-4. **`global.http2` against an explicit request or defaults setting:** request `http2: false` beats `global.http2: true`; the CLI `--http2` beats both. Pinned in Task 5.
+4. **`global.http2` against an explicit request or defaults setting:** request `http2: false` beats `global.http2: true`; a request's own `http2` beats `--http2`, which beats `global.defaults.http2` and `global.http2` (precedence: request > `--http2` > `global.defaults.http2` > `global.http2`). Pinned in Task 5.
 5. **Combined short flags:** `-vc` sets verbose and continue-on-error; `-c` with `--continue-on-error=false` is not possible (no `=` syntax), so only presence matters. Pinned in Task 6.
 
 ---
@@ -77,8 +77,7 @@
   - With `global.http2: true`, every request resolves `http2 = true` and `--dry-run` prints `--http2`.
   - A request with `http2: false` overrides it.
   - `global.defaults.http2` behaves as today.
-  - The CLI `--http2` still wins.
-  - Precedence: CLI > request > `global.defaults.http2` > `global.http2`.
+  - Precedence: request > `--http2` > `global.defaults.http2` > `global.http2`.
 - [ ] **Implement:** treat `global.http2` as a default for `defaults.http2` when that's unset. Update `content/docs/features/http2.mdx` and `connection-pooling.mdx` to document `global.http2` as working (remove the "use defaults" workaround notes).
 - [ ] **Commit** `fix(config): apply global.http2 to every request`.
 
