@@ -8,7 +8,7 @@ use super::types::{Body, CurlRunnerIr, FormField, YamlOptions};
 use crate::jsval::num_to_string;
 use crate::model::Json;
 use crate::snapshot::js_stringify;
-use crate::yaml_text::{yaml_key, yaml_str};
+use crate::yaml_text::{needs_quoting, scalar_text, yaml_key, yaml_str};
 
 /// Serialize one IR (`serializeToYaml`).
 pub fn serialize_to_yaml(ir: &CurlRunnerIr, options: YamlOptions) -> String {
@@ -111,7 +111,7 @@ fn request_fields(lines: &mut Vec<String>, ir: &CurlRunnerIr, base: usize, prett
             Body::Json(c) => lines.extend(json_body_lines(c, base, pretty)),
             // The runner sends a string body verbatim, so these go in as plain strings.
             Body::Urlencoded(c) | Body::Binary(c) | Body::Raw(c) => {
-                lines.push(format!("{p0}body: {}", yaml_str(c)));
+                lines.push(format!("{p0}body: {}", body_string(c)));
             }
         }
     }
@@ -188,8 +188,16 @@ fn json_body_lines(value: &Json, base: usize, pretty: bool) -> Vec<String> {
             lines
         }
         Json::Object(_) | Json::Array(_) => vec![format!("{p0}body: {}", js_stringify(value))],
-        scalar => vec![format!("{p0}body: {}", yaml_str(&js_stringify(scalar)))],
+        scalar => vec![format!("{p0}body: {}", body_string(&js_stringify(scalar)))],
     }
+}
+
+/// A string body that reads back as exactly `s` (multi-line text, `- a`, `#x`, ...).
+fn body_string(s: &str) -> String {
+    if s.is_empty() {
+        return "\"\"".into();
+    }
+    scalar_text(s, needs_quoting(s), false)
 }
 
 /// A YAML primitive (string, number or boolean).

@@ -17,7 +17,9 @@
   "ir": {
     "method": "POST",
     "url": "https://x.test",
-    "headers": {},
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
     "metadata": {
       "source": "curl",
       "warnings": []
@@ -32,5 +34,7 @@
 request:
   method: POST
   url: https://x.test
+  headers:
+    Content-Type: application/x-www-form-urlencoded
   body: "a%20b%3Dc"
 

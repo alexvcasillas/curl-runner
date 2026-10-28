@@ -272,3 +272,96 @@ fn yaml_body_converts_back_to_curl_d_with_the_json() {
             .contains("-d 'plain text'")
     );
 }
+
+fn sent_headers(cmd: &str) -> Vec<String> {
+    let yaml = convert_curl_to_yaml(cmd, &ConvertOptions::default())
+        .unwrap()
+        .output;
+    let parsed = crate::parser::load_str(&yaml, "convert.yaml").unwrap();
+    crate::transport::easy::header_lines(&parsed.requests[0])
+}
+
+#[test]
+fn string_data_keeps_the_content_type_curl_would_send() {
+    let form = "Content-Type: application/x-www-form-urlencoded";
+    for flags in [
+        "-d 'a=1&b=2'",
+        "--data 'a=1'",
+        "--data-raw 'plain text'",
+        "--data-binary 'raw bytes'",
+        "--data-urlencode 'a=b c'",
+    ] {
+        let h = sent_headers(&format!("curl -X POST https://a.test {flags}"));
+        assert_eq!(h, [form], "{flags}");
+    }
+    // An explicit header wins.
+    let h = sent_headers("curl -X POST https://a.test -H 'Content-Type: text/plain' -d 'hi'");
+    assert_eq!(h, ["Content-Type: text/plain"]);
+    // JSON bodies keep the runner's JSON default.
+    let h = sent_headers("curl -X POST https://a.test -d '{\"a\":1}'");
+    assert_eq!(h, ["Content-Type: application/json"]);
+}
+
+#[test]
+fn string_bodies_read_back_identically() {
+    let tricky = [
+        "- a",
+        "- a\n- b",
+        "? x",
+        ": x",
+        "#c",
+        "a #c",
+        "&a",
+        "*a",
+        "!t x",
+        "|",
+        ">",
+        "%x",
+        "@x",
+        "`x",
+        " lead",
+        "trail ",
+        "[x",
+        "{x",
+        "[1, 2",
+        "line1\nline2",
+        "line1\n\nline3\n",
+        "tab\there",
+        "\ttab first",
+        "quote\"d",
+        "'single'",
+        "back\\slash",
+        "ünïcode 日本語 😀",
+        "null",
+        "true",
+        "~",
+        "123",
+        "-1.5",
+        "0x1f",
+        "1e3",
+        "${VAR}",
+        "${VAR:default} and ${store.x}",
+        "a: b",
+        "a:",
+        "key=value&other=1",
+        "---",
+        "...",
+        "<tag>",
+        "=",
+        "\u{85}x",
+        "x\u{2028}y",
+        "x\r\ny",
+    ];
+    for s in tricky {
+        let mut ir = normalize(&parse_curl("curl -X POST https://a.test -d x")).unwrap();
+        ir.body = Some(Body::Raw(s.to_string()));
+        let yaml = serialize_to_yaml(&ir, YamlOptions::default());
+        let parsed = crate::parser::load_str(&yaml, "t.yaml")
+            .unwrap_or_else(|e| panic!("{s:?} -> invalid yaml: {e:?}\n{yaml}"));
+        assert_eq!(
+            parsed.requests[0].body,
+            Some(serde_json::Value::String(s.to_string())),
+            "{s:?}\n{yaml}"
+        );
+    }
+}

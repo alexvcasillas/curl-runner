@@ -1,5 +1,7 @@
 request:
   method: POST
   url: https://example.com
+  headers:
+    Content-Type: application/x-www-form-urlencoded
   body: "@not-a-file"
 

@@ -18,6 +18,18 @@ pub fn normalize(ast: &CurlAst) -> Result<CurlRunnerIr, NormalizeError> {
     let mut headers = normalize_headers(ast);
     let auth = detect_auth(ast, &mut headers);
     let (body, form_data) = detect_body(ast);
+    // curl labels `-d`/`--data*` text as form data unless told otherwise, while the
+    // runner defaults a body to JSON: keep what curl would have sent.
+    if matches!(
+        body,
+        Some(Body::Urlencoded(_) | Body::Raw(_) | Body::Binary(_))
+    ) && headers.get("Content-Type").is_none()
+    {
+        headers.insert(
+            "Content-Type",
+            "application/x-www-form-urlencoded".to_string(),
+        );
+    }
     let method = infer_method(ast, body.is_some(), form_data.is_some());
     let ssl = detect_ssl(ast);
 

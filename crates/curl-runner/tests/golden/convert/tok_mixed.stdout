@@ -3,5 +3,6 @@ request:
   url: ""
   headers:
     Accept: "*/*"
+    Content-Type: application/x-www-form-urlencoded
   body: test
 

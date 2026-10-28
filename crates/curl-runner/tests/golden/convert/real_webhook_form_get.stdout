@@ -1,5 +1,7 @@
 request:
   method: GET
   url: https://api.example.com/search
+  headers:
+    Content-Type: application/x-www-form-urlencoded
   body: "q%3Dhello%20world&lang%3Den"
 
