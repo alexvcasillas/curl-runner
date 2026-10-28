@@ -267,6 +267,7 @@ fn parse_short(flags: &str, next: Option<&str>, has_next: bool, o: &mut CliOptio
             'h' => o.help = Some(true),
             'v' => o.verbose = Some(true),
             'p' => o.execution = Some("parallel".into()),
+            'c' => o.continue_on_error = Some(true),
             'q' => o.quiet = Some(true),
             'w' => o.watch = Some(true),
             's' => o.snapshot = Some(true),
@@ -541,10 +542,10 @@ mod tests {
     }
 
     #[test]
-    fn short_c_is_a_noop() {
-        let o = p(&["-c"]);
-        assert_eq!(o, CliOptions::default());
-        assert_eq!(p(&["-vc"]).continue_on_error, None);
+    fn short_c_is_continue_on_error() {
+        assert_eq!(p(&["-c"]).continue_on_error, Some(true));
+        let o = p(&["-vc"]);
+        assert_eq!((o.verbose, o.continue_on_error), (Some(true), Some(true)));
     }
 
     #[test]

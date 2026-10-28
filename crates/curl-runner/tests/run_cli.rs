@@ -110,6 +110,19 @@ fn exit_0_continue_on_error() {
 }
 
 #[test]
+fn short_c_continues_after_a_failure() {
+    let e = setup(&[("t.yaml", &mixed(3, 1))]);
+    let (code, out, _) = e.run(&["t.yaml", "-c"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("Summary: 2/3 requests completed, 1 failed\n"),
+        "{out}"
+    );
+    let (code, _, _) = e.run(&["t.yaml", "-c", "--strict-exit"]);
+    assert_eq!(code, 1);
+}
+
+#[test]
 fn exit_1_strict_exit_with_continue() {
     let e = setup(&[("t.yaml", &mixed(3, 1))]);
     let (code, out, _) = e.run(&["t.yaml", "--continue-on-error", "--strict-exit"]);
