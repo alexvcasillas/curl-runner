@@ -1,5 +1,10 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+/* Next's CSS parser rejects ::highlight() and drops these two search-dialog utilities with a
+   build warning; skip generating them. */
+@source not inline("[&_::highlight(fd-search)]:text-fd-primary [&_::highlight(fd-search)]:underline");
 
 @custom-variant dark (&:is(.dark *));
 
@@ -95,6 +100,38 @@
   --sidebar-border: #1f1f1f;
   --sidebar-ring: #22d3ee;
   color-scheme: dark;
+}
+
+/* Fumadocs UI (docs layout, sidebar, TOC, search), themed with the Monochrome tokens. Dark only:
+   the root layout puts .dark on <html>. #nd-sidebar repeats the values that neutral.css overrides. */
+.dark,
+.dark #nd-sidebar {
+  --color-fd-background: #0a0a0a;
+  --color-fd-foreground: #ededed;
+  --color-fd-muted: #171717;
+  --color-fd-muted-foreground: #a1a1a1;
+  --color-fd-popover: #0f0f0f;
+  --color-fd-popover-foreground: #ededed;
+  --color-fd-card: #0f0f0f;
+  --color-fd-card-foreground: #ededed;
+  --color-fd-border: #1f1f1f;
+  --color-fd-primary: #22d3ee;
+  --color-fd-primary-foreground: #0a0a0a;
+  --color-fd-secondary: #171717;
+  --color-fd-secondary-foreground: #ededed;
+  --color-fd-accent: #1f1f1f;
+  --color-fd-accent-foreground: #ededed;
+  --color-fd-ring: #22d3ee;
+  --color-fd-overlay: rgb(0 0 0 / 0.6);
+  --color-fd-info: #22d3ee;
+  --color-fd-success: #4ade80;
+  --color-fd-error: #f87171;
+}
+
+/* Docs code blocks: the marketing panes' surface and hairline. */
+#nd-docs-layout figure.shiki {
+  border-color: var(--color-line);
+  background: var(--color-surface);
 }
 
 @layer base {

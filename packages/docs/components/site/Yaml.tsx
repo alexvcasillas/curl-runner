@@ -1,17 +1,7 @@
-import { codeToHtml, type ThemeRegistration } from 'shiki';
+import { codeToHtml } from 'shiki';
+import { YAML_THEME } from '@/lib/shiki-theme';
 
-export const YAML_THEME: ThemeRegistration = {
-  name: 'curl-runner-monochrome',
-  type: 'dark',
-  fg: '#EDEDED',
-  bg: 'transparent',
-  settings: [
-    { settings: { foreground: '#EDEDED', background: 'transparent' } },
-    { scope: ['entity.name.tag'], settings: { foreground: '#22D3EE' } },
-    { scope: ['string.quoted'], settings: { foreground: '#F5A97F' } },
-    { scope: ['comment'], settings: { foreground: '#8A8A8A' } },
-  ],
-};
+export { YAML_THEME };
 
 export async function Yaml({ source }: { source: string }) {
   const html = await codeToHtml(source.trim(), { lang: 'yaml', theme: YAML_THEME });

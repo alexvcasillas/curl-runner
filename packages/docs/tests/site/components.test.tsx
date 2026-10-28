@@ -33,6 +33,11 @@ describe('SiteHeader', () => {
       '/docs/quick-start',
     );
   });
+
+  it('marks Docs as the current section on docs pages', () => {
+    render(<SiteHeader active="docs" />);
+    expect(screen.getByRole('link', { name: 'Docs' })).toHaveAttribute('aria-current', 'page');
+  });
 });
 
 describe('SiteFooter', () => {

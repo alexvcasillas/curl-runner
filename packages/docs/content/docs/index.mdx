@@ -1,0 +1,82 @@
+---
+title: Introduction
+description: A CLI for HTTP requests defined in YAML files. A single native binary, built in Rust, with parallel execution, response validation and variables.
+---
+
+`curl-runner` runs the HTTP requests you describe in YAML files. Instead of long curl commands or a folder of shell scripts, you keep readable request files with variables, response assertions and parallel execution, and run them locally or in CI.
+
+It ships as a single native binary built in Rust: you do not need Bun, Node.js or curl installed to run it.
+
+## Features
+
+- **YAML configuration**: define requests in plain YAML, with variables and templates.
+- **Fast execution**: a native binary that runs requests sequentially or in parallel.
+- **A complete CLI**: readable output, progress and clear errors.
+- **Flexible configuration**: global settings, variable interpolation, response validation and several output formats.
+
+## Quick start
+
+### 1. Install curl-runner
+
+```bash
+# macOS / Linux
+curl -fsSL https://www.curl-runner.com/install.sh | bash
+
+# Windows (PowerShell)
+irm https://www.curl-runner.com/install.ps1 | iex
+
+# Homebrew
+brew install alexvcasillas/tap/curl-runner
+
+# npm (works with bun and pnpm too)
+npm i -g @curl-runner/cli
+```
+
+See [Installation](/docs/installation) for every method.
+
+### 2. Create a YAML file
+
+```yaml title="api-test.yaml"
+# Basic API test configuration
+collection:
+  name: "My API Tests"
+  requests:
+    - name: "Get users"
+      url: "https://jsonplaceholder.typicode.com/users"
+      method: GET
+      expect:
+        status: 200
+
+    - name: "Create user"
+      url: "https://jsonplaceholder.typicode.com/users"
+      method: POST
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "name": "John Doe",
+          "email": "john@example.com"
+        }
+      expect:
+        status: 201
+```
+
+### 3. Run your requests
+
+```bash
+curl-runner api-test.yaml
+```
+
+## Next steps
+
+- [Installation](/docs/installation): every install method, per platform.
+- [Use cases](/docs/use-cases): real-world applications and examples.
+- [Tutorials](/docs/tutorials): step-by-step guides.
+- [Examples](/docs/examples/basic): practical request files.
+
+## Key concepts
+
+- [Variables and templating](/docs/variables): dynamic requests with variables, environment values and computed expressions.
+- [Global settings](/docs/global-settings): execution behaviour, timeouts and defaults for every request.
+- [Response validation](/docs/features/response-validation): assert status codes, headers and body content.
+- [Parallel execution](/docs/features/parallel-execution): run requests concurrently.

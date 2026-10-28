@@ -53,3 +53,4 @@ packages/docs/public/docs/
 
 # staged by scripts/npm-stage.sh, never committed
 npm/*/bin/
+packages/docs/.source/

@@ -1,9 +1,12 @@
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
+import { fumadocsMdx } from 'fumadocs-mdx/vite';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
-  plugins: [react()],
+  // Compile content/docs/*.mdx for the `.source` index that `fumadocs-mdx` generates on
+  // postinstall/build; `index: false` keeps that Next.js-flavoured index as is.
+  plugins: [react(), fumadocsMdx({ index: false })],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./', import.meta.url)),

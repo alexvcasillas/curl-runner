@@ -1,10 +1,10 @@
 import Link from 'next/link';
 import { ButtonLink } from '@/components/site/ButtonLink';
 
-export type SiteSection = 'features' | 'alternatives' | 'downloads' | 'changelog';
+export type SiteSection = 'docs' | 'features' | 'alternatives' | 'downloads' | 'changelog';
 
 const NAV: { label: string; href: string; section?: SiteSection }[] = [
-  { label: 'Docs', href: '/docs' },
+  { label: 'Docs', href: '/docs', section: 'docs' },
   { label: 'Features', href: '/features/parallel-execution', section: 'features' },
   { label: 'Alternatives', href: '/alternatives', section: 'alternatives' },
   { label: 'Downloads', href: '/downloads', section: 'downloads' },
