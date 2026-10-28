@@ -1,4 +1,5 @@
 use super::*;
+use crate::convert::jsutil::JsMap;
 
 fn conv(cmd: &str) -> ConvertResult {
     convert_curl_to_yaml(cmd, &ConvertOptions::default()).unwrap()
@@ -304,64 +305,140 @@ fn string_data_keeps_the_content_type_curl_would_send() {
 
 #[test]
 fn string_bodies_read_back_identically() {
-    let tricky = [
-        "- a",
-        "- a\n- b",
-        "? x",
-        ": x",
-        "#c",
-        "a #c",
-        "&a",
-        "*a",
-        "!t x",
-        "|",
-        ">",
-        "%x",
-        "@x",
-        "`x",
-        " lead",
-        "trail ",
-        "[x",
-        "{x",
-        "[1, 2",
-        "line1\nline2",
-        "line1\n\nline3\n",
-        "tab\there",
-        "\ttab first",
-        "quote\"d",
-        "'single'",
-        "back\\slash",
-        "ünïcode 日本語 😀",
-        "null",
-        "true",
-        "~",
-        "123",
-        "-1.5",
-        "0x1f",
-        "1e3",
-        "${VAR}",
-        "${VAR:default} and ${store.x}",
-        "a: b",
-        "a:",
-        "key=value&other=1",
-        "---",
-        "...",
-        "<tag>",
-        "=",
-        "\u{85}x",
-        "x\u{2028}y",
-        "x\r\ny",
-    ];
-    for s in tricky {
+    for s in TRICKY {
         let mut ir = normalize(&parse_curl("curl -X POST https://a.test -d x")).unwrap();
         ir.body = Some(Body::Raw(s.to_string()));
-        let yaml = serialize_to_yaml(&ir, YamlOptions::default());
-        let parsed = crate::parser::load_str(&yaml, "t.yaml")
-            .unwrap_or_else(|e| panic!("{s:?} -> invalid yaml: {e:?}\n{yaml}"));
+        let parsed = reparse(&ir, s);
         assert_eq!(
-            parsed.requests[0].body,
+            parsed.body,
             Some(serde_json::Value::String(s.to_string())),
-            "{s:?}\n{yaml}"
+            "body {s:?}"
         );
     }
 }
+
+fn reparse(ir: &CurlRunnerIr, s: &str) -> crate::model::RequestConfig {
+    let yaml = serialize_to_yaml(ir, YamlOptions::default());
+    let parsed = crate::parser::load_str(&yaml, "t.yaml")
+        .unwrap_or_else(|e| panic!("{s:?} -> invalid yaml: {e:?}\n{yaml}"));
+    parsed.requests.into_iter().next().unwrap()
+}
+
+#[test]
+fn every_emitted_scalar_reads_back_identically() {
+    for s in TRICKY {
+        let base = || normalize(&parse_curl("curl https://a.test")).unwrap();
+
+        let mut ir = base();
+        ir.headers.insert("X-A", s.to_string());
+        let r = reparse(&ir, s);
+        assert_eq!(
+            r.headers.unwrap().get("X-A"),
+            Some(&s.to_string()),
+            "header value {s:?}"
+        );
+
+        let mut ir = base();
+        let mut params = JsMap::new();
+        params.insert("k", s.to_string());
+        ir.params = Some(params);
+        let r = reparse(&ir, s);
+        assert_eq!(
+            r.params.unwrap().get("k"),
+            Some(&s.to_string()),
+            "param value {s:?}"
+        );
+
+        let mut ir = base();
+        let mut form = JsMap::new();
+        form.insert("f", FormField::Text(s.to_string()));
+        ir.form_data = Some(form);
+        let r = reparse(&ir, s);
+        let got = r.form_data.unwrap();
+        assert_eq!(
+            crate::transport::easy::form_value_string(got.get("f").unwrap()),
+            *s,
+            "form value {s:?}"
+        );
+
+        if s.is_empty() {
+            continue;
+        }
+        let mut ir = base();
+        ir.headers.insert(*s, "v".to_string());
+        let r = reparse(&ir, s);
+        assert_eq!(
+            r.headers.unwrap().get(*s),
+            Some(&"v".to_string()),
+            "header key {s:?}"
+        );
+
+        let mut ir = base();
+        let mut params = JsMap::new();
+        params.insert(*s, "v".to_string());
+        ir.params = Some(params);
+        let r = reparse(&ir, s);
+        assert_eq!(
+            r.params.unwrap().get(*s),
+            Some(&"v".to_string()),
+            "param key {s:?}"
+        );
+
+        let mut ir = base();
+        let mut form = JsMap::new();
+        form.insert(*s, FormField::Text("v".to_string()));
+        ir.form_data = Some(form);
+        let r = reparse(&ir, s);
+        assert!(r.form_data.unwrap().contains_key(*s), "form key {s:?}");
+    }
+}
+
+const TRICKY: &[&str] = &[
+    "",
+    "- a",
+    "- a\n- b",
+    "? x",
+    ": x",
+    "#c",
+    "a #c",
+    "&a",
+    "*a",
+    "!t x",
+    "|",
+    ">",
+    "%x",
+    "@x",
+    "`x",
+    " lead",
+    "trail ",
+    "[x",
+    "{x",
+    "[1, 2",
+    "line1\nline2",
+    "line1\n\nline3\n",
+    "tab\there",
+    "\ttab first",
+    "quote\"d",
+    "'single'",
+    "back\\slash",
+    "ünïcode 日本語 😀",
+    "null",
+    "true",
+    "~",
+    "123",
+    "-1.5",
+    "0x1f",
+    "1e3",
+    "${VAR}",
+    "${VAR:default} and ${store.x}",
+    "a: b",
+    "a:",
+    "key=value&other=1",
+    "---",
+    "...",
+    "<tag>",
+    "=",
+    "\u{85}x",
+    "x\u{2028}y",
+    "x\r\ny",
+];

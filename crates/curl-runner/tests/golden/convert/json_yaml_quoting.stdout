@@ -20,8 +20,7 @@ request:
     amp: "a&b"
     dash: -x
     colon: "x:"
-    nl: line1
-line2
+    nl: "line1\nline2"
     tab: a	b
     bs: back\slash
     "yes": "Yes"

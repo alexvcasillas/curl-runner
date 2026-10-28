@@ -14,9 +14,28 @@ pub fn yaml_str(s: &str) -> String {
         return "\"\"".into();
     }
     if needs_quoting(s) {
-        return quote(s);
+        return quote_safe(s);
     }
-    s.to_string()
+    // Whatever the TS rule leaves bare must still read back as the same string
+    // (`- a`, multi-line text, `#x`, ...).
+    let plain_ok = reads_back(&format!("v: {s}"), &serde_json::json!({ "v": s }));
+    if plain_ok {
+        s.to_string()
+    } else {
+        quote_escaped(s)
+    }
+}
+
+/// `quote`, except text with line breaks or control characters, which needs
+/// escapes to survive.
+fn quote_safe(s: &str) -> String {
+    if s.chars()
+        .any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}' | '\u{feff}'))
+    {
+        quote_escaped(s)
+    } else {
+        quote(s)
+    }
 }
 
 /// Quote a YAML key if necessary.
@@ -34,7 +53,7 @@ pub fn yaml_key(s: &str) -> String {
     if ok && !reads_as_scalar {
         s.to_string()
     } else {
-        quote(s)
+        quote_safe(s)
     }
 }
 
