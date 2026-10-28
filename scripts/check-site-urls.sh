@@ -21,11 +21,27 @@ CHECKS=0
 fail() { echo "FAIL $*"; FAILS=$((FAILS + 1)); }
 get() { curl -s -o /dev/null -w "$1" --max-time 60 ${3:-} ${EXTRA[@]+"${EXTRA[@]}"} "$2"; }
 
+# sha256 of a body; fails unless the response is 200 with a non-empty body.
+fetch_sum() { # url [curl args]
+  local url="$1" f code
+  shift
+  f="$(mktemp)"
+  code="$(curl -s -o "$f" -w '%{http_code}' --max-time 60 "$@" "$url")"
+  if [ "$code" = 200 ] && [ -s "$f" ]; then shasum -a 256 "$f" | cut -d' ' -f1; rm -f "$f"; return 0; fi
+  rm -f "$f"
+  return 1
+}
+
 expect_status() { # url expected [curl flags], e.g. -L to follow redirects
   CHECKS=$((CHECKS + 1))
-  local got
-  got="$(get '%{http_code}' "$1" ${3:-})"
+  local got out final
+  out="$(get '%{http_code} %{url_effective}' "$1" ${3:-})"
+  got="${out%% *}"
+  final="${out#* }"
   [ "$got" = "$2" ] || fail "$1 -> $got (want $2)"
+  if [ -n "${3:-}" ] && [ "$(echo "$final" | cut -d/ -f3)" != "$(echo "$1" | cut -d/ -f3)" ]; then
+    fail "$1 redirected off-host to $final"
+  fi
 }
 
 expect_type() { # url regex
@@ -57,15 +73,17 @@ for f in /llms.txt /rss.xml /sitemap.xml; do expect_status "$BASE$f" 200; done
 
 for f in /install.sh /install.ps1; do
   CHECKS=$((CHECKS + 1))
-  a="$(curl -s --max-time 60 ${EXTRA[@]+"${EXTRA[@]}"} "$BASE$f" | shasum -a 256 | cut -d' ' -f1)"
-  b="$(curl -s --max-time 60 "$REF$f" | shasum -a 256 | cut -d' ' -f1)"
+  a="$(fetch_sum "$BASE$f" ${EXTRA[@]+"${EXTRA[@]}"})" || { fail "$f on $BASE: not 200 or empty"; continue; }
+  b="$(fetch_sum "$REF$f")" || { fail "$f on $REF: not 200 or empty"; continue; }
   [ "$a" = "$b" ] || fail "$f differs from $REF$f"
 done
 
 expect_status "$BASE/api/test/echo" 200
 expect_status "$BASE/api/test/status/404" 404
 CHECKS=$((CHECKS + 1))
-t="$(get '%{time_total}' "$BASE/api/test/delay/1")"
+out="$(get '%{http_code} %{time_total}' "$BASE/api/test/delay/1")"
+[ "${out%% *}" = 200 ] || fail "/api/test/delay/1 -> ${out%% *} (want 200)"
+t="${out#* }"
 awk -v t="$t" 'BEGIN { exit !(t >= 1.0) }' || fail "/api/test/delay/1 took ${t}s (want >= 1s)"
 
 echo "$CHECKS checks, $FAILS failures"

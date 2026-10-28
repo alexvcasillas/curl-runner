@@ -36,16 +36,16 @@ export function SiteHeader({ active }: { active?: SiteSection }) {
     <header className="border-b border-hairline">
       <nav
         aria-label="Main"
-        className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-x-8 gap-y-2 px-6 py-4"
+        className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-x-8 gap-y-0 px-6 py-2 sm:gap-y-2 sm:py-4"
       >
         <Link
           href="/"
-          className="flex h-11 items-center gap-2.5 text-[17px] font-semibold tracking-[-0.01em] text-fg hover:text-white"
+          className="mr-auto flex h-11 items-center gap-2.5 text-[17px] sm:mr-0 font-semibold tracking-[-0.01em] text-fg hover:text-white"
         >
           <TerminalMark className="size-[22px] text-brand" />
           curl-runner
         </Link>
-        <div className="flex grow flex-wrap gap-x-6 text-sm">
+        <div className="order-last flex w-full flex-nowrap gap-x-6 overflow-x-auto text-sm sm:order-none sm:w-auto sm:grow sm:flex-wrap sm:overflow-visible">
           {NAV.map((item) => {
             const isActive = item.section !== undefined && item.section === active;
             return (
@@ -53,7 +53,7 @@ export function SiteHeader({ active }: { active?: SiteSection }) {
                 key={item.href}
                 href={item.href}
                 aria-current={isActive ? 'page' : undefined}
-                className={`inline-flex h-11 items-center transition-colors hover:text-fg ${isActive ? 'text-fg' : 'text-fg-secondary'}`}
+                className={`inline-flex h-11 shrink-0 items-center whitespace-nowrap transition-colors hover:text-fg ${isActive ? 'text-fg' : 'text-fg-secondary'}`}
               >
                 {item.label}
               </Link>

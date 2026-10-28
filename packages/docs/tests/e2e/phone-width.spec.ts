@@ -22,3 +22,13 @@ for (const path of PAGES) {
     expect(scrollWidth).toBeLessThanOrEqual(innerWidth);
   });
 }
+
+for (const path of ['/', '/docs/quick-start']) {
+  test(`${path} marketing header stays compact at 390px`, async ({ page }) => {
+    await page.goto(path);
+    const height = await page.evaluate(
+      () => document.querySelector('header')?.getBoundingClientRect().height ?? 0,
+    );
+    expect(height).toBeLessThanOrEqual(130);
+  });
+}
