@@ -1,7 +1,8 @@
 //! `when` and `expect` rules (TS `validateWhenCondition`, `validateExpect`).
 
 use super::issues::{
-    Crash, Ctx, Res, Severity, as_num, has_key, is_object, not_plain_object, prop, truthy_prop,
+    Crash, Ctx, Res, Severity, as_num, has_key, is_interpolated, is_object, not_plain_object, prop,
+    truthy_prop,
 };
 use super::request::convert_to;
 use curl_runner_core::jsval::{is_js_space, parse_int};
@@ -173,7 +174,7 @@ pub fn validate_expect(cx: &mut Ctx, expect: &Json, path: &str) -> Res {
 }
 
 fn in_status_range(v: &Json) -> bool {
-    as_num(v).is_some_and(|n| (100.0..=599.0).contains(&n))
+    is_interpolated(v) || as_num(v).is_some_and(|n| (100.0..=599.0).contains(&n))
 }
 
 fn validate_status(cx: &mut Ctx, status: &Json, path: &str) {
@@ -192,6 +193,7 @@ fn validate_status(cx: &mut Ctx, status: &Json, path: &str) {
                 "Status codes must be numbers between 100-599",
             );
         }
+    } else if is_interpolated(status) {
     } else if let Some(s) = status.as_str() {
         let parsed = parse_int(s);
         if (100.0..=599.0).contains(&parsed) {

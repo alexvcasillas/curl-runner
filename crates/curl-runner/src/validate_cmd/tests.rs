@@ -1428,3 +1428,19 @@ fn non_numeric_and_negative_values_still_error() {
         assert_eq!(o.code, 1, "{yaml}: {}", o.stdout);
     }
 }
+
+#[test]
+fn interpolated_expect_status_is_accepted() {
+    for status in ["\"${S}\"", "\"${S:200}\"", "[\"${S}\", 201]"] {
+        let yaml = format!(
+            "request:\n  name: r\n  url: https://example.com\n  expect:\n    status: {status}\n"
+        );
+        let o = validate(&yaml, &["--strict"]);
+        assert_eq!(o.code, 0, "{status}: {}", o.stdout);
+    }
+    let o = validate(
+        "request:\n  name: r\n  url: https://example.com\n  expect:\n    status: [abc]\n",
+        &[],
+    );
+    assert_eq!(o.code, 1, "{}", o.stdout);
+}
