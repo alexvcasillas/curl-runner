@@ -1,5 +1,4 @@
 curl \
   -X GET \
-  -d '"x"' \
-  -H 'Content-Type: application/json' \
+  -d x \
   https://a.test

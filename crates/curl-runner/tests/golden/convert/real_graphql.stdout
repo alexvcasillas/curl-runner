@@ -4,7 +4,6 @@ request:
   headers:
     Content-Type: application/json
   body:
-    json:
-      query: "{ viewer { login } }"
-      variables: {}
+    query: "{ viewer { login } }"
+    variables: {}
 

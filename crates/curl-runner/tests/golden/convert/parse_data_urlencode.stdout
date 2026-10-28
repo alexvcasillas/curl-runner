@@ -1,6 +1,5 @@
 request:
   method: POST
   url: https://example.com
-  body:
-    form: "name%3DJohn%20Doe"
+  body: "name%3DJohn%20Doe"
 

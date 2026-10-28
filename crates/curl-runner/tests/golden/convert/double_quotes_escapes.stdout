@@ -1,6 +1,5 @@
 request:
   method: POST
   url: https://x.test
-  body:
-    raw: "{\"a\":\"b\\c\"}"
+  body: "{\"a\":\"b\\c\"}"
 

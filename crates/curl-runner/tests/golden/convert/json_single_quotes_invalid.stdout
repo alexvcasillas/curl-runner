@@ -3,6 +3,5 @@ request:
   url: https://x.test/j
   headers:
     Content-Type: application/json
-  body:
-    raw: "{'a':1}"
+  body: "{'a':1}"
 

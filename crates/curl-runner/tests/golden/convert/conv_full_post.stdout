@@ -5,6 +5,5 @@ request:
     type: bearer
     token: TOKEN
   body:
-    json:
-      name: Alex
+    name: Alex
 

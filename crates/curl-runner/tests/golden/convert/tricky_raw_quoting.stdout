@@ -1,6 +1,5 @@
 request:
   method: POST
   url: https://x.test
-  body:
-    raw: "say \"hi\" # not comment"
+  body: "say \"hi\" # not comment"
 

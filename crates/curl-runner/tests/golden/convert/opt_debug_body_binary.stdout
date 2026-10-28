@@ -32,6 +32,5 @@
 request:
   method: POST
   url: https://x.test
-  body:
-    binary: "@f.bin"
+  body: "@f.bin"
 

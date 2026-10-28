@@ -1,6 +1,5 @@
 request:
   method: GET
   url: https://example.com
-  body:
-    form: q=test
+  body: q=test
 

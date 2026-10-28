@@ -26,7 +26,16 @@ pub fn yaml_key(s: &str) -> String {
         .next()
         .is_some_and(|c| c.is_ascii_alphabetic() || c == b'_')
         && b.all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-');
-    if ok { s.to_string() } else { quote(s) }
+    // `on: x` reads back as the key `true` (YAML 1.1 booleans, like Bun).
+    let reads_as_scalar = matches!(
+        s.to_lowercase().as_str(),
+        "true" | "false" | "null" | "yes" | "no" | "on" | "off"
+    );
+    if ok && !reads_as_scalar {
+        s.to_string()
+    } else {
+        quote(s)
+    }
 }
 
 pub fn needs_quoting(s: &str) -> bool {

@@ -7,6 +7,5 @@ requests:
     method: POST
     url: https://api.example.com/users
     body:
-      json:
-        name: test
+      name: test
 

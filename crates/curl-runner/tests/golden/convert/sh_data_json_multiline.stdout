@@ -2,6 +2,5 @@ request:
   name: request_1
   method: POST
   url: https://a.test
-  body:
-    raw: "{"
+  body: "{"
 

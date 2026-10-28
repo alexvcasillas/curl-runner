@@ -4,9 +4,8 @@ request:
   headers:
     Content-Type: application/json
   body:
-    json:
-      user: {"name":"A","roles":["a","b"]}
-      n: null
-      ok: true
-      v: 1.5
+    user: {"name":"A","roles":["a","b"]}
+    n: null
+    ok: true
+    v: 1.5
 

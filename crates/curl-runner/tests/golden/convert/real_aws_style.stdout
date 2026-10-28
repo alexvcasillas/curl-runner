@@ -4,6 +4,5 @@ request:
   headers:
     Authorization: "AWS4-HMAC-SHA256 Credential=AKIA/20240101/us-east-1/s3/aws4_request, SignedHeaders=host, Signature=abc"
     X-Amz-Date: 20240101T000000Z
-  body:
-    binary: "@key.txt"
+  body: "@key.txt"
 

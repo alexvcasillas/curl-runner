@@ -1,6 +1,5 @@
 request:
   method: GET
   url: https://api.example.com/search
-  body:
-    form: "q%3Dhello%20world&lang%3Den"
+  body: "q%3Dhello%20world&lang%3Den"
 

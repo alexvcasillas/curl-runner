@@ -1,6 +1,5 @@
 request:
   method: POST
   url: https://example.com
-  body:
-    raw: "@not-a-file"
+  body: "@not-a-file"
 

@@ -1,6 +1,5 @@
 request:
   method: POST
   url: https://x.test
-  body:
-    form: "x%3D!~*'()-_."
+  body: "x%3D!~*'()-_."
 

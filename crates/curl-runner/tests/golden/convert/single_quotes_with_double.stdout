@@ -1,6 +1,5 @@
 request:
   method: POST
   url: ""
-  body:
-    raw: "{\"msg\":\"it\\s}' https://x.test"
+  body: "{\"msg\":\"it\\s}' https://x.test"
 

@@ -1,6 +1,5 @@
 request:
   method: POST
   url: https://x.test/upload
-  body:
-    binary: "@payload.bin"
+  body: "@payload.bin"
 

@@ -3,6 +3,5 @@ request:
   url: https://x.test/j
   headers:
     Content-Type: application/json
-  body:
-    json: [1, "two", true, null, 3.5]
+  body: [1,"two",true,null,3.5]
 

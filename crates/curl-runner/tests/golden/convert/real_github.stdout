@@ -8,9 +8,8 @@ request:
     type: bearer
     token: ghp_xxxxxxxxxxxx
   body:
-    json:
-      title: Found a bug
-      body: I'm having a problem with this.
-      labels: ["bug"]
+    title: Found a bug
+    body: I'm having a problem with this.
+    labels: ["bug"]
   followRedirects: true
 

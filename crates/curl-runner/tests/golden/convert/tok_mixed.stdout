@@ -3,6 +3,5 @@ request:
   url: ""
   headers:
     Accept: "*/*"
-  body:
-    raw: test
+  body: test
 

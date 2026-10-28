@@ -128,6 +128,8 @@ pub fn yaml_to_ir(config: &Json) -> Result<CurlRunnerIr, String> {
                     Body::Json(body.clone())
                 }
             }
+            // A string body is sent verbatim by the runner: `-d 'text'`.
+            Json::String(s) => Body::Raw(s.clone()),
             other => Body::Json(other.clone()),
         });
     }

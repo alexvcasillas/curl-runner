@@ -7,8 +7,7 @@ request:
     Content-Type: application/json
     X-Request-Id: abc-123
   body:
-    json:
-      title: hello
-      tags: ["a","b"]
-      n: {"x":1}
+    title: hello
+    tags: ["a","b"]
+    n: {"x":1}
 

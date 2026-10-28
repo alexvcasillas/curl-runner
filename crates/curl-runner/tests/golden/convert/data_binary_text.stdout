@@ -1,6 +1,5 @@
 request:
   method: POST
   url: https://x.test/upload
-  body:
-    raw: raw text here
+  body: raw text here
 

@@ -147,9 +147,8 @@ request:
     username: me
     password: pw
   body:
-    json:
-      "7": 0
-      a: [1,{"b":2}]
+    "7": 0
+    a: [1,{"b":2}]
   timeout: 30000
   maxRedirects: 4
   proxy: http://p:1

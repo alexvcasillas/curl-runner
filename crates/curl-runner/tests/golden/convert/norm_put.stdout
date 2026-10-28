@@ -1,6 +1,5 @@
 request:
   method: PUT
   url: https://example.com
-  body:
-    raw: data
+  body: data
 

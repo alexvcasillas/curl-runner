@@ -4,32 +4,31 @@ request:
   headers:
     Content-Type: application/json
   body:
-    json:
-      t: "true"
-      n: "123"
-      c: "a: b"
-      br: "{x}"
-      e: ""
-      sp: " lead"
-      sp2: "trail "
-      q: "\"quoted\""
-      sq: "'single'"
-      h: "a#b"
-      at: "@user"
-      pct: "100%"
-      star: "*x"
-      amp: "a&b"
-      dash: -x
-      colon: "x:"
-      nl: line1
+    t: "true"
+    n: "123"
+    c: "a: b"
+    br: "{x}"
+    e: ""
+    sp: " lead"
+    sp2: "trail "
+    q: "\"quoted\""
+    sq: "'single'"
+    h: "a#b"
+    at: "@user"
+    pct: "100%"
+    star: "*x"
+    amp: "a&b"
+    dash: -x
+    colon: "x:"
+    nl: line1
 line2
-      tab: a	b
-      bs: back\slash
-      yes: "Yes"
-      off: "OFF"
-      f: "1.5"
-      neg: "-2"
-      dot: 1.2.3
-      nullstr: "NULL"
-      ws: a  b
+    tab: a	b
+    bs: back\slash
+    "yes": "Yes"
+    "off": "OFF"
+    f: "1.5"
+    neg: "-2"
+    dot: 1.2.3
+    nullstr: "NULL"
+    ws: a  b
 

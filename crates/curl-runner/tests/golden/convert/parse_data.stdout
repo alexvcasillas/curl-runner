@@ -2,6 +2,5 @@ request:
   method: POST
   url: https://example.com
   body:
-    json:
-      name: Alex
+    name: Alex
 
