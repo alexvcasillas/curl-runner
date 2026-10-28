@@ -53,3 +53,7 @@ packages/docs/next-env.d.ts
 # staged by scripts/npm-stage.sh, never committed
 npm/*/bin/
 packages/docs/.source/
+
+# playwright
+test-results/
+playwright-report/
