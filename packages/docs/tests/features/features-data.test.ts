@@ -69,4 +69,25 @@ describe('features data', () => {
     expect(getAdjacentFeatures('env-files').next).toBeNull();
     expect(getAdjacentFeatures('env-files').prev?.slug).toBe('convert');
   });
+
+  it('sharpens search titles and descriptions for the pages Search Console ranks', () => {
+    const cases = [
+      ['convert', 'Convert curl to YAML (and back) — curl-runner', 'convert curl'],
+      ['retry-mechanism', 'Retry failed curl requests with backoff — curl-runner', 'retry'],
+      ['file-uploads', 'Upload files with multipart form data — curl-runner', 'upload files'],
+    ] as const;
+    for (const [slug, seoTitle, query] of cases) {
+      const f = getFeatureBySlug(slug);
+      expect(f?.seoTitle, slug).toBe(seoTitle.replace(' — curl-runner', ''));
+      expect(f?.description.length, slug).toBeLessThanOrEqual(150);
+      expect(f?.description.toLowerCase(), slug).toContain(query);
+    }
+  });
+
+  it('documents curl --retry on the retry page', () => {
+    const f = getFeatureBySlug('retry-mechanism');
+    expect(f?.fromCurl?.heading).toBe('From curl --retry');
+    expect(f?.fromCurl?.href).toBe('https://curl.se/docs/manpage.html#--retry');
+    expect(f?.example.yaml).toContain('retryableStatuses: [429, 500, 502, 503]');
+  });
 });

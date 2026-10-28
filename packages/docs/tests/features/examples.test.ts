@@ -13,9 +13,14 @@ describe.skipIf(!bin)('feature examples pass `curl-runner validate --strict`', (
   const dir = mkdtempSync(join(tmpdir(), 'curl-runner-examples-'));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-  it.each(getAllFeatures().map((f) => [f.slug, f] as const))('%s', (slug, feature) => {
-    const file = join(dir, `${slug}.yaml`);
-    writeFileSync(file, feature.example.yaml);
+  const samples = getAllFeatures().flatMap((f) => [
+    [f.slug, f.example.yaml] as const,
+    ...(f.fromCurl ? [[`${f.slug}-from-curl`, f.fromCurl.yaml] as const] : []),
+  ]);
+
+  it.each(samples)('%s', (name, source) => {
+    const file = join(dir, `${name}.yaml`);
+    writeFileSync(file, source);
     const result = spawnSync(bin as string, ['validate', '--strict', file], {
       encoding: 'utf8',
       env: { ...process.env, NO_COLOR: '1' },
