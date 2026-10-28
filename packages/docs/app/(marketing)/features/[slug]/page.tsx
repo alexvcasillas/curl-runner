@@ -6,12 +6,14 @@ import { CodePane } from '@/components/site/CodePane';
 import { Eyebrow } from '@/components/site/Eyebrow';
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { Yaml } from '@/components/site/Yaml';
+import { StructuredData } from '@/components/structured-data';
 import {
   type FeatureData,
   getAdjacentFeatures,
   getAllFeatures,
   getFeatureBySlug,
 } from '@/lib/features-data';
+import { featureBreadcrumbs } from '@/lib/seo';
 
 const BASE_URL = 'https://www.curl-runner.com';
 
@@ -105,6 +107,7 @@ export default async function FeaturePage({ params }: FeaturePageProps) {
 
   return (
     <>
+      <StructuredData data={featureBreadcrumbs(feature)} />
       <SiteHeader active="features" />
       <main id="main-content">
         <div className="mx-auto grid max-w-[1200px] gap-12 px-6 md:grid-cols-[220px_minmax(0,1fr)]">

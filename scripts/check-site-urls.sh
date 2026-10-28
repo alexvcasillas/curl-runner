@@ -86,5 +86,25 @@ out="$(get '%{http_code} %{time_total}' "$BASE/api/test/delay/1")"
 t="${out#* }"
 awk -v t="$t" 'BEGIN { exit !(t >= 1.0) }' || fail "/api/test/delay/1 took ${t}s (want >= 1s)"
 
+# Canonical-host redirects. Production only: other deployments have their own hostname.
+# One permanent hop (301/308) straight to the canonical URL; redirects are not followed.
+expect_redirect() { # url expected-location
+  CHECKS=$((CHECKS + 1))
+  local out code loc
+  out="$(get '%{http_code} %{redirect_url}' "$1")"
+  code="${out%% *}"
+  loc="${out#* }"
+  { [ "$code" = 301 ] || [ "$code" = 308 ]; } || fail "$1 -> $code (want 301 or 308)"
+  [ "$loc" = "$2" ] || fail "$1 -> Location '$loc' (want $2)"
+}
+
+if [ "$BASE" = "https://www.curl-runner.com" ]; then
+  for u in http://curl-runner.com/ http://www.curl-runner.com/ https://curl-runner.com/; do
+    expect_redirect "$u" "https://www.curl-runner.com/"
+  done
+else
+  echo "skip: canonical-host redirect checks run only against https://www.curl-runner.com"
+fi
+
 echo "$CHECKS checks, $FAILS failures"
 [ "$FAILS" -eq 0 ]

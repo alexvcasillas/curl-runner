@@ -1,7 +1,10 @@
 import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/layouts/docs/page';
 import { createRelativeLink } from 'fumadocs-ui/mdx';
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { StructuredData } from '@/components/structured-data';
+import { docsBreadcrumbs, featureOverviewHref } from '@/lib/seo';
 import { getDocsOgUrl, SITE_URL, source } from '@/lib/source';
 import { getMDXComponents } from '@/mdx-components';
 
@@ -17,11 +20,21 @@ export default async function Page({ params }: Props) {
   }
 
   const MDX = page.data.body;
+  const overviewHref = featureOverviewHref(page.slugs);
 
   return (
     <DocsPage toc={page.data.toc} full={page.data.full}>
+      <StructuredData data={docsBreadcrumbs(page)} />
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
+      {overviewHref ? (
+        <Link
+          href={overviewHref}
+          className="not-prose -mt-2 mb-4 inline-block text-sm text-fd-muted-foreground underline-offset-4 hover:text-fd-foreground hover:underline"
+        >
+          Feature overview →
+        </Link>
+      ) : null}
       <DocsBody>
         <MDX components={getMDXComponents({ a: createRelativeLink(source, page) })} />
       </DocsBody>
