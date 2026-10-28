@@ -71,3 +71,18 @@ jobs:
 
       - name: Smoke test
         run: ./target/x86_64-unknown-linux-musl/release/curl-runner --version
+
+  # The single required status check for branch protection ("Run Tests"):
+  # passes only when every test job above passed.
+  run-tests:
+    name: Run Tests
+    needs: [rust, rust-musl]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: All test jobs passed
+        run: |
+          [ "${{ needs.rust.result }}" = success ] && [ "${{ needs.rust-musl.result }}" = success ] || {
+            echo "rust: ${{ needs.rust.result }}, rust-musl: ${{ needs.rust-musl.result }}"
+            exit 1
+          }
