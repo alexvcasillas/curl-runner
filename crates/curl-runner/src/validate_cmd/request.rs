@@ -218,10 +218,20 @@ pub fn validate_request_config(cx: &mut Ctx, req: &Json, path: &str, is_defaults
     cx.boolean_field(req, "http2", path);
 
     if let Some(s) = prop(req, "snapshot").filter(|v| is_object(v)) {
-        global::validate_snapshot(cx, s, &format!("{path}.snapshot"))?;
+        global::validate_snapshot(
+            cx,
+            s,
+            &format!("{path}.snapshot"),
+            global::VALID_REQUEST_SNAPSHOT_KEYS,
+        )?;
     }
     if let Some(d) = prop(req, "diff").filter(|v| is_object(v)) {
-        global::validate_diff(cx, d, &format!("{path}.diff"))?;
+        global::validate_diff(
+            cx,
+            d,
+            &format!("{path}.diff"),
+            global::VALID_REQUEST_DIFF_KEYS,
+        )?;
     }
     Ok(())
 }

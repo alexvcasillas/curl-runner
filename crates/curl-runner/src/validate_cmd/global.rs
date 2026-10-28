@@ -8,7 +8,7 @@ use super::issues::{
 use super::{request, security};
 use curl_runner_core::model::Json;
 
-const VALID_GLOBAL_KEYS: &[&str] = &[
+pub(super) const VALID_GLOBAL_KEYS: &[&str] = &[
     "env",
     "security",
     "execution",
@@ -36,9 +36,8 @@ pub(super) const VALID_PROFILE_KEYS: &[&str] = &[
     "histogram",
     "exportFile",
 ];
-/// Request-level `snapshot:` shares this check with `global.snapshot`, so it
-/// is the union of `SnapshotConfig` and `GlobalSnapshotConfig`.
-pub(super) const VALID_SNAPSHOT_KEYS: &[&str] = &[
+/// `GlobalSnapshotConfig` (`global.snapshot`).
+pub(super) const VALID_GLOBAL_SNAPSHOT_KEYS: &[&str] = &[
     "enabled",
     "name",
     "include",
@@ -48,8 +47,11 @@ pub(super) const VALID_SNAPSHOT_KEYS: &[&str] = &[
     "updateMode",
     "ci",
 ];
-/// Union of `DiffConfig` and `GlobalDiffConfig` (see `VALID_SNAPSHOT_KEYS`).
-pub(super) const VALID_DIFF_KEYS: &[&str] = &[
+/// `SnapshotConfig` (request-level `snapshot:`).
+pub(super) const VALID_REQUEST_SNAPSHOT_KEYS: &[&str] =
+    &["enabled", "name", "include", "exclude", "match"];
+/// `GlobalDiffConfig` (`global.diff`).
+pub(super) const VALID_GLOBAL_DIFF_KEYS: &[&str] = &[
     "enabled",
     "exclude",
     "match",
@@ -60,6 +62,9 @@ pub(super) const VALID_DIFF_KEYS: &[&str] = &[
     "save",
     "outputFormat",
 ];
+/// `DiffConfig` (request-level `diff:`).
+pub(super) const VALID_REQUEST_DIFF_KEYS: &[&str] =
+    &["enabled", "exclude", "match", "includeTimings"];
 const VALID_EXECUTION_MODES: &[&str] = &["sequential", "parallel"];
 const VALID_OUTPUT_FORMATS: &[&str] = &["json", "pretty", "raw"];
 const VALID_PRETTY_LEVELS: &[&str] = &["minimal", "standard", "detailed"];
@@ -126,10 +131,15 @@ pub fn validate_global(cx: &mut Ctx, config: &Json, path: &str) -> Res {
         validate_profile(cx, p, &format!("{path}.profile"))?;
     }
     if let Some(s) = truthy_prop(config, "snapshot") {
-        validate_snapshot(cx, s, &format!("{path}.snapshot"))?;
+        validate_snapshot(
+            cx,
+            s,
+            &format!("{path}.snapshot"),
+            VALID_GLOBAL_SNAPSHOT_KEYS,
+        )?;
     }
     if let Some(d) = truthy_prop(config, "diff") {
-        validate_diff(cx, d, &format!("{path}.diff"))?;
+        validate_diff(cx, d, &format!("{path}.diff"), VALID_GLOBAL_DIFF_KEYS)?;
     }
     if let Some(v) = truthy_prop(config, "variables") {
         validate_variables(cx, v, &format!("{path}.variables"));
@@ -300,8 +310,8 @@ fn choice_and_dir(cx: &mut Ctx, obj: &Json, field: &str, valid: &[&str], path: &
     }
 }
 
-pub fn validate_snapshot(cx: &mut Ctx, snapshot: &Json, path: &str) -> Res {
-    cx.check_unknown_keys(snapshot, VALID_SNAPSHOT_KEYS, path)?;
+pub fn validate_snapshot(cx: &mut Ctx, snapshot: &Json, path: &str, keys: &[&str]) -> Res {
+    cx.check_unknown_keys(snapshot, keys, path)?;
     choice_and_dir(
         cx,
         snapshot,
@@ -312,8 +322,8 @@ pub fn validate_snapshot(cx: &mut Ctx, snapshot: &Json, path: &str) -> Res {
     Ok(())
 }
 
-pub fn validate_diff(cx: &mut Ctx, diff: &Json, path: &str) -> Res {
-    cx.check_unknown_keys(diff, VALID_DIFF_KEYS, path)?;
+pub fn validate_diff(cx: &mut Ctx, diff: &Json, path: &str, keys: &[&str]) -> Res {
+    cx.check_unknown_keys(diff, keys, path)?;
     choice_and_dir(cx, diff, "outputFormat", VALID_DIFF_OUTPUT_FORMATS, path);
     Ok(())
 }

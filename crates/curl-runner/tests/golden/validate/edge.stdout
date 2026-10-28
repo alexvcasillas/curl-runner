@@ -296,16 +296,19 @@
   [2m→[0m 1 error(s), 1 warning(s)
 
 [31m✗[0m edge/e047.yaml
-  [33m●[0m request.snapshot.0: Unknown key "0" (did you mean "ci"?)
-    [36mfix:[0m Rename to "ci"
+  [33m●[0m request.snapshot.0: Unknown key "0"
+  [33m●[0m request.diff.outputFormat: Unknown key "outputFormat"
+  [33m●[0m request.diff.dir: Unknown key "dir"
   [31m●[0m request.diff.outputFormat: Invalid outputFormat "1". Must be: terminal, json, markdown
   [31m●[0m request.diff.dir: Must be a string
-  [2m→[0m 2 error(s), 1 warning(s)
+  [2m→[0m 2 error(s), 3 warning(s)
 
 [31m✗[0m edge/e048.yaml
+  [33m●[0m request.snapshot.updateMode: Unknown key "updateMode"
+  [33m●[0m request.snapshot.dir: Unknown key "dir"
   [31m●[0m request.snapshot.updateMode: Invalid updateMode "[object Object]". Must be: none, all, failing
   [31m●[0m request.snapshot.dir: Must be a string
-  [2m→[0m 2 error(s)
+  [2m→[0m 2 error(s), 2 warning(s)
 
 [32m✓[0m edge/e049.yaml
   [33m●[0m requests[1]: Duplicate request name "a" (also at requests[0])
@@ -442,4 +445,4 @@
   [2m→[0m 1 error(s)
 
 
-[36mSummary:[0m 51 file(s) with 188 issue(s)
+[36mSummary:[0m 51 file(s) with 192 issue(s)
