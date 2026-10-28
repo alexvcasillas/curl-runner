@@ -74,17 +74,16 @@ describe('docs feature pages link back to the overview', () => {
 });
 
 describe('breadcrumbs', () => {
-  it('feature pages: Home, Features, title', async () => {
+  it('feature pages: Home, title (there is no /features index page)', async () => {
     const feature = getAllFeatures()[0];
     const html = await render(<FeaturePage params={Promise.resolve({ slug: feature.slug })} />);
     const crumbs = jsonLd(html).find((d) => d['@type'] === 'BreadcrumbList');
     expect(crumbs).toEqual(featureBreadcrumbs(feature));
     expect(crumbs?.itemListElement).toEqual([
       { '@type': 'ListItem', position: 1, name: 'Home', item: SITE_URL },
-      { '@type': 'ListItem', position: 2, name: 'Features', item: `${SITE_URL}/features` },
       {
         '@type': 'ListItem',
-        position: 3,
+        position: 2,
         name: feature.title,
         item: `${SITE_URL}/features/${feature.slug}`,
       },
@@ -116,6 +115,23 @@ describe('breadcrumbs', () => {
 });
 
 describe('breadcrumb URLs resolve', () => {
+  it('every emitted feature breadcrumb item is the home page or a feature page', () => {
+    const real = new Set<string>([
+      SITE_URL,
+      ...getAllFeatures().map((f) => `${SITE_URL}/features/${f.slug}`),
+    ]);
+    for (const feature of getAllFeatures()) {
+      const items = featureBreadcrumbs(feature).itemListElement as {
+        item: string;
+        position: number;
+      }[];
+      expect(items.map((i) => i.position)).toEqual(items.map((_, i) => i + 1));
+      for (const entry of items) {
+        expect(real.has(entry.item), `${feature.slug}: ${entry.item}`).toBe(true);
+      }
+    }
+  });
+
   it('every emitted docs breadcrumb item is a real page', () => {
     const real = new Set<string>([
       SITE_URL,

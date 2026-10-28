@@ -25,7 +25,6 @@ export function breadcrumbList(items: BreadcrumbItem[]) {
 export function featureBreadcrumbs(feature: Pick<FeatureData, 'slug' | 'title'>) {
   return breadcrumbList([
     { name: 'Home', url: SITE_URL },
-    { name: 'Features', url: `${SITE_URL}/features` },
     { name: feature.title, url: `${SITE_URL}/features/${feature.slug}` },
   ]);
 }
