@@ -9,6 +9,8 @@ use std::path::Path;
 pub enum InstallMethod {
     Npm,
     Bun,
+    /// `cargo install curl-runner` (`$CARGO_HOME/bin`, default `~/.cargo/bin`).
+    Cargo,
     /// A downloaded binary (TS `curl` installer and `standalone`).
     Standalone,
     /// A development build or an unreadable path: never upgraded.
@@ -31,8 +33,11 @@ pub fn detect(exe: &Path, env: &dyn Fn(&str) -> Option<String>) -> InstallMethod
     if p.contains("node_modules") {
         return InstallMethod::Npm;
     }
-    // Never self-replace inside a package manager's tree.
-    if p.contains("/Cellar/") || p.contains("/.cargo/bin/") {
+    if is_cargo(&p, env) {
+        return InstallMethod::Cargo;
+    }
+    // Never self-replace inside Homebrew's tree.
+    if p.contains("/Cellar/") {
         return InstallMethod::Unknown;
     }
     if p.contains("/.local/bin/") {
@@ -48,6 +53,20 @@ pub fn detect(exe: &Path, env: &dyn Fn(&str) -> Option<String>) -> InstallMethod
 
 fn is_dev_build(p: &str) -> bool {
     p.contains("/target/debug/") || p.contains("/target/release/")
+}
+
+fn is_cargo(p: &str, env: &dyn Fn(&str) -> Option<String>) -> bool {
+    if p.contains("/.cargo/bin/") {
+        return true;
+    }
+    env("CARGO_HOME")
+        .filter(|h| !h.is_empty())
+        .is_some_and(|h| {
+            p.starts_with(&format!(
+                "{}/bin/",
+                h.replace('\\', "/").trim_end_matches('/')
+            ))
+        })
 }
 
 fn is_bun(p: &str, env: &dyn Fn(&str) -> Option<String>) -> bool {
@@ -70,6 +89,7 @@ pub fn upgrade_command(m: InstallMethod) -> Option<&'static str> {
     match m {
         InstallMethod::Bun => Some("bun install -g @curl-runner/cli@latest"),
         InstallMethod::Npm => Some("npm install -g @curl-runner/cli@latest"),
+        InstallMethod::Cargo => Some("cargo install curl-runner --locked"),
         InstallMethod::Standalone | InstallMethod::Unknown => None,
     }
 }
@@ -182,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    fn homebrew_and_cargo_trees_are_unknown() {
+    fn homebrew_tree_is_unknown() {
         assert_eq!(
             d("/opt/homebrew/Cellar/curl-runner/1.2.3/bin/curl-runner"),
             InstallMethod::Unknown
@@ -191,17 +211,31 @@ mod tests {
             d("/home/linuxbrew/.linuxbrew/Cellar/curl-runner/1.2.3/bin/curl-runner"),
             InstallMethod::Unknown
         );
-        assert_eq!(d("/home/u/.cargo/bin/curl-runner"), InstallMethod::Unknown);
-        assert_eq!(
-            d(r"C:\Users\u\.cargo\bin\curl-runner.exe"),
-            InstallMethod::Unknown
-        );
         // npm installed through Homebrew's node is still npm.
         assert_eq!(
             d(
                 "/opt/homebrew/Cellar/node/22/lib/node_modules/@curl-runner/cli-darwin-arm64/bin/curl-runner"
             ),
             InstallMethod::Npm
+        );
+    }
+
+    #[test]
+    fn detects_cargo_install_path() {
+        assert_eq!(d("/home/u/.cargo/bin/curl-runner"), InstallMethod::Cargo);
+        assert_eq!(
+            d(r"C:\Users\u\.cargo\bin\curl-runner.exe"),
+            InstallMethod::Cargo
+        );
+        let env = |k: &str| (k == "CARGO_HOME").then(|| "/opt/cargo/".to_string());
+        assert_eq!(
+            detect(Path::new("/opt/cargo/bin/curl-runner"), &env),
+            InstallMethod::Cargo
+        );
+        // Outside `$CARGO_HOME/bin` it is not a cargo install.
+        assert_eq!(
+            detect(Path::new("/opt/cargo-tools/curl-runner"), &env),
+            InstallMethod::Standalone
         );
     }
 
@@ -227,6 +261,10 @@ mod tests {
         assert_eq!(
             upgrade_command(InstallMethod::Npm),
             Some("npm install -g @curl-runner/cli@latest")
+        );
+        assert_eq!(
+            upgrade_command(InstallMethod::Cargo),
+            Some("cargo install curl-runner --locked")
         );
         assert_eq!(upgrade_command(InstallMethod::Standalone), None);
         assert_eq!(upgrade_command(InstallMethod::Unknown), None);

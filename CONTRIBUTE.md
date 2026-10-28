@@ -449,18 +449,31 @@ sources in `npm/`), published in lockstep by `scripts/npm-publish.sh`. See
   2. On npmjs.com → package → Settings → Trusted publishing, add GitHub
      Actions: repo `alexvcasillas/curl-runner`, workflow `release.yml`,
      environment `Production` (same as `@curl-runner/cli`).
-- [ ] **Run the release smoke:** `gh workflow run release.yml -f smoke=true`.
-      It builds all binaries, smoke-tests the archives/installers and runs
+- [ ] **Bootstrap the crates on crates.io.** CI publishes with crates.io
+      trusted publishing, which can only be configured on a crate that
+      already exists. Before merging the first version PR (2.0.0):
+  1. On the version PR branch (Cargo.toml already at 2.0.0), with a token
+     from `cargo login`: `cargo publish -p curl-runner-core && cargo publish -p curl-runner`.
+  2. On crates.io → each crate → Settings → Trusted Publishing, add GitHub:
+     repo `alexvcasillas/curl-runner`, workflow `release.yml`, environment
+     `Production`.
+  3. Merge the version PR; `scripts/crates-publish.sh` skips the versions
+     already on crates.io.
+- [ ] **Run the release smoke:** `gh workflow run release.yml --ref <branch> -f smoke=true`.
+      It builds all binaries, smoke-tests the archives/installers, runs
       `scripts/npm-smoke.sh` (bun without node, npm without bun, pnpm) on
-      linux-x64 and linux-arm64. It never publishes.
+      linux-x64 and linux-arm64, and runs `cargo publish --workspace --dry-run`.
+      It never publishes.
 - [ ] **Know the gaps:** the `darwin-*` and `win32-x64` npm packages are not
       smoke-tested anywhere (CI or locally); only the linux packages are
       installed and run. Check `npm i -g @curl-runner/cli` on a Mac and on
       Windows after the first release. On Windows the npm/bun command needs `sh`
       on PATH; `install.ps1` is the supported route without it.
 
-If a publish fails midway, re-run the failed jobs: versions already on npm are
-skipped, and `@curl-runner/cli` is only published after all platform packages.
+If a publish fails midway, re-run the failed jobs: versions already on npm or
+crates.io are skipped, and `@curl-runner/cli` is only published after all platform
+packages. The version PR bumps `packages/cli/package.json` and, through
+`scripts/sync-cargo-version.sh`, the Cargo workspace version.
 
 ## 🐛 Issue Guidelines
 

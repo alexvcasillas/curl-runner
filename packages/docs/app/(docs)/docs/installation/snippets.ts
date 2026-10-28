@@ -13,6 +13,8 @@ export const pnpmInstallExample = `pnpm install -g @curl-runner/cli`;
 export const bunInstallExample = `bun install -g @curl-runner/cli
 # Windows: needs sh on PATH (e.g. Git for Windows Unix tools); otherwise use install.ps1`;
 
+export const cargoInstallExample = `cargo install curl-runner --locked`;
+
 export const npxUsageExample = `npx @curl-runner/cli my-tests.yaml`;
 
 export const verifyInstallationExample = `curl-runner --version`;

@@ -18,6 +18,7 @@ import { DownloadsSection } from '@/components/downloads-section';
 import { Badge } from '@/components/ui/badge';
 import {
   bunInstallExample,
+  cargoInstallExample,
   curlInstallerExample,
   linuxBinaryInstallExample,
   npmInstallExample,
@@ -37,6 +38,7 @@ export const metadata: Metadata = {
     'curl-runner installation',
     'bun install curl-runner',
     'npm install curl-runner',
+    'cargo install curl-runner',
     'CLI tool installation',
     'HTTP client setup',
     'package manager installation',
@@ -185,6 +187,18 @@ curl-runner --version`}
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* Cargo Installation */}
+              <div className="space-y-3">
+                <h3 className="text-xl font-semibold">Cargo (crates.io)</h3>
+                <p className="text-muted-foreground">
+                  Build from source with Rust. This compiles libcurl and the TLS library, so it
+                  needs a C compiler and <code className="bg-muted px-1 rounded">cmake</code>.{' '}
+                  <code className="bg-muted px-1 rounded">curl-runner upgrade</code> reruns the same
+                  command.
+                </p>
+                <CodeBlockServer language="bash">{cargoInstallExample}</CodeBlockServer>
               </div>
 
               {/* Binary Downloads */}

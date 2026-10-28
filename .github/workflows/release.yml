@@ -125,6 +125,23 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
 
+      # crates.io trusted publishing (OIDC token), then curl-runner-core and
+      # curl-runner at the version the version PR synced into Cargo.toml.
+      - name: Install Rust toolchain
+        if: ${{ steps.changesets.outputs.published == 'true' }}
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Authenticate to crates.io
+        if: ${{ steps.changesets.outputs.published == 'true' }}
+        id: crates-auth
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Publish crates
+        if: ${{ steps.changesets.outputs.published == 'true' }}
+        run: scripts/crates-publish.sh
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
+
   build:
     name: Build ${{ matrix.platform }}
     needs: meta
@@ -285,6 +302,28 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Manual only (smoke=true): packages both crates and builds them from the
+  # packaged sources, as crates.io and `cargo install` will. Never uploads.
+  crates-smoke:
+    name: crates.io dry run
+    needs: meta
+    if: ${{ inputs.smoke }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake clang build-essential pkg-config
+
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: cargo publish --dry-run
+        run: cargo publish --workspace --dry-run --locked
 
   # Manual only (workflow_dispatch with smoke=true): never publishes.
   release-smoke:

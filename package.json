@@ -20,7 +20,7 @@
     "typecheck:docs": "bun run --filter '@curl-runner/docs' typecheck",
     "test": "cargo test --workspace",
     "changeset": "changeset",
-    "version": "changeset version",
+    "version": "changeset version && bash scripts/sync-cargo-version.sh",
     "release": "changeset publish",
     "prepare": "husky",
     "cli": "cargo run -q -p curl-runner --",

@@ -14,6 +14,7 @@ curl-runner 2.0 is a rewrite of the CLI in Rust. YAML files, flags, subcommands,
 - `@curl-runner/cli` has no JavaScript and no postinstall. It ships the binary through one optional dependency per platform (`@curl-runner/cli-linux-x64`, `-linux-arm64`, `-darwin-x64`, `-darwin-arm64`, `-win32-x64`), downloaded by npm, bun, pnpm and yarn according to `os`/`cpu`. Installing with `--omit=optional` leaves no binary.
 - The `curl-runner` bin is a POSIX `sh` launcher. On Windows the npm/bun/pnpm/yarn shims therefore need `sh` on `PATH` (Git for Windows, MSYS2 or Cygwin); without `sh`, install with `install.ps1` or run the `.exe` from the platform package directly.
 - Linux binaries are static musl builds.
+- New: `cargo install curl-runner --locked` installs from crates.io (`curl-runner` and its engine `curl-runner-core`); `curl-runner upgrade` detects cargo installs and reruns that command.
 
 ### Migration: timeouts are now milliseconds
 

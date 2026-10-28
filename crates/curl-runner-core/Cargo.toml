@@ -3,6 +3,11 @@ name = "curl-runner-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Engine behind the curl-runner CLI: YAML request suites, libcurl execution, validation, snapshots and diffs"
+keywords = ["http", "curl", "api-testing", "yaml"]
+categories = ["development-tools::testing", "web-programming::http-client"]
 
 [dependencies]
 curl = { version = "0.4", default-features = false, features = ["static-curl", "http2", "rustls"] }

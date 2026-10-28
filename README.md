@@ -46,6 +46,9 @@ npm i -g @curl-runner/cli     # or: bun i -g @curl-runner/cli, pnpm add -g @curl
 curl-runner --version
 ```
 
+Or build it from crates.io with `cargo install curl-runner --locked` (needs a C compiler
+and `cmake`).
+
 The npm package ships a prebuilt native binary per platform; no Node, Bun or curl is
 needed to run it. See [packages/cli/README.md](packages/cli/README.md) for the install
 script, Windows notes and how the npm package works.

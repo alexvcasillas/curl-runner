@@ -3,13 +3,19 @@ name = "curl-runner"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Run HTTP request suites defined in YAML: validation, retries, parallel runs, snapshots and diffs, on libcurl"
+readme = "README.md"
+keywords = ["http", "curl", "api-testing", "yaml", "cli"]
+categories = ["command-line-utilities", "development-tools::testing", "web-programming::http-client"]
 
 [[bin]]
 name = "curl-runner"
 path = "src/main.rs"
 
 [dependencies]
-curl-runner-core = { path = "../curl-runner-core" }
+curl-runner-core.workspace = true
 thiserror = "2.0.21"
 curl = { version = "0.4", default-features = false, features = ["static-curl", "http2", "rustls"] }
 ctrlc = "3.5.2"
