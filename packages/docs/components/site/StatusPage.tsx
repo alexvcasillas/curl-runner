@@ -21,7 +21,7 @@ export function StatusPage({ code, title, description }: StatusPageProps) {
   return (
     <div className="flex min-h-screen flex-col bg-ground text-fg">
       <SiteHeader />
-      <main className="mx-auto w-full max-w-[1200px] grow px-6 py-24">
+      <main id="main-content" className="mx-auto w-full max-w-[1200px] grow px-6 py-24">
         <p className="m-0 font-mono text-sm text-brand">{code}</p>
         <h1 className="mt-4 mb-0 text-[clamp(36px,6vw,56px)] leading-[1.05] font-bold tracking-[-0.035em]">
           {title}

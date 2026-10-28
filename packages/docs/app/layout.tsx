@@ -10,8 +10,8 @@ import { SITE_DESCRIPTION } from '@/lib/site';
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.curl-runner.com'),
   title: {
-    default: 'curl-runner Documentation',
-    template: '%s | curl-runner Documentation',
+    default: 'curl-runner',
+    template: '%s — curl-runner',
   },
   description: SITE_DESCRIPTION,
   keywords: [
@@ -60,19 +60,19 @@ export const metadata: Metadata = {
   manifest: '/manifest.json',
   alternates: {
     types: {
-      'application/rss+xml': [{ url: '/rss.xml', title: 'curl-runner Documentation RSS' }],
+      'application/rss+xml': [{ url: '/rss.xml', title: 'curl-runner changelog RSS' }],
     },
   },
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    title: 'curl-runner Documentation',
+    title: 'curl-runner',
     description: SITE_DESCRIPTION,
-    siteName: 'curl-runner Documentation',
+    siteName: 'curl-runner',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'curl-runner Documentation',
+    title: 'curl-runner',
     description: SITE_DESCRIPTION,
     creator: '@curl_runner',
     site: '@curl_runner',

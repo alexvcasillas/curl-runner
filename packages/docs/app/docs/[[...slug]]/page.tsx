@@ -43,10 +43,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const url = `${SITE_URL}${page.url}`;
   const isIndex = page.slugs.length === 0;
   const ogImage = getDocsOgUrl(page);
+  const docsTitle = isIndex ? 'curl-runner docs' : `${page.data.title} — curl-runner docs`;
 
   return {
-    // The index keeps the site-wide docs title instead of "Introduction | curl-runner Documentation".
-    title: isIndex ? { absolute: 'curl-runner Documentation' } : page.data.title,
+    title: { absolute: docsTitle },
     description: page.data.description,
     alternates: {
       canonical: url,
@@ -55,10 +55,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     openGraph: {
       url,
       type: 'article',
-      title: page.data.title,
+      siteName: 'curl-runner',
+      title: docsTitle,
       description: page.data.description,
       images: [{ url: ogImage, width: 1200, height: 630, alt: page.data.title }],
     },
-    twitter: { card: 'summary_large_image', images: [ogImage] },
+    twitter: { card: 'summary_large_image', title: docsTitle, images: [ogImage] },
   };
 }

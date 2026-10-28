@@ -31,9 +31,22 @@ export function TerminalMark({ className }: { className?: string }) {
   );
 }
 
-export function SiteHeader({ active }: { active?: SiteSection }) {
+export function SiteHeader({
+  active,
+  skipTo = '#main-content',
+}: {
+  active?: SiteSection;
+  /** Anchor of the main content the skip link jumps to. */
+  skipTo?: string;
+}) {
   return (
     <header className="border-b border-hairline">
+      <a
+        href={skipTo}
+        className="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:top-2 focus-visible:left-2 focus-visible:z-50 focus-visible:rounded-md focus-visible:bg-surface focus-visible:px-4 focus-visible:py-2 focus-visible:text-sm focus-visible:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+      >
+        Skip to content
+      </a>
       <nav
         aria-label="Main"
         className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-x-8 gap-y-0 px-6 py-2 sm:gap-y-2 sm:py-4"

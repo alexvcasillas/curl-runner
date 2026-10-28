@@ -4,7 +4,7 @@ import { SiteFooter } from '@/components/site/SiteFooter';
 export default function MarketingLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-ground text-fg">
-      <main className="grow">{children}</main>
+      <div className="grow">{children}</div>
       <SiteFooter />
     </div>
   );

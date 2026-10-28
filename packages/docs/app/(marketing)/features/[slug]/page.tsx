@@ -106,79 +106,82 @@ export default async function FeaturePage({ params }: FeaturePageProps) {
   return (
     <>
       <SiteHeader active="features" />
+      <main id="main-content">
+        <div className="mx-auto grid max-w-[1200px] gap-12 px-6 md:grid-cols-[220px_minmax(0,1fr)]">
+          <FeatureNav current={feature.slug} />
 
-      <div className="mx-auto grid max-w-[1200px] gap-12 px-6 md:grid-cols-[220px_minmax(0,1fr)]">
-        <FeatureNav current={feature.slug} />
+          <article className="min-w-0 pt-16 pb-24 md:pt-[72px]">
+            <Eyebrow>{feature.title}</Eyebrow>
+            <h1 className="mt-4 mb-0 max-w-[18ch] text-[clamp(40px,5.6vw,64px)] leading-[1.03] font-bold tracking-[-0.045em] text-fg">
+              {feature.headline}
+            </h1>
+            <p className="mt-6 mb-0 max-w-160 text-[19px] leading-[1.6] text-fg-secondary">
+              {feature.description}
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <ButtonLink href={`/docs/features/${feature.slug}`} variant="primary" size="lg">
+                Read the docs
+              </ButtonLink>
+              <ButtonLink href="/downloads" variant="secondary" size="lg">
+                Install curl-runner
+              </ButtonLink>
+            </div>
 
-        <article className="min-w-0 pt-16 pb-24 md:pt-[72px]">
-          <Eyebrow>{feature.title}</Eyebrow>
-          <h1 className="mt-4 mb-0 max-w-[18ch] text-[clamp(40px,5.6vw,64px)] leading-[1.03] font-bold tracking-[-0.045em] text-fg">
-            {feature.headline}
-          </h1>
-          <p className="mt-6 mb-0 max-w-160 text-[19px] leading-[1.6] text-fg-secondary">
-            {feature.description}
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <ButtonLink href={`/docs/features/${feature.slug}`} variant="primary" size="lg">
-              Read the docs
-            </ButtonLink>
-            <ButtonLink href="/downloads" variant="secondary" size="lg">
-              Install curl-runner
-            </ButtonLink>
-          </div>
+            <div className="mt-16">
+              <CodePane filename={feature.example.filename} copyText={feature.example.yaml}>
+                <Yaml source={feature.example.yaml} />
+              </CodePane>
+            </div>
 
-          <div className="mt-16">
-            <CodePane filename={feature.example.filename} copyText={feature.example.yaml}>
-              <Yaml source={feature.example.yaml} />
-            </CodePane>
-          </div>
+            <section aria-labelledby="benefits-heading" className="mt-20">
+              <h2 id="benefits-heading" className="sr-only">
+                Benefits
+              </h2>
+              <ul className="m-0 grid list-none grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] border-t border-l border-hairline p-0">
+                {feature.benefits.map((benefit) => (
+                  <li key={benefit.title} className="border-r border-b border-hairline p-7">
+                    <h3 className="m-0 mb-2.5 text-[17px] font-semibold text-fg">
+                      {benefit.title}
+                    </h3>
+                    <p className="m-0 text-[15px] leading-[1.6] text-fg-secondary">
+                      {benefit.description}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </section>
 
-          <section aria-labelledby="benefits-heading" className="mt-20">
-            <h2 id="benefits-heading" className="sr-only">
-              Benefits
-            </h2>
-            <ul className="m-0 grid list-none grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] border-t border-l border-hairline p-0">
-              {feature.benefits.map((benefit) => (
-                <li key={benefit.title} className="border-r border-b border-hairline p-7">
-                  <h3 className="m-0 mb-2.5 text-[17px] font-semibold text-fg">{benefit.title}</h3>
-                  <p className="m-0 text-[15px] leading-[1.6] text-fg-secondary">
-                    {benefit.description}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </section>
+            <section aria-labelledby="good-for-heading">
+              <h2
+                id="good-for-heading"
+                className="mt-20 mb-6 text-[28px] font-bold tracking-[-0.025em] text-fg"
+              >
+                Good for
+              </h2>
+              <ol className="m-0 flex list-none flex-col border-t border-hairline p-0">
+                {feature.goodFor.map((item, i) => (
+                  <li
+                    key={item}
+                    className="flex gap-4 border-b border-hairline py-[18px] text-base text-fg"
+                  >
+                    <span aria-hidden="true" className="font-mono text-fg-tertiary">
+                      {String(i + 1).padStart(2, '0')}
+                    </span>
+                    {item}
+                  </li>
+                ))}
+              </ol>
+            </section>
 
-          <section aria-labelledby="good-for-heading">
-            <h2
-              id="good-for-heading"
-              className="mt-20 mb-6 text-[28px] font-bold tracking-[-0.025em] text-fg"
-            >
-              Good for
-            </h2>
-            <ol className="m-0 flex list-none flex-col border-t border-hairline p-0">
-              {feature.goodFor.map((item, i) => (
-                <li
-                  key={item}
-                  className="flex gap-4 border-b border-hairline py-[18px] text-base text-fg"
-                >
-                  <span aria-hidden="true" className="font-mono text-fg-tertiary">
-                    {String(i + 1).padStart(2, '0')}
-                  </span>
-                  {item}
-                </li>
-              ))}
-            </ol>
-          </section>
-
-          {prev || next ? (
-            <nav aria-label="More features" className="mt-20 flex flex-wrap gap-4">
-              {prev ? <NeighbourCard feature={prev} direction="prev" /> : null}
-              {next ? <NeighbourCard feature={next} direction="next" /> : null}
-            </nav>
-          ) : null}
-        </article>
-      </div>
+            {prev || next ? (
+              <nav aria-label="More features" className="mt-20 flex flex-wrap gap-4">
+                {prev ? <NeighbourCard feature={prev} direction="prev" /> : null}
+                {next ? <NeighbourCard feature={next} direction="next" /> : null}
+              </nav>
+            ) : null}
+          </article>
+        </div>
+      </main>
     </>
   );
 }

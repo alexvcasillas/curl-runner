@@ -9,7 +9,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     // The root layout already forces the dark theme; Fumadocs only provides search here.
     <RootProvider theme={{ enabled: false }}>
       <div className="flex min-h-screen flex-col bg-ground text-fg">
-        <SiteHeader active="docs" />
+        <SiteHeader active="docs" skipTo="#nd-page" />
         <DocsLayout
           tree={source.getPageTree()}
           nav={{ title: 'Documentation', url: '/docs' }}

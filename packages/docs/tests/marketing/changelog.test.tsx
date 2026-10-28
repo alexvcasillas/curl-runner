@@ -85,7 +85,7 @@ describe('changelog page', () => {
 
   it('exports metadata', () => {
     expect(metadata.title).toEqual({ absolute: 'Changelog — curl-runner' });
-    expect(metadata.alternates?.canonical).toBe('/changelog');
+    expect(metadata.alternates?.canonical).toBe('https://www.curl-runner.com/changelog');
   });
 });
 
