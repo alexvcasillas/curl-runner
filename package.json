@@ -7,13 +7,10 @@
     "packages/*"
   ],
   "scripts": {
-    "start:cli": "bun run --filter '@curl-runner/cli' start",
     "start:docs": "bun run --filter '@curl-runner/docs' start",
     "dev": "bun run --filter '*' dev",
-    "dev:cli": "bun run --filter '@curl-runner/cli' dev",
     "dev:docs": "bun run --filter '@curl-runner/docs' dev",
     "build": "bun run --filter '*' build",
-    "build:cli": "bun run --filter '@curl-runner/cli' build",
     "build:docs": "bun run --filter '@curl-runner/docs' build",
     "format": "bunx @biomejs/biome format --write .",
     "lint": "bunx @biomejs/biome lint .",
@@ -21,12 +18,13 @@
     "check:ci": "bunx @biomejs/biome ci .",
     "typecheck": "bun run --filter '*' typecheck",
     "typecheck:docs": "bun run --filter '@curl-runner/docs' typecheck",
-    "cli": "bun run packages/cli/src/cli.ts",
-    "test": "bun test || echo 'No tests found'",
+    "test": "cargo test --workspace",
     "changeset": "changeset",
     "version": "changeset version",
     "release": "changeset publish",
-    "prepare": "husky"
+    "prepare": "husky",
+    "cli": "cargo run -q -p curl-runner --",
+    "build:cli": "cargo build --release -p curl-runner"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.2",

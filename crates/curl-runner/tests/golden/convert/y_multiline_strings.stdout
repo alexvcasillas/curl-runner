@@ -1,0 +1,6 @@
+curl \
+  -X POST \
+  -d 'line1
+line2
+' \
+  https://a.test

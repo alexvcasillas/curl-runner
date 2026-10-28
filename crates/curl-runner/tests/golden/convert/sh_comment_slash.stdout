@@ -1,0 +1,5 @@
+request:
+  name: request_1
+  method: GET
+  url: https://yes.test
+

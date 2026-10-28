@@ -1,0 +1,6 @@
+request:
+  method: POST
+  url: https://x.test
+  body:
+    form: "price=$5 and `tick`"
+

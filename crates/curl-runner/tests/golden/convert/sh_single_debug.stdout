@@ -1,0 +1,19 @@
+[33mDEBUG:[0m
+{
+  "ir": {
+    "method": "DELETE",
+    "url": "https://a.test/1",
+    "headers": {},
+    "metadata": {
+      "source": "curl",
+      "warnings": []
+    },
+    "name": "request_1"
+  }
+}
+
+request:
+  name: request_1
+  method: DELETE
+  url: https://a.test/1
+

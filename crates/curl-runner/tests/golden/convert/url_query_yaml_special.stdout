@@ -1,0 +1,16 @@
+request:
+  method: GET
+  url: https://x.test/s
+  params:
+    a: "true"
+    b: "123"
+    c: a:b
+    d: :x
+    e: "x:"
+    f: "null"
+    g: "#hash"
+    h: "1.5"
+    i: "-3"
+    j: " lead"
+    k: "trail "
+

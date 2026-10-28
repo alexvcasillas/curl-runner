@@ -1,0 +1,162 @@
+[33mDEBUG:[0m
+{
+  "tokens": [
+    "curl",
+    "-sS",
+    "-L",
+    "-k",
+    "--compressed",
+    "--http2",
+    "-m",
+    "30",
+    "--max-redirs",
+    "4",
+    "-x",
+    "http://p:1",
+    "--cacert",
+    "c.pem",
+    "--cert",
+    "d.pem",
+    "--key",
+    "e.pem",
+    "-u",
+    "me:pw",
+    "-b",
+    "a=1",
+    "-c",
+    "jar",
+    "-A",
+    "UA",
+    "-e",
+    "ref",
+    "-o",
+    "out.txt",
+    "-I",
+    "-G",
+    "-X",
+    "head",
+    "--weird",
+    "x",
+    "-d",
+    "{\"a\":[1,{\"b\":2}],\"7\":0}",
+    "https://x.test/a?x=1"
+  ],
+  "ast": {
+    "url": "https://x.test/a?x=1",
+    "headers": [],
+    "unsupportedFlags": [
+      {
+        "flag": "--weird",
+        "value": "x"
+      }
+    ],
+    "silent": true,
+    "compressed": true,
+    "http2": true,
+    "maxTime": 30,
+    "maxRedirs": 4,
+    "proxy": "http://p:1",
+    "cacert": "c.pem",
+    "cert": "d.pem",
+    "key": "e.pem",
+    "user": "me:pw",
+    "cookie": "a=1",
+    "cookieJar": "jar",
+    "userAgent": "UA",
+    "referer": "ref",
+    "output": "out.txt",
+    "head": true,
+    "get": true,
+    "method": "HEAD",
+    "data": [
+      "{\"a\":[1,{\"b\":2}],\"7\":0}"
+    ]
+  },
+  "ir": {
+    "method": "HEAD",
+    "url": "https://x.test/a",
+    "headers": {
+      "Cookie": "a=1",
+      "User-Agent": "UA",
+      "Referer": "ref"
+    },
+    "metadata": {
+      "source": "curl",
+      "warnings": [
+        "Unsupported curl flag: --weird x",
+        "Flag --compressed has no YAML equivalent; curl handles decompression natively",
+        "Cookie flag (-b a=1) stored as header; manual review recommended",
+        "Cookie jar flag (-c jar) has no YAML equivalent"
+      ],
+      "unsupportedFlags": [
+        {
+          "flag": "--weird",
+          "value": "x"
+        }
+      ]
+    },
+    "params": {
+      "x": "1"
+    },
+    "body": {
+      "type": "json",
+      "content": {
+        "7": 0,
+        "a": [
+          1,
+          {
+            "b": 2
+          }
+        ]
+      }
+    },
+    "auth": {
+      "type": "basic",
+      "username": "me",
+      "password": "pw"
+    },
+    "maxRedirects": 4,
+    "timeout": 30000,
+    "proxy": "http://p:1",
+    "output": "out.txt",
+    "http2": true,
+    "ssl": {
+      "ca": "c.pem",
+      "cert": "d.pem",
+      "key": "e.pem"
+    }
+  }
+}
+
+# Warning: Unsupported curl flag: --weird x
+# Warning: Flag --compressed has no YAML equivalent; curl handles decompression natively
+# Warning: Cookie flag (-b a=1) stored as header; manual review recommended
+# Warning: Cookie jar flag (-c jar) has no YAML equivalent
+
+request:
+  method: HEAD
+  url: https://x.test/a
+  params:
+    x: "1"
+  headers:
+    Cookie: a=1
+    Referer: ref
+    User-Agent: UA
+  auth:
+    type: basic
+    username: me
+    password: pw
+  body:
+    json:
+      "7": 0
+      a: [1,{"b":2}]
+  timeout: 30000
+  maxRedirects: 4
+  proxy: http://p:1
+  http2: true
+  output: out.txt
+  ssl:
+    ca: c.pem
+    cert: d.pem
+    key: e.pem
+

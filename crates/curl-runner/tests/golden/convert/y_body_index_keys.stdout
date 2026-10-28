@@ -1,0 +1,5 @@
+curl \
+  -X GET \
+  -d '{"1":"y","2":"x","b":1}' \
+  -H 'Content-Type: application/json' \
+  https://a.test

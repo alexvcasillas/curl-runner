@@ -1,0 +1,10 @@
+request:
+  method: POST
+  url: https://api.example.com/graphql
+  headers:
+    Content-Type: application/json
+  body:
+    json:
+      query: "{ viewer { login } }"
+      variables: {}
+

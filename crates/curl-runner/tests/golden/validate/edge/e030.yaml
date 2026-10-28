@@ -1,0 +1,1 @@
+request: {url: https://a.com, auth: {type: digest, user: x}}

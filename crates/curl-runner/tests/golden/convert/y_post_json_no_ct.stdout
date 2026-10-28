@@ -1,0 +1,5 @@
+curl \
+  -X POST \
+  -d '{"name":"Alex","nested":{"list":[1,2,3]}}' \
+  -H 'Content-Type: application/json' \
+  https://api.example.com

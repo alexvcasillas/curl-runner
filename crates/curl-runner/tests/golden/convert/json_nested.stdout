@@ -1,0 +1,12 @@
+request:
+  method: POST
+  url: https://x.test/j
+  headers:
+    Content-Type: application/json
+  body:
+    json:
+      user: {"name":"A","roles":["a","b"]}
+      n: null
+      ok: true
+      v: 1.5
+

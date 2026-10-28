@@ -1,0 +1,15 @@
+# Warning: Flag --compressed has no YAML equivalent; curl handles decompression natively
+
+request:
+  method: GET
+  url: https://example.com/api/items
+  params:
+    limit: "50"
+    page: "2"
+  headers:
+    Accept: "application/json, text/plain, */*"
+    Accept-Language: "en-US,en;q=0.9"
+    Cache-Control: no-cache
+    Cookie: a=1; b=2
+    User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36
+

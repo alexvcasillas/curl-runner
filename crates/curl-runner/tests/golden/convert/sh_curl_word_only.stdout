@@ -1,0 +1,7 @@
+# Warning: Unsupported curl flag: -V
+
+request:
+  name: request_1
+  method: GET
+  url: ""
+

@@ -1,0 +1,62 @@
+#!/usr/bin/env sh
+# curl-runner npm launcher (POSIX sh, no Node or Bun needed at runtime).
+# Finds the native binary shipped in the optional dependency
+# @curl-runner/cli-<os>-<cpu> and execs it. See README.md, "How the npm
+# package works".
+set -e
+
+case "$(uname -s)" in
+  Linux) os=linux ;;
+  Darwin) os=darwin ;;
+  MINGW* | MSYS* | CYGWIN*) os=win32 ;;
+  *) os="$(uname -s)" ;;
+esac
+case "$(uname -m)" in
+  x86_64 | amd64) cpu=x64 ;;
+  aarch64 | arm64) cpu=arm64 ;;
+  *) cpu="$(uname -m)" ;;
+esac
+
+exe=curl-runner
+case "$os-$cpu" in
+  linux-x64 | linux-arm64 | darwin-x64 | darwin-arm64) candidates="$os-$cpu" ;;
+  win32-x64) candidates="$os-$cpu" exe=curl-runner.exe ;;
+  *)
+    echo "curl-runner: unsupported platform $os-$cpu (supported: linux-x64, linux-arm64, darwin-x64, darwin-arm64, win32-x64)." >&2
+    echo "curl-runner: download a binary from https://github.com/alexvcasillas/curl-runner/releases instead." >&2
+    exit 1
+    ;;
+esac
+# A Rosetta shell reports x86_64 on Apple silicon while an arm64 package
+# manager installed the arm64 package (and vice versa): accept either.
+case "$os" in darwin) candidates="$candidates darwin-arm64 darwin-x64" ;; esac
+
+# Resolve this script through bin symlinks (npm, bun and yarn link it) to
+# the real package directory. No readlink -f: older macOS lacks it.
+self="$0"
+while [ -L "$self" ]; do
+  link="$(readlink "$self")"
+  case "$link" in
+    /*) self="$link" ;;
+    *) self="$(dirname -- "$self")/$link" ;;
+  esac
+done
+pkg_dir="$(CDPATH='' cd -- "$(dirname -- "$self")/.." && pwd -P)"
+
+# Node module resolution from pkg_dir: <ancestor>/node_modules/<name>.
+# Covers npm (nested or hoisted), bun, pnpm (.pnpm siblings) and yarn.
+for platform in $candidates; do
+  dir="$pkg_dir"
+  while :; do
+    bin="$dir/node_modules/@curl-runner/cli-$platform/bin/$exe"
+    if [ -f "$bin" ]; then
+      exec "$bin" "$@"
+    fi
+    [ "$dir" = "/" ] && break
+    dir="$(dirname "$dir")"
+  done
+done
+
+echo "curl-runner: platform package @curl-runner/cli-$os-$cpu is missing." >&2
+echo "curl-runner: reinstall @curl-runner/cli with optional dependencies enabled (no --omit=optional / --no-optional / --ignore-optional)." >&2
+exit 1

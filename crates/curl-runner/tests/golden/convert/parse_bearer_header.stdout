@@ -1,0 +1,7 @@
+request:
+  method: GET
+  url: https://example.com
+  auth:
+    type: bearer
+    token: mytoken123
+

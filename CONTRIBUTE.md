@@ -13,6 +13,7 @@ Thank you for considering contributing to curl-runner! We welcome contributions 
 - [Testing](#testing)
 - [Documentation](#documentation)
 - [Submitting Changes](#submitting-changes)
+- [Releasing](#releasing)
 - [Issue Guidelines](#issue-guidelines)
 - [Community](#community)
 
@@ -32,9 +33,9 @@ This project and everyone participating in it is governed by our Code of Conduct
 
 ### Prerequisites
 
-- **[Bun](https://bun.sh)** v1.2.21 or higher
+- **[Rust](https://rustup.rs)** (the toolchain is pinned in `rust-toolchain.toml`; needed for the CLI)
+- **[Bun](https://bun.sh)** v1.2.21 or higher (needed for the documentation site and repo tooling only; the CLI itself does not use Bun)
 - **Git** for version control
-- **Node.js** knowledge (TypeScript/JavaScript)
 - **Basic understanding** of HTTP and REST APIs
 
 ### Quick Setup
@@ -48,24 +49,29 @@ cd curl-runner
 # Add upstream remote
 git remote add upstream https://github.com/yourusername/curl-runner.git
 
-# Install dependencies
+# Install dependencies (docs site and tooling)
 bun install
 
 # Verify everything works
-bun run build
-bun run test
+cargo test --workspace
+bun run build:docs
 ```
 
 ## 🛠️ Development Setup
 
 ### Workspace Overview
 
-curl-runner is a monorepo with two main packages:
+curl-runner is a monorepo: a Rust workspace for the CLI and a Bun workspace for the npm wrapper and the documentation site:
 
 ```
+crates/
+├── curl-runner/         # CLI binary (args, commands, output, wizard)
+├── curl-runner-core/    # Parser, executor, transport (libcurl), validation
+└── testkit/             # Local test server and helpers
 packages/
-├── cli/                 # CLI tool (@curl-runner/cli)
+├── cli/                 # npm wrapper of the native binary (@curl-runner/cli)
 └── docs/               # Documentation website (@curl-runner/docs)
+parity/                  # TS vs Rust parity harness (see parity/README.md)
 ```
 
 ### Development Commands
@@ -74,43 +80,36 @@ packages/
 # Install dependencies for all packages
 bun install
 
-# Development mode
-bun run dev              # All packages in dev mode
-bun run dev:cli          # CLI only (watch mode)
-bun run dev:docs         # Documentation site only
+# CLI (Rust)
+cargo run -p curl-runner -- <args>   # or: bun run cli <args>
+cargo build --release -p curl-runner # or: bun run build:cli
+cargo fmt --all                      # Format
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace               # or: bun run test
 
-# Building
-bun run build            # Build all packages
-bun run build:cli        # Build CLI binary
+# Documentation site
+bun run dev:docs         # Development server
 bun run build:docs       # Build documentation site
 
-# Code quality
+# Code quality (TypeScript: docs site and tooling)
 bun run format           # Format with Biome
 bun run lint             # Lint with Biome
 bun run check            # Format and fix issues
 bun run check:ci         # CI-friendly check
-
-# Testing
-bun test                 # Run all tests
-bun test:cli             # Run CLI tests only
 ```
 
 ## 📁 Project Structure
 
-### CLI Package (`packages/cli/`)
+### CLI (`crates/`)
 
 ```
+crates/curl-runner/          # binary: main.rs, args.rs, run.rs, commands, output
+crates/curl-runner-core/     # library: parser, executor, transport, validate, snapshot, diff
+crates/testkit/              # test server used by integration tests and parity
 packages/cli/
-├── src/
-│   ├── cli.ts          # Main CLI entry point
-│   ├── core/           # Core functionality
-│   ├── parsers/        # YAML parsing logic
-│   ├── http/           # HTTP client and utilities
-│   ├── validators/     # Response validation
-│   └── utils/          # Shared utilities
-├── examples/           # Example YAML files
-├── tests/              # Test files
-└── package.json
+├── bin/curl-runner          # npm launcher (POSIX sh)
+├── examples/                # Example YAML files
+└── README.md
 ```
 
 ### Documentation Package (`packages/docs/`)
@@ -196,15 +195,17 @@ git checkout -b fix/issue-123
 
 ```bash
 # Run all tests
-bun test
+cargo test --workspace
 
 # Test CLI functionality
-bun run cli packages/cli/examples/
+cargo run -p curl-runner -- packages/cli/examples/
 
 # Test documentation site
 bun run dev:docs  # Visit http://localhost:3000
 
 # Check code quality
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
 bun run check
 ```
 
@@ -231,7 +232,14 @@ git commit -m "test: add integration tests for collections"
 
 ## 📏 Coding Standards
 
-### TypeScript/JavaScript
+### Rust (CLI)
+
+- `cargo fmt --all` before every commit (rustfmt defaults)
+- `cargo clippy --workspace --all-targets -- -D warnings` must pass
+- `cargo test --workspace` must pass; add unit tests next to the code and integration tests under `crates/*/tests`
+- Behavior changes versus the former TypeScript CLI are logged in `crates/CHANGES-FROM-TS.md`
+
+### TypeScript/JavaScript (docs site and tooling)
 
 - **Indentation:** 2 spaces (configured in Biome)
 - **Quotes:** Single quotes for strings
@@ -245,13 +253,13 @@ git commit -m "test: add integration tests for collections"
 ### Code Quality
 
 ```bash
-# Format code
+# Rust
+cargo fmt --all
+cargo clippy --workspace --all-targets -- -D warnings
+
+# TypeScript (docs site)
 bun run format
-
-# Check and fix issues
 bun run check
-
-# Lint code
 bun run lint
 ```
 
@@ -300,46 +308,31 @@ async function executeRequest(config: RequestConfig): Promise<Response> {
 
 ### Test Structure
 
-```typescript
-import { test, expect } from "bun:test";
-import { parseYamlConfig } from "../src/parsers/yaml";
+Unit tests live in `#[cfg(test)]` modules next to the code; integration tests live in
+`crates/*/tests` and use the `testkit` server.
 
-test("parseYamlConfig - should parse valid single request", () => {
-  const yaml = `
-    request:
-      name: Test Request
-      url: https://example.com
-      method: GET
-  `;
+```rust
+#[test]
+fn parses_a_single_request() {
+    let doc = parse_yaml("request:\n  url: https://example.com\n  method: GET\n").unwrap();
+    assert_eq!(doc.requests().len(), 1);
+}
 
-  const result = parseYamlConfig(yaml);
-
-  expect(result.type).toBe("single");
-  expect(result.request.name).toBe("Test Request");
-  expect(result.request.url).toBe("https://example.com");
-});
-
-test("parseYamlConfig - should throw on invalid YAML", () => {
-  const invalidYaml = "invalid: yaml: content:";
-
-  expect(() => parseYamlConfig(invalidYaml)).toThrow();
-});
+#[test]
+fn rejects_invalid_yaml() {
+    assert!(parse_yaml("invalid: yaml: content:").is_err());
+}
 ```
 
 ### Running Tests
 
 ```bash
 # Run all tests
-bun test
+cargo test --workspace
 
-# Run specific test file
-bun test src/parsers/yaml.test.ts
-
-# Run tests with coverage
-bun test --coverage
-
-# Run CLI integration tests
-bun test:cli
+# Run one crate or test
+cargo test -p curl-runner-core parser
+cargo test -p curl-runner --test convert_cli
 ```
 
 ## 📚 Documentation
@@ -388,7 +381,7 @@ async function executeRequests(
 
 1. **Update Documentation:** Ensure docs reflect your changes
 2. **Add Tests:** Include tests for new functionality
-3. **Check Code Quality:** Run `bun run check`
+3. **Check Code Quality:** Run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` (plus `bun run check` for TypeScript changes)
 4. **Update Examples:** Add/update YAML examples if needed
 5. **Write Clear Description:** Explain what and why
 
@@ -438,13 +431,44 @@ Brief description of changes
 3. **Feedback:** Address any requested changes
 4. **Approval:** Once approved, we'll merge your PR
 
+## 🚢 Releasing
+
+Releases run from `.github/workflows/release.yml` (changesets). `@curl-runner/cli`
+ships the native binary through five optional platform packages
+(`@curl-runner/cli-{linux-x64,linux-arm64,darwin-x64,darwin-arm64,win32-x64}`,
+sources in `npm/`), published in lockstep by `scripts/npm-publish.sh`. See
+`packages/cli/README.md` ("How the npm package works").
+
+### Before the first release
+
+- [ ] **Bootstrap the five platform package names on npm.** CI publishes with
+      npm trusted publishing (OIDC, no token), which can only be configured on a
+      package that already exists. For each `@curl-runner/cli-<platform>`:
+  1. Publish a placeholder once by hand, e.g. from `npm/cli-<platform>/` with
+     version `0.0.0` (`npm publish --access public`), so the name exists.
+  2. On npmjs.com → package → Settings → Trusted publishing, add GitHub
+     Actions: repo `alexvcasillas/curl-runner`, workflow `release.yml`,
+     environment `Production` (same as `@curl-runner/cli`).
+- [ ] **Run the release smoke:** `gh workflow run release.yml -f smoke=true`.
+      It builds all binaries, smoke-tests the archives/installers and runs
+      `scripts/npm-smoke.sh` (bun without node, npm without bun, pnpm) on
+      linux-x64 and linux-arm64. It never publishes.
+- [ ] **Know the gaps:** the `darwin-*` and `win32-x64` npm packages are not
+      smoke-tested anywhere (CI or locally); only the linux packages are
+      installed and run. Check `npm i -g @curl-runner/cli` on a Mac and on
+      Windows after the first release. On Windows the npm/bun command needs `sh`
+      on PATH; `install.ps1` is the supported route without it.
+
+If a publish fails midway, re-run the failed jobs: versions already on npm are
+skipped, and `@curl-runner/cli` is only published after all platform packages.
+
 ## 🐛 Issue Guidelines
 
 ### Bug Reports
 
 Use the bug report template and include:
 
-- **Environment:** OS, Bun version, curl-runner version
+- **Environment:** OS, curl-runner version
 - **Steps to Reproduce:** Clear, minimal steps
 - **Expected Behavior:** What should happen
 - **Actual Behavior:** What actually happens
@@ -518,13 +542,13 @@ Contributors are recognized in:
 
 ```bash
 # Test CLI changes quickly
-bun run packages/cli/src/cli.ts examples/simple.yaml
+cargo run -p curl-runner -- packages/cli/examples/simple.yaml
 
 # Debug with verbose output
-bun run packages/cli/src/cli.ts -v examples/
+cargo run -p curl-runner -- -v packages/cli/examples/
 
 # Test parallel execution
-bun run packages/cli/src/cli.ts -p examples/
+cargo run -p curl-runner -- -p packages/cli/examples/
 ```
 
 ### Working with Documentation
@@ -542,10 +566,9 @@ bun run build:docs
 
 ### Debugging
 
-- Use `console.log` for quick debugging
-- Use Bun's built-in debugger: `bun --inspect src/file.ts`
+- Use `dbg!` / `eprintln!` for quick debugging (CLI) and `console.log` (docs site)
 - Add test cases to reproduce issues
-- Use TypeScript strict mode to catch errors early
+- Run the parity harness (`parity/run.sh`, see `parity/README.md`) when touching runtime behavior
 
 ## 🎯 Areas Needing Help
 

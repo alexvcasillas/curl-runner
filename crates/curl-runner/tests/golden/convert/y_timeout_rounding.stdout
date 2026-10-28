@@ -1,0 +1,15 @@
+curl \
+  --max-time 1 \
+  https://a.test/1
+
+curl \
+  --max-time 2 \
+  https://a.test/2
+
+curl \
+  --max-time 2 \
+  https://a.test/3
+
+curl \
+  --max-time NaN \
+  https://a.test/4

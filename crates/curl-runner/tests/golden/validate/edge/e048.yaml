@@ -1,0 +1,1 @@
+request: {url: https://a.com, snapshot: {updateMode: {a: 1}, dir: [1]}, diff: true}

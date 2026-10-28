@@ -1,0 +1,1 @@
+request: {url: https://a.com, headers: {x-api-key: "abcdefabcdefabcdefabcdefabcdefab", Authorization: "Bearer a.b.c", AUTHORIZATION: 1, X: [1], Y: null}, auth: {type: bearer, token: t}}

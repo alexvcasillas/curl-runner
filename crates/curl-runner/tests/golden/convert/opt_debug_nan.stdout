@@ -1,0 +1,36 @@
+[33mDEBUG:[0m
+{
+  "tokens": [
+    "curl",
+    "-m",
+    "abc",
+    "--max-redirs",
+    "zz",
+    "https://x.test"
+  ],
+  "ast": {
+    "url": "https://x.test",
+    "headers": [],
+    "unsupportedFlags": [],
+    "maxTime": null,
+    "maxRedirs": null
+  },
+  "ir": {
+    "method": "GET",
+    "url": "https://x.test",
+    "headers": {},
+    "metadata": {
+      "source": "curl",
+      "warnings": []
+    },
+    "maxRedirects": null,
+    "timeout": null
+  }
+}
+
+request:
+  method: GET
+  url: https://x.test
+  timeout: NaN
+  maxRedirects: NaN
+

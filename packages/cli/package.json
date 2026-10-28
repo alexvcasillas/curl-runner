@@ -1,24 +1,13 @@
 {
   "name": "@curl-runner/cli",
   "version": "1.25.0",
-  "description": "A powerful CLI tool for HTTP request management using YAML configuration",
+  "description": "A powerful CLI tool for HTTP request management using YAML configuration (native binary)",
   "type": "module",
-  "main": "./dist/cli.js",
   "repository": {
     "url": "git+https://github.com/alexvcasillas/curl-runner.git"
   },
   "bin": {
-    "curl-runner": "dist/cli.js"
-  },
-  "scripts": {
-    "start": "bun run dist/cli.js",
-    "dev": "bun run src/cli.ts",
-    "build": "bun run scripts/build-with-version.ts",
-    "format": "bunx @biomejs/biome format --write .",
-    "lint": "bunx @biomejs/biome lint .",
-    "check": "bunx @biomejs/biome check --write .",
-    "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "curl-runner": "bin/curl-runner"
   },
   "keywords": [
     "curl",
@@ -26,8 +15,7 @@
     "api",
     "testing",
     "yaml",
-    "cli",
-    "bun"
+    "cli"
   ],
   "author": "",
   "license": "MIT",
@@ -35,16 +23,7 @@
     "access": "public"
   },
   "files": [
-    "dist",
+    "bin",
     "README.md"
-  ],
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5.0.0"
-  },
-  "dependencies": {
-    "@clack/prompts": "^1.0.0"
-  }
+  ]
 }

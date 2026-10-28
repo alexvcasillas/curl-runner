@@ -1,0 +1,2 @@
+global: {maxConcurrency: "5", execution: sequential, watch: {debounce: -1, enabled: "yes", clear: "FALSE"}, profile: {iterations: 20000, warmup: -1, concurrency: 0, extra: 1}}
+request: {url: https://a.com}

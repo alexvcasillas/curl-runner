@@ -1,0 +1,8 @@
+request:
+  method: POST
+  url: https://x.test
+  formData:
+    a: "1"
+    k:
+      file: x.bin
+

@@ -1,0 +1,50 @@
+[33mDEBUG:[0m
+{
+  "tokens": [
+    "curl",
+    "-d",
+    "{\"a\":{\"b\":[1,2,{\"c\":null}]},\"1\":1.50}",
+    "https://x.test"
+  ],
+  "ast": {
+    "url": "https://x.test",
+    "headers": [],
+    "unsupportedFlags": [],
+    "data": [
+      "{\"a\":{\"b\":[1,2,{\"c\":null}]},\"1\":1.50}"
+    ]
+  },
+  "ir": {
+    "method": "POST",
+    "url": "https://x.test",
+    "headers": {},
+    "metadata": {
+      "source": "curl",
+      "warnings": []
+    },
+    "body": {
+      "type": "json",
+      "content": {
+        "1": 1.5,
+        "a": {
+          "b": [
+            1,
+            2,
+            {
+              "c": null
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+
+request:
+  method: POST
+  url: https://x.test
+  body:
+    json:
+      "1": 1.5
+      a: {"b":[1,2,{"c":null}]}
+

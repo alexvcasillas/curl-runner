@@ -1,0 +1,6 @@
+request:
+  method: GET
+  url: ""
+  headers:
+    Content-Type: application/json
+

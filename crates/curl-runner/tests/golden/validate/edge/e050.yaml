@@ -1,0 +1,1 @@
+collection: {requests: [{url: https://a.com}], variables: {password: x, "1x": "sk_live_x", t: "AKIA1234567890ABCDEF"}, defaults: {name: a, timeout: 5}, extra: 1, descriptio: x}

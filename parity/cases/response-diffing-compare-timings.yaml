@@ -1,0 +1,11 @@
+# Timing comparison is on; the change percentage differs between runs, so only the
+# on-disk files and --output are compared for this case (masked).
+global:
+  diff:
+    save: true
+    label: t2
+    compareWith: stored
+    includeTimings: true
+requests:
+  - name: Get User
+    url: ${BASE_URL}/jp/users/1

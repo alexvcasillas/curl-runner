@@ -1,0 +1,8 @@
+request:
+  method: GET
+  url: https://x.test
+  headers:
+    Accept-Language: en
+    Content-Type: a
+    X-Api-Key: k
+

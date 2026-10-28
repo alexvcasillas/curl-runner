@@ -1,0 +1,6 @@
+request:
+  url: "https://api.example.com/users"
+  params:
+    page: "1"
+    q: hello world
+    sort: name

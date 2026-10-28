@@ -1,0 +1,3 @@
+curl \
+  -X post \
+  https://a.test

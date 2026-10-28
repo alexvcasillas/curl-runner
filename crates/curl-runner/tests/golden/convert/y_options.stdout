@@ -1,0 +1,12 @@
+curl \
+  --max-time 5 \
+  -L \
+  --max-redirs 3 \
+  -x http://p:3128 \
+  -k \
+  --http2 \
+  -o out.json \
+  --cacert ca.pem \
+  --cert c.pem \
+  --key k.pem \
+  https://a.test

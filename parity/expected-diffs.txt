@@ -1,0 +1,60 @@
+# Allow-list for parity/run.sh. Format: case|flagset|signature|reason
+# Exact names only (no globs). flagsets: default, continue-on-error, strict-exit, parallel, dry-run.
+# signature = the exact set of differences the cell may have, sorted tokens joined by "+":
+#   exit            exit codes differ
+#   out:<key>       top-level key of the normalized --output JSON differs
+#   stdout          normalized stdout differs (dry-run cells only)
+#   snapfiles       __snapshots__ files differ (after masking updatedAt/hash/dates)
+#   basefiles       __baselines__ / .bl files differ (after masking capturedAt/hash/timing/dates)
+#   noout-ts / noout-rust   no --output file written by that CLI
+# A cell with any other difference (or a crash/hang, exit >=124) fails. Every reason
+# cites the crates/CHANGES-FROM-TS.md entry that explains it; a reason starting with
+# "BUG" would mark a known unfixed bug (none right now).
+
+# --- Precedence: TS lets a test file's `global` beat CLI flags; Rust follows the docs (CLI wins).
+# These files set `global.execution: sequential` and store values, so `--execution parallel`
+# runs them sequentially in TS (store resolves) and in parallel in Rust (store unresolved).
+conditional-basic.yaml|parallel|exit+out:failed+out:results+out:skipped+out:successful|CHANGES Precedence (file global.execution beats --execution in TS)
+conditional-shorthand.yaml|parallel|exit+out:failed+out:results+out:skipped+out:successful|CHANGES Precedence (file global.execution beats --execution in TS)
+conditional-advanced.yaml|parallel|exit+out:failed+out:results+out:skipped+out:successful|CHANGES Precedence (file global.execution beats --execution in TS)
+response-storage.yaml|parallel|out:failed+out:results+out:total|CHANGES Precedence (file global.execution beats --execution in TS)
+response-storage-auth-flow.yaml|parallel|out:failed+out:results+out:total|CHANGES Precedence (file global.execution beats --execution in TS)
+# `global.output.saveToFile` in the file beats `--output` in TS (TS writes no out.json), CLI wins in Rust.
+save-to-file.yaml|default|noout-ts|CHANGES Precedence (file global.output.saveToFile beats --output in TS)
+save-to-file.yaml|continue-on-error|noout-ts|CHANGES Precedence (file global.output.saveToFile beats --output in TS)
+save-to-file.yaml|strict-exit|noout-ts|CHANGES Precedence (file global.output.saveToFile beats --output in TS)
+save-to-file.yaml|parallel|noout-ts|CHANGES Precedence (file global.output.saveToFile beats --output in TS)
+save-to-file.yaml|dry-run|noout-ts+stdout|CHANGES Precedence (file global.output.saveToFile beats --output in TS)
+
+# --- Request timeout units (spec bug fix #1): TS passed ms to `--max-time` as seconds.
+timeout-basic.yaml|dry-run|stdout|CHANGES Request timeout units (--max-time 5000 vs 5)
+parallel.yaml|dry-run|stdout|CHANGES Request timeout units (timeout: 5 prints --max-time 5 vs 0.005)
+# timeout-with-retry: `timeout: 100` is 100 s in TS (request succeeds after 300 ms) and 100 ms in Rust
+# (transport failure after retries, counted as failed).
+timeout-with-retry.yaml|default|exit+out:failed+out:results+out:successful|CHANGES Request timeout units + Transport failures (100 s in TS, 100 ms in Rust, 300 ms endpoint)
+timeout-with-retry.yaml|continue-on-error|out:failed+out:results+out:successful|CHANGES Request timeout units + Transport failures (100 s in TS, 100 ms in Rust, 300 ms endpoint)
+timeout-with-retry.yaml|strict-exit|exit+out:failed+out:results+out:successful|CHANGES Request timeout units + Transport failures (100 s in TS, 100 ms in Rust, 300 ms endpoint)
+timeout-with-retry.yaml|parallel|exit+out:failed+out:results+out:successful|CHANGES Request timeout units + Transport failures (100 s in TS, 100 ms in Rust, 300 ms endpoint)
+timeout-with-retry.yaml|dry-run|stdout|CHANGES Request timeout units (--max-time 100 vs 0.1)
+# test-with-retry: `timeout: 2` is 2 s in TS and 2 ms in Rust against a 100 ms endpoint.
+test-with-retry.yaml|continue-on-error|exit+out:failed+out:results+out:total|CHANGES Request timeout units + Transport failures (2 s in TS, 2 ms in Rust, 100 ms endpoint)
+test-with-retry.yaml|parallel|out:failed+out:results+out:successful|CHANGES Request timeout units + Transport failures (2 s in TS, 2 ms in Rust, 100 ms endpoint)
+test-with-retry.yaml|dry-run|stdout|CHANGES Request timeout units (--max-time 2 vs 0.002)
+
+# --- Dry run with `store`: TS interpolates `${store.x}` to "" and prints `Stored: x = ""`;
+# Rust leaves `${store.x}` literal and prints no Stored lines (controller ruling: keep Rust).
+# `when` conditions then evaluate differently, hence the skipped/successful diffs in conditional-shorthand.
+conditional-basic.yaml|dry-run|out:results+stdout|CHANGES Dry run with store (TS empty string + Stored lines, Rust literal ${store.x})
+conditional-shorthand.yaml|dry-run|out:results+out:skipped+out:successful+stdout|CHANGES Dry run with store (TS empty string + Stored lines, Rust literal ${store.x})
+conditional-advanced.yaml|dry-run|out:results+stdout|CHANGES Dry run with store (TS empty string + Stored lines, Rust literal ${store.x})
+response-storage.yaml|dry-run|out:results+stdout|CHANGES Dry run with store (TS empty string + Stored lines, Rust literal ${store.x})
+
+# --- Snapshot load-modify-save race: with `--execution parallel` TS requests of one file load the
+# snapshot file concurrently and the last write drops the others' entries (timing dependent, so
+# the cell may also pass); Rust serializes compares and keeps every entry.
+snapshot-advanced.yaml|parallel|snapfiles|CHANGES Snapshots (TS parallel load-modify-save race loses entries)
+snapshot-update.yaml|parallel|snapfiles|CHANGES Snapshots (TS parallel load-modify-save race loses entries)
+
+# --- Profile failures: a connection that cannot be made is a failed iteration in Rust, a successful sample in TS.
+profile-failure.yaml|profile|out:<root>|CHANGES Profile failures (Down: Rust failures 6 / failureRate 100, TS 0 / 0)
+profile-failure.yaml|profile-concurrent|out:<root>|CHANGES Profile failures (Down: Rust failures 8 / failureRate 100, TS 0 / 0)

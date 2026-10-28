@@ -1,10 +1,10 @@
 # @curl-runner/cli
 
 [![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Bun](https://img.shields.io/badge/Bun-%23000000.svg?style=flat-square&logo=bun&logoColor=white)](https://bun.sh)
+[![Rust](https://img.shields.io/badge/Rust-%23000000.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
-A powerful CLI tool for HTTP request management using YAML configuration files. Built with [Bun](https://bun.sh) for blazing-fast performance and featuring variable interpolation, parallel execution, and response validation.
+A powerful CLI tool for HTTP request management using YAML configuration files. A single native Rust binary (libcurl statically linked; no Bun, Node or curl needed at runtime) featuring variable interpolation, parallel execution, and response validation.
 
 ## 🚀 Features
 
@@ -21,27 +21,85 @@ A powerful CLI tool for HTTP request management using YAML configuration files. 
 
 ## 📦 Installation
 
-### From Source
+### npm / Bun / pnpm
 
 ```bash
-# Clone the monorepo
+bun i -g @curl-runner/cli    # no Node needed, no postinstall to trust
+npm i -g @curl-runner/cli    # no Bun needed; the runtime needs neither Node nor Bun
+pnpm add -g @curl-runner/cli
+```
+
+### How the npm package works
+
+`@curl-runner/cli` contains no JavaScript. It ships a native binary through
+one optional dependency per platform, versioned in lockstep with it:
+
+| Package | `os` / `cpu` | Binary |
+| --- | --- | --- |
+| `@curl-runner/cli-linux-x64` | linux / x64 | static musl |
+| `@curl-runner/cli-linux-arm64` | linux / arm64 | static musl |
+| `@curl-runner/cli-darwin-x64` | darwin / x64 | Mach-O |
+| `@curl-runner/cli-darwin-arm64` | darwin / arm64 | Mach-O |
+| `@curl-runner/cli-win32-x64` | win32 / x64 | `curl-runner.exe` |
+
+npm, Bun, pnpm and yarn download only the package whose `os`/`cpu` match.
+The `curl-runner` bin is `bin/curl-runner`, a POSIX `sh` launcher
+(`#!/usr/bin/env sh`): it maps `uname` to the platform, finds
+`node_modules/@curl-runner/cli-<platform>/bin/curl-runner` by walking up
+`node_modules` directories like Node's resolver (npm nested/hoisted, Bun
+global, pnpm `.pnpm` siblings, yarn), and `exec`s it. If the platform is
+unsupported or its package is missing (for example after `--omit=optional`),
+it exits 1 with a message saying so.
+
+Why this design:
+
+- **No postinstall.** Bun does not run lifecycle scripts of untrusted
+  dependencies, so the esbuild-style "postinstall copies the binary over the
+  bin" approach breaks `bun i -g`. Optional dependencies plus a launcher need
+  no scripts at all.
+- **No Node at runtime.** A JS launcher (`#!/usr/bin/env node`) fails on a
+  machine with only Bun. `sh` is always present on Linux and macOS.
+- **Lockstep versions.** The platform packages live in `npm/cli-*` with
+  version `0.0.0`. At release, `scripts/npm-stage.sh` stamps them with the
+  `@curl-runner/cli` version, copies in the CI-built binaries and adds the
+  exact-version `optionalDependencies` to this package (kept out of git so
+  `bun.lock` never points at unpublished versions). `scripts/npm-publish.sh`
+  then publishes the five platform packages before `changeset publish`
+  publishes `@curl-runner/cli`.
+
+Windows: package managers wrap bins in shims (npm's cmd-shim writes
+`curl-runner.cmd`/`.ps1`; Bun writes a `.exe` shim). Both read the shebang and
+run `sh <launcher>`, so `curl-runner` works from cmd and PowerShell only when
+a `sh` is on `PATH` (Git for Windows with its Unix tools on `PATH`, MSYS2,
+Cygwin), and always from Git Bash. Without `sh`, install the native binary
+with `install.ps1` from the docs, or run
+`node_modules/@curl-runner/cli-win32-x64/bin/curl-runner.exe` directly.
+Mapping a single `bin` entry to a native `.exe` on Windows would require a
+postinstall, which is what this design avoids.
+
+Testing: `scripts/npm-smoke.sh <bin-dir> [linux/arm64 linux/amd64]` packs
+everything, publishes to a throwaway local verdaccio and installs it with
+`bun i -g` (no node), `npm i -g` (no bun) and `pnpm add -g` in Docker.
+
+### From Source
+
+Needs [Rust](https://rustup.rs) (toolchain pinned in `rust-toolchain.toml`); Bun is not required.
+
+```bash
 git clone https://github.com/alexvcasillas/curl-runner.git
 cd curl-runner
 
-# Install dependencies
-bun install
-
 # Build the CLI
-bun run build:cli
+cargo build --release -p curl-runner
 
-# The binary will be available at ./curl-runner
+# The binary is at ./target/release/curl-runner
 ```
 
 ### Development Mode
 
 ```bash
 # Run from source
-bun run packages/cli/src/cli.ts [files...] [options]
+cargo run -p curl-runner -- [files...] [options]
 
 # Or use the workspace script
 bun run cli [files...] [options]
@@ -379,27 +437,25 @@ curl-runner -v examples/
 ### Running Tests
 
 ```bash
-# Run unit tests
-bun test
+# Run unit and integration tests
+cargo test --workspace
 
-# Run integration tests with example files
+# Run the example files
 curl-runner examples/
 
 # Test CLI functionality
-bun run packages/cli/src/cli.ts --help
+cargo run -p curl-runner -- --help
 ```
 
 ### Development Commands
 
 ```bash
-# Run in development mode with file watching
-bun run dev:cli
-
 # Build the CLI binary
-bun run build:cli
+cargo build --release -p curl-runner
 
 # Check code quality
-bun run check
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 ## 🎨 Output Formats
@@ -515,4 +571,4 @@ MIT License - see [LICENSE.md](../../LICENSE.md) for details.
 
 ---
 
-Built with ❤️ using [Bun](https://bun.sh) and TypeScript
+Built with ❤️ using Rust and libcurl

@@ -1,0 +1,2 @@
+global: {snapshot: [1], diff: "x", variables: "abc", defaults: "xy", output: 5, ci: {failOn: 1, failOnPercentage: 200}}
+request: {url: https://a.com}

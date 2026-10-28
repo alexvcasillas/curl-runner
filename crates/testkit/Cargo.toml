@@ -1,0 +1,13 @@
+[package]
+name = "testkit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+serde_json = "1"
+url = "2"
+
+[dev-dependencies]
+curl = { version = "0.4", default-features = false, features = ["static-curl", "http2", "rustls"] }

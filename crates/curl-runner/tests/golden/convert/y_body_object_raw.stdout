@@ -1,0 +1,4 @@
+curl \
+  -X GET \
+  -d '[object Object]' \
+  https://a.test

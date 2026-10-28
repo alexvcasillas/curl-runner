@@ -1,0 +1,8 @@
+request:
+  method: GET
+  url: https://api.example.com
+  auth:
+    type: basic
+    username: admin
+    password: secret
+

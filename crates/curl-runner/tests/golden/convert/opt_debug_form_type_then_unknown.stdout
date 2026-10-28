@@ -1,0 +1,43 @@
+[33mDEBUG:[0m
+{
+  "tokens": [
+    "curl",
+    "-F",
+    "f=@a;type;filename=x;type=y",
+    "https://x.test"
+  ],
+  "ast": {
+    "url": "https://x.test",
+    "headers": [],
+    "unsupportedFlags": [],
+    "form": [
+      "f=@a;type;filename=x;type=y"
+    ]
+  },
+  "ir": {
+    "method": "POST",
+    "url": "https://x.test",
+    "headers": {},
+    "metadata": {
+      "source": "curl",
+      "warnings": []
+    },
+    "formData": {
+      "f": {
+        "file": "a",
+        "contentType": "y",
+        "filename": "x"
+      }
+    }
+  }
+}
+
+request:
+  method: POST
+  url: https://x.test
+  formData:
+    f:
+      file: a
+      filename: x
+      contentType: y
+

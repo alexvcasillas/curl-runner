@@ -1,0 +1,11 @@
+requests:
+  - name: request_1
+    method: GET
+    url: https://a.test/1
+
+  - name: request_2
+    method: POST
+    url: https://a.test/2
+    headers:
+      A: b
+

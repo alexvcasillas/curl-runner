@@ -1,0 +1,10 @@
+# Auto mode with exactly one stored baseline (seeded 'only'): compares against it.
+global:
+  diff:
+    enabled: true
+    label: run
+    exclude:
+      - "*.date"
+requests:
+  - name: Get User
+    url: ${BASE_URL}/jp/users/1

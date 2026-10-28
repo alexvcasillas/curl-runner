@@ -1,0 +1,6 @@
+request:
+  method: GET
+  url: https://x.com/
+  params:
+    a: "2"
+

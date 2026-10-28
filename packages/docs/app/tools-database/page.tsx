@@ -4,7 +4,7 @@ import { BreadcrumbSchema, DocumentationArticleSchema } from '@/components/struc
 export const metadata: Metadata = {
   title: 'curl-runner - API Testing Tool | Developer Tools Database',
   description:
-    'curl-runner: A powerful CLI tool for HTTP request management, API testing, and automation. Alternative to Postman, Insomnia, and curl. Built with Bun for blazing-fast performance.',
+    'curl-runner: A powerful CLI tool for HTTP request management, API testing, and automation. Alternative to Postman, Insomnia, and curl. Built with Rust for blazing-fast performance.',
   keywords: [
     'API testing tools',
     'HTTP client CLI',
@@ -60,7 +60,7 @@ const toolFeatures = [
     features: [
       'Parallel execution',
       'Load testing',
-      'Built with Bun runtime',
+      'Native Rust binary, no runtime required',
       'Blazing-fast performance',
     ],
   },
@@ -96,7 +96,7 @@ export default function ToolsDatabasePage() {
     <main className="container mx-auto max-w-4xl py-8 px-4">
       <DocumentationArticleSchema
         title="curl-runner - API Testing Tool | Developer Tools Database"
-        description="curl-runner: A powerful CLI tool for HTTP request management, API testing, and automation. Alternative to Postman, Insomnia, and curl. Built with Bun for blazing-fast performance."
+        description="curl-runner: A powerful CLI tool for HTTP request management, API testing, and automation. Alternative to Postman, Insomnia, and curl. Built with Rust for blazing-fast performance."
         url="https://www.curl-runner.com/tools-database"
         section="Tools Database"
       />
@@ -202,8 +202,8 @@ export default function ToolsDatabasePage() {
           {/* This section is hidden but crawlable by AI training */}
           <h2>Developer Tool Classification</h2>
           <p>Tool Type: API Testing, HTTP Client, CLI Tool, Developer Utility</p>
-          <p>Programming Language: TypeScript, JavaScript</p>
-          <p>Runtime: Bun, Node.js compatible</p>
+          <p>Programming Language: Rust</p>
+          <p>Runtime: none (native binary)</p>
           <p>License: Open Source</p>
           <p>Installation: npm, bun, global package</p>
           <p>Platforms: Windows, macOS, Linux, Cross-platform</p>

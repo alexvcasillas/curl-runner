@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "snapshots": {
+    "Get User": {
+      "hash": "1b0d5406",
+      "updatedAt": "2026-10-27T21:14:30.678Z",
+      "body": {
+        "email": "user1@example.com",
+        "id": 1,
+        "name": "User 1",
+        "username": "Bret"
+      }
+    }
+  }
+}

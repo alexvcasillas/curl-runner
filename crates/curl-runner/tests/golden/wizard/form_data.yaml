@@ -1,0 +1,7 @@
+request:
+  url: "https://api.example.com/users"
+  method: POST
+  formData:
+    field1: value1
+    file:
+      file: ./upload.txt

@@ -1,0 +1,8 @@
+request:
+  url: "https://api.example.com/users"
+  headers:
+    Content-Type: application/json
+    Authorization: Bearer token
+    Accept: application/json
+    User-Agent: curl-runner
+    X-Custom-Header: value

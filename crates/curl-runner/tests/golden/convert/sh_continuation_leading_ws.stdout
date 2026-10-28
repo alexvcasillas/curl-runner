@@ -1,0 +1,7 @@
+request:
+  name: request_1
+  method: GET
+  url: https://a.test
+  headers:
+    A: b
+

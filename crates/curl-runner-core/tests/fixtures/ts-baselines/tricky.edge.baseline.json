@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "label": "edge",
+  "capturedAt": "2026-10-27T21:30:11.211Z",
+  "baselines": {
+    "Floats": {
+      "hash": "a7b8a179",
+      "capturedAt": "2026-10-27T21:30:11.211Z",
+      "status": 200,
+      "headers": {
+        "b-key": "v",
+        "x-multi": "a, b",
+        "a-key": "w"
+      },
+      "body": {
+        "f": 0.1,
+        "big": 123456789012345680000,
+        "huge": 1e+21,
+        "neg0": 0,
+        "e": 1.5e-7,
+        "int": 5
+      },
+      "timing": 12.345678901234567
+    },
+    "Weird": {
+      "hash": "931c1f07",
+      "capturedAt": "2026-10-27T21:30:11.211Z",
+      "status": 204,
+      "body": null,
+      "timing": 0
+    },
+    "Index keys": {
+      "hash": "42ad42fd",
+      "capturedAt": "2026-10-27T21:30:11.211Z",
+      "status": 200,
+      "body": {
+        "2": "y",
+        "10": "x",
+        "b": 1,
+        "a": [],
+        "o": {},
+        "u": "é \u0001\"\\ 😀"
+      }
+    },
+    "http://x/nourl": {
+      "hash": "bee5e103",
+      "capturedAt": "2026-10-27T21:30:11.211Z",
+      "status": 200,
+      "body": "text"
+    }
+  }
+}

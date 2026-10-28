@@ -1,0 +1,6 @@
+# Warning: Flag --compressed has no YAML equivalent; curl handles decompression natively
+
+request:
+  method: GET
+  url: https://example.com
+

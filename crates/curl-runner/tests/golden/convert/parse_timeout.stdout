@@ -1,0 +1,5 @@
+request:
+  method: GET
+  url: https://example.com
+  timeout: 30000
+

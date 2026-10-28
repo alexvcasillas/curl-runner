@@ -1,0 +1,8 @@
+request:
+  method: POST
+  url: https://auth.example.com/oauth/token
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body:
+    form: "grant_type=client_credentials&client_id=abc&client_secret=def&scope=read write"
+

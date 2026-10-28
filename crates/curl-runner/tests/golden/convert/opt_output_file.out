@@ -1,0 +1,7 @@
+# Warning: Flag --compressed has no YAML equivalent; curl handles decompression natively
+
+request:
+  method: POST
+  url: https://x.test
+  body:
+    form: a=1

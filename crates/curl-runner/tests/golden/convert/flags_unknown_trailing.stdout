@@ -1,0 +1,6 @@
+# Warning: Unsupported curl flag: --weird
+
+request:
+  method: GET
+  url: https://x.test
+

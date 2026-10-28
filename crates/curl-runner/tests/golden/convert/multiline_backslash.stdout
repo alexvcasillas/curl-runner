@@ -1,0 +1,14 @@
+# Warning: Flag --compressed has no YAML equivalent; curl handles decompression natively
+
+request:
+  method: POST
+  url: https://api.example.com/v1/items
+  headers:
+    Content-Type: application/json
+    X-Request-Id: abc-123
+  body:
+    json:
+      title: hello
+      tags: ["a","b"]
+      n: {"x":1}
+

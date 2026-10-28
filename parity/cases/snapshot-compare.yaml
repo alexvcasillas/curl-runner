@@ -1,0 +1,45 @@
+# Snapshot comparison against stored snapshots (parity/cases/__snapshots__/snapshot-compare.snap.json).
+global:
+  continueOnError: true
+  snapshot:
+    exclude:
+      - "*.updatedAt"
+
+collection:
+  name: Snapshot Compare
+  requests:
+    # stored snapshot matches
+    - name: Matching User
+      url: ${BASE_URL}/jp/users/1
+      snapshot: true
+
+    # stored snapshot differs: expected User 9
+    - name: Changed User
+      url: ${BASE_URL}/jp/users/1
+      snapshot:
+        include:
+          - status
+          - body
+
+    # no stored snapshot: created
+    - name: Brand New
+      url: ${BASE_URL}/jp/posts/1
+      snapshot: true
+
+    # explicit snapshot name; match rule and exclusion hide the dynamic parts
+    - name: Renamed Request
+      url: ${BASE_URL}/jp/users/1
+      snapshot:
+        name: stored-under-this-name
+        include:
+          - body
+        exclude:
+          - body.email
+        match:
+          "body.id": "*"
+          "body.name": "regex:^User \\d+$"
+
+    # disabled for this request
+    - name: Not Snapshotted
+      url: ${BASE_URL}/jp/posts/1
+      snapshot: false

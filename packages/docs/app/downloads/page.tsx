@@ -112,8 +112,8 @@ export default function DownloadsPage() {
                 <div className="flex-1">
                   <h3 className="font-semibold mb-2">No Dependencies</h3>
                   <p className="text-sm text-muted-foreground">
-                    Standalone executables with Bun runtime bundled. No need to install Node.js or
-                    any other dependencies.
+                    Standalone native executables. No need to install Bun, Node.js or any other
+                    dependencies.
                   </p>
                 </div>
               </div>

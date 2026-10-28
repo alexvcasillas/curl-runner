@@ -1,0 +1,236 @@
+{
+  "total": 5,
+  "successful": 2,
+  "failed": 2,
+  "skipped": 1,
+  "duration": 0,
+  "results": [
+    {
+      "request": {
+        "name": "Get user",
+        "url": "http://SERVER/json/user",
+        "method": "GET",
+        "expect": {
+          "status": 200,
+          "body": {
+            "name": "Test User"
+          }
+        },
+        "store": {
+          "userId": "body.id"
+        },
+        "headers": {},
+        "params": {},
+        "variables": {},
+        "sourceOutputConfig": {},
+        "sourceFile": "summary.yaml"
+      },
+      "success": true,
+      "status": 200,
+      "headers": {
+        "server": "tiny-http (Rust)",
+        "date": "DATE",
+        "content-type": "application/json",
+        "content-length": "68"
+      },
+      "headerHistory": [
+        {
+          "status": 200,
+          "headers": {
+            "server": "tiny-http (Rust)",
+            "date": "DATE",
+            "content-type": "application/json",
+            "content-length": "68"
+          }
+        }
+      ],
+      "body": {
+        "active": true,
+        "email": "test@example.com",
+        "id": 1,
+        "name": "Test User"
+      },
+      "metrics": {
+        "duration": 0,
+        "size": 0,
+        "dnsLookup": 0,
+        "tcpConnection": 0,
+        "tlsHandshake": 0,
+        "firstByte": 0,
+        "download": 0
+      }
+    },
+    {
+      "request": {
+        "name": "Wrong status",
+        "url": "http://SERVER/status/404",
+        "expect": {
+          "status": 200
+        },
+        "headers": {},
+        "params": {},
+        "variables": {},
+        "sourceOutputConfig": {},
+        "sourceFile": "summary.yaml"
+      },
+      "success": false,
+      "status": 404,
+      "headers": {
+        "server": "tiny-http (Rust)",
+        "date": "DATE",
+        "content-type": "application/json",
+        "content-length": "14"
+      },
+      "headerHistory": [
+        {
+          "status": 404,
+          "headers": {
+            "server": "tiny-http (Rust)",
+            "date": "DATE",
+            "content-type": "application/json",
+            "content-length": "14"
+          }
+        }
+      ],
+      "body": {
+        "status": 404
+      },
+      "metrics": {
+        "duration": 0,
+        "size": 0,
+        "dnsLookup": 0,
+        "tcpConnection": 0,
+        "tlsHandshake": 0,
+        "firstByte": 0,
+        "download": 0
+      },
+      "error": "Expected status 200, got 404"
+    },
+    {
+      "request": {
+        "name": "Body mismatch",
+        "url": "http://SERVER/json/users",
+        "expect": {
+          "status": 200,
+          "body": {
+            "[0].name": "Nobody"
+          }
+        },
+        "headers": {},
+        "params": {},
+        "variables": {},
+        "sourceOutputConfig": {},
+        "sourceFile": "summary.yaml"
+      },
+      "success": false,
+      "status": 200,
+      "headers": {
+        "server": "tiny-http (Rust)",
+        "date": "DATE",
+        "content-type": "application/json",
+        "content-length": "58"
+      },
+      "headerHistory": [
+        {
+          "status": 200,
+          "headers": {
+            "server": "tiny-http (Rust)",
+            "date": "DATE",
+            "content-type": "application/json",
+            "content-length": "58"
+          }
+        }
+      ],
+      "body": [
+        {
+          "id": 1,
+          "name": "Test User"
+        },
+        {
+          "id": 2,
+          "name": "Other User"
+        }
+      ],
+      "metrics": {
+        "duration": 0,
+        "size": 0,
+        "dnsLookup": 0,
+        "tcpConnection": 0,
+        "tlsHandshake": 0,
+        "firstByte": 0,
+        "download": 0
+      },
+      "error": "Expected [0].name to be \"Nobody\", got undefined"
+    },
+    {
+      "request": {
+        "name": "Uses store",
+        "url": "http://SERVER/json/nested?id=1",
+        "expect": {
+          "status": [200, 201]
+        },
+        "headers": {},
+        "params": {},
+        "variables": {},
+        "sourceOutputConfig": {},
+        "sourceFile": "summary.yaml"
+      },
+      "success": true,
+      "status": 200,
+      "headers": {
+        "server": "tiny-http (Rust)",
+        "date": "DATE",
+        "content-type": "application/json",
+        "content-length": "48"
+      },
+      "headerHistory": [
+        {
+          "status": 200,
+          "headers": {
+            "server": "tiny-http (Rust)",
+            "date": "DATE",
+            "content-type": "application/json",
+            "content-length": "48"
+          }
+        }
+      ],
+      "body": {
+        "data": {
+          "items": [
+            {
+              "id": 1
+            },
+            {
+              "id": 2
+            }
+          ],
+          "total": 2
+        }
+      },
+      "metrics": {
+        "duration": 0,
+        "size": 0,
+        "dnsLookup": 0,
+        "tcpConnection": 0,
+        "tlsHandshake": 0,
+        "firstByte": 0,
+        "download": 0
+      }
+    },
+    {
+      "request": {
+        "name": "Skipped",
+        "url": "http://SERVER/json/user",
+        "when": "store.userId == 99",
+        "headers": {},
+        "params": {},
+        "variables": {},
+        "sourceOutputConfig": {},
+        "sourceFile": "summary.yaml"
+      },
+      "success": true,
+      "skipped": true,
+      "skipReason": "condition not met: store.userId == 99"
+    }
+  ]
+}

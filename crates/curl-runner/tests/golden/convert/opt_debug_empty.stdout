@@ -1,0 +1,23 @@
+[33mDEBUG:[0m
+{
+  "tokens": [],
+  "ast": {
+    "url": "",
+    "headers": [],
+    "unsupportedFlags": []
+  },
+  "ir": {
+    "method": "GET",
+    "url": "",
+    "headers": {},
+    "metadata": {
+      "source": "curl",
+      "warnings": []
+    }
+  }
+}
+
+request:
+  method: GET
+  url: ""
+

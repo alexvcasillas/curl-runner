@@ -1,0 +1,6 @@
+[33m⚠ expect block has no curl equivalent[0m
+[33m⚠ store block has no curl equivalent[0m
+[33m⚠ when condition has no curl equivalent[0m
+[33m⚠ retry config simplified in curl output[0m
+[33m⚠ snapshot config has no curl equivalent[0m
+[33m⚠ diff config has no curl equivalent[0m

@@ -1,0 +1,3 @@
+curl \
+  -X GET \
+  https://a.test/u

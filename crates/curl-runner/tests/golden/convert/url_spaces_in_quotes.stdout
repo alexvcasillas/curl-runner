@@ -1,0 +1,4 @@
+request:
+  method: GET
+  url: https://x.test/a b
+

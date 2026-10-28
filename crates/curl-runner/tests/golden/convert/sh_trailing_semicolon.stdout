@@ -1,0 +1,9 @@
+requests:
+  - name: request_1
+    method: GET
+    url: https://a.test
+
+  - name: request_2
+    method: GET
+    url: https://b.test;
+

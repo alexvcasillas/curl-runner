@@ -1,0 +1,7 @@
+# Auto mode with several stored baselines (seeded 'a' and 'b'): lists them.
+global:
+  diff:
+    enabled: true
+requests:
+  - name: Get User
+    url: ${BASE_URL}/jp/users/1

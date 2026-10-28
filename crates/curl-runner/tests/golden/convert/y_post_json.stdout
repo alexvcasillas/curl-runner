@@ -1,0 +1,5 @@
+curl \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Alex","age":30}' \
+  https://api.example.com

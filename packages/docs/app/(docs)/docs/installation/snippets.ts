@@ -3,13 +3,15 @@ export const curlInstallerExample = `curl -fsSL https://www.curl-runner.com/inst
 
 export const powershellInstallerExample = `irm https://www.curl-runner.com/install.ps1 | iex`;
 
-export const npmInstallExample = `npm install -g @curl-runner/cli`;
+export const npmInstallExample = `npm install -g @curl-runner/cli
+# Windows: needs sh on PATH (e.g. Git for Windows Unix tools); otherwise use install.ps1`;
 
 export const yarnInstallExample = `yarn global add @curl-runner/cli`;
 
 export const pnpmInstallExample = `pnpm install -g @curl-runner/cli`;
 
-export const bunInstallExample = `bun install -g @curl-runner/cli`;
+export const bunInstallExample = `bun install -g @curl-runner/cli
+# Windows: needs sh on PATH (e.g. Git for Windows Unix tools); otherwise use install.ps1`;
 
 export const npxUsageExample = `npx @curl-runner/cli my-tests.yaml`;
 

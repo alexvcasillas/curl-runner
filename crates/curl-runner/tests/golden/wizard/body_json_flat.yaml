@@ -1,0 +1,6 @@
+request:
+  url: "https://api.example.com/users"
+  method: POST
+  body:
+    name: test
+    value: 123

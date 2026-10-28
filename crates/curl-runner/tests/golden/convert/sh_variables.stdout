@@ -1,0 +1,8 @@
+request:
+  name: request_1
+  method: GET
+  url: $BASE_URL/users
+  auth:
+    type: bearer
+    token: $TOKEN
+

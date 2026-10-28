@@ -1,0 +1,37 @@
+[33mDEBUG:[0m
+{
+  "tokens": [
+    "curl",
+    "--data-binary",
+    "@f.bin",
+    "https://x.test"
+  ],
+  "ast": {
+    "url": "https://x.test",
+    "headers": [],
+    "unsupportedFlags": [],
+    "dataBinary": [
+      "@f.bin"
+    ]
+  },
+  "ir": {
+    "method": "POST",
+    "url": "https://x.test",
+    "headers": {},
+    "metadata": {
+      "source": "curl",
+      "warnings": []
+    },
+    "body": {
+      "type": "binary",
+      "content": "@f.bin"
+    }
+  }
+}
+
+request:
+  method: POST
+  url: https://x.test
+  body:
+    binary: "@f.bin"
+

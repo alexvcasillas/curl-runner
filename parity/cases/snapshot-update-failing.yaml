@@ -1,0 +1,18 @@
+# updateMode failing + a global snapshot enable (requests need no snapshot key).
+global:
+  continueOnError: true
+  snapshot:
+    enabled: true
+    updateMode: failing
+    include:
+      - status
+      - body
+
+collection:
+  name: Snapshot Update Failing
+  requests:
+    - name: Stale Post
+      url: ${BASE_URL}/jp/posts/1
+    - name: Opt Out
+      url: ${BASE_URL}/jp/users/1
+      snapshot: false

@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "snapshots": {
+    "Matching User": {
+      "hash": "00000000",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "body": {
+        "id": 1,
+        "name": "User 1",
+        "username": "Bret",
+        "email": "user1@example.com"
+      }
+    },
+    "Changed User": {
+      "hash": "00000000",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "status": 201,
+      "body": {
+        "id": 9,
+        "name": "User 9",
+        "username": "Bret",
+        "extra": [
+          1,
+          2
+        ]
+      }
+    },
+    "stored-under-this-name": {
+      "hash": "00000000",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "body": {
+        "id": 77,
+        "name": "User 5",
+        "username": "Bret",
+        "email": "old@example.com"
+      }
+    }
+  }
+}

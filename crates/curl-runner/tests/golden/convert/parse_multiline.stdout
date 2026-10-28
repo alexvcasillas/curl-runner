@@ -1,0 +1,9 @@
+request:
+  method: POST
+  url: https://api.example.com
+  headers:
+    Content-Type: application/json
+  body:
+    json:
+      test: true
+

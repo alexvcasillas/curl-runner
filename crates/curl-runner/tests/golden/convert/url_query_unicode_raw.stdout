@@ -1,0 +1,7 @@
+request:
+  method: GET
+  url: https://x.test/s
+  params:
+    emoji: 😀
+    name: Ünï
+

@@ -1,0 +1,17 @@
+# updateMode all: a differing snapshot is rewritten and reported as updated.
+global:
+  continueOnError: true
+  snapshot:
+    updateMode: all
+
+collection:
+  name: Snapshot Update
+  requests:
+    - name: Stale User
+      url: ${BASE_URL}/jp/users/1
+      snapshot: true
+    - name: Fresh User
+      url: ${BASE_URL}/jp/users/1
+      snapshot:
+        include:
+          - status

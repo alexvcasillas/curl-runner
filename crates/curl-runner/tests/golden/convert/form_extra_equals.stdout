@@ -1,0 +1,8 @@
+request:
+  method: POST
+  url: https://x.test/up
+  formData:
+    f:
+      file: a.txt
+      contentType: a
+

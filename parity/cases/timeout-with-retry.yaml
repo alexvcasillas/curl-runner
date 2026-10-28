@@ -1,0 +1,20 @@
+# Timeout with retry example
+# Usage: curl-runner timeout-with-retry.yaml
+#
+# Parity edit: the endpoint waits 300 ms and the timeout is 100 (milliseconds per the
+# docs, so Rust times out and retries; TS passed it to curl as seconds and succeeds).
+
+global:
+  output:
+    format: pretty
+    prettyLevel: standard
+    showMetrics: true
+
+request:
+  name: Timeout with Retry
+  url: ${BASE_URL}/api/test/delay/300  # Server waits 300 ms (times out after 100 ms)
+  method: GET
+  timeout: 100   # 100 ms timeout
+  retry:
+    count: 2      # Retry twice
+    delay: 50     # 50 ms delay between retries

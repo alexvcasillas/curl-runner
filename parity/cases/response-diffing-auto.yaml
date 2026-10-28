@@ -1,0 +1,12 @@
+# Auto mode with no stored baseline: saves the run as 'baseline'.
+global:
+  diff:
+    enabled: true
+    exclude:
+      - "*.date"
+
+requests:
+  - name: Get User
+    url: ${BASE_URL}/jp/users/1
+  - name: Plain Text
+    url: ${BASE_URL}/jp/posts/1

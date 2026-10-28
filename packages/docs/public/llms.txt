@@ -4,7 +4,7 @@ This file provides comprehensive information about the curl-runner project and i
 
 ## Project Overview
 
-curl-runner is a powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance, it allows developers to define, execute, and validate HTTP requests with advanced features like parallel execution, response validation, variable templation, and comprehensive output formats.
+curl-runner is a powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance, it allows developers to define, execute, and validate HTTP requests with advanced features like parallel execution, response validation, variable templation, and comprehensive output formats.
 
 ## Documentation Structure
 
@@ -132,7 +132,7 @@ The complete documentation is available at: https://curl-runner.com/docs
 
 1. **YAML-Based Configuration**: Human-readable configuration files with support for variables, templates, and complex request definitions.
 
-2. **High Performance**: Built on Bun runtime for exceptional speed and efficiency.
+2. **High Performance**: Built in Rust as a native binary (libcurl in-process, no runtime needed) for exceptional speed and efficiency.
 
 3. **Flexible Execution**: Support for both sequential and parallel request execution with configurable concurrency limits.
 
@@ -157,7 +157,7 @@ The complete documentation is available at: https://curl-runner.com/docs
 
 ## Technical Implementation
 
-- **Runtime**: Bun (optimized for performance)
+- **Runtime**: None needed (single static Rust binary, libcurl in-process)
 - **Configuration**: YAML with advanced templating
 - **Execution**: Concurrent HTTP client with connection pooling
 - **Validation**: Schema-based validation with custom rules

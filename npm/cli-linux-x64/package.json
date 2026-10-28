@@ -1,0 +1,22 @@
+{
+  "name": "@curl-runner/cli-linux-x64",
+  "version": "0.0.0",
+  "description": "The linux-x64 binary for @curl-runner/cli. Install @curl-runner/cli instead.",
+  "repository": {
+    "url": "git+https://github.com/alexvcasillas/curl-runner.git"
+  },
+  "license": "MIT",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin"
+  ],
+  "preferUnplugged": true,
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,52 @@
+# Parallel execution example
+global:
+  execution: parallel
+  variables:
+    API_URL: ${BASE_URL}/api/test
+  output:
+    verbose: true
+    showBody: true
+    showHeaders: true
+    showMetrics: true
+    format: pretty
+
+requests:
+  - name: Get IP Address
+    url: ${BASE_URL}/api/test/ip
+    method: GET
+    
+  - name: Get User Agent
+    url: ${BASE_URL}/api/test/user-agent
+    method: GET
+    
+  - name: Get Headers
+    url: ${BASE_URL}/api/test/headers
+    method: GET
+    headers:
+      X-Custom-Header: curl-runner
+      Accept: application/json
+    
+  - name: Post JSON Data
+    url: ${BASE_URL}/api/test/post
+    method: POST
+    headers:
+      Content-Type: application/json
+    body:
+      name: Curl Runner Test
+      timestamp: "2024-01-01"
+      data:
+        key1: value1
+        key2: value2
+    
+  - name: Test Basic Auth
+    url: ${BASE_URL}/api/test/basic-auth/user/pass
+    method: GET
+    auth:
+      type: basic
+      username: user
+      password: pass
+    
+  - name: Test Delayed Response
+    url: ${BASE_URL}/api/test/delay/0
+    method: GET
+    timeout: 5

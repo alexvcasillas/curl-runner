@@ -1,0 +1,23 @@
+[33mDEBUG:[0m
+{
+  "tokens": [
+    "curl",
+    "https://x.test"
+  ],
+  "ast": {
+    "url": "https://x.test",
+    "headers": [],
+    "unsupportedFlags": []
+  },
+  "ir": {
+    "method": "GET",
+    "url": "https://x.test",
+    "headers": {},
+    "metadata": {
+      "source": "curl",
+      "warnings": []
+    }
+  }
+}
+
+[34mℹ Written to e.yaml[0m

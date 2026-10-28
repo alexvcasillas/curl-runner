@@ -1,0 +1,18 @@
+# Saves a baseline (global.diff.save) with timings: __baselines__/response-diffing-save.staging.baseline.json
+global:
+  diff:
+    save: true
+    label: staging
+    includeTimings: true
+
+collection:
+  name: Diff Save
+  requests:
+    - name: Get User
+      url: ${BASE_URL}/jp/users/1
+    - name: List Posts
+      url: ${BASE_URL}/jp/posts
+    - name: Failing Request
+      url: ${BASE_URL}/jp/users/1
+      expect:
+        status: 404

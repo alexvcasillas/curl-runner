@@ -1,0 +1,7 @@
+curl \
+  -H 'X-Dollar: $HOME' \
+  -H 'X-Quote: say "hi"' \
+  -H 'X-Backslash: a\b' \
+  -H 'X-Safe: a_b-c.d/e:f@g=h,i+j%k' \
+  -H 'X-Unsafe: a;b' \
+  "https://a.test/a b?c=d&e='f'"

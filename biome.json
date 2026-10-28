@@ -16,6 +16,8 @@
       "!curl-runner",
       "!bun.lockb",
       "!packages/cli/examples",
+      "!crates/**/*",
+      "!parity/**/*",
       "!packages/cli/dist",
       "!packages/web/.next",
       "!packages/web/out",

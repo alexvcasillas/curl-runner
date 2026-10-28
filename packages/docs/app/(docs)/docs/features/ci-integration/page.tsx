@@ -96,11 +96,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
       - name: Install curl-runner
-        run: bun install -g curl-runner
+        run: npm install -g @curl-runner/cli
 
       - name: Run API Tests
         env:
@@ -120,13 +117,13 @@ const gitlabCi = `stages:
 
 api-tests:
   stage: test
-  image: oven/bun:latest
+  image: node:22-slim
   variables:
     CURL_RUNNER_STRICT_EXIT: "true"
     CURL_RUNNER_CONTINUE_ON_ERROR: "true"
     CURL_RUNNER_OUTPUT_FORMAT: json
   before_script:
-    - bun install -g curl-runner
+    - npm install -g @curl-runner/cli
   script:
     - curl-runner tests/ --output test-results.json
   artifacts:

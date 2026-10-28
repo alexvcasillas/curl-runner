@@ -1,0 +1,16 @@
+request:
+  url: "https://api.example.com/users"
+  method: POST
+  body:
+    user:
+      name: ann
+      age: 31
+      admin: false
+      nick: null
+      tags: [a, b, c]
+    nums: [1, 2.5, -3, 1e+21, 0.1]
+    ok: true
+    deep:
+      a:
+        b:
+          c: x

@@ -1,0 +1,4 @@
+request:
+  method: GET
+  url: "http://[::1]:8080/x"
+

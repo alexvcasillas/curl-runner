@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "snapshots": {
+    "numbers": {
+      "hash": "f40e0381",
+      "updatedAt": "2023-11-14T22:13:20.000Z",
+      "body": {
+        "a": 1,
+        "b": 1e+21,
+        "c": 0,
+        "d": 123456789012345680000,
+        "e": 9007199254740992,
+        "f": 1.5e-7,
+        "g": 0.1,
+        "h": [
+          1,
+          2.5,
+          300
+        ]
+      }
+    },
+    "unicode": {
+      "hash": "23854ff9",
+      "updatedAt": "2023-11-14T22:13:21.234Z",
+      "status": 200,
+      "headers": {
+        "content-type": "text/plain; charset=utf-8",
+        "x-multi": "a, b"
+      },
+      "body": {
+        "s": "café 😀     \u0001 \"q\" \\ / \n\t",
+        "kéy": null
+      }
+    },
+    "index keys": {
+      "hash": "7fc39a03",
+      "updatedAt": "2023-11-14T22:13:22.468Z",
+      "body": {
+        "2": 3,
+        "10": 2,
+        "b": 1,
+        "01": 4,
+        "a": 5
+      }
+    },
+    "empty": {
+      "hash": "9bdfa2a6",
+      "updatedAt": "2023-11-14T22:13:23.702Z",
+      "body": {
+        "o": {},
+        "a": [],
+        "n": null,
+        "t": true,
+        "f": false,
+        "s": ""
+      }
+    },
+    "null body": {
+      "hash": "7b1510f7",
+      "updatedAt": "2023-11-14T22:13:24.936Z",
+      "body": null
+    },
+    "array body": {
+      "hash": "06d85bf8",
+      "updatedAt": "2023-11-14T22:13:26.170Z",
+      "body": [
+        1,
+        "two",
+        {
+          "three": [
+            3
+          ]
+        }
+      ]
+    },
+    "string body": {
+      "hash": "64e8545f",
+      "updatedAt": "2023-11-14T22:13:27.404Z",
+      "body": "plain text"
+    }
+  }
+}

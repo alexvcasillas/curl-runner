@@ -1,0 +1,9 @@
+# Warning: Cookie flag (-b session=abc123) stored as header; manual review recommended
+# Warning: Cookie jar flag (-c cookies.txt) has no YAML equivalent
+
+request:
+  method: GET
+  url: https://example.com
+  headers:
+    Cookie: session=abc123
+

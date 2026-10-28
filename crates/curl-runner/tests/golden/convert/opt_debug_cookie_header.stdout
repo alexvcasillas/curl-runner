@@ -1,0 +1,46 @@
+[33mDEBUG:[0m
+{
+  "tokens": [
+    "curl",
+    "-b",
+    "a=1",
+    "-H",
+    "x: y",
+    "https://x.test"
+  ],
+  "ast": {
+    "url": "https://x.test",
+    "headers": [
+      {
+        "key": "x",
+        "value": "y"
+      }
+    ],
+    "unsupportedFlags": [],
+    "cookie": "a=1"
+  },
+  "ir": {
+    "method": "GET",
+    "url": "https://x.test",
+    "headers": {
+      "X": "y",
+      "Cookie": "a=1"
+    },
+    "metadata": {
+      "source": "curl",
+      "warnings": [
+        "Cookie flag (-b a=1) stored as header; manual review recommended"
+      ]
+    }
+  }
+}
+
+# Warning: Cookie flag (-b a=1) stored as header; manual review recommended
+
+request:
+  method: GET
+  url: https://x.test
+  headers:
+    Cookie: a=1
+    X: y
+

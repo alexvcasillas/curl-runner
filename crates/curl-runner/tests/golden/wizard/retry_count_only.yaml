@@ -1,0 +1,4 @@
+request:
+  url: "https://api.example.com/users"
+  retry:
+    count: 5

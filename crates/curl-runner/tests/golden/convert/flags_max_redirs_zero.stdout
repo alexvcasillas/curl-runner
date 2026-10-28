@@ -1,0 +1,5 @@
+request:
+  method: GET
+  url: https://x.test
+  maxRedirects: 0
+

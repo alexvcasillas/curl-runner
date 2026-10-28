@@ -1,0 +1,692 @@
+{
+  "version": 1,
+  "label": "stored",
+  "capturedAt": "2026-10-27T21:30:01.086Z",
+  "baselines": {
+    "Get User": {
+      "hash": "28f89aac",
+      "capturedAt": "2026-10-27T21:30:01.085Z",
+      "status": 200,
+      "headers": {
+        "content-length": "70",
+        "content-type": "application/json",
+        "date": "Tue, 27 Oct 2026 21:30:01 GMT",
+        "server": "tiny-http (Rust)"
+      },
+      "body": {
+        "email": "user1@example.com",
+        "id": 1,
+        "name": "User 1",
+        "username": "Bret"
+      },
+      "timing": 9.394832999999998
+    },
+    "List Posts": {
+      "hash": "22c07d01",
+      "capturedAt": "2026-10-27T21:30:01.086Z",
+      "status": 200,
+      "headers": {
+        "content-length": "6687",
+        "content-type": "application/json",
+        "date": "Tue, 27 Oct 2026 21:30:01 GMT",
+        "server": "tiny-http (Rust)"
+      },
+      "body": [
+        {
+          "body": "post body 1",
+          "id": 1,
+          "title": "edited title",
+          "userId": 1
+        },
+        {
+          "body": "post body 2",
+          "id": 2,
+          "title": "post title 2",
+          "userId": 77
+        },
+        {
+          "body": "post body 3",
+          "id": 3,
+          "title": "post title 3",
+          "userId": 1
+        },
+        {
+          "body": "post body 4",
+          "id": 4,
+          "title": "post title 4",
+          "userId": 1
+        },
+        {
+          "body": "post body 5",
+          "id": 5,
+          "title": "post title 5",
+          "userId": 1
+        },
+        {
+          "body": "post body 6",
+          "id": 6,
+          "title": "post title 6",
+          "userId": 1
+        },
+        {
+          "body": "post body 7",
+          "id": 7,
+          "title": "post title 7",
+          "userId": 1
+        },
+        {
+          "body": "post body 8",
+          "id": 8,
+          "title": "post title 8",
+          "userId": 1
+        },
+        {
+          "body": "post body 9",
+          "id": 9,
+          "title": "post title 9",
+          "userId": 1
+        },
+        {
+          "body": "post body 10",
+          "id": 10,
+          "title": "post title 10",
+          "userId": 1
+        },
+        {
+          "body": "post body 11",
+          "id": 11,
+          "title": "post title 11",
+          "userId": 2
+        },
+        {
+          "body": "post body 12",
+          "id": 12,
+          "title": "post title 12",
+          "userId": 2
+        },
+        {
+          "body": "post body 13",
+          "id": 13,
+          "title": "post title 13",
+          "userId": 2
+        },
+        {
+          "body": "post body 14",
+          "id": 14,
+          "title": "post title 14",
+          "userId": 2
+        },
+        {
+          "body": "post body 15",
+          "id": 15,
+          "title": "post title 15",
+          "userId": 2
+        },
+        {
+          "body": "post body 16",
+          "id": 16,
+          "title": "post title 16",
+          "userId": 2
+        },
+        {
+          "body": "post body 17",
+          "id": 17,
+          "title": "post title 17",
+          "userId": 2
+        },
+        {
+          "body": "post body 18",
+          "id": 18,
+          "title": "post title 18",
+          "userId": 2
+        },
+        {
+          "body": "post body 19",
+          "id": 19,
+          "title": "post title 19",
+          "userId": 2
+        },
+        {
+          "body": "post body 20",
+          "id": 20,
+          "title": "post title 20",
+          "userId": 2
+        },
+        {
+          "body": "post body 21",
+          "id": 21,
+          "title": "post title 21",
+          "userId": 3
+        },
+        {
+          "body": "post body 22",
+          "id": 22,
+          "title": "post title 22",
+          "userId": 3
+        },
+        {
+          "body": "post body 23",
+          "id": 23,
+          "title": "post title 23",
+          "userId": 3
+        },
+        {
+          "body": "post body 24",
+          "id": 24,
+          "title": "post title 24",
+          "userId": 3
+        },
+        {
+          "body": "post body 25",
+          "id": 25,
+          "title": "post title 25",
+          "userId": 3
+        },
+        {
+          "body": "post body 26",
+          "id": 26,
+          "title": "post title 26",
+          "userId": 3
+        },
+        {
+          "body": "post body 27",
+          "id": 27,
+          "title": "post title 27",
+          "userId": 3
+        },
+        {
+          "body": "post body 28",
+          "id": 28,
+          "title": "post title 28",
+          "userId": 3
+        },
+        {
+          "body": "post body 29",
+          "id": 29,
+          "title": "post title 29",
+          "userId": 3
+        },
+        {
+          "body": "post body 30",
+          "id": 30,
+          "title": "post title 30",
+          "userId": 3
+        },
+        {
+          "body": "post body 31",
+          "id": 31,
+          "title": "post title 31",
+          "userId": 4
+        },
+        {
+          "body": "post body 32",
+          "id": 32,
+          "title": "post title 32",
+          "userId": 4
+        },
+        {
+          "body": "post body 33",
+          "id": 33,
+          "title": "post title 33",
+          "userId": 4
+        },
+        {
+          "body": "post body 34",
+          "id": 34,
+          "title": "post title 34",
+          "userId": 4
+        },
+        {
+          "body": "post body 35",
+          "id": 35,
+          "title": "post title 35",
+          "userId": 4
+        },
+        {
+          "body": "post body 36",
+          "id": 36,
+          "title": "post title 36",
+          "userId": 4
+        },
+        {
+          "body": "post body 37",
+          "id": 37,
+          "title": "post title 37",
+          "userId": 4
+        },
+        {
+          "body": "post body 38",
+          "id": 38,
+          "title": "post title 38",
+          "userId": 4
+        },
+        {
+          "body": "post body 39",
+          "id": 39,
+          "title": "post title 39",
+          "userId": 4
+        },
+        {
+          "body": "post body 40",
+          "id": 40,
+          "title": "post title 40",
+          "userId": 4
+        },
+        {
+          "body": "post body 41",
+          "id": 41,
+          "title": "post title 41",
+          "userId": 5
+        },
+        {
+          "body": "post body 42",
+          "id": 42,
+          "title": "post title 42",
+          "userId": 5
+        },
+        {
+          "body": "post body 43",
+          "id": 43,
+          "title": "post title 43",
+          "userId": 5
+        },
+        {
+          "body": "post body 44",
+          "id": 44,
+          "title": "post title 44",
+          "userId": 5
+        },
+        {
+          "body": "post body 45",
+          "id": 45,
+          "title": "post title 45",
+          "userId": 5
+        },
+        {
+          "body": "post body 46",
+          "id": 46,
+          "title": "post title 46",
+          "userId": 5
+        },
+        {
+          "body": "post body 47",
+          "id": 47,
+          "title": "post title 47",
+          "userId": 5
+        },
+        {
+          "body": "post body 48",
+          "id": 48,
+          "title": "post title 48",
+          "userId": 5
+        },
+        {
+          "body": "post body 49",
+          "id": 49,
+          "title": "post title 49",
+          "userId": 5
+        },
+        {
+          "body": "post body 50",
+          "id": 50,
+          "title": "post title 50",
+          "userId": 5
+        },
+        {
+          "body": "post body 51",
+          "id": 51,
+          "title": "post title 51",
+          "userId": 6
+        },
+        {
+          "body": "post body 52",
+          "id": 52,
+          "title": "post title 52",
+          "userId": 6
+        },
+        {
+          "body": "post body 53",
+          "id": 53,
+          "title": "post title 53",
+          "userId": 6
+        },
+        {
+          "body": "post body 54",
+          "id": 54,
+          "title": "post title 54",
+          "userId": 6
+        },
+        {
+          "body": "post body 55",
+          "id": 55,
+          "title": "post title 55",
+          "userId": 6
+        },
+        {
+          "body": "post body 56",
+          "id": 56,
+          "title": "post title 56",
+          "userId": 6
+        },
+        {
+          "body": "post body 57",
+          "id": 57,
+          "title": "post title 57",
+          "userId": 6
+        },
+        {
+          "body": "post body 58",
+          "id": 58,
+          "title": "post title 58",
+          "userId": 6
+        },
+        {
+          "body": "post body 59",
+          "id": 59,
+          "title": "post title 59",
+          "userId": 6
+        },
+        {
+          "body": "post body 60",
+          "id": 60,
+          "title": "post title 60",
+          "userId": 6
+        },
+        {
+          "body": "post body 61",
+          "id": 61,
+          "title": "post title 61",
+          "userId": 7
+        },
+        {
+          "body": "post body 62",
+          "id": 62,
+          "title": "post title 62",
+          "userId": 7
+        },
+        {
+          "body": "post body 63",
+          "id": 63,
+          "title": "post title 63",
+          "userId": 7
+        },
+        {
+          "body": "post body 64",
+          "id": 64,
+          "title": "post title 64",
+          "userId": 7
+        },
+        {
+          "body": "post body 65",
+          "id": 65,
+          "title": "post title 65",
+          "userId": 7
+        },
+        {
+          "body": "post body 66",
+          "id": 66,
+          "title": "post title 66",
+          "userId": 7
+        },
+        {
+          "body": "post body 67",
+          "id": 67,
+          "title": "post title 67",
+          "userId": 7
+        },
+        {
+          "body": "post body 68",
+          "id": 68,
+          "title": "post title 68",
+          "userId": 7
+        },
+        {
+          "body": "post body 69",
+          "id": 69,
+          "title": "post title 69",
+          "userId": 7
+        },
+        {
+          "body": "post body 70",
+          "id": 70,
+          "title": "post title 70",
+          "userId": 7
+        },
+        {
+          "body": "post body 71",
+          "id": 71,
+          "title": "post title 71",
+          "userId": 8
+        },
+        {
+          "body": "post body 72",
+          "id": 72,
+          "title": "post title 72",
+          "userId": 8
+        },
+        {
+          "body": "post body 73",
+          "id": 73,
+          "title": "post title 73",
+          "userId": 8
+        },
+        {
+          "body": "post body 74",
+          "id": 74,
+          "title": "post title 74",
+          "userId": 8
+        },
+        {
+          "body": "post body 75",
+          "id": 75,
+          "title": "post title 75",
+          "userId": 8
+        },
+        {
+          "body": "post body 76",
+          "id": 76,
+          "title": "post title 76",
+          "userId": 8
+        },
+        {
+          "body": "post body 77",
+          "id": 77,
+          "title": "post title 77",
+          "userId": 8
+        },
+        {
+          "body": "post body 78",
+          "id": 78,
+          "title": "post title 78",
+          "userId": 8
+        },
+        {
+          "body": "post body 79",
+          "id": 79,
+          "title": "post title 79",
+          "userId": 8
+        },
+        {
+          "body": "post body 80",
+          "id": 80,
+          "title": "post title 80",
+          "userId": 8
+        },
+        {
+          "body": "post body 81",
+          "id": 81,
+          "title": "post title 81",
+          "userId": 9
+        },
+        {
+          "body": "post body 82",
+          "id": 82,
+          "title": "post title 82",
+          "userId": 9
+        },
+        {
+          "body": "post body 83",
+          "id": 83,
+          "title": "post title 83",
+          "userId": 9
+        },
+        {
+          "body": "post body 84",
+          "id": 84,
+          "title": "post title 84",
+          "userId": 9
+        },
+        {
+          "body": "post body 85",
+          "id": 85,
+          "title": "post title 85",
+          "userId": 9
+        },
+        {
+          "body": "post body 86",
+          "id": 86,
+          "title": "post title 86",
+          "userId": 9
+        },
+        {
+          "body": "post body 87",
+          "id": 87,
+          "title": "post title 87",
+          "userId": 9
+        },
+        {
+          "body": "post body 88",
+          "id": 88,
+          "title": "post title 88",
+          "userId": 9
+        },
+        {
+          "body": "post body 89",
+          "id": 89,
+          "title": "post title 89",
+          "userId": 9
+        },
+        {
+          "body": "post body 90",
+          "id": 90,
+          "title": "post title 90",
+          "userId": 9
+        },
+        {
+          "body": "post body 91",
+          "id": 91,
+          "title": "post title 91",
+          "userId": 10
+        },
+        {
+          "body": "post body 92",
+          "id": 92,
+          "title": "post title 92",
+          "userId": 10
+        },
+        {
+          "body": "post body 93",
+          "id": 93,
+          "title": "post title 93",
+          "userId": 10
+        },
+        {
+          "body": "post body 94",
+          "id": 94,
+          "title": "post title 94",
+          "userId": 10
+        },
+        {
+          "body": "post body 95",
+          "id": 95,
+          "title": "post title 95",
+          "userId": 10
+        },
+        {
+          "body": "post body 96",
+          "id": 96,
+          "title": "post title 96",
+          "userId": 10
+        },
+        {
+          "body": "post body 97",
+          "id": 97,
+          "title": "post title 97",
+          "userId": 10
+        },
+        {
+          "body": "post body 98",
+          "id": 98,
+          "title": "post title 98",
+          "userId": 10
+        },
+        {
+          "body": "post body 99",
+          "id": 99,
+          "title": "post title 99",
+          "userId": 10
+        },
+        {
+          "body": "post body 100",
+          "id": 100,
+          "title": "post title 100",
+          "userId": 10
+        },
+        {
+          "id": 999,
+          "title": "extra"
+        }
+      ],
+      "timing": 7.131166
+    },
+    "Status Change": {
+      "hash": "28f89aac",
+      "capturedAt": "2026-10-27T21:30:01.085Z",
+      "status": 201,
+      "headers": {
+        "content-length": "70",
+        "content-type": "application/json",
+        "date": "Tue, 27 Oct 2026 21:30:01 GMT",
+        "server": "tiny-http (Rust)"
+      },
+      "body": {
+        "email": "user1@example.com",
+        "id": 1,
+        "name": "User 1",
+        "username": "Bret"
+      },
+      "timing": 9.394832999999998
+    },
+    "Type Change": {
+      "hash": "28f89aac",
+      "capturedAt": "2026-10-27T21:30:01.085Z",
+      "status": 200,
+      "headers": {
+        "content-length": "70",
+        "content-type": "application/json",
+        "date": "Tue, 27 Oct 2026 21:30:01 GMT",
+        "server": "tiny-http (Rust)"
+      },
+      "body": "a string",
+      "timing": 9.394832999999998
+    },
+    "Gone Request": {
+      "hash": "28f89aac",
+      "capturedAt": "2026-10-27T21:30:01.085Z",
+      "status": 200,
+      "headers": {
+        "content-length": "70",
+        "content-type": "application/json",
+        "date": "Tue, 27 Oct 2026 21:30:01 GMT",
+        "server": "tiny-http (Rust)"
+      },
+      "body": {
+        "email": "user1@example.com",
+        "id": 1,
+        "name": "User 1",
+        "username": "Bret"
+      },
+      "timing": 9.394832999999998
+    }
+  }
+}

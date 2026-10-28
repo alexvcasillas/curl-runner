@@ -1,0 +1,6 @@
+request:
+  method: POST
+  url: https://x.test/up
+  formData:
+    a: "1"
+

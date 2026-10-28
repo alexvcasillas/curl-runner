@@ -1,0 +1,10 @@
+request:
+  method: GET
+  url: https://x.test/s
+  params:
+    "=x": ""
+    a: ""
+    b: ""
+    c: "1"
+    d: "2"
+

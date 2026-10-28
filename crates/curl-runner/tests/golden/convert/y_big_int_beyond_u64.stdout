@@ -1,0 +1,5 @@
+curl \
+  -X GET \
+  -d '{"id":1.2345678901234569e+23,"neg":-1.2345678901234569e+23}' \
+  -H 'Content-Type: application/json' \
+  https://a.test

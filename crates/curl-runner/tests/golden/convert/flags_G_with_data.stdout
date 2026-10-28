@@ -1,0 +1,6 @@
+request:
+  method: GET
+  url: https://x.test/s
+  body:
+    form: "a=1&b=2"
+

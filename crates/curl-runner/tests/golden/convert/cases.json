@@ -1,0 +1,3186 @@
+[
+ {
+  "name": "tok_simple",
+  "args": [
+   "curl",
+   "curl https://example.com"
+  ]
+ },
+ {
+  "name": "tok_single_quoted",
+  "args": [
+   "curl",
+   "curl -d '{\"key\":\"value\"}'"
+  ]
+ },
+ {
+  "name": "tok_double_quoted",
+  "args": [
+   "curl",
+   "curl -H \"Content-Type: application/json\""
+  ]
+ },
+ {
+  "name": "tok_escaped_in_double",
+  "args": [
+   "curl",
+   "curl -d \"hello \\\"world\\\"\""
+  ]
+ },
+ {
+  "name": "tok_continuation",
+  "args": [
+   "curl",
+   "curl \\\n  -X POST \\\n  https://example.com"
+  ]
+ },
+ {
+  "name": "tok_mixed",
+  "args": [
+   "curl",
+   "curl -H 'Accept: */*' -d \"test\""
+  ]
+ },
+ {
+  "name": "tok_empty",
+  "args": [
+   "curl",
+   ""
+  ]
+ },
+ {
+  "name": "tok_tabs_spaces",
+  "args": [
+   "curl",
+   "curl   -X   GET\thttps://example.com"
+  ]
+ },
+ {
+  "name": "tok_backslash_escape",
+  "args": [
+   "curl",
+   "curl hello\\ world"
+  ]
+ },
+ {
+  "name": "tok_crlf_continuation",
+  "args": [
+   "curl",
+   "curl \\\r\n  -X POST"
+  ]
+ },
+ {
+  "name": "tok_adjacent_quotes",
+  "args": [
+   "curl",
+   "curl 'hello'\"world\""
+  ]
+ },
+ {
+  "name": "parse_simple_get",
+  "args": [
+   "curl",
+   "curl https://example.com"
+  ]
+ },
+ {
+  "name": "parse_method",
+  "args": [
+   "curl",
+   "curl -X POST https://api.example.com"
+  ]
+ },
+ {
+  "name": "parse_headers",
+  "args": [
+   "curl",
+   "curl -H \"Content-Type: application/json\" -H \"Accept: text/plain\" https://example.com"
+  ]
+ },
+ {
+  "name": "parse_data",
+  "args": [
+   "curl",
+   "curl -d '{\"name\":\"Alex\"}' https://example.com"
+  ]
+ },
+ {
+  "name": "parse_multi_data",
+  "args": [
+   "curl",
+   "curl -d \"a=1\" -d \"b=2\" https://example.com"
+  ]
+ },
+ {
+  "name": "parse_form",
+  "args": [
+   "curl",
+   "curl -F \"file=@test.png\" -F \"name=test\" https://example.com"
+  ]
+ },
+ {
+  "name": "parse_basic_auth",
+  "args": [
+   "curl",
+   "curl -u admin:secret https://example.com"
+  ]
+ },
+ {
+  "name": "parse_bearer_header",
+  "args": [
+   "curl",
+   "curl -H \"Authorization: Bearer mytoken123\" https://example.com"
+  ]
+ },
+ {
+  "name": "parse_insecure",
+  "args": [
+   "curl",
+   "curl -k https://self-signed.example.com"
+  ]
+ },
+ {
+  "name": "parse_location",
+  "args": [
+   "curl",
+   "curl -L https://example.com"
+  ]
+ },
+ {
+  "name": "parse_combined_sSL",
+  "args": [
+   "curl",
+   "curl -sSL https://example.com"
+  ]
+ },
+ {
+  "name": "parse_XPOST",
+  "args": [
+   "curl",
+   "curl -XPOST https://example.com"
+  ]
+ },
+ {
+  "name": "parse_timeout",
+  "args": [
+   "curl",
+   "curl --max-time 30 https://example.com"
+  ]
+ },
+ {
+  "name": "parse_proxy",
+  "args": [
+   "curl",
+   "curl -x http://proxy:8080 https://example.com"
+  ]
+ },
+ {
+  "name": "parse_http2",
+  "args": [
+   "curl",
+   "curl --http2 https://example.com"
+  ]
+ },
+ {
+  "name": "parse_ssl",
+  "args": [
+   "curl",
+   "curl --cacert ca.pem --cert client.pem --key client-key.pem https://example.com"
+  ]
+ },
+ {
+  "name": "parse_output",
+  "args": [
+   "curl",
+   "curl -o output.json https://example.com"
+  ]
+ },
+ {
+  "name": "parse_user_agent",
+  "args": [
+   "curl",
+   "curl -A \"MyApp/1.0\" https://example.com"
+  ]
+ },
+ {
+  "name": "parse_unknown_flag",
+  "args": [
+   "curl",
+   "curl --unknown-flag value https://example.com"
+  ]
+ },
+ {
+  "name": "parse_multiline",
+  "args": [
+   "curl",
+   "curl -X POST \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"test\":true}' \\\n  https://api.example.com"
+  ]
+ },
+ {
+  "name": "parse_head",
+  "args": [
+   "curl",
+   "curl -I https://example.com"
+  ]
+ },
+ {
+  "name": "parse_get_data",
+  "args": [
+   "curl",
+   "curl -G -d \"q=test\" https://example.com"
+  ]
+ },
+ {
+  "name": "parse_data_urlencode",
+  "args": [
+   "curl",
+   "curl --data-urlencode \"name=John Doe\" https://example.com"
+  ]
+ },
+ {
+  "name": "parse_data_raw",
+  "args": [
+   "curl",
+   "curl --data-raw \"@not-a-file\" https://example.com"
+  ]
+ },
+ {
+  "name": "parse_compressed",
+  "args": [
+   "curl",
+   "curl --compressed https://example.com"
+  ]
+ },
+ {
+  "name": "parse_cookies",
+  "args": [
+   "curl",
+   "curl -b \"session=abc123\" -c cookies.txt https://example.com"
+  ]
+ },
+ {
+  "name": "parse_max_redirs",
+  "args": [
+   "curl",
+   "curl -L --max-redirs 5 https://example.com"
+  ]
+ },
+ {
+  "name": "norm_infer_post",
+  "args": [
+   "curl",
+   "curl -d \"data\" https://example.com"
+  ]
+ },
+ {
+  "name": "norm_put",
+  "args": [
+   "curl",
+   "curl -X PUT -d \"data\" https://example.com"
+  ]
+ },
+ {
+  "name": "norm_query",
+  "args": [
+   "curl",
+   "curl https://example.com/api?key=val&page=2"
+  ]
+ },
+ {
+  "name": "norm_json_body",
+  "args": [
+   "curl",
+   "curl -d '{\"name\":\"Alex\",\"age\":30}' https://example.com"
+  ]
+ },
+ {
+  "name": "norm_form_urlencoded",
+  "args": [
+   "curl",
+   "curl -d \"name=Alex&age=30\" https://example.com"
+  ]
+ },
+ {
+  "name": "norm_raw_body",
+  "args": [
+   "curl",
+   "curl -d \"hello world\" https://example.com"
+  ]
+ },
+ {
+  "name": "norm_bearer",
+  "args": [
+   "curl",
+   "curl -H \"Authorization: Bearer tok123\" https://example.com"
+  ]
+ },
+ {
+  "name": "norm_header_case",
+  "args": [
+   "curl",
+   "curl -H \"content-type: text/plain\" https://example.com"
+  ]
+ },
+ {
+  "name": "norm_form_meta",
+  "args": [
+   "curl",
+   "curl -F \"file=@test.png;filename=photo.png;type=image/png\" https://example.com"
+  ]
+ },
+ {
+  "name": "norm_ssl",
+  "args": [
+   "curl",
+   "curl --cacert ca.pem --cert client.pem --key key.pem https://example.com"
+  ]
+ },
+ {
+  "name": "norm_referer",
+  "args": [
+   "curl",
+   "curl -e \"https://ref.com\" https://example.com"
+  ]
+ },
+ {
+  "name": "norm_cookie",
+  "args": [
+   "curl",
+   "curl -b \"session=abc\" https://example.com"
+  ]
+ },
+ {
+  "name": "conv_full_post",
+  "args": [
+   "curl",
+   "curl -X POST https://api.example.com/users -H 'Authorization: Bearer TOKEN' -d '{\"name\":\"Alex\"}'"
+  ]
+ },
+ {
+  "name": "conv_query",
+  "args": [
+   "curl",
+   "curl \"https://api.example.com/search?q=hello&page=1\""
+  ]
+ },
+ {
+  "name": "conv_stripe",
+  "args": [
+   "curl",
+   "curl -X POST https://api.stripe.com/v1/charges \\\n        -u sk_test_key: \\\n        -d amount=2000 \\\n        -d currency=usd \\\n        -d source=tok_visa"
+  ]
+ },
+ {
+  "name": "rt_simple",
+  "args": [
+   "curl",
+   "curl https://api.example.com/users"
+  ]
+ },
+ {
+  "name": "rt_post_json",
+  "args": [
+   "curl",
+   "curl -X POST -H \"Content-Type: application/json\" -d '{\"name\":\"Alex\"}' https://api.example.com/users"
+  ]
+ },
+ {
+  "name": "rt_basic",
+  "args": [
+   "curl",
+   "curl -u admin:secret https://api.example.com"
+  ]
+ },
+ {
+  "name": "ser_header_accept",
+  "args": [
+   "curl",
+   "curl -H \"Accept: text/plain\" https://example.com"
+  ]
+ },
+ {
+  "name": "ser_auth",
+  "args": [
+   "curl",
+   "curl -u admin:pass https://example.com"
+  ]
+ },
+ {
+  "name": "ser_compressed",
+  "args": [
+   "curl",
+   "curl --compressed https://example.com"
+  ]
+ },
+ {
+  "name": "conv_debug",
+  "args": [
+   "curl",
+   "curl https://example.com",
+   "--debug"
+  ]
+ },
+ {
+  "name": "multiline_backslash",
+  "args": [
+   "curl",
+   "curl -X POST 'https://api.example.com/v1/items' \\\n  -H 'Content-Type: application/json' \\\n  -H 'X-Request-Id: abc-123' \\\n  -d '{\"title\":\"hello\",\"tags\":[\"a\",\"b\"],\"n\":{\"x\":1}}' \\\n  --compressed"
+  ]
+ },
+ {
+  "name": "multiline_backslash_crlf",
+  "args": [
+   "curl",
+   "curl -X PUT \\\r\n  -H 'A: b' \\\r\n  https://x.test/y"
+  ]
+ },
+ {
+  "name": "single_quotes_with_double",
+  "args": [
+   "curl",
+   "curl -d '{\"msg\":\"it\\'s\"}' https://x.test"
+  ]
+ },
+ {
+  "name": "single_quote_break_out",
+  "args": [
+   "curl",
+   "curl -d '{\"msg\":\"it'\\''s\"}' https://x.test"
+  ]
+ },
+ {
+  "name": "double_quotes_escapes",
+  "args": [
+   "curl",
+   "curl -d \"{\\\"a\\\":\\\"b\\\\c\\\"}\" https://x.test"
+  ]
+ },
+ {
+  "name": "double_quotes_dollar_backtick",
+  "args": [
+   "curl",
+   "curl -d \"price=\\$5 and \\`tick\\`\" https://x.test"
+  ]
+ },
+ {
+  "name": "double_quotes_other_escape",
+  "args": [
+   "curl",
+   "curl -d \"a\\nb\\qc\" https://x.test"
+  ]
+ },
+ {
+  "name": "double_quote_newline_continuation",
+  "args": [
+   "curl",
+   "curl -d \"ab\\\ncd\" https://x.test"
+  ]
+ },
+ {
+  "name": "ansi_c_quote",
+  "args": [
+   "curl",
+   "curl -d $'{\"a\":\"line1\\nline2\"}' https://x.test"
+  ]
+ },
+ {
+  "name": "ansi_c_quote_header",
+  "args": [
+   "curl",
+   "curl -H $'X-Foo: bar\\tbaz' https://x.test"
+  ]
+ },
+ {
+  "name": "data_raw_json",
+  "args": [
+   "curl",
+   "curl --data-raw '{\"k\":[1,2,3]}' https://x.test"
+  ]
+ },
+ {
+  "name": "data_raw_at",
+  "args": [
+   "curl",
+   "curl --data-raw '@literal' https://x.test"
+  ]
+ },
+ {
+  "name": "data_binary_file",
+  "args": [
+   "curl",
+   "curl --data-binary @payload.bin https://x.test/upload"
+  ]
+ },
+ {
+  "name": "data_binary_text",
+  "args": [
+   "curl",
+   "curl --data-binary 'raw text here' https://x.test/upload"
+  ]
+ },
+ {
+  "name": "data_binary_multi",
+  "args": [
+   "curl",
+   "curl --data-binary 'a' --data-binary 'b' https://x.test/upload"
+  ]
+ },
+ {
+  "name": "data_at_file",
+  "args": [
+   "curl",
+   "curl -d @body.json https://x.test"
+  ]
+ },
+ {
+  "name": "data_mixed_flags",
+  "args": [
+   "curl",
+   "curl -d 'a=1' --data-raw 'b=2' --data-ascii 'c=3' https://x.test"
+  ]
+ },
+ {
+  "name": "data_urlencode_multi",
+  "args": [
+   "curl",
+   "curl --data-urlencode 'name=John Doe' --data-urlencode 'q=a&b=c' https://x.test"
+  ]
+ },
+ {
+  "name": "data_urlencode_unicode",
+  "args": [
+   "curl",
+   "curl --data-urlencode 'name=José ünï' https://x.test"
+  ]
+ },
+ {
+  "name": "data_urlencode_punct",
+  "args": [
+   "curl",
+   "curl --data-urlencode \"x=!~*'()-_.\" https://x.test"
+  ]
+ },
+ {
+  "name": "form_file_meta",
+  "args": [
+   "curl",
+   "curl -F 'avatar=@me.png;filename=photo.png;type=image/png' -F 'name=Alex' -F 'note=hi there' https://x.test/up"
+  ]
+ },
+ {
+  "name": "form_type_first",
+  "args": [
+   "curl",
+   "curl -F 'f=@a.txt;type=text/plain;filename=b.txt' https://x.test/up"
+  ]
+ },
+ {
+  "name": "form_extra_equals",
+  "args": [
+   "curl",
+   "curl -F 'f=@a.txt;type=a=b;foo=bar' https://x.test/up"
+  ]
+ },
+ {
+  "name": "form_no_value_parts",
+  "args": [
+   "curl",
+   "curl -F 'f=@a.txt;filename;type' https://x.test/up"
+  ]
+ },
+ {
+  "name": "form_string",
+  "args": [
+   "curl",
+   "curl -F 'a=1' --form-string 'b=@notfile' --form-string 'c=x=y' https://x.test/up"
+  ]
+ },
+ {
+  "name": "form_string_alone",
+  "args": [
+   "curl",
+   "curl --form-string 'b=@notfile' https://x.test/up"
+  ]
+ },
+ {
+  "name": "form_no_eq",
+  "args": [
+   "curl",
+   "curl -F 'noequals' -F 'ok=1' https://x.test/up"
+  ]
+ },
+ {
+  "name": "form_numeric_keys",
+  "args": [
+   "curl",
+   "curl -F 'b=1' -F '10=2' -F '2=3' https://x.test/up"
+  ]
+ },
+ {
+  "name": "form_with_data",
+  "args": [
+   "curl",
+   "curl -F 'a=1' -d 'b=2' https://x.test/up"
+  ]
+ },
+ {
+  "name": "form_long_flag",
+  "args": [
+   "curl",
+   "curl --form 'a=1' --form 'k=@x.bin' https://x.test"
+  ]
+ },
+ {
+  "name": "user_basic",
+  "args": [
+   "curl",
+   "curl -u 'alice:s3cr3t' https://x.test"
+  ]
+ },
+ {
+  "name": "user_only",
+  "args": [
+   "curl",
+   "curl -u alice https://x.test"
+  ]
+ },
+ {
+  "name": "user_colon_first",
+  "args": [
+   "curl",
+   "curl -u ':pw' https://x.test"
+  ]
+ },
+ {
+  "name": "user_multi_colon",
+  "args": [
+   "curl",
+   "curl --user 'a:b:c' https://x.test"
+  ]
+ },
+ {
+  "name": "user_quoting",
+  "args": [
+   "curl",
+   "curl -u 'a b:c: d' https://x.test"
+  ]
+ },
+ {
+  "name": "headers_dup",
+  "args": [
+   "curl",
+   "curl -H 'X-A: 1' -H 'x-a: 2' -H 'X-B: 3' -H 'X-A: 4' https://x.test"
+  ]
+ },
+ {
+  "name": "headers_mixed_case",
+  "args": [
+   "curl",
+   "curl -H 'content-TYPE: a' -H 'ACCEPT-language: en' -H 'x-api-key: k' https://x.test"
+  ]
+ },
+ {
+  "name": "headers_no_colon",
+  "args": [
+   "curl",
+   "curl -H 'NoColonHere' -H ':x' -H 'Ok: 1' https://x.test"
+  ]
+ },
+ {
+  "name": "headers_empty_value",
+  "args": [
+   "curl",
+   "curl -H 'X-Empty:' -H 'X-Space:   ' https://x.test"
+  ]
+ },
+ {
+  "name": "headers_value_colons",
+  "args": [
+   "curl",
+   "curl -H 'X-Url: http://a.b:80/c' -H 'X-T: 12:30:45' https://x.test"
+  ]
+ },
+ {
+  "name": "headers_sorting",
+  "args": [
+   "curl",
+   "curl -H 'x-b: 1' -H 'X-a: 2' -H 'Accept: x' -H 'accept-charset: y' -H 'A-b: 3' -H 'a_b: 4' https://x.test"
+  ]
+ },
+ {
+  "name": "auth_header_basic_ok",
+  "args": [
+   "curl",
+   "curl -H 'Authorization: Basic dXNlcjpwYXNz' https://x.test"
+  ]
+ },
+ {
+  "name": "auth_header_basic_nopad",
+  "args": [
+   "curl",
+   "curl -H 'Authorization: Basic dXNlcjpwYXNzd29yZA' https://x.test"
+  ]
+ },
+ {
+  "name": "auth_header_basic_nocolon",
+  "args": [
+   "curl",
+   "curl -H 'Authorization: Basic dXNlcg==' https://x.test"
+  ]
+ },
+ {
+  "name": "auth_header_basic_invalid",
+  "args": [
+   "curl",
+   "curl -H 'Authorization: Basic !!!notbase64' https://x.test"
+  ]
+ },
+ {
+  "name": "auth_header_basic_latin1",
+  "args": [
+   "curl",
+   "curl -H 'Authorization: Basic w6k6w7E=' https://x.test"
+  ]
+ },
+ {
+  "name": "auth_header_basic_ws",
+  "args": [
+   "curl",
+   "curl -H 'Authorization: Basic   dXNl cjpwYXNz  ' https://x.test"
+  ]
+ },
+ {
+  "name": "auth_header_basic_badlen",
+  "args": [
+   "curl",
+   "curl -H 'Authorization: Basic A' https://x.test"
+  ]
+ },
+ {
+  "name": "auth_header_basic_extra_pad",
+  "args": [
+   "curl",
+   "curl -H 'Authorization: Basic dXNlcjpwYXNz=' https://x.test"
+  ]
+ },
+ {
+  "name": "auth_header_basic_empty",
+  "args": [
+   "curl",
+   "curl -H 'Authorization: Basic ' https://x.test"
+  ]
+ },
+ {
+  "name": "auth_header_token",
+  "args": [
+   "curl",
+   "curl -H 'Authorization: Token abc' https://x.test"
+  ]
+ },
+ {
+  "name": "auth_header_bearer_case",
+  "args": [
+   "curl",
+   "curl -H 'authorization: BEARER  tok  ' https://x.test"
+  ]
+ },
+ {
+  "name": "auth_header_multi",
+  "args": [
+   "curl",
+   "curl -H 'Authorization: Token a' -H 'Authorization: Bearer b' https://x.test"
+  ]
+ },
+ {
+  "name": "auth_header_multi2",
+  "args": [
+   "curl",
+   "curl -H 'Authorization: Token a' -H 'Authorization: Token b' https://x.test"
+  ]
+ },
+ {
+  "name": "auth_user_and_header",
+  "args": [
+   "curl",
+   "curl -u a:b -H 'Authorization: Bearer z' https://x.test"
+  ]
+ },
+ {
+  "name": "flags_compressed_k_L",
+  "args": [
+   "curl",
+   "curl --compressed -k -L https://x.test"
+  ]
+ },
+ {
+  "name": "flags_all_common",
+  "args": [
+   "curl",
+   "curl -k -L --compressed --http2 --max-redirs 3 -m 10 -x http://p:3128 -o out.bin https://x.test"
+  ]
+ },
+ {
+  "name": "flags_max_time_float",
+  "args": [
+   "curl",
+   "curl --max-time 1.5 https://x.test"
+  ]
+ },
+ {
+  "name": "flags_max_time_nan",
+  "args": [
+   "curl",
+   "curl --max-time abc https://x.test"
+  ]
+ },
+ {
+  "name": "flags_max_time_hex",
+  "args": [
+   "curl",
+   "curl -m 0x10 https://x.test"
+  ]
+ },
+ {
+  "name": "flags_max_time_neg",
+  "args": [
+   "curl",
+   "curl -m -5 https://x.test"
+  ]
+ },
+ {
+  "name": "flags_max_time_exp",
+  "args": [
+   "curl",
+   "curl -m 1e3 https://x.test"
+  ]
+ },
+ {
+  "name": "flags_max_redirs_nan",
+  "args": [
+   "curl",
+   "curl -L --max-redirs many https://x.test"
+  ]
+ },
+ {
+  "name": "flags_max_redirs_zero",
+  "args": [
+   "curl",
+   "curl --max-redirs 0 https://x.test"
+  ]
+ },
+ {
+  "name": "flags_cookie_jar",
+  "args": [
+   "curl",
+   "curl -b 'a=1; b=2' -c jar.txt https://x.test"
+  ]
+ },
+ {
+  "name": "flags_ua_header_wins",
+  "args": [
+   "curl",
+   "curl -H 'user-agent: mine' -A other https://x.test"
+  ]
+ },
+ {
+  "name": "flags_referer_header_wins",
+  "args": [
+   "curl",
+   "curl -H 'Referer: mine' -e other https://x.test"
+  ]
+ },
+ {
+  "name": "flags_unsupported_many",
+  "args": [
+   "curl",
+   "curl --retry 3 --connect-timeout 5 -w '%{http_code}' --foo --bar baz -Z https://x.test"
+  ]
+ },
+ {
+  "name": "flags_unknown_empty_next",
+  "args": [
+   "curl",
+   "curl --weird '' https://x.test"
+  ]
+ },
+ {
+  "name": "flags_unknown_dash_next",
+  "args": [
+   "curl",
+   "curl --weird -k https://x.test"
+  ]
+ },
+ {
+  "name": "flags_unknown_trailing",
+  "args": [
+   "curl",
+   "curl https://x.test --weird"
+  ]
+ },
+ {
+  "name": "flags_known_boolean_ignored",
+  "args": [
+   "curl",
+   "curl -sS -f --fail-early --globoff -N --raw --http1.1 https://x.test"
+  ]
+ },
+ {
+  "name": "flags_combined_sSL_after",
+  "args": [
+   "curl",
+   "curl https://x.test -sSL"
+  ]
+ },
+ {
+  "name": "flags_combined_fsSL_mid",
+  "args": [
+   "curl",
+   "curl -fsSL https://x.test/a -H 'X: 1'"
+  ]
+ },
+ {
+  "name": "flags_combined_value_dX",
+  "args": [
+   "curl",
+   "curl -XPOST -H 'A: 1' https://x.test"
+  ]
+ },
+ {
+  "name": "flags_combined_value_d",
+  "args": [
+   "curl",
+   "curl https://x.test -d'a=b' -H 'X: 1'"
+  ]
+ },
+ {
+  "name": "flags_combined_mixed_unknown",
+  "args": [
+   "curl",
+   "curl -sZ https://x.test"
+  ]
+ },
+ {
+  "name": "flags_combined_kL_then",
+  "args": [
+   "curl",
+   "curl -kL https://x.test -H 'A: 1'"
+  ]
+ },
+ {
+  "name": "flags_dash_alone",
+  "args": [
+   "curl",
+   "curl - https://x.test"
+  ]
+ },
+ {
+  "name": "flags_double_dash",
+  "args": [
+   "curl",
+   "curl -- https://x.test"
+  ]
+ },
+ {
+  "name": "flags_value_missing_X",
+  "args": [
+   "curl",
+   "curl https://x.test -X"
+  ]
+ },
+ {
+  "name": "flags_value_missing_u",
+  "args": [
+   "curl",
+   "curl https://x.test -u"
+  ]
+ },
+ {
+  "name": "flags_value_missing_H",
+  "args": [
+   "curl",
+   "curl https://x.test -H"
+  ]
+ },
+ {
+  "name": "flags_X_lowercase",
+  "args": [
+   "curl",
+   "curl -X post https://x.test"
+  ]
+ },
+ {
+  "name": "flags_X_empty",
+  "args": [
+   "curl",
+   "curl -X '' -d a https://x.test"
+  ]
+ },
+ {
+  "name": "flags_request_long",
+  "args": [
+   "curl",
+   "curl --request DELETE https://x.test/1"
+  ]
+ },
+ {
+  "name": "flags_request_eq",
+  "args": [
+   "curl",
+   "curl --request=PATCH https://x.test/1"
+  ]
+ },
+ {
+  "name": "flags_head_and_X",
+  "args": [
+   "curl",
+   "curl -I -X GET https://x.test"
+  ]
+ },
+ {
+  "name": "flags_get_and_head",
+  "args": [
+   "curl",
+   "curl -G -I https://x.test"
+  ]
+ },
+ {
+  "name": "flags_G_with_data",
+  "args": [
+   "curl",
+   "curl -G -d 'a=1' -d 'b=2' https://x.test/s"
+  ]
+ },
+ {
+  "name": "flags_second_url",
+  "args": [
+   "curl",
+   "curl https://a.test https://b.test"
+  ]
+ },
+ {
+  "name": "flags_no_url",
+  "args": [
+   "curl",
+   "curl -X POST"
+  ]
+ },
+ {
+  "name": "flags_no_curl_prefix",
+  "args": [
+   "curl",
+   "https://x.test -H 'A: b'"
+  ]
+ },
+ {
+  "name": "flags_curl_twice",
+  "args": [
+   "curl",
+   "curl curl https://x.test"
+  ]
+ },
+ {
+  "name": "flags_verbose_silent",
+  "args": [
+   "curl",
+   "curl -v -s https://x.test"
+  ]
+ },
+ {
+  "name": "flags_cacert_cert_key_partial",
+  "args": [
+   "curl",
+   "curl --cert only.pem https://x.test"
+  ]
+ },
+ {
+  "name": "flags_tls_flags",
+  "args": [
+   "curl",
+   "curl --tlsv1.2 --ciphers ALL https://x.test"
+  ]
+ },
+ {
+  "name": "flags_resolve",
+  "args": [
+   "curl",
+   "curl --resolve x.test:443:127.0.0.1 https://x.test"
+  ]
+ },
+ {
+  "name": "flags_proxy_long",
+  "args": [
+   "curl",
+   "curl --proxy http://u:p@proxy:8080 https://x.test"
+  ]
+ },
+ {
+  "name": "flags_output_long",
+  "args": [
+   "curl",
+   "curl --output 'my file.txt' https://x.test"
+  ]
+ },
+ {
+  "name": "url_query_encoded",
+  "args": [
+   "curl",
+   "curl 'https://x.test/s?q=hello%20world&e=a%2Bb&plus=a+b&u=%C3%A9'"
+  ]
+ },
+ {
+  "name": "url_query_empty_values",
+  "args": [
+   "curl",
+   "curl 'https://x.test/s?a=&b&c=1&=x&&d=2'"
+  ]
+ },
+ {
+  "name": "url_query_dup_keys",
+  "args": [
+   "curl",
+   "curl 'https://x.test/s?a=1&a=2&b=3'"
+  ]
+ },
+ {
+  "name": "url_query_numeric_keys",
+  "args": [
+   "curl",
+   "curl 'https://x.test/s?z=1&10=a&2=b&0=c'"
+  ]
+ },
+ {
+  "name": "url_query_fragment",
+  "args": [
+   "curl",
+   "curl 'https://x.test/s?a=1#frag'"
+  ]
+ },
+ {
+  "name": "url_query_special_keys",
+  "args": [
+   "curl",
+   "curl 'https://x.test/s?a.b=1&c[0]=2&d%20e=3&Z=4&a_b=5'"
+  ]
+ },
+ {
+  "name": "url_query_only_q",
+  "args": [
+   "curl",
+   "curl 'https://x.test/?'"
+  ]
+ },
+ {
+  "name": "url_query_eq_in_value",
+  "args": [
+   "curl",
+   "curl 'https://x.test/s?token=abc==&x=a=b'"
+  ]
+ },
+ {
+  "name": "url_query_malformed_pct",
+  "args": [
+   "curl",
+   "curl 'https://x.test/s?a=%E0%A4%A'"
+  ]
+ },
+ {
+  "name": "url_query_bad_hex",
+  "args": [
+   "curl",
+   "curl 'https://x.test/s?a=%zz'"
+  ]
+ },
+ {
+  "name": "url_query_overlong",
+  "args": [
+   "curl",
+   "curl 'https://x.test/s?a=%C0%80'"
+  ]
+ },
+ {
+  "name": "url_query_unicode_raw",
+  "args": [
+   "curl",
+   "curl 'https://x.test/s?name=Ünï&emoji=😀'"
+  ]
+ },
+ {
+  "name": "url_query_yaml_special",
+  "args": [
+   "curl",
+   "curl 'https://x.test/s?a=true&b=123&c=a:b&d=:x&e=x:&f=null&g=%23hash&h=1.5&i=-3&j=%20lead&k=trail%20'"
+  ]
+ },
+ {
+  "name": "url_empty",
+  "args": [
+   "curl",
+   ""
+  ]
+ },
+ {
+  "name": "url_spaces_in_quotes",
+  "args": [
+   "curl",
+   "curl 'https://x.test/a b'"
+  ]
+ },
+ {
+  "name": "url_yaml_special",
+  "args": [
+   "curl",
+   "curl 'https://x.test/a#b'"
+  ]
+ },
+ {
+  "name": "url_ipv6",
+  "args": [
+   "curl",
+   "curl 'http://[::1]:8080/x'"
+  ]
+ },
+ {
+  "name": "url_colon_end",
+  "args": [
+   "curl",
+   "curl 'host:'"
+  ]
+ },
+ {
+  "name": "json_nested",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '{\"user\":{\"name\":\"A\",\"roles\":[\"a\",\"b\"]},\"n\":null,\"ok\":true,\"v\":1.5}'"
+  ]
+ },
+ {
+  "name": "json_array_prims",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '[1,\"two\",true,null,3.5]'"
+  ]
+ },
+ {
+  "name": "json_array_objs",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '[{\"a\":1},{\"b\":2}]'"
+  ]
+ },
+ {
+  "name": "json_array_empty",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '[]'"
+  ]
+ },
+ {
+  "name": "json_object_empty",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '{}'"
+  ]
+ },
+ {
+  "name": "json_scalar_number",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '123'"
+  ]
+ },
+ {
+  "name": "json_scalar_string",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '\"hello\"'"
+  ]
+ },
+ {
+  "name": "json_scalar_true",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d 'true'"
+  ]
+ },
+ {
+  "name": "json_scalar_null",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d 'null'"
+  ]
+ },
+ {
+  "name": "json_numbers",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '{\"a\":1e21,\"b\":0.1,\"c\":1.0,\"d\":123456789012345678901234567890,\"e\":-0,\"f\":1E-7,\"g\":100,\"h\":1.5e3,\"i\":0.000001,\"j\":12345678901234567}'"
+  ]
+ },
+ {
+  "name": "json_unicode",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '{\"name\":\"José\",\"emoji\":\"😀\",\"jp\":\"日本語\"}'"
+  ]
+ },
+ {
+  "name": "json_index_keys",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '{\"b\":1,\"2\":\"two\",\"1\":\"one\",\"a\":2,\"10\":\"ten\"}'"
+  ]
+ },
+ {
+  "name": "json_dup_keys",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '{\"a\":1,\"b\":2,\"a\":3}'"
+  ]
+ },
+ {
+  "name": "json_yaml_quoting",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '{\"t\":\"true\",\"n\":\"123\",\"c\":\"a: b\",\"br\":\"{x}\",\"e\":\"\",\"sp\":\" lead\",\"sp2\":\"trail \",\"q\":\"\\\"quoted\\\"\",\"sq\":\"'\\''single'\\''\",\"h\":\"a#b\",\"at\":\"@user\",\"pct\":\"100%\",\"star\":\"*x\",\"amp\":\"a&b\",\"dash\":\"-x\",\"colon\":\"x:\",\"nl\":\"line1\\nline2\",\"tab\":\"a\\tb\",\"bs\":\"back\\\\slash\",\"yes\":\"Yes\",\"off\":\"OFF\",\"f\":\"1.5\",\"neg\":\"-2\",\"dot\":\"1.2.3\",\"nullstr\":\"NULL\",\"ws\":\"a  b\"}'"
+  ]
+ },
+ {
+  "name": "json_odd_keys",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '{\"a.b\":1,\"c d\":2,\"1x\":3,\"_u\":4,\"x-y\":5,\"\":6,\"é\":7,\"a:b\":8,\"q\\\"k\":9}'"
+  ]
+ },
+ {
+  "name": "json_nested_obj_in_array",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '{\"items\":[{\"id\":1,\"tags\":[\"x\"]},{\"id\":2}],\"meta\":{\"deep\":{\"er\":[1,2]}}}'"
+  ]
+ },
+ {
+  "name": "json_big_whitespace",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '  {  \"a\" : 1 ,\n \"b\" : [ 1 , 2 ]  }  '"
+  ]
+ },
+ {
+  "name": "json_invalid_trailing",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '{\"a\":1} x'"
+  ]
+ },
+ {
+  "name": "json_single_quotes_invalid",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '{'\\''a'\\'':1}'"
+  ]
+ },
+ {
+  "name": "json_control_chars",
+  "args": [
+   "curl",
+   "curl -X POST https://x.test/j -H 'Content-Type: application/json' -d '{\"c\":\"\\u0001\\u001f\\u007f\",\"u2028\":\"\\u2028\"}'"
+  ]
+ },
+ {
+  "name": "json_no_ct_header",
+  "args": [
+   "curl",
+   "curl https://x.test/j -d '{\"a\":1}'"
+  ]
+ },
+ {
+  "name": "json_with_pretty_flag",
+  "args": [
+   "curl",
+   "curl https://x.test/j -d '{\"a\":1}'"
+  ]
+ },
+ {
+  "name": "real_github",
+  "args": [
+   "curl",
+   "curl -L -H 'Accept: application/vnd.github+json' -H 'Authorization: Bearer ghp_xxxxxxxxxxxx' -H 'X-GitHub-Api-Version: 2022-11-28' https://api.github.com/repos/octocat/Hello-World/issues -d '{\"title\":\"Found a bug\",\"body\":\"I'\\''m having a problem with this.\",\"labels\":[\"bug\"]}'"
+  ]
+ },
+ {
+  "name": "real_slack",
+  "args": [
+   "curl",
+   "curl -X POST -H 'Content-type: application/json' --data '{\"text\":\"Hello, World!\"}' https://hooks.slack.com/services/T000/B000/XXXX"
+  ]
+ },
+ {
+  "name": "real_graphql",
+  "args": [
+   "curl",
+   "curl -s https://api.example.com/graphql -H 'Content-Type: application/json' --data-raw '{\"query\":\"{ viewer { login } }\",\"variables\":{}}'"
+  ]
+ },
+ {
+  "name": "real_oauth",
+  "args": [
+   "curl",
+   "curl -X POST https://auth.example.com/oauth/token -H 'Content-Type: application/x-www-form-urlencoded' -d 'grant_type=client_credentials&client_id=abc&client_secret=def&scope=read write'"
+  ]
+ },
+ {
+  "name": "real_upload",
+  "args": [
+   "curl",
+   "curl -X POST https://api.example.com/upload -H 'Authorization: Bearer tok' -F 'file=@/tmp/report.pdf;type=application/pdf' -F 'description=Q3 report'"
+  ]
+ },
+ {
+  "name": "real_head",
+  "args": [
+   "curl",
+   "curl --head https://example.com/health"
+  ]
+ },
+ {
+  "name": "real_cookies_session",
+  "args": [
+   "curl",
+   "curl -b 'sid=abc; theme=dark' -c /tmp/jar -L https://example.com/account"
+  ]
+ },
+ {
+  "name": "real_chrome_copy",
+  "args": [
+   "curl",
+   "curl 'https://example.com/api/items?page=2&limit=50' \\\n  -H 'accept: application/json, text/plain, */*' \\\n  -H 'accept-language: en-US,en;q=0.9' \\\n  -H 'cache-control: no-cache' \\\n  -H 'cookie: a=1; b=2' \\\n  -H 'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' \\\n  --compressed"
+  ]
+ },
+ {
+  "name": "real_aws_style",
+  "args": [
+   "curl",
+   "curl -X PUT 'https://bucket.s3.amazonaws.com/key.txt' -H 'x-amz-date: 20240101T000000Z' -H 'Authorization: AWS4-HMAC-SHA256 Credential=AKIA/20240101/us-east-1/s3/aws4_request, SignedHeaders=host, Signature=abc' --data-binary @key.txt"
+  ]
+ },
+ {
+  "name": "real_delete",
+  "args": [
+   "curl",
+   "curl -X DELETE https://api.example.com/users/42 -H 'X-Api-Key: abc123'"
+  ]
+ },
+ {
+  "name": "real_proxy_insecure",
+  "args": [
+   "curl",
+   "curl -k -x socks5://127.0.0.1:1080 https://internal.test/status"
+  ]
+ },
+ {
+  "name": "real_json_array_post",
+  "args": [
+   "curl",
+   "curl -X POST https://api.example.com/bulk -H 'Content-Type: application/json' -d '[{\"id\":1},{\"id\":2}]'"
+  ]
+ },
+ {
+  "name": "real_webhook_form_get",
+  "args": [
+   "curl",
+   "curl -G https://api.example.com/search --data-urlencode 'q=hello world' --data-urlencode 'lang=en'"
+  ]
+ },
+ {
+  "name": "tricky_trailing_backslash",
+  "args": [
+   "curl",
+   "curl https://x.test \\"
+  ]
+ },
+ {
+  "name": "tricky_leading_trailing_space",
+  "args": [
+   "curl",
+   "   curl https://x.test   "
+  ]
+ },
+ {
+  "name": "tricky_newlines_inside",
+  "args": [
+   "curl",
+   "curl\nhttps://x.test\n-H 'A: b'"
+  ]
+ },
+ {
+  "name": "tricky_tabs",
+  "args": [
+   "curl",
+   "curl\t-H\t'A: b'\thttps://x.test"
+  ]
+ },
+ {
+  "name": "tricky_empty_quotes",
+  "args": [
+   "curl",
+   "curl '' https://x.test"
+  ]
+ },
+ {
+  "name": "tricky_unterminated_single",
+  "args": [
+   "curl",
+   "curl -d 'abc https://x.test"
+  ]
+ },
+ {
+  "name": "tricky_unterminated_double",
+  "args": [
+   "curl",
+   "curl -d \"abc https://x.test"
+  ]
+ },
+ {
+  "name": "tricky_backslash_end_in_double",
+  "args": [
+   "curl",
+   "curl -d \"abc\\"
+  ]
+ },
+ {
+  "name": "tricky_double_bs_newline",
+  "args": [
+   "curl",
+   "curl \\\n\n  https://x.test"
+  ]
+ },
+ {
+  "name": "tricky_unicode_header",
+  "args": [
+   "curl",
+   "curl -H 'X-Name: Zoë' https://x.test"
+  ]
+ },
+ {
+  "name": "tricky_astral_flag",
+  "args": [
+   "curl",
+   "curl -😀 https://x.test"
+  ]
+ },
+ {
+  "name": "tricky_json_in_header",
+  "args": [
+   "curl",
+   "curl -H 'X-Json: {\"a\":1}' https://x.test"
+  ]
+ },
+ {
+  "name": "tricky_curl_alone",
+  "args": [
+   "curl",
+   "curl"
+  ]
+ },
+ {
+  "name": "tricky_just_flag",
+  "args": [
+   "curl",
+   "-X"
+  ]
+ },
+ {
+  "name": "tricky_big_data",
+  "args": [
+   "curl",
+   "curl -d 'a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&z=2' https://x.test"
+  ]
+ },
+ {
+  "name": "tricky_data_amp_json",
+  "args": [
+   "curl",
+   "curl -d '{\"a\":1}' -d '{\"b\":2}' https://x.test"
+  ]
+ },
+ {
+  "name": "tricky_data_trailing_amp",
+  "args": [
+   "curl",
+   "curl -d 'a=1&' https://x.test"
+  ]
+ },
+ {
+  "name": "tricky_data_leading_eq",
+  "args": [
+   "curl",
+   "curl -d '=1' https://x.test"
+  ]
+ },
+ {
+  "name": "tricky_data_multiline_form",
+  "args": [
+   "curl",
+   "curl -d 'a=1\nb=2' https://x.test"
+  ]
+ },
+ {
+  "name": "tricky_data_newline_raw",
+  "args": [
+   "curl",
+   "curl -d 'line1\nline2' https://x.test"
+  ]
+ },
+ {
+  "name": "tricky_raw_quoting",
+  "args": [
+   "curl",
+   "curl -d 'say \"hi\" # not comment' https://x.test"
+  ]
+ },
+ {
+  "name": "opt_debug_post",
+  "args": [
+   "curl",
+   "curl -X POST -H 'A: b' -F 'f=@x.png;type=image/png;filename=y.png' -F 't=1' https://x.test/u?a=1&2=b",
+   "--debug"
+  ]
+ },
+ {
+  "name": "opt_debug_full",
+  "args": [
+   "curl",
+   "curl -sS -L -k --compressed --http2 -m 30 --max-redirs 4 -x http://p:1 --cacert c.pem --cert d.pem --key e.pem -u me:pw -b 'a=1' -c jar -A UA -e ref -o out.txt -I -G -X head --weird x -d '{\"a\":[1,{\"b\":2}],\"7\":0}' https://x.test/a?x=1",
+   "--debug"
+  ]
+ },
+ {
+  "name": "opt_debug_nan",
+  "args": [
+   "curl",
+   "curl -m abc --max-redirs zz https://x.test",
+   "--debug"
+  ]
+ },
+ {
+  "name": "opt_debug_order",
+  "args": [
+   "curl",
+   "curl -k -u a:b -X post -L https://x.test --data-binary @f -d x -F a=b --form-string c=d",
+   "--debug"
+  ]
+ },
+ {
+  "name": "opt_debug_dup_assign",
+  "args": [
+   "curl",
+   "curl -X GET -X POST -u a -u b:c https://x.test",
+   "--debug"
+  ]
+ },
+ {
+  "name": "opt_debug_missing_values",
+  "args": [
+   "curl",
+   "curl https://x.test -X",
+   "--debug"
+  ]
+ },
+ {
+  "name": "opt_debug_unsupported",
+  "args": [
+   "curl",
+   "curl --foo bar --baz https://x.test -Z",
+   "--debug"
+  ]
+ },
+ {
+  "name": "opt_debug_empty",
+  "args": [
+   "curl",
+   "",
+   "--debug"
+  ]
+ },
+ {
+  "name": "opt_debug_cookie_header",
+  "args": [
+   "curl",
+   "curl -b 'a=1' -H 'x: y' https://x.test",
+   "--debug"
+  ]
+ },
+ {
+  "name": "opt_debug_body_kinds_urlenc",
+  "args": [
+   "curl",
+   "curl --data-urlencode 'a b=c' https://x.test",
+   "--debug"
+  ]
+ },
+ {
+  "name": "opt_debug_body_binary",
+  "args": [
+   "curl",
+   "curl --data-binary @f.bin https://x.test",
+   "--debug"
+  ]
+ },
+ {
+  "name": "opt_debug_form_empty_filename",
+  "args": [
+   "curl",
+   "curl -F 'f=@a;filename=;type=' https://x.test",
+   "--debug"
+  ]
+ },
+ {
+  "name": "opt_debug_form_type_then_unknown",
+  "args": [
+   "curl",
+   "curl -F 'f=@a;type;filename=x;type=y' https://x.test",
+   "--debug"
+  ]
+ },
+ {
+  "name": "opt_debug_json_nested",
+  "args": [
+   "curl",
+   "curl -d '{\"a\":{\"b\":[1,2,{\"c\":null}]},\"1\":1.50}' https://x.test",
+   "--debug"
+  ]
+ },
+ {
+  "name": "opt_debug_basic_header",
+  "args": [
+   "curl",
+   "curl -H 'Authorization: Basic dXNlcjpwYXNz' https://x.test",
+   "--debug"
+  ]
+ },
+ {
+  "name": "opt_debug_dup_headers",
+  "args": [
+   "curl",
+   "curl -H 'a: 1' -H 'A: 2' https://x.test",
+   "--debug"
+  ]
+ },
+ {
+  "name": "opt_debug_empty_header_key",
+  "args": [
+   "curl",
+   "curl -H ' : x' https://x.test",
+   "--debug"
+  ]
+ },
+ {
+  "name": "opt_pretty",
+  "args": [
+   "curl",
+   "curl -d '{\"a\":1}' https://x.test",
+   "--pretty"
+  ]
+ },
+ {
+  "name": "opt_loss_report",
+  "args": [
+   "curl",
+   "curl --compressed https://x.test",
+   "--loss-report"
+  ]
+ },
+ {
+  "name": "opt_normalize_batch_env",
+  "args": [
+   "curl",
+   "curl https://x.test",
+   "--normalize",
+   "--batch",
+   "--env-detect"
+  ]
+ },
+ {
+  "name": "opt_unknown_option",
+  "args": [
+   "curl",
+   "curl https://x.test",
+   "--nope",
+   "-q"
+  ]
+ },
+ {
+  "name": "opt_output_file",
+  "args": [
+   "curl",
+   "curl --compressed -X POST https://x.test -d a=1",
+   "-o",
+   "out.yaml"
+  ],
+  "out": "out.yaml"
+ },
+ {
+  "name": "opt_output_long",
+  "args": [
+   "curl",
+   "curl https://x.test",
+   "--output",
+   "res.yaml"
+  ],
+  "out": "res.yaml"
+ },
+ {
+  "name": "opt_output_subdir",
+  "args": [
+   "curl",
+   "curl https://x.test",
+   "-o",
+   "a/b/c.yaml"
+  ],
+  "out": "a/b/c.yaml"
+ },
+ {
+  "name": "opt_output_with_warnings_info",
+  "args": [
+   "curl",
+   "curl --compressed https://x.test",
+   "-o",
+   "w.yaml"
+  ],
+  "out": "w.yaml"
+ },
+ {
+  "name": "opt_output_missing_value",
+  "args": [
+   "curl",
+   "curl --compressed https://x.test",
+   "-o"
+  ]
+ },
+ {
+  "name": "opt_output_empty_value",
+  "args": [
+   "curl",
+   "curl --compressed https://x.test",
+   "-o",
+   ""
+  ]
+ },
+ {
+  "name": "opt_output_dir",
+  "args": [
+   "curl",
+   "curl https://x.test",
+   "-o",
+   "dd"
+  ],
+  "files": {
+   "dd/keep": "x"
+  }
+ },
+ {
+  "name": "opt_output_debug",
+  "args": [
+   "curl",
+   "curl https://x.test",
+   "--debug",
+   "-o",
+   "d.yaml"
+  ],
+  "out": "d.yaml"
+ },
+ {
+  "name": "opt_output_before_debug",
+  "args": [
+   "curl",
+   "curl https://x.test",
+   "-o",
+   "e.yaml",
+   "--debug"
+  ],
+  "out": "e.yaml"
+ },
+ {
+  "name": "help_flag",
+  "args": [
+   "--help"
+  ]
+ },
+ {
+  "name": "help_flag_after",
+  "args": [
+   "curl",
+   "curl https://x.test",
+   "--help"
+  ]
+ },
+ {
+  "name": "help_short",
+  "args": [
+   "yaml",
+   "-h"
+  ]
+ },
+ {
+  "name": "help_no_args",
+  "args": []
+ },
+ {
+  "name": "help_one_arg",
+  "args": [
+   "curl"
+  ]
+ },
+ {
+  "name": "help_unknown_sub",
+  "args": [
+   "wat",
+   "x"
+  ]
+ },
+ {
+  "name": "help_curl_missing_input",
+  "args": [
+   "curl"
+  ]
+ },
+ {
+  "name": "err_file_missing",
+  "args": [
+   "file",
+   "nope.sh"
+  ]
+ },
+ {
+  "name": "err_yaml_missing",
+  "args": [
+   "yaml",
+   "nope.yaml"
+  ]
+ },
+ {
+  "name": "err_file_is_dir",
+  "args": [
+   "file",
+   "adir"
+  ],
+  "files": {
+   "adir/x": "y"
+  }
+ },
+ {
+  "name": "err_yaml_is_dir",
+  "args": [
+   "yaml",
+   "adir"
+  ],
+  "files": {
+   "adir/x": "y"
+  }
+ },
+ {
+  "name": "file_empty",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": ""
+  }
+ },
+ {
+  "name": "sh_basic",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "#!/bin/bash\n# API tests\ncurl https://api.example.com/health\ncurl -X POST https://api.example.com/users -d '{\"name\":\"test\"}'\n"
+  }
+ },
+ {
+  "name": "sh_multiline",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl -X POST \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"test\":true}' \\\n  https://api.example.com"
+  }
+ },
+ {
+  "name": "sh_comments",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "# This is a comment\n\n# Another comment\ncurl https://example.com\n"
+  }
+ },
+ {
+  "name": "sh_pipe",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl https://api.example.com | jq ."
+  }
+ },
+ {
+  "name": "sh_and",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "echo \"test\" && curl https://example.com"
+  }
+ },
+ {
+  "name": "sh_or",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "false || curl https://a.test"
+  }
+ },
+ {
+  "name": "sh_semicolon_chain",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "echo hi; curl https://a.test; echo bye"
+  }
+ },
+ {
+  "name": "sh_trailing_semicolon",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl https://a.test ;  \ncurl https://b.test;;"
+  }
+ },
+ {
+  "name": "sh_subshell",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "R=$(curl -s https://a.test/x)\necho $R"
+  }
+ },
+ {
+  "name": "sh_backtick",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "R=`curl -s https://a.test/x`"
+  }
+ },
+ {
+  "name": "sh_quoted_pipe",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl -d 'a|b' https://a.test | jq .\ncurl -H \"X: a|b\" https://b.test"
+  }
+ },
+ {
+  "name": "sh_escaped_pipe",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl -d a\\|b https://a.test"
+  }
+ },
+ {
+  "name": "sh_none",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "echo hello\nls -la\n"
+  }
+ },
+ {
+  "name": "sh_single",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl -X DELETE https://a.test/1\n"
+  }
+ },
+ {
+  "name": "sh_single_debug",
+  "args": [
+   "file",
+   "input.sh",
+   "--debug"
+  ],
+  "files": {
+   "input.sh": "curl -X DELETE https://a.test/1\n"
+  }
+ },
+ {
+  "name": "sh_batch_debug",
+  "args": [
+   "file",
+   "input.sh",
+   "--debug"
+  ],
+  "files": {
+   "input.sh": "curl https://a.test/1\ncurl -u a:b https://a.test/2 --compressed\n"
+  }
+ },
+ {
+  "name": "sh_batch_warnings",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl --compressed https://a.test/1\ncurl -b 'a=1' -c j https://a.test/2\ncurl --foo bar https://a.test/3\n"
+  }
+ },
+ {
+  "name": "sh_batch_names",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl https://a.test/1\n\ncurl -X POST -d '{\"a\":1}' https://a.test/2\ncurl -F 'f=@x' -F 'g=1' https://a.test/3\ncurl -H 'A: 1' -u u:p -k https://a.test/4\n"
+  }
+ },
+ {
+  "name": "sh_crlf",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl https://a.test/1\r\ncurl -X POST \\\r\n  -H 'A: b' \\\r\n  https://a.test/2\r\n"
+  }
+ },
+ {
+  "name": "sh_trailing_backslash_eof",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl https://a.test \\"
+  }
+ },
+ {
+  "name": "sh_continuation_leading_ws",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl \\\n\t -H 'A: b' \\\n      https://a.test\n"
+  }
+ },
+ {
+  "name": "sh_indented",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "  curl https://a.test/indented\n\tcurl https://a.test/tab\n"
+  }
+ },
+ {
+  "name": "sh_curl_tab",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl\thttps://a.test"
+  }
+ },
+ {
+  "name": "sh_curl_word_only",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl\ncurl -V\ncurl"
+  }
+ },
+ {
+  "name": "sh_short_command",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl\ncurl a"
+  }
+ },
+ {
+  "name": "sh_comment_slash",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "// curl https://no.test\ncurl https://yes.test\n"
+  }
+ },
+ {
+  "name": "sh_curl_in_echo",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "echo \"curl https://a.test\"\necho curl https://b.test\n"
+  }
+ },
+ {
+  "name": "sh_variables",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl -H \"Authorization: Bearer $TOKEN\" \"$BASE_URL/users\"\n"
+  }
+ },
+ {
+  "name": "sh_data_json_multiline",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl -X POST https://a.test \\\n  -d '{\n    \"a\": 1,\n    \"b\": [1, 2]\n  }'\n"
+  }
+ },
+ {
+  "name": "sh_output_file",
+  "args": [
+   "file",
+   "input.sh",
+   "-o",
+   "batch.yaml"
+  ],
+  "files": {
+   "input.sh": "curl --compressed https://a.test\ncurl https://b.test\n"
+  }
+ },
+ {
+  "name": "sh_url_error",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl 'https://a.test/?a=%E0%A4%A'"
+  }
+ },
+ {
+  "name": "sh_bom",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "﻿curl https://bom.test\n"
+  }
+ },
+ {
+  "name": "sh_invalid_utf8_surrogate",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl https://x.test/é\n"
+  }
+ },
+ {
+  "name": "sh_heredoc",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "cat <<EOF\ncurl https://no.test\nEOF\ncurl https://yes.test\n"
+  }
+ },
+ {
+  "name": "sh_background",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl https://a.test &\ncurl https://b.test > out.txt\n"
+  }
+ },
+ {
+  "name": "sh_redirect",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl -s https://a.test > /dev/null 2>&1\n"
+  }
+ },
+ {
+  "name": "sh_json_array_batch",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl -d '[1,2,3]' https://a.test/a\ncurl -d '{}' https://a.test/b\ncurl -d 'null' https://a.test/c\n"
+  }
+ },
+ {
+  "name": "sh_dup_names_quoting",
+  "args": [
+   "file",
+   "input.sh"
+  ],
+  "files": {
+   "input.sh": "curl -H 'X-A: a:b' -H 'X-B: 12' https://a.test/1\ncurl https://a.test/2?x=true\n"
+  }
+ },
+ {
+  "name": "y_simple",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://api.example.com\n  method: GET\n"
+  }
+ },
+ {
+  "name": "y_default_method",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://api.example.com\n"
+  }
+ },
+ {
+  "name": "y_requests",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "requests:\n  - url: https://a.test/1\n  - url: https://a.test/2\n    method: POST\n    body:\n      json:\n        a: 1\n"
+  }
+ },
+ {
+  "name": "y_collection",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "collection:\n  requests:\n    - url: https://c.test/1\n    - url: https://c.test/2\n"
+  }
+ },
+ {
+  "name": "y_all_three",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\nrequests:\n  - url: https://b.test\ncollection:\n  requests:\n    - url: https://c.test\n"
+  }
+ },
+ {
+  "name": "y_post_json",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://api.example.com\n  method: POST\n  headers:\n    Content-Type: application/json\n  body:\n    name: Alex\n    age: 30\n"
+  }
+ },
+ {
+  "name": "y_post_json_no_ct",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://api.example.com\n  method: POST\n  body:\n    json:\n      name: Alex\n      nested:\n        list: [1, 2, 3]\n"
+  }
+ },
+ {
+  "name": "y_body_kinds",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "requests:\n  - url: https://a.test/form\n    method: POST\n    body:\n      form: a=1&b=2\n  - url: https://a.test/raw\n    method: POST\n    body:\n      raw: hello world\n  - url: https://a.test/bin\n    method: POST\n    body:\n      binary: '@file.bin'\n  - url: https://a.test/str\n    method: POST\n    body: plain string\n  - url: https://a.test/arr\n    method: POST\n    body: [1, 2]\n  - url: https://a.test/num\n    method: POST\n    body: 42\n  - url: https://a.test/null\n    method: POST\n    body: null\n  - url: https://a.test/bool\n    method: POST\n    body: false\n"
+  }
+ },
+ {
+  "name": "y_body_number_raw",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  body:\n    raw: 123\n"
+  }
+ },
+ {
+  "name": "y_body_object_raw",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  body:\n    raw: {a: 1}\n"
+  }
+ },
+ {
+  "name": "y_body_index_keys",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  body:\n    json:\n      b: 1\n      '2': x\n      '1': y\n"
+  }
+ },
+ {
+  "name": "y_get_with_body",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  method: GET\n  body: x\n"
+  }
+ },
+ {
+  "name": "y_auth_bearer",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  auth:\n    type: bearer\n    token: mytoken\n"
+  }
+ },
+ {
+  "name": "y_auth_basic",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  auth:\n    type: basic\n    username: alice\n    password: 's3 cr3t'\n"
+  }
+ },
+ {
+  "name": "y_auth_basic_nouser",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  auth:\n    type: basic\n"
+  }
+ },
+ {
+  "name": "y_auth_bearer_notoken",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  auth:\n    type: bearer\n"
+  }
+ },
+ {
+  "name": "y_auth_other",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  auth:\n    type: digest\n    username: u\n"
+  }
+ },
+ {
+  "name": "y_params",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://api.example.com/search\n  params:\n    q: hello world\n    page: 1\n    'a&b': 'c=d'\n    emoji: 😀\n    plus: a+b\n    tilde: ~*-._!\n"
+  }
+ },
+ {
+  "name": "y_params_existing_query",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test/s?x=1\n  params:\n    y: 2\n"
+  }
+ },
+ {
+  "name": "y_params_numeric_keys",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test/s\n  params:\n    z: 1\n    '10': a\n    '2': b\n"
+  }
+ },
+ {
+  "name": "y_params_empty",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test/s\n  params: {}\n"
+  }
+ },
+ {
+  "name": "y_headers",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  headers:\n    X-Num: 123\n    X-Bool: true\n    X-Null: null\n    X-Space: a b\n    X-Quote: it's\n    X-List: [1, 2]\n    X-Empty: ''\n"
+  }
+ },
+ {
+  "name": "y_headers_numeric_keys",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  headers:\n    b: 1\n    '5': e\n    '3': c\n"
+  }
+ },
+ {
+  "name": "y_headers_content_type_empty",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  headers:\n    Content-Type: ''\n  body:\n    json: {a: 1}\n"
+  }
+ },
+ {
+  "name": "y_form_data",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test/u\n  method: POST\n  formData:\n    name: Alex\n    n: 5\n    file:\n      file: ./a.png\n      filename: b.png\n      contentType: image/png\n    bare:\n      file: ./c.txt\n    empty_meta:\n      file: ./d.txt\n      filename: ''\n"
+  }
+ },
+ {
+  "name": "y_form_data_empty",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test/u\n  formData: {}\n"
+  }
+ },
+ {
+  "name": "y_form_data_with_body",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test/u\n  formData:\n    a: 1\n  body: ignored\n"
+  }
+ },
+ {
+  "name": "y_options",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  timeout: 5000\n  followRedirects: true\n  maxRedirects: 3\n  proxy: http://p:3128\n  insecure: true\n  http2: true\n  output: out.json\n  ssl:\n    ca: ca.pem\n    cert: c.pem\n    key: k.pem\n"
+  }
+ },
+ {
+  "name": "y_options_falsy",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  timeout: 0\n  followRedirects: false\n  maxRedirects: 0\n  insecure: false\n  http2: false\n"
+  }
+ },
+ {
+  "name": "y_timeout_rounding",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "requests:\n  - url: https://a.test/1\n    timeout: 1\n  - url: https://a.test/2\n    timeout: 1500\n  - url: https://a.test/3\n    timeout: 2000\n  - url: https://a.test/4\n    timeout: '3s'\n"
+  }
+ },
+ {
+  "name": "y_ssl_empty",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  ssl: {}\n"
+  }
+ },
+ {
+  "name": "y_ssl_verify_false",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  ssl:\n    verify: false\n"
+  }
+ },
+ {
+  "name": "y_warnings",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  expect:\n    status: 200\n  store:\n    id: body.id\n  when:\n    x: 1\n  retry:\n    count: 2\n  snapshot: true\n  diff: true\n"
+  }
+ },
+ {
+  "name": "y_warnings_output_file",
+  "args": [
+   "yaml",
+   "input.yaml",
+   "-o",
+   "o.sh"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  expect:\n    status: 200\n"
+  }
+ },
+ {
+  "name": "y_global_ignored",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "global:\n  variables:\n    X: 1\nrequests:\n  - url: ${X}/a\n    name: first\n"
+  }
+ },
+ {
+  "name": "y_quoting_values",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test/a b?c=d&e='f'\n  headers:\n    X-Dollar: $HOME\n    X-Quote: \"say \\\"hi\\\"\"\n    X-Backslash: 'a\\b'\n    X-Safe: a_b-c.d/e:f@g=h,i+j%k\n    X-Unsafe: 'a;b'\n"
+  }
+ },
+ {
+  "name": "y_url_with_single_quote",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: \"https://a.test/it's\"\n  headers:\n    X-A: \"it's `x` $y \\\\ \\\"q\\\"\"\n"
+  }
+ },
+ {
+  "name": "y_method_lowercase",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  method: post\n"
+  }
+ },
+ {
+  "name": "y_method_number",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  method: 5\n"
+  }
+ },
+ {
+  "name": "y_url_number",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: 12345\n"
+  }
+ },
+ {
+  "name": "y_name_ignored",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  name: hi\n  url: https://a.test\n"
+  }
+ },
+ {
+  "name": "y_none",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "other: 1\n"
+  }
+ },
+ {
+  "name": "y_empty_requests",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "requests: []\n"
+  }
+ },
+ {
+  "name": "y_empty_doc",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": ""
+  }
+ },
+ {
+  "name": "y_comment_doc",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "# just a comment\n"
+  }
+ },
+ {
+  "name": "y_top_level_list",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "- a\n- b\n"
+  }
+ },
+ {
+  "name": "y_top_level_scalar",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "hello\n"
+  }
+ },
+ {
+  "name": "y_null_item",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "requests:\n  - null\n"
+  }
+ },
+ {
+  "name": "y_scalar_item",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "requests:\n  - hello\n"
+  }
+ },
+ {
+  "name": "y_missing_url",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  method: GET\n"
+  }
+ },
+ {
+  "name": "y_missing_url_params",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  method: GET\n  params:\n    a: 1\n"
+  }
+ },
+ {
+  "name": "y_null_url",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: null\n"
+  }
+ },
+ {
+  "name": "y_requests_number",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "requests: 5\n"
+  }
+ },
+ {
+  "name": "y_requests_object",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "requests:\n  a: 1\n"
+  }
+ },
+ {
+  "name": "y_requests_string",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "requests: ab\n"
+  }
+ },
+ {
+  "name": "y_collection_bad",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "collection:\n  requests: 3\n"
+  }
+ },
+ {
+  "name": "y_request_falsy",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request: false\nrequests:\n  - url: https://a.test\n"
+  }
+ },
+ {
+  "name": "y_first_ok_second_bad",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "requests:\n  - url: https://a.test\n  - method: GET\n"
+  }
+ },
+ {
+  "name": "y_anchors",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "base: &b\n  Accept: text/plain\nrequest:\n  url: https://a.test\n  headers: *b\n"
+  }
+ },
+ {
+  "name": "y_multiline_strings",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  method: POST\n  body:\n    raw: |\n      line1\n      line2\n"
+  }
+ },
+ {
+  "name": "y_unicode",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test/ünï\n  headers:\n    X-Name: José\n"
+  }
+ },
+ {
+  "name": "y_float_keys",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  body:\n    json:\n      1.5: a\n      true: b\n"
+  }
+ },
+ {
+  "name": "y_many_requests",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "requests:\n  - url: https://a.test/0\n    method: GET\n  - url: https://a.test/1\n    method: POST\n  - url: https://a.test/2\n    method: PUT\n  - url: https://a.test/3\n    method: GET\n  - url: https://a.test/4\n    method: POST\n  - url: https://a.test/5\n    method: PUT\n"
+  }
+ },
+ {
+  "name": "y_headers_content_type_null",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  headers:\n    Content-Type: null\n  body:\n    json: {a: 1}\n"
+  }
+ },
+ {
+  "name": "y_headers_content_type_zero",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  headers:\n    Content-Type: 0\n  body: {a: 1}\n"
+  }
+ },
+ {
+  "name": "y_max_redirects_text",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  maxRedirects: x\n"
+  }
+ },
+ {
+  "name": "y_max_redirects_float",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  maxRedirects: 2.5\n"
+  }
+ },
+ {
+  "name": "y_proxy_number",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  proxy: 5\n"
+  }
+ },
+ {
+  "name": "y_url_bool_params",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: true\n  params:\n    a: 1\n"
+  }
+ },
+ {
+  "name": "y_big_ints_ok",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  body:\n    json:\n      big: 12345678901234567890\n"
+  }
+ },
+ {
+  "name": "url_query_accent_keys",
+  "args": [
+   "curl",
+   "curl 'https://x.test/s?ñ=1&é=2&e=3&z=4&É=5&è=6&ê=7&ë=8&Eb=9&ea=10&ç=11&c=12&ö=13&o=14'"
+  ]
+ },
+ {
+  "name": "headers_accent_sorting",
+  "args": [
+   "curl",
+   "curl -H 'X-é: 1' -H 'x-e: 2' -H 'X-è: 3' -H 'X-Ünï: 4' -H 'X-Z: 5' https://x.test"
+  ]
+ },
+ {
+  "name": "proto_keys",
+  "args": [
+   "curl",
+   "curl \"https://x.com/?__proto__=1&a=2\" -H \"__proto__: v\""
+  ]
+ },
+ {
+  "name": "proto_keys_debug",
+  "args": [
+   "curl",
+   "curl \"https://x.com/?__proto__=1&a=2\" -H \"__proto__: v\" -F \"__proto__=z\"",
+   "--debug"
+  ]
+ },
+ {
+  "name": "y_params_string",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test/s\n  params: abc\n"
+  }
+ },
+ {
+  "name": "y_params_list",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test/s\n  params: [x, 5, true]\n"
+  }
+ },
+ {
+  "name": "y_headers_string",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  headers: hi\n"
+  }
+ },
+ {
+  "name": "y_headers_list",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  headers: [a, b]\n"
+  }
+ },
+ {
+  "name": "y_formdata_string",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  formData: ab\n"
+  }
+ },
+ {
+  "name": "y_formdata_list",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  formData: [a, {file: f.txt}]\n"
+  }
+ },
+ {
+  "name": "y_params_headers_proto",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  params:\n    __proto__: 1\n    b: 2\n  headers:\n    __proto__: v\n    X: y\n  formData:\n    __proto__: z\n    f: g\n"
+  }
+ },
+ {
+  "name": "y_big_int_beyond_u64",
+  "args": [
+   "yaml",
+   "input.yaml"
+  ],
+  "files": {
+   "input.yaml": "request:\n  url: https://a.test\n  body:\n    json:\n      id: 123456789012345678901234\n      neg: -123456789012345678901234\n"
+  }
+ }
+]

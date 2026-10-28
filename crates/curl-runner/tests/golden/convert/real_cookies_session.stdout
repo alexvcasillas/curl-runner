@@ -1,0 +1,10 @@
+# Warning: Cookie flag (-b sid=abc; theme=dark) stored as header; manual review recommended
+# Warning: Cookie jar flag (-c /tmp/jar) has no YAML equivalent
+
+request:
+  method: GET
+  url: https://example.com/account
+  headers:
+    Cookie: sid=abc; theme=dark
+  followRedirects: true
+

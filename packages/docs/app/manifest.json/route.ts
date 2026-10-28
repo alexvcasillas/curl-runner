@@ -5,7 +5,7 @@ export async function GET(): Promise<Response> {
     name: 'curl-runner Documentation',
     short_name: 'curl-runner',
     description:
-      'A powerful CLI tool for HTTP request management using YAML configuration files. Built with Bun for blazing-fast performance.',
+      'A powerful CLI tool for HTTP request management using YAML configuration files. Built in Rust (a native binary) for blazing-fast performance.',
     start_url: '/',
     display: 'standalone',
     background_color: '#ffffff',

@@ -46,12 +46,14 @@ function Install-CurlRunner {
     $Platform = "windows-$Arch"
     Write-Info "Detected platform: $Platform"
 
-    $Version = Get-LatestVersion
+    # Release tags look like "@curl-runner/cli@1.2.3"; asset names use the bare version.
+    $Tag = Get-LatestVersion
+    $Version = $Tag -replace '^.*@', ''
     Write-Info "Latest version: $Version"
 
     $ZipName = "curl-runner-cli-$Version-$Platform.zip"
-    $DownloadUrl = "https://github.com/$Repo/releases/download/$Version/$ZipName"
-    $ChecksumUrl = "https://github.com/$Repo/releases/download/$Version/SHA256SUMS.txt"
+    $DownloadUrl = "https://github.com/$Repo/releases/download/$Tag/$ZipName"
+    $ChecksumUrl = "https://github.com/$Repo/releases/download/$Tag/SHA256SUMS.txt"
 
     $TempDir = Join-Path $env:TEMP "curl-runner-install"
     if (Test-Path $TempDir) { Remove-Item -Recurse -Force $TempDir }
@@ -79,7 +81,7 @@ function Install-CurlRunner {
     # Verify checksum
     Write-Info "Verifying checksum..."
     $Checksums = Get-Content $ChecksumPath
-    $ExpectedLine = $Checksums | Where-Object { $_ -match $ZipName }
+    $ExpectedLine = $Checksums | Where-Object { $_ -match [regex]::Escape($ZipName) }
     if (-not $ExpectedLine) {
         Write-Error "Checksum not found for $ZipName"
     }
@@ -101,7 +103,10 @@ function Install-CurlRunner {
     }
 
     # Move binary
+    # The archive contains curl-runner-<platform>.exe; install it as curl-runner.exe
+    $ExtractedPath = Join-Path $TempDir "$BinaryName-$Platform.exe"
     $BinaryPath = Join-Path $TempDir "$BinaryName.exe"
+    Rename-Item -Path $ExtractedPath -NewName "$BinaryName.exe" -Force
     $DestPath = Join-Path $InstallDir "$BinaryName.exe"
     Move-Item -Path $BinaryPath -Destination $DestPath -Force
 

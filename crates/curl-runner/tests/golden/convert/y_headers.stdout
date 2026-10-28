@@ -1,0 +1,9 @@
+curl \
+  -H 'X-Num: 123' \
+  -H 'X-Bool: true' \
+  -H 'X-Null: null' \
+  -H 'X-Space: a b' \
+  -H "X-Quote: it's" \
+  -H 'X-List: 1,2' \
+  -H 'X-Empty: ' \
+  https://a.test

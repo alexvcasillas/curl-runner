@@ -1,0 +1,10 @@
+request:
+  method: POST
+  url: https://x.test/j
+  headers:
+    Content-Type: application/json
+  body:
+    json:
+      items: [{"id":1,"tags":["x"]},{"id":2}]
+      meta: {"deep":{"er":[1,2]}}
+

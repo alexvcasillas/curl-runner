@@ -1,0 +1,8 @@
+request:
+  method: POST
+  url: https://x.test/up
+  formData:
+    a: "1"
+    b: "@notfile"
+    c: x=y
+

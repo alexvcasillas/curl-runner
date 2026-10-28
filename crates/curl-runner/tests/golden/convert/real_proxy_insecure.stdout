@@ -1,0 +1,6 @@
+request:
+  method: GET
+  url: https://internal.test/status
+  proxy: socks5://127.0.0.1:1080
+  insecure: true
+
