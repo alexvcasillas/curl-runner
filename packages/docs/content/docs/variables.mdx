@@ -11,6 +11,10 @@ Variables in curl-runner allow you to create flexible, reusable configurations. 
   Variables are interpolated using the `${VARIABLE_NAME}` syntax. You can also use default values with `${VAR:default}`.
 </Callout>
 
+<Callout type="warn" title="Values are used as written">
+  Interpolation runs once, over the request fields (`url`, `headers`, `body`, `timeout`, ...). Variable values are used as written: a value such as `"${BASE_URL}/v1"` is **not** itself interpolated, and `${...}` inside `global.defaults` / `collection.defaults` is not interpolated either. Put `${VAR}` references in the request fields.
+</Callout>
+
 ## Variable Scopes
 
 Variables can be defined at different levels, each with its own scope and precedence rules.
@@ -65,12 +69,19 @@ export BASE_URL="https://api.staging.com"
 ```
 
 ```yaml title="env-variables.yaml"
-# Reference in YAML
+# Reference environment variables directly in request fields
 global:
   variables:
-    API_TOKEN: "${API_KEY}"     # From environment
-    API_BASE: "${BASE_URL}"     # From environment
     TIMEOUT: "5000"             # Static value
+
+collection:
+  name: "Environment example"
+  requests:
+    - name: "Uses the environment"
+      url: "${BASE_URL}/data"                 # From environment
+      timeout: ${TIMEOUT}                     # Static value
+      headers:
+        Authorization: "Bearer ${API_KEY}"    # From environment
 ```
 
 ## Variable Precedence
@@ -102,7 +113,7 @@ collection:
 
 ## Default Values
 
-Provide fallback values for variables that may not be set using the `${VAR:default}` syntax.
+Provide fallback values for variables that may not be set using the `${VAR:default}` syntax. Use it in request fields.
 
 <Callout title="Default value syntax">
   `${VAR:default}`: uses "default" if VAR is not set.
@@ -113,50 +124,26 @@ Provide fallback values for variables that may not be set using the `${VAR:defau
 </Callout>
 
 ```yaml title="default-values.yaml"
-global:
-  variables:
-    # Basic default value - uses "5000" if API_TIMEOUT is not set
-    API_TIMEOUT: "${API_TIMEOUT:5000}"
-
-    # Default with URL - uses the URL if API_BASE is not set
-    API_BASE: "${API_BASE:https://api.example.com}"
-
-    # Nested defaults - tries DATABASE_HOST, then DB_HOST, then "localhost"
-    DB_HOST: "${DATABASE_HOST:${DB_HOST:localhost}}"
-
-    # Empty default - uses empty string if OPTIONAL_PARAM is not set
-    OPTIONAL_PARAM: "${OPTIONAL_PARAM:}"
-
 collection:
+  name: "Defaults"
   requests:
     - name: "Request with defaults"
-      url: "${API_BASE}/data"
-      timeout: ${API_TIMEOUT}
+      # Uses the URL if API_BASE is not set
+      url: "${API_BASE:https://api.example.com}/data"
+      # Uses 5000 if API_TIMEOUT is not set
+      timeout: ${API_TIMEOUT:5000}
       headers:
-        X-DB-Host: "${DB_HOST}"
+        # Nested defaults - tries DATABASE_HOST, then DB_HOST, then "localhost"
+        X-DB-Host: "${DATABASE_HOST:${DB_HOST:localhost}}"
+        # Empty default - empty string if OPTIONAL_PARAM is not set
+        X-Optional: "${OPTIONAL_PARAM:}"
 ```
 
 <Callout title="Note on reserved prefixes">
   The colon syntax is also used for dynamic variables like `DATE:format` and `TIME:format`. These reserved prefixes (`DATE`, `TIME`, `UUID`, `RANDOM`) are handled specially and won't conflict with default value syntax.
 </Callout>
 
-Use default value syntax to provide fallback values when variables are not set. For environment-specific configurations, use separate YAML files per environment or set environment variables directly.
-
-```yaml title="default-values.yaml"
-global:
-  variables:
-    # Default value if environment variable not set
-    API_TIMEOUT: "${API_TIMEOUT:5000}"
-
-    # Nested default values
-    DB_HOST: "${DATABASE_HOST:${DB_HOST:localhost}}"
-
-collection:
-  requests:
-    - name: "Request with defaults"
-      url: "${BASE_URL}/data"
-      timeout: ${API_TIMEOUT}
-```
+For environment-specific configurations, use separate YAML files per environment or set environment variables directly.
 
 ## Dynamic Variables
 
@@ -178,29 +165,21 @@ Create dynamic values using built-in functions.
 - `${RANDOM:string:10}`: random string of the given length
 
 ```yaml title="dynamic-variables.yaml"
-global:
-  variables:
-    # Dynamic timestamp
-    TIMESTAMP: "${DATE:YYYY-MM-DD}"
-    REQUEST_TIME: "${TIME:HH:mm:ss}"
-
-    # UUID generation
-    REQUEST_ID: "${UUID}"
-    SESSION_ID: "${UUID:short}"
-
-    # Random values
-    RANDOM_NUM: "${RANDOM:1-1000}"
-    RANDOM_STR: "${RANDOM:string:10}"
-
 collection:
+  name: "Dynamic values"
   requests:
     - name: "Request with dynamic values"
-      url: "https://api.example.com/requests"
+      url: "https://api.example.com/requests?n=${RANDOM:1-1000}"
       headers:
-        X-Request-ID: "${REQUEST_ID}"
+        X-Request-ID: "${UUID}"
+        X-Session: "${UUID:short}"
+        X-Date: "${DATE:YYYY-MM-DD}"
+        X-Time: "${TIME:HH:mm:ss}"
         X-Timestamp: "${TIMESTAMP}"
-        X-Session: "${SESSION_ID}"
+        X-Nonce: "${RANDOM:string:10}"
 ```
+
+Each reference is evaluated separately, so two `${UUID}` references give two different values.
 
 ## String Transforms
 
@@ -215,45 +194,36 @@ global:
     ENV: "production"
     RESOURCE: "Users"
 
-    # Transform to uppercase
-    UPPER_ENV: "${ENV:upper}"           # Results in "PRODUCTION"
-
-    # Transform to lowercase
-    LOWER_RESOURCE: "${RESOURCE:lower}" # Results in "users"
-
 collection:
+  name: "Transforms"
   requests:
     - name: "Request with case transforms"
-      url: "https://api.example.com/${RESOURCE:lower}"
+      url: "https://api.example.com/${RESOURCE:lower}"   # users
       headers:
-        X-Environment: "${ENV:upper}"
-        X-Resource-Type: "${RESOURCE:lower}"
+        X-Environment: "${ENV:upper}"                    # PRODUCTION
+        X-Resource-Type: "${RESOURCE:lower}"             # users
 ```
 
 ## Complex Interpolation
 
-Combine multiple variables and expressions to create complex, computed values.
+Combine several variables, defaults and transforms in one field. Everything is resolved in a single pass over the request, so write the full expression in the field instead of building it up in other variables.
 
 ```yaml title="complex-interpolation.yaml"
 global:
   variables:
+    BASE_URL: "https://api.example.com"
     BASE_PATH: "/api/v1"
     RESOURCE: "users"
-
-    # Computed from other variables
-    FULL_ENDPOINT: "${BASE_URL}${BASE_PATH}/${RESOURCE}"
-
-    # String manipulation
-    UPPER_ENV: "${ENV:upper}"
-    LOWER_RESOURCE: "${RESOURCE:lower}"
+    ENV: "production"
 
 collection:
+  name: "Complex interpolation"
   requests:
-    - name: "Using computed variables"
-      url: "${FULL_ENDPOINT}"
+    - name: "Using several variables"
+      url: "${BASE_URL}${BASE_PATH}/${RESOURCE}"
       headers:
-        X-Environment: "${UPPER_ENV}"
-        X-Resource-Type: "${LOWER_RESOURCE}"
+        X-Environment: "${ENV:upper}"
+        X-Resource-Type: "${RESOURCE:lower}"
 ```
 
 ## Best Practices
@@ -279,27 +249,27 @@ collection:
 ### API Authentication
 
 ```yaml title="API Authentication Pattern"
-global:
-  variables:
-    # Use environment variables for configuration
-    BASE_URL: "${API_BASE_URL:https://api-staging.example.com}"
-    API_KEY: "${API_KEY}"
 collection:
+  name: "Authenticated requests"
   requests:
     - name: "Authenticated request"
-      url: "${BASE_URL}/users"
+      # Use API_BASE_URL from the environment when set, else the global variable
+      url: "${API_BASE_URL:https://api-staging.example.com}/users"
       headers:
         Authorization: "Bearer ${API_KEY}"
 ```
 
 ### Request Correlation IDs
 
+`global.defaults` is not interpolated, so set per-request headers where you need generated values.
+
 ```yaml title="Request Correlation IDs"
-global:
-  variables:
-    CORRELATION_ID: "${UUID}"
-  defaults:
-    headers:
-      X-Correlation-ID: "${CORRELATION_ID}"
-      X-Request-Time: "${TIMESTAMP}"
+collection:
+  name: "Correlation IDs"
+  requests:
+    - name: "Traced request"
+      url: "https://api.example.com/users"
+      headers:
+        X-Correlation-ID: "${UUID}"
+        X-Request-Time: "${TIMESTAMP}"
 ```

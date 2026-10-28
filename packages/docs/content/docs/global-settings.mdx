@@ -196,35 +196,30 @@ requests:
 
 Define reusable variables that can be referenced throughout your request configurations.
 
+<Callout type="warn" title="Values are used as written">
+  Interpolation runs once, over the request fields. Variable values are not themselves interpolated (a value like `"${BASE_URL}/${API_VERSION}"` stays literal), and `${...}` inside `global.defaults` is not interpolated. Write the full expression in the request field.
+</Callout>
+
 ```yaml title="global-variables.yaml"
 # Global variables for reuse across requests
 global:
   variables:
-    # API configuration
     BASE_URL: "https://api.example.com"
     API_VERSION: "v1"
-    API_KEY: "${API_KEY}"
-
-    # Computed variables
-    API_ENDPOINT: "${BASE_URL}/${API_VERSION}"
-    AUTH_HEADER: "Bearer ${API_KEY}"
-
-    # Default values when environment variable not set
-    TIMEOUT: "${REQUEST_TIMEOUT:5000}"
-
-  defaults:
-    headers:
-      Authorization: "${AUTH_HEADER}"
-    timeout: "${TIMEOUT}"
 
 requests:
   - name: Get Users
-    url: "${API_ENDPOINT}/users"
+    url: "${BASE_URL}/${API_VERSION}/users"
     method: GET
+    timeout: ${REQUEST_TIMEOUT:5000}       # default when the variable is not set
+    headers:
+      Authorization: "Bearer ${API_KEY}"   # from the environment
 
   - name: Create User
-    url: "${API_ENDPOINT}/users"
+    url: "${BASE_URL}/${API_VERSION}/users"
     method: POST
+    headers:
+      Content-Type: "application/json"
     body:
       name: "John Doe"
 ```
@@ -262,17 +257,13 @@ global:
 
   # Global variables
   variables:
-    BASE_URL: "${API_BASE_URL:https://api.example.com}"
-    API_KEY: "${API_KEY}"
-    TRACE_ID: "${UUID}"
+    BASE_URL: "https://api.example.com"
 
   # Global defaults
   defaults:
     proxy: "http://proxy.company.com:8080"
     headers:
       User-Agent: "curl-runner/2.0"
-      X-Trace-ID: "${TRACE_ID}"
-      Authorization: "Bearer ${API_KEY}"
     timeout: 8000
     retry:
       count: 3
@@ -282,6 +273,9 @@ global:
 requests:
   - name: Example
     url: "${BASE_URL}/data"
+    headers:
+      Authorization: "Bearer ${API_KEY}"   # ${...} goes in request fields, not defaults
+      X-Trace-ID: "${UUID}"
 ```
 
 ## SSL/TLS Configuration
