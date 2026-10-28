@@ -162,7 +162,7 @@ request:
     seoTitle: 'Retry failed curl requests with backoff',
     headline: 'Flaky networks shouldn’t fail your suite.',
     description:
-      'Retry failed requests with a count, a delay and exponential backoff, per request or per file. 429 and 5xx get another try; a 400 doesn’t.',
+      'Retry failed curl requests with a count, delay and backoff. 429, 500, 502, 503 and 504 retry by default; a 400 doesn’t.',
     example: {
       filename: 'retry.yaml',
       yaml: yaml(`
