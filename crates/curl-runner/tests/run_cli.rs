@@ -316,6 +316,17 @@ fn dry_run_prints_commands_and_exits_0() {
 }
 
 #[test]
+fn global_http2_reaches_dry_run_commands() {
+    let yaml = "global:\n  http2: true\nrequests:\n  - url: \"{BASE}/json/user\"\n  - url: \"{BASE}/json/users\"\n    http2: false\n";
+    let e = setup(&[("t.yaml", yaml)]);
+    let (code, out, _) = e.run(&["t.yaml", "--dry-run"]);
+    assert_eq!(code, 0);
+    assert_eq!(out.matches("--http2").count(), 1, "{out}");
+    let (_, out, _) = e.run(&["t.yaml", "--dry-run", "--http2"]);
+    assert_eq!(out.matches("--http2").count(), 2, "{out}");
+}
+
+#[test]
 fn directory_and_quiet() {
     let e = setup(&[("tests/a.yaml", PASS2), ("tests/sub/b.yaml", PASS2)]);
     let (code, out, _) = e.run(&["tests/", "-q"]);

@@ -342,8 +342,16 @@ pub fn prepare_raw(
     if let Some(v) = &head.variables {
         variables.extend(v.iter().map(|(k, v)| (k.clone(), v.clone())));
     }
+    // `global.http2` is the lowest-priority source of `defaults.http2`.
+    let global_http2 = RequestConfig {
+        http2: global.http2,
+        ..Default::default()
+    };
     let file_defaults = spread_defaults(
-        &spread_defaults(&layers.base, &global.defaults.clone().unwrap_or_default()),
+        &spread_defaults(
+            &spread_defaults(&layers.base, &global_http2),
+            &global.defaults.clone().unwrap_or_default(),
+        ),
         &head.defaults.unwrap_or_default(),
     );
     let defaults = to_json(&spread_defaults(&file_defaults, &layers.overrides));
@@ -389,6 +397,11 @@ pub fn prepare_raw(
             };
             let mut m = merge_request_json(&defaults, &r);
             if let Json::Object(o) = &mut m {
+                // `--http2` is an explicit command-line choice: it beats the
+                // request's own `http2`.
+                if let Some(h) = layers.overrides.http2 {
+                    o.insert("http2".into(), Json::Bool(h));
+                }
                 o.insert("sourceFile".into(), source_file.clone());
                 o.insert("sourceOutputConfig".into(), stamp_output.clone());
             }

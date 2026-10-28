@@ -35,10 +35,9 @@ Configure HTTP/2 in your YAML files globally or per-request.
 ### Global Configuration
 
 ```yaml title="Global HTTP/2"
-# Enable HTTP/2 globally via defaults
+# Enable HTTP/2 for every request in the file
 global:
-  defaults:
-    http2: true
+  http2: true
 
 requests:
   - name: Get Users
@@ -49,6 +48,8 @@ requests:
     url: https://api.example.com/posts
     method: GET
 ```
+
+`global.defaults.http2` works too and wins over `global.http2` if both are set.
 
 ### Per-Request Configuration
 
@@ -94,8 +95,7 @@ Or configure it in YAML:
 global:
   execution: parallel
   maxConcurrency: 10
-  defaults:
-    http2: true
+  http2: true
 
 requests:
   - name: Request 1
@@ -117,4 +117,4 @@ requests:
   - Server must support HTTP/2 (most modern servers do)
   - Falls back to HTTP/1.1 if server doesn't support it
   - Requires HTTPS for most servers (HTTP/2 over TLS)
-  - Per-request config overrides global setting
+  - Per-request `http2` overrides the global setting; the `--http2` flag applies to every request and wins over both

@@ -710,8 +710,7 @@ requests:
       yaml: yaml(`
 # Or for a whole run: curl-runner feed.yaml --http2
 global:
-  defaults:
-    http2: true
+  http2: true
 
 requests:
   - name: Feed over HTTP/2

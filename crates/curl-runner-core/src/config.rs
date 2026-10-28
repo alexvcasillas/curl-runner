@@ -191,8 +191,11 @@ pub fn defaults_layers(
     let mut derived = GlobalConfig::default();
     apply_env_overrides(&mut derived, &env);
     apply_cli_options(&mut derived, cli);
+    // `global.http2` is the lowest-priority source of `defaults.http2`.
+    let mut base_defaults = base.defaults.unwrap_or_default();
+    base_defaults.http2 = base_defaults.http2.or(base.http2);
     DefaultsLayers {
-        base: base.defaults.unwrap_or_default(),
+        base: base_defaults,
         overrides: derived.defaults.unwrap_or_default(),
         output_overrides: derived.output.unwrap_or_default(),
     }
@@ -1229,6 +1232,46 @@ mod tests {
         let r = f.requests[0].retry.as_ref().unwrap();
         assert_eq!((r.count, r.delay), (Some(2), Some(5000)));
         assert_eq!(f.requests[0].timeout, Some(777));
+    }
+
+    fn http2_of(yaml: &str, c: &CliOptions) -> Vec<Option<bool>> {
+        let file = parser::global_from_raw(&parser::parse_raw(yaml).unwrap()).unwrap();
+        let layers = defaults_layers(None, &file, &no_env, c);
+        parse_file(yaml, &layers)
+            .requests
+            .iter()
+            .map(|r| r.http2)
+            .collect()
+    }
+
+    #[test]
+    fn global_http2_applies_to_every_request() {
+        let y = "global:\n  http2: true\nrequests:\n  - url: http://a\n  - url: http://b\n";
+        assert_eq!(http2_of(y, &cli(|_| {})), vec![Some(true), Some(true)]);
+    }
+
+    #[test]
+    fn request_http2_false_beats_global_http2() {
+        let y = "global:\n  http2: true\nrequests:\n  - url: http://a\n    http2: false\n  - url: http://b\n";
+        assert_eq!(http2_of(y, &cli(|_| {})), vec![Some(false), Some(true)]);
+    }
+
+    #[test]
+    fn defaults_http2_beats_global_http2_and_still_works_alone() {
+        let y =
+            "global:\n  http2: true\n  defaults:\n    http2: false\nrequests:\n  - url: http://a\n";
+        assert_eq!(http2_of(y, &cli(|_| {})), vec![Some(false)]);
+        let y = "global:\n  defaults:\n    http2: true\nrequests:\n  - url: http://a\n";
+        assert_eq!(http2_of(y, &cli(|_| {})), vec![Some(true)]);
+    }
+
+    #[test]
+    fn cli_http2_beats_request_defaults_and_global() {
+        let y = "global:\n  http2: false\n  defaults:\n    http2: false\nrequests:\n  - url: http://a\n    http2: false\n";
+        assert_eq!(
+            http2_of(y, &cli(|c| c.http2 = Some(true))),
+            vec![Some(true)]
+        );
     }
 
     #[test]
