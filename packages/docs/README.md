@@ -52,13 +52,13 @@ git clone https://github.com/alexvcasillas/curl-runner.git
 cd curl-runner
 
 # Install dependencies
-bun install
+pnpm install
 
 # Start the development server
-bun run dev:docs
+pnpm dev:docs
 
 # Or run all packages in development mode
-bun run dev
+pnpm dev
 ```
 
 The documentation site will be available at [http://localhost:3000](http://localhost:3000).
@@ -67,10 +67,10 @@ The documentation site will be available at [http://localhost:3000](http://local
 
 ```bash
 # Build the documentation site
-bun run build:docs
+pnpm build:docs
 
 # Start the production server
-bun run start:docs
+pnpm start:docs
 ```
 
 ## 🏗️ Architecture
@@ -316,21 +316,20 @@ The site is fully responsive with breakpoints:
 
 ```bash
 # Development
-bun run dev                    # Start development server
-bun run dev:docs              # Start docs development server only
+pnpm dev                    # Start development server
+pnpm dev:docs              # Start docs development server only
 
 # Building
-bun run build                 # Build for production
-bun run build:docs           # Build docs only
-bun run start                 # Start production server
+pnpm build                 # Build for production
+pnpm build:docs           # Build docs only
+pnpm start                 # Start production server
 
 # Content Generation
-bun run generate-markdown     # Generate markdown from JSX components
 
 # Code Quality
-bun run format               # Format code with Biome
-bun run lint                 # Lint code
-bun run check               # Format and fix issues
+pnpm format               # Format code with Biome
+pnpm lint                 # Lint code
+pnpm check               # Format and fix issues
 ```
 
 ### Development Best Practices
@@ -345,10 +344,10 @@ bun run check               # Format and fix issues
 
 ```bash
 # Run component tests
-bun test
+pnpm test
 
 # Visual regression testing (manual)
-bun run dev:docs
+pnpm dev:docs
 # Navigate and test in browser
 ```
 
@@ -361,7 +360,7 @@ bun run dev:docs
    ```
    Framework Preset: Next.js
    Root Directory: packages/docs
-   Build Command: bun run build
+   Build Command: pnpm build
    Output Directory: .next
    ```
 3. **Environment variables**: Configure any needed environment variables
@@ -371,7 +370,7 @@ bun run dev:docs
 
 ```bash
 # Build the static site
-bun run build:docs
+pnpm build:docs
 
 # The output will be in .next/ directory
 # Upload to your hosting provider
@@ -423,7 +422,7 @@ npx @next/bundle-analyzer
 1. **Install shadcn/ui component**:
 
 ```bash
-bunx shadcn-ui@latest add button
+pnpm dlx shadcn-ui@latest add button
 ```
 
 2. **Customize in components/ui/**:
@@ -544,7 +543,7 @@ export const metadata: Metadata = {
 1. **Fork the repository**
 2. **Create a feature branch**: `git checkout -b docs/new-feature`
 3. **Make your changes**: Update content, components, or styles
-4. **Test locally**: `bun run dev:docs`
+4. **Test locally**: `pnpm dev:docs`
 5. **Commit changes**: Follow conventional commit format
 6. **Open a pull request**: Describe your changes clearly
 

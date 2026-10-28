@@ -87,21 +87,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
           node-version: "24"
+          cache: pnpm
 
       - name: Install latest npm
         run: npm install -g npm@latest
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
       - name: Install Dependencies
-        run: bun install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Download binaries
         if: ${{ needs.build.result == 'success' }}
@@ -117,7 +116,7 @@ jobs:
         id: changesets
         uses: changesets/action@v1
         with:
-          version: bun run version
+          version: pnpm run version
           publish: bash scripts/npm-publish.sh dist-bin
           commit: "chore: version packages"
           title: "chore: version packages"

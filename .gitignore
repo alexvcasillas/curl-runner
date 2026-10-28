@@ -1,9 +1,8 @@
-# dependencies (bun install)
+# dependencies (pnpm install)
 node_modules
 
 # output
 out
-packages/remotion/out
 dist
 *.tgz
 

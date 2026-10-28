@@ -58,7 +58,7 @@ script, Windows notes and how the npm package works.
 ### Build from source
 
 Prerequisites: [Rust](https://rustup.rs) (the toolchain is pinned in `rust-toolchain.toml`).
-[Bun](https://bun.sh) is only needed for the documentation site.
+[Node](https://nodejs.org) 24 and [pnpm](https://pnpm.io) are only needed for the documentation site.
 
 ```bash
 git clone https://github.com/alexvcasillas/curl-runner.git
@@ -68,7 +68,7 @@ cd curl-runner
 cargo build --release -p curl-runner
 
 # Documentation site only
-bun install
+pnpm install
 ```
 
 ## 🚀 Quick Start
@@ -172,35 +172,35 @@ curl-runner/
 
 ```bash
 # Install dependencies for all packages
-bun install
+pnpm install
 
 # CLI (Rust)
 cargo run -p curl-runner -- packages/cli/examples/simple.yaml
-cargo build --release -p curl-runner               # or: bun run build:cli
+cargo build --release -p curl-runner               # or: pnpm build:cli
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace                             # or: bun run test
+cargo test --workspace                             # or: pnpm test
 
 # Documentation site
-bun run dev:docs         # Development server
-bun run build:docs       # Build documentation site
+pnpm --filter @curl-runner/docs dev         # Development server
+pnpm --filter @curl-runner/docs build       # Build documentation site
 
 # Code quality (TypeScript: docs site and tooling)
-bun run format           # Format code with Biome
-bun run lint             # Lint code with Biome
-bun run check            # Format and fix all issues
-bun run check:ci         # CI-friendly check
+pnpm format           # Format code with Biome
+pnpm lint             # Lint code with Biome
+pnpm check            # Format and fix all issues
+pnpm check:ci         # CI-friendly check
 ```
 
 ### Running the Documentation Site
 
 ```bash
 # Start development server
-bun run dev:docs
+pnpm --filter @curl-runner/docs dev
 
 # Build and start production server
-bun run build:docs
-bun run start:docs
+pnpm --filter @curl-runner/docs build
+pnpm --filter @curl-runner/docs start
 ```
 
 Visit [http://localhost:3000](http://localhost:3000) to view the documentation.
@@ -404,7 +404,7 @@ This project is licensed under the MIT License. See [LICENSE.md](LICENSE.md) for
 ## 🙏 Acknowledgments
 
 - **[Rust](https://www.rust-lang.org/)** and **[libcurl](https://curl.se/libcurl/)** - The CLI runtime
-- **[Bun](https://bun.sh)** - JavaScript runtime and package manager for the docs site
+- **[pnpm](https://pnpm.io)** - Package manager for the docs site
 - **[Next.js](https://nextjs.org/)** - The React framework for production
 - **[Biome](https://biomejs.dev/)** - Fast formatter and linter
 - **[Tailwind CSS](https://tailwindcss.com/)** - Utility-first CSS framework

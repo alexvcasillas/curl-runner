@@ -34,7 +34,7 @@ This project and everyone participating in it is governed by our Code of Conduct
 ### Prerequisites
 
 - **[Rust](https://rustup.rs)** (the toolchain is pinned in `rust-toolchain.toml`; needed for the CLI)
-- **[Bun](https://bun.sh)** v1.2.21 or higher (needed for the documentation site and repo tooling only; the CLI itself does not use Bun)
+- **[Node](https://nodejs.org)** 24 and **[pnpm](https://pnpm.io)** (needed for the documentation site and repo tooling only; the CLI itself does not use them)
 - **Git** for version control
 - **Basic understanding** of HTTP and REST APIs
 
@@ -50,18 +50,18 @@ cd curl-runner
 git remote add upstream https://github.com/yourusername/curl-runner.git
 
 # Install dependencies (docs site and tooling)
-bun install
+pnpm install
 
 # Verify everything works
 cargo test --workspace
-bun run build:docs
+pnpm --filter @curl-runner/docs build
 ```
 
 ## 🛠️ Development Setup
 
 ### Workspace Overview
 
-curl-runner is a monorepo: a Rust workspace for the CLI and a Bun workspace for the npm wrapper and the documentation site:
+curl-runner is a monorepo: a Rust workspace for the CLI and a pnpm workspace for the npm wrapper and the documentation site:
 
 ```
 crates/
@@ -78,24 +78,24 @@ parity/                  # TS vs Rust parity harness (see parity/README.md)
 
 ```bash
 # Install dependencies for all packages
-bun install
+pnpm install
 
 # CLI (Rust)
-cargo run -p curl-runner -- <args>   # or: bun run cli <args>
-cargo build --release -p curl-runner # or: bun run build:cli
+cargo run -p curl-runner -- <args>   # or: pnpm cli <args>
+cargo build --release -p curl-runner # or: pnpm build:cli
 cargo fmt --all                      # Format
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace               # or: bun run test
+cargo test --workspace               # or: pnpm test
 
 # Documentation site
-bun run dev:docs         # Development server
-bun run build:docs       # Build documentation site
+pnpm --filter @curl-runner/docs dev         # Development server
+pnpm --filter @curl-runner/docs build       # Build documentation site
 
 # Code quality (TypeScript: docs site and tooling)
-bun run format           # Format with Biome
-bun run lint             # Lint with Biome
-bun run check            # Format and fix issues
-bun run check:ci         # CI-friendly check
+pnpm format           # Format with Biome
+pnpm lint             # Lint with Biome
+pnpm check            # Format and fix issues
+pnpm check:ci         # CI-friendly check
 ```
 
 ## 📁 Project Structure
@@ -201,12 +201,12 @@ cargo test --workspace
 cargo run -p curl-runner -- packages/cli/examples/
 
 # Test documentation site
-bun run dev:docs  # Visit http://localhost:3000
+pnpm --filter @curl-runner/docs dev  # Visit http://localhost:3000
 
 # Check code quality
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-bun run check
+pnpm check
 ```
 
 ### 5. Commit Changes
@@ -258,9 +258,9 @@ cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 
 # TypeScript (docs site)
-bun run format
-bun run check
-bun run lint
+pnpm format
+pnpm check
+pnpm lint
 ```
 
 ### File Organization
@@ -381,7 +381,7 @@ async function executeRequests(
 
 1. **Update Documentation:** Ensure docs reflect your changes
 2. **Add Tests:** Include tests for new functionality
-3. **Check Code Quality:** Run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` (plus `bun run check` for TypeScript changes)
+3. **Check Code Quality:** Run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` (plus `pnpm check` for TypeScript changes)
 4. **Update Examples:** Add/update YAML examples if needed
 5. **Write Clear Description:** Explain what and why
 
@@ -568,13 +568,10 @@ cargo run -p curl-runner -- -p packages/cli/examples/
 
 ```bash
 # Start docs development server
-bun run dev:docs
-
-# Generate documentation from JSX components
-bun run --filter '@curl-runner/docs' generate-markdown
+pnpm --filter @curl-runner/docs dev
 
 # Build docs for production
-bun run build:docs
+pnpm --filter @curl-runner/docs build
 ```
 
 ### Debugging

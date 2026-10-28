@@ -2,7 +2,7 @@
 # Stamp the version of packages/cli/package.json (bumped by `changeset version`)
 # into the Cargo workspace: [workspace.package] version, the pinned
 # curl-runner-core dependency and the workspace entries of Cargo.lock.
-# Runs as part of `bun run version`, so the version PR carries both bumps.
+# Runs as part of `pnpm run version`, so the version PR carries both bumps.
 # Usage: sync-cargo-version.sh [repo-root]
 set -euo pipefail
 

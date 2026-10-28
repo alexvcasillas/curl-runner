@@ -63,7 +63,7 @@ Why this design:
   version `0.0.0`. At release, `scripts/npm-stage.sh` stamps them with the
   `@curl-runner/cli` version, copies in the CI-built binaries and adds the
   exact-version `optionalDependencies` to this package (kept out of git so
-  `bun.lock` never points at unpublished versions). `scripts/npm-publish.sh`
+  `pnpm-lock.yaml` never points at unpublished versions). `scripts/npm-publish.sh`
   then publishes the five platform packages before `changeset publish`
   publishes `@curl-runner/cli`.
 
@@ -102,7 +102,7 @@ cargo build --release -p curl-runner
 cargo run -p curl-runner -- [files...] [options]
 
 # Or use the workspace script
-bun run cli [files...] [options]
+pnpm cli [files...] [options]
 ```
 
 ## 🚀 Quick Start

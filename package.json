@@ -3,21 +3,18 @@
   "version": "1.0.0",
   "private": true,
   "description": "curl-runner monorepo - CLI tool and documentation",
-  "workspaces": [
-    "packages/*"
-  ],
   "scripts": {
-    "start:docs": "bun run --filter '@curl-runner/docs' start",
-    "dev": "bun run --filter '*' dev",
-    "dev:docs": "bun run --filter '@curl-runner/docs' dev",
-    "build": "bun run --filter '*' build",
-    "build:docs": "bun run --filter '@curl-runner/docs' build",
-    "format": "bunx @biomejs/biome format --write .",
-    "lint": "bunx @biomejs/biome lint .",
-    "check": "bunx @biomejs/biome check --write .",
-    "check:ci": "bunx @biomejs/biome ci .",
-    "typecheck": "bun run --filter '*' typecheck",
-    "typecheck:docs": "bun run --filter '@curl-runner/docs' typecheck",
+    "start:docs": "pnpm --filter '@curl-runner/docs' start",
+    "dev": "pnpm --filter '*' dev",
+    "dev:docs": "pnpm --filter '@curl-runner/docs' dev",
+    "build": "pnpm --filter '*' build",
+    "build:docs": "pnpm --filter '@curl-runner/docs' build",
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "check": "biome check --write .",
+    "check:ci": "biome ci .",
+    "typecheck": "pnpm --filter '*' typecheck",
+    "typecheck:docs": "pnpm --filter '@curl-runner/docs' typecheck",
     "test": "cargo test --workspace",
     "changeset": "changeset",
     "version": "changeset version && bash scripts/sync-cargo-version.sh",
@@ -27,18 +24,15 @@
     "build:cli": "cargo build --release -p curl-runner"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.2.2",
+    "@biomejs/biome": "2.2.2",
     "@changesets/changelog-github": "^0.5.1",
     "@changesets/cli": "^2.29.6",
-    "@types/bun": "latest",
     "@types/node": "^24.3.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
     "typescript": "^5.0.0"
   },
-  "engines": {
-    "bun": ">=1.2.21"
-  },
+  "packageManager": "pnpm@12.16.1",
   "repository": {
     "type": "git",
     "url": "https://github.com/alexvcasillas/curl-runner.git"
@@ -57,7 +51,7 @@
   "license": "MIT",
   "lint-staged": {
     "*.{js,ts,tsx,jsx,json,css,md}": [
-      "bunx @biomejs/biome check --write --no-errors-on-unmatched"
+      "biome check --write --no-errors-on-unmatched"
     ]
   },
   "dependencies": {
