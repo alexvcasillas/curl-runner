@@ -272,6 +272,9 @@ importers:
       cmdk:
         specifier: ^1.1.1
         version: 1.1.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      geist:
+        specifier: ^1.8.2
+        version: 1.8.2(next@16.1.4(@babel/core@7.29.7)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))
       gsap:
         specifier: ^3.13.0
         version: 3.15.0
@@ -2051,6 +2054,11 @@ packages:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
+
+  geist@1.8.2:
+    resolution: {integrity: sha512-fRF4sbJ9qcCxPb35cVtKBAwYlTt1IbU9nkbPi0a+xyZqPIjCJ2BY8ekGhx6/SGSZKrR7/UuL57r/eeDQ1Xy11g==}
+    peerDependencies:
+      next: '>=13.2.0'
 
   gensync@1.0.0-beta.2:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
@@ -4634,6 +4642,10 @@ snapshots:
 
   fsevents@2.3.3:
     optional: true
+
+  geist@1.8.2(next@16.1.4(@babel/core@7.29.7)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)):
+    dependencies:
+      next: 16.1.4(@babel/core@7.29.7)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
 
   gensync@1.0.0-beta.2: {}
 

@@ -1,20 +1,11 @@
 import { Analytics } from '@vercel/analytics/next';
+import { GeistMono } from 'geist/font/mono';
+import { GeistSans } from 'geist/font/sans';
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
 import { ThemeProvider } from 'next-themes';
 import './globals.css';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import { PulsoraAnalytics } from '@/components/pulsora-analytics';
-
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-});
-
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.curl-runner.com'),
@@ -172,26 +163,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`dark ${GeistSans.variable} ${GeistMono.variable}`}
+      suppressHydrationWarning
+    >
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link rel="dns-prefetch" href="https://vercel-insights.com" />
         <link rel="dns-prefetch" href="https://vitals.vercel-insights.com" />
-        <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
-        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000" />
-        <meta name="color-scheme" content="light dark" />
+        <meta name="theme-color" content="#0A0A0A" />
+        <meta name="color-scheme" content="dark" />
       </head>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-        suppressHydrationWarning
-      >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
+      <body suppressHydrationWarning>
+        <ThemeProvider attribute="class" forcedTheme="dark" disableTransitionOnChange>
           <PulsoraAnalytics>{children}</PulsoraAnalytics>
         </ThemeProvider>
         <Analytics />
