@@ -323,7 +323,7 @@ dependencies = [
 
 [[package]]
 name = "curl-runner"
-version = "1.25.0"
+version = "2.0.0"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -350,7 +350,7 @@ dependencies = [
 
 [[package]]
 name = "curl-runner-core"
-version = "1.25.0"
+version = "2.0.0"
 dependencies = [
  "chrono",
  "curl",
@@ -1689,7 +1689,7 @@ checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 
 [[package]]
 name = "testkit"
-version = "1.25.0"
+version = "2.0.0"
 dependencies = [
  "curl",
  "serde_json",
