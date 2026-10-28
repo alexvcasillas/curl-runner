@@ -23,7 +23,7 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   {
     label: 'Primary interface',
     curlRunner: 'CLI',
-    // https://www.postman.com/pricing/ (API client, Postman CLI) ; https://learning.postman.com/docs/postman-cli/postman-cli-overview/
+    // https://www.postman.com/downloads/ ("Postman on the web"); https://www.postman.com/pricing/ (Postman CLI); https://learning.postman.com/docs/postman-cli/postman-cli-overview/
     postman: 'Desktop and web app, plus the Postman CLI',
     // https://github.com/Kong/insomnia (cross-platform API client); https://developer.konghq.com/inso-cli/
     insomnia: 'Desktop app, plus the inso CLI',
@@ -49,7 +49,8 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
     insomnia: 'Yes, as test suites',
     // https://curl.se/docs/manpage.html (--fail / --fail-with-body only act on HTTP error status)
     curl: 'Only HTTP error status (--fail)',
-    httpie: 'No',
+    // https://httpie.io/docs/cli/exit-status (--check-status exits non-zero on 3xx/4xx/5xx)
+    httpie: 'Only HTTP error status (--check-status)',
   },
   {
     label: 'Headless / CI',
@@ -77,7 +78,7 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
     label: 'Account needed',
     curlRunner: 'No',
     // https://www.postman.com/pricing/ (Free plan); https://learning.postman.com/docs/getting-started/first-steps/sending-the-first-request/ (sign in to save); https://learning.postman.com/docs/postman-cli/postman-cli-overview/ (login, or init without an account)
-    postman: 'Free plan available; sign-in needed to save and sync',
+    postman: 'Free plan available; sign-in needed to save work',
     // https://github.com/Kong/insomnia (local Scratch Pad without an account; most capabilities need one)
     insomnia: 'Local Scratch Pad needs none; most features do',
     curl: 'No',
