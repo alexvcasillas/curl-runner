@@ -60,7 +60,7 @@ request:
       cache-control: "no-cache"
 ```
 
-**Note:** Header names are case-insensitive, but values are case-sensitive. Use exact values or regex patterns for flexible matching.
+**Note:** Header names are case-insensitive, but values are case-sensitive. Header values are compared exactly: regex patterns and `*` apply to body values only.
 
 ## Body Validation
 
@@ -120,8 +120,6 @@ requests:
       type: "document"
     expect:
       status: 201
-      headers:
-        location: "^/resources/[0-9]+$"  # Regex pattern
       body:
         id: "^[0-9]+$"  # Validate format
         name: "Test Resource"

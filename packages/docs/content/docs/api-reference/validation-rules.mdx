@@ -1,0 +1,725 @@
+---
+title: "Validation Rules"
+description: "Complete reference for response validation using the expect configuration object. Define validation rules for status codes, headers, response time, and response body content."
+---
+
+Complete reference for response validation using the `expect` configuration object. Define validation rules for status codes, headers, response time, and response body content.
+
+## Overview [#overview]
+
+Validation rules allow you to verify that API responses meet expected criteria. Using the `expect` configuration object, you can validate HTTP status codes, response headers, response time, and body content, with support for exact matching, pattern matching, ranges, and wildcards.
+
+```yaml title="expect-config-complete.yaml"
+# Complete ExpectConfig Example
+request:
+  name: "Comprehensive Validation Example"
+  url: "https://api.example.com/users/123"
+  method: GET
+  expect:
+    # Failure expectation (optional - for negative testing)
+    failure: false    # false = expect success (default), true = expect failure
+
+    # Status code validation
+    status: 200
+
+    # Response time validation (milliseconds)
+    responseTime: "< 2000"
+
+    # Response headers validation (exact values)
+    headers:
+      content-type: "application/json"
+      x-api-version: "v2"
+      cache-control: "no-cache, no-store"
+
+    # Response body validation
+    body:
+      id: 123
+      username: "johndoe"
+      email: "john@example.com"
+      profile:
+        firstName: "John"
+        lastName: "Doe"
+        createdAt: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'  # Regex pattern
+        active: true
+        metadata:
+          lastLogin: "*"  # Any value (wildcard)
+          preferences: "*"  # Any object structure
+```
+
+**Important:** When validation rules are present, curl-runner marks a request as failed if any rule does not match, even if the HTTP request itself succeeded. All mismatches are reported together:
+
+```text title="terminal"
+x Mismatch demo [v2]
+   ├─ GET: http://127.0.0.1:8765/users/1
+   ├─ x Status: 200
+   └─ Duration: 1ms | 144.00 B
+
+  ✗ Validation Errors:
+    • status: expected 201|202, got 200
+    • id: expected 2, got 1
+    • Expected role to match one of ["admin","guest"], got "user"
+    • Expected email to match pattern ^admin@, got "leanne@example.com"
+    • Expected token to exist, but it was absent
+    • Expected profile.age to match range < 18, got 34
+    • Expected response time to match > 5000ms, got 1.06ms
+```
+
+## ExpectConfig Properties [#expect-properties]
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `failure` | boolean | When `true`, expect the request to fail with a 4xx/5xx status. Used for negative testing |
+| `status` | number \| number[] | Expected HTTP status code(s) |
+| `headers` | Record&lt;string, string&gt; | Expected response headers (exact values) |
+| `body` | any | Expected response body structure and values |
+| `responseTime` | string | Response time limit in milliseconds, as a range such as `"< 1000"` or `"> 100, < 2000"` |
+
+## Status Code Validation [#status-validation]
+
+Validate that responses return expected HTTP status codes. You can specify a single status code or an array of acceptable codes. Status codes are numbers: patterns such as `"2xx"` are not supported.
+
+```yaml title="status-single.yaml"
+# Single status code (most common)
+request:
+  name: "Expect Success"
+  url: "https://api.example.com/data"
+  expect:
+    status: 200
+```
+
+```yaml title="status-multiple.yaml"
+# Multiple acceptable status codes
+request:
+  name: "Accept Multiple Status"
+  url: "https://api.example.com/users/123"
+  method: GET
+  expect:
+    status: [200, 304]  # OK or Not Modified
+```
+
+```yaml title="status-scenarios.yaml"
+# Different scenarios
+requests:
+  # Successful creation
+  - name: "Create Resource"
+    url: "https://api.example.com/resources"
+    method: POST
+    body:
+      name: "New Resource"
+    expect:
+      status: 201  # Created
+
+  # Successful deletion
+  - name: "Delete Resource"
+    url: "https://api.example.com/resources/123"
+    method: DELETE
+    expect:
+      status: 204  # No Content
+
+  # Conditional request
+  - name: "Conditional Get"
+    url: "https://api.example.com/data"
+    method: GET
+    headers:
+      If-None-Match: "some-etag"
+    expect:
+      status: [200, 304]  # OK or Not Modified
+
+  # Error handling
+  - name: "Expected Not Found"
+    url: "https://api.example.com/users/nonexistent"
+    method: GET
+    expect:
+      status: 404  # Not Found is expected
+
+  # Rate limiting tolerance
+  - name: "Rate Limited Request"
+    url: "https://api.example.com/limited-endpoint"
+    method: GET
+    expect:
+      status: [200, 429]  # OK or Too Many Requests
+```
+
+| Class | Codes |
+| --- | --- |
+| Success (2xx) | 200 OK, 201 Created, 204 No Content |
+| Redirect (3xx) | 301 Moved, 302 Found, 304 Not Modified |
+| Client Error (4xx) | 400 Bad Request, 401 Unauthorized, 404 Not Found |
+| Server Error (5xx) | 500 Internal Error, 502 Bad Gateway, 503 Unavailable |
+
+Without `expect.status`, curl-runner does not judge the status code: a 404 is a completed request.
+
+## Failure Testing (Negative Testing) [#failure-testing]
+
+Use `expect.failure: true` to test that endpoints correctly fail in expected ways. This is useful for testing error handling, authentication failures, validation errors, and other scenarios where you expect the request to return a 4xx or 5xx status.
+
+```yaml title="failure-auth.yaml"
+# Test authentication failure
+request:
+  name: "Test Invalid Authentication"
+  url: "https://api.example.com/protected-resource"
+  method: GET
+  auth:
+    type: bearer
+    token: "invalid-token"
+  expect:
+    failure: true    # Expect this request to fail
+    status: 401      # Should return Unauthorized
+    body:
+      error: "Invalid token"
+      code: "AUTH_ERROR"
+```
+
+```yaml title="failure-validation.yaml"
+# Test validation failure
+request:
+  name: "Test Invalid Input"
+  url: "https://api.example.com/users"
+  method: POST
+  body:
+    name: ""         # Invalid: empty name
+    email: "invalid" # Invalid: malformed email
+  expect:
+    failure: true    # Expect validation to fail
+    status: 400      # Should return Bad Request
+    body:
+      error: "Validation failed"
+```
+
+```yaml title="failure-not-found.yaml"
+# Test resource not found
+request:
+  name: "Test Non-existent Resource"
+  url: "https://api.example.com/users/999999"
+  method: GET
+  expect:
+    failure: true    # Expect resource not found
+    status: 404      # Should return Not Found
+    body:
+      error: "User not found"
+```
+
+```yaml title="failure-rate-limit.yaml"
+# Test rate limiting
+request:
+  name: "Test Rate Limit Exceeded"
+  url: "https://api.example.com/limited-endpoint"
+  method: GET
+  expect:
+    failure: true    # Expect rate limit error
+    status: 429      # Should return Too Many Requests
+    headers:
+      retry-after: "60"  # Exact value of the retry header
+```
+
+```yaml title="failure-mixed.yaml"
+# Mixed success and failure testing
+requests:
+  # Normal success case
+  - name: "Valid Request"
+    url: "https://api.example.com/data"
+    method: GET
+    expect:
+      status: 200    # Normal success expectation
+
+  # Test failure case
+  - name: "Invalid Request"
+    url: "https://api.example.com/data"
+    method: GET
+    headers:
+      authorization: "invalid"
+    expect:
+      failure: true  # Expect this to fail
+      status: 403    # Should be Forbidden
+```
+
+**How failure testing works**
+
+- **Success:** `expect.failure: true`, a 4xx/5xx status, and all other rules pass.
+- **Failed:** `expect.failure: true` and a status below 400 (`Expected request to fail (4xx/5xx) but got status 200`).
+- **Failed:** `expect.failure: true`, a 4xx/5xx status, but another rule (wrong error details) does not match.
+
+**Important:** With `expect.failure: true`, curl-runner inverts the success/failure logic. A 4xx/5xx response that matches your expectations is a successful test result.
+
+## Header Validation [#header-validation]
+
+Validate response headers with exact values. Header names are case-insensitive; values are compared exactly (they are not regular expressions, and `*` is not a wildcard for headers).
+
+```yaml title="header-basic.yaml"
+# Basic header validation
+request:
+  name: "Basic Header Check"
+  url: "https://api.example.com/data"
+  expect:
+    headers:
+      content-type: "application/json"
+      server: "nginx"
+```
+
+```yaml title="header-case.yaml"
+# Case-insensitive header names
+request:
+  name: "Case Insensitive Headers"
+  url: "https://api.example.com/data"
+  expect:
+    headers:
+      CONTENT-TYPE: "application/json"  # Matches the content-type header
+```
+
+```yaml title="header-security.yaml"
+# Security headers validation
+request:
+  name: "Security Headers Check"
+  url: "https://api.secure.example.com/data"
+  expect:
+    headers:
+      strict-transport-security: "max-age=31536000"
+      x-frame-options: "DENY"
+      x-content-type-options: "nosniff"
+```
+
+```yaml title="header-api.yaml"
+# API-specific headers
+request:
+  name: "API Headers Validation"
+  url: "https://api.example.com/data"
+  expect:
+    headers:
+      x-api-version: "v2"
+      x-rate-limit-limit: "1000"
+```
+
+**Multi-value headers:** When a response header appears more than once (for example `Set-Cookie`), the validator passes if your expected value equals any element, or equals the comma-joined whole. For example, `set-cookie: "a=1"` matches the actual values `["a=1", "b=2"]`.
+
+Because header values are literals, `content-type: "^application/json"` fails against `application/json` (the pattern is compared as text). A mismatch looks like this:
+
+```text title="terminal"
+Expected header content-type="^application/json", got "application/json"
+```
+
+### Common Header Validation Patterns [#header-patterns]
+
+- **Content headers:** response content metadata: `content-type`, `content-length`
+- **Security headers:** security policy headers: `strict-transport-security`
+- **API headers:** versioning and tracking: `x-api-version`, `x-request-id`
+- **Rate limiting:** usage limits: `x-rate-limit-remaining`
+
+## Body Validation [#body-validation]
+
+Validate response body content with support for exact matching, partial matching, and nested structures. Only the fields you list are checked.
+
+```yaml title="body-exact.yaml"
+# Exact value matching
+request:
+  name: "Exact Value Match"
+  url: "https://api.example.com/status"
+  expect:
+    body:
+      status: "operational"
+      code: 200
+      message: "All systems operational"
+```
+
+```yaml title="body-nested.yaml"
+# Object structure validation
+request:
+  name: "Object Structure Validation"
+  url: "https://api.example.com/users/123"
+  expect:
+    body:
+      id: 123
+      username: "johndoe"
+      profile:
+        firstName: "John"
+        lastName: "Doe"
+        email: "john@example.com"
+        settings:
+          theme: "dark"
+          notifications: true
+```
+
+```yaml title="body-partial.yaml"
+# Partial matching (only check specific fields)
+request:
+  name: "Partial Matching"
+  url: "https://api.example.com/users/123"
+  expect:
+    body:
+      id: 123       # Only check ID
+      active: true  # Only check active status
+      # Other fields ignored
+```
+
+```yaml title="body-types.yaml"
+# Mixed data types
+request:
+  name: "Mixed Data Types"
+  url: "https://api.example.com/metrics"
+  expect:
+    body:
+      # String values
+      version: "2.1.0"
+      environment: "production"
+
+      # Numeric values
+      uptime: 86400
+      cpu_usage: 0.75
+
+      # Boolean values
+      healthy: true
+      maintenance_mode: false
+
+      # Null values
+      last_error: null
+```
+
+```yaml title="body-text.yaml"
+# A text response body
+request:
+  name: "Health check"
+  url: "https://api.example.com/health"
+  expect:
+    headers:
+      content-type: "text/plain"
+    body: "OK"
+```
+
+### Body Validation Types [#body-validation-types]
+
+| Type | Description | Example |
+| --- | --- | --- |
+| Exact Matching | Values must match exactly | `status: "active"` |
+| Type Validation | JSON types are compared strictly (`1` is not `"1"`) | `active: true`, `count: 42` |
+| Partial Matching | Only specified fields are validated | `id: 123  # others ignored` |
+| Nested Objects | Deep structure validation | `profile: { name: "John" }` |
+| Pattern Matching | A string that looks like a regex | `id: "^[0-9]+$"` |
+| Range Matching | Numeric comparisons | `age: ">= 18, <= 120"` |
+| One of | An array of acceptable values | `role: ["user", "admin"]` |
+| Wildcard | Any value | `token: "*"` |
+| Existence | Key must be present or absent | `token: $exists`, `password: $absent` |
+
+### Arrays [#arrays]
+
+An array in `expect.body` is a list of items that must each match at least one item of the actual array. Order and extra items do not matter.
+
+```yaml title="body-arrays.yaml"
+# Array validation
+request:
+  name: "Array Validation"
+  url: "https://api.example.com/users"
+  expect:
+    body:
+      # The response must contain an item matching each of these
+      - id: 1
+        username: "user1"
+      - id: 2
+        active: true
+```
+
+To check specific positions or the length, use selectors as object keys. They work on a response whose body is an array.
+
+```yaml title="array-selectors.yaml"
+# Array selectors
+request:
+  name: "Array Selectors"
+  url: "https://api.example.com/users"
+  expect:
+    body:
+      length: "> 3"       # Number of items (any range works: ">= 1, <= 100")
+      "[0]":              # First item
+        id: 1
+      "[-1]":             # Last item
+        name: "User 5"
+      "slice(0,2)":       # First two items, matched like an array
+        - id: 2
+```
+
+## Pattern Validation with Regex [#pattern-validation]
+
+Use regular expressions for flexible validation of dynamic content like IDs, timestamps, emails, and custom formats. A string is treated as a regex when it starts with `^`, ends with `$`, or contains `\d`, `\w` or `\s`. The value is converted to text first, so patterns work on numbers too.
+
+```yaml title="pattern-common.yaml"
+# Common patterns
+request:
+  name: "Common Pattern Validation"
+  url: "https://api.example.com/user/profile"
+  expect:
+    body:
+      # Email pattern
+      email: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+      # UUID pattern
+      user_id: '^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$'
+
+      # ISO date pattern
+      created_at: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$'
+
+      # URL pattern
+      avatar_url: '^https?://[\w.-]+\.[a-zA-Z]{2,}(/.*)?$'
+```
+
+```yaml title="pattern-numeric.yaml"
+# Numeric patterns
+request:
+  name: "Numeric Pattern Validation"
+  url: "https://api.example.com/financial/account"
+  expect:
+    body:
+      # Currency amounts (dollars and cents)
+      balance: '^[0-9]+\.[0-9]{2}$'
+
+      # Percentage values
+      interest_rate: '^[0-9]{1,2}\.[0-9]{2}%$'
+
+      # Account numbers
+      account_number: '^[0-9]{10,12}$'
+```
+
+```yaml title="pattern-business.yaml"
+# Custom business patterns
+request:
+  name: "Business Pattern Validation"
+  url: "https://api.example.com/orders/12345"
+  expect:
+    body:
+      # Order ID pattern
+      order_id: '^ORD-[0-9]{8}$'
+
+      # Product SKU pattern
+      sku: '^[A-Z]{3}-[0-9]{4}-[A-Z]{2}$'
+
+      # Status enum validation
+      status: '^(pending|processing|shipped|delivered|cancelled)$'
+```
+
+**Regex escaping:** Write regexes in single-quoted YAML strings so backslashes stay as they are (`'^\d{4}$'`). In double quotes you must double them (`"^\\d{4}$"`).
+
+### Numeric ranges [#numeric-ranges]
+
+A string that starts with a comparison operator is a range. Combine several with commas. `responseTime` uses the same syntax.
+
+```yaml title="ranges.yaml"
+# Range validation
+request:
+  name: "Range Validation"
+  url: "https://api.example.com/analytics"
+  expect:
+    responseTime: "> 100, < 2000"
+    body:
+      views: "> 1000"
+      clicks: ">= 50"
+      conversion: "< 10.5"
+      score: ">= 0, <= 100"
+      metrics:
+        monthly_revenue: ">= 10000, <= 1000000"
+```
+
+### One of several values [#one-of]
+
+```yaml title="one-of.yaml"
+# Multiple acceptable values
+request:
+  name: "One Of"
+  url: "https://api.example.com/settings"
+  expect:
+    body:
+      role: ["user", "admin", "guest"]
+      visible: [true, false]
+      retries: [0, 1, 2]
+```
+
+## Wildcard and Flexible Validation [#wildcard-validation]
+
+Use wildcards (`*`) to accept any value, useful for dynamic or sensitive data. `*` matches any value (including `null`) and does not require the key to exist. Use `$exists` to require the key and `$absent` to require that it is missing.
+
+```yaml title="wildcard-basic.yaml"
+# Wildcard matching (any value)
+request:
+  name: "Wildcard Validation"
+  url: "https://api.example.com/user/session"
+  expect:
+    body:
+      user_id: "*"        # Any user ID value
+      session_token: "*"  # Any token value
+      expires_at: "*"     # Any expiration time
+```
+
+```yaml title="wildcard-exists.yaml"
+# Existence checks
+request:
+  name: "Existence Checks"
+  url: "https://api.example.com/user/123"
+  expect:
+    body:
+      id: 123
+      token: $exists       # Must be present, any value (null counts)
+      password: $absent    # Must NOT be present
+      nick: null           # Must be present and null
+```
+
+```yaml title="wildcard-nested.yaml"
+# Nested wildcard validation
+request:
+  name: "Nested Wildcard"
+  url: "https://api.example.com/complex-data"
+  expect:
+    body:
+      metadata:
+        created_by: "*"     # Any user info
+        custom_fields: "*"  # Any custom field object
+      data:
+        # Specific validation for critical fields
+        id: '^[0-9]+$'
+        status: "active"
+        # Flexible for other fields
+        properties: "*"
+```
+
+### Wildcard Use Cases [#wildcard-use-cases]
+
+- **Dynamic values:** timestamps, UUIDs and tokens that change between requests.
+- **Sensitive data:** check presence without exposing actual values in validation.
+- **Optional fields:** validate fields that may or may not be present.
+- **Complex structures:** allow flexible nested object structures.
+
+## Complex Validation Scenarios [#complex-validation]
+
+Advanced validation examples combining multiple techniques for comprehensive API testing.
+
+```yaml title="complex-order.yaml"
+# Nested object validation with mixed patterns
+request:
+  name: "E-commerce Order Validation"
+  url: "https://api.ecommerce.example.com/orders/12345"
+  expect:
+    status: 200
+    headers:
+      content-type: "application/json"
+    responseTime: "< 2000"
+    body:
+      order:
+        id: '^ORD-[0-9]{8}$'
+        status: '^(pending|confirmed|shipped|delivered)$'
+        customer:
+          id: '^CUST-[0-9]{6}$'
+          email: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+          shipping_address:
+            street: "*"
+            city: "*"
+            state: '^[A-Z]{2}$'            # US state code
+            zip_code: '^[0-9]{5}(-[0-9]{4})?$'  # US ZIP
+        items:
+          - sku: '^[A-Z0-9-]+$'
+            quantity: '^[1-9][0-9]*$'      # Positive integer
+            price: '^[0-9]+\.[0-9]{2}$'
+        totals:
+          subtotal: '^[0-9]+\.[0-9]{2}$'
+          total: '^[0-9]+\.[0-9]{2}$'
+        payment:
+          method: '^(credit_card|paypal|bank_transfer)$'
+          status: '^(pending|completed|failed)$'
+          transaction_id: $exists
+```
+
+```yaml title="complex-pagination.yaml"
+# API response validation with pagination
+request:
+  name: "Paginated Response Validation"
+  url: "https://api.example.com/products?page=1&limit=20"
+  expect:
+    status: 200
+    body:
+      data:
+        - id: '^[0-9]+$'
+          name: '^.+$'       # Any non-empty name
+          price: '^[0-9]+\.[0-9]{2}$'
+          in_stock: true     # Boolean value
+      pagination:
+        current_page: 1
+        per_page: 20
+        total_pages: '^[0-9]+$'
+        has_next: true
+        has_previous: false
+```
+
+```yaml title="complex-error-or-success.yaml"
+# Accept several statuses, check the common parts only
+request:
+  name: "Robust API Validation"
+  url: "https://api.banking.example.com/accounts/123/transactions"
+  expect:
+    status: [200, 400, 401, 403]  # Multiple valid responses
+    body:
+      # Only check fields that are always present
+      request_id: '^[a-f0-9-]{36}$'
+```
+
+## Validation Inheritance and Overrides [#validation-inheritance]
+
+`expect` can be set in `global.defaults`, in `collection.defaults`, and on each request. The most specific level that defines `expect` wins, and it replaces the inherited `expect` as a whole: rules are not merged between levels.
+
+```yaml title="inheritance.yaml"
+# Validation Inheritance and Overrides
+global:
+  defaults:
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+
+collection:
+  name: "API Test Suite"
+
+  # Collection-level defaults replace the global expect
+  defaults:
+    expect:
+      status: 200
+      headers:
+        content-type: "application/json"
+        x-api-version: "v2"
+
+  requests:
+    # Uses the collection expect as is
+    - name: "Standard Request"
+      url: "https://api.example.com/users"
+      method: GET
+
+    # Replaces it completely: only status 202 is checked here
+    - name: "Custom Validation Request"
+      url: "https://api.example.com/upload"
+      method: POST
+      expect:
+        status: 202
+
+    # Repeat the rules you still need
+    - name: "Special Case Request"
+      url: "https://api.example.com/special"
+      method: GET
+      expect:
+        status: [200, 404]
+        headers:
+          x-api-version: "v2"
+```
+
+### Validation Precedence Order [#validation-precedence]
+
+1. **Request-level validation:** `expect` on the request has the highest priority and completely replaces inherited rules.
+2. **Collection-level defaults:** `collection.defaults.expect` replaces the global `expect`.
+3. **Global defaults:** `global.defaults.expect` provides the baseline for requests that do not set their own.
+
+## Common Validation Patterns [#common-patterns]
+
+| Pattern | Use | Example |
+| --- | --- | --- |
+| API authentication | Validate login responses and token formats | `token: '^[A-Za-z0-9\-_]+\.'` |
+| Data creation | Verify new resource creation and IDs | `id: '^[0-9]+$'` with `status: 201` |
+| Error handling | Validate error response structures | `error: { code: "*", message: "*" }` |
+| Pagination | Check paginated response metadata | `total_pages: '^[0-9]+$'` |
+
+## Validation Best Practices [#best-practices]
+
+- **Start Simple, Add Complexity:** begin with basic status code validation, then gradually add header and body validation as needed.
+- **Use Partial Matching:** validate only the fields that matter to avoid brittle tests that break with API changes.
+- **Leverage Patterns for Dynamic Data:** use regex patterns for IDs, timestamps, and other dynamic values that change between requests.
+- **Test Both Success and Error Cases:** include validation for expected error responses to ensure proper error handling.
+- **Use Wildcards for Sensitive Data:** validate presence of tokens and sensitive fields without exposing actual values in test logs.

@@ -20,13 +20,13 @@
     "environment-variables",
     "features/upgrade",
     "---Examples---",
-    "[Basic Usage](/docs/examples/basic)",
-    "[Collection](/docs/examples/collection)",
-    "[Advanced](/docs/examples/advanced)",
+    "examples/basic",
+    "examples/collection",
+    "examples/advanced",
     "---API Reference---",
-    "[Request Object](/docs/api-reference/request-object)",
-    "[Response Object](/docs/api-reference/response-object)",
-    "[Global Settings](/docs/api-reference/global-settings)",
-    "[Validation Rules](/docs/api-reference/validation-rules)"
+    "api-reference/request-object",
+    "api-reference/response-object",
+    "api-reference/global-settings",
+    "api-reference/validation-rules"
   ]
 }

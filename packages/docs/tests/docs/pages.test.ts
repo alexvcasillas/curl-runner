@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { source } from '@/lib/source';
@@ -46,7 +46,17 @@ const FEATURES = [
   'upgrade',
 ].map((slug) => `features/${slug}`);
 
-const MOVED_PAGES = [...GETTING_STARTED, ...FEATURES];
+const REFERENCE_AND_EXAMPLES = [
+  'api-reference/request-object',
+  'api-reference/response-object',
+  'api-reference/global-settings',
+  'api-reference/validation-rules',
+  'examples/basic',
+  'examples/collection',
+  'examples/advanced',
+];
+
+const MOVED_PAGES = [...GETTING_STARTED, ...FEATURES, ...REFERENCE_AND_EXAMPLES];
 
 type TreeNode = { url?: string; children?: unknown[]; index?: unknown };
 
@@ -128,6 +138,38 @@ describe('features docs', () => {
     expect(urls.slice(first, last + 1)).toEqual(
       FEATURES.filter((p) => p !== 'features/upgrade').map((p) => `/docs/${p}`),
     );
+  });
+});
+
+describe('reference and examples docs', () => {
+  it('serves every page from MDX: index + 39 moved pages = 40', () => {
+    // 1 index + 12 getting-started/config/cli + 20 features + 7 reference and examples
+    expect(source.getPages()).toHaveLength(40);
+  });
+
+  it('has removed the old React docs tree and its sidebar config', () => {
+    expect(existsSync(join(__dirname, '../../app/(docs)'))).toBe(false);
+    expect(existsSync(join(__dirname, '../../lib/docs-config.ts'))).toBe(false);
+  });
+
+  it('has no link entries left in the root meta: every entry is a page, folder or separator', () => {
+    const meta = JSON.parse(readFileSync(join(CONTENT_DIR, 'meta.json'), 'utf8')) as {
+      pages: string[];
+    };
+    expect(meta.pages.filter((e) => e.startsWith('[') || e.includes('](/docs/'))).toEqual([]);
+  });
+
+  it('lists the examples, then the API reference, as the last sidebar entries', () => {
+    const urls = flatten(source.pageTree).map((n) => n.url);
+    expect(urls.slice(-7)).toEqual([
+      '/docs/examples/basic',
+      '/docs/examples/collection',
+      '/docs/examples/advanced',
+      '/docs/api-reference/request-object',
+      '/docs/api-reference/response-object',
+      '/docs/api-reference/global-settings',
+      '/docs/api-reference/validation-rules',
+    ]);
   });
 });
 

@@ -1,0 +1,495 @@
+---
+title: "Global Settings"
+description: "Complete reference for global configuration options that control execution behavior, output formatting, and default request settings."
+---
+
+Complete reference for the `global` configuration options that control execution behavior, output formatting, and default request settings. For a guided introduction see [Global Settings](/docs/global-settings).
+
+## Overview [#overview]
+
+Global settings control the overall behavior of `curl-runner` execution, including how requests are processed, output formatting, default values, and variable management. These settings apply to all requests unless overridden at the collection or request level.
+
+<Callout type="warn" title="Values are used as written">
+  Interpolation runs once, over the request fields. A variable value is not interpolated itself (`API_KEY: "${API_KEY}"` stays literal), and `${...}` inside `global.defaults` is not interpolated either. Reference environment variables and global variables in the request fields.
+</Callout>
+
+```yaml title="global-config-complete.yaml"
+# Complete Global Configuration Example
+global:
+  # Execution behavior
+  execution: sequential
+  continueOnError: false
+
+  # Global variables available to all requests
+  variables:
+    BASE_URL: "https://api.example.com"
+    API_VERSION: "v2"
+
+  # Output configuration
+  output:
+    verbose: true
+    showHeaders: true
+    showBody: true
+    showMetrics: true
+    format: pretty
+    prettyLevel: standard  # minimal, standard, or detailed
+    saveToFile: "results/api-test-results.json"
+
+  # Default settings applied to all requests
+  defaults:
+    timeout: 5000
+    headers:
+      User-Agent: "curl-runner/2.0"
+      Accept: "application/json"
+    followRedirects: true
+    maxRedirects: 3
+    retry:
+      count: 2
+      delay: 1000
+
+  # Security controls (secure defaults; opt in/out as needed)
+  security:
+    allowedProtocols: [http, https]  # Block file://, ftp://, gopher:// etc.
+    allowPaths: false                # Confine file paths to the working directory
+
+requests:
+  - name: Get Users
+    url: "${BASE_URL}/${API_VERSION}/users"
+    headers:
+      X-API-Version: "${API_VERSION}"
+```
+
+## Global Configuration Properties [#properties]
+
+| Property | Type | Default | Description |
+| --- | --- | --- | --- |
+| `execution` | `'sequential'` \| `'parallel'` | `'sequential'` | How to execute multiple requests |
+| `continueOnError` | boolean | `false` | Whether to continue execution after errors |
+| `maxConcurrency` | number | unlimited | Maximum concurrent requests in parallel mode |
+| `variables` | object | `{}` | Global variables for all requests |
+| `output` | object | - | Output formatting configuration |
+| `defaults` | object | `{}` | Default request settings for all requests (any property of the [request object](/docs/api-reference/request-object)) |
+| `ssl` | object | - | SSL/TLS settings for all requests: `verify`, `ca`, `cert`, `key` |
+| `connectionPool` | object | - | Connection settings: `enabled`, `maxStreamsPerHost`, `keepaliveTime`, `connectTimeout`. See [Connection Pooling](/docs/features/connection-pooling) |
+| `ci` | object | - | CI exit codes: `strictExit`, `failOn`, `failOnPercentage`. See [CI Integration](/docs/features/ci-integration) |
+| `watch` | object | - | Watch mode: `enabled`, `debounce`, `clear`. See [Watch Mode](/docs/features/watch-mode) |
+| `profile` | object | - | Performance profiling: `iterations`, `warmup`, `concurrency`, `histogram`, `exportFile`. See [Performance Profiling](/docs/features/performance-profiling) |
+| `snapshot` | object | - | Snapshot testing defaults. See [Snapshots](/docs/features/snapshots) |
+| `diff` | object | - | Response diffing defaults. See [Response Diffing](/docs/features/response-diffing) |
+| `env` | object | - | `environment` and `redactSecrets`. See [Environment Files](/docs/features/env-files) |
+| `security.allowedProtocols` | string[] | `['http', 'https']` | URL protocols allowed for requests. Other protocols (file, ftp, gopher, ...) are blocked before curl runs. Override with `--allow-protocol` or `CURL_RUNNER_ALLOWED_PROTOCOLS` |
+| `security.allowPaths` | boolean | `false` | When `false`, `output`, `saveToFile` and `formData` file paths are confined to the working directory. Set `true` (or pass `--allow-path`) to permit paths outside it. SSL `cert`, `key` and `ca` paths are always exempt |
+
+HTTP/2 is enabled per request: set `http2: true` under `global.defaults` (or pass `--http2`). See [HTTP/2](/docs/features/http2).
+
+## Execution Modes [#execution-modes]
+
+Control how multiple requests are executed: sequentially (one after another) or in parallel (simultaneously).
+
+```yaml title="execution-sequential.yaml"
+# Sequential execution (default)
+global:
+  execution: sequential  # Requests run one after another
+  continueOnError: false # Stop on first error
+
+collection:
+  name: "Sequential API Tests"
+  requests:
+    - name: "Step 1: Login"
+      url: "https://api.example.com/login"
+      method: POST
+      # Must complete before next request
+
+    - name: "Step 2: Get Data"
+      url: "https://api.example.com/data"
+      method: GET
+
+    - name: "Step 3: Process"
+      url: "https://api.example.com/process"
+      method: POST
+```
+
+```yaml title="execution-parallel.yaml"
+# Parallel execution for performance
+global:
+  execution: parallel    # All requests run at the same time
+  continueOnError: true  # Continue even if some fail
+  maxConcurrency: 5      # At most 5 at once
+
+collection:
+  name: "Load Testing"
+  requests:
+    - name: "Load Test 1"
+      url: "https://api.example.com/endpoint1"
+
+    - name: "Load Test 2"
+      url: "https://api.example.com/endpoint2"
+
+    - name: "Load Test 3"
+      url: "https://api.example.com/endpoint3"
+```
+
+- **Sequential (default):** use for dependent requests, workflows and login sequences. Order is predictable and later requests can use earlier responses through `store`. Total time is longer.
+- **Parallel:** use for load testing and independent health checks. Faster, with higher throughput, but requests cannot depend on each other and it is resource intensive.
+
+## Error Handling Configuration [#error-handling]
+
+Configure how `curl-runner` responds to request failures and validation errors.
+
+```yaml title="error-fail-fast.yaml"
+# Stop on first error (strict mode)
+global:
+  continueOnError: false  # Default behavior
+  execution: sequential
+
+collection:
+  name: "Strict Setup"
+  requests:
+    - name: "Critical Setup"
+      url: "https://api.example.com/setup"
+      method: POST
+      # If this fails, execution stops
+
+    - name: "Dependent Operation"
+      url: "https://api.example.com/operation"
+      method: POST
+      # Only runs if setup succeeds
+```
+
+```yaml title="error-resilient.yaml"
+# Continue on error (resilient mode)
+global:
+  continueOnError: true   # Keep going despite failures
+  execution: sequential
+
+collection:
+  name: "Resilient Checks"
+  requests:
+    - name: "Optional Check 1"
+      url: "https://api.example.com/check1"
+      # If it fails, continue to the next
+
+    - name: "Optional Check 2"
+      url: "https://api.example.com/check2"
+      # Runs regardless of check1 result
+
+    - name: "Important Operation"
+      url: "https://api.example.com/important"
+      # Runs regardless of previous failures
+```
+
+### Error Handling Strategies [#error-strategies]
+
+- **Fail-fast mode (`continueOnError: false`):** stop execution on the first error. Best for critical workflows.
+- **Resilient mode (`continueOnError: true`):** continue despite errors. Best for comprehensive testing. The same switch is available as `--continue-on-error` on the command line.
+
+## Global Variables [#global-variables]
+
+Define variables that are available to all requests in the configuration. Collection variables override them, and environment variables are referenced with `${NAME}` in the request fields.
+
+```yaml title="global-variables.yaml"
+# Global Variables Configuration
+global:
+  variables:
+    # Environment configuration
+    BASE_URL: "https://api.production.example.com"
+    API_VERSION: "v2"
+    ENVIRONMENT: "production"
+
+    # Common values
+    USER_AGENT: "MyApp/1.0.0 (production)"
+
+collection:
+  name: "Variables"
+  variables:
+    # Override global variables at collection level
+    ENVIRONMENT: "staging"  # Override global
+    COLLECTION_ID: "api_tests_v2"
+
+  requests:
+    - name: "Use Global Variables"
+      url: "${BASE_URL}/${API_VERSION}/users"
+      headers:
+        Authorization: "Bearer ${API_KEY}"   # API_KEY comes from the environment
+        User-Agent: "${USER_AGENT}"
+        X-Environment: "${ENVIRONMENT}"
+        X-Request-ID: "${UUID}"
+
+    - name: "Second Request"
+      url: "${BASE_URL}/${API_VERSION}/orders"
+      headers:
+        X-Environment: "${ENVIRONMENT}"   # staging: the collection value wins
+```
+
+**Variable precedence:** collection variables override global variables, and both are used before environment variables. Use the `${VAR_NAME}` syntax to reference environment variables. See [Variables](/docs/variables).
+
+## Output Configuration [#output-configuration]
+
+Control how results are displayed and saved, including verbosity, format, and file output options.
+
+```yaml title="output-minimal.yaml"
+# Minimal output
+global:
+  output:
+    verbose: false
+    showHeaders: false
+    showBody: false
+    showMetrics: false
+    format: json      # Clean JSON output
+
+requests:
+  - name: Health
+    url: https://api.example.com/health
+```
+
+```yaml title="output-detailed.yaml"
+# Detailed output for debugging
+global:
+  output:
+    verbose: true      # Show detailed information
+    showHeaders: true  # Include response headers
+    showBody: true     # Show response body content
+    showMetrics: true  # Performance metrics
+    format: pretty     # Human-readable format
+
+requests:
+  - name: Health
+    url: https://api.example.com/health
+```
+
+```yaml title="output-save.yaml"
+# Save results to file
+global:
+  output:
+    verbose: true
+    format: json
+    saveToFile: "test-results/api-tests.json"
+
+requests:
+  - name: Health
+    url: https://api.example.com/health
+```
+
+```yaml title="output-raw.yaml"
+# Raw output for piping
+global:
+  output:
+    format: raw       # Raw response content only
+    showHeaders: false
+    showBody: true
+    saveToFile: "data.txt"
+
+requests:
+  - name: Health
+    url: https://api.example.com/health
+```
+
+| Output Option | Type | Description |
+| --- | --- | --- |
+| `verbose` | boolean | Show detailed execution information |
+| `quiet` | boolean | Suppress all output except errors |
+| `showHeaders` | boolean | Include response headers in output |
+| `showBody` | boolean | Include response body content |
+| `showMetrics` | boolean | Show performance timing metrics |
+| `format` | `'json'` \| `'pretty'` \| `'raw'` | Output format style |
+| `prettyLevel` | `'minimal'` \| `'standard'` \| `'detailed'` | Pretty format verbosity level |
+| `saveToFile` | string | File path to save results |
+
+### Output Format Details [#output-formats]
+
+- **JSON format:** structured, machine-readable output for CI/CD integration.
+- **Pretty format:** human-readable, colorized output with configurable verbosity levels, for development.
+- **Raw format:** the raw response content only, for data extraction.
+
+See [Output Formats](/docs/features/output-formats) for samples of each.
+
+### Pretty Format Levels [#pretty-levels]
+
+The pretty format supports three verbosity levels to control how much information is displayed.
+
+- **Minimal:** shows only request name, method, URL, and status. No body, headers, or metrics. Use for quick status checks and CI/CD summaries.
+- **Standard:** shows body and metrics when enabled via `showBody` / `showMetrics`. Use for development, testing and debugging.
+- **Detailed:** shows all available information: headers, body, detailed metrics, request details, and commands. Use for troubleshooting and detailed analysis.
+
+## Default Request Settings [#default-settings]
+
+Configure default values that apply to all requests, reducing repetition and ensuring consistency across your API configurations.
+
+```yaml title="defaults-config.yaml"
+# Default Request Settings
+global:
+  defaults:
+    # Timeouts and retries
+    timeout: 10000        # 10 seconds default
+    followRedirects: true
+    maxRedirects: 5
+    retry:
+      count: 3
+      delay: 2000
+      backoff: 2
+      retryableStatuses: [429, 500, 502, 503, 504]
+
+    # Common headers for all requests
+    headers:
+      User-Agent: "curl-runner/2.0"
+      Accept: "application/json"
+      X-Client-Version: "1.2.3"
+
+    # Security settings
+    insecure: false       # Verify SSL certificates
+
+    # Response validation
+    expect:
+      status: [200, 201]
+
+collection:
+  name: "API Tests with Defaults"
+
+  # Collection-level defaults override global
+  defaults:
+    headers:
+      X-Collection: "api-tests"
+    timeout: 15000  # Override global timeout
+
+  requests:
+    - name: "Quick Request"
+      url: "https://api.example.com/quick"
+      # Uses the defaults from global and collection
+
+    - name: "Custom Request"
+      url: "https://api.example.com/custom"
+      timeout: 30000  # Override timeout just for this request
+      headers:
+        X-Special: "custom-header"  # Adds to the default headers
+
+    - name: "Slow Request"
+      url: "https://api.example.com/slow"
+      retry:
+        count: 5      # Override the retry count, keep the other retry fields
+        delay: 5000
+```
+
+### Setting Precedence Order [#default-precedence]
+
+1. **Command-line flags and `CURL_RUNNER_*` environment variables:** win over everything in the file.
+2. **Request-level settings:** values on an individual request override all defaults.
+3. **Collection-level defaults:** `collection.defaults` override global defaults.
+4. **Global defaults:** `global.defaults` provide fallback values for unspecified settings.
+
+`headers`, `params`, `variables` and `retry` are merged key by key between levels. Other values, including a whole `expect` block, are replaced.
+
+## Production Configuration Example [#production-example]
+
+A comprehensive example showing how to configure `curl-runner` for production monitoring and CI/CD integration.
+
+```yaml title="production-config.yaml"
+# Production Configuration
+global:
+  # Execution settings
+  execution: sequential
+  continueOnError: false
+
+  # Variables
+  variables:
+    API_PRIMARY: "https://api-primary.example.com"
+    HEALTH_CHECK_VERSION: "v1"
+
+  # Output for CI/CD integration
+  output:
+    verbose: true
+    showHeaders: false    # Reduce log noise
+    showBody: false       # Don't log sensitive data
+    showMetrics: true     # Track performance
+    format: json          # Machine-readable
+    saveToFile: "artifacts/api-test-results.json"
+
+  # Production defaults
+  defaults:
+    timeout: 30000        # 30 seconds for production APIs
+    followRedirects: true
+    maxRedirects: 3
+    insecure: false       # Always verify certificates
+
+    headers:
+      User-Agent: "curl-runner-ci/2.0"
+      Accept: "application/json"
+      X-Environment: "production"
+
+    # Retry configuration for reliability
+    retry:
+      count: 3
+      delay: 5000
+      backoff: 2
+      retryableStatuses: [429, 500, 502, 503, 504]
+
+collection:
+  name: "Production Health Checks"
+  description: "Critical API endpoints monitoring"
+
+  defaults:
+    headers:
+      X-Health-Check: "automated"
+
+  requests:
+    - name: "Primary API Health"
+      url: "${API_PRIMARY}/${HEALTH_CHECK_VERSION}/health"
+      method: GET
+      headers:
+        Authorization: "Bearer ${SERVICE_TOKEN}"
+      expect:
+        status: 200
+        body:
+          status: "healthy"
+          version: "*"
+
+    - name: "Database Connection Check"
+      url: "${API_PRIMARY}/${HEALTH_CHECK_VERSION}/health/database"
+      method: GET
+      timeout: 60000     # Database checks can be slow
+      headers:
+        Authorization: "Bearer ${SERVICE_TOKEN}"
+      expect:
+        status: 200
+        body:
+          database:
+            status: "connected"
+            response_time: '^[0-9]+ms$'
+
+    - name: "External Service Dependencies"
+      url: "${API_PRIMARY}/${HEALTH_CHECK_VERSION}/health/dependencies"
+      method: GET
+      timeout: 45000     # External services may be slow
+      headers:
+        Authorization: "Bearer ${SERVICE_TOKEN}"
+      expect:
+        status: [200, 207]  # 207 for partial failures
+```
+
+**Production ready:** this configuration shows proper authentication through environment variables, monitoring output, error handling and CI/CD integration patterns.
+
+## Environment Integration [#environment-integration]
+
+**Environment variables.** Reference environment variables using `${VAR_NAME}` syntax. `curl-runner` loads `.env` files automatically. See [Environment Files](/docs/features/env-files).
+
+```bash title=".env"
+API_TOKEN=your_secret_token
+BASE_URL=https://api.staging.example.com
+DEBUG_MODE=true
+```
+
+**Configuration files.** Use different configuration files for different environments by organizing global settings appropriately.
+
+```bash title="terminal"
+# Run with a specific environment
+curl-runner config/production.yaml
+curl-runner config/staging.yaml
+curl-runner config/development.yaml
+```
+
+## Global Configuration Best Practices [#best-practices]
+
+- **Environment Separation:** use different global configurations for development, staging, and production to avoid accidental cross-environment requests.
+- **Secure Credentials:** never hard-code credentials in configuration files. Use environment variables or secure credential management.
+- **Appropriate Timeouts:** set reasonable default timeouts (in milliseconds) based on your API characteristics. Too short causes unnecessary failures, too long delays error detection.
+- **Consistent Headers:** use global defaults for common headers like User-Agent, Accept, and API versioning.
+- **Output Configuration:** configure output formats appropriate for your use case: pretty for development, JSON for CI/CD, raw for data processing.

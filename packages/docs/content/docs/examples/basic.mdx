@@ -1,0 +1,221 @@
+---
+title: "Basic Examples"
+description: "Simple curl-runner examples to get started with HTTP requests. Learn basic GET, POST, PUT, and DELETE operations with practical examples."
+---
+
+Simple HTTP request configurations to get you started with curl-runner. Copy and modify these examples for your own use cases.
+
+## Examples [#examples-grid]
+
+### Simple GET Request
+
+Basic HTTP GET request to fetch data.
+
+```yaml title="get-request.yaml"
+# Simple GET request
+request:
+  name: Get JSONPlaceholder Post
+  url: https://jsonplaceholder.typicode.com/posts/1
+  method: GET
+```
+
+### POST Request with JSON Body
+
+Create a new resource with a JSON payload.
+
+```yaml title="post-request.yaml"
+# POST request with JSON body
+request:
+  name: Create New Post
+  url: https://jsonplaceholder.typicode.com/posts
+  method: POST
+  headers:
+    Content-Type: application/json
+  body:
+    title: My New Post
+    body: This is the content of my new post
+    userId: 1
+```
+
+### Request with Headers and Authentication
+
+Include custom headers and Bearer token authentication. The token comes from the `API_TOKEN` environment variable.
+
+```yaml title="auth-request.yaml"
+# Request with authentication
+request:
+  name: Get Protected Resource
+  url: https://api.example.com/protected/resource
+  method: GET
+  headers:
+    Authorization: Bearer ${API_TOKEN}
+    Content-Type: application/json
+    X-API-Version: "1.0"
+    User-Agent: curl-runner/2.0
+```
+
+### PUT Request to Update Resource
+
+Update an existing resource completely.
+
+```yaml title="put-request.yaml"
+# PUT request to update resource
+request:
+  name: Update Post
+  url: https://jsonplaceholder.typicode.com/posts/1
+  method: PUT
+  headers:
+    Content-Type: application/json
+  body:
+    id: 1
+    title: Updated Post Title
+    body: This post has been updated
+    userId: 1
+```
+
+### PATCH Request for Partial Update
+
+Update specific fields of a resource.
+
+```yaml title="patch-request.yaml"
+# PATCH request for partial update
+request:
+  name: Update Post Title
+  url: https://jsonplaceholder.typicode.com/posts/1
+  method: PATCH
+  headers:
+    Content-Type: application/json
+  body:
+    title: Partially Updated Title
+```
+
+### DELETE Request
+
+Remove a resource from the server.
+
+```yaml title="delete-request.yaml"
+# DELETE request
+request:
+  name: Delete Post
+  url: https://jsonplaceholder.typicode.com/posts/1
+  method: DELETE
+  headers:
+    Authorization: Bearer ${API_TOKEN}
+```
+
+### Request with Query Parameters
+
+Include URL query parameters in your request, either in the URL or in `params`.
+
+```yaml title="query-params.yaml"
+# Request with query parameters
+request:
+  name: Search Posts
+  url: https://jsonplaceholder.typicode.com/posts?userId=1&_limit=5
+  method: GET
+  headers:
+    Accept: application/json
+```
+
+```yaml title="query-params-object.yaml"
+# The same request with a params object
+request:
+  name: Search Posts
+  url: https://jsonplaceholder.typicode.com/posts
+  method: GET
+  params:
+    userId: 1
+    _limit: 5
+```
+
+### Form Data Request
+
+Send form-encoded data (`application/x-www-form-urlencoded`).
+
+```yaml title="form-request.yaml"
+# Form data request
+request:
+  name: Submit Contact Form
+  url: https://httpbin.org/post
+  method: POST
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body: "name=John+Doe&email=john@example.com&message=Hello+World"
+```
+
+### Request with Timeout and Retries
+
+Configure request timeout (in milliseconds) and retry behavior.
+
+```yaml title="timeout-retry.yaml"
+# Request with timeout and retries
+request:
+  name: Slow API Call
+  url: https://httpbin.org/delay/2
+  method: GET
+  timeout: 5000  # 5 seconds
+  retry:
+    count: 3     # Retry up to 3 times
+    delay: 1000  # Wait 1 second before the first retry
+  headers:
+    Accept: application/json
+```
+
+### Request with Response Validation
+
+Check the response with `expect`: the run fails if a rule does not match.
+
+```yaml title="validate-response.yaml"
+# Validate the response
+request:
+  name: Get User
+  url: https://jsonplaceholder.typicode.com/users/1
+  method: GET
+  expect:
+    status: 200
+    body:
+      id: 1
+      username: Bret
+      email: Sincere@april.biz
+```
+
+## Running the Examples [#running-examples]
+
+Save any of the above examples to a YAML file and run them with `curl-runner`:
+
+```bash title="terminal"
+# Run a specific example
+curl-runner get-request.yaml
+
+# Run with verbose output
+curl-runner post-request.yaml -v
+
+# Run with timeout
+curl-runner auth-request.yaml --timeout 10000
+
+# Preview the curl command without sending anything
+curl-runner post-request.yaml --dry-run
+
+# Save results to file
+curl-runner query-params.yaml --output results.json
+```
+
+## Tips [#tips]
+
+### Testing APIs
+
+- Use `https://jsonplaceholder.typicode.com` for testing. It is a free REST API for testing and prototyping.
+- Try `https://httpbin.org` for testing different HTTP scenarios like delays, status codes, and headers.
+
+### Best Practices
+
+- Always include meaningful names for your requests.
+- Use appropriate HTTP methods (GET for reading, POST for creating, etc.).
+- Include proper Content-Type headers when sending data.
+
+### Debugging & Troubleshooting
+
+- Use the `--verbose` flag to see detailed request and response information.
+- Check response headers for debugging information and API limits.
+- Test with simple requests first, then add complexity gradually.
+- Validate your YAML syntax if requests aren't working as expected: `curl-runner validate file.yaml`.

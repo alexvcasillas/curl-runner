@@ -1,0 +1,600 @@
+---
+title: "Advanced Examples"
+description: "Complex curl-runner configurations for advanced use cases. Learn variable interpolation, authentication, validation, and real-world API testing."
+---
+
+Complex real-world scenarios showcasing the full power of curl-runner. These examples demonstrate advanced patterns for production environments.
+
+These advanced examples demonstrate sophisticated curl-runner patterns for complex workflows, integration testing, performance testing, and production environments.
+
+**Note:** Advanced examples often use environment variables and dynamic values. Make sure to set up your environment properly with the required tokens and endpoints before running these configurations.
+
+## Variable Interpolation & Environment Management [#variable-interpolation]
+
+Advanced variable usage with environment loading and dynamic values.
+
+<Callout type="warn" title="Values are used as written">
+  Interpolation runs once, over the request fields. A variable value is not interpolated itself, and `${...}` inside `global.defaults` is not interpolated either. Put `${...}` references in the request fields.
+</Callout>
+
+```yaml title="advanced-variables.yaml"
+# Variable interpolation with environment loading
+global:
+  variables:
+    BASE_URL: https://api.production.example.com
+    API_VERSION: v2
+  defaults:
+    timeout: 5000
+    headers:
+      User-Agent: "curl-runner/2.0"
+
+collection:
+  name: Production API Tests
+  variables:
+    # Override or extend global variables
+    USER_ID: 12345
+    RESOURCE_ID: abc-123
+
+  requests:
+    - name: Get User Profile
+      url: ${BASE_URL}/${API_VERSION}/users/${USER_ID}
+      method: GET
+      headers:
+        Authorization: "Bearer ${API_TOKEN}"  # From the environment
+        X-API-Version: "${API_VERSION}"
+      expect:
+        status: 200
+        body:
+          id: "^${USER_ID}$"   # The value of the variable, as a pattern
+          active: true
+
+    - name: Update Resource
+      url: ${BASE_URL}/${API_VERSION}/resources/${RESOURCE_ID}
+      method: PUT
+      headers:
+        Content-Type: application/json
+        Authorization: "Bearer ${API_TOKEN}"
+      body:
+        name: "Updated Resource"
+        updatedBy: ${USER_ID}
+        timestamp: "${TIMESTAMP}"  # Dynamic value: Unix time in milliseconds
+      expect:
+        status: 200
+        body:
+          id: ${RESOURCE_ID}
+```
+
+- **Environment variables:** load variables from `.env` files or the system environment, for example `API_TOKEN=your_token_here`. See [Environment Files](/docs/features/env-files).
+- **Dynamic values:** generate values at runtime such as `${TIMESTAMP}`, `${UUID}` or `${DATE:YYYY-MM-DD}`. See [Variables](/docs/variables).
+
+## Advanced Authentication Patterns [#advanced-authentication]
+
+Multiple authentication methods, token passing, and custom auth headers.
+
+```yaml title="auth-patterns.yaml"
+# Advanced authentication patterns
+requests:
+  # Basic Authentication
+  - name: Basic Auth Example
+    url: https://httpbin.org/basic-auth/user/pass
+    method: GET
+    auth:
+      type: basic
+      username: user
+      password: pass
+
+  # Bearer Token Authentication
+  - name: Bearer Token Example
+    url: https://api.github.com/user
+    method: GET
+    auth:
+      type: bearer
+      token: ${GITHUB_TOKEN}
+
+  # Custom Authorization Headers
+  - name: Custom Auth Example
+    url: https://api.example.com/protected
+    method: GET
+    headers:
+      Authorization: "Custom ${CUSTOM_TOKEN}"
+      X-API-Key: "${API_KEY}"
+      X-Client-ID: "${CLIENT_ID}"
+
+  # OAuth2-style request with an access token
+  - name: OAuth2 Request
+    url: https://api.oauth-provider.example.com/data
+    method: GET
+    headers:
+      Authorization: "Bearer ${ACCESS_TOKEN}"
+    expect:
+      status: [200, 401]  # Handle token expiry
+```
+
+## Error Handling & Retry Logic [#error-handling]
+
+Robust error handling with retry mechanisms, fallbacks, and conditional logic.
+
+```yaml title="error-handling.yaml"
+# Advanced error handling and retry logic
+global:
+  continueOnError: true  # Continue even if requests fail
+  execution: sequential  # Process one at a time
+
+collection:
+  name: Robust API Testing
+  requests:
+    # Retry with exponential backoff
+    - name: Flaky Service Call
+      url: https://api.flaky-service.example.com/data
+      method: GET
+      timeout: 3000
+      retry:
+        count: 5
+        delay: 1000   # 1 second, then 2, 4, 8, 16
+        backoff: 2
+      expect:
+        status: [200, 503]  # Accept service unavailable
+
+    # Handle multiple possible responses
+    - name: Resource Check
+      url: https://api.example.com/resource/status
+      method: GET
+      expect:
+        status: [200, 404, 410]  # OK, Not Found, or Gone
+        body:
+          status: ["active", "inactive", "deleted"]
+
+    # Conditional update
+    - name: Conditional Update
+      url: https://api.example.com/resource/123
+      method: PUT
+      headers:
+        If-Match: "*"  # Only if the resource exists
+        Content-Type: application/json
+      body:
+        status: "updated"
+      expect:
+        status: [200, 412]  # OK or Precondition Failed
+
+    # Primary request: remember how it went
+    - name: Primary Endpoint
+      url: https://api-primary.example.com/data
+      method: GET
+      timeout: 2000
+      store:
+        primaryStatus: status
+
+    # Fallback request, only when the primary did not answer 200
+    - name: Fallback Endpoint
+      url: https://api-backup.example.com/data
+      method: GET
+      timeout: 5000
+      when: "store.primaryStatus != 200"
+```
+
+**Best practice:** use `continueOnError: true` for test suites where you want to see all failures, but `false` for critical workflows where early termination is desired. See [Retry Mechanism](/docs/features/retry-mechanism) and [Conditional Execution](/docs/features/conditional-execution).
+
+## High-Performance Parallel Execution [#parallel-execution]
+
+Concurrent request execution for load testing and performance optimization.
+
+```yaml title="parallel-execution.yaml"
+# Parallel execution
+global:
+  execution: parallel  # Run requests concurrently
+  maxConcurrency: 5
+  continueOnError: false
+
+collection:
+  name: High-Performance API Tests
+  requests:
+    # Batch of parallel requests
+    - name: Health Check 1
+      url: https://api1.example.com/health
+      method: GET
+      timeout: 1000
+
+    - name: Health Check 2
+      url: https://api2.example.com/health
+      method: GET
+      timeout: 1000
+
+    - name: Health Check 3
+      url: https://api3.example.com/health
+      method: GET
+      timeout: 1000
+
+    # Load testing pattern
+    - name: Load Test Create User 1
+      url: https://api.example.com/users
+      method: POST
+      headers:
+        Content-Type: application/json
+      body:
+        username: "user1_${TIMESTAMP}"
+        email: "user1_${TIMESTAMP}@example.com"
+
+    - name: Load Test Create User 2
+      url: https://api.example.com/users
+      method: POST
+      headers:
+        Content-Type: application/json
+      body:
+        username: "user2_${TIMESTAMP}"
+        email: "user2_${TIMESTAMP}@example.com"
+
+    # Concurrent API validation
+    - name: Validate Endpoint A
+      url: https://api.example.com/endpoint-a
+      method: GET
+      expect:
+        status: 200
+
+    - name: Validate Endpoint B
+      url: https://api.example.com/endpoint-b
+      method: GET
+      expect:
+        status: 200
+```
+
+### Parallel Execution Considerations [#parallel-considerations]
+
+- **Resource limits:** monitor system resources and API rate limits when running many concurrent requests. Use `maxConcurrency` to cap them.
+- **Request independence:** ensure parallel requests don't depend on each other's results or side effects. `store` and `when` need a sequential run.
+
+See [Parallel Execution](/docs/features/parallel-execution).
+
+## Complex Response Validation [#complex-validation]
+
+Advanced validation patterns for complex data structures, arrays, and ranges. See [Validation Rules](/docs/api-reference/validation-rules) for the full syntax.
+
+```yaml title="complex-validation.yaml"
+# Complex response validation patterns
+requests:
+  # Deep object validation with nested structures
+  - name: Complex JSON Validation
+    url: https://api.example.com/complex-data
+    method: GET
+    expect:
+      status: 200
+      headers:
+        content-type: application/json
+      responseTime: "< 2000"
+      body:
+        metadata:
+          version: "2.1"
+          timestamp: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
+          pagination:
+            page: 1
+            per_page: 20
+            total: "*"        # Any value
+        data:
+          # The array must contain an item that matches this shape
+          - id: '^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$'  # UUID
+            status: ["active", "inactive", "pending"]  # One of these values
+            created_at: '^\d{4}-\d{2}-\d{2}'           # Date format
+
+  # Array validation with selectors
+  - name: Array Response Validation
+    url: https://api.example.com/items
+    method: GET
+    expect:
+      status: 200
+      body:
+        length: ">= 1, <= 100"   # Number of items
+        "[0]":                    # First item
+          id: '^[0-9]+$'
+          type: "product"
+          price: '^[0-9]+(\.[0-9]{2})?$'   # Currency format
+          in_stock: true
+        "[-1]":                   # Last item
+          id: '^[0-9]+$'
+
+  # One-of and existence rules
+  - name: Conditional Validation
+    url: https://api.example.com/user/profile
+    method: GET
+    expect:
+      status: 200
+      body:
+        account_type: ["free", "premium", "enterprise"]
+        password: $absent         # Must not be in the response
+        subscription:
+          plan: '^(premium|enterprise)$'
+          expires_at: '^\d{4}-\d{2}-\d{2}'
+```
+
+### Validation Patterns [#validation-patterns]
+
+- **Regex patterns:** flexible format validation, for example `'^[a-f0-9-]{36}$'`.
+- **Array validation:** items listed in an array must each be found in the response, and selectors such as `"[0]"` and `length` check positions and size.
+- **One-of values:** `type: ["free", "premium"]`.
+- **Nested objects:** deep structure validation such as `metadata.pagination`.
+
+## Full Integration Testing [#integration-testing]
+
+End-to-end workflow testing with user lifecycle management and cleanup. Values created by one request are saved with `store` and used by the next ones, so nothing is hard-coded and each run uses fresh data.
+
+```yaml title="integration-test.yaml"
+# Full integration test suite
+global:
+  execution: sequential  # Required for response storage
+  continueOnError: false
+  variables:
+    BASE_URL: https://api.example.com
+    API_VERSION: v1
+  defaults:
+    timeout: 10000
+    headers:
+      User-Agent: "curl-runner-integration-test"
+      Accept: application/json
+
+collection:
+  name: E2E Integration Test Suite
+  description: "Complete workflow testing from user creation to deletion"
+
+  requests:
+    # 1. Create test user
+    - name: Create User Account
+      url: ${BASE_URL}/${API_VERSION}/users
+      method: POST
+      headers:
+        Content-Type: application/json
+      body:
+        email: "test-${TIMESTAMP}@example.com"
+        name: "Test User"
+        password: "TempPassword123!"
+      expect:
+        status: 201
+        body:
+          id: '^[0-9]+$'
+          name: "Test User"
+      store:
+        userId: body.id
+        userEmail: body.email
+
+    # 2. Login with the created user
+    - name: User Login
+      url: ${BASE_URL}/${API_VERSION}/auth/login
+      method: POST
+      headers:
+        Content-Type: application/json
+      body:
+        email: ${store.userEmail}
+        password: "TempPassword123!"
+      expect:
+        status: 200
+        body:
+          token: '^[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+$'  # JWT
+      store:
+        token: body.token
+
+    # 3. Access a protected resource
+    - name: Get User Profile
+      url: ${BASE_URL}/${API_VERSION}/users/me
+      method: GET
+      headers:
+        Authorization: "Bearer ${store.token}"
+      expect:
+        status: 200
+        body:
+          name: "Test User"
+
+    # 4. Update the user profile
+    - name: Update Profile
+      url: ${BASE_URL}/${API_VERSION}/users/me
+      method: PUT
+      headers:
+        Authorization: "Bearer ${store.token}"
+        Content-Type: application/json
+      body:
+        name: "Updated Test User"
+        preferences:
+          theme: "dark"
+          notifications: true
+      expect:
+        status: 200
+        body:
+          name: "Updated Test User"
+          preferences:
+            theme: "dark"
+            notifications: true
+
+    # 5. Create a user resource
+    - name: Create User Resource
+      url: ${BASE_URL}/${API_VERSION}/resources
+      method: POST
+      headers:
+        Authorization: "Bearer ${store.token}"
+        Content-Type: application/json
+      body:
+        title: "Test Resource"
+        description: "Created during integration test"
+        type: "document"
+      expect:
+        status: 201
+        body:
+          id: '^[0-9]+$'
+          title: "Test Resource"
+      store:
+        resourceId: body.id
+
+    # 6. List user resources
+    - name: List User Resources
+      url: ${BASE_URL}/${API_VERSION}/resources
+      method: GET
+      params:
+        owner: me
+      headers:
+        Authorization: "Bearer ${store.token}"
+      expect:
+        status: 200
+        body:
+          items:
+            - title: "Test Resource"
+
+    # 7. Delete the user resource
+    - name: Delete User Resource
+      url: ${BASE_URL}/${API_VERSION}/resources/${store.resourceId}
+      method: DELETE
+      headers:
+        Authorization: "Bearer ${store.token}"
+      expect:
+        status: 204
+
+    # 8. Verify the resource is deleted
+    - name: Verify Resource Deleted
+      url: ${BASE_URL}/${API_VERSION}/resources/${store.resourceId}
+      method: GET
+      headers:
+        Authorization: "Bearer ${store.token}"
+      expect:
+        status: 404
+
+    # 9. Logout
+    - name: User Logout
+      url: ${BASE_URL}/${API_VERSION}/auth/logout
+      method: POST
+      headers:
+        Authorization: "Bearer ${store.token}"
+      expect:
+        status: 200
+
+    # 10. Clean up: delete the test user (needs admin privileges)
+    - name: Delete Test User
+      url: ${BASE_URL}/${API_VERSION}/admin/users/${store.userId}
+      method: DELETE
+      headers:
+        Authorization: "Bearer ${ADMIN_TOKEN}"   # From the environment
+      expect:
+        status: 204
+```
+
+**Integration testing:** this example covers a complete user lifecycle: creation, authentication, resource management, and cleanup. It fits CI/CD pipelines. See [Response Storage](/docs/features/response-storage) for the `store` paths.
+
+## Performance & Load Testing [#performance-testing]
+
+Load testing scenarios with concurrent requests and response time validation. For repeatable measurements use [Performance Profiling](/docs/features/performance-profiling).
+
+```yaml title="performance-test.yaml"
+# Performance and load testing scenarios
+global:
+  execution: parallel
+  continueOnError: true
+  maxConcurrency: 10
+
+collection:
+  name: Performance Test Suite
+  requests:
+    # Warmup requests
+    - name: Warmup Request 1
+      url: https://api.example.com/health
+      method: GET
+      timeout: 1000
+
+    - name: Warmup Request 2
+      url: https://api.example.com/health
+      method: GET
+      timeout: 1000
+
+    # Load testing - multiple similar requests
+    - name: Load Test - Get Users Page 1
+      url: https://api.example.com/users
+      method: GET
+      params:
+        page: 1
+        limit: 50
+      timeout: 2000
+      expect:
+        status: 200
+        responseTime: "< 500"
+
+    - name: Load Test - Get Users Page 2
+      url: https://api.example.com/users
+      method: GET
+      params:
+        page: 2
+        limit: 50
+      timeout: 2000
+      expect:
+        status: 200
+
+    # Stress testing - resource creation
+    - name: Stress Test - Create Resource 1
+      url: https://api.example.com/resources
+      method: POST
+      headers:
+        Content-Type: application/json
+        Authorization: "Bearer ${TEST_TOKEN}"
+      body:
+        name: "Load Test Resource 1"
+        data: "Performance test data"
+      timeout: 5000
+      expect:
+        status: [201, 429]  # Created or Rate Limited
+
+    # Database performance testing
+    - name: DB Performance - Complex Query
+      url: https://api.example.com/analytics/report
+      method: POST
+      headers:
+        Content-Type: application/json
+        Authorization: "Bearer ${TEST_TOKEN}"
+      body:
+        dateRange:
+          start: "2026-01-01"
+          end: "2026-12-31"
+        metrics: ["users", "revenue", "conversions"]
+        groupBy: ["month", "region"]
+      timeout: 30000  # Allow longer for complex queries
+      expect:
+        status: 200
+        responseTime: "< 10000"
+
+    # CDN/Cache performance
+    - name: Cache Performance Test
+      url: https://cdn.example.com/static/large-file.json
+      method: GET
+      headers:
+        Accept-Encoding: "gzip, deflate"
+      timeout: 10000
+      expect:
+        status: 200
+        headers:
+          cache-control: "max-age=3600"
+```
+
+### Performance Testing Tips [#performance-tips]
+
+- **Warmup phase:** include warmup requests to establish connections and prime caches before measuring performance.
+- **Realistic scenarios:** mix read and write operations in realistic proportions that match your production traffic patterns.
+- **Monitor resources:** watch for rate limiting (429 responses) and adjust concurrency levels accordingly.
+
+## Running Advanced Examples [#running-examples]
+
+Advanced examples often require additional setup and environment configuration:
+
+```bash title="terminal"
+# Set up environment variables
+export API_TOKEN="your_api_token"
+export ADMIN_TOKEN="admin_token"
+
+# Run with environment loading (.env.production)
+curl-runner advanced-example.yaml --env production
+
+# Run with a custom timeout for load testing
+curl-runner performance-test.yaml --timeout 60000
+
+# Run with detailed metrics output
+curl-runner integration-test.yaml --verbose --show-metrics
+
+# Save detailed results for analysis
+curl-runner complex-validation.yaml --output results.json --output-format json
+```
+
+## Advanced Usage Best Practices [#best-practices]
+
+- **Environment separation:** use different variable files for development, staging, and production environments to avoid accidental cross-environment requests.
+- **Test data isolation:** use unique identifiers (timestamps, UUIDs) for test data to avoid conflicts in concurrent test runs.
+- **Resource cleanup:** include cleanup steps in your test suites to remove test data and prevent resource accumulation.
+- **Performance baselines:** establish performance baselines and validate response times to catch performance regressions early.
