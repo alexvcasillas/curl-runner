@@ -40,6 +40,13 @@ describe('homepage', () => {
     expect(html).toContain('Example request timings are illustrative.');
   });
 
+  it('prints the terminal output the way the CLI does', async () => {
+    const html = await renderHome();
+    expect(html).toContain('Processing: api.yaml');
+    expect(html).toContain('84ms | 2.10 KB');
+    expect(html).toContain('96.00 B');
+  });
+
   it('has no placeholder text', async () => {
     const html = await renderHome();
     expect(html).not.toMatch(/\[\d+\]/);

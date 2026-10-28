@@ -49,7 +49,7 @@ Enable and configure connection pooling directly from the command line.
 
 | Option | Description |
 | --- | --- |
-| `--connection-pool` | Enable TCP connection pooling with HTTP/2 multiplexing |
+| `--connection-pool` | Enable the connection pool: forces HTTP/2, applies keepalive and connect timeouts, caps connections per host in parallel runs |
 | `--max-streams <n>` | Max connections per host in parallel runs (default: 10) |
 | `--keepalive-time <sec>` | TCP keepalive time in seconds (default: 60) |
 | `--connect-timeout <sec>` | Connection timeout in seconds (default: 30) |
@@ -88,7 +88,7 @@ Fine-tune connection pooling behavior with these configuration options.
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `enabled` | boolean | `false` | Enable connection pooling and HTTP/2 multiplexing |
+| `enabled` | boolean | `false` | Enable the connection pool (forces HTTP/2, applies keepalive and connect timeouts) |
 | `maxStreamsPerHost` | number | `10` | Maximum connections per host in parallel runs |
 | `keepaliveTime` | number | `60` | TCP keepalive probe interval in seconds |
 | `connectTimeout` | number | `30` | Connection establishment timeout in seconds |

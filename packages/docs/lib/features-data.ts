@@ -752,7 +752,7 @@ requests:
     title: 'Connection Pooling',
     headline: 'Reuse connections across parallel requests.',
     description:
-      'With pooling on, parallel requests share connections to the same host instead of each opening its own, and HTTP/2 multiplexing is switched on. Tune per-host limits, keepalive and connect timeout.',
+      'With pooling on, parallel requests share connections to the same host instead of each opening its own, and the pool caps connections per host, forces HTTP/2 and applies keepalive and connect timeouts. Multiplexing is always on in parallel runs.',
     example: {
       filename: 'pool.yaml',
       yaml: yaml(`
@@ -782,7 +782,7 @@ requests:
       {
         title: 'HTTP/2 multiplexing',
         description:
-          'Many requests share one connection as separate streams when the server supports HTTP/2.',
+          'In parallel runs, many requests share one connection as separate streams when the server supports HTTP/2.',
       },
       {
         title: 'Tunable',
