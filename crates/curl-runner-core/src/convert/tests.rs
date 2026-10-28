@@ -442,3 +442,99 @@ const TRICKY: &[&str] = &[
     "x\u{2028}y",
     "x\r\ny",
 ];
+
+fn warned(r: &ConvertResult, needle: &str) -> bool {
+    r.warnings.iter().any(|w| w.contains(needle))
+}
+
+#[test]
+fn retry_count_is_converted() {
+    let r = conv("curl --retry 3 https://x.test");
+    assert!(r.output.contains("retry:\n    count: 3"), "{}", r.output);
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+}
+
+#[test]
+fn retry_delay_seconds_become_milliseconds() {
+    let r = conv("curl --retry 3 --retry-delay 2 https://x.test");
+    assert!(
+        r.output.contains("retry:\n    count: 3\n    delay: 2000"),
+        "{}",
+        r.output
+    );
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+}
+
+#[test]
+fn retry_delay_without_retry_warns() {
+    let r = conv("curl --retry-delay 2 https://x.test");
+    assert!(!r.output.contains("retry:"), "{}", r.output);
+    assert!(warned(&r, "--retry-delay"), "{:?}", r.warnings);
+}
+
+#[test]
+fn non_numeric_retry_values_warn() {
+    let r = conv("curl --retry many https://x.test");
+    assert!(!r.output.contains("retry:"), "{}", r.output);
+    assert!(warned(&r, "--retry many"), "{:?}", r.warnings);
+    let r = conv("curl --retry 3 --retry-delay soon https://x.test");
+    assert!(r.output.contains("count: 3"), "{}", r.output);
+    assert!(!r.output.contains("delay:"), "{}", r.output);
+    assert!(warned(&r, "--retry-delay soon"), "{:?}", r.warnings);
+}
+
+#[test]
+fn other_retry_flags_warn_and_do_not_swallow_the_url() {
+    let r = conv(
+        "curl --retry 2 --retry-all-errors --retry-connrefused --retry-max-time 30 https://x.test",
+    );
+    assert!(r.output.contains("url: https://x.test"), "{}", r.output);
+    for f in [
+        "--retry-all-errors",
+        "--retry-connrefused",
+        "--retry-max-time",
+    ] {
+        assert!(warned(&r, f), "{f}: {:?}", r.warnings);
+    }
+}
+
+#[test]
+fn retry_converts_to_curl_flags() {
+    let r = convert_yaml_to_curl(
+        "request:\n  url: https://a.com\n  retry:\n    count: 3\n    delay: 2000\n",
+    )
+    .unwrap();
+    assert!(r.output.contains("--retry 3"), "{}", r.output);
+    assert!(r.output.contains("--retry-delay 2"), "{}", r.output);
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+}
+
+#[test]
+fn retry_delay_that_is_not_whole_seconds_warns() {
+    let r = convert_yaml_to_curl(
+        "request:\n  url: https://a.com\n  retry:\n    count: 3\n    delay: 1500\n",
+    )
+    .unwrap();
+    assert!(r.output.contains("--retry-delay 2"), "{}", r.output);
+    assert!(warned(&r, "1500"), "{:?}", r.warnings);
+}
+
+#[test]
+fn retry_extras_without_curl_equivalent_warn() {
+    let r = convert_yaml_to_curl("request:\n  url: https://a.com\n  retry:\n    count: 2\n    backoff: 2\n    retryableStatuses: [503]\n").unwrap();
+    assert!(r.output.contains("--retry 2"), "{}", r.output);
+    assert!(warned(&r, "retry"), "{:?}", r.warnings);
+}
+
+#[test]
+fn retry_round_trips() {
+    let y = convert_curl_to_yaml(
+        "curl --retry 3 --retry-delay 2 https://x.test",
+        &ConvertOptions::default(),
+    )
+    .unwrap()
+    .output;
+    let parsed = crate::parser::load_str(&y, "convert.yaml").unwrap();
+    let retry = parsed.requests[0].retry.clone().unwrap();
+    assert_eq!((retry.count, retry.delay), (Some(3), Some(2000)));
+}

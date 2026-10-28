@@ -138,6 +138,13 @@ fn request_fields(lines: &mut Vec<String>, ir: &CurlRunnerIr, base: usize, prett
     if let Some(t) = ir.timeout {
         lines.push(format!("{p0}timeout: {}", num_to_string(t)));
     }
+    if let Some(r) = &ir.retry {
+        lines.push(format!("{p0}retry:"));
+        lines.push(format!("{p1}count: {}", r.count));
+        if let Some(ms) = r.delay_ms {
+            lines.push(format!("{p1}delay: {ms}"));
+        }
+    }
     if ir.follow_redirects == Some(true) {
         lines.push(format!("{p0}followRedirects: true"));
     }

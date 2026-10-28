@@ -5,7 +5,7 @@
 //! template literals and truthiness checks would.
 
 use super::jsutil::JsMap;
-use super::types::{Auth, Body, CurlRunnerIr, FormField, FormFile, NumText, Source, Ssl};
+use super::types::{Auth, Body, CurlRunnerIr, FormField, FormFile, NumText, RetryIr, Source, Ssl};
 use crate::jsval::JsVal;
 use crate::model::Json;
 
@@ -48,6 +48,44 @@ fn object_entries(v: Option<&Json>) -> Vec<(String, Json)> {
     }
 }
 
+/// The curl-expressible part of a YAML `retry` block plus a warning per part
+/// that is lost or rounded.
+fn retry_to_ir(retry: Option<&Json>) -> (Option<RetryIr>, Vec<String>) {
+    let mut warnings = Vec::new();
+    let Some(obj) = retry.and_then(Json::as_object) else {
+        warnings.push("retry config has no curl equivalent".into());
+        return (None, warnings);
+    };
+    let whole = |k: &str| obj.get(k).and_then(Json::as_u64);
+    let count = whole("count");
+    let delay_ms = whole("delay");
+    for k in ["count", "delay"] {
+        if obj.get(k).is_some_and(|v| !v.is_null()) && whole(k).is_none() {
+            warnings.push(format!("retry {k} is not a whole number and was dropped"));
+        }
+    }
+    for k in ["backoff", "retryableStatuses"] {
+        if obj.get(k).is_some_and(|v| !v.is_null()) {
+            warnings.push(format!("retry {k} has no curl equivalent"));
+        }
+    }
+    if let Some(ms) = delay_ms.filter(|ms| ms % 1000 != 0) {
+        warnings.push(format!(
+            "retry delay {ms}ms rounded up to {}s for --retry-delay",
+            ms.div_ceil(1000)
+        ));
+    }
+    match count {
+        Some(count) => (Some(RetryIr { count, delay_ms }), warnings),
+        None => {
+            if delay_ms.is_some() {
+                warnings.push("retry delay needs a count; --retry-delay not emitted".into());
+            }
+            (None, warnings)
+        }
+    }
+}
+
 /// `yamlToIR`. `Err` carries the message of the TypeError the TS code throws
 /// for a `null` entry.
 pub fn yaml_to_ir(config: &Json) -> Result<CurlRunnerIr, String> {
@@ -85,6 +123,7 @@ pub fn yaml_to_ir(config: &Json) -> Result<CurlRunnerIr, String> {
         proxy: None,
         output: None,
         http2: false,
+        retry: None,
         ssl: None,
         source: Source::Yaml,
         falsy_content_type,
@@ -182,13 +221,17 @@ pub fn yaml_to_ir(config: &Json) -> Result<CurlRunnerIr, String> {
         ("expect", "expect block has no curl equivalent"),
         ("store", "store block has no curl equivalent"),
         ("when", "when condition has no curl equivalent"),
-        ("retry", "retry config simplified in curl output"),
         ("snapshot", "snapshot config has no curl equivalent"),
         ("diff", "diff config has no curl equivalent"),
     ] {
         if truthy(get(key)) {
             warnings.push(msg.to_string());
         }
+    }
+    if truthy(get("retry")) {
+        let (retry, lossy) = retry_to_ir(get("retry"));
+        ir.retry = retry;
+        warnings.extend(lossy);
     }
     ir.warnings = warnings;
     Ok(ir)

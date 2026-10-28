@@ -42,6 +42,9 @@ pub struct CurlAst {
     pub referer: Option<String>,
     pub silent: bool,
     pub verbose: bool,
+    /// Raw `--retry` / `--retry-delay` values, validated by the normalizer.
+    pub retry: Option<String>,
+    pub retry_delay: Option<String>,
     pub unsupported_flags: Vec<UnsupportedFlag>,
     pub order: Vec<&'static str>,
 }
@@ -120,6 +123,14 @@ pub enum Source {
     Yaml,
 }
 
+/// The part of `retry` that curl can express (`--retry`, `--retry-delay`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RetryIr {
+    pub count: u64,
+    /// Milliseconds (curl takes whole seconds).
+    pub delay_ms: Option<u64>,
+}
+
 /// Intermediate representation shared by both converters.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurlRunnerIr {
@@ -138,6 +149,7 @@ pub struct CurlRunnerIr {
     pub proxy: Option<String>,
     pub output: Option<String>,
     pub http2: bool,
+    pub retry: Option<RetryIr>,
     pub ssl: Option<Ssl>,
     pub source: Source,
     /// A YAML `Content-Type` header whose value is falsy (`null`, `0`,
