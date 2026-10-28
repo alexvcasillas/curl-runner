@@ -34,7 +34,7 @@ jobs:
       BUILD: ${{ steps.meta.outputs.BUILD }}
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Compute release tag + build metadata for CLI
         id: meta
@@ -83,12 +83,12 @@ jobs:
 
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
 
@@ -105,7 +105,7 @@ jobs:
 
       - name: Download binaries
         if: ${{ needs.build.result == 'success' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: bin-*
           path: dist-bin
@@ -178,7 +178,7 @@ jobs:
       CURL_RUNNER_VERSION: ${{ needs.meta.outputs.VERSION }}
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # aws-lc-sys (rustls crypto) needs a C toolchain + cmake; musl needs musl-gcc.
       - name: Install Linux build dependencies
@@ -220,7 +220,7 @@ jobs:
              "dist/curl-runner-${{ matrix.platform }}${{ matrix.exe }}"
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bin-${{ matrix.platform }}
           path: dist/curl-runner-${{ matrix.platform }}${{ matrix.exe }}
@@ -235,7 +235,7 @@ jobs:
       FILE_PREFIX: ${{ needs.meta.outputs.FILE_PREFIX }}
     steps:
       - name: Download binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: bin-*
           path: packages/cli
@@ -263,7 +263,7 @@ jobs:
             > SHA256SUMS.txt
 
       - name: Upload release assets artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-assets
           path: |
@@ -283,13 +283,13 @@ jobs:
       contents: write
     steps:
       - name: Download release assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-assets
           path: packages/cli
 
       - name: Upload binaries + checksums to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.meta.outputs.TAG }}
           files: |
@@ -312,7 +312,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install build dependencies
         run: |
@@ -346,10 +346,10 @@ jobs:
             platform: windows-x64
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download release assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-assets
           path: assets
@@ -400,10 +400,10 @@ jobs:
             os: ubuntu-24.04-arm
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: bin-${{ matrix.platform }}
           path: dist-bin
