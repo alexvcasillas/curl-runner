@@ -27,6 +27,7 @@ impl Env {
     fn cmd(&self, args: &[&str]) -> Command {
         let mut c = Command::new(BIN);
         c.env_clear()
+            .envs(testkit::system_env())
             .env("NO_COLOR", "1")
             .env("BASE_URL", &self.server.base_url)
             .current_dir(self.dir.path())
@@ -365,6 +366,7 @@ fn sigint_exits_130() {
     )]);
     let child = std::process::Command::new(BIN)
         .env_clear()
+        .envs(testkit::system_env())
         .env("NO_COLOR", "1")
         .current_dir(e.dir.path())
         .arg("t.yaml")
@@ -481,6 +483,7 @@ fn sigint_still_writes_output_file() {
     ]);
     let child = std::process::Command::new(BIN)
         .env_clear()
+        .envs(testkit::system_env())
         .env("NO_COLOR", "1")
         .current_dir(e.dir.path())
         .args(["a.yaml", "b.yaml", "--output", "r.json"])
@@ -1028,6 +1031,7 @@ fn profile_sigint_prints_partial_stats_exports_and_exits_130() {
     )]);
     let child = std::process::Command::new(BIN)
         .env_clear()
+        .envs(testkit::system_env())
         .env("NO_COLOR", "1")
         .current_dir(e.dir.path())
         .args([

@@ -19,6 +19,7 @@ fn check(name: &str, args: &[&str]) {
     let dir = golden_dir();
     let out = Command::new(BIN)
         .env_clear()
+        .envs(testkit::system_env())
         .current_dir(&dir)
         .arg("validate")
         .args(args)
@@ -52,6 +53,7 @@ fn fix_rewrites_like_ts() {
     std::fs::write(work.path().join("f.yaml"), input).unwrap();
     let out = Command::new(BIN)
         .env_clear()
+        .envs(testkit::system_env())
         .current_dir(work.path())
         .args(["validate", "f.yaml", "--fix"])
         .output()
@@ -67,6 +69,7 @@ fn crash_prints_type_error() {
     std::fs::write(work.path().join("a.yaml"), "5\n").unwrap();
     let out = Command::new(BIN)
         .env_clear()
+        .envs(testkit::system_env())
         .current_dir(work.path())
         .args(["validate", "a.yaml"])
         .output()

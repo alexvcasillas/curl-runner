@@ -15,6 +15,7 @@ fn run(args: &[&str], dir: &Path, stdin: Option<&str>) -> (Output, Duration) {
     cmd.args(args)
         .current_dir(dir)
         .env_clear()
+        .envs(testkit::system_env())
         .env("NO_COLOR", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -86,6 +87,7 @@ fn init_with_a_closed_stdin_descriptor_exits_promptly_with_exit_0() {
         .args(["-c", "exec \"$0\" init <&-", BIN])
         .current_dir(d.path())
         .env_clear()
+        .envs(testkit::system_env())
         .output()
         .unwrap();
     assert!(start.elapsed() < Duration::from_secs(10));

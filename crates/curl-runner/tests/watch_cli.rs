@@ -39,6 +39,7 @@ impl Watch {
     fn spawn(dir: &std::path::Path, args: &[&str]) -> Watch {
         let mut child = Command::new(BIN)
             .env_clear()
+            .envs(testkit::system_env())
             .env("NO_COLOR", "1")
             .current_dir(dir)
             .args(args)
@@ -195,6 +196,7 @@ fn watch_without_files_exits_1() {
     let dir = tempfile::tempdir().unwrap();
     let out = Command::new(BIN)
         .env_clear()
+        .envs(testkit::system_env())
         .env("NO_COLOR", "1")
         .current_dir(dir.path())
         .args(["missing.yaml", "--watch"])

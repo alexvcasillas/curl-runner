@@ -449,3 +449,17 @@ fn jp_route(method: &str, rest: &[&str], body: &[u8]) -> Response {
         _ => not_found(),
     }
 }
+
+/// Variables to restore after `env_clear()` when spawning the CLI in tests
+/// (`.env_clear().envs(testkit::system_env())`). On Windows: `SystemRoot`
+/// (without it Winsock cannot start, so every connection fails),
+/// `SystemDrive`, `windir` and the temp dirs. Empty on Unix.
+pub fn system_env() -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+    if !cfg!(windows) {
+        return Vec::new();
+    }
+    ["SystemRoot", "SystemDrive", "windir", "TEMP", "TMP"]
+        .into_iter()
+        .filter_map(|k| std::env::var_os(k).map(|v| (k.into(), v)))
+        .collect()
+}

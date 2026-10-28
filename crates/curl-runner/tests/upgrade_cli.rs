@@ -85,6 +85,7 @@ fn install_copy() -> Installed {
 fn run(i: &Installed, srv: &TestServer, args: &[&str]) -> (i32, String) {
     let out = Command::new(&i.exe)
         .env_clear()
+        .envs(testkit::system_env())
         .env("NO_COLOR", "1")
         .env("CURL_RUNNER_TEST_GITHUB_BASE", &srv.base_url)
         .arg("upgrade")
@@ -138,6 +139,7 @@ fn help_and_unreachable_registry() {
     // A dev build (this test binary lives in target/) is never replaced.
     let out = Command::new(BIN)
         .env_clear()
+        .envs(testkit::system_env())
         .env("NO_COLOR", "1")
         .env("CURL_RUNNER_TEST_GITHUB_BASE", &srv.base_url)
         .arg("upgrade")
@@ -147,6 +149,7 @@ fn help_and_unreachable_registry() {
     assert!(String::from_utf8_lossy(&out.stdout).contains("Cannot upgrade"));
     let dead = Command::new(&i.exe)
         .env_clear()
+        .envs(testkit::system_env())
         .env("NO_COLOR", "1")
         .env("CURL_RUNNER_TEST_GITHUB_BASE", "http://127.0.0.1:1")
         .arg("upgrade")

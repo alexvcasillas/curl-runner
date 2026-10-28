@@ -34,6 +34,7 @@ fn run_case(case: &Value, dir: &Path) -> Vec<String> {
         .collect();
     let out = Command::new(BIN)
         .env_clear()
+        .envs(testkit::system_env())
         .current_dir(work.path())
         .arg("convert")
         .args(&args)
