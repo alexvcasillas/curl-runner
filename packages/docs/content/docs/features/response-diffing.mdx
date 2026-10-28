@@ -1,0 +1,254 @@
+---
+title: "Response Diffing"
+description: "Compare API responses between environments or runs. Detect API drift and breaking changes."
+---
+
+Compare API responses between environments or runs. Detect API drift, breaking changes, and unexpected behavior before they reach production.
+
+## Overview
+
+Response diffing captures API responses as baselines and compares them across environments (staging vs production) or over time. Perfect for detecting API drift and validating deployments.
+
+- **Environment Comparison**: Compare staging vs production responses
+- **Drift Detection**: Detect unexpected API changes over time
+- **Deployment Validation**: Verify APIs before and after deployments
+
+## Basic Usage
+
+Save responses as baselines and compare later runs against them.
+
+```bash title="CLI Usage"
+# Save current run as baseline
+curl-runner api.yaml --diff-save --diff-label staging
+
+# Compare against staging baseline
+curl-runner api.yaml --diff --diff-compare staging
+
+# Auto mode: creates baseline on first run, compares on subsequent
+curl-runner api.yaml --diff
+```
+
+Configure diffing in your YAML file:
+
+```yaml title="Basic Diff Config"
+# Simple diffing - compare against baseline
+global:
+  diff:
+    exclude:
+      - "body.timestamp"
+      - "headers.date"
+
+request:
+  name: Get User
+  url: https://api.example.com/users/1
+  method: GET
+```
+
+## Diff Subcommand [#subcommand]
+
+Compare two stored baselines without making new requests.
+
+```bash title="Offline Comparison"
+# Compare two stored baselines (offline, no requests)
+curl-runner diff staging production api.yaml
+
+# Compare with JSON output for CI
+curl-runner diff staging production api.yaml --diff-output json
+```
+
+## CLI Options
+
+- `-d, --diff`: Enable diff mode. Creates baseline on first run, compares on subsequent runs.
+
+- `--diff-save`: Save current run as a baseline. Use with --diff-label.
+
+- `--diff-label <name>`: Label for current run (e.g., 'staging', 'production', 'v1.0').
+
+- `--diff-compare <label>`: Compare current run against this baseline label.
+
+- `--diff-dir <dir>` *(default: `__baselines__`)*: Directory to store baseline files.
+
+- `--diff-output <format>`: Output format: `terminal` (default), `json`, or `markdown`.
+
+## Configuration Options [#configuration]
+
+Configure exclusions, match rules, and timing tracking.
+
+```yaml title="Advanced Configuration"
+# Advanced diff configuration
+global:
+  diff:
+    enabled: true
+    dir: "__baselines__"
+    exclude:
+      - "*.timestamp"
+      - "*.Date"
+      - "body.headers.X-Request-Id"
+    match:
+      "body.origin": "*"  # IP can change
+    includeTimings: true  # Track response time changes
+
+requests:
+  - name: Get Users
+    url: https://api.example.com/users
+    method: GET
+    diff:
+      exclude:
+        - "body[*].lastLogin"
+
+  - name: Create User
+    url: https://api.example.com/users
+    method: POST
+    body:
+      name: Test User
+    diff:
+      match:
+        "body.id": "*"  # New ID each time
+```
+
+**exclude**: paths to ignore during comparison:
+
+- `body.timestamp` - Exact path
+- `*.createdAt` - Wildcard
+- `body[*].id` - Array wildcard
+
+**match**: accept dynamic values:
+
+- `"body.id": "*"` - Any value
+- `"body.uuid": "regex:^[a-f0-9-]{36}$"`
+
+## Typical Workflow [#workflow]
+
+A common workflow for comparing staging and production environments.
+
+```bash title="Environment Comparison Workflow"
+# 1. Save staging baseline
+curl-runner api.yaml --diff-save --diff-label staging
+
+# 2. Save production baseline
+curl-runner api.yaml --diff-save --diff-label production
+
+# 3. Compare environments (offline)
+curl-runner diff staging production api.yaml
+
+# 4. Compare new deployment against baseline
+curl-runner api.yaml --diff --diff-compare staging --diff-label v2.0
+```
+
+## Baseline File Format [#baseline-files]
+
+Baselines are stored as JSON files in the `__baselines__` directory.
+
+```json title="__baselines__/api.staging.baseline.json"
+{
+  "version": 1,
+  "label": "staging",
+  "capturedAt": "2024-01-15T10:30:00Z",
+  "baselines": {
+    "Get User": {
+      "hash": "a1b2c3d4",
+      "capturedAt": "2024-01-15T10:30:00Z",
+      "status": 200,
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com"
+      }
+    }
+  }
+}
+```
+
+## CI/CD Integration [#ci-integration]
+
+Use response diffing in CI/CD pipelines to detect breaking changes.
+
+```bash title="CI Configuration"
+# CI Pipeline - detect breaking changes
+curl-runner api.yaml --diff --diff-compare baseline --diff-output json
+
+# Environment variables
+CURL_RUNNER_DIFF=true
+CURL_RUNNER_DIFF_COMPARE=baseline
+CURL_RUNNER_DIFF_OUTPUT=json
+CURL_RUNNER_DIFF_DIR=__baselines__
+```
+
+**Exit Codes:** Returns exit code 1 if differences are found, making it easy to fail CI builds on unexpected changes.
+
+## Output Formats [#output]
+
+Diff results in terminal, JSON, or markdown format.
+
+### Terminal Output
+
+```text title="Terminal Output"
+Response Diff: staging → production
+
+  ✗ Get User
+    headers.content-length:
+      - "76"
+      + "72"
+    body.id:
+      - 123
+      + 456
+    body.name:
+      - "John Doe"
+      + "Jane"
+
+  ✓ Get Config (no changes)
+
+Summary: 1 unchanged, 1 changed (2 total)
+```
+
+### Markdown Output
+
+````markdown title="Markdown Output"
+# Response Diff: staging → production
+
+| Metric | Count |
+|--------|-------|
+| Total Requests | 2 |
+| Unchanged | 1 |
+| Changed | 1 |
+| New Baselines | 0 |
+
+## Changes
+
+### `Get User`
+
+```diff
+# body.id:
+- 123
++ 456
+# body.name:
+- "John Doe"
++ "Jane"
+```
+````
+
+## Best Practices
+
+- **Recommended**
+  - Exclude timestamps and request IDs
+  - Use descriptive labels (staging, prod, v1.0)
+  - Commit baselines to version control
+  - Use JSON output for CI pipelines
+  - Compare before deploying to production
+- **Considerations**
+  - Exclude all non-deterministic fields
+  - Update baselines when changes are intentional
+  - Don't compare across different API versions
+  - Keep baselines up to date
+
+## Environment Variables
+
+- `CURL_RUNNER_DIFF`: Enable diffing (true/false)
+- `CURL_RUNNER_DIFF_SAVE`: Save as baseline (true/false)
+- `CURL_RUNNER_DIFF_LABEL`: Label for current run
+- `CURL_RUNNER_DIFF_COMPARE`: Baseline to compare against
+- `CURL_RUNNER_DIFF_DIR`: Baseline directory
+- `CURL_RUNNER_DIFF_OUTPUT`: Output format (terminal/json/markdown)

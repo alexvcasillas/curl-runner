@@ -1,0 +1,202 @@
+---
+title: "Environment Files & Secret Redaction"
+description: "Load variables from .env files with environment-specific overrides and automatic secret redaction in outputs."
+---
+
+Load variables from .env files with automatic secret protection in CLI output.
+
+## Overview
+
+curl-runner automatically loads variables from `.env` files and redacts sensitive values in output. This keeps secrets safe when sharing logs or terminal output.
+
+- **.env Support**: Auto-load variables from `.env` files
+- **Secret Redaction**: Automatically mask sensitive values
+- **Pattern Detection**: Auto-detect common API key formats
+
+## Basic Usage
+
+Create a `.env` file in your project root. Variables are automatically loaded and available via `${VAR_NAME}` syntax.
+
+```bash title=".env"
+# .env
+API_URL=https://api.example.com
+API_VERSION=v1
+
+# Secrets (automatically redacted in output)
+SECRET_API_KEY=sk_live_abc123def456
+SECRET_TOKEN=ghp_xxxxxxxxxxxx
+```
+
+```yaml title="api.yaml"
+# api.yaml
+request:
+  url: ${API_URL}/users
+  method: GET
+  headers:
+    Authorization: Bearer ${SECRET_API_KEY}
+    X-Api-Version: ${API_VERSION}
+```
+
+## Environment Overrides
+
+Use environment-specific files to override values for different deployments.
+
+```bash title="Environment Files"
+# .env (base defaults)
+API_URL=https://api.example.com
+DEBUG=false
+
+# .env.local (local overrides, gitignored)
+DEBUG=true
+
+# .env.staging (environment-specific)
+API_URL=https://staging.api.example.com
+
+# .env.staging.local (local staging overrides)
+API_URL=https://my-staging.api.example.com
+```
+
+### Priority Chain
+
+Files are loaded in order, with later files overriding earlier values.
+
+```bash title="Load Priority"
+# Priority (lowest to highest):
+# 1. .env              - Base defaults
+# 2. .env.local        - Local overrides (gitignored)
+# 3. .env.{env}        - Environment-specific
+# 4. .env.{env}.local  - Local environment overrides
+
+# Example: with --env staging
+# Loads: .env -> .env.local -> .env.staging -> .env.staging.local
+```
+
+## CLI Options
+
+Use the `--env` flag to select an environment.
+
+- `-e`, `--env <name>`: Select environment (loads `.env.{name}` files)
+
+- `--no-redact`: Disable secret redaction in output (not recommended)
+
+```bash title="CLI Usage"
+# Use staging environment
+curl-runner api.yaml --env staging
+curl-runner api.yaml -e staging
+
+# Use production environment
+curl-runner api.yaml --env production
+
+# Disable secret redaction (not recommended)
+curl-runner api.yaml --no-redact
+```
+
+## Configuration
+
+Set defaults in `curl-runner.yaml`.
+
+```yaml title="curl-runner.yaml"
+# curl-runner.yaml
+global:
+  env:
+    environment: staging    # Default environment
+    redactSecrets: true     # Enable redaction (default)
+  variables:
+    # These override .env values
+    CUSTOM_VAR: "from-config"
+```
+
+## Secret Redaction
+
+Secrets are automatically redacted in URLs and curl command output.
+
+### SECRET_ Prefix [#secret-prefix]
+
+Variables starting with `SECRET_` are always redacted.
+
+```bash title="Secret Variables"
+# Variables starting with SECRET_ are automatically redacted
+SECRET_API_KEY=sk_live_abc123
+SECRET_DATABASE_URL=postgres://user:pass@host/db
+SECRET_JWT_TOKEN=eyJhbGciOiJIUzI1NiIs...
+
+# Regular variables are NOT redacted
+API_KEY=public_key_123
+DATABASE_HOST=localhost
+```
+
+### Pattern Detection
+
+Common API key patterns are automatically detected and redacted, even without the SECRET_ prefix.
+
+```text title="Detected Patterns"
+# These patterns are automatically detected and redacted:
+
+# Stripe keys
+sk_live_... / sk_test_... / pk_live_... / rk_live_...
+
+# AWS credentials
+AKIA... (AWS Access Key IDs)
+
+# GitHub tokens
+ghp_... / gho_... / ghu_... / ghs_... / ghr_...
+
+# NPM tokens
+npm_...
+
+# Slack tokens
+xoxb-... / xoxp-...
+
+# Paddle keys
+pdl_...
+
+# OpenAI keys
+sk-...
+
+# Anthropic keys
+sk-ant-api03-...
+
+# Bearer tokens
+Bearer <40+ char token>
+```
+
+### Redaction in Output [#redaction-output]
+
+Secrets appear as `[REDACTED]` in output.
+
+```bash title="Output Comparison"
+# api.yaml sends:  X-Api-Key: ${SECRET_API_KEY}
+
+# Without redaction (--no-redact)
+$ curl-runner api.yaml --dry-run --no-redact
+  curl -H 'X-Api-Key: sk_live_abc123def456' ...
+
+# With redaction (default)
+$ curl-runner api.yaml --dry-run
+  curl -H 'X-Api-Key: [REDACTED]' ...
+```
+
+## Git Ignore [#gitignore]
+
+Always gitignore local and production env files to prevent accidental commits.
+
+```text title=".gitignore"
+# .gitignore
+.env.local
+.env.*.local
+.env.production
+```
+
+## Best Practices
+
+- **Recommended**
+  - Prefix secrets with `SECRET_`
+  - Use `.env.local` for personal overrides
+  - Keep `.env` in git with safe defaults
+  - Gitignore all `.local` and production files
+  - Use environment-specific files for staging/production
+- **Avoid**
+  - Using `--no-redact` in shared terminals
+  - Committing `.env.local` or `.env.production`
+  - Storing production secrets in base `.env`
+  - Sharing terminal output without reviewing for secrets

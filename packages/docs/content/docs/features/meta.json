@@ -1,0 +1,24 @@
+{
+  "title": "Features",
+  "pages": [
+    "response-storage",
+    "conditional-execution",
+    "file-uploads",
+    "parallel-execution",
+    "response-validation",
+    "snapshots",
+    "response-diffing",
+    "retry-mechanism",
+    "watch-mode",
+    "dry-run",
+    "http2",
+    "connection-pooling",
+    "output-formats",
+    "ci-integration",
+    "performance-profiling",
+    "yaml-wizard",
+    "validate",
+    "convert",
+    "env-files"
+  ]
+}

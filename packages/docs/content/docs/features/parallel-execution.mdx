@@ -1,0 +1,211 @@
+---
+title: "Parallel Execution"
+description: "Execute HTTP requests in parallel for faster performance. Learn about concurrent request execution, performance optimization, and best practices."
+---
+
+Execute multiple HTTP requests simultaneously for improved performance.
+
+## Overview
+
+Parallel execution allows curl-runner to send multiple HTTP requests simultaneously, significantly reducing the total execution time when testing multiple endpoints or performing load testing.
+
+**Note:** By default, curl-runner executes requests sequentially. Enable parallel execution using the `execution: parallel` setting in your YAML file or the `-p` CLI flag.
+
+## Basic Usage
+
+Configure parallel execution in your YAML file using the global execution setting.
+
+```yaml title="parallel-requests.yaml"
+# Run multiple requests in parallel
+global:
+  execution: parallel
+  variables:
+    API_URL: https://api.example.com
+  output:
+    showMetrics: true
+
+requests:
+  - name: Get Users
+    url: ${API_URL}/users
+    method: GET
+    
+  - name: Get Posts
+    url: ${API_URL}/posts
+    method: GET
+    
+  - name: Get Comments
+    url: ${API_URL}/comments
+    method: GET
+    
+  - name: Get Products
+    url: ${API_URL}/products
+    method: GET
+```
+
+## Configuration Options [#configuration]
+
+Control how parallel execution behaves with these settings:
+
+| Setting | Type | Description |
+| --- | --- | --- |
+| `execution` | string | "parallel" or "sequential" (default: "sequential") |
+| `continueOnError` | boolean | Continue executing remaining requests if one fails |
+| `maxConcurrency` | number | Maximum number of requests to run simultaneously (default: unlimited) |
+| `timeout` | number | Global timeout for each request in milliseconds |
+
+## Concurrency Control
+
+Use `maxConcurrency` to limit the number of requests that run simultaneously. This is useful for avoiding rate limiting from APIs or preventing overwhelming target servers.
+
+```yaml title="concurrency-control.yaml"
+# Using CLI options to control concurrency
+# curl-runner --execution parallel --max-concurrent 5 tests.yaml
+
+global:
+  execution: parallel
+
+collection:
+  name: "Controlled Concurrency"
+  requests:
+    # Even with 20 requests, only 5 will run concurrently
+    - name: "Request 1"
+      url: "https://httpbin.org/delay/1"
+    - name: "Request 2"
+      url: "https://httpbin.org/delay/1"
+    - name: "Request 3"
+      url: "https://httpbin.org/delay/1"
+    - name: "Request 4"
+      url: "https://httpbin.org/delay/1"
+    - name: "Request 5"
+      url: "https://httpbin.org/delay/1"
+    - name: "Request 6"
+      url: "https://httpbin.org/delay/1"
+    - name: "Request 7"
+      url: "https://httpbin.org/delay/1"
+    - name: "Request 8"
+      url: "https://httpbin.org/delay/1"
+    - name: "Request 9"
+      url: "https://httpbin.org/delay/1"
+    - name: "Request 10"
+      url: "https://httpbin.org/delay/1"
+    # ... up to 20 requests
+```
+
+**When to Use Concurrency Limits**
+
+- APIs with rate limits (e.g., 10 requests/second)
+- Testing against servers with limited capacity
+- Simulating realistic concurrent user loads
+- Avoiding resource exhaustion on your machine
+
+## Error Handling
+
+When running requests in parallel, you can control how errors are handled using the `continueOnError` setting.
+
+```yaml title="parallel-with-error-handling.yaml"
+# Control parallel execution
+global:
+  execution: parallel
+  continueOnError: true  # Continue even if some requests fail
+  variables:
+    BASE_URL: https://api.example.com
+  output:
+    verbose: true
+    showMetrics: true
+
+requests:
+  # These will all run at the same time
+  - name: Request 1
+    url: ${BASE_URL}/endpoint1
+    timeout: 5000
+    
+  - name: Request 2
+    url: ${BASE_URL}/endpoint2
+    timeout: 5000
+    
+  - name: Request 3
+    url: ${BASE_URL}/endpoint3
+    timeout: 5000
+```
+
+- **Stop on Error**: By default, if any request fails, curl-runner will cancel remaining requests.
+- **Continue on Error** *(recommended)*: Set `continueOnError: true` to complete all requests regardless of failures.
+
+## Performance Testing
+
+Parallel execution is ideal for performance testing and load simulation. Use it to test how your API handles concurrent requests.
+
+```yaml title="performance-test.yaml"
+# Performance testing with parallel requests
+global:
+  execution: parallel
+  variables:
+    API_URL: https://api.example.com
+    AUTH_TOKEN: your-token-here
+  output:
+    showMetrics: true
+    saveToFile: performance-results.json
+
+# Test multiple endpoints simultaneously
+requests:
+  - name: Health Check 1
+    url: ${API_URL}/health
+    
+  - name: Health Check 2
+    url: ${API_URL}/health
+    
+  - name: Health Check 3
+    url: ${API_URL}/health
+    
+  - name: Health Check 4
+    url: ${API_URL}/health
+    
+  - name: Health Check 5
+    url: ${API_URL}/health
+```
+
+**Metrics Collected**
+
+- Total execution time for all requests
+- Individual request duration
+- Response sizes
+- Success/failure counts
+- Average response time
+
+## CLI Usage
+
+Control parallel execution from the command line.
+
+```bash title="terminal"
+# Run with parallel execution (short flag)
+curl-runner api-tests.yaml -p
+
+# Run with parallel execution (long flag)
+curl-runner api-tests.yaml --execution parallel
+
+# Override file setting to run sequentially
+curl-runner api-tests.yaml --execution sequential
+
+# Run parallel with max 5 concurrent requests
+curl-runner api-tests.yaml -p --max-concurrent 5
+
+# Run parallel with verbose output
+curl-runner api-tests.yaml -p --verbose
+```
+
+### CLI Flags
+
+| Flag | Description |
+| --- | --- |
+| `-p` | Force parallel execution (short flag) |
+| `--execution parallel` | Force parallel execution (long flag) |
+| `--execution sequential` | Force sequential execution |
+| `--max-concurrent <n>` | Limit concurrent requests in parallel mode |
+| `--continue-on-error` | Continue execution on failures |
+
+## Best Practices
+
+- **Use for Independent Requests**: Parallel execution works best when requests don't depend on each other. If requests need data from previous responses, use sequential execution.
+- **Set Appropriate Timeouts**: When running many requests in parallel, set reasonable timeouts to prevent hanging requests from blocking completion.
+- **Monitor Resource Usage**: Running many parallel requests can consume significant system resources. Start with a small number and increase gradually.
+- **Use Metrics for Analysis**: Enable `showMetrics: true` to collect timing data for performance analysis.

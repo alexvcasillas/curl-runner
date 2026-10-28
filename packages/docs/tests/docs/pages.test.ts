@@ -22,7 +22,43 @@ const GETTING_STARTED = [
   'cli-options',
 ];
 
-const MOVED_PAGES = [...GETTING_STARTED];
+// In the order of lib/docs-config.ts (Upgrade sits under CLI Reference there).
+const FEATURES = [
+  'response-storage',
+  'conditional-execution',
+  'file-uploads',
+  'parallel-execution',
+  'response-validation',
+  'snapshots',
+  'response-diffing',
+  'retry-mechanism',
+  'watch-mode',
+  'dry-run',
+  'http2',
+  'connection-pooling',
+  'output-formats',
+  'ci-integration',
+  'performance-profiling',
+  'yaml-wizard',
+  'validate',
+  'convert',
+  'env-files',
+  'upgrade',
+].map((slug) => `features/${slug}`);
+
+const MOVED_PAGES = [...GETTING_STARTED, ...FEATURES];
+
+type TreeNode = { url?: string; children?: unknown[]; index?: unknown };
+
+// Pages of the sidebar tree in display order (folders expand in place).
+function flatten(input: unknown): TreeNode[] {
+  const node = input as TreeNode;
+  return [
+    ...(node.url ? [node] : []),
+    ...(node.index ? flatten(node.index) : []),
+    ...(node.children ?? []).flatMap(flatten),
+  ];
+}
 
 function mdxFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -49,12 +85,49 @@ describe('docs pages', () => {
     const meta = JSON.parse(readFileSync(join(CONTENT_DIR, 'meta.json'), 'utf8')) as {
       pages: string[];
     };
-    for (const path of MOVED_PAGES.filter((p) => !p.includes('/'))) {
+    for (const path of GETTING_STARTED.filter((p) => !p.includes('/'))) {
       expect(meta.pages, path).toContain(path);
       expect(meta.pages.some((e) => e.startsWith('[') && e.includes(`](/docs/${path})`))).toBe(
         false,
       );
     }
+  });
+});
+
+describe('features docs', () => {
+  it('has no link entries left for features pages in the root meta', () => {
+    const meta = JSON.parse(readFileSync(join(CONTENT_DIR, 'meta.json'), 'utf8')) as {
+      pages: string[];
+    };
+    expect(meta.pages.filter((e) => e.includes('](/docs/features/'))).toEqual([]);
+  });
+
+  it('lists the features pages in docs-config order in features/meta.json', () => {
+    const meta = JSON.parse(readFileSync(join(CONTENT_DIR, 'features/meta.json'), 'utf8')) as {
+      pages: string[];
+    };
+    const expected = FEATURES.map((p) => p.replace('features/', '')).filter((p) => p !== 'upgrade');
+    expect(meta.pages).toEqual(expected);
+  });
+
+  it('shows Upgrade in the sidebar under CLI Reference, after Environment Variables', () => {
+    const urls = flatten(source.pageTree).map((n) => n.url);
+    expect(urls).toContain('/docs/features/upgrade');
+    expect(urls.indexOf('/docs/features/upgrade')).toBeGreaterThan(
+      urls.indexOf('/docs/environment-variables'),
+    );
+  });
+
+  it('puts the features pages between Security and CLI Commands in the sidebar', () => {
+    const urls = flatten(source.pageTree).map((n) => n.url);
+    const first = urls.indexOf('/docs/features/response-storage');
+    const last = urls.indexOf('/docs/features/env-files');
+    expect(urls.indexOf('/docs/security')).toBeLessThan(first);
+    expect(last).toBeLessThan(urls.indexOf('/docs/cli-commands'));
+    // docs-config order, with Upgrade living under CLI Reference instead
+    expect(urls.slice(first, last + 1)).toEqual(
+      FEATURES.filter((p) => p !== 'features/upgrade').map((p) => `/docs/${p}`),
+    );
   });
 });
 
@@ -71,7 +144,10 @@ describe('MDX content for 2.x', () => {
       const text = readFileSync(file, 'utf8');
       expect(text).not.toMatch(/^\s*validation:/m);
       // `bun add -g` is fine in the npm-family install list; `bun install` was the old step.
-      expect(text).not.toMatch(/bun install/);
+      // The upgrade page documents the command curl-runner itself runs for bun installs.
+      expect(text.replaceAll('bun install -g @curl-runner/cli@latest', '')).not.toMatch(
+        /bun install/,
+      );
     },
   );
 });

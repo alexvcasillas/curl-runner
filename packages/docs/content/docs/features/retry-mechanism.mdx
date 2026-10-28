@@ -1,0 +1,280 @@
+---
+title: "Retry Mechanism"
+description: "Implement robust retry logic for HTTP requests with curl-runner. Learn retry strategies, backoff patterns, and transient failure handling."
+---
+
+Automatically retry failed requests with configurable delays and attempts.
+
+## Overview
+
+The retry mechanism in `curl-runner` allows you to automatically retry failed requests, making your API tests more resilient to temporary failures, network issues, and rate limiting.
+
+- **Smart Retries**: Automatically retry on network errors, timeouts, and retryable status codes (429, 5xx)
+- **Flexible Settings**: Control retry count, delays, and conditions per request or globally
+
+## Basic Usage
+
+Configure retries using the `retry` field in your request configuration.
+
+```yaml title="basic-retry.yaml"
+# Basic retry configuration
+request:
+  name: Flaky API Endpoint
+  url: https://api.example.com/unstable
+  method: GET
+  retry:
+    count: 3      # Retry up to 3 times
+    delay: 1000   # Wait 1 second between retries
+
+# Retries trigger on:
+# - Network errors (connection refused, DNS failures)
+# - Timeouts
+# - Retryable status codes (429, 500, 502, 503, 504 by default)
+```
+
+**How it works:**
+
+1. First attempt is made immediately
+2. If it fails, wait for the specified delay
+3. Retry up to the specified count
+4. Stop on success or after all retries exhausted
+
+## Configuration Options [#configuration]
+
+Fine-tune retry behavior with these configuration options.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `count` | number | 0 | Number of retry attempts |
+| `delay` | number | 0 | Initial delay between retries (ms) |
+| `backoff` | number | 1 | Exponential backoff multiplier. Delay increases as: delay × backoff^(attempt-1) |
+| `retryableStatuses` | number[] | [429, 500, 502, 503, 504] | HTTP status codes that trigger a retry |
+
+## Advanced Scenarios
+
+Handle complex retry requirements with different configurations per request.
+
+```yaml title="advanced-retry.yaml"
+# Advanced retry scenarios
+requests:
+  - name: Critical API Call
+    url: https://api.example.com/important
+    method: POST
+    headers:
+      Content-Type: application/json
+    body:
+      data: "important"
+    retry:
+      count: 5      # More retries for critical requests
+      delay: 2000   # 2 second delay
+    timeout: 10000  # 10 second timeout per attempt
+    
+  - name: Fast Retry
+    url: https://api.example.com/quick
+    method: GET
+    retry:
+      count: 10     # Many quick retries
+      delay: 100    # Very short delay
+    timeout: 1000   # Short timeout
+```
+
+## Global Configuration
+
+Set default retry behavior for all requests and override as needed.
+
+```yaml title="global-retry.yaml"
+# Global retry configuration
+global:
+  defaults:
+    retry:
+      count: 2      # Default retry count for all requests
+      delay: 500    # Default delay between retries
+  variables:
+    API_URL: https://api.example.com
+
+requests:
+  - name: Uses Global Retry
+    url: ${API_URL}/endpoint1
+    method: GET
+    # Will use global retry settings
+    
+  - name: Override Retry
+    url: ${API_URL}/endpoint2
+    method: GET
+    retry:
+      count: 5      # Override global setting
+      delay: 1000   # Override global delay
+      
+  - name: No Retry
+    url: ${API_URL}/stable
+    method: GET
+    retry:
+      count: 0      # Disable retries for this request
+```
+
+## Retry and Validation [#retry-with-validation]
+
+Retry and validation ( `expect`) are complementary but independent features. Retries handle transport-level failures, while validation checks the final response after all retries are exhausted.
+
+```yaml title="retry-validation.yaml"
+# Retry and validation are complementary features
+# Retry handles transport failures; validation checks the final response
+request:
+  name: Resilient API Call
+  url: https://api.example.com/resource
+  method: GET
+  retry:
+    count: 5
+    delay: 2000
+    backoff: 2
+  expect:
+    # Validation runs AFTER all retries are exhausted
+    # It checks the final response, not individual attempts
+    status: 200
+    body:
+      status: "ready"
+
+---
+
+# Custom retryable status codes
+request:
+  name: Retry on specific codes
+  url: https://api.example.com/custom
+  method: GET
+  retry:
+    count: 3
+    delay: 1000
+    retryableStatuses: [429, 500, 502, 503]  # Customize which codes trigger retries
+```
+
+**Important:** Validation (`expect`) does **not** trigger retries. It runs **after** all retry attempts are exhausted and checks the final response. Retries are triggered only by network errors, timeouts, and retryable HTTP status codes.
+
+## Retry-After Header Support [#retry-after-header]
+
+When a server responds with HTTP 429 (Too Many Requests) and includes a `Retry-After` header, `curl-runner` will honor the server's requested wait time instead of using the configured delay.
+
+**How it works:**
+
+1. Request receives HTTP 429 response
+2. If `Retry-After` header is present, its value is used as the delay
+3. If the header is absent, the configured delay (with backoff) is used
+4. Request is retried after the determined delay
+
+## Custom Retryable Status Codes [#retryable-status-codes]
+
+By default, retries trigger on HTTP 429 and 5xx status codes (500, 502, 503, 504). Customize this with the `retryableStatuses` option.
+
+```yaml title="retryable-statuses.yaml"
+# Only retry on 503 Service Unavailable
+request:
+  name: Custom Retryable Codes
+  url: https://api.example.com/endpoint
+  method: GET
+  retry:
+    count: 3
+    delay: 1000
+    retryableStatuses: [503]
+
+---
+
+# Include 408 Request Timeout alongside defaults
+request:
+  name: Extended Retryable Codes
+  url: https://api.example.com/endpoint
+  method: GET
+  retry:
+    count: 3
+    delay: 1000
+    retryableStatuses: [408, 429, 500, 502, 503, 504]
+```
+
+## Retry Strategies
+
+### Fixed Delay
+
+Use a consistent delay between all retry attempts.
+
+```yaml title="fixed-delay.yaml"
+# Fixed delay retry strategy
+request:
+  name: Reliable API Call
+  url: https://api.example.com/data
+  method: GET
+  retry:
+    count: 3      # Retry up to 3 times
+    delay: 1000   # Wait exactly 1 second between retries
+    
+# Will attempt sequence:
+# 1. Initial request
+# 2. Wait 1s → Retry attempt 1  
+# 3. Wait 1s → Retry attempt 2
+# 4. Wait 1s → Retry attempt 3
+```
+
+### Exponential Backoff
+
+Use the `backoff` multiplier to increase delays exponentially between retries. This is ideal for rate-limited APIs and helps reduce server load during outages.
+
+```yaml title="exponential-backoff.yaml"
+# Exponential backoff with backoff multiplier
+request:
+  name: API with Exponential Backoff
+  url: https://api.example.com/endpoint
+  method: GET
+  retry:
+    count: 4        # Retry up to 4 times
+    delay: 1000     # Initial delay: 1 second
+    backoff: 2      # Double the delay each retry
+
+# Retry delays will be:
+# Attempt 1: 1000ms (1s)
+# Attempt 2: 2000ms (2s)
+# Attempt 3: 4000ms (4s)
+# Attempt 4: 8000ms (8s)
+
+---
+
+# Gentler backoff with 1.5x multiplier
+request:
+  name: Gentle Backoff
+  url: https://api.example.com/rate-limited
+  method: GET
+  retry:
+    count: 5
+    delay: 1000
+    backoff: 1.5    # 1.5x multiplier
+
+# Retry delays: 1000ms, 1500ms, 2250ms, 3375ms, 5063ms
+```
+
+## When to Retry
+
+### Automatic Retry Conditions
+
+`curl-runner` automatically retries on these conditions:
+
+- **Network Errors**: Connection refused, DNS failures, and network connectivity issues
+- **Timeouts**: Request exceeds the configured timeout limit
+- **Retryable Status Codes**: HTTP 429 (Too Many Requests) and 5xx server errors (500, 502, 503, 504)
+
+## Best Practices
+
+- **Set Reasonable Limits**: Don't retry indefinitely. Set a reasonable count (3-5) for most scenarios.
+- **Use Appropriate Delays**: Avoid overwhelming servers with rapid retries. Use at least 1-second delays for production APIs.
+- **Consider Exponential Backoff**: For rate-limited APIs, increase delay between retries to avoid hitting limits repeatedly.
+- **Monitor Total Time**: With retries, requests can take much longer. Set appropriate timeouts to avoid hanging tests.
+
+## CLI Options
+
+Control retry behavior from the command line.
+
+```bash title="terminal"
+# Override retry count globally
+curl-runner api-tests.yaml --retries 5
+
+# Disable all retries
+curl-runner api-tests.yaml --no-retry
+
+# Set retry delay
+curl-runner api-tests.yaml --retries 3 --retry-delay 2000
+```

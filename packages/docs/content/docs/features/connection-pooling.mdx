@@ -1,0 +1,185 @@
+---
+title: "Connection Pooling"
+description: "Reuse TCP connections and leverage HTTP/2 multiplexing for faster, more efficient API requests with curl-runner."
+---
+
+Reuse TCP connections and leverage HTTP/2 multiplexing for dramatically faster parallel requests.
+
+## Overview
+
+Connection pooling reuses connections per host and multiplexes parallel requests over HTTP/2. This eliminates redundant TCP handshakes and TLS negotiations, dramatically improving performance for parallel requests to the same host.
+
+- **1 TCP Handshake**: Per host instead of per request
+- **1 TLS Negotiation**: Single handshake for HTTPS
+- **HTTP/2 Streams**: Multiplexed on single connection
+- **1 DNS Lookup**: Cached for all requests
+
+## How It Works
+
+When connection pooling is enabled, curl-runner runs parallel requests through one shared libcurl multi handle with HTTP/2 multiplexing on. Requests to the same host share a connection (up to `maxStreamsPerHost` concurrent connections or streams per host).
+
+```bash title="Before vs After"
+# WITHOUT Connection Pooling (default)
+# Each request = new TCP + new TLS
+
+Request 1 → TCP handshake → TLS → HTTP
+Request 2 → TCP handshake → TLS → HTTP
+Request 3 → TCP handshake → TLS → HTTP
+# Total: 3 TCP handshakes, 3 TLS negotiations
+
+# WITH Connection Pooling
+# All same-host requests share ONE connection
+
+Requests 1,2,3 → one HTTP/2 connection → TCP → TLS → [stream1, stream2, stream3]
+# Total: 1 TCP handshake, 1 TLS negotiation
+```
+
+- **Performance Impact**: For 10 requests to the same host over HTTPS, connection pooling can save ~200ms of TCP/TLS overhead per request, resulting in up to 2 seconds of total time saved.
+
+## Basic Usage
+
+Enable connection pooling with `connectionPool.enabled` in your global configuration.
+
+```yaml title="Basic Connection Pooling"
+global:
+  execution: parallel
+  connectionPool:
+    enabled: true
+
+requests:
+  - name: Get Users
+    url: https://api.example.com/users
+  - name: Get Posts
+    url: https://api.example.com/posts
+  - name: Get Comments
+    url: https://api.example.com/comments
+```
+
+## CLI Options
+
+Enable and configure connection pooling directly from the command line.
+
+| Option | Description |
+| --- | --- |
+| `--connection-pool` | Enable TCP connection pooling with HTTP/2 multiplexing |
+| `--max-streams <n>` | Max concurrent streams per host (default: 10) |
+| `--keepalive-time <sec>` | TCP keepalive time in seconds (default: 60) |
+| `--connect-timeout <sec>` | Connection timeout in seconds (default: 30) |
+
+```bash title="CLI Examples"
+# Enable connection pooling via CLI
+curl-runner api.yaml -p --connection-pool
+
+# With custom settings
+curl-runner api.yaml -p --connection-pool --max-streams 20
+
+# Via environment variables
+CURL_RUNNER_CONNECTION_POOL=true curl-runner api.yaml -p
+
+# Full example with env vars
+CURL_RUNNER_CONNECTION_POOL=true \
+CURL_RUNNER_MAX_STREAMS_PER_HOST=15 \
+CURL_RUNNER_KEEPALIVE_TIME=120 \
+curl-runner api.yaml -p
+```
+
+## Environment Variables
+
+Configure connection pooling using environment variables for CI/CD pipelines.
+
+| Variable | Description |
+| --- | --- |
+| `CURL_RUNNER_CONNECTION_POOL` | Enable connection pooling (true/false) |
+| `CURL_RUNNER_MAX_STREAMS_PER_HOST` | Max concurrent streams per host |
+| `CURL_RUNNER_KEEPALIVE_TIME` | TCP keepalive time in seconds |
+| `CURL_RUNNER_CONNECT_TIMEOUT` | Connection timeout in seconds |
+
+## Configuration Options [#configuration]
+
+Fine-tune connection pooling behavior with these configuration options.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | boolean | `false` | Enable connection pooling and HTTP/2 multiplexing |
+| `maxStreamsPerHost` | number | `10` | Maximum concurrent HTTP/2 streams per host connection |
+| `keepaliveTime` | number | `60` | TCP keepalive probe interval in seconds |
+| `connectTimeout` | number | `30` | Connection establishment timeout in seconds |
+
+```yaml title="Full Configuration"
+global:
+  execution: parallel
+  connectionPool:
+    enabled: true
+    maxStreamsPerHost: 10    # Max concurrent streams per connection
+    keepaliveTime: 60        # TCP keepalive in seconds
+    connectTimeout: 30       # Connection timeout in seconds
+
+requests:
+  - name: Get Users
+    url: https://api.example.com/users
+    method: GET
+  - name: Get Posts
+    url: https://api.example.com/posts
+    method: GET
+  - name: Create Order
+    url: https://api.example.com/orders
+    method: POST
+    body:
+      productId: 123
+  - name: Get Inventory
+    url: https://api.example.com/inventory
+    method: GET
+```
+
+## Multi-Host Behavior [#multi-host]
+
+Requests are grouped by host (scheme + hostname + port). Each host gets its own pooled connection, and different hosts run in parallel.
+
+```yaml title="Multi-Host Grouping"
+# Requests are automatically grouped by host
+# Each host group uses its own pooled connection
+
+global:
+  execution: parallel
+  connectionPool:
+    enabled: true
+    maxStreamsPerHost: 5
+
+requests:
+  # Group 1: api.example.com (1 connection, 3 streams)
+  - url: https://api.example.com/users
+  - url: https://api.example.com/posts
+  - url: https://api.example.com/comments
+
+  # Group 2: auth.example.com (1 connection, 2 streams)
+  - url: https://auth.example.com/token
+  - url: https://auth.example.com/validate
+
+  # Group 3: cdn.example.com (1 connection, 1 stream)
+  - url: https://cdn.example.com/assets
+```
+
+## When to Use
+
+- **Recommended For**
+  - Multiple parallel requests to the same host
+  - Performance-critical test suites
+  - Load testing with many concurrent requests
+  - APIs with high TLS negotiation overhead
+- **Not Needed For**
+  - Sequential execution (requests run one at a time)
+  - Single request executions
+  - Requests to many different hosts
+  - When request isolation is required
+
+## Limitations
+
+- **Parallel mode only:** Connection pooling applies to `execution: parallel`. Sequential runs reuse connections between requests on their own.
+- **Retries and concurrency:** Retries and `maxConcurrency` apply to pooled requests like any other parallel run. Status codes are judged only through `expect`.
+- **Idle connections:** Idle keep-alive connections stay open until the run ends.
+
+## Related Features [#related]
+
+- [HTTP/2 Support](/docs/features/http2): Enable HTTP/2 protocol
+- [Parallel Execution](/docs/features/parallel-execution): Run requests simultaneously
+- [Performance Profiling](/docs/features/performance-profiling): Measure connection timing metrics

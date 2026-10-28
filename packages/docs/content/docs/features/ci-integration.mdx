@@ -1,0 +1,254 @@
+---
+title: "CI/CD Integration"
+description: "Integrate curl-runner with CI/CD pipelines using CI-friendly exit codes and configurable failure thresholds."
+---
+
+Integrate curl-runner with CI/CD pipelines using CI-friendly exit codes and configurable failure thresholds.
+
+## Overview
+
+`curl-runner` provides CI-friendly exit codes that integrate seamlessly with popular CI/CD platforms. By default, the tool follows standard conventions where exit code 0 indicates success and exit code 1 indicates failure.
+
+- **Strict Mode**: Exit 1 if any validation fails
+- **Count Threshold**: Allow N failures before failing
+- **Percentage Threshold**: Allow N% failures before failing
+
+## Exit Code Options
+
+Control how curl-runner determines its exit code based on test results.
+
+```bash title="terminal"
+# CI/CD exit code options
+
+# Strict mode - exit 1 if ANY validation fails
+curl-runner tests/ --strict-exit
+
+# Run all tests, then fail if any failed
+curl-runner tests/ --continue-on-error --strict-exit
+
+# Allow up to 2 failures before failing
+curl-runner tests/ --fail-on 2
+
+# Allow up to 10% of tests to fail
+curl-runner tests/ --fail-on-percentage 10
+
+# Combine options for comprehensive CI setup
+curl-runner tests/ \
+  --continue-on-error \
+  --strict-exit \
+  --output-format json \
+  --output results.json
+```
+
+### Option Reference
+
+| Option | Description |
+| --- | --- |
+| `--strict-exit` | Exit with code 1 if any validation fails, regardless of --continue-on-error |
+| `--fail-on <count>` | Exit with code 1 only if failures exceed the specified count |
+| `--fail-on-percentage <pct>` | Exit with code 1 only if failure percentage exceeds the threshold (0-100) |
+
+## Exit Code Behavior
+
+Understanding how different configurations affect the exit code.
+
+| Configuration | No Failures | Failures Exist |
+| --- | --- | --- |
+| Default (no options) | Exit 0 | Exit 1 |
+| `--continue-on-error` | Exit 0 | Exit 0 |
+| `--strict-exit` | Exit 0 | Exit 1 |
+| `--continue-on-error --strict-exit` | Exit 0 | Exit 1 |
+| `--fail-on N` | Exit 0 | Exit 0 if ≤N, Exit 1 if \>N |
+| `--fail-on-percentage P` | Exit 0 | Exit 0 if ≤P%, Exit 1 if \>P% |
+
+**Tip:** Use `--continue-on-error --strict-exit` together to run all tests before determining the final exit code. This ensures you get complete test results while still failing the pipeline when needed.
+
+## Environment Variables
+
+All CI options can be configured via environment variables for easy integration with CI/CD platforms.
+
+```bash title="terminal"
+# Environment variables for CI/CD
+
+# Enable strict exit mode
+export CURL_RUNNER_STRICT_EXIT=true
+
+# Set failure threshold (count)
+export CURL_RUNNER_FAIL_ON=5
+
+# Set failure threshold (percentage)
+export CURL_RUNNER_FAIL_ON_PERCENTAGE=10
+
+# Combine with other settings
+export CURL_RUNNER_STRICT_EXIT=true
+export CURL_RUNNER_CONTINUE_ON_ERROR=true
+export CURL_RUNNER_OUTPUT_FORMAT=json
+curl-runner tests/
+```
+
+### Environment Variable Reference [#env-reference]
+
+| Variable | Type | Description |
+| --- | --- | --- |
+| `CURL_RUNNER_STRICT_EXIT` | boolean | Enable strict exit mode (true/false) |
+| `CURL_RUNNER_FAIL_ON` | number | Maximum allowed failures |
+| `CURL_RUNNER_FAIL_ON_PERCENTAGE` | number | Maximum allowed failure percentage (0-100) |
+
+## Platform Examples
+
+### GitHub Actions
+
+Complete workflow for running API tests with artifact upload.
+
+```yaml title=".github/workflows/api-tests.yml"
+name: API Tests
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install curl-runner
+        run: npm install -g @curl-runner/cli
+
+      - name: Run API Tests
+        env:
+          CURL_RUNNER_STRICT_EXIT: true
+          CURL_RUNNER_CONTINUE_ON_ERROR: true
+        run: curl-runner tests/ --output-format json --output results.json
+
+      - name: Upload Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: results.json
+```
+
+### GitLab CI
+
+GitLab CI configuration with test artifacts.
+
+```yaml title=".gitlab-ci.yml"
+stages:
+  - test
+
+api-tests:
+  stage: test
+  image: node:22-slim
+  variables:
+    CURL_RUNNER_STRICT_EXIT: "true"
+    CURL_RUNNER_CONTINUE_ON_ERROR: "true"
+    CURL_RUNNER_OUTPUT_FORMAT: json
+  before_script:
+    - npm install -g @curl-runner/cli
+  script:
+    - curl-runner tests/ --output test-results.json
+  artifacts:
+    when: always
+    paths:
+      - test-results.json
+```
+
+### Jenkins Pipeline [#jenkins]
+
+Declarative Jenkins pipeline with artifact archiving.
+
+```groovy title="Jenkinsfile"
+pipeline {
+    agent any
+
+    environment {
+        CURL_RUNNER_STRICT_EXIT = 'true'
+        CURL_RUNNER_CONTINUE_ON_ERROR = 'true'
+        CURL_RUNNER_OUTPUT_FORMAT = 'json'
+    }
+
+    stages {
+        stage('Install') {
+            steps {
+                sh 'npm install -g @curl-runner/cli'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                sh 'curl-runner tests/ --output test-results.json'
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: 'test-results.json', allowEmptyArchive: true
+        }
+    }
+}
+```
+
+### CircleCI
+
+CircleCI configuration with test artifact storage.
+
+```yaml title=".circleci/config.yml"
+version: 2.1
+
+executors:
+  node:
+    docker:
+      - image: cimg/node:20.0
+
+jobs:
+  test:
+    executor: node
+    environment:
+      CURL_RUNNER_STRICT_EXIT: "true"
+      CURL_RUNNER_CONTINUE_ON_ERROR: "true"
+    steps:
+      - checkout
+      - run:
+          name: Install curl-runner
+          command: npm install -g @curl-runner/cli
+      - run:
+          name: Run API Tests
+          command: curl-runner tests/ --output-format json --output test-results.json
+      - store_artifacts:
+          path: test-results.json
+          destination: test-results
+
+workflows:
+  test:
+    jobs:
+      - test
+```
+
+## Best Practices
+
+- **Run All Tests First**: Use `--continue-on-error` with `--strict-exit` to get complete test results before failing.
+- **Use JSON Output**: JSON format is easier to parse and integrate with CI reporting tools.
+- **Archive Test Results**: Always save results as artifacts, even when tests fail, for debugging.
+- **Use Environment Variables**: Configure via env vars for flexibility across environments.
+
+## Troubleshooting
+
+**Exit Code Always 0**
+
+If the exit code is always 0 even with failures, check that you're using CI options correctly:
+
+```bash
+# Wrong: exits 0 with failures when using --continue-on-error alone
+curl-runner tests/ --continue-on-error
+
+# Right: exits 1 if any failures occur
+curl-runner tests/ --continue-on-error --strict-exit
+```
+
+**Tests Pass Locally but Fail in CI**
+
+Common causes include network issues, missing environment variables, or timing differences. Try increasing timeout and retry settings:
+
+```bash
+curl-runner tests/ --timeout 30000 --retries 3 --retry-delay 2000
+```

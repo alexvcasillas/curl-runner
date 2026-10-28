@@ -1,0 +1,137 @@
+---
+title: "Dry Run Mode"
+description: "Preview curl commands without executing them. Validate request configurations and debug issues before making actual API calls."
+---
+
+Preview the exact curl commands that would be executed without making actual API calls.
+
+## Overview
+
+Dry run mode shows you exactly what curl commands curl-runner would execute, without actually making the HTTP requests. This is invaluable for debugging configurations, validating variable interpolation, and reviewing complex request setups.
+
+- **Preview Commands**: See the exact curl command before execution
+- **Validate Config**: Verify headers, body, and variable interpolation
+- **Safe Testing**: No API calls made, no side effects
+
+## Basic Usage
+
+Enable dry run mode with the `-n` or `--dry-run` flag.
+
+```bash title="Basic Dry Run"
+# Basic dry run
+curl-runner api.yaml --dry-run
+
+# Short form
+curl-runner api.yaml -n
+
+# Dry run a directory of tests
+curl-runner tests/ --dry-run
+
+# Dry run with verbose output
+curl-runner api.yaml -n -v
+```
+
+## Example
+
+Given this YAML configuration, dry run mode shows the generated curl command.
+
+```yaml title="api.yaml"
+# api.yaml
+request:
+  name: Create User
+  url: https://api.example.com/users
+  method: POST
+  headers:
+    Authorization: Bearer ${API_TOKEN}
+    Content-Type: application/json
+  body:
+    name: John Doe
+    email: john@example.com
+```
+
+```text title="Dry Run Output"
+$ curl-runner api.yaml --dry-run
+
+  Command:
+    curl -X POST -w
+__CURL_METRICS_START__%{json}__CURL_METRICS_END__ -D - -H 'Authorization: [REDACTED]' -H 'Content-Type: application/json' --data-raw '{"name":"John Doe","email":"john@example.com"}' -L --proto -all,http,https --proto-redir -all,http,https -s -S -- https://api.example.com/users
+✓ Create User [api]
+   ├─ POST: https://api.example.com/users
+   ├─ ✓ Status: DRY-RUN
+   └─ Duration: 0ms | 0 B
+
+Summary: 1 request completed successfully
+```
+
+## Output Formats
+
+Dry run works with all output formats. The `dryRun: true` field indicates no request was made.
+
+- `--output-format pretty` *(default)*: Shows Status: `DRY-RUN` in cyan
+
+- `--output-format json`: Includes `"dryRun": true` in the response
+
+- `--output-format raw`: Shows only the curl command (no response body)
+
+```text title="JSON Output"
+$ curl-runner api.yaml --dry-run --output-format json
+
+{
+  "request": {
+    "name": "Create User",
+    "url": "https://api.example.com/users",
+    "method": "POST"
+  },
+  "success": true,
+  "dryRun": true
+}
+```
+
+## Environment Variables
+
+Enable dry run mode via environment variable for scripted workflows.
+
+- `CURL_RUNNER_DRY_RUN` Enable dry run mode (true/false)
+
+```bash title="Environment Variables"
+# Enable dry run via environment variable
+CURL_RUNNER_DRY_RUN=true curl-runner api.yaml
+
+# Useful in scripts for conditional dry runs
+if [ "$DEBUG" = "true" ]; then
+  curl-runner api.yaml --dry-run
+else
+  curl-runner api.yaml
+fi
+```
+
+## Use Cases
+
+Common scenarios where dry run mode is helpful.
+
+```bash title="Common Use Cases"
+# Verify configuration before deployment
+curl-runner production.yaml --dry-run
+
+# Debug authentication headers
+curl-runner auth-test.yaml -n -v
+
+# Validate variable interpolation
+curl-runner ${ENV}.yaml --dry-run
+
+# Review generated commands for complex requests
+curl-runner file-upload.yaml --dry-run
+```
+
+## Best Practices
+
+- **Recommended**
+  - Use `-n` before running against production APIs
+  - Verify authentication headers are correctly interpolated (secret values are shown as `[REDACTED]`; use `--no-redact` to see them)
+  - Check request body structure for complex payloads
+  - Validate file upload configurations
+- **Notes**
+  - Response storage won't have values from dry runs
+  - Conditional execution evaluates but doesn't execute
+  - Snapshot/diff modes show DRY-RUN status
+  - All requests show success (no actual validation)

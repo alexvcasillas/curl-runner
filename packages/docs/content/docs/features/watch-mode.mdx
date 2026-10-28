@@ -1,0 +1,145 @@
+---
+title: "Watch Mode"
+description: "Automatically re-run HTTP requests when files change. Learn about watch mode for rapid API development and testing workflows."
+---
+
+Automatically re-run HTTP requests when YAML files change, providing instant feedback during development.
+
+## Overview
+
+Watch mode monitors your YAML files for changes and automatically re-executes requests when modifications are detected. This creates a tight feedback loop ideal for API development and testing.
+
+- **Instant Feedback**: See results immediately after saving
+- **Debounced Execution**: Smart debouncing prevents duplicate runs
+- **Clean Output**: Automatic screen clearing for readability
+
+## Basic Usage
+
+Enable watch mode with the `-w` or `--watch` flag.
+
+```bash title="Basic Watch Mode"
+# Basic watch mode
+curl-runner api.yaml --watch
+
+# Short form
+curl-runner api.yaml -w
+
+# Watch a directory
+curl-runner tests/ -w
+
+# Watch multiple files
+curl-runner auth.yaml users.yaml products.yaml -w
+```
+
+## Watch Options
+
+Customize watch behavior with additional options.
+
+- `--watch-debounce <ms>` *(default: 300)*: Set the debounce delay in milliseconds. This prevents multiple rapid re-runs when files are saved in quick succession.
+
+- `--no-watch-clear` *(default: clears screen)*: Disable automatic screen clearing between runs. Useful when you want to see the history of all runs.
+
+```bash title="Watch Options"
+# Custom debounce delay (500ms)
+curl-runner api.yaml -w --watch-debounce 500
+
+# Don't clear screen between runs
+curl-runner api.yaml -w --no-watch-clear
+
+# Combine with other options
+curl-runner tests/ -w -p --max-concurrent 3 -v
+```
+
+## YAML Configuration
+
+Configure watch mode in your `curl-runner.yaml` configuration file.
+
+```yaml title="curl-runner.yaml"
+# curl-runner.yaml - Enable watch mode via config
+global:
+  watch:
+    enabled: true
+    debounce: 300     # 300ms debounce delay
+    clear: true       # Clear screen between runs
+  variables:
+    API_URL: https://api.example.com
+
+requests:
+  - name: Get Users
+    url: ${API_URL}/users
+    method: GET
+    expect:
+      status: 200
+```
+
+## Environment Variables
+
+Control watch mode via environment variables for CI/CD or scripted workflows.
+
+- `CURL_RUNNER_WATCH` Enable watch mode (true/false)
+- `CURL_RUNNER_WATCH_DEBOUNCE` Debounce delay in milliseconds
+- `CURL_RUNNER_WATCH_CLEAR` Clear screen between runs (true/false)
+
+```bash title="Environment Variables"
+# Enable watch mode via environment variable
+CURL_RUNNER_WATCH=true curl-runner api.yaml
+
+# Customize debounce
+CURL_RUNNER_WATCH_DEBOUNCE=500 curl-runner tests/ -w
+
+# Disable screen clearing
+CURL_RUNNER_WATCH_CLEAR=false curl-runner api.yaml -w
+```
+
+## Development Workflow
+
+Watch mode integrates seamlessly with your development workflow.
+
+```bash title="Development Workflow"
+# Development workflow example
+# Terminal 1: Start watch mode
+curl-runner api-tests.yaml -w -v
+
+# Terminal 2: Edit your YAML file
+# Every time you save, requests automatically re-run
+
+# Watch with parallel execution for faster feedback
+curl-runner tests/ -w -p --max-concurrent 5
+
+# Watch with specific output format
+curl-runner api.yaml -w --output-format pretty --pretty-level detailed
+```
+
+## Output Example
+
+Here's what watch mode output looks like when a file changes.
+
+```text title="Watch Mode Output"
+Watching for changes... (press Ctrl+C to stop)
+   Files: api.yaml
+
+--------------------------------------------------
+[14:32:15] File changed: api.yaml
+
+✓ Get Users [api]
+   ├─ GET https://api.example.com/users
+   ├─ ✓ Status: 200
+   └─ Duration: 45ms | 1.2 KB
+
+Summary: 1 passed | 0 failed | 45ms
+
+Watching for changes...
+```
+
+## Best Practices
+
+- **Recommended**
+  - Use `-v` for detailed feedback during development
+  - Combine with `-p` for faster test suites
+  - Keep YAML files focused on related requests
+  - Use appropriate debounce for your editor's save behavior
+- **Considerations**
+  - Watch mode keeps the process running until Ctrl+C
+  - Not recommended for CI/CD pipelines
+  - Changes during execution are queued
+  - Only watches explicitly specified files

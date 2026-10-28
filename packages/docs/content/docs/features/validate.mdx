@@ -1,0 +1,570 @@
+---
+title: "YAML Validation"
+description: "Validate curl-runner YAML configuration files against the schema. Discover issues, get fix suggestions, and auto-fix common problems."
+---
+
+Validate curl-runner YAML configuration files against the schema. Discover issues, get fix suggestions, and auto-fix common problems with a single command.
+
+## Overview
+
+The `curl-runner validate` command provides comprehensive validation of your YAML configuration files. It checks structure, required fields, valid values, security issues, and common typos—with intelligent suggestions and auto-fix capabilities.
+
+- **Schema Validation**: Full curl-runner schema validation
+- **Auto-Fix**: Many issue types fix themselves with `--fix`
+- **Typo Detection**: Smart suggestions for misspellings
+- **Security Checks**: Detects hardcoded secrets & keys
+
+## Basic Usage
+
+Run `curl-runner validate` to check your YAML files.
+
+```bash title="CLI Usage"
+# Validate all YAML files in current directory
+curl-runner validate
+
+# Validate specific file
+curl-runner validate api.yaml
+
+# Validate directory
+curl-runner validate tests/
+
+# Validate with glob pattern
+curl-runner validate "tests/**/*.yaml"
+```
+
+## CLI Options
+
+- `-f, --fix`: Automatically fix issues where possible. Fixes URL issues, method casing, header casing, and more.
+
+- `-s, --strict`: Treat warnings as errors. Useful for CI pipelines where you want stricter validation.
+
+- `-q, --quiet`: Only show files with issues. Valid files are not printed.
+
+- `-h, --help`: Show help message and exit.
+
+```bash title="Strict Mode"
+# Treat warnings as errors (for CI)
+curl-runner validate --strict
+
+# Short form
+curl-runner validate -s
+
+# Combine with quiet mode
+curl-runner validate --strict --quiet
+```
+
+## Auto-Fix
+
+Use `--fix` to automatically fix common issues.
+
+```bash title="Auto-Fix Usage"
+# Validate and auto-fix issues
+curl-runner validate --fix
+
+# Short form
+curl-runner validate -f
+
+# Fix quietly (only show errors)
+curl-runner validate -fq
+
+# Fix specific files
+curl-runner validate api.yaml --fix
+```
+
+**Auto-Fixable Issues**
+
+- Lowercase HTTP methods → UPPERCASE
+- Missing `https://` prefix
+- Protocol typos (htps, htpp, etc.)
+- Hostname typos (locahost, etc.)
+- Double slashes in URL paths
+- Spaces in URLs → %20
+- Header casing (content-type → Content-Type)
+- Lowercase execution mode
+- Lowercase output format
+- Lowercase prettyLevel
+
+**Manual Fix Required**
+
+- Invalid auth types
+- Missing required fields (url)
+- Invalid status codes
+- Schema conflicts (body + formData)
+- Unknown keys with no suggestion
+- Invalid port numbers
+- Hardcoded credentials
+- Invalid JSON body
+
+## Output Examples [#output]
+
+The validate command provides clear, colorized output showing what passed, what failed, and the severity of each issue.
+
+```text title="Validation Output"
+curl-runner validate
+
+Files: 5 found
+
+✓ api/invalid.yaml
+  ● request.url: URL should start with http:// or https://
+    fix: Prepend https://
+  ● request.method: Method should be uppercase: "GET"
+    fix: Change to "GET"
+  ● request.headers.content-type: Header "content-type" should be "Content-Type" for consistency
+    fix: Rename to "Content-Type"
+  ● request.insecure: Insecure mode disables SSL verification
+  → 3 warning(s), 1 info
+
+✓ api/orders.yaml
+✓ api/posts.yaml
+✓ api/products.yaml
+✓ api/users.yaml
+
+All files valid!
+```
+
+Files with warnings still count as valid. With `--strict` they fail:
+
+```text title="Output with --strict"
+curl-runner validate --strict -q
+
+Files: 5 found
+
+✗ api/invalid.yaml
+  ● request.insecure: Insecure mode disables SSL verification
+  → 1 warning(s)
+
+Summary: 1 file(s) with 1 issue(s)
+```
+
+With auto-fix enabled:
+
+```text title="Output with --fix"
+curl-runner validate --fix
+
+Files: 5 found
+
+✓ api/invalid.yaml
+  ● request.url: URL should start with http:// or https://
+  ● request.method: Method should be uppercase: "GET"
+  ● request.headers.content-type: Header "content-type" should be "Content-Type" for consistency
+  ● request.insecure: Insecure mode disables SSL verification
+  ✓ Fixed 3 issue(s)
+  → 3 warning(s), 1 info
+
+✓ api/orders.yaml
+✓ api/posts.yaml
+✓ api/products.yaml
+✓ api/users.yaml
+
+All files valid!
+```
+
+<Callout title="Auto-fix rewrites the file">
+  `--fix` writes the file back in place and re-serializes the YAML, so formatting and comments are
+  not preserved. Review the diff before committing.
+</Callout>
+
+## URL Validations
+
+Comprehensive URL validation with typo detection and auto-fix capabilities.
+
+```yaml title="URL Validations"
+# URL Validations
+
+# Missing protocol (warning, auto-fixable)
+request:
+  url: api.example.com/users
+  # Warning: URL should start with http:// or https://
+  # Fix: Prepend https://
+
+---
+# Protocol typo (error, auto-fixable)
+request:
+  url: htps://api.example.com
+  # Error: URL contains typo "htps"
+  # Fix: Fix to "https"
+
+---
+# Hostname typo (error, auto-fixable)
+request:
+  url: https://locahost:3000/api
+  # Error: URL contains typo "locahost"
+  # Fix: Fix to "localhost"
+
+---
+# Double slash in path (warning, auto-fixable)
+request:
+  url: https://api.example.com//users
+  # Warning: URL contains double slashes in path
+  # Fix: Remove extra slashes
+
+---
+# Spaces in URL (error, auto-fixable)
+request:
+  url: https://api.example.com/users /list
+  # Error: URL contains spaces
+  # Fix: Encode spaces as %20
+
+---
+# Invalid port (error)
+request:
+  url: https://api.example.com:99999/api
+  # Error: Invalid port number 99999. Must be 1-65535
+```
+
+- **Detected URL Typos**
+  - `htpp` → http
+  - `htps` → https
+  - `htp` → http
+  - `httpss` → https
+  - `locahost` → localhost
+  - `localhsot` → localhost
+  - `localhos` → localhost
+  - `lcoalhost` → localhost
+
+## Header Validations
+
+Validates header names, detects duplicates, and checks Content-Type consistency.
+
+```yaml title="Header Validations"
+# Header Validations
+
+# Wrong casing (info, auto-fixable)
+request:
+  url: https://api.example.com
+  headers:
+    content-type: application/json
+    authorization: Bearer token
+  # Info: Header "content-type" should be "Content-Type" for consistency
+  # Info: Header "authorization" should be "Authorization" for consistency
+
+---
+# Missing Content-Type (info)
+request:
+  url: https://api.example.com
+  method: POST
+  body:
+    name: test
+  # Info: Body present but no Content-Type header; consider adding one
+
+---
+# Duplicate headers (warning)
+request:
+  url: https://api.example.com
+  headers:
+    Content-Type: application/json
+    content-type: text/plain
+  # Warning: Duplicate header "content-type" (case-insensitive match with "Content-Type")
+```
+
+- **Standard Header Casing**
+  - Content-Type
+  - Authorization
+  - Accept
+  - Cache-Control
+  - Content-Length
+  - User-Agent
+  - X-Requested-With
+  - X-API-Key
+  - Accept-Encoding
+
+## Security Validations
+
+Detects potential security issues like hardcoded credentials and API keys.
+
+```yaml title="Security Validations"
+# Security Validations
+
+# Hardcoded credentials (warning)
+request:
+  url: https://api.example.com
+  auth:
+    type: basic
+    username: admin
+    password: secret123
+  # Warning: Hardcoded password. Consider using "${env.PASSWORD}"
+
+---
+# JWT in header (warning)
+request:
+  url: https://api.example.com
+  headers:
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature
+  # Warning: Potentially sensitive header value. Consider using variables like "${env.TOKEN}"
+
+---
+# API key patterns (warning)
+request:
+  url: https://api.example.com
+  headers:
+    X-API-Key: sk-live-xxxxxxxxxxxxx
+  # Warning: Potentially sensitive header value. Consider using variables like "${env.TOKEN}"
+
+---
+# Insecure mode (warning)
+request:
+  url: https://api.example.com
+  insecure: true
+  # Warning: Insecure mode disables SSL verification
+```
+
+**Detected Patterns**
+
+- JWT tokens (Bearer eyJ...)
+- Stripe API keys (sk_live_*, sk_test_*)
+- AWS access keys (AKIA...)
+- Common password field names (password, passwd, secret, api_key, etc.)
+- Hardcoded bearer tokens
+- Insecure SSL mode
+
+## Unknown Key Detection [#unknown-keys]
+
+Detects unknown configuration keys and suggests corrections using edit distance matching.
+
+```yaml title="Unknown Key Detection"
+# Unknown Key Detection with Suggestions
+
+# Typo in key name
+request:
+  url: https://api.example.com
+  methood: GET
+  # Warning: Unknown key "methood" (did you mean "method"?)
+  # Fix: Rename to "method"
+
+---
+# Typo in nested key
+request:
+  url: https://api.example.com
+  auth:
+    tpye: bearer
+    token: ${TOKEN}
+  # Warning: Unknown key "tpye" (did you mean "type"?)
+  # Error: Auth type is required
+
+---
+# Global config typo
+global:
+  excution: parallel
+  # Warning: Unknown key "excution" (did you mean "execution"?)
+
+requests:
+  - url: https://api.example.com
+```
+
+## What Gets Validated [#validation-rules]
+
+The validator checks all aspects of your curl-runner configuration.
+
+**Structure**
+
+- Must have `request`, `requests`, or `collection`
+- Unknown keys are flagged with suggestions
+- Valid YAML syntax
+- Duplicate request names detected
+
+**Request Fields**
+
+- `url` - Required, validated format
+- `method` - GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS
+- `headers` - Casing, duplicates
+- `body` - JSON validation, method compatibility
+
+**Authentication**
+
+- `auth.type` - basic, bearer, digest, ntlm or oauth2
+- basic auth requires username
+- bearer auth requires token
+- Hardcoded credential detection
+
+**SSL/TLS Config**
+
+- cert without key is flagged
+- key without cert is flagged
+- Path values must be strings
+- Insecure mode warning
+
+**Expect Assertions**
+
+- Status codes must be 100-599
+- Response time format validation
+- Headers must be an object
+- Duration format (e.g., `<500ms`)
+
+**Global Config**
+
+- execution: sequential or parallel
+- output.format: json, pretty, raw
+- output.prettyLevel: minimal, standard, detailed
+- ci.failOnPercentage: 0-100
+
+**Timeouts & Retries**
+
+- timeout must be positive number
+- retry.count must be non-negative
+- retry.delay must be non-negative
+- retry.maxDelay must be non-negative
+
+**Proxy Config**
+
+- proxy.url must be valid URL
+- proxy.auth requires username
+- Proxy URL protocol validation
+
+## Valid Configuration Examples [#valid-examples]
+
+Here are examples of properly configured YAML files that pass validation.
+
+```yaml title="Valid Request"
+# Valid request configuration
+request:
+  name: Get User
+  url: https://api.example.com/users/1
+  method: GET
+  headers:
+    Authorization: Bearer ${TOKEN}
+    Content-Type: application/json
+  timeout: 5000
+  expect:
+    status: 200
+    headers:
+      content-type: application/json
+    body:
+      id: 1
+```
+
+Global configuration:
+
+```yaml title="Valid Global Config"
+# Valid global configuration
+global:
+  execution: parallel
+  maxConcurrency: 5
+  continueOnError: true
+  output:
+    format: pretty
+    prettyLevel: detailed
+  ci:
+    strictExit: true
+    failOn: 2
+
+requests:
+  - url: https://api.example.com/users
+  - url: https://api.example.com/posts
+```
+
+## Common Validation Errors [#common-errors]
+
+Here are examples of common validation errors and how to fix them.
+
+```yaml title="Common Errors"
+# Common validation errors
+
+# Missing URL (error)
+request:
+  method: GET
+  # Error: URL is required
+
+---
+# Invalid method (error)
+request:
+  url: https://api.example.com
+  method: INVALID
+  # Error: Invalid method "INVALID". Must be: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS
+
+---
+# Lowercase method (warning, auto-fixable)
+request:
+  url: https://api.example.com
+  method: get
+  # Warning: Method should be uppercase: "GET"
+
+---
+# Invalid auth type (error)
+request:
+  url: https://api.example.com
+  auth:
+    type: oauth
+  # Error: Invalid auth type "oauth". Must be: basic, bearer, digest, ntlm, oauth2
+
+---
+# Invalid status code (error)
+request:
+  url: https://api.example.com
+  expect:
+    status: 1000
+  # Error: Status code must be a number between 100-599
+
+---
+# Body and formData conflict (error)
+request:
+  url: https://api.example.com
+  body: { "test": "value" }
+  formData:
+    field: value
+  # Error: Cannot use both "body" and "formData"
+
+---
+# Body with GET (warning)
+request:
+  url: https://api.example.com
+  method: GET
+  body: { "test": "value" }
+  # Warning: Body with GET method may be ignored by some servers
+
+---
+# Duplicate request names (warning)
+requests:
+  - name: GetUser
+    url: https://api.example.com/users/1
+  - name: GetUser
+    url: https://api.example.com/users/2
+  # Warning: Duplicate request name "GetUser"
+```
+
+## CI/CD Integration [#ci-integration]
+
+Use validation in your CI/CD pipeline to catch configuration errors before deployment.
+
+```bash title="CI Integration"
+# GitHub Actions
+- name: Validate YAML configs
+  run: curl-runner validate tests/ --quiet
+
+# GitLab CI (strict mode fails on warnings)
+validate:
+  script:
+    - curl-runner validate tests/ --strict
+
+# Pre-commit hook
+curl-runner validate && curl-runner tests/
+```
+
+**Exit Codes**
+
+- `0` - All files valid (no errors)
+- `1` - One or more files have errors
+- `1` (with --strict) - Files have errors OR warnings
+
+## Best Practices
+
+- **Recommended**
+  - Run validation before committing changes
+  - Use --strict in CI pipelines
+  - Use --quiet in automated scripts
+  - Review auto-fixes before committing
+  - Use environment variables for credentials
+  - Validate entire test directories at once
+- **Considerations**
+  - Auto-fix changes files in place
+  - Some issues require manual intervention
+  - Warnings don't fail validation (unless --strict)
+  - Variables (`${VAR}`) are not resolved during validation
+  - Security warnings suggest using env vars
+
+## Severity Levels
+
+Each issue is printed with a colored `●`; the color shows the severity and the summary line counts each level.
+
+- **Error** (red): Must be fixed. Fails validation.
+- **Warning** (yellow): Should be fixed. Often auto-fixable. Valid by default, fails with `--strict`.
+- **Info** (dim): For awareness. Does not affect the exit code.
