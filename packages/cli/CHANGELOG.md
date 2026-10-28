@@ -1,5 +1,11 @@
 # @curl-runner/cli
 
+## 2.1.0
+
+### Minor Changes
+
+- [#133](https://github.com/alexvcasillas/curl-runner/pull/133) [`b5f26d3`](https://github.com/alexvcasillas/curl-runner/commit/b5f26d392216c7794ab3854b11c6d7c111230e56) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - Homebrew: install with `brew install alexvcasillas/tap/curl-runner` (prebuilt binaries for macOS and Linux, arm64 and x64). `curl-runner upgrade` now detects Homebrew installs and runs `brew upgrade curl-runner` instead of refusing to upgrade them.
+
 ## 2.0.0
 
 ### Major Changes
