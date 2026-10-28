@@ -20,6 +20,7 @@ import {
   bunInstallExample,
   cargoInstallExample,
   curlInstallerExample,
+  homebrewInstallExample,
   linuxBinaryInstallExample,
   npmInstallExample,
   powershellInstallerExample,
@@ -39,6 +40,7 @@ export const metadata: Metadata = {
     'bun install curl-runner',
     'npm install curl-runner',
     'cargo install curl-runner',
+    'brew install curl-runner',
     'CLI tool installation',
     'HTTP client setup',
     'package manager installation',
@@ -187,6 +189,18 @@ curl-runner --version`}
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* Homebrew Installation */}
+              <div className="space-y-3">
+                <h3 className="text-xl font-semibold">Homebrew (macOS, Linux)</h3>
+                <p className="text-muted-foreground">
+                  Install the prebuilt binary from the{' '}
+                  <code className="bg-muted px-1 rounded">alexvcasillas/tap</code> tap.{' '}
+                  <code className="bg-muted px-1 rounded">curl-runner upgrade</code> runs{' '}
+                  <code className="bg-muted px-1 rounded">brew upgrade curl-runner</code> for you.
+                </p>
+                <CodeBlockServer language="bash">{homebrewInstallExample}</CodeBlockServer>
               </div>
 
               {/* Cargo Installation */}

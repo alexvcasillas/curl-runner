@@ -11,6 +11,8 @@ pub enum InstallMethod {
     Bun,
     /// `cargo install curl-runner` (`$CARGO_HOME/bin`, default `~/.cargo/bin`).
     Cargo,
+    /// `brew install alexvcasillas/tap/curl-runner` (a Homebrew `Cellar` path).
+    Homebrew,
     /// A downloaded binary (TS `curl` installer and `standalone`).
     Standalone,
     /// A development build or an unreadable path: never upgraded.
@@ -36,9 +38,9 @@ pub fn detect(exe: &Path, env: &dyn Fn(&str) -> Option<String>) -> InstallMethod
     if is_cargo(&p, env) {
         return InstallMethod::Cargo;
     }
-    // Never self-replace inside Homebrew's tree.
+    // Homebrew's own tree; never self-replace inside it.
     if p.contains("/Cellar/") {
-        return InstallMethod::Unknown;
+        return InstallMethod::Homebrew;
     }
     if p.contains("/.local/bin/") {
         return InstallMethod::Standalone;
@@ -90,6 +92,7 @@ pub fn upgrade_command(m: InstallMethod) -> Option<&'static str> {
         InstallMethod::Bun => Some("bun install -g @curl-runner/cli@latest"),
         InstallMethod::Npm => Some("npm install -g @curl-runner/cli@latest"),
         InstallMethod::Cargo => Some("cargo install curl-runner --locked"),
+        InstallMethod::Homebrew => Some("brew upgrade curl-runner"),
         InstallMethod::Standalone | InstallMethod::Unknown => None,
     }
 }
@@ -202,14 +205,18 @@ mod tests {
     }
 
     #[test]
-    fn homebrew_tree_is_unknown() {
+    fn detects_homebrew_cellar_path() {
         assert_eq!(
             d("/opt/homebrew/Cellar/curl-runner/1.2.3/bin/curl-runner"),
-            InstallMethod::Unknown
+            InstallMethod::Homebrew
+        );
+        assert_eq!(
+            d("/usr/local/Cellar/curl-runner/1.2.3/bin/curl-runner"),
+            InstallMethod::Homebrew
         );
         assert_eq!(
             d("/home/linuxbrew/.linuxbrew/Cellar/curl-runner/1.2.3/bin/curl-runner"),
-            InstallMethod::Unknown
+            InstallMethod::Homebrew
         );
         // npm installed through Homebrew's node is still npm.
         assert_eq!(
@@ -265,6 +272,10 @@ mod tests {
         assert_eq!(
             upgrade_command(InstallMethod::Cargo),
             Some("cargo install curl-runner --locked")
+        );
+        assert_eq!(
+            upgrade_command(InstallMethod::Homebrew),
+            Some("brew upgrade curl-runner")
         );
         assert_eq!(upgrade_command(InstallMethod::Standalone), None);
         assert_eq!(upgrade_command(InstallMethod::Unknown), None);

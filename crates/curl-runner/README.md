@@ -14,6 +14,7 @@ Building from source compiles libcurl and the TLS library, so it needs a C compi
 
 ```bash
 curl -fsSL https://www.curl-runner.com/install.sh | bash   # macOS, Linux
+brew install alexvcasillas/tap/curl-runner                  # Homebrew
 npm i -g @curl-runner/cli                                   # or bun / pnpm
 ```
 
