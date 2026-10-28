@@ -28,41 +28,69 @@ export interface LatestRelease {
 const GITHUB_REPO = 'alexvcasillas/curl-runner';
 const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 
-function parseAssets(assets: ReleaseAsset[]): {
-  binaries: BinaryDownload[];
-  checksumUrl?: string;
-} {
+const PLATFORM_ORDER = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'linux-arm64', 'windows-x64'];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/**
+ * Pure parser for a GitHub release payload. Returns null unless the tag looks
+ * like `@curl-runner/cli@X.Y.Z`.
+ */
+export function parseRelease(json: unknown): LatestRelease | null {
+  if (!isRecord(json) || typeof json.tag_name !== 'string') {
+    return null;
+  }
+  const versionMatch = json.tag_name.match(/^@curl-runner\/cli@(\d+\.\d+\.\d+\S*)$/);
+  if (!versionMatch) {
+    return null;
+  }
+
   const binaries: BinaryDownload[] = [];
   let checksumUrl: string | undefined;
+  const assets = Array.isArray(json.assets) ? json.assets : [];
 
   for (const asset of assets) {
-    // Parse binary assets
-    const binaryMatch = asset.name.match(
-      /^curl-runner-cli-.+-(linux|darwin|windows)-(x64|arm64)\.(tar\.gz|zip)$/,
-    );
-
-    if (binaryMatch) {
-      const os = binaryMatch[1];
-      const arch = binaryMatch[2];
-      const platform = `${os}-${arch}`;
-
-      binaries.push({
-        platform,
-        arch,
-        os: os as 'linux' | 'darwin' | 'windows',
-        fileName: asset.name,
-        downloadUrl: asset.browser_download_url,
-        size: asset.size,
-      });
+    if (
+      !isRecord(asset) ||
+      typeof asset.name !== 'string' ||
+      typeof asset.browser_download_url !== 'string'
+    ) {
+      continue;
     }
-
-    // Find checksum file
     if (asset.name === 'SHA256SUMS.txt') {
       checksumUrl = asset.browser_download_url;
+      continue;
+    }
+    const match = asset.name.match(
+      /^curl-runner-cli-.+-(linux|darwin|windows)-(x64|arm64)\.(tar\.gz|zip)$/,
+    );
+    if (match) {
+      binaries.push({
+        platform: `${match[1]}-${match[2]}`,
+        arch: match[2],
+        os: match[1] as BinaryDownload['os'],
+        fileName: asset.name,
+        downloadUrl: asset.browser_download_url,
+        size: typeof asset.size === 'number' ? asset.size : 0,
+      });
     }
   }
 
-  return { binaries, checksumUrl };
+  binaries.sort((x, y) => PLATFORM_ORDER.indexOf(x.platform) - PLATFORM_ORDER.indexOf(y.platform));
+
+  return {
+    version: versionMatch[1],
+    tagName: json.tag_name,
+    publishedAt: typeof json.published_at === 'string' ? json.published_at : '',
+    htmlUrl:
+      typeof json.html_url === 'string'
+        ? json.html_url
+        : `https://github.com/${GITHUB_REPO}/releases`,
+    binaries,
+    checksumUrl,
+  };
 }
 
 async function fetchLatestReleaseUncached(): Promise<LatestRelease | null> {
@@ -86,22 +114,7 @@ async function fetchLatestReleaseUncached(): Promise<LatestRelease | null> {
       return null;
     }
 
-    const data = await response.json();
-
-    // Extract version from tag (e.g., @curl-runner/cli@1.10.0 -> 1.10.0)
-    const versionMatch = data.tag_name.match(/@curl-runner\/cli@(.+)/);
-    const version = versionMatch ? versionMatch[1] : data.tag_name;
-
-    const { binaries, checksumUrl } = parseAssets(data.assets);
-
-    return {
-      version,
-      tagName: data.tag_name,
-      publishedAt: data.published_at,
-      htmlUrl: data.html_url,
-      binaries,
-      checksumUrl,
-    };
+    return parseRelease(await response.json());
   } catch (error) {
     console.error('Failed to fetch latest release:', error);
     return null;

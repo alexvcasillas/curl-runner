@@ -1,0 +1,43 @@
+{
+  "tag_name": "@curl-runner/cli@2.1.0",
+  "published_at": "2026-10-28T13:42:19Z",
+  "html_url": "https://github.com/alexvcasillas/curl-runner/releases/tag/%40curl-runner/cli%402.1.0",
+  "assets": [
+    {
+      "name": "curl-runner-cli-2.1.0-darwin-arm64.tar.gz",
+      "browser_download_url": "https://github.com/alexvcasillas/curl-runner/releases/download/%40curl-runner/cli%402.1.0/curl-runner-cli-2.1.0-darwin-arm64.tar.gz",
+      "size": 4358287,
+      "content_type": "application/gzip"
+    },
+    {
+      "name": "curl-runner-cli-2.1.0-darwin-x64.tar.gz",
+      "browser_download_url": "https://github.com/alexvcasillas/curl-runner/releases/download/%40curl-runner/cli%402.1.0/curl-runner-cli-2.1.0-darwin-x64.tar.gz",
+      "size": 4663428,
+      "content_type": "application/gzip"
+    },
+    {
+      "name": "curl-runner-cli-2.1.0-linux-arm64.tar.gz",
+      "browser_download_url": "https://github.com/alexvcasillas/curl-runner/releases/download/%40curl-runner/cli%402.1.0/curl-runner-cli-2.1.0-linux-arm64.tar.gz",
+      "size": 4841082,
+      "content_type": "application/gzip"
+    },
+    {
+      "name": "curl-runner-cli-2.1.0-linux-x64.tar.gz",
+      "browser_download_url": "https://github.com/alexvcasillas/curl-runner/releases/download/%40curl-runner/cli%402.1.0/curl-runner-cli-2.1.0-linux-x64.tar.gz",
+      "size": 5170656,
+      "content_type": "application/gzip"
+    },
+    {
+      "name": "curl-runner-cli-2.1.0-windows-x64.zip",
+      "browser_download_url": "https://github.com/alexvcasillas/curl-runner/releases/download/%40curl-runner/cli%402.1.0/curl-runner-cli-2.1.0-windows-x64.zip",
+      "size": 4169122,
+      "content_type": "application/zip"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "browser_download_url": "https://github.com/alexvcasillas/curl-runner/releases/download/%40curl-runner/cli%402.1.0/SHA256SUMS.txt",
+      "size": 530,
+      "content_type": "text/plain"
+    }
+  ]
+}
