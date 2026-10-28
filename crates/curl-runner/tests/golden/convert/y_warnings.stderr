@@ -3,3 +3,5 @@
 [33m⚠ when condition has no curl equivalent[0m
 [33m⚠ snapshot config has no curl equivalent[0m
 [33m⚠ diff config has no curl equivalent[0m
+[33m⚠ retry without a delay retries immediately; curl backs off 1s, 2s, 4s... (it has no way to retry immediately)[0m
+[33m⚠ curl retries on 408, 429, 500, 502, 503 and 504; the retryableStatuses here differ (the runner's default lacks 408)[0m

@@ -448,21 +448,38 @@ fn warned(r: &ConvertResult, needle: &str) -> bool {
 }
 
 #[test]
-fn retry_count_is_converted() {
+fn bare_retry_matches_curl_backoff_and_statuses() {
     let r = conv("curl --retry 3 https://x.test");
-    assert!(r.output.contains("retry:\n    count: 3"), "{}", r.output);
-    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
-}
-
-#[test]
-fn retry_delay_seconds_become_milliseconds() {
-    let r = conv("curl --retry 3 --retry-delay 2 https://x.test");
     assert!(
-        r.output.contains("retry:\n    count: 3\n    delay: 2000"),
+        r.output.contains("retry:\n    count: 3\n    delay: 1000\n    backoff: 2\n    retryableStatuses: [408, 429, 500, 502, 503, 504]"),
         "{}",
         r.output
     );
     assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+}
+
+#[test]
+fn retry_delay_seconds_become_fixed_milliseconds() {
+    let r = conv("curl --retry 3 --retry-delay 2 https://x.test");
+    assert!(
+        r.output
+            .contains("retry:\n    count: 3\n    delay: 2000\n    retryableStatuses:"),
+        "{}",
+        r.output
+    );
+    assert!(!r.output.contains("backoff"), "{}", r.output);
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+}
+
+#[test]
+fn retry_delay_zero_means_curl_default_backoff() {
+    let r = conv("curl --retry 2 --retry-delay 0 https://x.test");
+    assert!(
+        r.output.contains("delay: 1000\n    backoff: 2"),
+        "{}",
+        r.output
+    );
+    assert!(warned(&r, "--retry-delay 0"), "{:?}", r.warnings);
 }
 
 #[test]
@@ -479,7 +496,12 @@ fn non_numeric_retry_values_warn() {
     assert!(warned(&r, "--retry many"), "{:?}", r.warnings);
     let r = conv("curl --retry 3 --retry-delay soon https://x.test");
     assert!(r.output.contains("count: 3"), "{}", r.output);
-    assert!(!r.output.contains("delay:"), "{}", r.output);
+    // the bad delay is ignored, so curl's default backoff applies
+    assert!(
+        r.output.contains("delay: 1000\n    backoff: 2"),
+        "{}",
+        r.output
+    );
     assert!(warned(&r, "--retry-delay soon"), "{:?}", r.warnings);
 }
 
@@ -498,32 +520,58 @@ fn other_retry_flags_warn_and_do_not_swallow_the_url() {
     }
 }
 
+fn y2c(retry: &str) -> ConvertResult {
+    convert_yaml_to_curl(&format!(
+        "request:\n  url: https://a.com\n  retry:\n{retry}"
+    ))
+    .unwrap()
+}
+
+const CURL_STATUSES: &str = "    retryableStatuses: [408, 429, 500, 502, 503, 504]\n";
+
 #[test]
-fn retry_converts_to_curl_flags() {
-    let r = convert_yaml_to_curl(
-        "request:\n  url: https://a.com\n  retry:\n    count: 3\n    delay: 2000\n",
-    )
-    .unwrap();
+fn curl_default_backoff_maps_to_bare_retry_without_warning() {
+    let r = y2c(&format!(
+        "    count: 3\n    delay: 1000\n    backoff: 2\n{CURL_STATUSES}"
+    ));
+    assert!(r.output.contains("--retry 3"), "{}", r.output);
+    assert!(!r.output.contains("--retry-delay"), "{}", r.output);
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+}
+
+#[test]
+fn fixed_delay_maps_to_retry_delay() {
+    let r = y2c(&format!("    count: 3\n    delay: 2000\n{CURL_STATUSES}"));
     assert!(r.output.contains("--retry 3"), "{}", r.output);
     assert!(r.output.contains("--retry-delay 2"), "{}", r.output);
     assert!(r.warnings.is_empty(), "{:?}", r.warnings);
 }
 
 #[test]
+fn immediate_retry_warns_that_curl_backs_off() {
+    for body in ["    count: 3\n", "    count: 3\n    delay: 0\n"] {
+        let r = y2c(body);
+        assert!(r.output.contains("--retry 3"), "{}", r.output);
+        assert!(!r.output.contains("--retry-delay"), "{}", r.output);
+        assert!(warned(&r, "retries immediately"), "{:?}", r.warnings);
+    }
+}
+
+#[test]
 fn retry_delay_that_is_not_whole_seconds_warns() {
-    let r = convert_yaml_to_curl(
-        "request:\n  url: https://a.com\n  retry:\n    count: 3\n    delay: 1500\n",
-    )
-    .unwrap();
+    let r = y2c("    count: 3\n    delay: 1500\n");
     assert!(r.output.contains("--retry-delay 2"), "{}", r.output);
     assert!(warned(&r, "1500"), "{:?}", r.warnings);
 }
 
 #[test]
-fn retry_extras_without_curl_equivalent_warn() {
-    let r = convert_yaml_to_curl("request:\n  url: https://a.com\n  retry:\n    count: 2\n    backoff: 2\n    retryableStatuses: [503]\n").unwrap();
+fn retry_backoff_and_status_differences_warn() {
+    let r = y2c("    count: 2\n    delay: 500\n    backoff: 3\n    retryableStatuses: [503]\n");
     assert!(r.output.contains("--retry 2"), "{}", r.output);
-    assert!(warned(&r, "retry"), "{:?}", r.warnings);
+    assert!(warned(&r, "backoff 3"), "{:?}", r.warnings);
+    assert!(warned(&r, "408"), "{:?}", r.warnings);
+    // the runner's default status set lacks 408
+    assert!(warned(&y2c("    count: 1\n    delay: 1000\n"), "408"));
 }
 
 #[test]

@@ -123,13 +123,19 @@ pub enum Source {
     Yaml,
 }
 
-/// The part of `retry` that curl can express (`--retry`, `--retry-delay`).
+/// The `retry` block: `--retry` / `--retry-delay` and the runner settings
+/// that reproduce curl's retry timing and status set.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RetryIr {
     pub count: u64,
     /// Milliseconds (curl takes whole seconds).
     pub delay_ms: Option<u64>,
+    pub backoff: Option<f64>,
+    pub statuses: Option<Vec<u16>>,
 }
+
+/// Statuses curl retries on (`--retry`): the runner's default set lacks 408.
+pub const CURL_RETRY_STATUSES: [u16; 6] = [408, 429, 500, 502, 503, 504];
 
 /// Intermediate representation shared by both converters.
 #[derive(Debug, Clone, PartialEq)]

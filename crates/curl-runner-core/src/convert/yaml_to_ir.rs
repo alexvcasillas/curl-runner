@@ -5,7 +5,10 @@
 //! template literals and truthiness checks would.
 
 use super::jsutil::JsMap;
-use super::types::{Auth, Body, CurlRunnerIr, FormField, FormFile, NumText, RetryIr, Source, Ssl};
+use super::types::{
+    Auth, Body, CURL_RETRY_STATUSES, CurlRunnerIr, FormField, FormFile, NumText, RetryIr, Source,
+    Ssl,
+};
 use crate::jsval::JsVal;
 use crate::model::Json;
 
@@ -49,41 +52,75 @@ fn object_entries(v: Option<&Json>) -> Vec<(String, Json)> {
 }
 
 /// The curl-expressible part of a YAML `retry` block plus a warning per part
-/// that is lost or rounded.
+/// whose timing or status set differs from what curl would do.
 fn retry_to_ir(retry: Option<&Json>) -> (Option<RetryIr>, Vec<String>) {
     let mut warnings = Vec::new();
     let Some(obj) = retry.and_then(Json::as_object) else {
         warnings.push("retry config has no curl equivalent".into());
         return (None, warnings);
     };
-    let whole = |k: &str| obj.get(k).and_then(Json::as_u64);
-    let count = whole("count");
-    let delay_ms = whole("delay");
-    for k in ["count", "delay"] {
-        if obj.get(k).is_some_and(|v| !v.is_null()) && whole(k).is_none() {
-            warnings.push(format!("retry {k} is not a whole number and was dropped"));
+    let present = |k: &str| obj.get(k).is_some_and(|v| !v.is_null());
+    let count = obj.get("count").and_then(Json::as_u64);
+    let delay = obj.get("delay").and_then(Json::as_u64);
+    let backoff = obj.get("backoff").and_then(Json::as_f64);
+    for k in ["count", "delay", "backoff"] {
+        if present(k) && obj.get(k).and_then(Json::as_f64).is_none() {
+            warnings.push(format!("retry {k} is not a number and was dropped"));
         }
     }
-    for k in ["backoff", "retryableStatuses"] {
-        if obj.get(k).is_some_and(|v| !v.is_null()) {
-            warnings.push(format!("retry {k} has no curl equivalent"));
+    let Some(count) = count else {
+        if delay.is_some() {
+            warnings.push("retry delay needs a count; --retry-delay not emitted".into());
         }
-    }
-    if let Some(ms) = delay_ms.filter(|ms| ms % 1000 != 0) {
-        warnings.push(format!(
-            "retry delay {ms}ms rounded up to {}s for --retry-delay",
-            ms.div_ceil(1000)
-        ));
-    }
-    match count {
-        Some(count) => (Some(RetryIr { count, delay_ms }), warnings),
-        None => {
-            if delay_ms.is_some() {
-                warnings.push("retry delay needs a count; --retry-delay not emitted".into());
+        return (None, warnings);
+    };
+
+    let growing = backoff.is_some_and(|b| b != 1.0);
+    let (emit_delay, backoff_ir) = match delay.unwrap_or(0) {
+        1000 if backoff == Some(2.0) => (None, None), // curl's default: 1s, 2s, 4s...
+        0 => {
+            warnings.push(
+                "retry without a delay retries immediately; curl backs off 1s, 2s, 4s... (it has no way to retry immediately)".into(),
+            );
+            (None, None)
+        }
+        ms => {
+            if ms % 1000 != 0 {
+                warnings.push(format!(
+                    "retry delay {ms}ms rounded up to {}s for --retry-delay",
+                    ms.div_ceil(1000)
+                ));
             }
-            (None, warnings)
+            if growing {
+                warnings.push(format!(
+                    "retry backoff {} has no curl equivalent: curl waits a fixed --retry-delay",
+                    backoff.unwrap_or(1.0)
+                ));
+            }
+            (Some(ms), None)
         }
+    };
+    if emit_delay.is_none() && delay.unwrap_or(0) == 0 && growing {
+        warnings.push("retry backoff has no effect without a delay".into());
     }
+    let statuses = obj
+        .get("retryableStatuses")
+        .and_then(Json::as_array)
+        .map(|a| a.iter().filter_map(Json::as_u64).collect::<Vec<_>>());
+    if statuses.as_deref() != Some(&CURL_RETRY_STATUSES.map(u64::from)[..]) {
+        warnings.push(
+            "curl retries on 408, 429, 500, 502, 503 and 504; the retryableStatuses here differ (the runner's default lacks 408)".into(),
+        );
+    }
+    (
+        Some(RetryIr {
+            count,
+            delay_ms: emit_delay,
+            backoff: backoff_ir,
+            statuses: None,
+        }),
+        warnings,
+    )
 }
 
 /// `yamlToIR`. `Err` carries the message of the TypeError the TS code throws

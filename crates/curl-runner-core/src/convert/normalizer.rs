@@ -5,7 +5,8 @@
 use super::jsjson;
 use super::jsutil::{JsMap, atob, decode_uri_component, encode_uri_component};
 use super::types::{
-    Auth, Body, CurlAst, CurlRunnerIr, FormField, FormFile, NumText, RetryIr, Source, Ssl,
+    Auth, Body, CURL_RETRY_STATUSES, CurlAst, CurlRunnerIr, FormField, FormFile, NumText, RetryIr,
+    Source, Ssl,
 };
 use crate::jsval::trim;
 
@@ -122,7 +123,27 @@ fn detect_retry(ast: &CurlAst, warnings: &mut Vec<String>) -> Option<RetryIr> {
         n
     });
     match (count, delay) {
-        (Some(count), delay_ms) => Some(RetryIr { count, delay_ms }),
+        (Some(count), delay) => {
+            // curl waits 1 s, 2 s, 4 s... unless a (non-zero) delay is given,
+            // then the delay is fixed; the runner's default is no wait at all.
+            let (delay_ms, backoff) = match delay {
+                Some(ms) if ms > 0 => (ms, None),
+                other => {
+                    if other == Some(0) {
+                        warnings.push(
+                            "--retry-delay 0 means curl's default backoff (1s, 2s, 4s...); converted as such".into(),
+                        );
+                    }
+                    (1000, Some(2.0))
+                }
+            };
+            Some(RetryIr {
+                count,
+                delay_ms: Some(delay_ms),
+                backoff,
+                statuses: Some(CURL_RETRY_STATUSES.to_vec()),
+            })
+        }
         (None, Some(_)) => {
             warnings.push("--retry-delay has no effect without --retry; ignored".into());
             None

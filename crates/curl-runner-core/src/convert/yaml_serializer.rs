@@ -144,6 +144,13 @@ fn request_fields(lines: &mut Vec<String>, ir: &CurlRunnerIr, base: usize, prett
         if let Some(ms) = r.delay_ms {
             lines.push(format!("{p1}delay: {ms}"));
         }
+        if let Some(b) = r.backoff {
+            lines.push(format!("{p1}backoff: {}", num_to_string(b)));
+        }
+        if let Some(st) = &r.statuses {
+            let list: Vec<String> = st.iter().map(u16::to_string).collect();
+            lines.push(format!("{p1}retryableStatuses: [{}]", list.join(", ")));
+        }
     }
     if ir.follow_redirects == Some(true) {
         lines.push(format!("{p0}followRedirects: true"));
