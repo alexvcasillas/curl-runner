@@ -1273,6 +1273,27 @@ mod tests {
     }
 
     #[test]
+    fn file_global_http2_beats_project_config_defaults_http2() {
+        // Project `defaults.http2: false` is a lower layer than the test
+        // file's own `global.http2: true`: the nearer source wins.
+        let project = GlobalConfig {
+            defaults: Some(RequestConfig {
+                http2: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let yaml = "global:\n  http2: true\nrequests:\n  - url: http://a\n";
+        let layers = defaults_layers(
+            Some(&project),
+            &GlobalConfig::default(),
+            &no_env,
+            &cli(|_| {}),
+        );
+        assert_eq!(parse_file(yaml, &layers).requests[0].http2, Some(true));
+    }
+
+    #[test]
     fn config_file_only_needs_a_valid_global() {
         let dir = tempfile::tempdir().unwrap();
         // Valid YAML with a request whose types are wrong: TS ignores everything but `global`.
