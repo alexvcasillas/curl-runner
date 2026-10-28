@@ -8,7 +8,7 @@
 //!   without a value and `-1` is parsed as short flags.
 //! - Numbers use JS `parseInt`/`parseFloat` prefix semantics (`30ms` is 30).
 //!   Where TS stores `NaN` (or an overflowing number) the Rust field stays unset.
-//! - Short `-c` is accepted and ignored; `--continue-on-error` is the real flag.
+//! - Short `-c` is an alias of `--continue-on-error` (1.x ignored it).
 //! - Invalid enum values (`--output-format xml`) are consumed and ignored.
 
 pub use curl_runner_core::config::CliOptions;
@@ -267,6 +267,7 @@ fn parse_short(flags: &str, next: Option<&str>, has_next: bool, o: &mut CliOptio
             'h' => o.help = Some(true),
             'v' => o.verbose = Some(true),
             'p' => o.execution = Some("parallel".into()),
+            'c' => o.continue_on_error = Some(true),
             'q' => o.quiet = Some(true),
             'w' => o.watch = Some(true),
             's' => o.snapshot = Some(true),
@@ -291,7 +292,7 @@ fn parse_short(flags: &str, next: Option<&str>, has_next: bool, o: &mut CliOptio
                     consumed = 1;
                 }
             }
-            // `-c` (and any unknown short flag) is accepted and ignored.
+            // Any unknown short flag is accepted and ignored.
             _ => {}
         }
     }
@@ -541,10 +542,10 @@ mod tests {
     }
 
     #[test]
-    fn short_c_is_a_noop() {
-        let o = p(&["-c"]);
-        assert_eq!(o, CliOptions::default());
-        assert_eq!(p(&["-vc"]).continue_on_error, None);
+    fn short_c_is_continue_on_error() {
+        assert_eq!(p(&["-c"]).continue_on_error, Some(true));
+        let o = p(&["-vc"]);
+        assert_eq!((o.verbose, o.continue_on_error), (Some(true), Some(true)));
     }
 
     #[test]

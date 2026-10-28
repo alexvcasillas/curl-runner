@@ -14,9 +14,28 @@ pub fn yaml_str(s: &str) -> String {
         return "\"\"".into();
     }
     if needs_quoting(s) {
-        return quote(s);
+        return quote_safe(s);
     }
-    s.to_string()
+    // Whatever the TS rule leaves bare must still read back as the same string
+    // (`- a`, multi-line text, `#x`, ...).
+    let plain_ok = reads_back(&format!("v: {s}"), &serde_json::json!({ "v": s }));
+    if plain_ok {
+        s.to_string()
+    } else {
+        quote_escaped(s)
+    }
+}
+
+/// `quote`, except text with line breaks or control characters, which needs
+/// escapes to survive.
+fn quote_safe(s: &str) -> String {
+    if s.chars()
+        .any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}' | '\u{feff}'))
+    {
+        quote_escaped(s)
+    } else {
+        quote(s)
+    }
 }
 
 /// Quote a YAML key if necessary.
@@ -26,7 +45,16 @@ pub fn yaml_key(s: &str) -> String {
         .next()
         .is_some_and(|c| c.is_ascii_alphabetic() || c == b'_')
         && b.all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-');
-    if ok { s.to_string() } else { quote(s) }
+    // `on: x` reads back as the key `true` (YAML 1.1 booleans, like Bun).
+    let reads_as_scalar = matches!(
+        s.to_lowercase().as_str(),
+        "true" | "false" | "null" | "yes" | "no" | "on" | "off"
+    );
+    if ok && !reads_as_scalar {
+        s.to_string()
+    } else {
+        quote_safe(s)
+    }
 }
 
 pub fn needs_quoting(s: &str) -> bool {

@@ -53,6 +53,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--limit-rate",
     "--ciphers",
     "--proto",
+    "--retry-max-time",
     "--tlsv1.2",
     "--tlsv1.3",
 ];
@@ -88,6 +89,8 @@ const BOOLEAN_FLAGS: &[&str] = &[
     "--tr-encoding",
     "--tcp-nodelay",
     "--tcp-fastopen",
+    "--retry-all-errors",
+    "--retry-connrefused",
 ];
 
 /// Parse a raw curl command string (`parseCurl`).
@@ -289,6 +292,28 @@ fn process_flag(flag: &str, value: Option<&str>, i: usize, ast: &mut CurlAst) ->
             ast.referer = own();
             ast.touch("referer");
             i + 2
+        }
+        "--retry" => {
+            ast.retry = own();
+            i + 2
+        }
+        "--retry-delay" => {
+            ast.retry_delay = own();
+            i + 2
+        }
+        "--retry-max-time" => {
+            ast.unsupported_flags.push(UnsupportedFlag {
+                flag: flag.to_string(),
+                value: own(),
+            });
+            i + 2
+        }
+        "--retry-all-errors" | "--retry-connrefused" => {
+            ast.unsupported_flags.push(UnsupportedFlag {
+                flag: flag.to_string(),
+                value: None,
+            });
+            i + 1
         }
         "-G" | "--get" => {
             ast.get = true;

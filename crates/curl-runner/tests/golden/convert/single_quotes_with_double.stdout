@@ -1,6 +1,7 @@
 request:
   method: POST
   url: ""
-  body:
-    raw: "{\"msg\":\"it\\s}' https://x.test"
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body: "{\"msg\":\"it\\s}' https://x.test"
 

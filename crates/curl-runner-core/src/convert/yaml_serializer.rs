@@ -8,7 +8,7 @@ use super::types::{Body, CurlRunnerIr, FormField, YamlOptions};
 use crate::jsval::num_to_string;
 use crate::model::Json;
 use crate::snapshot::js_stringify;
-use crate::yaml_text::{yaml_key, yaml_str};
+use crate::yaml_text::{needs_quoting, scalar_text, yaml_key, yaml_str};
 
 /// Serialize one IR (`serializeToYaml`).
 pub fn serialize_to_yaml(ir: &CurlRunnerIr, options: YamlOptions) -> String {
@@ -107,13 +107,12 @@ fn request_fields(lines: &mut Vec<String>, ir: &CurlRunnerIr, base: usize, prett
     }
 
     if let Some(body) = &ir.body {
-        lines.push(format!("{p0}body:"));
         match body {
-            Body::Json(c) if pretty => lines.extend(serialize_json_to_yaml(c, base + 2)),
-            Body::Json(c) => lines.push(format!("{p1}json: {}", js_stringify(c))),
-            Body::Urlencoded(c) => lines.push(format!("{p1}form: {}", yaml_str(c))),
-            Body::Binary(c) => lines.push(format!("{p1}binary: {}", yaml_str(c))),
-            Body::Raw(c) => lines.push(format!("{p1}raw: {}", yaml_str(c))),
+            Body::Json(c) => lines.extend(json_body_lines(c, base, pretty)),
+            // The runner sends a string body verbatim, so these go in as plain strings.
+            Body::Urlencoded(c) | Body::Binary(c) | Body::Raw(c) => {
+                lines.push(format!("{p0}body: {}", body_string(c)));
+            }
         }
     }
 
@@ -138,6 +137,20 @@ fn request_fields(lines: &mut Vec<String>, ir: &CurlRunnerIr, base: usize, prett
 
     if let Some(t) = ir.timeout {
         lines.push(format!("{p0}timeout: {}", num_to_string(t)));
+    }
+    if let Some(r) = &ir.retry {
+        lines.push(format!("{p0}retry:"));
+        lines.push(format!("{p1}count: {}", r.count));
+        if let Some(ms) = r.delay_ms {
+            lines.push(format!("{p1}delay: {ms}"));
+        }
+        if let Some(b) = r.backoff {
+            lines.push(format!("{p1}backoff: {}", num_to_string(b)));
+        }
+        if let Some(st) = &r.statuses {
+            let list: Vec<String> = st.iter().map(u16::to_string).collect();
+            lines.push(format!("{p1}retryableStatuses: [{}]", list.join(", ")));
+        }
     }
     if ir.follow_redirects == Some(true) {
         lines.push(format!("{p0}followRedirects: true"));
@@ -168,35 +181,37 @@ fn request_fields(lines: &mut Vec<String>, ir: &CurlRunnerIr, base: usize, prett
     }
 }
 
-/// A JSON value as the `json:` entry of a body, `indent` spaces deep.
-fn serialize_json_to_yaml(value: &Json, indent: usize) -> Vec<String> {
-    let pad = " ".repeat(indent);
+/// A JSON value as the `body:` entry, keys `base` spaces deep. The runner sends
+/// an object or array body as JSON and a string body verbatim, so objects and
+/// arrays go in directly and a scalar goes in as a string holding its JSON text
+/// (a bare `null`/`0`/`false` body would send nothing).
+fn json_body_lines(value: &Json, base: usize, pretty: bool) -> Vec<String> {
+    let p0 = " ".repeat(base);
     match value {
-        Json::Null => vec![format!("{pad}json: null")],
-        Json::Array(a) if a.is_empty() => vec![format!("{pad}json: []")],
-        Json::Array(a)
-            if a.iter()
-                .all(|v| !matches!(v, Json::Array(_) | Json::Object(_))) =>
-        {
-            let items: Vec<String> = a.iter().map(js_stringify).collect();
-            vec![format!("{pad}json: [{}]", items.join(", "))]
-        }
-        Json::Array(_) => vec![format!("{pad}json: {}", js_stringify(value))],
-        Json::Object(o) if o.is_empty() => vec![format!("{pad}json: {{}}")],
-        Json::Object(o) => {
-            let mut lines = vec![format!("{pad}json:")];
+        Json::Object(o) if o.is_empty() => vec![format!("{p0}body: {{}}")],
+        Json::Object(o) if pretty => {
+            let mut lines = vec![format!("{p0}body:")];
             for (key, v) in crate::snapshot::json::js_entries(o) {
                 let rendered = match v {
                     Json::Null => "null".to_string(),
                     Json::Object(_) | Json::Array(_) => js_stringify(v),
                     other => yaml_value(other),
                 };
-                lines.push(format!("{pad}  {}: {rendered}", yaml_key(key)));
+                lines.push(format!("{p0}  {}: {rendered}", yaml_key(key)));
             }
             lines
         }
-        other => vec![format!("{pad}json: {}", js_stringify(other))],
+        Json::Object(_) | Json::Array(_) => vec![format!("{p0}body: {}", js_stringify(value))],
+        scalar => vec![format!("{p0}body: {}", body_string(&js_stringify(scalar)))],
     }
+}
+
+/// A string body that reads back as exactly `s` (multi-line text, `- a`, `#x`, ...).
+fn body_string(s: &str) -> String {
+    if s.is_empty() {
+        return "\"\"".into();
+    }
+    scalar_text(s, needs_quoting(s), false)
 }
 
 /// A YAML primitive (string, number or boolean).
@@ -245,7 +260,7 @@ mod tests {
             assert!(s.contains(want), "{want} in {s}");
         }
         let s = y("curl -d '{\"name\":\"Alex\"}' https://example.com");
-        assert!(s.contains("body:") && s.contains("json:") && s.contains("name: Alex"));
+        assert!(s.contains("body:\n    name: Alex") && !s.contains("json:"));
         assert!(y("curl --compressed https://example.com").contains("# Warning:"));
     }
 

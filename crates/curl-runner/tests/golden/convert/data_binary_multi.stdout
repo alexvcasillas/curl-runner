@@ -1,6 +1,7 @@
 request:
   method: POST
   url: https://x.test/upload
-  body:
-    raw: ab
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body: ab
 

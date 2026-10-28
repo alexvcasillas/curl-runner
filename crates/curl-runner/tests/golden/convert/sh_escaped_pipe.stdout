@@ -2,6 +2,7 @@ request:
   name: request_1
   method: POST
   url: https://a.test
-  body:
-    raw: "a|b"
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body: "a|b"
 

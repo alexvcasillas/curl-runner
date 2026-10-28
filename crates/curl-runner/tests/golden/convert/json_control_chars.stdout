@@ -4,7 +4,6 @@ request:
   headers:
     Content-Type: application/json
   body:
-    json:
-      c: 
-      u2028:  
+    c: "\u0001\u001f\u007f"
+    u2028: "\u2028"
 

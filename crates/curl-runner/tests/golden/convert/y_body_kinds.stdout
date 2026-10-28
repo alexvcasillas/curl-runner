@@ -15,8 +15,7 @@ curl \
 
 curl \
   -X POST \
-  -d '"plain string"' \
-  -H 'Content-Type: application/json' \
+  -d 'plain string' \
   https://a.test/str
 
 curl \

@@ -1,6 +1,7 @@
 request:
   method: POST
   url: https://x.test
-  body:
-    raw: "say \"hi\" # not comment"
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body: "say \"hi\" # not comment"
 

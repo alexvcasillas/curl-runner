@@ -65,6 +65,7 @@ requests:
 | --- | --- | --- | --- |
 | `execution` | `'sequential'` \| `'parallel'` | `'sequential'` | How to execute multiple requests |
 | `continueOnError` | boolean | `false` | Whether to continue execution after errors |
+| `http2` | boolean | `false` | Use HTTP/2 for every request. See [HTTP/2](/docs/features/http2) |
 | `maxConcurrency` | number | unlimited | Maximum concurrent requests in parallel mode |
 | `variables` | object | `{}` | Global variables for all requests |
 | `output` | object | - | Output formatting configuration |
@@ -80,7 +81,7 @@ requests:
 | `security.allowedProtocols` | string[] | `['http', 'https']` | URL protocols allowed for requests. Other protocols (file, ftp, gopher, ...) are blocked before curl runs. Override with `--allow-protocol` or `CURL_RUNNER_ALLOWED_PROTOCOLS` |
 | `security.allowPaths` | boolean | `false` | When `false`, `output`, `saveToFile` and `formData` file paths are confined to the working directory. Set `true` (or pass `--allow-path`) to permit paths outside it. SSL `cert`, `key` and `ca` paths are always exempt |
 
-HTTP/2 is enabled per request: set `http2: true` under `global.defaults` (or pass `--http2`). See [HTTP/2](/docs/features/http2).
+`global.http2: true` turns on HTTP/2 for every request. Precedence: request `http2` > `--http2` > `global.defaults.http2` > `global.http2`. See [HTTP/2](/docs/features/http2).
 
 ## Execution Modes [#execution-modes]
 

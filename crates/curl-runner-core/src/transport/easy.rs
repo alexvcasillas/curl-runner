@@ -196,7 +196,7 @@ pub(crate) const JSON_CONTENT_TYPE: &str = "Content-Type: application/json";
 
 /// Request header lines in TS order: user headers, bearer auth, auto
 /// Content-Type.
-fn header_lines(req: &RequestConfig) -> Vec<String> {
+pub(crate) fn header_lines(req: &RequestConfig) -> Vec<String> {
     let mut lines = user_header_lines(req);
     lines.extend(bearer_line(req));
     if needs_json_content_type(req) {

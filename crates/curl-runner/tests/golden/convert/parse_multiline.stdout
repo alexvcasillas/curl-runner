@@ -4,6 +4,5 @@ request:
   headers:
     Content-Type: application/json
   body:
-    json:
-      test: true
+    test: true
 

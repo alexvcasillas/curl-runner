@@ -172,8 +172,8 @@ pub fn validate_expect(cx: &mut Ctx, expect: &Json, path: &str) -> Res {
     Ok(())
 }
 
-fn in_status_range(v: &Json) -> bool {
-    as_num(v).is_some_and(|n| (100.0..=599.0).contains(&n))
+fn in_status_range(cx: &Ctx, v: &Json) -> bool {
+    cx.interpolated(v) || as_num(v).is_some_and(|n| (100.0..=599.0).contains(&n))
 }
 
 fn validate_status(cx: &mut Ctx, status: &Json, path: &str) {
@@ -185,13 +185,12 @@ fn validate_status(cx: &mut Ctx, status: &Json, path: &str) {
                 "Empty status array - no status will match",
             );
         }
-        if !list.iter().all(in_status_range) {
-            cx.add(
-                path,
-                Severity::Error,
-                "Status codes must be numbers between 100-599",
-            );
+        if !list.iter().all(|v| in_status_range(cx, v)) {
+            let m = cx.num_msg(status, "Status codes must be numbers between 100-599");
+            cx.add(path, Severity::Error, m);
         }
+    } else if cx.interpolated(status) {
+        // Resolved at run time.
     } else if let Some(s) = status.as_str() {
         let parsed = parse_int(s);
         if (100.0..=599.0).contains(&parsed) {
@@ -202,18 +201,12 @@ fn validate_status(cx: &mut Ctx, status: &Json, path: &str) {
                 Some(convert_to(parsed)),
             );
         } else {
-            cx.add(
-                path,
-                Severity::Error,
-                "Status code must be a number between 100-599",
-            );
+            let m = cx.num_msg(status, "Status code must be a number between 100-599");
+            cx.add(path, Severity::Error, m);
         }
-    } else if !in_status_range(status) {
-        cx.add(
-            path,
-            Severity::Error,
-            "Status code must be a number between 100-599",
-        );
+    } else if !in_status_range(cx, status) {
+        let m = cx.num_msg(status, "Status code must be a number between 100-599");
+        cx.add(path, Severity::Error, m);
     }
 }
 

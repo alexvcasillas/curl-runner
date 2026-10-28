@@ -1,6 +1,7 @@
 request:
   method: POST
   url: https://x.test
-  body:
-    raw: "${\"a\":\"line1\\nline2\"}"
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body: "${\"a\":\"line1\\nline2\"}"
 

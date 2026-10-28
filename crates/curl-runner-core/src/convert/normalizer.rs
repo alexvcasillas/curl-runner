@@ -4,7 +4,10 @@
 
 use super::jsjson;
 use super::jsutil::{JsMap, atob, decode_uri_component, encode_uri_component};
-use super::types::{Auth, Body, CurlAst, CurlRunnerIr, FormField, FormFile, NumText, Source, Ssl};
+use super::types::{
+    Auth, Body, CURL_RETRY_STATUSES, CurlAst, CurlRunnerIr, FormField, FormFile, NumText, RetryIr,
+    Source, Ssl,
+};
 use crate::jsval::trim;
 
 /// Conversion failed where the TS code threw (a malformed `%` escape).
@@ -18,8 +21,22 @@ pub fn normalize(ast: &CurlAst) -> Result<CurlRunnerIr, NormalizeError> {
     let mut headers = normalize_headers(ast);
     let auth = detect_auth(ast, &mut headers);
     let (body, form_data) = detect_body(ast);
+    warn_file_references(ast, &mut warnings);
+    // curl labels `-d`/`--data*` text as form data unless told otherwise, while the
+    // runner defaults a body to JSON: keep what curl would have sent.
+    if matches!(
+        body,
+        Some(Body::Urlencoded(_) | Body::Raw(_) | Body::Binary(_))
+    ) && headers.get("Content-Type").is_none()
+    {
+        headers.insert(
+            "Content-Type",
+            "application/x-www-form-urlencoded".to_string(),
+        );
+    }
     let method = infer_method(ast, body.is_some(), form_data.is_some());
     let ssl = detect_ssl(ast);
+    let retry = detect_retry(ast, &mut warnings);
 
     for f in &ast.unsupported_flags {
         let value = f.value.as_deref().filter(|v| !v.is_empty());
@@ -70,12 +87,70 @@ pub fn normalize(ast: &CurlAst) -> Result<CurlRunnerIr, NormalizeError> {
         proxy: non_empty(&ast.proxy).map(str::to_string),
         output: non_empty(&ast.output).map(str::to_string),
         http2: ast.http2,
+        retry,
         ssl,
         source: Source::Curl,
         falsy_content_type: false,
         warnings,
         unsupported_flags: ast.unsupported_flags.clone(),
     })
+}
+
+/// `--retry N` / `--retry-delay S` (whole seconds) to `retry`. Anything that
+/// cannot be mapped exactly is reported, never dropped silently.
+fn detect_retry(ast: &CurlAst, warnings: &mut Vec<String>) -> Option<RetryIr> {
+    let whole = |v: &str| {
+        let v = trim(v);
+        (!v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| v.parse::<u64>().ok())
+            .flatten()
+    };
+    let count = ast.retry.as_deref().and_then(|v| {
+        let n = whole(v);
+        if n.is_none() {
+            warnings.push(format!(
+                "Unsupported curl flag: --retry {v} (expected a whole number); ignored"
+            ));
+        }
+        n
+    });
+    let delay = ast.retry_delay.as_deref().and_then(|v| {
+        let n = whole(v).and_then(|s| s.checked_mul(1000));
+        if n.is_none() {
+            warnings.push(format!(
+                "Unsupported curl flag: --retry-delay {v} (expected whole seconds); ignored"
+            ));
+        }
+        n
+    });
+    match (count, delay) {
+        (Some(count), delay) => {
+            // curl waits 1 s, 2 s, 4 s... unless a (non-zero) delay is given,
+            // then the delay is fixed; the runner's default is no wait at all.
+            let (delay_ms, backoff) = match delay {
+                Some(ms) if ms > 0 => (ms, None),
+                other => {
+                    if other == Some(0) {
+                        warnings.push(
+                            "--retry-delay 0 means curl's default backoff (1s, 2s, 4s...); converted as such".into(),
+                        );
+                    }
+                    (1000, Some(2.0))
+                }
+            };
+            Some(RetryIr {
+                count,
+                delay_ms: Some(delay_ms),
+                backoff,
+                statuses: Some(CURL_RETRY_STATUSES.to_vec()),
+            })
+        }
+        (None, Some(_)) => {
+            warnings.push("--retry-delay has no effect without --retry; ignored".into());
+            None
+        }
+        (None, None) => None,
+    }
 }
 
 fn non_empty(s: &Option<String>) -> Option<&str> {
@@ -180,6 +255,25 @@ fn basic(user: &str, pass: &str) -> Auth {
         username: Some(user.to_string()),
         password: Some(pass.to_string()),
         token: None,
+    }
+}
+
+/// `-d @file` / `--data-binary @file` make curl read the body from a file; the
+/// converter keeps the text `@file`, so say so and let the user fill it in.
+fn warn_file_references(ast: &CurlAst, warnings: &mut Vec<String>) {
+    if !ast.form.is_empty() || !ast.data_urlencode.is_empty() {
+        return;
+    }
+    let sources = if ast.data_binary.is_empty() {
+        &ast.data
+    } else {
+        &ast.data_binary
+    };
+    for d in sources.iter().filter(|d| d.starts_with('@')) {
+        warnings.push(format!(
+            "Body references a file ({d}): file references are not read, \
+             so the body is the literal text \"{d}\"; fill in the body with the file's contents"
+        ));
     }
 }
 

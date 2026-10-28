@@ -22,6 +22,13 @@ describe('feature page', () => {
     expect(generateStaticParams()).toEqual(getAllFeatures().map((f) => ({ slug: f.slug })));
   });
 
+  it('renders the curl --retry section on the retry page', async () => {
+    const html = await render('retry-mechanism');
+    expect(html).toContain('From curl --retry');
+    expect(html).toContain('href="https://curl.se/docs/manpage.html#--retry"');
+    expect(html).toContain('retryableStatuses');
+  });
+
   it('renders the retry mechanism page', async () => {
     const html = await render('retry-mechanism');
     expect(html).toContain('Flaky networks shouldn’t fail your suite.');
@@ -57,7 +64,9 @@ describe('feature page', () => {
 
   it('builds metadata from the feature', async () => {
     const meta = await generateMetadata({ params: Promise.resolve({ slug: 'retry-mechanism' }) });
-    expect(meta.title).toEqual({ absolute: 'Retry Mechanism — curl-runner' });
+    expect(meta.title).toEqual({
+      absolute: 'Retry failed curl requests with backoff — curl-runner',
+    });
     expect(meta.alternates?.canonical).toBe('https://www.curl-runner.com/features/retry-mechanism');
   });
 });

@@ -4,8 +4,7 @@ request:
   headers:
     Content-Type: application/json
   body:
-    json:
-      name: José
-      emoji: 😀
-      jp: 日本語
+    name: José
+    emoji: 😀
+    jp: 日本語
 

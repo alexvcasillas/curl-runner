@@ -17,10 +17,14 @@
   "ir": {
     "method": "POST",
     "url": "https://x.test",
-    "headers": {},
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
     "metadata": {
       "source": "curl",
-      "warnings": []
+      "warnings": [
+        "Body references a file (@f.bin): file references are not read, so the body is the literal text \"@f.bin\"; fill in the body with the file's contents"
+      ]
     },
     "body": {
       "type": "binary",
@@ -29,9 +33,12 @@
   }
 }
 
+# Warning: Body references a file (@f.bin): file references are not read, so the body is the literal text "@f.bin"; fill in the body with the file's contents
+
 request:
   method: POST
   url: https://x.test
-  body:
-    binary: "@f.bin"
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body: "@f.bin"
 

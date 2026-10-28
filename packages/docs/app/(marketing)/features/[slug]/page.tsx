@@ -6,12 +6,14 @@ import { CodePane } from '@/components/site/CodePane';
 import { Eyebrow } from '@/components/site/Eyebrow';
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { Yaml } from '@/components/site/Yaml';
+import { StructuredData } from '@/components/structured-data';
 import {
   type FeatureData,
   getAdjacentFeatures,
   getAllFeatures,
   getFeatureBySlug,
 } from '@/lib/features-data';
+import { featureBreadcrumbs } from '@/lib/seo';
 
 const BASE_URL = 'https://www.curl-runner.com';
 
@@ -31,7 +33,7 @@ export async function generateMetadata({ params }: FeaturePageProps): Promise<Me
   if (!feature) {
     return {};
   }
-  const title = `${feature.title} — curl-runner`;
+  const title = `${feature.seoTitle ?? feature.title} — curl-runner`;
   const url = `${BASE_URL}/features/${feature.slug}`;
   return {
     title: { absolute: title },
@@ -105,6 +107,7 @@ export default async function FeaturePage({ params }: FeaturePageProps) {
 
   return (
     <>
+      <StructuredData data={featureBreadcrumbs(feature)} />
       <SiteHeader active="features" />
       <main id="main-content">
         <div className="mx-auto grid max-w-[1200px] gap-12 px-6 md:grid-cols-[220px_minmax(0,1fr)]">
@@ -150,6 +153,40 @@ export default async function FeaturePage({ params }: FeaturePageProps) {
                 ))}
               </ul>
             </section>
+
+            {feature.fromCurl ? (
+              <section aria-labelledby="from-curl-heading">
+                <h2
+                  id="from-curl-heading"
+                  className="mt-20 mb-6 text-[28px] font-bold tracking-[-0.025em] text-fg"
+                >
+                  {feature.fromCurl.heading}
+                </h2>
+                <p className="m-0 max-w-160 text-base leading-[1.6] text-fg-secondary">
+                  {feature.fromCurl.intro}
+                </p>
+                <div className="mt-6 flex flex-col gap-4">
+                  <CodePane filename="curl" copyText={feature.fromCurl.curl}>
+                    <pre className="m-0 overflow-x-auto p-5 font-mono text-[13px] leading-[1.7] text-fg">
+                      {feature.fromCurl.curl}
+                    </pre>
+                  </CodePane>
+                  <CodePane filename="retry-from-curl.yaml" copyText={feature.fromCurl.yaml}>
+                    <Yaml source={feature.fromCurl.yaml} />
+                  </CodePane>
+                </div>
+                <p className="mt-6 mb-0 max-w-160 text-base leading-[1.6] text-fg-secondary">
+                  {feature.fromCurl.outro}{' '}
+                  <a
+                    href={feature.fromCurl.href}
+                    className="text-fg underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-brand"
+                  >
+                    {feature.fromCurl.linkText}
+                  </a>
+                  .
+                </p>
+              </section>
+            ) : null}
 
             <section aria-labelledby="good-for-heading">
               <h2

@@ -4,7 +4,7 @@
 use super::issues::{
     Crash, Ctx, Fix, FixValue, Res, Severity, as_num, as_str, change_to, entries,
     find_closest_match, has_key, is_identifier, is_object, is_sensitive_value, js_number,
-    js_string, not_num_at_least, not_plain_object, prop, truthy, truthy_prop,
+    js_string, not_plain_object, prop, truthy, truthy_prop,
 };
 use super::{conditions, global, security, url};
 use curl_runner_core::jsval::{num_to_string, parse_int, trim};
@@ -12,6 +12,7 @@ use curl_runner_core::model::Json;
 
 pub const VALID_METHODS: &[&str] = &["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
 
+pub(super) const VALID_RETRY_KEYS: &[&str] = &["count", "delay", "backoff", "retryableStatuses"];
 pub const VALID_REQUEST_KEYS: &[&str] = &[
     "name",
     "url",
@@ -115,6 +116,15 @@ fn header_value<'a>(headers: &'a Json, name: &str) -> Option<&'a Json> {
 }
 
 pub fn validate_request_config(cx: &mut Ctx, req: &Json, path: &str, is_defaults: bool) -> Res {
+    // The runner interpolates request objects, not `defaults` blocks.
+    let saved = cx.literal_only;
+    cx.literal_only |= is_defaults;
+    let res = validate_request_fields(cx, req, path, is_defaults);
+    cx.literal_only = saved;
+    res
+}
+
+fn validate_request_fields(cx: &mut Ctx, req: &Json, path: &str, is_defaults: bool) -> Res {
     cx.check_unknown_keys(req, VALID_REQUEST_KEYS, path)?;
 
     if let Some(name) = truthy_prop(req, "name") {
@@ -206,8 +216,9 @@ pub fn validate_request_config(cx: &mut Ctx, req: &Json, path: &str, is_defaults
 
     if let Some(mr) = prop(req, "maxRedirects") {
         let p = format!("{path}.maxRedirects");
-        if not_num_at_least(mr, 0.0) {
-            cx.add(&p, Severity::Error, "Must be a non-negative number");
+        if cx.not_num_at_least(mr, 0.0) {
+            let m = cx.num_msg(mr, "Must be a non-negative number");
+            cx.add(&p, Severity::Error, m);
         } else if as_num(mr).is_some_and(|n| n > 50.0) {
             cx.add(&p, Severity::Warning, "Very high redirect limit");
         }
@@ -217,10 +228,20 @@ pub fn validate_request_config(cx: &mut Ctx, req: &Json, path: &str, is_defaults
     cx.boolean_field(req, "http2", path);
 
     if let Some(s) = prop(req, "snapshot").filter(|v| is_object(v)) {
-        global::validate_snapshot(cx, s, &format!("{path}.snapshot"))?;
+        global::validate_snapshot(
+            cx,
+            s,
+            &format!("{path}.snapshot"),
+            global::VALID_REQUEST_SNAPSHOT_KEYS,
+        )?;
     }
     if let Some(d) = prop(req, "diff").filter(|v| is_object(v)) {
-        global::validate_diff(cx, d, &format!("{path}.diff"))?;
+        global::validate_diff(
+            cx,
+            d,
+            &format!("{path}.diff"),
+            global::VALID_REQUEST_DIFF_KEYS,
+        )?;
     }
     Ok(())
 }
@@ -397,6 +418,9 @@ fn validate_form_data(cx: &mut Ctx, fd: &Json, path: &str) {
 }
 
 fn validate_timeout(cx: &mut Ctx, timeout: &Json, path: &str) {
+    if cx.interpolated(timeout) {
+        return;
+    }
     let Some(t) = as_num(timeout) else {
         if let Some(s) = timeout.as_str() {
             let parsed = parse_int(s);
@@ -410,7 +434,8 @@ fn validate_timeout(cx: &mut Ctx, timeout: &Json, path: &str) {
                 return;
             }
         }
-        cx.add(path, Severity::Error, "Timeout must be a positive number");
+        let m = cx.num_msg(timeout, "Timeout must be a positive number");
+        cx.add(path, Severity::Error, m);
         return;
     };
     if t <= 0.0 {
@@ -449,17 +474,16 @@ pub fn convert_to(n: f64) -> Fix {
 }
 
 fn validate_retry(cx: &mut Ctx, retry: &Json, path: &str, method: Option<&Json>) -> Res {
-    cx.check_unknown_keys(retry, &["count", "delay", "backoff"], path)?;
+    cx.check_unknown_keys(retry, VALID_RETRY_KEYS, path)?;
 
     let count = prop(retry, "count");
     let cp = format!("{path}.count");
     match count {
         None => cx.add(&cp, Severity::Error, "Retry count is required"),
-        Some(c) if not_num_at_least(c, 0.0) => cx.add(
-            &cp,
-            Severity::Error,
-            "Retry count must be a non-negative number",
-        ),
+        Some(c) if cx.not_num_at_least(c, 0.0) => {
+            let m = cx.num_msg(c, "Retry count must be a non-negative number");
+            cx.add(&cp, Severity::Error, m);
+        }
         Some(c) if as_num(c).is_some_and(|n| n > 10.0) => cx.add(
             &cp,
             Severity::Warning,
@@ -468,18 +492,16 @@ fn validate_retry(cx: &mut Ctx, retry: &Json, path: &str, method: Option<&Json>)
         Some(_) => {}
     }
 
-    if prop(retry, "delay").is_some_and(|d| not_num_at_least(d, 0.0)) {
-        cx.add(
-            &format!("{path}.delay"),
-            Severity::Error,
-            "Retry delay must be a non-negative number",
-        );
+    if let Some(d) = prop(retry, "delay").filter(|d| cx.not_num_at_least(d, 0.0)) {
+        let m = cx.num_msg(d, "Retry delay must be a non-negative number");
+        cx.add(&format!("{path}.delay"), Severity::Error, m);
     }
 
     if let Some(b) = prop(retry, "backoff") {
         let bp = format!("{path}.backoff");
-        if not_num_at_least(b, 1.0) {
-            cx.add(&bp, Severity::Error, "Retry backoff must be >= 1");
+        if cx.not_num_at_least(b, 1.0) {
+            let m = cx.num_msg(b, "Retry backoff must be >= 1");
+            cx.add(&bp, Severity::Error, m);
         } else if as_num(b).is_some_and(|n| n > 5.0) {
             cx.add(
                 &bp,

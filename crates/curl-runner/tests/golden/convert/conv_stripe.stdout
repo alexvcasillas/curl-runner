@@ -1,10 +1,11 @@
 request:
   method: POST
   url: https://api.stripe.com/v1/charges
+  headers:
+    Content-Type: application/x-www-form-urlencoded
   auth:
     type: basic
     username: sk_test_key
     password: ""
-  body:
-    form: "amount=2000&currency=usd&source=tok_visa"
+  body: "amount=2000&currency=usd&source=tok_visa"
 

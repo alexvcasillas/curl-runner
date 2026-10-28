@@ -1,6 +1,7 @@
 request:
   method: POST
   url: https://x.test
-  body:
-    form: "price=$5 and `tick`"
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body: "price=$5 and `tick`"
 

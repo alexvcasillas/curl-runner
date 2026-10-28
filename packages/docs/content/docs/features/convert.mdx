@@ -35,9 +35,8 @@ request:
     type: bearer
     token: TOKEN
   body:
-    json:
-      name: Alex
-      role: admin
+    name: Alex
+    role: admin
 ```
 
 ## YAML to Curl
@@ -93,9 +92,10 @@ requests:
   - name: request_2
     method: POST
     url: https://api.example.com/users
+    headers:
+      Content-Type: application/json
     body:
-      json:
-        name: Alex
+      name: Alex
 
   - name: request_3
     method: GET
@@ -111,8 +111,8 @@ The converter automatically normalizes and detects semantic intent from curl fla
 
 | Curl Input | YAML Output |
 | --- | --- |
-| `-d '{"key":"val"}'` | `body.json` + infers POST |
-| `-d 'key=val&key2=val2'` | `body.form` (urlencoded) |
+| `-d '{"key":"val"}'` | `body: {key: val}` + infers POST |
+| `-d 'key=val&key2=val2'` | `body: "key=val&key2=val2"` with `Content-Type: application/x-www-form-urlencoded` |
 | `-H 'Authorization: Bearer T'` | `auth.type: bearer` |
 | `-u user:pass` | `auth.type: basic` |
 | `-F 'file=@img.png'` | `formData.file.file: img.png` |
@@ -149,12 +149,13 @@ curl-runner convert curl "curl -X POST https://api.stripe.com/v1/charges \
 request:
   method: POST
   url: https://api.stripe.com/v1/charges
+  headers:
+    Content-Type: application/x-www-form-urlencoded
   auth:
     type: basic
     username: sk_test_key
     password: ""
-  body:
-    form: "amount=2000&currency=usd&source=tok_visa"
+  body: "amount=2000&currency=usd&source=tok_visa"
 ```
 
 ## Loss Handling

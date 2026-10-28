@@ -54,9 +54,33 @@ pub struct Ctx {
     pub issues: Vec<Issue>,
     /// `requestNames` (a JS `Set` of `path:name`).
     pub request_names: Vec<String>,
+    /// True while checking `global` and `defaults` blocks: the runner does not
+    /// interpolate them, so `${...}` is not a valid number there.
+    pub literal_only: bool,
 }
 
+const NOT_INTERPOLATED_HINT: &str = " (global settings are not interpolated, use a literal number)";
+
 impl Ctx {
+    /// A `${...}` value that resolves at run time (never in global settings).
+    pub fn interpolated(&self, v: &Json) -> bool {
+        !self.literal_only && is_interpolated(v)
+    }
+
+    /// `not_num_at_least` that honours `literal_only`.
+    pub fn not_num_at_least(&self, v: &Json, min: f64) -> bool {
+        !self.interpolated(v) && as_num(v).is_none_or(|n| n < min)
+    }
+
+    /// Adds the "not interpolated" hint to a numeric error for a `${...}` value.
+    pub fn num_msg(&self, v: &Json, msg: &str) -> String {
+        if self.literal_only && is_interpolated(v) {
+            format!("{msg}{NOT_INTERPOLATED_HINT}")
+        } else {
+            msg.to_string()
+        }
+    }
+
     pub fn add(&mut self, path: &str, severity: Severity, message: impl Into<String>) {
         self.add_fix(path, severity, message, None);
     }
@@ -253,9 +277,11 @@ pub fn not_plain_object(v: &Json) -> bool {
     !is_object(v) || v.is_array()
 }
 
-/// `typeof v !== 'number' || v < min`.
-pub fn not_num_at_least(v: &Json, min: f64) -> bool {
-    as_num(v).is_none_or(|n| n < min)
+/// A string holding a `${...}` reference (same detection as the
+/// interpolator); its numeric value is only known at run time.
+pub fn is_interpolated(v: &Json) -> bool {
+    v.as_str()
+        .is_some_and(|s| !curl_runner_core::interpolate::extract_variables(s).is_empty())
 }
 
 /// JS `String(v)`.

@@ -5,7 +5,10 @@
 //! template literals and truthiness checks would.
 
 use super::jsutil::JsMap;
-use super::types::{Auth, Body, CurlRunnerIr, FormField, FormFile, NumText, Source, Ssl};
+use super::types::{
+    Auth, Body, CURL_RETRY_STATUSES, CurlRunnerIr, FormField, FormFile, NumText, RetryIr, Source,
+    Ssl,
+};
 use crate::jsval::JsVal;
 use crate::model::Json;
 
@@ -48,6 +51,78 @@ fn object_entries(v: Option<&Json>) -> Vec<(String, Json)> {
     }
 }
 
+/// The curl-expressible part of a YAML `retry` block plus a warning per part
+/// whose timing or status set differs from what curl would do.
+fn retry_to_ir(retry: Option<&Json>) -> (Option<RetryIr>, Vec<String>) {
+    let mut warnings = Vec::new();
+    let Some(obj) = retry.and_then(Json::as_object) else {
+        warnings.push("retry config has no curl equivalent".into());
+        return (None, warnings);
+    };
+    let present = |k: &str| obj.get(k).is_some_and(|v| !v.is_null());
+    let count = obj.get("count").and_then(Json::as_u64);
+    let delay = obj.get("delay").and_then(Json::as_u64);
+    let backoff = obj.get("backoff").and_then(Json::as_f64);
+    for k in ["count", "delay", "backoff"] {
+        if present(k) && obj.get(k).and_then(Json::as_f64).is_none() {
+            warnings.push(format!("retry {k} is not a number and was dropped"));
+        }
+    }
+    let Some(count) = count else {
+        if delay.is_some() {
+            warnings.push("retry delay needs a count; --retry-delay not emitted".into());
+        }
+        return (None, warnings);
+    };
+
+    let growing = backoff.is_some_and(|b| b != 1.0);
+    let (emit_delay, backoff_ir) = match delay.unwrap_or(0) {
+        1000 if backoff == Some(2.0) => (None, None), // curl's default: 1s, 2s, 4s...
+        0 => {
+            warnings.push(
+                "retry without a delay retries immediately; curl backs off 1s, 2s, 4s... (it has no way to retry immediately)".into(),
+            );
+            (None, None)
+        }
+        ms => {
+            if ms % 1000 != 0 {
+                warnings.push(format!(
+                    "retry delay {ms}ms rounded up to {}s for --retry-delay",
+                    ms.div_ceil(1000)
+                ));
+            }
+            if growing {
+                warnings.push(format!(
+                    "retry backoff {} has no curl equivalent: curl waits a fixed --retry-delay",
+                    backoff.unwrap_or(1.0)
+                ));
+            }
+            (Some(ms), None)
+        }
+    };
+    if emit_delay.is_none() && delay.unwrap_or(0) == 0 && growing {
+        warnings.push("retry backoff has no effect without a delay".into());
+    }
+    let statuses = obj
+        .get("retryableStatuses")
+        .and_then(Json::as_array)
+        .map(|a| a.iter().filter_map(Json::as_u64).collect::<Vec<_>>());
+    if statuses.as_deref() != Some(&CURL_RETRY_STATUSES.map(u64::from)[..]) {
+        warnings.push(
+            "curl retries on 408, 429, 500, 502, 503 and 504; the retryableStatuses here differ (the runner's default lacks 408)".into(),
+        );
+    }
+    (
+        Some(RetryIr {
+            count,
+            delay_ms: emit_delay,
+            backoff: backoff_ir,
+            statuses: None,
+        }),
+        warnings,
+    )
+}
+
 /// `yamlToIR`. `Err` carries the message of the TypeError the TS code throws
 /// for a `null` entry.
 pub fn yaml_to_ir(config: &Json) -> Result<CurlRunnerIr, String> {
@@ -85,6 +160,7 @@ pub fn yaml_to_ir(config: &Json) -> Result<CurlRunnerIr, String> {
         proxy: None,
         output: None,
         http2: false,
+        retry: None,
         ssl: None,
         source: Source::Yaml,
         falsy_content_type,
@@ -128,6 +204,8 @@ pub fn yaml_to_ir(config: &Json) -> Result<CurlRunnerIr, String> {
                     Body::Json(body.clone())
                 }
             }
+            // A string body is sent verbatim by the runner: `-d 'text'`.
+            Json::String(s) => Body::Raw(s.clone()),
             other => Body::Json(other.clone()),
         });
     }
@@ -180,13 +258,17 @@ pub fn yaml_to_ir(config: &Json) -> Result<CurlRunnerIr, String> {
         ("expect", "expect block has no curl equivalent"),
         ("store", "store block has no curl equivalent"),
         ("when", "when condition has no curl equivalent"),
-        ("retry", "retry config simplified in curl output"),
         ("snapshot", "snapshot config has no curl equivalent"),
         ("diff", "diff config has no curl equivalent"),
     ] {
         if truthy(get(key)) {
             warnings.push(msg.to_string());
         }
+    }
+    if truthy(get("retry")) {
+        let (retry, lossy) = retry_to_ir(get("retry"));
+        ir.retry = retry;
+        warnings.extend(lossy);
     }
     ir.warnings = warnings;
     Ok(ir)

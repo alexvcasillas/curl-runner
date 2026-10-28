@@ -3,6 +3,5 @@ request:
   url: https://x.test/j
   headers:
     Content-Type: application/json
-  body:
-    json: 123
+  body: "123"
 

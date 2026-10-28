@@ -1,6 +1,7 @@
 request:
   method: POST
   url: ""
-  body:
-    raw: abc\
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body: abc\
 

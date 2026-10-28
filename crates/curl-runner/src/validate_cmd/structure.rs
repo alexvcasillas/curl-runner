@@ -88,10 +88,14 @@ pub fn validate_structure(content: &Json, cx: &mut Ctx) -> Res {
 }
 
 pub fn validate_global_pass(content: &Json, cx: &mut Ctx) -> Res {
-    match truthy_prop(content, "global") {
-        Some(g) => global::validate_global(cx, g, "global"),
-        None => Ok(()),
-    }
+    let Some(g) = truthy_prop(content, "global") else {
+        return Ok(());
+    };
+    // The runner does not interpolate `global`, so numbers must be literal.
+    cx.literal_only = true;
+    let res = global::validate_global(cx, g, "global");
+    cx.literal_only = false;
+    res
 }
 
 pub fn validate_collection_pass(content: &Json, cx: &mut Ctx) -> Res {

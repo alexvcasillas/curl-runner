@@ -2,18 +2,15 @@ requests:
   - name: request_1
     method: POST
     url: https://a.test/a
-    body:
-      json: [1, 2, 3]
+    body: [1,2,3]
 
   - name: request_2
     method: POST
     url: https://a.test/b
-    body:
-      json: {}
+    body: {}
 
   - name: request_3
     method: POST
     url: https://a.test/c
-    body:
-      json: null
+    body: "null"
 

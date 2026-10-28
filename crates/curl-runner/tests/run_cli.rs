@@ -110,6 +110,19 @@ fn exit_0_continue_on_error() {
 }
 
 #[test]
+fn short_c_continues_after_a_failure() {
+    let e = setup(&[("t.yaml", &mixed(3, 1))]);
+    let (code, out, _) = e.run(&["t.yaml", "-c"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("Summary: 2/3 requests completed, 1 failed\n"),
+        "{out}"
+    );
+    let (code, _, _) = e.run(&["t.yaml", "-c", "--strict-exit"]);
+    assert_eq!(code, 1);
+}
+
+#[test]
 fn exit_1_strict_exit_with_continue() {
     let e = setup(&[("t.yaml", &mixed(3, 1))]);
     let (code, out, _) = e.run(&["t.yaml", "--continue-on-error", "--strict-exit"]);
@@ -313,6 +326,18 @@ fn dry_run_prints_commands_and_exits_0() {
     assert!(out.contains("  Command:\n    curl "));
     assert!(out.contains("   ├─ ✓ Status: DRY-RUN\n"));
     assert!(out.contains("Summary: 2 requests completed successfully"));
+}
+
+#[test]
+fn global_http2_reaches_dry_run_commands() {
+    let yaml = "global:\n  http2: true\nrequests:\n  - url: \"{BASE}/json/user\"\n  - url: \"{BASE}/json/users\"\n    http2: false\n";
+    let e = setup(&[("t.yaml", yaml)]);
+    let (code, out, _) = e.run(&["t.yaml", "--dry-run"]);
+    assert_eq!(code, 0);
+    assert_eq!(out.matches("--http2").count(), 1, "{out}");
+    let (_, out, _) = e.run(&["t.yaml", "--dry-run", "--http2"]);
+    // request `http2: false` stays false even with `--http2`
+    assert_eq!(out.matches("--http2").count(), 1, "{out}");
 }
 
 #[test]

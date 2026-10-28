@@ -1,6 +1,7 @@
 request:
   method: POST
   url: https://x.test
-  body:
-    form: "x%3D!~*'()-_."
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body: "x%3D!~*'()-_."
 

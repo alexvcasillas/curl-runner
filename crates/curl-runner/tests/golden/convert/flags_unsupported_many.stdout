@@ -5,4 +5,9 @@
 request:
   method: GET
   url: ""
+  retry:
+    count: 3
+    delay: 1000
+    backoff: 2
+    retryableStatuses: [408, 429, 500, 502, 503, 504]
 

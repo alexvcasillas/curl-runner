@@ -3,12 +3,14 @@
 
 use super::issues::{
     Ctx, Res, Severity, as_num, entries, is_identifier, is_sensitive_value, js_string,
-    not_num_at_least, not_plain_object, prop, truthy_prop,
+    not_plain_object, prop, truthy_prop,
 };
 use super::{request, security};
 use curl_runner_core::model::Json;
 
-const VALID_GLOBAL_KEYS: &[&str] = &[
+pub(super) const VALID_GLOBAL_KEYS: &[&str] = &[
+    "env",
+    "security",
     "execution",
     "maxConcurrency",
     "continueOnError",
@@ -25,6 +27,44 @@ const VALID_GLOBAL_KEYS: &[&str] = &[
     "output",
     "defaults",
 ];
+pub(super) const VALID_ENV_KEYS: &[&str] = &["environment", "redactSecrets"];
+pub(super) const VALID_SECURITY_KEYS: &[&str] = &["allowedProtocols", "allowPaths"];
+pub(super) const VALID_PROFILE_KEYS: &[&str] = &[
+    "iterations",
+    "warmup",
+    "concurrency",
+    "histogram",
+    "exportFile",
+];
+/// `GlobalSnapshotConfig` (`global.snapshot`).
+pub(super) const VALID_GLOBAL_SNAPSHOT_KEYS: &[&str] = &[
+    "enabled",
+    "name",
+    "include",
+    "exclude",
+    "match",
+    "dir",
+    "updateMode",
+    "ci",
+];
+/// `SnapshotConfig` (request-level `snapshot:`).
+pub(super) const VALID_REQUEST_SNAPSHOT_KEYS: &[&str] =
+    &["enabled", "name", "include", "exclude", "match"];
+/// `GlobalDiffConfig` (`global.diff`).
+pub(super) const VALID_GLOBAL_DIFF_KEYS: &[&str] = &[
+    "enabled",
+    "exclude",
+    "match",
+    "includeTimings",
+    "dir",
+    "label",
+    "compareWith",
+    "save",
+    "outputFormat",
+];
+/// `DiffConfig` (request-level `diff:`).
+pub(super) const VALID_REQUEST_DIFF_KEYS: &[&str] =
+    &["enabled", "exclude", "match", "includeTimings"];
 const VALID_EXECUTION_MODES: &[&str] = &["sequential", "parallel"];
 const VALID_OUTPUT_FORMATS: &[&str] = &["json", "pretty", "raw"];
 const VALID_PRETTY_LEVELS: &[&str] = &["minimal", "standard", "detailed"];
@@ -50,8 +90,9 @@ pub fn validate_global(cx: &mut Ctx, config: &Json, path: &str) -> Res {
 
     if let Some(mc) = prop(config, "maxConcurrency") {
         let p = format!("{path}.maxConcurrency");
-        if not_num_at_least(mc, 1.0) {
-            cx.add(&p, Severity::Error, "Must be a positive number");
+        if cx.not_num_at_least(mc, 1.0) {
+            let m = cx.num_msg(mc, "Must be a positive number");
+            cx.add(&p, Severity::Error, m);
         }
         if prop(config, "execution").and_then(Json::as_str) == Some("sequential") {
             cx.add(
@@ -66,6 +107,12 @@ pub fn validate_global(cx: &mut Ctx, config: &Json, path: &str) -> Res {
         cx.boolean_field(config, f, path);
     }
 
+    if let Some(e) = truthy_prop(config, "env") {
+        cx.check_unknown_keys(e, VALID_ENV_KEYS, &format!("{path}.env"))?;
+    }
+    if let Some(s) = truthy_prop(config, "security") {
+        cx.check_unknown_keys(s, VALID_SECURITY_KEYS, &format!("{path}.security"))?;
+    }
     if let Some(o) = truthy_prop(config, "output") {
         validate_output(cx, o, &format!("{path}.output"))?;
     }
@@ -85,10 +132,15 @@ pub fn validate_global(cx: &mut Ctx, config: &Json, path: &str) -> Res {
         validate_profile(cx, p, &format!("{path}.profile"))?;
     }
     if let Some(s) = truthy_prop(config, "snapshot") {
-        validate_snapshot(cx, s, &format!("{path}.snapshot"))?;
+        validate_snapshot(
+            cx,
+            s,
+            &format!("{path}.snapshot"),
+            VALID_GLOBAL_SNAPSHOT_KEYS,
+        )?;
     }
     if let Some(d) = truthy_prop(config, "diff") {
-        validate_diff(cx, d, &format!("{path}.diff"))?;
+        validate_diff(cx, d, &format!("{path}.diff"), VALID_GLOBAL_DIFF_KEYS)?;
     }
     if let Some(v) = truthy_prop(config, "variables") {
         validate_variables(cx, v, &format!("{path}.variables"));
@@ -159,8 +211,9 @@ fn validate_output(cx: &mut Ctx, output: &Json, path: &str) -> Res {
 
 /// `x !== undefined && (typeof x !== 'number' || x < min)` → error `msg`.
 fn number_at_least(cx: &mut Ctx, obj: &Json, field: &str, min: f64, path: &str, msg: &str) {
-    if prop(obj, field).is_some_and(|v| not_num_at_least(v, min)) {
-        cx.add(&format!("{path}.{field}"), Severity::Error, msg);
+    if let Some(v) = prop(obj, field).filter(|v| cx.not_num_at_least(v, min)) {
+        let m = cx.num_msg(v, msg);
+        cx.add(&format!("{path}.{field}"), Severity::Error, m);
     }
 }
 
@@ -201,12 +254,11 @@ fn validate_ci(cx: &mut Ctx, ci: &Json, path: &str) -> Res {
     cx.boolean_field(ci, "strictExit", path);
     number_at_least(cx, ci, "failOn", 0.0, path, NON_NEGATIVE);
     let pct = prop(ci, "failOnPercentage");
-    if pct.is_some_and(|v| as_num(v).is_none_or(|n| !(0.0..=100.0).contains(&n))) {
-        cx.add(
-            &format!("{path}.failOnPercentage"),
-            Severity::Error,
-            "Must be a number between 0 and 100",
-        );
+    if let Some(v) =
+        pct.filter(|v| !cx.interpolated(v) && as_num(v).is_none_or(|n| !(0.0..=100.0).contains(&n)))
+    {
+        let m = cx.num_msg(v, "Must be a number between 0 and 100");
+        cx.add(&format!("{path}.failOnPercentage"), Severity::Error, m);
     }
     if prop(ci, "failOn").is_some() && pct.is_some() {
         cx.add(
@@ -227,11 +279,7 @@ fn validate_watch(cx: &mut Ctx, watch: &Json, path: &str) -> Res {
 }
 
 fn validate_profile(cx: &mut Ctx, profile: &Json, path: &str) -> Res {
-    cx.check_unknown_keys(
-        profile,
-        &["iterations", "warmup", "concurrency", "percentiles"],
-        path,
-    )?;
+    cx.check_unknown_keys(profile, VALID_PROFILE_KEYS, path)?;
     number_at_least(cx, profile, "iterations", 1.0, path, POSITIVE);
     if num_above(profile, "iterations", 10_000.0) {
         cx.add(
@@ -263,12 +311,8 @@ fn choice_and_dir(cx: &mut Ctx, obj: &Json, field: &str, valid: &[&str], path: &
     }
 }
 
-pub fn validate_snapshot(cx: &mut Ctx, snapshot: &Json, path: &str) -> Res {
-    cx.check_unknown_keys(
-        snapshot,
-        &["updateMode", "dir", "ignoreFields", "ignoreHeaders"],
-        path,
-    )?;
+pub fn validate_snapshot(cx: &mut Ctx, snapshot: &Json, path: &str, keys: &[&str]) -> Res {
+    cx.check_unknown_keys(snapshot, keys, path)?;
     choice_and_dir(
         cx,
         snapshot,
@@ -279,18 +323,8 @@ pub fn validate_snapshot(cx: &mut Ctx, snapshot: &Json, path: &str) -> Res {
     Ok(())
 }
 
-pub fn validate_diff(cx: &mut Ctx, diff: &Json, path: &str) -> Res {
-    cx.check_unknown_keys(
-        diff,
-        &[
-            "outputFormat",
-            "dir",
-            "ignoreFields",
-            "ignoreHeaders",
-            "baselineUrl",
-        ],
-        path,
-    )?;
+pub fn validate_diff(cx: &mut Ctx, diff: &Json, path: &str, keys: &[&str]) -> Res {
+    cx.check_unknown_keys(diff, keys, path)?;
     choice_and_dir(cx, diff, "outputFormat", VALID_DIFF_OUTPUT_FORMATS, path);
     Ok(())
 }

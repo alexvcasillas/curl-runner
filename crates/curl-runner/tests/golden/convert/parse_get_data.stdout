@@ -1,6 +1,7 @@
 request:
   method: GET
   url: https://example.com
-  body:
-    form: q=test
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body: q=test
 

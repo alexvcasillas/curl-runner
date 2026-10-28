@@ -1,6 +1,9 @@
+# Warning: Body references a file (@payload.bin): file references are not read, so the body is the literal text "@payload.bin"; fill in the body with the file's contents
+
 request:
   method: POST
   url: https://x.test/upload
-  body:
-    binary: "@payload.bin"
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body: "@payload.bin"
 

@@ -109,6 +109,12 @@ pub fn generate_curl_from_ir(ir: &CurlRunnerIr) -> String {
     if let Some(t) = ir.timeout {
         seg.push(format!("--max-time {}", num_to_string((t / 1000.0).ceil())));
     }
+    if let Some(r) = &ir.retry {
+        seg.push(format!("--retry {}", r.count));
+        if let Some(ms) = r.delay_ms {
+            seg.push(format!("--retry-delay {}", ms.div_ceil(1000)));
+        }
+    }
     if ir.follow_redirects == Some(true) {
         seg.push("-L".into());
     }

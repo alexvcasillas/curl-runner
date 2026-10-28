@@ -42,6 +42,9 @@ pub struct CurlAst {
     pub referer: Option<String>,
     pub silent: bool,
     pub verbose: bool,
+    /// Raw `--retry` / `--retry-delay` values, validated by the normalizer.
+    pub retry: Option<String>,
+    pub retry_delay: Option<String>,
     pub unsupported_flags: Vec<UnsupportedFlag>,
     pub order: Vec<&'static str>,
 }
@@ -120,6 +123,20 @@ pub enum Source {
     Yaml,
 }
 
+/// The `retry` block: `--retry` / `--retry-delay` and the runner settings
+/// that reproduce curl's retry timing and status set.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RetryIr {
+    pub count: u64,
+    /// Milliseconds (curl takes whole seconds).
+    pub delay_ms: Option<u64>,
+    pub backoff: Option<f64>,
+    pub statuses: Option<Vec<u16>>,
+}
+
+/// Statuses curl retries on (`--retry`): the runner's default set lacks 408.
+pub const CURL_RETRY_STATUSES: [u16; 6] = [408, 429, 500, 502, 503, 504];
+
 /// Intermediate representation shared by both converters.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurlRunnerIr {
@@ -138,6 +155,7 @@ pub struct CurlRunnerIr {
     pub proxy: Option<String>,
     pub output: Option<String>,
     pub http2: bool,
+    pub retry: Option<RetryIr>,
     pub ssl: Option<Ssl>,
     pub source: Source,
     /// A YAML `Content-Type` header whose value is falsy (`null`, `0`,

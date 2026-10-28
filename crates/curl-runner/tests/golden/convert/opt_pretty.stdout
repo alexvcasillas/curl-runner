@@ -2,6 +2,5 @@ request:
   method: POST
   url: https://x.test
   body:
-    json:
-      a: 1
+    a: 1
 

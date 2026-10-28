@@ -1,6 +1,7 @@
 request:
   method: POST
   url: https://x.test
-  body:
-    form: "name%3DJohn%20Doe&q%3Da%26b%3Dc"
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body: "name%3DJohn%20Doe&q%3Da%26b%3Dc"
 

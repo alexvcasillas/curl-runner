@@ -1,6 +1,7 @@
 request:
   method: PUT
   url: https://example.com
-  body:
-    raw: data
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body: data
 

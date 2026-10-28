@@ -2,6 +2,5 @@ request:
   method: POST
   url: ""
   body:
-    json:
-      key: value
+    key: value
 

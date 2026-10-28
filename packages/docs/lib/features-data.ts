@@ -6,6 +6,8 @@ export interface Benefit {
 export interface FeatureData {
   slug: string;
   title: string;
+  /** Page <title> (without the site suffix) when it should differ from the sidebar `title`. */
+  seoTitle?: string;
   /** H1: the benefit, as a sentence. */
   headline: string;
   description: string;
@@ -14,6 +16,17 @@ export interface FeatureData {
   benefits: [Benefit, Benefit, Benefit];
   goodFor: [string, string, string, string];
   keywords: string[];
+  /** Optional "from curl" comparison section: a curl command next to its YAML equivalent. */
+  fromCurl?: {
+    heading: string;
+    intro: string;
+    curl: string;
+    /** Must pass `curl-runner validate --strict` too. */
+    yaml: string;
+    outro: string;
+    linkText: string;
+    href: string;
+  };
 }
 
 /** Trim the template's outer blank lines and end with one newline, like a file. */
@@ -146,15 +159,16 @@ request:
   {
     slug: 'retry-mechanism',
     title: 'Retry Mechanism',
+    seoTitle: 'Retry failed curl requests with backoff',
     headline: 'Flaky networks shouldn’t fail your suite.',
     description:
-      'Retry failed requests with a count, a delay and exponential backoff — per request or for the whole file. Rate limits and gateway errors get another try; a bad request doesn’t.',
+      'Retry failed curl requests with a count, delay and backoff. 429, 500, 502, 503 and 504 retry by default; a 400 doesn’t.',
     example: {
       filename: 'retry.yaml',
       yaml: yaml(`
 global:
   defaults:
-    retry: { count: 3, delay: 1000, backoff: 2 }
+    retry: { count: 3, delay: 1000, backoff: 2, retryableStatuses: [429, 500, 502, 503] }
 
 requests:
   - name: Flaky upstream
@@ -187,7 +201,35 @@ requests:
       'Services that take a moment to warm up after a deploy',
       'Smoke tests against shared staging environments',
     ],
-    keywords: ['retry', 'exponential backoff', 'flaky tests', 'rate limiting', 'Retry-After'],
+    keywords: [
+      'curl retry',
+      'curl --retry',
+      'curl retry on failure',
+      'curl retry delay',
+      'exponential backoff',
+      'flaky tests',
+      'rate limiting',
+      'Retry-After',
+    ],
+    fromCurl: {
+      heading: 'From curl --retry',
+      intro:
+        'curl’s --retry N retries transient errors only, waiting 1 second and doubling the wait on each attempt. --retry-delay S replaces that with a fixed wait of S seconds. The YAML equivalent:',
+      curl: 'curl --retry 3 --retry-delay 2 https://api.example.com/data',
+      yaml: yaml(`
+request:
+  name: Flaky upstream
+  url: https://api.example.com/data
+  retry:
+    count: 3
+    delay: 2000
+    retryableStatuses: [408, 429, 500, 502, 503, 504]
+`),
+      outro:
+        'curl-runner convert maps these flags for you: --retry N becomes count N with a 1000 ms delay, a backoff of 2 and the transient status codes 408, 429, 500, 502, 503 and 504; --retry-delay S turns it into a fixed delay of S × 1000 ms. On top of that, a retry policy can be set per request or as a default for the file, and retryableStatuses lets you choose which statuses are worth another try.',
+      linkText: 'curl’s documentation for --retry',
+      href: 'https://curl.se/docs/manpage.html#--retry',
+    },
   },
   {
     slug: 'watch-mode',
@@ -288,9 +330,10 @@ requests:
   {
     slug: 'file-uploads',
     title: 'File Uploads',
+    seoTitle: 'Upload files with multipart form data',
     headline: 'Multipart uploads without the curl flags.',
     description:
-      'Send multipart/form-data with formData: plain fields and file attachments side by side. Set a filename and content type when the server cares, and let curl-runner build the request.',
+      'Upload files with multipart form data: plain fields and file attachments in YAML, with a filename and content type when the server needs them.',
     example: {
       filename: 'upload.yaml',
       yaml: yaml(`
@@ -710,8 +753,7 @@ requests:
       yaml: yaml(`
 # Or for a whole run: curl-runner feed.yaml --http2
 global:
-  defaults:
-    http2: true
+  http2: true
 
 requests:
   - name: Feed over HTTP/2
@@ -895,9 +937,10 @@ request:
   {
     slug: 'convert',
     title: 'curl ⇄ YAML',
+    seoTitle: 'Convert curl to YAML (and back)',
     headline: 'Paste a curl command, get a test.',
     description:
-      'curl-runner convert turns a curl command — or a whole shell script of them — into YAML, and turns YAML back into curl. curl flags it doesn’t recognise come back as warnings instead of breaking the conversion.',
+      'Convert curl commands, or a whole shell script of them, to YAML and back. Flags curl-runner doesn’t recognise come back as warnings, not errors.',
     example: {
       filename: 'users.yaml',
       yaml: yaml(`

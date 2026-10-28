@@ -1,6 +1,7 @@
 request:
   method: POST
   url: https://x.test
-  body:
-    raw: "@literal"
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  body: "@literal"
 
