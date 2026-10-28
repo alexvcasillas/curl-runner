@@ -45,3 +45,6 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
+
+      - name: Docs Tests
+        run: pnpm --filter @curl-runner/docs test
