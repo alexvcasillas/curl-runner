@@ -3,7 +3,8 @@
 # version PR has been merged. Order matters: the five platform packages go
 # first, then `changeset publish` publishes @curl-runner/cli, whose staged
 # optionalDependencies pin them to the same version. Re-runnable: versions
-# already on npm are skipped (changeset publish skips its own the same way).
+# already on npm are skipped, @curl-runner/cli included (checked here, not by
+# changesets).
 # Usage: npm-publish.sh <bin-dir>   (the downloaded bin-* build artifacts)
 set -euo pipefail
 
@@ -39,6 +40,22 @@ for p in linux-x64 linux-arm64 darwin-x64 darwin-arm64 win32-x64; do
   fi
   (cd "$REPO_ROOT/npm/cli-$p" && npm publish --access public)
 done
+
+# `changeset publish` misreads already-published versions here (it retried
+# @curl-runner/cli@2.0.0 and the redirect package), so decide ourselves.
+status=0
+"$REPO_ROOT/scripts/npm-published.sh" @curl-runner/cli "$VERSION" || status=$?
+case "$status" in
+  0)
+    echo "@curl-runner/cli@$VERSION already published, skipping"
+    exit 0
+    ;;
+  1) ;;
+  *)
+    echo "error: npm registry lookup for @curl-runner/cli@$VERSION failed; not publishing" >&2
+    exit 1
+    ;;
+esac
 
 cd "$REPO_ROOT"
 bun run release
