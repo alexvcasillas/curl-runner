@@ -1376,7 +1376,7 @@ request:
 }
 
 #[test]
-fn interpolated_numeric_values_are_accepted_everywhere() {
+fn interpolated_numeric_values_are_accepted_in_request_fields() {
     let ok = |label: &str, yaml: &str| {
         let o = validate(yaml, &["--strict"]);
         assert_eq!(o.code, 0, "{label}: {}", o.stdout);
@@ -1391,29 +1391,64 @@ fn interpolated_numeric_values_are_accepted_everywhere() {
         "retry.count",
         &req("  retry: { count: \"${N}\", delay: \"${D:500}\", backoff: \"${B}\" }"),
     );
+}
+
+#[test]
+fn interpolated_numeric_values_error_in_global_settings() {
+    // The runner does not interpolate `global` or `defaults` blocks, so
+    // `validate` must agree with `run` and reject `${...}` there.
+    let bad = |label: &str, yaml: &str| {
+        let o = validate(yaml, &[]);
+        assert_eq!(o.code, 1, "{label}: {}", o.stdout);
+        assert!(
+            has(&o, contains("global settings are not interpolated")),
+            "{label}: {}",
+            o.stdout
+        );
+    };
     let global = |extra: &str| {
         format!("global:\n{extra}\nrequest:\n  name: r\n  url: https://example.com\n")
     };
-    ok("maxConcurrency", &global("  maxConcurrency: \"${C}\""));
-    ok(
+    bad("maxConcurrency", &global("  maxConcurrency: \"${C}\""));
+    bad(
         "profile",
         &global("  profile: { iterations: \"${I}\", warmup: \"${W}\", concurrency: \"${C:2}\" }"),
     );
-    ok(
+    bad(
         "pool",
         &global(
             "  connectionPool: { maxStreamsPerHost: \"${S}\", keepaliveTime: \"${K}\", connectTimeout: \"${T}\" }",
         ),
     );
-    ok("watch", &global("  watch: { debounce: \"${D}\" }"));
-    ok(
-        "ci",
-        &global("  ci: { failOn: \"${F}\", failOnPercentage: \"${P}\" }"),
+    bad("watch", &global("  watch: { debounce: \"${D}\" }"));
+    bad("ci.failOn", &global("  ci: { failOn: \"${F}\" }"));
+    bad(
+        "ci.failOnPercentage",
+        &global("  ci: { failOnPercentage: \"${P}\" }"),
     );
-    ok(
-        "defaults",
-        &global("  defaults:\n    timeout: \"${T}\"\n    retry: { count: \"${N}\" }"),
+    bad(
+        "defaults.timeout",
+        &global("  defaults:\n    timeout: \"${T}\""),
     );
+    bad(
+        "defaults.retry",
+        &global("  defaults:\n    retry: { count: \"${N}\" }"),
+    );
+    bad(
+        "defaults.expect.status",
+        &global("  defaults:\n    expect: { status: \"${S}\" }"),
+    );
+    bad(
+        "collection.defaults",
+        "collection:\n  defaults: { timeout: \"${T}\" }\nrequests:\n  - name: r\n    url: https://example.com\n",
+    );
+    // A literal number in the same place is fine, and request fields after
+    // a global block are still interpolated.
+    let o = validate(
+        "global:\n  maxConcurrency: 2\nrequest:\n  name: r\n  url: https://example.com\n  timeout: \"${T}\"\n",
+        &["--strict"],
+    );
+    assert_eq!(o.code, 0, "{}", o.stdout);
 }
 
 #[test]

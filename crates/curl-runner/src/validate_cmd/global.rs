@@ -2,8 +2,8 @@
 //! connectionPool, ci, watch, profile, snapshot, diff, variables).
 
 use super::issues::{
-    Ctx, Res, Severity, as_num, entries, is_identifier, is_interpolated, is_sensitive_value,
-    js_string, not_num_at_least, not_plain_object, prop, truthy_prop,
+    Ctx, Res, Severity, as_num, entries, is_identifier, is_sensitive_value, js_string,
+    not_plain_object, prop, truthy_prop,
 };
 use super::{request, security};
 use curl_runner_core::model::Json;
@@ -90,8 +90,9 @@ pub fn validate_global(cx: &mut Ctx, config: &Json, path: &str) -> Res {
 
     if let Some(mc) = prop(config, "maxConcurrency") {
         let p = format!("{path}.maxConcurrency");
-        if not_num_at_least(mc, 1.0) {
-            cx.add(&p, Severity::Error, "Must be a positive number");
+        if cx.not_num_at_least(mc, 1.0) {
+            let m = cx.num_msg(mc, "Must be a positive number");
+            cx.add(&p, Severity::Error, m);
         }
         if prop(config, "execution").and_then(Json::as_str) == Some("sequential") {
             cx.add(
@@ -210,8 +211,9 @@ fn validate_output(cx: &mut Ctx, output: &Json, path: &str) -> Res {
 
 /// `x !== undefined && (typeof x !== 'number' || x < min)` → error `msg`.
 fn number_at_least(cx: &mut Ctx, obj: &Json, field: &str, min: f64, path: &str, msg: &str) {
-    if prop(obj, field).is_some_and(|v| not_num_at_least(v, min)) {
-        cx.add(&format!("{path}.{field}"), Severity::Error, msg);
+    if let Some(v) = prop(obj, field).filter(|v| cx.not_num_at_least(v, min)) {
+        let m = cx.num_msg(v, msg);
+        cx.add(&format!("{path}.{field}"), Severity::Error, m);
     }
 }
 
@@ -252,14 +254,11 @@ fn validate_ci(cx: &mut Ctx, ci: &Json, path: &str) -> Res {
     cx.boolean_field(ci, "strictExit", path);
     number_at_least(cx, ci, "failOn", 0.0, path, NON_NEGATIVE);
     let pct = prop(ci, "failOnPercentage");
-    if pct.is_some_and(|v| {
-        !is_interpolated(v) && as_num(v).is_none_or(|n| !(0.0..=100.0).contains(&n))
-    }) {
-        cx.add(
-            &format!("{path}.failOnPercentage"),
-            Severity::Error,
-            "Must be a number between 0 and 100",
-        );
+    if let Some(v) =
+        pct.filter(|v| !cx.interpolated(v) && as_num(v).is_none_or(|n| !(0.0..=100.0).contains(&n)))
+    {
+        let m = cx.num_msg(v, "Must be a number between 0 and 100");
+        cx.add(&format!("{path}.failOnPercentage"), Severity::Error, m);
     }
     if prop(ci, "failOn").is_some() && pct.is_some() {
         cx.add(
