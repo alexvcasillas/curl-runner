@@ -250,7 +250,6 @@ impl Workspace {
             &self.filter.read(cx).value(),
         );
         let active = self.state.active_document().map(|d| d.rel_path.clone());
-        let deck_slot = deck_slot_width(&collection.tree);
         let tree = div()
             .id("collection-tree")
             .role(Role::Tree)
@@ -266,7 +265,7 @@ impl Workspace {
             .children(
                 rows.into_iter()
                     .enumerate()
-                    .map(|(ix, row)| self.render_row(ix, row, active.as_deref(), deck_slot, cx)),
+                    .map(|(ix, row)| self.render_row(ix, row, active.as_deref(), cx)),
             );
 
         column
@@ -320,7 +319,6 @@ impl Workspace {
         ix: usize,
         row: Row,
         active: Option<&Path>,
-        deck_slot: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let depth = row.depth;
@@ -438,13 +436,12 @@ impl Workspace {
                                     .flex_none()
                                     .items_center()
                                     .justify_between()
-                                    .w(px(hang.max(MULTI_HANG) + deck_slot))
+                                    .w(px(hang.max(MULTI_HANG) + stack.slot_width()))
                                     .child(chevron)
                                     .child(method_stack(
                                         &stack,
                                         fill,
                                         (!selected).then(|| (group_name, color("surface-100"))),
-                                        deck_slot,
                                     )),
                             )
                             .child(name_cell(label))
@@ -648,23 +645,6 @@ const ROW_GAP: f32 = 8.;
 /// chevron and a gap.
 const MULTI_HANG: f32 = CHEVRON_SIZE + 4.;
 
-/// The method slot of multi-request rows: the widest stack in `tree`, at
-/// least the single-request badge slot, so their names line up with each
-/// other.
-fn deck_slot_width(tree: &[TreeNode]) -> f32 {
-    tree.iter()
-        .map(|n| match n {
-            TreeNode::Folder { children, .. } => deck_slot_width(children),
-            TreeNode::File {
-                method: None,
-                requests,
-                ..
-            } => Stack::new(requests.iter().map(|r| r.method.as_str())).width(),
-            TreeNode::File { .. } => 0.,
-        })
-        .fold(METHOD_BADGE_WIDTH, f32::max)
-}
-
 /// The method as coloured mono text in a fixed slot so names line up.
 pub fn method_badge(method: Option<&str>) -> Div {
     let text = method.map(str::to_owned).unwrap_or_default();
@@ -718,7 +698,7 @@ fn tree_menu(
 mod tests {
     use super::{
         BADGE_TEXT_SIZE, Group, METHOD_BADGE_WIDTH, ROW_GAP, Row, RowKind, TreeNode,
-        badge_text_size, deck_slot_width, request_label, visible_rows,
+        badge_text_size, request_label, visible_rows,
     };
     use crate::model::collection::RequestEntry;
 
@@ -876,24 +856,6 @@ mod tests {
                 file("get-user.yaml", "users/get-user.yaml", Some("GET")),
             ],
         }]
-    }
-
-    #[test]
-    fn deck_slot_fits_the_widest_stack() {
-        assert_eq!(deck_slot_width(&[]), METHOD_BADGE_WIDTH);
-        // GET + POST: two dots 7px apart, narrower than a badge.
-        assert_eq!(deck_slot_width(&flows()), METHOD_BADGE_WIDTH);
-        let wide = vec![TreeNode::Folder {
-            name: "x".into(),
-            children: vec![multi(
-                "smoke.yaml",
-                "x/smoke.yaml",
-                &[("GET", "a"), ("POST", "b"), ("PUT", "c"), ("PATCH", "d")],
-            )],
-        }];
-        let mut tree = flows();
-        tree.extend(wide);
-        assert!(deck_slot_width(&tree) > METHOD_BADGE_WIDTH);
     }
 
     #[test]
