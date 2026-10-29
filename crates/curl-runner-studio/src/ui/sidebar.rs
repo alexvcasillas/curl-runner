@@ -191,7 +191,9 @@ impl Workspace {
                         .small()
                         .icon(IconName::Plus)
                         .tooltip("New request")
-                        .on_click(cx.listener(|this, _, _, cx| this.new_request(None, cx))),
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.new_request(None, window, cx);
+                        })),
                 ),
             )
             .child(
@@ -384,7 +386,9 @@ impl Workspace {
                     .mt(px(4.))
                     .icon(IconName::Plus)
                     .label("New collection")
-                    .on_click(cx.listener(|this, _, _, cx| this.new_collection(cx))),
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.new_collection(window, cx);
+                    })),
             )
     }
 }
@@ -414,10 +418,12 @@ fn tree_menu(
     let (new_ws, rename_ws, delete_ws) = (ws.clone(), ws.clone(), ws.clone());
     let (rename_path, delete_path) = (target.to_path_buf(), target.to_path_buf());
     menu.item(
-        PopupMenuItem::new("New request here").on_click(move |_, _, cx| {
+        PopupMenuItem::new("New request here").on_click(move |_, window, cx| {
             let folder = folder.clone();
             new_ws
-                .update(cx, |this, cx| this.new_request(folder, cx))
+                .update(cx, |this, cx| {
+                    this.new_request(folder, window, cx);
+                })
                 .ok();
         }),
     )

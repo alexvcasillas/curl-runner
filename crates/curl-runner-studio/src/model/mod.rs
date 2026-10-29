@@ -3,3 +3,4 @@
 pub mod collection;
 pub mod diagnostics;
 pub mod document;
+pub mod templates;

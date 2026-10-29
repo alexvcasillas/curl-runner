@@ -76,8 +76,6 @@ impl Collection {
     }
 
     /// Writes a new file; an existing `rel` fails with `AlreadyExists`.
-    // Not wired yet: the New dialog writes files with it.
-    #[allow(dead_code)]
     pub fn create_file(&mut self, rel: &Path, contents: &str) -> io::Result<()> {
         let path = self.root.join(rel);
         if let Some(parent) = path.parent() {

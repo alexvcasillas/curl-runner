@@ -2,7 +2,7 @@
 //! and lays out title bar, sidebar, editor and status bar.
 
 use super::app::{
-    CloseTab, Import, NewCollection, NewRequest, OpenFolder, QuickFix, Quit, SaveFile,
+    CloseTab, Import, NewCollection, NewRequest, OpenFolder, OpenPalette, QuickFix, Quit, SaveFile,
     ToggleProblems, ui_font,
 };
 use super::diagnostics_view::DiagnosticsView;
@@ -96,7 +96,7 @@ impl Workspace {
 
     /// Opens `root` as the collection, replacing the current one and its
     /// tabs. Callers settle unsaved changes first.
-    fn open_collection(
+    pub(super) fn open_collection(
         &mut self,
         root: &Path,
         window: &mut Window,
@@ -310,7 +310,12 @@ impl Workspace {
 
     /// Runs `then` once unsaved changes in every tab are saved or dropped,
     /// asking first when there are any.
-    fn settle_unsaved(&mut self, then: Then, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn settle_unsaved(
+        &mut self,
+        then: Then,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let dirty = self.dirty_count();
         if dirty == 0 {
             return then(self, window, cx);
@@ -450,20 +455,9 @@ impl Workspace {
 
     // Tree actions.
 
-    /// Placeholder until the New dialog exists: `folder` is where the
-    /// request would go.
-    pub(super) fn new_request(&mut self, folder: Option<PathBuf>, _: &mut Context<Self>) {
-        log::debug!("new request in {folder:?}: the New dialog is not built yet");
-    }
-
-    /// Placeholder until the New collection dialog exists.
-    pub(super) fn new_collection(&mut self, _: &mut Context<Self>) {
-        log::debug!("new collection: the New dialog is not built yet");
-    }
-
-    /// Placeholder until the New dialog's From curl template exists.
-    pub(super) fn import(&mut self, _: &mut Context<Self>) {
-        log::debug!("import: the New dialog is not built yet");
+    pub(super) fn toggle_problems(&mut self, cx: &mut Context<Self>) {
+        self.problems_open = !self.problems_open;
+        cx.notify();
     }
 
     pub(super) fn open_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -660,14 +654,20 @@ impl Render for Workspace {
                 }
             }))
             .on_action(cx.listener(|this, _: &Quit, window, cx| this.quit(window, cx)))
-            .on_action(cx.listener(|this, _: &NewRequest, _, cx| this.new_request(None, cx)))
-            .on_action(cx.listener(|this, _: &NewCollection, _, cx| this.new_collection(cx)))
-            .on_action(cx.listener(|this, _: &Import, _, cx| this.import(cx)))
-            .on_action(cx.listener(|this, _: &QuickFix, window, cx| this.quick_fix(window, cx)))
-            .on_action(cx.listener(|this, _: &ToggleProblems, _, cx| {
-                this.problems_open = !this.problems_open;
-                cx.notify();
+            .on_action(cx.listener(|this, _: &NewRequest, window, cx| {
+                this.new_request(None, window, cx);
             }))
+            .on_action(cx.listener(|this, _: &NewCollection, window, cx| {
+                this.new_collection(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &Import, window, cx| {
+                this.import(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &OpenPalette, window, cx| {
+                this.open_palette(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &QuickFix, window, cx| this.quick_fix(window, cx)))
+            .on_action(cx.listener(|this, _: &ToggleProblems, _, cx| this.toggle_problems(cx)))
             .size_full()
             .flex()
             .flex_col()
@@ -698,7 +698,7 @@ fn set_editor_text(editor: &Entity<EditorState>, text: &str, window: &mut Window
     });
 }
 
-fn notify_error(message: String, window: &mut Window, cx: &mut App) {
+pub(super) fn notify_error(message: String, window: &mut Window, cx: &mut App) {
     log::warn!("{message}");
     window.push_notification(Notification::error(message), cx);
 }

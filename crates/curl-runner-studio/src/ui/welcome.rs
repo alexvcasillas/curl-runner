@@ -26,7 +26,9 @@ const CARDS: [Card; 4] = [
         keys: "⇧⌘N",
         title: "New collection",
         detail: "Pick an empty folder and start with a first request.",
-        action: Some(|ws, _, cx| ws.new_collection(cx)),
+        action: Some(|ws, window, cx| {
+            ws.new_collection(window, cx);
+        }),
     },
     Card {
         id: "welcome-open-folder",
@@ -50,7 +52,9 @@ const CARDS: [Card; 4] = [
         keys: "⌘I",
         title: "Import",
         detail: "Turn a curl command into a request file.",
-        action: Some(|ws, _, cx| ws.import(cx)),
+        action: Some(|ws, window, cx| {
+            ws.import(window, cx);
+        }),
     },
 ];
 

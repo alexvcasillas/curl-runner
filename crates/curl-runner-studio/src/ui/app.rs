@@ -20,13 +20,16 @@ actions!(
         SaveFile,
         /// Close the active tab, asking first when it has unsaved changes (⌘W).
         CloseTab,
-        /// Open the New request dialog (⌘N). Wired by the dialogs task.
+        /// Open the New dialog on a request (⌘N).
         NewRequest,
-        /// Open the New collection dialog (⇧⌘N). Wired by the dialogs task.
+        /// Open the New dialog on a collection (⇧⌘N).
         NewCollection,
-        /// Open the New dialog on the From curl template (⌘I). Wired by the
-        /// dialogs task.
+        /// Open the New dialog on the From curl template (⌘I).
         Import,
+        /// Create what the New dialog describes (⌘↵ in the dialog).
+        CreateNew,
+        /// Open the command palette (⌘K).
+        OpenPalette,
         /// Apply the first quick fix at the editor's cursor (⌘.).
         QuickFix,
         /// Show or hide the Problems panel (⇧⌘M).
@@ -40,6 +43,10 @@ pub fn menus() -> Vec<Menu> {
     vec![
         Menu::new("curl-runner studio").items([MenuItem::action("Quit curl-runner studio", Quit)]),
         Menu::new("File").items([
+            MenuItem::action("New Request…", NewRequest),
+            MenuItem::action("New Collection…", NewCollection),
+            MenuItem::action("Import curl…", Import),
+            MenuItem::separator(),
             MenuItem::action("Open Folder…", OpenFolder),
             MenuItem::action("Save", SaveFile),
             MenuItem::separator(),
@@ -59,6 +66,8 @@ pub fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-n", NewRequest, None),
         KeyBinding::new("cmd-shift-n", NewCollection, None),
         KeyBinding::new("cmd-i", Import, None),
+        KeyBinding::new("cmd-enter", CreateNew, Some("NewDialog")),
+        KeyBinding::new("cmd-k", OpenPalette, None),
         // Bound after the Kit's `cmd-.` (code actions menu), so it wins in
         // the editor; the menu stays on `ctrl-.` and the context menu.
         KeyBinding::new("cmd-.", QuickFix, Some("Input && mode == editor")),
@@ -91,11 +100,23 @@ pub fn run() {
                 .or_else(state::last_folder)
                 .filter(|p| p.is_dir());
             let file = dev_env("CURL_RUNNER_STUDIO_OPEN");
+            let show = std::env::var("CURL_RUNNER_STUDIO_SHOW").ok();
             gpui_kit::open_window(options, cx, |window, cx| {
                 cx.new(|cx| {
                     let mut ws = Workspace::new(folder, window, cx);
                     if let Some(file) = file {
                         ws.open_file(&file, window, cx);
+                    }
+                    if let Some(show) = show {
+                        // Dialogs need the window's root, which exists once
+                        // this builder returns.
+                        cx.defer_in(window, move |ws, window, cx| match show.as_str() {
+                            "new" => drop(ws.new_request(None, window, cx)),
+                            "new-collection" => drop(ws.new_collection(window, cx)),
+                            "import" => drop(ws.import(window, cx)),
+                            "palette" => drop(ws.open_palette(window, cx)),
+                            _ => {}
+                        });
                     }
                     ws
                 })
@@ -115,8 +136,9 @@ pub fn run() {
 
 /// Development aids for looking at a given state without clicking:
 /// `CURL_RUNNER_STUDIO_FOLDER` opens that folder instead of the last one
-/// (without remembering it) and `CURL_RUNNER_STUDIO_OPEN` opens a file by
-/// its path relative to the collection.
+/// (without remembering it), `CURL_RUNNER_STUDIO_OPEN` opens a file by
+/// its path relative to the collection and `CURL_RUNNER_STUDIO_SHOW` opens
+/// a dialog: `new`, `new-collection`, `import` or `palette`.
 fn dev_env(name: &str) -> Option<PathBuf> {
     std::env::var_os(name).map(PathBuf::from)
 }
@@ -356,6 +378,8 @@ mod tests {
                 "cmd-n",
                 "cmd-shift-n",
                 "cmd-i",
+                "cmd-enter",
+                "cmd-k",
                 "cmd-.",
                 "cmd-shift-m"
             ]
