@@ -1337,6 +1337,7 @@ dependencies = [
  "gpui-kit",
  "gpui-pre",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

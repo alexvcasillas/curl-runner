@@ -4,6 +4,10 @@
 #[allow(dead_code)]
 mod theme;
 
+// Until the app wires the model in (next task), little of it is used.
+#[allow(dead_code)]
+mod model;
+
 #[cfg(target_os = "macos")]
 mod app {
     use crate::theme;
