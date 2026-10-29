@@ -1,7 +1,7 @@
 //! The collections column: header, filter and the collection tree.
 
 use super::icons::{self, glyph};
-use super::method_stack::method_stack;
+use super::method_stack::{self, Stack, method_stack, more_chip};
 use super::workspace::Workspace;
 use super::{color, method_color};
 use crate::model::collection::TreeNode;
@@ -321,6 +321,7 @@ impl Workspace {
         active: Option<&Path>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let depth = row.depth;
         let base = div()
             .id(("tree-row", ix))
             .role(Role::TreeItem)
@@ -331,7 +332,7 @@ impl Workspace {
             .gap(px(ROW_GAP))
             .h(px(ROW_HEIGHT))
             .pr(px(8.))
-            .pl(px(8. + INDENT * row.depth as f32))
+            .pl(px(8. + INDENT * depth as f32))
             .rounded(px(6.))
             .text_size(px(13.))
             .text_color(color("text-secondary"))
@@ -418,9 +419,28 @@ impl Workspace {
                                 .test_support()
                                 .into_any_element()
                         };
-                        row.child(chevron)
-                            .child(method_stack(group.methods.iter().map(String::as_str), fill))
+                        let stack = Stack::new(group.methods.iter().map(String::as_str));
+                        // Chevron and deck hang into the indent, so the
+                        // method slot and the name line up with single rows.
+                        let pl = 8. + INDENT * depth as f32;
+                        let hang = if pl >= MULTI_HANG + 2. {
+                            MULTI_HANG
+                        } else {
+                            0.
+                        };
+                        row.pl(px(pl - hang))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_none()
+                                    .items_center()
+                                    .justify_between()
+                                    .w(px(hang.max(MULTI_HANG) + METHOD_BADGE_WIDTH))
+                                    .child(chevron)
+                                    .child(method_stack(&stack, fill)),
+                            )
                             .child(name_cell(label))
+                            .children(more_chip(&stack))
                             .child(count_cell(group.count))
                     }
                     None => row
@@ -617,6 +637,9 @@ fn badge_text_size(method: &str) -> f32 {
 const METHOD_BADGE_WIDTH: f32 = 34.;
 /// Gap between the badge and the name.
 const ROW_GAP: f32 = 8.;
+/// What a multi-request row's chevron and deck take left of the method
+/// slot: the chevron, a gap, then the pills peeking behind the front one.
+const MULTI_HANG: f32 = CHEVRON_SIZE + 4. + method_stack::PEEK_ROOM;
 
 /// The method as coloured mono text in a fixed slot so names line up.
 pub fn method_badge(method: Option<&str>) -> Div {

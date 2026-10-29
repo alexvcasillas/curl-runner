@@ -1,28 +1,33 @@
 //! `MethodStack`: the method slot of a multi-request file row. The first
-//! method is a pill in front; the next ones sit behind it, offset on x, so
-//! only their colored edges peek out; a `+N` chip counts the rest.
+//! method is a pill in front, exactly in the single-request badge slot so
+//! names line up across rows; the next ones sit behind it, shifted left, so
+//! only their colored edges peek out. A `+N` chip after the name counts the
+//! rest.
 
 use super::{app::mono_font, color, method_color};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 
-/// Pill width and height, px.
-pub const PILL_W: f32 = 40.;
+/// Pill width and height, px. The width is the badge slot's
+/// (`METHOD_BADGE_WIDTH` in `sidebar.rs`).
+pub const PILL_W: f32 = 34.;
 pub const PILL_H: f32 = 14.;
 pub const PILL_RADIUS: f32 = 4.;
-/// How far each pill behind the front one is shifted right, px.
+/// How far each pill behind the front one is shifted left, px.
 pub const PEEK: f32 = 4.;
 /// Most pills in the deck; further methods go to the `+N` chip.
 pub const MAX: usize = 3;
-/// Gap between the deck and the `+N` chip, px.
-pub const CHIP_GAP: f32 = 6.;
-/// The chip's width, px (fits `+9`; wider counts still center).
+/// The chip's minimum width, px (fits `+9`).
 pub const CHIP_W: f32 = 20.;
 pub const TEXT_SIZE: f32 = 9.5;
+/// For methods longer than 4 characters, so they fit inside the border.
+pub const TEXT_SIZE_LONG: f32 = 8.;
+/// For methods longer than `DELETE`.
+pub const TEXT_SIZE_LONGEST: f32 = 7.;
 /// Alpha of each pill's border in its method color.
 pub const BORDER_ALPHA: f32 = 0.4;
-/// The slot's fixed width, so names after it line up from row to row.
-pub const SLOT_W: f32 = PILL_W + PEEK * (MAX - 1) as f32 + CHIP_GAP + CHIP_W;
+/// Room the deck takes left of the slot, px.
+pub const PEEK_ROOM: f32 = PEEK * (MAX - 1) as f32;
 
 /// What the stack shows for a file's methods.
 #[derive(Debug, PartialEq, Eq)]
@@ -49,21 +54,23 @@ impl Stack {
         }
     }
 
-    /// Left edge of deck pill `i`, px.
+    /// Left edge of deck pill `i` relative to the slot, px.
     pub fn pill_left(i: usize) -> f32 {
-        PEEK * i as f32
-    }
-
-    /// Left edge of the `+N` chip, px, when there is one.
-    pub fn chip_left(&self) -> Option<f32> {
-        (self.more > 0)
-            .then(|| Self::pill_left(self.deck.len().saturating_sub(1)) + PILL_W + CHIP_GAP)
+        -PEEK * i as f32
     }
 }
 
-/// The stack for `methods`; `fill` is the row background behind it.
-pub fn method_stack<'a>(methods: impl IntoIterator<Item = &'a str>, fill: Hsla) -> Div {
-    let stack = Stack::new(methods);
+fn text_size(method: &str) -> f32 {
+    match method.len() {
+        0..=4 => TEXT_SIZE,
+        5..=6 => TEXT_SIZE_LONG,
+        _ => TEXT_SIZE_LONGEST,
+    }
+}
+
+/// The deck for `stack` in a [`PILL_W`] slot; the pills behind it overflow
+/// [`PEEK_ROOM`] to the left. `fill` is the row background behind it.
+pub fn method_stack(stack: &Stack, fill: Hsla) -> Div {
     let pill = |i: usize, method: &str| {
         let tint = method_color(method);
         div()
@@ -81,6 +88,7 @@ pub fn method_stack<'a>(methods: impl IntoIterator<Item = &'a str>, fill: Hsla) 
             .justify_center()
             .when(i == 0, |p| {
                 p.text_color(tint)
+                    .text_size(px(text_size(method)))
                     .line_height(px(PILL_H - 2.))
                     .child(method.to_string())
             })
@@ -88,47 +96,51 @@ pub fn method_stack<'a>(methods: impl IntoIterator<Item = &'a str>, fill: Hsla) 
     let mut slot = div()
         .relative()
         .flex_none()
-        .w(px(SLOT_W))
+        .w(px(PILL_W))
         .h(px(PILL_H))
         .font_family(mono_font())
-        .text_size(px(TEXT_SIZE))
         .font_weight(FontWeight::MEDIUM);
     // Back to front: later children paint over earlier ones.
     for (i, m) in stack.deck.iter().enumerate().rev() {
         slot = slot.child(pill(i, m));
     }
-    if let Some(left) = stack.chip_left() {
-        slot = slot.child(
-            div()
-                .absolute()
-                .top_0()
-                .left(px(left))
-                .min_w(px(CHIP_W))
-                .h(px(PILL_H))
-                .px(px(3.))
-                .rounded(px(PILL_RADIUS))
-                .bg(color("surface-200"))
-                .text_color(color("text-secondary"))
-                .flex()
-                .items_center()
-                .justify_center()
-                .line_height(px(PILL_H))
-                .child(format!("+{}", stack.more)),
-        );
-    }
     slot
+}
+
+/// The `+N` chip for methods beyond the deck, if any.
+pub fn more_chip(stack: &Stack) -> Option<Div> {
+    (stack.more > 0).then(|| {
+        div()
+            .flex_none()
+            .min_w(px(CHIP_W))
+            .h(px(PILL_H))
+            .px(px(3.))
+            .rounded(px(PILL_RADIUS))
+            .bg(color("surface-200"))
+            .text_color(color("text-secondary"))
+            .font_family(mono_font())
+            .text_size(px(TEXT_SIZE))
+            .font_weight(FontWeight::MEDIUM)
+            .flex()
+            .items_center()
+            .justify_center()
+            .line_height(px(PILL_H))
+            .child(format!("+{}", stack.more))
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{CHIP_GAP, CHIP_W, PEEK, PILL_W, SLOT_W, Stack};
+    use super::{PEEK, PEEK_ROOM, PILL_W, Stack, text_size};
+
+    /// Geist Mono's advance, em.
+    const MONO_ADVANCE_EM: f32 = 0.6;
 
     #[test]
     fn deck_keeps_distinct_methods_in_order() {
         let s = Stack::new(["GET", "GET", "POST", "GET"]);
         assert_eq!(s.deck, ["GET", "POST"]);
         assert_eq!(s.more, 0);
-        assert_eq!(s.chip_left(), None);
     }
 
     #[test]
@@ -136,7 +148,6 @@ mod tests {
         let s = Stack::new(["POST", "GET", "PUT", "DELETE", "GET", "PATCH"]);
         assert_eq!(s.deck, ["POST", "GET", "PUT"]);
         assert_eq!(s.more, 2);
-        assert_eq!(s.chip_left(), Some(PEEK * 2. + PILL_W + CHIP_GAP));
     }
 
     #[test]
@@ -147,9 +158,17 @@ mod tests {
     }
 
     #[test]
-    fn slot_fits_full_deck_and_chip() {
-        let s = Stack::new(["A", "B", "C", "D"]);
-        assert!(s.chip_left().unwrap() + CHIP_W <= SLOT_W);
-        assert_eq!(Stack::pill_left(1), PEEK);
+    fn pills_peek_left_within_the_room() {
+        assert_eq!(Stack::pill_left(0), 0.);
+        assert_eq!(Stack::pill_left(1), -PEEK);
+        assert_eq!(-Stack::pill_left(super::MAX - 1), PEEK_ROOM);
+    }
+
+    #[test]
+    fn every_method_fits_inside_the_pill_border() {
+        for method in ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] {
+            let width = method.len() as f32 * MONO_ADVANCE_EM * text_size(method);
+            assert!(width <= PILL_W - 4., "{method}: {width}");
+        }
     }
 }
