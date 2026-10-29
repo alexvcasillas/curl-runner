@@ -1,7 +1,9 @@
 //! Starter text for new request files and the file names they get.
 
 use curl_runner_core::convert::{YamlOptions, normalize, parse_curl, serialize_to_yaml};
+use curl_runner_core::lint::spans::locate;
 use curl_runner_core::yaml_text::yaml_str;
+use std::ops::Range;
 use unicode_normalization::UnicodeNormalization as _;
 use unicode_normalization::char::is_combining_mark;
 
@@ -13,6 +15,44 @@ pub fn request_template(name: &str, method: &str, url: &str) -> String {
         yaml_str(url),
         yaml_str(&method.to_ascii_uppercase()),
     )
+}
+
+/// A copy of the request file `source` named `name`: a single request's
+/// `request.name` is replaced (or added); other files are copied as they are.
+pub fn duplicate_request(source: &str, name: &str) -> String {
+    match locate(source, "request.name") {
+        Some(spans) if spans.key.is_some() => {
+            let mut text = source.to_string();
+            text.replace_range(spans.value, &yaml_str(name));
+            text
+        }
+        _ => source.to_string(),
+    }
+}
+
+/// The `${VAR}` references in `text`, as byte ranges including `${` and
+/// `}`. One still being typed (no `}` yet) runs to the end of its name.
+pub fn variable_spans(text: &str) -> Vec<Range<usize>> {
+    let mut spans = Vec::new();
+    let mut from = 0;
+    while let Some(at) = text[from..].find("${") {
+        let start = from + at;
+        let body = &text[start + 2..];
+        let end = match body.find(['}', '$']) {
+            Some(i) if body.as_bytes()[i] == b'}' => start + 2 + i + 1,
+            _ => {
+                let name = body
+                    .find(|c: char| {
+                        !(c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | ':' | '-'))
+                    })
+                    .unwrap_or(body.len());
+                start + 2 + name
+            }
+        };
+        spans.push(start..end);
+        from = end;
+    }
+    spans
 }
 
 /// The file name for a request called `name`: a kebab-case ASCII slug plus
@@ -77,6 +117,43 @@ mod tests {
         let text = request_template("a: b # c", "POST", "https://api.example.com/x?y=1");
         assert_eq!(diagnose(&text), []);
         assert!(text.contains("name: \"a: b # c\""), "{text}");
+    }
+
+    #[test]
+    fn duplicate_renames_a_single_request() {
+        let source =
+            "# Get a user\nrequest:\n  name: Get user\n  url: ${BASE_URL}/users/1\n  method: GET\n";
+        let copy = duplicate_request(source, "Get user: copy");
+        assert_eq!(
+            copy,
+            "# Get a user\nrequest:\n  name: \"Get user: copy\"\n  url: ${BASE_URL}/users/1\n  method: GET\n"
+        );
+        assert_eq!(diagnose(&copy), []);
+    }
+
+    #[test]
+    fn duplicate_copies_other_files_verbatim() {
+        let unnamed = "request:\n  url: https://api.example.com\n";
+        assert_eq!(duplicate_request(unnamed, "x"), unnamed);
+        let many = "requests:\n  - name: a\n    url: https://api.example.com\n";
+        assert_eq!(duplicate_request(many, "x"), many);
+        assert_eq!(duplicate_request("request: [", "x"), "request: [");
+    }
+
+    #[test]
+    fn variable_spans_cover_references() {
+        let url = "${BASE_URL}/v1/${store.id}/x";
+        let spans: Vec<&str> = variable_spans(url).into_iter().map(|r| &url[r]).collect();
+        assert_eq!(spans, ["${BASE_URL}", "${store.id}"]);
+        // Unclosed while typing: up to the end of the name.
+        let url = "${BA/v1/charges";
+        assert_eq!(variable_spans(url), vec![0..4]);
+        assert_eq!(variable_spans("${"), vec![0..2]);
+        assert_eq!(variable_spans("a${B${C}"), [1..4, 4..8]);
+        assert!(variable_spans("https://api.example.com/$x").is_empty());
+        // Multibyte text around a reference keeps char boundaries.
+        let url = "é${ü}é";
+        assert_eq!(&url[variable_spans(url)[0].clone()], "${ü}");
     }
 
     #[test]

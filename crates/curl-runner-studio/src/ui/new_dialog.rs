@@ -1,15 +1,18 @@
 //! The New dialog (`NewRequest.dc.html`): a request file from a blank
-//! template or a curl command (⌘N, ⌘I), or a new collection (⇧⌘N).
+//! template, a curl command (⌘N, ⌘I) or a copy of another request, or a new
+//! collection (⇧⌘N).
 
 use super::app::{CreateNew, mono_font};
-use super::color;
 use super::workspace::{Workspace, notify_error};
+use super::{color, method_color};
 use crate::model::collection::{Collection, TreeNode};
-use crate::model::templates::{file_name_for, request_from_curl, request_template};
+use crate::model::templates::{
+    duplicate_request, file_name_for, request_from_curl, request_template, variable_spans,
+};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::dialog::{DialogEntrance, DialogFooter};
 use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
-use gpui_kit::component::select::{Select, SelectState};
+use gpui_kit::component::select::{Select, SelectItem, SelectState};
 use gpui_kit::component::{IconName, IndexPath, Sizable as _, WindowExt as _};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
@@ -22,6 +25,112 @@ const METHODS: [&str; 7] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OP
 /// The file a new collection starts with.
 const STARTER_FILE: &str = "requests.yaml";
 
+/// Field height and text sizes from the mockup.
+const FIELD_H: f32 = 36.;
+const FIELD_TEXT: f32 = 13.;
+const MONO_TEXT: f32 = 12.;
+
+/// A method in the method select, drawn in its method color.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct MethodItem(SharedString);
+
+impl MethodItem {
+    fn label(&self) -> Div {
+        div()
+            .font_family(mono_font())
+            .text_size(px(MONO_TEXT))
+            .text_color(method_color(&self.0))
+            .child(self.0.clone())
+    }
+}
+
+impl SelectItem for MethodItem {
+    type Value = SharedString;
+
+    fn title(&self) -> SharedString {
+        self.0.clone()
+    }
+
+    fn display_title(&self) -> Option<AnyElement> {
+        Some(self.label().into_any_element())
+    }
+
+    fn render(&self, _: &mut Window, _: &mut App) -> impl IntoElement {
+        self.label()
+    }
+
+    fn value(&self) -> &SharedString {
+        &self.0
+    }
+}
+
+/// A request file the Duplicate template can copy.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SourceItem {
+    rel: PathBuf,
+    label: SharedString,
+    /// The single request's method, else the first request's.
+    method: Option<SharedString>,
+    /// Requests in a multi-request file; 0 for a single request.
+    count: usize,
+}
+
+impl SourceItem {
+    fn row(&self) -> Div {
+        div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .min_w_0()
+            .child(
+                div()
+                    .flex_none()
+                    .w(px(44.))
+                    .font_family(mono_font())
+                    .text_size(px(11.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(method_color(self.method.as_deref().unwrap_or("")))
+                    .child(self.method.clone().unwrap_or_default()),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .child(self.label.clone()),
+            )
+            .when(self.count > 0, |row| {
+                row.child(
+                    div()
+                        .flex_none()
+                        .text_size(px(12.))
+                        .text_color(color("text-tertiary"))
+                        .child(format!("{} requests", self.count)),
+                )
+            })
+    }
+}
+
+impl SelectItem for SourceItem {
+    type Value = PathBuf;
+
+    fn title(&self) -> SharedString {
+        self.label.clone()
+    }
+
+    fn display_title(&self) -> Option<AnyElement> {
+        Some(self.row().into_any_element())
+    }
+
+    fn render(&self, _: &mut Window, _: &mut App) -> impl IntoElement {
+        self.row()
+    }
+
+    fn value(&self) -> &PathBuf {
+        &self.rel
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Request,
@@ -32,6 +141,7 @@ pub enum Kind {
 pub enum Template {
     Blank,
     FromCurl,
+    Duplicate,
 }
 
 pub struct NewDialog {
@@ -39,9 +149,14 @@ pub struct NewDialog {
     kind: Kind,
     template: Template,
     name: Entity<InputState>,
-    method: Entity<SelectState<Vec<SharedString>>>,
+    method: Entity<SelectState<Vec<MethodItem>>>,
     url: Entity<InputState>,
     curl: Entity<TextareaState>,
+    /// The open collection's root; the Duplicate template reads from it.
+    root: Option<PathBuf>,
+    /// Request files the Duplicate template can copy; `None` without a
+    /// collection.
+    source: Option<Entity<SelectState<Vec<SourceItem>>>>,
     /// Folders of the open collection, relative to its root (`""` first),
     /// as the folder select lists them. Empty without a collection.
     folders: Vec<PathBuf>,
@@ -61,18 +176,32 @@ impl NewDialog {
         kind: Kind,
         template: Template,
         collection: Option<(&Collection, PathBuf)>,
+        active: Option<PathBuf>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let name = cx.new(|cx| InputState::new(window, cx).placeholder("Create charge"));
-        let url = cx.new(|cx| InputState::new(window, cx).placeholder("https://api.example.com"));
+        let name = cx.new(|cx| InputState::new(window, cx).placeholder("create-charge"));
+        let url = cx.new(|cx| InputState::new(window, cx).placeholder("${BASE_URL}/v1/charges"));
         let curl = cx.new(|cx| {
             TextareaState::new(window, cx)
                 .rows(5)
                 .placeholder("curl -X POST https://api.example.com/v1/charges -d amount=2500")
         });
-        let methods = METHODS.map(SharedString::from).to_vec();
+        let methods = METHODS.map(|m| MethodItem(SharedString::from(m))).to_vec();
         let method = cx.new(|cx| SelectState::new(methods, Some(IndexPath::default()), window, cx));
+        let root = collection.as_ref().map(|(c, _)| c.root.clone());
+        let source = collection.as_ref().map(|(c, _)| {
+            let mut sources = Vec::new();
+            collect_sources(&c.tree, &mut sources);
+            let at = active
+                .and_then(|a| sources.iter().position(|s| s.rel == a))
+                .unwrap_or(0);
+            let selected = (!sources.is_empty()).then_some(IndexPath {
+                row: at,
+                ..IndexPath::default()
+            });
+            cx.new(|cx| SelectState::new(sources, selected, window, cx))
+        });
         let (folders, folder) = match collection {
             Some((collection, preselect)) => {
                 let mut folders = vec![PathBuf::new()];
@@ -127,6 +256,8 @@ impl NewDialog {
             method,
             url,
             curl,
+            root,
+            source,
             folders,
             folder,
             picked: None,
@@ -146,6 +277,45 @@ impl NewDialog {
         self.template = template;
         self.error = None;
         cx.notify();
+    }
+
+    /// Development aid (`CURL_RUNNER_STUDIO_FILL`, `name|METHOD|url`):
+    /// fills the request fields, focuses the URL, and with `duplicate`
+    /// switches to the Duplicate template.
+    pub(super) fn dev_fill(
+        &mut self,
+        spec: &str,
+        duplicate: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let mut parts = spec.splitn(3, '|');
+        let (name, method, url) = (parts.next(), parts.next(), parts.next());
+        if let Some(name) = name.filter(|n| !n.is_empty()) {
+            let name = name.to_string();
+            self.name.update(cx, |s, cx| s.set_value(name, window, cx));
+        }
+        if let Some(method) = method.filter(|m| !m.is_empty()) {
+            let method = SharedString::from(method.to_ascii_uppercase());
+            self.method
+                .update(cx, |s, cx| s.set_selected_value(&method, window, cx));
+        }
+        if let Some(url) = url {
+            let url = url.to_string();
+            self.url.update(cx, |s, cx| s.set_value(url, window, cx));
+            // After the dialog's first build, which focuses the name.
+            let focus = self.url.read(cx).focus_handle(cx);
+            cx.spawn_in(window, async move |_, cx| {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(300))
+                    .await;
+                cx.update(|window, cx| focus.focus(window, cx)).ok();
+            })
+            .detach();
+        }
+        if duplicate {
+            self.set_template(Template::Duplicate, cx);
+        }
     }
 
     fn convert(&mut self, cx: &mut Context<Self>) {
@@ -184,6 +354,19 @@ impl NewDialog {
                 request_template(&name, method.as_deref().unwrap_or("GET"), &url)
             }
             Template::FromCurl => request_from_curl(&name, &self.curl.read(cx).value())?.yaml,
+            Template::Duplicate => {
+                let (Some(root), Some(source)) = (&self.root, &self.source) else {
+                    return Err("Open a collection to copy one of its requests.".into());
+                };
+                let rel = source
+                    .read(cx)
+                    .selected_value()
+                    .cloned()
+                    .ok_or("Choose the request to copy.")?;
+                let text = std::fs::read_to_string(root.join(&rel))
+                    .map_err(|e| format!("Couldn't read {}: {e}", rel.display()))?;
+                duplicate_request(&text, &name)
+            }
         };
         let file = file_name_for(&name);
         let Some(folder) = &self.folder else {
@@ -303,7 +486,7 @@ impl NewDialog {
         };
         div()
             .flex()
-            .items_center()
+            .items_start()
             .gap(px(12.))
             .px(px(24.))
             .pt(px(20.))
@@ -336,6 +519,8 @@ impl NewDialog {
                 Button::new("new-close")
                     .ghost()
                     .small()
+                    // Centred on the 34px segmented control.
+                    .mt(px(3.))
                     .icon(IconName::Close)
                     .on_click(|_, window, cx| window.close_dialog(cx)),
             )
@@ -343,7 +528,10 @@ impl NewDialog {
 
     fn render_request(&self, cx: &mut Context<Self>) -> Div {
         let folder = match &self.folder {
-            Some(select) => Select::new(select).into_any_element(),
+            Some(select) => Select::new(select)
+                .h(px(FIELD_H))
+                .text_size(px(FIELD_TEXT))
+                .into_any_element(),
             None => self
                 .render_picker("Choose where the request goes.", cx)
                 .into_any_element(),
@@ -355,6 +543,7 @@ impl NewDialog {
                 .flex()
                 .flex_col()
                 .flex_1()
+                .min_w_0()
                 .gap(px(4.))
                 .px(px(12.))
                 .py(px(10.))
@@ -362,32 +551,46 @@ impl NewDialog {
                 .border_1()
                 .border_color(color(if on { "text-tertiary" } else { "border-100" }))
                 .bg(color(if on { "surface-200" } else { "surface-raised" }))
+                .when(!on, |el| {
+                    el.hover(|el| el.border_color(color("border-200")))
+                })
                 .cursor_pointer()
                 .on_click(cx.listener(move |this, _, _, cx| this.set_template(t, cx)))
-                .child(div().child(title))
+                .child(
+                    div()
+                        .text_size(px(FIELD_TEXT))
+                        .line_height(px(18.))
+                        .text_color(color("text-primary"))
+                        .child(title),
+                )
                 .child(
                     div()
                         .text_size(px(12.))
+                        .line_height(px(16.))
                         .text_color(color("text-tertiary"))
                         .child(detail),
                 )
         };
         let name = self.name.read(cx).value();
-        let saved_as =
-            (!name.trim().is_empty()).then(|| hint(format!("Saved as {}", file_name_for(&name))));
+        let file = file_name_for(&name);
+        // The suffix shows the file name already; say so only when the
+        // name is slugged into another one.
+        let saved_as = (!name.trim().is_empty() && file != format!("{name}.yaml"))
+            .then(|| hint(format!("Saved as {file}")));
         let request = match self.template {
             Template::Blank => field(
                 "Request",
                 div()
                     .flex()
                     .gap(px(8.))
-                    .child(div().w(px(110.)).child(Select::new(&self.method)))
                     .child(
-                        div()
-                            .flex_1()
-                            .font_family(mono_font())
-                            .child(Input::new(&self.url)),
-                    ),
+                        div().flex_none().w(px(96.)).child(
+                            Select::new(&self.method)
+                                .h(px(FIELD_H))
+                                .menu_width(px(120.)),
+                        ),
+                    )
+                    .child(self.render_url()),
             ),
             Template::FromCurl => field(
                 "curl command",
@@ -398,10 +601,22 @@ impl NewDialog {
                     .child(
                         div()
                             .font_family(mono_font())
-                            .text_size(px(12.))
+                            .text_size(px(MONO_TEXT))
                             .child(Textarea::new(&self.curl)),
                     )
                     .children(self.render_conversion()),
+            ),
+            Template::Duplicate => field(
+                "Copy from",
+                match &self.source {
+                    Some(source) => Select::new(source)
+                        .h(px(FIELD_H))
+                        .text_size(px(FIELD_TEXT))
+                        .placeholder("No request files yet")
+                        .into_any_element(),
+                    None => hint("Open a collection to copy one of its requests.".into())
+                        .into_any_element(),
+                },
             ),
         };
         div()
@@ -423,6 +638,12 @@ impl NewDialog {
                         "From curl",
                         "Paste a command",
                         Template::FromCurl,
+                    ))
+                    .child(card(
+                        "new-template-duplicate",
+                        "Duplicate",
+                        "Copy another request",
+                        Template::Duplicate,
                     )),
             )
             .child(field(
@@ -431,11 +652,49 @@ impl NewDialog {
                     .flex()
                     .flex_col()
                     .gap(px(6.))
-                    .child(Input::new(&self.name))
+                    .child(
+                        Input::new(&self.name)
+                            .min_h(px(FIELD_H))
+                            .text_size(px(FIELD_TEXT))
+                            .suffix(
+                                div()
+                                    .font_family(mono_font())
+                                    .text_size(px(MONO_TEXT))
+                                    .text_color(color("text-gutter"))
+                                    .child(".yaml"),
+                            ),
+                    )
                     .children(saved_as),
             ))
             .child(request)
             .child(field("Folder", folder))
+    }
+
+    /// The URL field: the Kit input draws the caret and selection with its
+    /// text transparent, and a canvas painted after it redraws the text with
+    /// `${VAR}` references in the variable color (the Kit's single-line
+    /// input has no highlighter or decorations).
+    fn render_url(&self) -> Div {
+        let url = self.url.clone();
+        div()
+            .relative()
+            .flex_1()
+            .min_w_0()
+            .font_family(mono_font())
+            .text_color(transparent_black())
+            .child(
+                Input::new(&self.url)
+                    .min_h(px(FIELD_H))
+                    .text_size(px(MONO_TEXT)),
+            )
+            .child(
+                canvas(
+                    |_, _, _| {},
+                    move |_, _, window, cx| paint_url(&url, window, cx),
+                )
+                .absolute()
+                .size_full(),
+            )
     }
 
     /// The From curl result under the command: warnings or the failure.
@@ -513,10 +772,6 @@ impl NewDialog {
     }
 
     fn render_footer(&self, cx: &mut Context<Self>) -> DialogFooter {
-        let create = match self.kind {
-            Kind::Request => "Create request",
-            Kind::Collection => "Create collection",
-        };
         let keys = |k: &'static str, what: &'static str| {
             div()
                 .flex()
@@ -527,8 +782,10 @@ impl NewDialog {
         };
         DialogFooter::new()
             .w_full()
-            .px(px(24.))
+            .pl(px(24.))
+            .pr(px(16.))
             .py(px(12.))
+            .gap(px(8.))
             .border_t_1()
             .border_color(color("border-100"))
             .bg(color("surface-raised"))
@@ -544,14 +801,20 @@ impl NewDialog {
             )
             .child(
                 Button::new("new-cancel")
-                    .ghost()
+                    .outline()
+                    .h(px(32.))
+                    .px(px(12.))
+                    .text_size(px(FIELD_TEXT))
                     .label("Cancel")
                     .on_click(|_, window, cx| window.close_dialog(cx)),
             )
             .child(
                 Button::new("new-create")
                     .primary()
-                    .label(create)
+                    .h(px(32.))
+                    .px(px(12.))
+                    .text_size(px(FIELD_TEXT))
+                    .label("Create")
                     .child(
                         div()
                             .font_family(mono_font())
@@ -605,6 +868,7 @@ fn field(label: &'static str, control: impl IntoElement) -> Div {
         .child(
             div()
                 .text_size(px(12.))
+                .line_height(px(16.))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(color("text-secondary"))
                 .child(label),
@@ -630,6 +894,90 @@ fn kbd(keys: &'static str) -> Div {
         .line_height(px(18.))
         .text_color(color("text-secondary"))
         .child(keys)
+}
+
+/// `text` split into `(byte length, is a ${VAR} reference)` runs.
+fn url_segments(text: &str) -> Vec<(usize, bool)> {
+    let mut segments = Vec::new();
+    let mut at = 0;
+    for span in variable_spans(text) {
+        if span.start > at {
+            segments.push((span.start - at, false));
+        }
+        segments.push((span.len(), true));
+        at = span.end;
+    }
+    if at < text.len() {
+        segments.push((text.len() - at, false));
+    }
+    segments
+}
+
+/// Paints the URL field's text over the Kit input (see `render_url`), from
+/// the layout the input painted this frame.
+fn paint_url(url: &Entity<InputState>, window: &mut Window, cx: &mut App) {
+    let state = url.read(cx);
+    let text = state.value();
+    if text.is_empty() {
+        return;
+    }
+    let (Some(bounds), Some(clip)) = (state.range_to_bounds(&(0..text.len())), state.text_bounds())
+    else {
+        return;
+    };
+    let mono = font(mono_font());
+    let runs: Vec<TextRun> = url_segments(&text)
+        .into_iter()
+        .map(|(len, var)| TextRun {
+            len,
+            font: mono.clone(),
+            color: color(if var {
+                "syntax-variable"
+            } else {
+                "text-gutter"
+            }),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        })
+        .collect();
+    let line = window
+        .text_system()
+        .shape_line(text, px(MONO_TEXT), &runs, None);
+    window.with_content_mask(Some(ContentMask { bounds: clip }), |window| {
+        line.paint(
+            bounds.origin,
+            bounds.size.height,
+            TextAlign::Left,
+            None,
+            window,
+            cx,
+        )
+        .ok();
+    });
+}
+
+/// Every request file under `tree`, depth first, for the Duplicate template.
+fn collect_sources(tree: &[TreeNode], out: &mut Vec<SourceItem>) {
+    for node in tree {
+        match node {
+            TreeNode::Folder { children, .. } => collect_sources(children, out),
+            TreeNode::File {
+                rel_path,
+                method,
+                requests,
+                ..
+            } => out.push(SourceItem {
+                rel: rel_path.clone(),
+                label: rel_path.display().to_string().into(),
+                method: method
+                    .clone()
+                    .or_else(|| requests.first().map(|r| r.method.clone()))
+                    .map(SharedString::from),
+                count: requests.len(),
+            }),
+        }
+    }
 }
 
 fn already_exists(file: &str) -> String {
@@ -719,8 +1067,10 @@ impl Workspace {
                 .unwrap_or_default()
         });
         let ws = cx.entity().downgrade();
+        let active = self.state.active_document().map(|d| d.rel_path.clone());
         let collection = self.state.collection.as_ref().map(|c| (c, folder));
-        let dialog = cx.new(|cx| NewDialog::new(ws, kind, template, collection, window, cx));
+        let dialog =
+            cx.new(|cx| NewDialog::new(ws, kind, template, collection, active, window, cx));
         let content = dialog.clone();
         let first_build = std::cell::Cell::new(true);
         window.open_dialog(cx, move |d, window, cx| {
@@ -790,7 +1140,7 @@ impl Workspace {
 mod tests {
     use super::super::state::StateStore;
     use super::super::workspace::Workspace;
-    use super::{Kind, NewDialog};
+    use super::{Kind, NewDialog, Template, url_segments};
     use gpui_kit::component::WindowExt as _;
     use gpui_kit::{
         AnyWindowHandle, AppContext as _, Bounds, Entity, Point, TestAppContext, VisualTestContext,
@@ -866,6 +1216,121 @@ mod tests {
             assert_eq!(doc.rel_path, Path::new("charges/capture-charge.yaml"));
         });
         cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
+    }
+
+    #[test]
+    fn url_segments_mark_variables() {
+        assert_eq!(
+            url_segments("${BASE_URL}/v1/${id}"),
+            [(11, true), (4, false), (5, true)]
+        );
+        assert_eq!(url_segments("https://x/${BA"), [(10, false), (4, true)]);
+        assert_eq!(url_segments("plain"), [(5, false)]);
+        assert!(url_segments("").is_empty());
+    }
+
+    #[gpui_kit::test]
+    fn the_method_select_sets_the_method(cx: &mut TestAppContext) {
+        let dir = collection();
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog =
+            cx.update(|window, cx| ws.update(cx, |ws, cx| ws.new_request(None, window, cx)));
+        cx.update(|window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.dev_fill(
+                    "Capture charge|post|${BASE_URL}/v1/charges",
+                    false,
+                    window,
+                    cx,
+                );
+                d.create(window, cx);
+            })
+        });
+        cx.run_until_parked();
+        let text = std::fs::read_to_string(dir.path().join("capture-charge.yaml")).unwrap();
+        assert_eq!(
+            text,
+            "request:\n  name: Capture charge\n  url: \"${BASE_URL}/v1/charges\"\n  method: POST\n"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn duplicate_copies_the_active_request_under_the_new_name(cx: &mut TestAppContext) {
+        let dir = collection();
+        std::fs::write(
+            dir.path().join("charges/get-charge.yaml"),
+            "# Read it back\nrequest:\n  name: Get charge\n  url: ${BASE_URL}/v1/charges/1\n",
+        )
+        .unwrap();
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.open_file(std::path::Path::new("charges/get-charge.yaml"), window, cx);
+                ws.new_request(None, window, cx)
+            })
+        });
+        let name = dialog.read_with(cx, |d, _| d.name.clone());
+        dialog.update(cx, |d, cx| d.set_template(Template::Duplicate, cx));
+
+        // The source's own name: refused, nothing overwritten.
+        set(&name, "Get charge", cx);
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.create(window, cx)));
+        dialog.read_with(cx, |d, _| {
+            assert_eq!(
+                d.error.as_deref(),
+                Some("A file named get-charge.yaml already exists")
+            )
+        });
+        let original = std::fs::read_to_string(dir.path().join("charges/get-charge.yaml")).unwrap();
+        assert!(original.contains("name: Get charge"), "{original}");
+
+        set(&name, "Get charge again", cx);
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.create(window, cx)));
+        cx.run_until_parked();
+        let copy =
+            std::fs::read_to_string(dir.path().join("charges/get-charge-again.yaml")).unwrap();
+        assert_eq!(
+            copy,
+            "# Read it back\nrequest:\n  name: Get charge again\n  url: ${BASE_URL}/v1/charges/1\n"
+        );
+        ws.read_with(cx, |ws, _| {
+            let doc = ws.state.active_document().unwrap();
+            assert_eq!(doc.rel_path, Path::new("charges/get-charge-again.yaml"));
+        });
+    }
+
+    #[gpui_kit::test]
+    fn duplicate_lists_every_request_file(cx: &mut TestAppContext) {
+        let dir = collection();
+        std::fs::write(
+            dir.path().join("flow.yaml"),
+            "requests:\n  - url: https://a\n    method: POST\n  - url: https://b\n",
+        )
+        .unwrap();
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog =
+            cx.update(|window, cx| ws.update(cx, |ws, cx| ws.new_request(None, window, cx)));
+        let sources = dialog.read_with(cx, |d, cx| {
+            let mut out = Vec::new();
+            let root = ws.read(cx).state.collection.as_ref().unwrap();
+            super::collect_sources(&root.tree, &mut out);
+            assert!(d.source.is_some());
+            out
+        });
+        let summary: Vec<(String, Option<&str>, usize)> = sources
+            .iter()
+            .map(|s| (s.rel.display().to_string(), s.method.as_deref(), s.count))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                ("charges/create-charge.yaml".to_string(), Some("GET"), 0),
+                ("flow.yaml".to_string(), Some("POST"), 2),
+            ]
+        );
     }
 
     #[gpui_kit::test]

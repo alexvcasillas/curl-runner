@@ -277,3 +277,15 @@ on the fallback families.
 None needed: all six items exist in 0.8.1. If a later version drops one, the
 fallback is range decorations (`RangeDecoration` fill/frame) for marks plus a
 `gpui_kit::component::popover` anchored at the range for messages.
+
+## Colored text in a single-line input (New dialog URL)
+
+The Kit's single-line `InputState` has no highlighter or decorations (both
+exist only in editor mode). The URL field wraps `Input` in a parent with a
+transparent text color (the input inherits its text color; the placeholder
+and caret use their own theme colors) and paints the text again from a
+`canvas` placed after it: `range_to_bounds(0..len)` gives this frame's origin
+(scroll included), `text_bounds()` the clip, and the line is shaped with one
+run per `${VAR}` / literal segment. Selection stays visible under it.
+Selects color their value with a custom `SelectItem` (`display_title`,
+`render`).
