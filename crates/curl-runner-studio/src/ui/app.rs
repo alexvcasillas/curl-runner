@@ -121,6 +121,7 @@ pub fn run() {
                             "new-collection" => drop(ws.new_collection(window, cx)),
                             "import" => drop(ws.import(window, cx)),
                             "palette" => drop(ws.open_palette(window, cx)),
+                            "problem" => ws.dev_show_first_problem(window, cx),
                             _ => {}
                         });
                     }
@@ -142,7 +143,9 @@ pub fn run() {
 /// `CURL_RUNNER_STUDIO_FOLDER` opens that folder instead of the last one
 /// (without remembering it), `CURL_RUNNER_STUDIO_OPEN` opens a file by
 /// its path relative to the collection and `CURL_RUNNER_STUDIO_SHOW` opens
-/// a dialog: `new`, `new-collection`, `import` or `palette`.
+/// a dialog: `new`, `new-collection`, `import` or `palette`; `problem`
+/// selects the open file's first problem and opens its popover (hover
+/// states can't be reached without a pointer).
 fn dev_env(name: &str) -> Option<PathBuf> {
     std::env::var_os(name).map(PathBuf::from)
 }

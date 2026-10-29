@@ -205,17 +205,34 @@ on the fallback families.
 
 ## Diagnostics in the studio (Task 8)
 
-- **Hover:** the editor's built-in diagnostic popover opens on any squiggle
-  and renders `Diagnostic.message` as markdown. A `HoverProvider` would open a
-  second popover over the same range, so the studio puts the hover text
-  (message, then `curl-runner · <path>`) in the message and registers no
-  hover provider.
-- **Gutter icon and line-number color: not possible in 0.8.1.** The gutter
-  has no hook (no per-line icon, no per-line number color). Skipped; the
-  squiggle, line tint, scrollbar tick and Problems row carry the severity.
-- **Line tint:** a `RangeDecoration` fill over the line (with its newline)
-  paints the text's extent plus one cell, not the full row width (fills use
-  the selection geometry).
+- **Hover popover:** the Kit opens its own diagnostic popover (yellow
+  bordered, markdown, `gpui-component` `input/popovers/diagnostic_popover.rs`)
+  whenever the pointer is on an entry of the editor's `DiagnosticSet`, with
+  no switch to turn it off. The studio therefore leaves that set **empty**
+  and draws squiggles itself; its popover (`ui/diagnostic_popover.rs`) is a
+  `deferred(anchored())` card opened from the pane's `on_mouse_move`, hit
+  testing each diagnostic with `EditorState::range_to_bounds` (window
+  coordinates of a byte range, `None` when not laid out). The editor takes
+  wheel events (`stop_propagation`), so the pane never sees a scroll: the
+  popover hides once its range's bounds differ from where it opened.
+- **Diagnostic marks (gutter icon, colored line number, full-row tint,
+  squiggle, inline hint):** the Kit has no gutter or per-line hook.
+  `ui/diagnostic_marks.rs` paints them from a `canvas` placed after the
+  `Editor` in the same parent. The editor stores `last_layout` and
+  `last_bounds` at the end of its own `paint`, and siblings paint in order,
+  so the canvas reads this frame's layout: `range_to_bounds(start..start)`
+  gives a row's top, `input_bounds()` the editor's box including the gutter,
+  `line_height()` the row height. The gutter geometry mirrors
+  `gpui-base` `input/base/element.rs`: line numbers start at
+  `input_bounds.origin.x`, padded to at least 3 digits, then a 6px margin and
+  an 18px fold column. Per marked row the canvas repaints the gutter cell
+  (bg-100, or surface-100 on the cursor row), paints the tint across the
+  row, the number in the severity color and the icon in the fold column
+  (`window.paint_svg` takes inline SVG bytes), then, clipped to the text
+  area, `paint_underline` (wavy) under each range and the hint after the
+  line end. Trade-offs: the tint draws over the text (alpha 5-8%, barely
+  visible); a fold chevron on a marked row is hidden by the icon; folded or
+  scrolled-out rows are skipped.
 - **Scrollbar ticks:** `EditorState::set_scrollbar_renderer` replaces the
   editor scrollbar; the studio returns `gpui_kit::base::Scrollbar::new(&context)`
   plus absolutely positioned ticks at `line / lines` of the track

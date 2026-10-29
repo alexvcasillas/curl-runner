@@ -2,6 +2,7 @@
 //! scrollbar ticks and the quick-fix code actions.
 
 use super::color;
+use super::diagnostic_marks::Marks;
 use super::workspace::Workspace;
 use crate::model::diagnostics::StudioDiagnostic;
 use crate::model::document::FixError;
@@ -9,11 +10,7 @@ use curl_runner_core::lint::Severity;
 use gpui_kit::base::Scrollbar;
 use gpui_kit::base::input::EditorScrollbarContext;
 use gpui_kit::component::WindowExt as _;
-use gpui_kit::component::highlighter::{Diagnostic, DiagnosticSeverity};
-use gpui_kit::component::input::{
-    CodeActionProvider, EditorState, Position, RangeDecoration, RangeDecorationCollection,
-    RangeDecorationStyle,
-};
+use gpui_kit::component::input::{CodeActionProvider, EditorState, Position};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::*;
 use lsp_types::{CodeAction, CodeActionKind};
@@ -49,65 +46,6 @@ pub fn severity_color(severity: Severity) -> Hsla {
     })
 }
 
-/// The hover text: the message, then where it comes from.
-fn hover_text(d: &StudioDiagnostic) -> String {
-    if d.path.is_empty() {
-        format!("{}\n\ncurl-runner", d.message)
-    } else {
-        format!("{}\n\ncurl-runner · {}", d.message, d.path)
-    }
-}
-
-fn editor_diagnostic(text: &str, d: &StudioDiagnostic) -> Diagnostic {
-    let severity = match d.severity {
-        Severity::Error => DiagnosticSeverity::Error,
-        Severity::Warning => DiagnosticSeverity::Warning,
-        Severity::Info => DiagnosticSeverity::Info,
-    };
-    // The editor's built-in diagnostic popover is the hover: it opens on the
-    // squiggle and shows the message as markdown.
-    Diagnostic::new(
-        position(text, d.range.start)..position(text, d.range.end),
-        hover_text(d),
-    )
-    .with_severity(severity)
-    .with_source("curl-runner")
-}
-
-/// Most severe first.
-fn rank(severity: Severity) -> u8 {
-    match severity {
-        Severity::Error => 0,
-        Severity::Warning => 1,
-        Severity::Info => 2,
-    }
-}
-
-/// Byte range of the line holding `offset`, with its newline.
-fn line_range(text: &str, offset: usize) -> Range<usize> {
-    let offset = offset.min(text.len());
-    let start = text[..offset].rfind('\n').map_or(0, |i| i + 1);
-    let end = text[start..]
-        .find('\n')
-        .map_or(text.len(), |i| start + i + 1);
-    start..end
-}
-
-/// One tint per line with an error or warning, in the most severe color
-/// (`diag-error-line`, `diag-warning-line`; info lines are not tinted).
-fn line_tints(text: &str, diagnostics: &[StudioDiagnostic]) -> Vec<(Range<usize>, Severity)> {
-    let mut lines: Vec<(Range<usize>, Severity)> = Vec::new();
-    for d in diagnostics.iter().filter(|d| d.severity != Severity::Info) {
-        let range = line_range(text, d.range.start);
-        match lines.iter_mut().find(|(r, _)| *r == range) {
-            Some((_, s)) if rank(d.severity) < rank(*s) => *s = d.severity,
-            Some(_) => {}
-            None => lines.push((range, d.severity)),
-        }
-    }
-    lines
-}
-
 /// Scrollbar ticks: each diagnostic's line as a fraction of the document.
 fn ticks(text: &str, diagnostics: &[StudioDiagnostic]) -> Vec<(f32, Severity)> {
     let lines = text.bytes().filter(|&b| b == b'\n').count() + 1;
@@ -120,10 +58,11 @@ fn ticks(text: &str, diagnostics: &[StudioDiagnostic]) -> Vec<(f32, Severity)> {
         .collect()
 }
 
-/// A tab's diagnostics presentation: what the editor shows beyond its own
-/// squiggles. Created with the tab's editor.
+/// A tab's diagnostics presentation beyond the text: the marks painted
+/// over the editor (`diagnostic_marks`) and the scrollbar ticks. Created
+/// with the tab's editor.
 pub(super) struct DiagnosticsView {
-    lines: RangeDecorationCollection,
+    pub marks: Rc<RefCell<Marks>>,
     ticks: Rc<RefCell<Vec<(f32, Hsla)>>>,
 }
 
@@ -136,48 +75,30 @@ impl DiagnosticsView {
     ) -> Self {
         let ticks: Rc<RefCell<Vec<(f32, Hsla)>>> = Rc::default();
         let painted = ticks.clone();
-        let lines = editor.update(cx, |state, cx| {
+        editor.update(cx, |state, _| {
             state.lsp_mut().code_action_providers = vec![Rc::new(QuickFixes { workspace })];
             state.set_scrollbar_renderer(Some(Rc::new(move |context, _, _| {
                 ticked_scrollbar(context, &painted.borrow())
             })));
-            state.create_range_decorations_collection(Vec::new(), cx)
         });
-        DiagnosticsView { lines, ticks }
+        DiagnosticsView {
+            marks: Rc::default(),
+            ticks,
+        }
     }
 
     /// Shows `diagnostics` of `text`, which must be the editor's text.
-    pub fn show(
-        &self,
-        editor: &Entity<EditorState>,
-        text: &str,
-        diagnostics: &[StudioDiagnostic],
-        cx: &mut App,
-    ) {
-        editor.update(cx, |state, cx| {
-            if let Some(set) = state.diagnostics_mut() {
-                set.clear();
-                set.extend(diagnostics.iter().map(|d| editor_diagnostic(text, d)));
-            }
-            cx.notify();
-        });
-        let tints = line_tints(text, diagnostics)
-            .into_iter()
-            .map(|(range, severity)| {
-                let token = match severity {
-                    Severity::Error => "diag-error-line",
-                    _ => "diag-warning-line",
-                };
-                RangeDecoration::new(range)
-                    .with_style(RangeDecorationStyle::Fill)
-                    .with_color(color(token))
-            })
-            .collect();
-        self.lines.set(tints, cx);
+    pub fn show(&self, text: &str, diagnostics: &[StudioDiagnostic]) {
+        *self.marks.borrow_mut() = Marks::new(text, diagnostics);
         *self.ticks.borrow_mut() = ticks(text, diagnostics)
             .into_iter()
             .map(|(at, severity)| (at, severity_color(severity)))
             .collect();
+    }
+
+    /// Drops the marks: the text changed under them.
+    pub fn clear(&self) {
+        *self.marks.borrow_mut() = Marks::default();
     }
 }
 
@@ -300,8 +221,7 @@ impl Workspace {
         if tab.editor.read(cx).value().as_ref() != doc.text {
             return;
         }
-        tab.diagnostics
-            .show(&tab.editor, &doc.text, &doc.diagnostics, cx);
+        tab.diagnostics.show(&doc.text, &doc.diagnostics);
     }
 
     /// Diagnoses tab `ix` now if its text changed since the last diagnosis.
@@ -356,7 +276,7 @@ impl Workspace {
 
     /// Applies the fix `fix` of the diagnostic at `path` in tab `ix`, if the
     /// current diagnostics still have it.
-    fn apply_named_fix(
+    pub(super) fn apply_named_fix(
         &mut self,
         ix: usize,
         path: &str,
@@ -421,9 +341,7 @@ fn cant_apply(window: &mut Window, cx: &mut App) {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Severity, StudioDiagnostic, byte_to_position, hover_text, line_tints, minimal_edit, ticks,
-    };
+    use super::{Severity, StudioDiagnostic, byte_to_position, minimal_edit, ticks};
     use std::ops::Range;
 
     #[test]
@@ -447,38 +365,6 @@ mod tests {
             fix: None,
             issue: None,
         }
-    }
-
-    #[test]
-    fn hover_text_names_curl_runner_and_path() {
-        let d = diag(0..1, Severity::Warning);
-        assert_eq!(
-            hover_text(&d),
-            "Unknown property\n\ncurl-runner · request.timout"
-        );
-        let parse = StudioDiagnostic {
-            path: String::new(),
-            ..d
-        };
-        assert_eq!(hover_text(&parse), "Unknown property\n\ncurl-runner");
-    }
-
-    #[test]
-    fn line_tints_take_the_most_severe_per_line() {
-        let text = "a: 1\nb: 2\nc: 3";
-        let tints = line_tints(
-            text,
-            &[
-                diag(5..6, Severity::Warning),
-                diag(8..9, Severity::Error),
-                diag(0..1, Severity::Info),
-                diag(10..11, Severity::Warning),
-            ],
-        );
-        assert_eq!(
-            tints,
-            [(5..10, Severity::Error), (10..14, Severity::Warning)]
-        );
     }
 
     #[test]

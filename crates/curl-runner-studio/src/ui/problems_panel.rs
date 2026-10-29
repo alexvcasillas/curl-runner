@@ -1,26 +1,22 @@
-//! The Problems panel under the editor: the active file's diagnostics.
+//! The panel under the editor: the active file's Problems, and the
+//! Output tab (empty until runs arrive).
 
 use super::app::mono_font;
 use super::color;
-use super::diagnostics_view::{byte_to_position, severity_color};
+use super::diagnostic_popover::{message_line, severity_icon};
+use super::diagnostics_view::byte_to_position;
 use super::workspace::Workspace;
+use crate::model::diagnostics::problem_order;
 use crate::model::document::Document;
-use curl_runner_core::lint::Severity;
-use gpui_kit::component::{Icon, IconName};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 
 pub const PROBLEMS_HEIGHT: f32 = 178.;
 
-pub fn severity_icon(severity: Severity) -> Icon {
-    let name = match severity {
-        Severity::Error => IconName::CircleX,
-        Severity::Warning => IconName::TriangleAlert,
-        Severity::Info => IconName::Info,
-    };
-    Icon::new(name)
-        .size(px(14.))
-        .text_color(severity_color(severity))
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PanelTab {
+    Problems,
+    Output,
 }
 
 /// `14:12`, one-based like the editor shows it.
@@ -30,56 +26,85 @@ fn line_col(text: &str, offset: usize) -> String {
 }
 
 impl Workspace {
+    fn render_panel_tab(
+        &self,
+        tab: PanelTab,
+        label: &'static str,
+        count: Option<usize>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let selected = self.panel_tab == tab;
+        div()
+            .id(label)
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .h(px(33.))
+            .px(px(12.))
+            .border_b_1()
+            .cursor_pointer()
+            .map(|t| {
+                if selected {
+                    t.text_color(color("text-primary"))
+                        .border_color(color("text-primary"))
+                } else {
+                    t.text_color(color("text-secondary"))
+                        .border_color(gpui_kit::transparent_black())
+                        .hover(|s| s.text_color(color("text-primary")))
+                }
+            })
+            .child(label)
+            .children(count.map(|n| {
+                div()
+                    .px(px(6.))
+                    .rounded_full()
+                    .bg(color("surface-300"))
+                    .text_color(color("text-primary"))
+                    .text_size(px(11.))
+                    .child(n.to_string())
+            }))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.panel_tab = tab;
+                cx.notify();
+            }))
+    }
+
     pub(super) fn render_problems(
         &self,
         doc: &Document,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let rows = doc.diagnostics.iter().enumerate().map(|(i, d)| {
-            div()
-                .id(("problem", i))
-                .role(Role::ListItem)
-                .test_support()
-                .flex()
-                .flex_none()
-                .items_center()
-                .gap(px(10.))
-                .h(px(30.))
-                .px(px(8.))
-                .rounded(px(6.))
-                .cursor_pointer()
-                .hover(|s| s.bg(color("surface-100")))
-                .child(severity_icon(d.severity))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_color(color("text-primary"))
-                        .child(d.message.clone()),
-                )
-                .child(
-                    div()
-                        .font_family(mono_font())
-                        .text_size(px(11.))
-                        .text_color(color("text-tertiary"))
-                        .child(d.path.clone()),
-                )
-                .child(
-                    div()
-                        .w(px(48.))
-                        .flex_none()
-                        .text_right()
-                        .font_family(mono_font())
-                        .text_size(px(11.))
-                        .text_color(color("text-secondary"))
-                        .child(line_col(&doc.text, d.range.start)),
-                )
-                .on_click(
-                    cx.listener(move |this, _, window, cx| this.reveal_problem(i, window, cx)),
-                )
-        });
         let count = doc.diagnostics.len();
+        let header = div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(2.))
+            .h(px(34.))
+            .px(px(8.))
+            .border_b_1()
+            .border_color(color("border-100"))
+            .child(self.render_panel_tab(PanelTab::Problems, "Problems", Some(count), cx))
+            .child(self.render_panel_tab(PanelTab::Output, "Output", None, cx))
+            .child(div().flex_1())
+            .child(
+                div()
+                    .pr(px(8.))
+                    .text_color(color("text-tertiary"))
+                    .child(format!(
+                        "Checked against curl-runner {} schema",
+                        curl_runner_core::VERSION
+                    )),
+            );
+        let body = match self.panel_tab {
+            PanelTab::Problems => self.render_problem_rows(doc, cx).into_any_element(),
+            PanelTab::Output => div()
+                .px(px(16.))
+                .py(px(10.))
+                .text_color(color("text-secondary"))
+                .child("No output yet. Run a request to see its log here.")
+                .into_any_element(),
+        };
         div()
             .id("problems-panel")
             .role(Role::List)
@@ -91,53 +116,85 @@ impl Workspace {
             .border_t_1()
             .border_color(color("border-100"))
             .text_size(px(12.))
-            .child(
-                div()
-                    .flex()
-                    .flex_none()
-                    .items_center()
-                    .gap(px(6.))
-                    .h(px(34.))
-                    .px(px(16.))
-                    .border_b_1()
-                    .border_color(color("border-100"))
-                    .child(div().text_color(color("text-primary")).child("Problems"))
-                    .child(
-                        div()
-                            .px(px(6.))
-                            .rounded_full()
-                            .bg(color("surface-300"))
-                            .text_size(px(11.))
-                            .child(count.to_string()),
-                    )
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .text_color(color("text-tertiary"))
-                            .child(format!("curl-runner {}", curl_runner_core::VERSION)),
-                    ),
-            )
-            .child(
-                div()
-                    .id("problems-list")
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .py(px(4.))
-                    .px(px(8.))
-                    .children(rows)
-                    .when(count == 0, |list| {
-                        list.child(
-                            div()
-                                .px(px(8.))
-                                .py(px(6.))
-                                .text_color(color("text-secondary"))
-                                .child("No problems in this file."),
-                        )
-                    }),
-            )
+            .child(header)
+            .child(body)
+    }
+
+    /// Errors first, then warnings; each row carries its diagnostic's index.
+    fn render_problem_rows(
+        &self,
+        doc: &Document,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let rows = problem_order(&doc.diagnostics).into_iter().map(|i| {
+            let d = &doc.diagnostics[i];
+            let selected = self.selected_problem == Some(i);
+            div()
+                .id(("problem", i))
+                .role(Role::ListItem)
+                .test_support()
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap(px(10.))
+                .h(px(30.))
+                .px(px(8.))
+                .rounded(px(6.))
+                .text_color(color("text-primary"))
+                .cursor_pointer()
+                .map(|row| {
+                    if selected {
+                        row.bg(color("surface-200"))
+                    } else {
+                        row.hover(|s| s.bg(color("surface-100")))
+                    }
+                })
+                .child(severity_icon(d.severity, 13.))
+                .child(message_line(&d.message, 11.5, false).flex_1())
+                .child(
+                    div()
+                        .flex_none()
+                        .font_family(mono_font())
+                        .text_size(px(11.))
+                        .text_color(color("text-tertiary"))
+                        .child(d.path.clone()),
+                )
+                .child(
+                    div()
+                        .w(px(40.))
+                        .flex_none()
+                        .text_right()
+                        .font_family(mono_font())
+                        .text_size(px(11.))
+                        .text_color(color("text-secondary"))
+                        .child(line_col(&doc.text, d.range.start)),
+                )
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.selected_problem = Some(i);
+                    this.reveal_problem(i, window, cx);
+                    cx.notify();
+                }))
+        });
+        let count = doc.diagnostics.len();
+        div()
+            .id("problems-list")
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .py(px(4.))
+            .px(px(8.))
+            .children(rows)
+            .when(count == 0, |list| {
+                list.child(
+                    div()
+                        .px(px(8.))
+                        .py(px(6.))
+                        .text_color(color("text-secondary"))
+                        .child("No problems in this file."),
+                )
+            })
     }
 }
 

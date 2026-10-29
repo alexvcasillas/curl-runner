@@ -5,7 +5,9 @@ use super::app::{
     CloseTab, Import, NewCollection, NewRequest, OpenFolder, OpenPalette, QuickFix, SaveFile,
     ToggleProblems, ui_font,
 };
+use super::diagnostic_popover::DiagnosticHover;
 use super::diagnostics_view::DiagnosticsView;
+use super::problems_panel::PanelTab;
 use super::state::{AppState, StateStore};
 use super::status_bar::StatusBar;
 use super::watch;
@@ -54,6 +56,18 @@ pub struct Workspace {
     pub(super) filter: Entity<InputState>,
     /// The Problems panel under the editor (⇧⌘M).
     pub(super) problems_open: bool,
+    /// The panel's tab: Problems or Output.
+    pub(super) panel_tab: PanelTab,
+    /// The Problems row last clicked, by diagnostic index.
+    pub(super) selected_problem: Option<usize>,
+    /// The diagnostic popover's squiggle.
+    pub(super) hover: Option<DiagnosticHover>,
+    /// The popover's pending close, while the pointer is off its squiggle.
+    pub(super) hover_close: Option<Task<()>>,
+    /// The pointer is on the popover.
+    pub(super) on_popover: bool,
+    /// Keeps the popover open without a pointer (`CURL_RUNNER_STUDIO_SHOW=problem`).
+    pub(super) hover_pinned: bool,
     /// Where the last folder is remembered.
     pub(super) store: StateStore,
     status: Entity<StatusBar>,
@@ -96,6 +110,12 @@ impl Workspace {
             selected_request: None,
             filter,
             problems_open: true,
+            panel_tab: PanelTab::Problems,
+            selected_problem: None,
+            hover: None,
+            hover_close: None,
+            on_popover: false,
+            hover_pinned: false,
             store,
             status: cx.new(|_| StatusBar::default()),
             focus,
@@ -204,6 +224,10 @@ impl Workspace {
             return;
         };
         let text = editor.read(cx).value().to_string();
+        // The marks and popover point into the old text.
+        self.tabs[ix].diagnostics.clear();
+        self.close_hover(cx);
+        self.selected_problem = None;
         let doc = &mut self.state.open[ix];
         doc.set_buffer(text);
         if doc.is_stale() {
@@ -225,6 +249,8 @@ impl Workspace {
 
     pub(super) fn activate_tab(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
         if ix < self.tabs.len() {
+            self.close_hover(cx);
+            self.selected_problem = None;
             self.state.active = Some(ix);
             self.focus_active_editor(window, cx);
             self.sync_chrome(window, cx);
@@ -972,11 +998,11 @@ mod tests {
         });
         cx.executor().advance_clock(Duration::from_millis(200));
         cx.run_until_parked();
-        ws.read_with(cx, |ws, cx| {
+        ws.read_with(cx, |ws, _| {
             let doc = &ws.state.open[0];
             assert!(!doc.is_stale());
             assert_eq!(doc.diagnostics.len(), 1, "{:?}", doc.diagnostics);
-            let shown = ws.tabs[0].editor.read(cx).diagnostics().unwrap().len();
+            let shown = ws.tabs[0].diagnostics.marks.borrow().shown.len();
             assert_eq!(shown, 1, "the editor shows the new diagnostics");
         });
     }
@@ -998,12 +1024,7 @@ mod tests {
             });
             window.render_frame(cx);
             assert_eq!(
-                ws.read(cx).tabs[0]
-                    .editor
-                    .read(cx)
-                    .diagnostics()
-                    .unwrap()
-                    .len(),
+                ws.read(cx).tabs[0].diagnostics.marks.borrow().shown.len(),
                 1
             );
             window.dispatch_action(QuickFix.boxed_clone(), cx);

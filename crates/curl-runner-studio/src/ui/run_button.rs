@@ -1,9 +1,12 @@
 //! The title bar's Run button: blocked while the active file has errors.
 
+use super::color;
+use super::diagnostic_popover::kbd;
+use super::icons::{self, glyph};
 use super::workspace::Workspace;
 use crate::model::diagnostics::{StudioDiagnostic, can_run, counts};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{Disableable as _, IconName, Sizable as _};
+use gpui_kit::component::tooltip::Tooltip;
+use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::path::PathBuf;
 
@@ -28,20 +31,49 @@ pub fn run_state(diagnostics: &[StudioDiagnostic]) -> Result<(), String> {
 }
 
 impl Workspace {
+    /// Run per the mockup: 32px, primary fill, play icon, `⌘↵` hint;
+    /// greyed with the reason as tooltip while it can't run.
     pub(super) fn render_run_button(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let state = match self.state.active_document() {
             Some(doc) => run_state(&doc.diagnostics),
             None => Err("Open a request to run".to_string()),
         };
-        let button = Button::new("run")
-            .primary()
-            .small()
-            .icon(IconName::Play)
-            .label("Run")
-            .on_click(cx.listener(|this, _, _, cx| this.request_run(cx)));
+        let (bg, fg, hint) = match state {
+            Ok(()) => (
+                color("primary"),
+                color("on-primary"),
+                color("on-primary").opacity(0.55),
+            ),
+            Err(_) => (
+                color("border-200"),
+                color("text-tertiary"),
+                color("text-disabled"),
+            ),
+        };
+        let button = div()
+            .id("run")
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(8.))
+            .h(px(32.))
+            .px(px(12.))
+            .rounded(px(6.))
+            .bg(bg)
+            .text_color(fg)
+            .text_size(px(13.))
+            .font_weight(FontWeight::MEDIUM)
+            .child(glyph(icons::PLAY).size(px(12.)).text_color(fg))
+            .child("Run")
+            .child(kbd("⌘↵", 11., hint));
         match state {
-            Ok(()) => button,
-            Err(reason) => button.disabled(true).tooltip(reason),
+            Ok(()) => button
+                .cursor_pointer()
+                .hover(|s| s.bg(color("primary-hover")))
+                .on_click(cx.listener(|this, _, _, cx| this.request_run(cx))),
+            Err(reason) => button
+                .cursor_not_allowed()
+                .tooltip(move |window, cx| Tooltip::new(reason.clone()).build(window, cx)),
         }
     }
 

@@ -2,7 +2,8 @@
 //! disk-conflict callout, the YAML editor and the Problems panel.
 
 use super::color;
-use super::problems_panel::severity_icon;
+use super::diagnostic_marks::{EDITOR_TEXT, paint_marks};
+use super::diagnostic_popover::severity_icon;
 use super::sidebar::method_badge;
 use super::workspace::Workspace;
 use crate::model::diagnostics::counts;
@@ -27,33 +28,21 @@ fn count_label(n: usize, noun: &str) -> String {
     }
 }
 
-/// A piece of the breadcrumb's problem counts.
-#[derive(Debug, PartialEq)]
-enum CountPart {
-    Count(Severity, String),
-    /// The `·` between the two counts.
-    Dot,
-}
-
-/// `N errors · M warnings`, each count hidden at zero.
-fn count_parts(errors: usize, warnings: usize) -> Vec<CountPart> {
+/// `N errors`, `M warnings`, each hidden at zero.
+fn count_parts(errors: usize, warnings: usize) -> Vec<(Severity, String)> {
     let mut parts = Vec::new();
     if errors > 0 {
-        parts.push(CountPart::Count(
-            Severity::Error,
-            count_label(errors, "error"),
-        ));
+        parts.push((Severity::Error, count_label(errors, "error")));
     }
     if warnings > 0 {
-        if errors > 0 {
-            parts.push(CountPart::Dot);
-        }
-        parts.push(CountPart::Count(
-            Severity::Warning,
-            count_label(warnings, "warning"),
-        ));
+        parts.push((Severity::Warning, count_label(warnings, "warning")));
     }
     parts
+}
+
+/// The breadcrumb's save state.
+fn save_label(dirty: bool) -> &'static str {
+    if dirty { "· Unsaved" } else { "· Saved" }
 }
 
 /// `collection / folders / file` for a file at `rel`.
@@ -81,15 +70,42 @@ impl Workspace {
                 .child(render_nothing_open());
         };
         let doc = &self.state.open[active];
-        let editor = Editor::new(&self.tabs[active].editor)
+        let state = self.tabs[active].editor.clone();
+        let editor = Editor::new(&state)
             .bordered(false)
             .h_full()
-            .text_size(px(13.))
+            .text_size(px(EDITOR_TEXT))
             .line_height(px(18.));
+        // Painted after the editor, from the layout it just painted.
+        let marks = self.tabs[active].diagnostics.marks.clone();
+        let hide_ghost = self.hovered_line();
+        let overlay = canvas(
+            |_, _, _| {},
+            move |_, _, window, cx| paint_marks(&state, &marks.borrow(), hide_ghost, window, cx),
+        )
+        .absolute()
+        .size_full();
+        let editor = div()
+            .id("editor-area")
+            .relative()
+            .flex_1()
+            .min_h_0()
+            .pt(px(8.))
+            .child(editor)
+            .child(overlay)
+            .children(self.render_diagnostic_popover(cx))
+            .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, _, cx| {
+                this.hover_diagnostics_at(e.position, cx)
+            }))
+            .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                if !*hovered {
+                    this.release_hover(cx);
+                }
+            }));
         pane.child(self.render_tabs(cx))
             .child(self.render_breadcrumb(doc))
             .when(doc.disk_conflict, |pane| pane.child(render_conflict(cx)))
-            .child(div().flex_1().min_h_0().pt(px(8.)).child(editor))
+            .child(editor)
             .when(self.problems_open, |pane| {
                 pane.child(self.render_problems(doc, cx))
             })
@@ -192,21 +208,20 @@ impl Workspace {
         let counts =
             count_parts(counts.errors, counts.warnings)
                 .into_iter()
-                .map(|part| match part {
-                    CountPart::Count(severity, label) => div()
+                .map(|(severity, label)| {
+                    div()
                         .flex()
                         .items_center()
                         .gap(px(6.))
                         .text_color(super::diagnostics_view::severity_color(severity))
-                        .child(severity_icon(severity).size(px(13.)))
-                        .child(label),
-                    CountPart::Dot => div().child("·"),
+                        .child(severity_icon(severity, 13.))
+                        .child(label)
                 });
         div()
             .flex()
             .flex_none()
             .items_center()
-            .gap(px(6.))
+            .gap(px(10.))
             .h(px(BREADCRUMB_HEIGHT))
             .px(px(16.))
             .text_size(px(12.))
@@ -222,7 +237,7 @@ impl Workspace {
             }))
             .child(div().flex_1())
             .children(counts)
-            .when(doc.is_dirty(), |bar| bar.child("· Unsaved"))
+            .child(save_label(doc.is_dirty()))
     }
 }
 
@@ -316,29 +331,31 @@ fn render_nothing_open() -> impl IntoElement {
 
 #[cfg(test)]
 mod tests {
-    use super::{CountPart, breadcrumb, count_label, count_parts};
+    use super::{breadcrumb, count_label, count_parts, save_label};
     use curl_runner_core::lint::Severity;
     use std::path::Path;
 
     #[test]
-    fn count_parts_separate_errors_and_warnings_with_a_dot() {
+    fn count_parts_list_errors_then_warnings() {
         assert_eq!(
             count_parts(2, 1),
             [
-                CountPart::Count(Severity::Error, "2 errors".into()),
-                CountPart::Dot,
-                CountPart::Count(Severity::Warning, "1 warning".into()),
+                (Severity::Error, "2 errors".into()),
+                (Severity::Warning, "1 warning".into()),
             ]
         );
         assert_eq!(
             count_parts(0, 3),
-            [CountPart::Count(Severity::Warning, "3 warnings".into())]
+            [(Severity::Warning, "3 warnings".into())]
         );
-        assert_eq!(
-            count_parts(1, 0),
-            [CountPart::Count(Severity::Error, "1 error".into())]
-        );
+        assert_eq!(count_parts(1, 0), [(Severity::Error, "1 error".into())]);
         assert_eq!(count_parts(0, 0), []);
+    }
+
+    #[test]
+    fn save_label_follows_dirty() {
+        assert_eq!(save_label(true), "· Unsaved");
+        assert_eq!(save_label(false), "· Saved");
     }
 
     #[test]
