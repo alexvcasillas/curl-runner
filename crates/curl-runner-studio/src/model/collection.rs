@@ -138,7 +138,8 @@ fn is_same_file(a: &Path, b: &Path) -> bool {
     a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
 }
 
-/// `(method, parse_ok)` for a file.
+/// `(method, parse_ok)` for a file. Only a mapping root is ok: an empty
+/// file, a scalar or a list parses but holds no request.
 fn read_meta(path: &Path) -> (Option<String>, bool) {
     let Ok(text) = std::fs::read_to_string(path) else {
         return (None, false);
@@ -146,6 +147,9 @@ fn read_meta(path: &Path) -> (Option<String>, bool) {
     let Ok(doc) = parse_raw_stream(&text) else {
         return (None, false);
     };
+    if !doc.is_object() {
+        return (None, false);
+    }
     let method = doc.get("request").map(|r| {
         r.get("method")
             .and_then(|m| m.as_str())
@@ -254,8 +258,18 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         write(d.path(), "bad.yaml", b"a: [unclosed\n");
         write(d.path(), "bin.yaml", &[0xff, 0xfe, 0x00]);
+        // Parses, but not to a mapping: no request can come from it.
+        write(d.path(), "empty.yaml", b"");
+        write(d.path(), "scalar.yaml", b"just text\n");
+        write(d.path(), "list.yaml", b"- url: https://api.example.com\n");
         let c = Collection::open(d.path()).unwrap();
-        for n in ["bad.yaml", "bin.yaml"] {
+        for n in [
+            "bad.yaml",
+            "bin.yaml",
+            "empty.yaml",
+            "scalar.yaml",
+            "list.yaml",
+        ] {
             assert!(
                 matches!(
                     file(&c.tree, n),

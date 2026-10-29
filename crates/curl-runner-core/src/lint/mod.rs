@@ -23,6 +23,10 @@ use crate::parser::{self, ParseError};
 use issues::{Ctx, Res};
 
 pub use fix::fix_document;
+
+/// The [`Issue::path`] of an issue about the whole document (the rules
+/// write it for an empty path).
+pub const ROOT_PATH: &str = "(root)";
 pub use issues::{Crash, Fix, FixValue, Issue, Severity};
 
 type Pass = fn(&Json, &mut Ctx) -> Res;

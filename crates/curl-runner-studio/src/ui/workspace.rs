@@ -2,7 +2,7 @@
 //! and lays out title bar, sidebar, editor and status bar.
 
 use super::app::{
-    CloseTab, Import, NewCollection, NewRequest, OpenFolder, OpenPalette, QuickFix, Quit, SaveFile,
+    CloseTab, Import, NewCollection, NewRequest, OpenFolder, OpenPalette, QuickFix, SaveFile,
     ToggleProblems, ui_font,
 };
 use super::diagnostics_view::DiagnosticsView;
@@ -56,6 +56,9 @@ pub struct Workspace {
     focus: FocusHandle,
     /// Set once the user agreed to close the window with unsaved changes.
     closing: bool,
+    /// Alive while the unsaved-changes dialog is open, so a repeated ⌘Q or
+    /// close does not stack another one.
+    asking: std::rc::Weak<()>,
     _watcher: Option<notify::RecommendedWatcher>,
     _watch_task: Option<Task<()>>,
     _filter_changes: Subscription,
@@ -91,6 +94,7 @@ impl Workspace {
             status: cx.new(|_| StatusBar::default()),
             focus,
             closing: false,
+            asking: std::rc::Weak::new(),
             _watcher: None,
             _watch_task: None,
             _filter_changes: filter_changes,
@@ -328,12 +332,20 @@ impl Workspace {
         if dirty == 0 {
             return then(self, window, cx);
         }
+        // The token lives in the dialog's builder, which the Kit drops when
+        // the dialog goes; while one is closing it is no longer active.
+        if self.asking.upgrade().is_some() && window.has_active_dialog(cx) {
+            return;
+        }
+        let token = Rc::new(());
+        self.asking = Rc::downgrade(&token);
         let ws = cx.entity().downgrade();
         let title = match dirty {
             1 => "Save changes to 1 file?".to_string(),
             n => format!("Save changes to {n} files?"),
         };
         window.open_dialog(cx, move |dialog, _, _| {
+            let _asking = &token;
             let (save_ws, discard_ws) = (ws.clone(), ws.clone());
             let (save_then, discard_then) = (then.clone(), then.clone());
             dialog
@@ -661,7 +673,6 @@ impl Render for Workspace {
                     this.request_close_tab(ix, window, cx);
                 }
             }))
-            .on_action(cx.listener(|this, _: &Quit, window, cx| this.quit(window, cx)))
             .on_action(cx.listener(|this, _: &NewRequest, window, cx| {
                 this.new_request(None, window, cx);
             }))
@@ -693,6 +704,26 @@ impl Render for Workspace {
                     .child(main),
             )
             .child(self.status.clone())
+    }
+}
+
+/// Quits through the window's workspace, so unsaved changes are settled
+/// even when focus is in a dialog or the palette: the Kit draws those beside
+/// the workspace, so the action never reaches it. With no workspace open
+/// there is nothing unsaved, so it quits directly.
+pub(super) fn quit_app(cx: &mut App) {
+    let found = cx.windows().into_iter().find_map(|handle| {
+        let root = handle.downcast::<gpui_kit::base::Root>()?;
+        let view = root.read(cx).ok()?.view().clone();
+        Some((handle, view.downcast::<Workspace>().ok()?))
+    });
+    match found {
+        Some((handle, ws)) => {
+            let _ = handle.update(cx, |_, window, cx| {
+                ws.update(cx, |ws, cx| ws.quit(window, cx))
+            });
+        }
+        None => cx.quit(),
     }
 }
 
@@ -852,6 +883,63 @@ mod tests {
         })
         .unwrap();
         ws.read_with(cx, |ws, _| assert!(!ws.closing));
+    }
+
+    /// Opens `smoke.yaml` and types into it, so it is dirty.
+    fn dirty_smoke(window: &mut gpui_kit::Window, cx: &mut gpui_kit::App) {
+        window.render_frame(cx);
+        window
+            .within("collection-tree")
+            .click(("tree-row", 4usize), cx);
+        window.render_frame(cx);
+        window.input("# x\n", cx);
+    }
+
+    #[gpui_kit::test]
+    fn quit_from_the_palette_asks_when_a_file_is_dirty(cx: &mut TestAppContext) {
+        let (_dir, window, ws) = open(cx);
+        cx.update_window(window, |_, window, cx| {
+            dirty_smoke(window, cx);
+            ws.update(cx, |ws, cx| drop(ws.open_palette(window, cx)));
+            // The palette takes focus as it renders.
+            window.render_frame(cx);
+            window.dispatch_action(Quit.boxed_clone(), cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+        ws.read_with(cx, |ws, _| {
+            assert!(ws.asking.upgrade().is_some(), "quit must ask first");
+            assert!(!ws.closing);
+        });
+    }
+
+    #[gpui_kit::test]
+    fn repeated_quit_does_not_stack_dialogs(cx: &mut TestAppContext) {
+        let (_dir, window, ws) = open(cx);
+        cx.update_window(window, |_, window, cx| {
+            dirty_smoke(window, cx);
+            window.dispatch_action(Quit.boxed_clone(), cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+        let first = ws.read_with(cx, |ws, _| ws.asking.clone());
+        assert!(first.upgrade().is_some(), "quit must ask first");
+        cx.update_window(window, |_, window, cx| {
+            window.render_frame(cx);
+            // From inside the dialog, as a second ⌘Q would come.
+            window.dispatch_action(Quit.boxed_clone(), cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+        ws.read_with(cx, |ws, _| {
+            assert!(ws.asking.ptr_eq(&first), "a second dialog was opened");
+        });
+        cx.update_window(window, |_, window, cx| {
+            window.close_dialog(cx);
+            window.render_frame(cx);
+            assert!(!window.has_active_dialog(cx), "only one dialog was open");
+        })
+        .unwrap();
     }
 
     #[gpui_kit::test]

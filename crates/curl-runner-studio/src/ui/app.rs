@@ -1,7 +1,7 @@
 //! App setup: theme and fonts, the action and keymap table, the window.
 
 use super::state;
-use super::workspace::Workspace;
+use super::workspace::{Workspace, quit_app};
 use crate::theme;
 use gpui_kit::component::{Theme, ThemeConfig};
 use gpui_kit::*;
@@ -37,8 +37,8 @@ actions!(
     ]
 );
 
-/// The macOS menu bar. Its actions reach the focused window first, so Quit
-/// goes through the workspace's unsaved-changes check.
+/// The macOS menu bar. Quit goes through the workspace's unsaved-changes
+/// check (see `init`).
 pub fn menus() -> Vec<Menu> {
     vec![
         Menu::new("curl-runner studio").items([MenuItem::action("Quit curl-runner studio", Quit)]),
@@ -126,8 +126,6 @@ pub fn run() {
                 })
             })
             .expect("failed to open the studio window");
-            // With no window open there is nothing unsaved: quit directly.
-            cx.on_action(|_: &Quit, cx| cx.quit());
             cx.on_window_closed(|cx, _| {
                 if cx.windows().is_empty() {
                     cx.quit();
@@ -158,6 +156,9 @@ pub fn init(cx: &mut App) {
     }
     cx.bind_keys(keymap());
     cx.set_menus(menus());
+    // Every Quit lands here (the workspace has no handler of its own). It
+    // runs during dispatch, while the window is checked out, so defer.
+    cx.on_action(|_: &Quit, cx| cx.defer(quit_app));
 }
 
 static FONTS: OnceLock<(SharedString, SharedString)> = OnceLock::new();

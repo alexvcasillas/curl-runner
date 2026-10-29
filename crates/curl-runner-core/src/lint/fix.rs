@@ -133,7 +133,7 @@ fn path_parts(path: &str) -> Vec<String> {
 }
 
 fn apply_fix(data: &mut Node, path: &str, value: &FixValue) {
-    if path.is_empty() || path == "(root)" {
+    if path.is_empty() || path == super::ROOT_PATH {
         return;
     }
     let parts = path_parts(path);

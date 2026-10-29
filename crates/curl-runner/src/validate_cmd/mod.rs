@@ -12,7 +12,7 @@ use crate::colors::Color;
 use crate::output::Console;
 use curl_runner_core::discover::find_yaml_files;
 use curl_runner_core::lint::{
-    Crash, Issue, LintOutcome, Severity, fix_document, is_valid, lint_text,
+    Crash, Issue, LintOutcome, ROOT_PATH, Severity, fix_document, is_valid, lint_text,
 };
 use report::{Counts, Paint};
 use std::path::Path;
@@ -55,7 +55,7 @@ fn validate_file(path: &Path, fix: bool) -> Result<FileResult, Crash> {
             return Ok(FileResult {
                 valid: false,
                 issues: vec![Issue {
-                    path: "(root)".into(),
+                    path: ROOT_PATH.into(),
                     severity: Severity::Error,
                     message,
                     fix: None,

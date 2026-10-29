@@ -7,7 +7,7 @@
 //! alias gives the alias node. A repeated key resolves to its last
 //! occurrence, as in the loaded value.
 
-use super::{FixValue, Issue};
+use super::{FixValue, Issue, ROOT_PATH};
 use crate::yaml_load::{Event, MAX_DEPTH, Parser};
 use std::ops::Range;
 
@@ -137,10 +137,15 @@ fn resolve<'a>(
 }
 
 /// The spans of the node at `path` (validator syntax: `request.retry`,
-/// `requests[2].url`; `""` is the root), or `None` when it is not in the
+/// `requests[2].url`; `""` and [`ROOT_PATH`] are the root, even when the
+/// document has a literal `(root)` key), or `None` when it is not in the
 /// first document.
 pub fn locate(text: &str, path: &str) -> Option<NodeSpans> {
     locate_node(text, path).map(|(spans, _)| spans)
+}
+
+fn is_root(path: &str) -> bool {
+    path.is_empty() || path == ROOT_PATH
 }
 
 /// What kind of node [`locate_node`] stopped at.
@@ -156,6 +161,7 @@ pub(crate) enum NodeKind {
 /// [`locate`], plus the kind of node found.
 pub(crate) fn locate_node(text: &str, path: &str) -> Option<(NodeSpans, NodeKind)> {
     let root = tree(text)?;
+    let path = if is_root(path) { "" } else { path };
     let (key, node) = resolve(&root, path, None, true)?;
     let kind = match node {
         Node::Scalar(_) => NodeKind::Scalar,
@@ -181,7 +187,7 @@ pub fn issue_range(text: &str, issue: &Issue) -> Range<usize> {
     if text.is_empty() {
         return 0..0;
     }
-    let found = (!issue.path.is_empty())
+    let found = (!is_root(&issue.path))
         .then(|| locate_node(text, &issue.path))
         .flatten();
     let Some((NodeSpans { key, value }, kind)) = found else {
@@ -307,6 +313,15 @@ mod tests {
             "# Créer 🚀"
         );
         assert_eq!(s(issue_range(DOC, &issue("nope.x", "m"))), "# Créer 🚀");
+    }
+    #[test]
+    fn root_path_wins_over_a_literal_root_key() {
+        let t = "# top\nrequest:\n  url: x\n\"(root)\": 1\n";
+        let root = issue(crate::lint::ROOT_PATH, "Missing request(s)");
+        assert_eq!(at(t, issue_range(t, &root)), "# top");
+        let root = locate(t, crate::lint::ROOT_PATH).unwrap();
+        assert_eq!(root, locate(t, "").unwrap());
+        assert!(at(t, root.value).starts_with("request:"));
     }
     #[test]
     fn parse_error_points_at_bad_line() {

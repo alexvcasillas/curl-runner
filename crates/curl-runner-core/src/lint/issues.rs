@@ -94,7 +94,7 @@ impl Ctx {
     ) {
         self.issues.push(Issue {
             path: if path.is_empty() {
-                "(root)".into()
+                super::ROOT_PATH.into()
             } else {
                 path.into()
             },

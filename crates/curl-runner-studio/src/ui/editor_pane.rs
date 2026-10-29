@@ -27,6 +27,35 @@ fn count_label(n: usize, noun: &str) -> String {
     }
 }
 
+/// A piece of the breadcrumb's problem counts.
+#[derive(Debug, PartialEq)]
+enum CountPart {
+    Count(Severity, String),
+    /// The `·` between the two counts.
+    Dot,
+}
+
+/// `N errors · M warnings`, each count hidden at zero.
+fn count_parts(errors: usize, warnings: usize) -> Vec<CountPart> {
+    let mut parts = Vec::new();
+    if errors > 0 {
+        parts.push(CountPart::Count(
+            Severity::Error,
+            count_label(errors, "error"),
+        ));
+    }
+    if warnings > 0 {
+        if errors > 0 {
+            parts.push(CountPart::Dot);
+        }
+        parts.push(CountPart::Count(
+            Severity::Warning,
+            count_label(warnings, "warning"),
+        ));
+    }
+    parts
+}
+
 /// `collection / folders / file` for a file at `rel`.
 pub fn breadcrumb(collection: &str, rel: &Path) -> Vec<String> {
     std::iter::once(collection.to_string())
@@ -160,17 +189,19 @@ impl Workspace {
         let parts = breadcrumb(collection, &doc.rel_path);
         let last = parts.len() - 1;
         let counts = counts(&doc.diagnostics);
-        let count = |n: usize, severity: Severity, noun: &str| {
-            (n > 0).then(|| {
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .text_color(super::diagnostics_view::severity_color(severity))
-                    .child(severity_icon(severity).size(px(13.)))
-                    .child(count_label(n, noun))
-            })
-        };
+        let counts =
+            count_parts(counts.errors, counts.warnings)
+                .into_iter()
+                .map(|part| match part {
+                    CountPart::Count(severity, label) => div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .text_color(super::diagnostics_view::severity_color(severity))
+                        .child(severity_icon(severity).size(px(13.)))
+                        .child(label),
+                    CountPart::Dot => div().child("·"),
+                });
         div()
             .flex()
             .flex_none()
@@ -190,8 +221,7 @@ impl Workspace {
                 sep.into_iter().chain(std::iter::once(part))
             }))
             .child(div().flex_1())
-            .children(count(counts.errors, Severity::Error, "error"))
-            .children(count(counts.warnings, Severity::Warning, "warning"))
+            .children(counts)
             .when(doc.is_dirty(), |bar| bar.child("· Unsaved"))
     }
 }
@@ -286,8 +316,30 @@ fn render_nothing_open() -> impl IntoElement {
 
 #[cfg(test)]
 mod tests {
-    use super::{breadcrumb, count_label};
+    use super::{CountPart, breadcrumb, count_label, count_parts};
+    use curl_runner_core::lint::Severity;
     use std::path::Path;
+
+    #[test]
+    fn count_parts_separate_errors_and_warnings_with_a_dot() {
+        assert_eq!(
+            count_parts(2, 1),
+            [
+                CountPart::Count(Severity::Error, "2 errors".into()),
+                CountPart::Dot,
+                CountPart::Count(Severity::Warning, "1 warning".into()),
+            ]
+        );
+        assert_eq!(
+            count_parts(0, 3),
+            [CountPart::Count(Severity::Warning, "3 warnings".into())]
+        );
+        assert_eq!(
+            count_parts(1, 0),
+            [CountPart::Count(Severity::Error, "1 error".into())]
+        );
+        assert_eq!(count_parts(0, 0), []);
+    }
 
     #[test]
     fn count_label_pluralizes() {

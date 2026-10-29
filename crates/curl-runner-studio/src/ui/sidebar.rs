@@ -393,14 +393,21 @@ impl Workspace {
     }
 }
 
-/// The method as coloured mono text, 34px wide so names line up.
+const BADGE_TEXT_SIZE: f32 = 10.;
+/// The advance of Geist Mono and Menlo, in em.
+const MONO_ADVANCE_EM: f32 = 0.61;
+/// Fits `OPTIONS`, the longest method, with room before the name (about
+/// 47px); rows without a method keep the slot so names line up.
+const METHOD_BADGE_WIDTH: f32 = "OPTIONS".len() as f32 * MONO_ADVANCE_EM * BADGE_TEXT_SIZE + 4.;
+
+/// The method as coloured mono text in a fixed slot so names line up.
 pub fn method_badge(method: Option<&str>) -> Div {
     let text = method.map(str::to_owned).unwrap_or_default();
     div()
         .flex_none()
-        .w(px(34.))
+        .w(px(METHOD_BADGE_WIDTH))
         .font_family(super::app::mono_font())
-        .text_size(px(10.))
+        .text_size(px(BADGE_TEXT_SIZE))
         .font_weight(FontWeight::MEDIUM)
         .text_color(method_color(method.unwrap_or("")))
         .child(text)
@@ -444,9 +451,23 @@ fn tree_menu(
 
 #[cfg(test)]
 mod tests {
-    use super::{Row, RowKind, TreeNode, request_label, visible_rows};
+    use super::{
+        BADGE_TEXT_SIZE, METHOD_BADGE_WIDTH, MONO_ADVANCE_EM, Row, RowKind, TreeNode,
+        request_label, visible_rows,
+    };
     use std::collections::HashSet;
     use std::path::PathBuf;
+
+    #[test]
+    fn method_badge_fits_every_method_with_room_before_the_name() {
+        for method in ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] {
+            let text = method.len() as f32 * MONO_ADVANCE_EM * BADGE_TEXT_SIZE;
+            assert!(
+                text + 2. <= METHOD_BADGE_WIDTH,
+                "{method} needs {text}px of {METHOD_BADGE_WIDTH}px"
+            );
+        }
+    }
 
     fn file(name: &str, rel: &str, method: Option<&str>) -> TreeNode {
         TreeNode::File {
