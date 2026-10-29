@@ -181,6 +181,8 @@ pub(crate) fn locate_node(text: &str, path: &str) -> Option<(NodeSpans, NodeKind
 /// - a `Rename` fix or an `Unknown key` message: the key;
 /// - otherwise a scalar value (an empty one falls back to its key);
 /// - otherwise the key (a sequence item: the first line of the value);
+/// - a path missing from the text: its nearest existing ancestor's key (a
+///   sequence item: its first line);
 /// - the root or an unresolvable path: the first non-blank line, trimmed;
 /// - an empty text: `0..0`.
 pub fn issue_range(text: &str, issue: &Issue) -> Range<usize> {
@@ -191,7 +193,7 @@ pub fn issue_range(text: &str, issue: &Issue) -> Range<usize> {
         .then(|| locate_node(text, &issue.path))
         .flatten();
     let Some((NodeSpans { key, value }, kind)) = found else {
-        return first_line(text);
+        return ancestor_range(text, &issue.path).unwrap_or_else(|| first_line(text));
     };
     let leaf = kind != NodeKind::Container;
     let want_key = issue.message.starts_with("Unknown key")
@@ -201,6 +203,25 @@ pub fn issue_range(text: &str, issue: &Issue) -> Range<usize> {
         _ if leaf => value,
         _ => line_at(text, value.start),
     }
+}
+
+/// `path` without its last segment (`.key` or `[i]`); `None` at the top.
+fn parent_path(path: &str) -> Option<&str> {
+    let cut = path.rfind(['.', '['])?;
+    (cut > 0).then(|| &path[..cut])
+}
+
+/// The key (a sequence item: the first line) of the nearest ancestor of
+/// `path` found in `text`, below the root.
+fn ancestor_range(text: &str, path: &str) -> Option<Range<usize>> {
+    let mut path = path;
+    while let Some(parent) = parent_path(path) {
+        if let Some(NodeSpans { key, value }) = locate(text, parent) {
+            return Some(key.unwrap_or_else(|| line_at(text, value.start)));
+        }
+        path = parent;
+    }
+    None
 }
 
 /// The line libyaml reports for the syntax error in `text`, trimmed (a
@@ -313,6 +334,29 @@ mod tests {
             "# Créer 🚀"
         );
         assert_eq!(s(issue_range(DOC, &issue("nope.x", "m"))), "# Créer 🚀");
+    }
+    #[test]
+    fn missing_paths_fall_back_to_the_nearest_ancestor() {
+        let t = "# top\nrequests:\n  - url: a\n  - url: b\n    method: GET\n";
+        let r = |p: &str| at(t, issue_range(t, &issue(p, "m")));
+        assert_eq!(r("requests[1].headers"), "- url: b");
+        assert_eq!(r("requests[1].headers.Accept"), "- url: b");
+        assert_eq!(r("requests[7].url"), "requests");
+        assert_eq!(r("requests.x"), "requests");
+        assert_eq!(r("nope.x"), "# top");
+        let t = "request:\n  retry: 3\n";
+        assert_eq!(
+            at(t, issue_range(t, &issue("request.retry.count", "m"))),
+            "retry"
+        );
+    }
+    #[test]
+    fn parent_paths() {
+        assert_eq!(parent_path("requests[2].headers"), Some("requests[2]"));
+        assert_eq!(parent_path("requests[2]"), Some("requests"));
+        assert_eq!(parent_path("requests"), None);
+        assert_eq!(parent_path("[1].b"), Some("[1]"));
+        assert_eq!(parent_path("[1]"), None);
     }
     #[test]
     fn root_path_wins_over_a_literal_root_key() {
