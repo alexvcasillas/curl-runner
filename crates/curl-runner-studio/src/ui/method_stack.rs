@@ -1,36 +1,27 @@
-//! `MethodStack`: the method slot of a multi-request file row (column A of
-//! `TreeMethods.dc.html`). Methods sit in request order as a deck of pills,
-//! each one layered on top of the previous and shifted [`STEP`] right, so
-//! the lower pills show their first letters and the top one its full name.
-//! Borders are the row background, so each edge reads cleanly. A `+N` chip
-//! after the deck counts the rest.
+//! `MethodStack`: the method slot of a multi-request file row (option C,
+//! "Method dots", of `TreeMethods.dc.html`). One filled dot per distinct
+//! method in request order, each shifted [`STEP`] right of the previous and
+//! painted on top of it. A ring in the row's background color cuts each
+//! overlap cleanly. A `+N` chip after the dots counts the rest.
 
 use super::{app::mono_font, color, method_color};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 
-/// Pill width and outer height (14px line plus the border), px.
-pub const PILL_W: f32 = 40.;
-pub const PILL_H: f32 = 17.;
-pub const PILL_RADIUS: f32 = 4.;
-pub const BORDER: f32 = 1.5;
-/// Text inset from the pill's left border, px.
-pub const TEXT_PAD: f32 = 5.;
-/// How far each pill sits right of the one below it, px.
-pub const STEP: f32 = 12.;
-/// Most pills in the deck; further methods go to the `+N` chip.
+/// Dot diameter, px.
+pub const DOT: f32 = 8.;
+/// Ring width around a dot, px (drawn outside the dot).
+pub const RING: f32 = 1.5;
+/// How far each dot sits right of the one below it, px.
+pub const STEP: f32 = 7.;
+/// Most dots; further methods go to the `+N` chip.
 pub const MAX: usize = 3;
-/// Gap between the deck and the `+N` chip, px.
+/// Gap between the last dot and the `+N` chip, px.
 pub const CHIP_GAP: f32 = 6.;
 pub const CHIP_H: f32 = 14.;
 pub const CHIP_PAD: f32 = 4.;
+pub const CHIP_RADIUS: f32 = 4.;
 pub const TEXT_SIZE: f32 = 9.5;
-/// For `DELETE`, so it fits inside the border.
-pub const TEXT_SIZE_LONG: f32 = 8.5;
-/// For methods longer than `DELETE`.
-pub const TEXT_SIZE_LONGEST: f32 = 7.;
-/// Alpha of the method color over the row background.
-pub const FILL_ALPHA: f32 = 0.16;
 /// Geist Mono's advance, em.
 const MONO_ADVANCE_EM: f32 = 0.6;
 
@@ -38,8 +29,8 @@ const MONO_ADVANCE_EM: f32 = 0.6;
 #[derive(Debug, PartialEq, Eq)]
 pub struct Stack {
     /// Distinct methods in request order, bottom first, at most [`MAX`].
-    pub deck: Vec<String>,
-    /// Distinct methods beyond the deck.
+    pub dots: Vec<String>,
+    /// Distinct methods beyond the dots.
     pub more: usize,
 }
 
@@ -54,33 +45,33 @@ impl Stack {
         let more = distinct.len().saturating_sub(MAX);
         distinct.truncate(MAX);
         Stack {
-            deck: distinct,
+            dots: distinct,
             more,
         }
     }
 
-    /// Left edge of deck pill `i` relative to the slot, px.
-    pub fn pill_left(i: usize) -> f32 {
+    /// Left edge of dot `i` relative to the slot, px.
+    pub fn dot_left(i: usize) -> f32 {
         STEP * i as f32
     }
 
-    /// Width of the pills alone, px.
-    pub fn deck_width(&self) -> f32 {
-        match self.deck.len() {
+    /// Width of the dots alone, px.
+    pub fn dots_width(&self) -> f32 {
+        match self.dots.len() {
             0 => 0.,
-            n => Self::pill_left(n - 1) + PILL_W,
+            n => Self::dot_left(n - 1) + DOT,
         }
     }
 
     /// Left edge of the `+N` chip, px.
     pub fn chip_left(&self) -> f32 {
-        self.deck_width() + CHIP_GAP
+        self.dots_width() + CHIP_GAP
     }
 
     /// Width of the whole stack, `+N` chip included, px.
     pub fn width(&self) -> f32 {
         match self.more {
-            0 => self.deck_width(),
+            0 => self.dots_width(),
             n => self.chip_left() + chip_width(n),
         }
     }
@@ -92,63 +83,52 @@ pub fn chip_width(n: usize) -> f32 {
     chars * MONO_ADVANCE_EM * TEXT_SIZE + 2. * CHIP_PAD
 }
 
-fn text_size(method: &str) -> f32 {
-    match method.len() {
-        0..=5 => TEXT_SIZE,
-        6 => TEXT_SIZE_LONG,
-        _ => TEXT_SIZE_LONGEST,
-    }
-}
-
-/// The pill's opaque fill: the method color at [`FILL_ALPHA`] over `row_bg`.
-pub fn pill_fill(method: &str, row_bg: Hsla) -> Hsla {
-    row_bg.blend(method_color(method).opacity(FILL_ALPHA))
-}
-
-/// The stack for `stack` in a `width`-wide slot. `row_bg` is the row
-/// background behind it (bg-100, or the selected row's gray).
-pub fn method_stack(stack: &Stack, row_bg: Hsla, width: f32) -> Div {
-    let pill = |i: usize, method: &str| {
-        div()
-            .absolute()
-            .top_0()
-            .left(px(Stack::pill_left(i)))
-            .w(px(PILL_W))
-            .h(px(PILL_H))
-            .rounded(px(PILL_RADIUS))
-            .border(px(BORDER))
-            .border_color(row_bg)
-            .bg(pill_fill(method, row_bg))
-            .overflow_hidden()
-            .flex()
-            .items_center()
-            .pl(px(TEXT_PAD))
-            .text_color(method_color(method))
-            .text_size(px(text_size(method)))
-            .line_height(px(PILL_H - 2. * BORDER))
-            .whitespace_nowrap()
-            .child(method.to_string())
-    };
+/// The stack for `stack` in a `width`-wide slot. `row_bg` is the ring color
+/// at rest; while the pointer is over the `group` row the rings take
+/// `hover_bg` (when given) so they keep matching the row.
+pub fn method_stack(
+    stack: &Stack,
+    row_bg: Hsla,
+    hover_bg: Option<(SharedString, Hsla)>,
+    width: f32,
+) -> Div {
     let mut slot = div()
         .relative()
         .flex_none()
         .w(px(width))
-        .h(px(PILL_H))
+        .h(px(DOT))
         .font_family(mono_font())
         .font_weight(FontWeight::MEDIUM);
     // Request order: later children paint over earlier ones.
-    for (i, m) in stack.deck.iter().enumerate() {
-        slot = slot.child(pill(i, m));
+    for (i, m) in stack.dots.iter().enumerate() {
+        let ring = div()
+            .absolute()
+            .top(px(-RING))
+            .left(px(Stack::dot_left(i) - RING))
+            .size(px(DOT + 2. * RING))
+            .rounded_full()
+            .bg(row_bg)
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(div().size(px(DOT)).rounded_full().bg(method_color(m)));
+        slot = slot.child(match &hover_bg {
+            Some((group, hover)) => {
+                let hover = *hover;
+                ring.group_hover(group.clone(), move |s| s.bg(hover))
+            }
+            None => ring,
+        });
     }
     if stack.more > 0 {
         slot = slot.child(
             div()
                 .absolute()
-                .top(px((PILL_H - CHIP_H) / 2.))
+                .top(px((DOT - CHIP_H) / 2.))
                 .left(px(stack.chip_left()))
                 .h(px(CHIP_H))
                 .px(px(CHIP_PAD))
-                .rounded(px(PILL_RADIUS))
+                .rounded(px(CHIP_RADIUS))
                 .bg(color("surface-200"))
                 .text_color(color("text-secondary"))
                 .text_size(px(TEXT_SIZE))
@@ -162,66 +142,49 @@ pub fn method_stack(stack: &Stack, row_bg: Hsla, width: f32) -> Div {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        BORDER, CHIP_GAP, MAX, MONO_ADVANCE_EM, PILL_W, STEP, Stack, TEXT_PAD, chip_width,
-        text_size,
-    };
+    use super::{CHIP_GAP, DOT, MAX, STEP, Stack, chip_width};
 
     #[test]
-    fn deck_keeps_distinct_methods_in_order() {
+    fn dots_keep_distinct_methods_in_order() {
         let s = Stack::new(["GET", "GET", "POST", "GET"]);
-        assert_eq!(s.deck, ["GET", "POST"]);
+        assert_eq!(s.dots, ["GET", "POST"]);
         assert_eq!(s.more, 0);
     }
 
     #[test]
-    fn deck_caps_at_max_and_counts_the_rest() {
+    fn dots_cap_at_max_and_count_the_rest() {
         let s = Stack::new(["POST", "GET", "PUT", "DELETE", "GET", "PATCH"]);
-        assert_eq!(s.deck, ["POST", "GET", "PUT"]);
+        assert_eq!(s.dots, ["POST", "GET", "PUT"]);
         assert_eq!(s.more, 2);
     }
 
     #[test]
     fn empty_stack_is_empty() {
         let s = Stack::new([]);
-        assert!(s.deck.is_empty());
+        assert!(s.dots.is_empty());
         assert_eq!(s.more, 0);
         assert_eq!(s.width(), 0.);
     }
 
     #[test]
-    fn later_pills_step_right() {
-        assert_eq!(Stack::pill_left(0), 0.);
-        assert_eq!(Stack::pill_left(1), STEP);
-        assert_eq!(Stack::pill_left(MAX - 1), STEP * 2.);
+    fn later_dots_step_right() {
+        assert_eq!(Stack::dot_left(0), 0.);
+        assert_eq!(Stack::dot_left(1), STEP);
+        assert_eq!(Stack::dot_left(MAX - 1), STEP * 2.);
     }
 
     #[test]
-    fn width_covers_the_deck_and_the_chip() {
-        // TreeMethods.dc.html: 40px pills 12px apart, `+N` at 70px.
-        assert_eq!(Stack::new(["GET"]).width(), PILL_W);
-        assert_eq!(Stack::new(["GET", "POST"]).width(), 52.);
+    fn dots_overlap() {
+        const { assert!(STEP < DOT) };
+    }
+
+    #[test]
+    fn width_covers_the_dots_and_the_chip() {
+        assert_eq!(Stack::new(["GET"]).width(), DOT);
+        assert_eq!(Stack::new(["GET", "POST"]).width(), 15.);
         let s = Stack::new(["GET", "POST", "PUT", "PATCH", "DELETE"]);
-        assert_eq!(s.deck_width(), 64.);
-        assert_eq!(s.chip_left(), 64. + CHIP_GAP);
-        assert_eq!(s.width(), 70. + chip_width(2));
-    }
-
-    #[test]
-    fn every_method_fits_inside_the_top_pill() {
-        for method in ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] {
-            let width = method.len() as f32 * MONO_ADVANCE_EM * text_size(method);
-            assert!(
-                width <= PILL_W - 2. * BORDER - TEXT_PAD,
-                "{method}: {width}"
-            );
-        }
-    }
-
-    #[test]
-    fn lower_pills_show_their_first_letter() {
-        // A glyph's ink is narrower than its advance.
-        let ink = 0.9 * MONO_ADVANCE_EM * text_size("GET");
-        assert!(BORDER + TEXT_PAD + ink <= STEP);
+        assert_eq!(s.dots_width(), 22.);
+        assert_eq!(s.chip_left(), 22. + CHIP_GAP);
+        assert_eq!(s.width(), 28. + chip_width(2));
     }
 }

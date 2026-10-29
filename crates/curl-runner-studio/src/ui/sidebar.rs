@@ -390,7 +390,8 @@ impl Workspace {
                 let selected = is_active && !child_selected;
                 let open_path = rel_path.clone();
                 let folder = rel_path.parent().map(Path::to_path_buf);
-                let row = select(base, selected, selected_bg).tooltip({
+                let group_name = SharedString::from(format!("tree-row-{ix}"));
+                let row = select(base.group(group_name.clone()), selected, selected_bg).tooltip({
                     let full = rel_path.display().to_string();
                     move |window, cx| {
                         gpui_kit::component::tooltip::Tooltip::new(full.clone()).build(window, cx)
@@ -422,7 +423,7 @@ impl Workspace {
                                 .into_any_element()
                         };
                         let stack = Stack::new(group.methods.iter().map(String::as_str));
-                        // The chevron hangs into the indent, so the deck
+                        // The chevron hangs into the indent, so the dots
                         // starts where single rows put their badge.
                         let pl = 8. + INDENT * depth as f32;
                         let hang = if pl >= MULTI_HANG + 2. {
@@ -439,7 +440,12 @@ impl Workspace {
                                     .justify_between()
                                     .w(px(hang.max(MULTI_HANG) + deck_slot))
                                     .child(chevron)
-                                    .child(method_stack(&stack, fill, deck_slot)),
+                                    .child(method_stack(
+                                        &stack,
+                                        fill,
+                                        (!selected).then(|| (group_name, color("surface-100"))),
+                                        deck_slot,
+                                    )),
                             )
                             .child(name_cell(label))
                             .child(count_cell(group.count))
@@ -875,8 +881,8 @@ mod tests {
     #[test]
     fn deck_slot_fits_the_widest_stack() {
         assert_eq!(deck_slot_width(&[]), METHOD_BADGE_WIDTH);
-        // GET + POST: two 40px pills 12px apart.
-        assert_eq!(deck_slot_width(&flows()), 52.);
+        // GET + POST: two dots 7px apart, narrower than a badge.
+        assert_eq!(deck_slot_width(&flows()), METHOD_BADGE_WIDTH);
         let wide = vec![TreeNode::Folder {
             name: "x".into(),
             children: vec![multi(
@@ -887,7 +893,7 @@ mod tests {
         }];
         let mut tree = flows();
         tree.extend(wide);
-        assert!(deck_slot_width(&tree) > 64.);
+        assert!(deck_slot_width(&tree) > METHOD_BADGE_WIDTH);
     }
 
     #[test]
