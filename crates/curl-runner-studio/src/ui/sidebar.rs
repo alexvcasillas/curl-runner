@@ -1,7 +1,7 @@
 //! The collections column: header, filter and the collection tree.
 
 use super::icons::{self, glyph};
-use super::method_stack::{self, Stack, method_stack, more_chip};
+use super::method_stack::{Stack, method_stack};
 use super::workspace::Workspace;
 use super::{color, method_color};
 use crate::model::collection::TreeNode;
@@ -250,6 +250,7 @@ impl Workspace {
             &self.filter.read(cx).value(),
         );
         let active = self.state.active_document().map(|d| d.rel_path.clone());
+        let deck_slot = deck_slot_width(&collection.tree);
         let tree = div()
             .id("collection-tree")
             .role(Role::Tree)
@@ -265,7 +266,7 @@ impl Workspace {
             .children(
                 rows.into_iter()
                     .enumerate()
-                    .map(|(ix, row)| self.render_row(ix, row, active.as_deref(), cx)),
+                    .map(|(ix, row)| self.render_row(ix, row, active.as_deref(), deck_slot, cx)),
             );
 
         column
@@ -319,6 +320,7 @@ impl Workspace {
         ix: usize,
         row: Row,
         active: Option<&Path>,
+        deck_slot: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let depth = row.depth;
@@ -420,8 +422,8 @@ impl Workspace {
                                 .into_any_element()
                         };
                         let stack = Stack::new(group.methods.iter().map(String::as_str));
-                        // Chevron and deck hang into the indent, so the
-                        // method slot and the name line up with single rows.
+                        // The chevron hangs into the indent, so the deck
+                        // starts where single rows put their badge.
                         let pl = 8. + INDENT * depth as f32;
                         let hang = if pl >= MULTI_HANG + 2. {
                             MULTI_HANG
@@ -435,12 +437,11 @@ impl Workspace {
                                     .flex_none()
                                     .items_center()
                                     .justify_between()
-                                    .w(px(hang.max(MULTI_HANG) + METHOD_BADGE_WIDTH))
+                                    .w(px(hang.max(MULTI_HANG) + deck_slot))
                                     .child(chevron)
-                                    .child(method_stack(&stack, fill)),
+                                    .child(method_stack(&stack, fill, deck_slot)),
                             )
                             .child(name_cell(label))
-                            .children(more_chip(&stack))
                             .child(count_cell(group.count))
                     }
                     None => row
@@ -637,9 +638,26 @@ fn badge_text_size(method: &str) -> f32 {
 const METHOD_BADGE_WIDTH: f32 = 34.;
 /// Gap between the badge and the name.
 const ROW_GAP: f32 = 8.;
-/// What a multi-request row's chevron and deck take left of the method
-/// slot: the chevron, a gap, then the pills peeking behind the front one.
-const MULTI_HANG: f32 = CHEVRON_SIZE + 4. + method_stack::PEEK_ROOM;
+/// What a multi-request row's chevron takes left of the method slot: the
+/// chevron and a gap.
+const MULTI_HANG: f32 = CHEVRON_SIZE + 4.;
+
+/// The method slot of multi-request rows: the widest stack in `tree`, at
+/// least the single-request badge slot, so their names line up with each
+/// other.
+fn deck_slot_width(tree: &[TreeNode]) -> f32 {
+    tree.iter()
+        .map(|n| match n {
+            TreeNode::Folder { children, .. } => deck_slot_width(children),
+            TreeNode::File {
+                method: None,
+                requests,
+                ..
+            } => Stack::new(requests.iter().map(|r| r.method.as_str())).width(),
+            TreeNode::File { .. } => 0.,
+        })
+        .fold(METHOD_BADGE_WIDTH, f32::max)
+}
 
 /// The method as coloured mono text in a fixed slot so names line up.
 pub fn method_badge(method: Option<&str>) -> Div {
@@ -694,7 +712,7 @@ fn tree_menu(
 mod tests {
     use super::{
         BADGE_TEXT_SIZE, Group, METHOD_BADGE_WIDTH, ROW_GAP, Row, RowKind, TreeNode,
-        badge_text_size, request_label, visible_rows,
+        badge_text_size, deck_slot_width, request_label, visible_rows,
     };
     use crate::model::collection::RequestEntry;
 
@@ -852,6 +870,24 @@ mod tests {
                 file("get-user.yaml", "users/get-user.yaml", Some("GET")),
             ],
         }]
+    }
+
+    #[test]
+    fn deck_slot_fits_the_widest_stack() {
+        assert_eq!(deck_slot_width(&[]), METHOD_BADGE_WIDTH);
+        // GET + POST: two 40px pills 12px apart.
+        assert_eq!(deck_slot_width(&flows()), 52.);
+        let wide = vec![TreeNode::Folder {
+            name: "x".into(),
+            children: vec![multi(
+                "smoke.yaml",
+                "x/smoke.yaml",
+                &[("GET", "a"), ("POST", "b"), ("PUT", "c"), ("PATCH", "d")],
+            )],
+        }];
+        let mut tree = flows();
+        tree.extend(wide);
+        assert!(deck_slot_width(&tree) > 64.);
     }
 
     #[test]
