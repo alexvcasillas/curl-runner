@@ -8,6 +8,7 @@
 //! [`Crash`] carrying the same message.
 
 mod conditions;
+pub mod edit;
 mod fix;
 mod global;
 mod issues;

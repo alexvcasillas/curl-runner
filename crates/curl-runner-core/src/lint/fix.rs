@@ -177,6 +177,18 @@ pub fn fix_document(content: &Json, issues: &[Issue]) -> Option<(String, Json)> 
     Some((serialize(&data, 0), data.to_json()))
 }
 
+/// The data [`fix_document`] gives for a single fix at `path`.
+pub(super) fn fixed_data(content: &Json, path: &str, value: &FixValue) -> Json {
+    let mut data = Node::from(content);
+    apply_fix(&mut data, path, value);
+    data.to_json()
+}
+
+/// The text [`fix_document`] writes for a scalar; `None` for a list or mapping.
+pub(super) fn scalar_yaml(v: &Json) -> Option<String> {
+    (!v.is_array() && !v.is_object()).then(|| serialize(&Node::Leaf(v.clone()), 0))
+}
+
 /// The strings TS quotes (with `JSON.stringify`).
 fn ts_quotes(s: &str) -> bool {
     s.contains(['\n', ':', '#'])

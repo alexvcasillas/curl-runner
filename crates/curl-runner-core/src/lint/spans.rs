@@ -143,17 +143,31 @@ pub fn locate(text: &str, path: &str) -> Option<NodeSpans> {
     locate_node(text, path).map(|(spans, _)| spans)
 }
 
-/// [`locate`], plus whether the value is a scalar or an alias.
-fn locate_node(text: &str, path: &str) -> Option<(NodeSpans, bool)> {
+/// What kind of node [`locate_node`] stopped at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NodeKind {
+    Scalar,
+    /// The path ends at, or runs through, an alias.
+    Alias,
+    /// A mapping or sequence.
+    Container,
+}
+
+/// [`locate`], plus the kind of node found.
+pub(crate) fn locate_node(text: &str, path: &str) -> Option<(NodeSpans, NodeKind)> {
     let root = tree(text)?;
     let (key, node) = resolve(&root, path, None, true)?;
-    let leaf = matches!(node, Node::Scalar(_) | Node::Alias(_));
+    let kind = match node {
+        Node::Scalar(_) => NodeKind::Scalar,
+        Node::Alias(_) => NodeKind::Alias,
+        Node::Seq(..) | Node::Map(..) => NodeKind::Container,
+    };
     Some((
         NodeSpans {
             key,
             value: node.span(),
         },
-        leaf,
+        kind,
     ))
 }
 
@@ -170,9 +184,10 @@ pub fn issue_range(text: &str, issue: &Issue) -> Range<usize> {
     let found = (!issue.path.is_empty())
         .then(|| locate_node(text, &issue.path))
         .flatten();
-    let Some((NodeSpans { key, value }, leaf)) = found else {
+    let Some((NodeSpans { key, value }, kind)) = found else {
         return first_line(text);
     };
+    let leaf = kind != NodeKind::Container;
     let want_key = issue.message.starts_with("Unknown key")
         || matches!(&issue.fix, Some(f) if matches!(f.value, FixValue::Rename { .. }));
     match key {
