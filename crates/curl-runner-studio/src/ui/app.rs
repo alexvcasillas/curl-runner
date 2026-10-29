@@ -67,6 +67,9 @@ pub fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-n", NewCollection, None),
         KeyBinding::new("cmd-i", Import, None),
         KeyBinding::new("cmd-enter", CreateNew, Some("NewDialog")),
+        // Bound after the Kit's `cmd-enter` in `Input` (a newline in a
+        // textarea), so ⌘↵ in the dialog's fields creates instead.
+        KeyBinding::new("cmd-enter", CreateNew, Some("NewDialog > Input")),
         KeyBinding::new("cmd-k", OpenPalette, None),
         // Bound after the Kit's `cmd-.` (code actions menu), so it wins in
         // the editor; the menu stays on `ctrl-.` and the context menu.
@@ -96,14 +99,15 @@ pub fn run() {
                 window_min_size: Some(size(px(960.), px(600.))),
                 ..Default::default()
             };
+            let store = state::StateStore::app_support();
             let folder = dev_env("CURL_RUNNER_STUDIO_FOLDER")
-                .or_else(state::last_folder)
+                .or_else(|| store.last_folder())
                 .filter(|p| p.is_dir());
             let file = dev_env("CURL_RUNNER_STUDIO_OPEN");
             let show = std::env::var("CURL_RUNNER_STUDIO_SHOW").ok();
             gpui_kit::open_window(options, cx, |window, cx| {
                 cx.new(|cx| {
-                    let mut ws = Workspace::new(folder, window, cx);
+                    let mut ws = Workspace::new(folder, store, window, cx);
                     if let Some(file) = file {
                         ws.open_file(&file, window, cx);
                     }
@@ -378,6 +382,7 @@ mod tests {
                 "cmd-n",
                 "cmd-shift-n",
                 "cmd-i",
+                "cmd-enter",
                 "cmd-enter",
                 "cmd-k",
                 "cmd-.",

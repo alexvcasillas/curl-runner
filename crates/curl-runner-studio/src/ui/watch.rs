@@ -37,6 +37,11 @@ pub fn tabs_to_reread<'a>(
 /// paths, relative to `root`. `None` when the OS watcher can't start.
 pub fn start(root: &Path) -> (Option<RecommendedWatcher>, UnboundedReceiver<Vec<PathBuf>>) {
     let (tx, rx) = unbounded();
+    // GPUI's test scheduler fails a test when another thread (FSEvents)
+    // wakes it, so tests that write files run without the OS watcher.
+    if cfg!(test) {
+        return (None, rx);
+    }
     // FSEvents reports resolved paths (`/private/var/..` for `/var/..`).
     let roots = [
         root.canonicalize().unwrap_or_else(|_| root.to_path_buf()),

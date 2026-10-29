@@ -6,7 +6,7 @@ use super::app::{
     ToggleProblems, ui_font,
 };
 use super::diagnostics_view::DiagnosticsView;
-use super::state::{self, AppState};
+use super::state::{AppState, StateStore};
 use super::status_bar::StatusBar;
 use super::watch;
 use super::{color, sidebar::request_label};
@@ -50,6 +50,8 @@ pub struct Workspace {
     pub(super) filter: Entity<InputState>,
     /// The Problems panel under the editor (⇧⌘M).
     pub(super) problems_open: bool,
+    /// Where the last folder is remembered.
+    pub(super) store: StateStore,
     status: Entity<StatusBar>,
     focus: FocusHandle,
     /// Set once the user agreed to close the window with unsaved changes.
@@ -60,7 +62,12 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    pub fn new(folder: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        folder: Option<PathBuf>,
+        store: StateStore,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let filter = cx.new(|cx| InputState::new(window, cx).placeholder("Filter"));
         let filter_changes = cx.subscribe(&filter, |_, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
@@ -80,6 +87,7 @@ impl Workspace {
             collapsed: HashSet::new(),
             filter,
             problems_open: true,
+            store,
             status: cx.new(|_| StatusBar::default()),
             focus,
             closing: false,
@@ -478,7 +486,7 @@ impl Workspace {
                     };
                     this.update_in(cx, |this, window, cx| {
                         if this.open_collection(&path, window, cx) {
-                            state::remember_folder(&path);
+                            this.store.remember_folder(&path);
                         }
                     })
                     .ok();
@@ -743,6 +751,7 @@ fn three_buttons(
 #[cfg(test)]
 mod tests {
     use super::super::app::{QuickFix, Quit};
+    use super::super::state::StateStore;
     use super::Workspace;
     use gpui_kit::component::WindowExt as _;
     use gpui_kit::component::input::{CodeActionItem, Position};
@@ -778,7 +787,7 @@ mod tests {
                 ..Default::default()
             };
             gpui_kit::open_window(options, cx, |window, cx| {
-                cx.new(|cx| Workspace::new(Some(root), window, cx))
+                cx.new(|cx| Workspace::new(Some(root), StateStore::none(), window, cx))
             })
             .unwrap()
         });

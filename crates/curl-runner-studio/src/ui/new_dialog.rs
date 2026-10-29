@@ -3,7 +3,6 @@
 
 use super::app::{CreateNew, mono_font};
 use super::color;
-use super::state;
 use super::workspace::{Workspace, notify_error};
 use crate::model::collection::{Collection, TreeNode};
 use crate::model::templates::{file_name_for, request_from_curl, request_template};
@@ -777,7 +776,7 @@ impl Workspace {
                     return;
                 }
                 if this.open_collection(&dir, window, cx) {
-                    state::remember_folder(&dir);
+                    this.store.remember_folder(&dir);
                     this.open_file(&file, window, cx);
                 }
             }),
@@ -789,6 +788,7 @@ impl Workspace {
 
 #[cfg(test)]
 mod tests {
+    use super::super::state::StateStore;
     use super::super::workspace::Workspace;
     use super::{Kind, NewDialog};
     use gpui_kit::component::WindowExt as _;
@@ -802,6 +802,7 @@ mod tests {
     fn open(
         cx: &mut TestAppContext,
         root: Option<PathBuf>,
+        store: StateStore,
     ) -> (AnyWindowHandle, Entity<Workspace>) {
         cx.update(|cx| {
             gpui_kit::init(cx);
@@ -814,7 +815,7 @@ mod tests {
                 ..Default::default()
             };
             gpui_kit::open_window(options, cx, |window, cx| {
-                cx.new(|cx| Workspace::new(root, window, cx))
+                cx.new(|cx| Workspace::new(root, store, window, cx))
             })
             .unwrap()
         })
@@ -843,7 +844,7 @@ mod tests {
     #[gpui_kit::test]
     fn new_request_writes_the_file_and_opens_it(cx: &mut TestAppContext) {
         let dir = collection();
-        let (window, ws) = open(cx, Some(dir.path().to_path_buf()));
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
         let cx = &mut VisualTestContext::from_window(window, cx);
         let dialog = cx.update(|window, cx| {
             ws.update(cx, |ws, cx| {
@@ -870,7 +871,7 @@ mod tests {
     #[gpui_kit::test]
     fn an_existing_file_is_an_inline_error(cx: &mut TestAppContext) {
         let dir = collection();
-        let (window, ws) = open(cx, Some(dir.path().to_path_buf()));
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
         let cx = &mut VisualTestContext::from_window(window, cx);
         let dialog = cx.update(|window, cx| {
             ws.update(cx, |ws, cx| {
@@ -895,7 +896,7 @@ mod tests {
     #[gpui_kit::test]
     fn import_converts_a_curl_command(cx: &mut TestAppContext) {
         let dir = collection();
-        let (window, ws) = open(cx, Some(dir.path().to_path_buf()));
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
         let cx = &mut VisualTestContext::from_window(window, cx);
         let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
         let (name, curl) = dialog.read_with(cx, |d, _| (d.name.clone(), d.curl.clone()));
@@ -920,7 +921,9 @@ mod tests {
     #[gpui_kit::test]
     fn new_collection_needs_an_empty_folder(cx: &mut TestAppContext) {
         let dir = collection();
-        let (window, ws) = open(cx, Some(dir.path().to_path_buf()));
+        let state = tempfile::tempdir().unwrap();
+        let store = StateStore::at(state.path());
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), store.clone());
         let cx = &mut VisualTestContext::from_window(window, cx);
         let dialog: Entity<NewDialog> =
             cx.update(|window, cx| ws.update(cx, |ws, cx| ws.new_collection(window, cx)));
@@ -954,5 +957,40 @@ mod tests {
                 Path::new("requests.yaml")
             );
         });
+        // Remembered in the injected store, not the user's.
+        assert_eq!(store.last_folder().as_deref(), Some(empty.path()));
+    }
+
+    #[gpui_kit::test]
+    fn enter_in_the_curl_field_is_a_newline_and_cmd_enter_creates(cx: &mut TestAppContext) {
+        let dir = collection();
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        let name = dialog.read_with(cx, |d, _| d.name.clone());
+        set(&name, "Refund", cx);
+        cx.run_until_parked();
+        // The curl field has focus; paste-like typing with a continuation.
+        cx.simulate_input("curl -X POST https://api.example.com/v1/refunds \\");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("  -d amount=100");
+        cx.run_until_parked();
+        assert!(
+            !dir.path().join("refund.yaml").exists(),
+            "enter must not create"
+        );
+        cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
+        let curl = dialog.read_with(cx, |d, cx| d.curl.read(cx).value().to_string());
+        assert_eq!(
+            curl,
+            "curl -X POST https://api.example.com/v1/refunds \\\n  -d amount=100"
+        );
+        cx.simulate_keystrokes("cmd-enter");
+        cx.run_until_parked();
+        dialog.read_with(cx, |d, _| assert_eq!(d.error, None));
+        let text = std::fs::read_to_string(dir.path().join("refund.yaml")).unwrap();
+        assert!(text.contains("method: POST"), "{text}");
+        assert!(text.contains("amount"), "{text}");
+        cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
     }
 }

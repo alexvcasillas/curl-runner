@@ -78,23 +78,49 @@ impl AppState {
     }
 }
 
-/// The folder opened last, if it is still recorded.
-pub fn last_folder() -> Option<PathBuf> {
-    last_folder_in(&state_dir()?)
+/// Where the studio keeps what it remembers between launches. The app uses
+/// [`StateStore::app_support`]; tests use a temporary folder or
+/// [`StateStore::none`], so they never touch the user's state.
+#[derive(Debug, Clone, Default)]
+pub struct StateStore {
+    /// `None`: nothing is read or written.
+    base: Option<PathBuf>,
 }
 
-/// Records `p` as the folder to reopen. Failures are logged, not fatal.
-pub fn remember_folder(p: &Path) {
-    let Some(dir) = state_dir() else { return };
-    if let Err(e) = remember_folder_in(&dir, p) {
-        log::warn!("could not save the last folder: {e}");
+impl StateStore {
+    /// `~/Library/Application Support/curl-runner-studio`.
+    pub fn app_support() -> Self {
+        let base = std::env::var_os("HOME")
+            .map(|home| PathBuf::from(home).join("Library/Application Support/curl-runner-studio"));
+        StateStore { base }
     }
-}
 
-/// `~/Library/Application Support/curl-runner-studio`.
-fn state_dir() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    Some(PathBuf::from(home).join("Library/Application Support/curl-runner-studio"))
+    /// State kept in `base`.
+    #[cfg(test)]
+    pub fn at(base: impl Into<PathBuf>) -> Self {
+        StateStore {
+            base: Some(base.into()),
+        }
+    }
+
+    /// Remembers nothing.
+    #[cfg(test)]
+    pub fn none() -> Self {
+        StateStore::default()
+    }
+
+    /// The folder opened last, if it is still recorded.
+    pub fn last_folder(&self) -> Option<PathBuf> {
+        last_folder_in(self.base.as_deref()?)
+    }
+
+    /// Records `p` as the folder to reopen. Failures are logged, not fatal.
+    pub fn remember_folder(&self, p: &Path) {
+        let Some(base) = &self.base else { return };
+        if let Err(e) = remember_folder_in(base, p) {
+            log::warn!("could not save the last folder: {e}");
+        }
+    }
 }
 
 const STATE_FILE: &str = "state.json";
@@ -119,12 +145,16 @@ mod tests {
     fn state_round_trips_last_folder() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path().join("curl-runner-studio");
-        assert_eq!(last_folder_in(&base), None);
-        remember_folder_in(&base, Path::new("/tmp/Payments API")).unwrap();
+        let store = StateStore::at(&base);
+        assert_eq!(store.last_folder(), None);
+        store.remember_folder(Path::new("/tmp/Payments API"));
         assert_eq!(
-            last_folder_in(&base),
+            store.last_folder(),
             Some(PathBuf::from("/tmp/Payments API"))
         );
+        // `none` neither reads nor writes.
+        StateStore::none().remember_folder(Path::new("/x"));
+        assert_eq!(StateStore::none().last_folder(), None);
         let raw = std::fs::read_to_string(base.join(STATE_FILE)).unwrap();
         let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(json["lastFolder"], "/tmp/Payments API");
