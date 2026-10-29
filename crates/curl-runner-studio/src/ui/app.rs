@@ -5,6 +5,7 @@ use super::workspace::{Workspace, quit_app};
 use crate::theme;
 use gpui_kit::component::{Theme, ThemeConfig};
 use gpui_kit::*;
+use std::borrow::Cow;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::OnceLock;
@@ -78,7 +79,8 @@ pub fn keymap() -> Vec<KeyBinding> {
     ]
 }
 
-pub const TITLE_BAR_HEIGHT: f32 = 48.;
+/// Main.png: 44px.
+pub const TITLE_BAR_HEIGHT: f32 = 44.;
 
 pub fn run() {
     application()
@@ -92,8 +94,8 @@ pub fn run() {
                 titlebar: Some(TitlebarOptions {
                     title: Some("curl-runner studio".into()),
                     appears_transparent: true,
-                    // Centres the traffic lights in the 48px title bar.
-                    traffic_light_position: Some(point(px(16.), px(17.))),
+                    // Centres the traffic lights in the 44px title bar.
+                    traffic_light_position: Some(point(px(16.), px(15.))),
                 }),
                 app_owns_titlebar_drag: true,
                 window_min_size: Some(size(px(960.), px(600.))),
@@ -145,8 +147,30 @@ fn dev_env(name: &str) -> Option<PathBuf> {
     std::env::var_os(name).map(PathBuf::from)
 }
 
+/// Geist and Geist Mono (SIL OFL 1.1, `assets/fonts/OFL.txt`), one file
+/// per weight and style the studio draws.
+const EMBEDDED_FONTS: &[&[u8]] = &[
+    include_bytes!("../../assets/fonts/Geist-Regular.ttf"),
+    include_bytes!("../../assets/fonts/Geist-Medium.ttf"),
+    include_bytes!("../../assets/fonts/Geist-SemiBold.ttf"),
+    include_bytes!("../../assets/fonts/Geist-Italic.ttf"),
+    include_bytes!("../../assets/fonts/GeistMono-Regular.ttf"),
+    include_bytes!("../../assets/fonts/GeistMono-Medium.ttf"),
+    include_bytes!("../../assets/fonts/GeistMono-SemiBold.ttf"),
+];
+
+/// Registers the embedded fonts. On failure the studio falls back to the
+/// system families (see `font_families`).
+fn load_fonts(cx: &App) {
+    let fonts = EMBEDDED_FONTS.iter().map(|&b| Cow::Borrowed(b)).collect();
+    if let Err(e) = cx.text_system().add_fonts(fonts) {
+        log::error!("embedded fonts did not load: {e}");
+    }
+}
+
 /// Theme, fonts and key bindings. Call after `gpui_kit::init`.
 pub fn init(cx: &mut App) {
+    load_fonts(cx);
     let installed = cx.text_system().all_font_names();
     let (ui, mono) = font_families(&installed);
     let _ = FONTS.set((ui.into(), mono.into()));
@@ -176,8 +200,9 @@ pub fn mono_font() -> SharedString {
 const FALLBACK_UI: &str = ".SystemUIFont";
 const FALLBACK_MONO: &str = "Menlo";
 
-/// Geist and Geist Mono when installed; otherwise the system UI font and
-/// Menlo. GPUI panics on a family it cannot find, so never name a missing one.
+/// Geist and Geist Mono (embedded, so present unless loading them failed);
+/// otherwise the system UI font and Menlo. GPUI panics on a family it
+/// cannot find, so never name a missing one.
 fn font_families(installed: &[String]) -> (&'static str, &'static str) {
     let has = |family: &str| installed.iter().any(|f| f == family);
     (
@@ -337,6 +362,16 @@ mod tests {
     fn fonts_prefer_geist_when_installed() {
         let installed = ["Geist".to_string(), "Geist Mono".to_string()];
         assert_eq!(font_families(&installed), ("Geist", "Geist Mono"));
+    }
+
+    #[test]
+    fn embedded_fonts_are_truetype_with_their_license() {
+        assert_eq!(super::EMBEDDED_FONTS.len(), 7);
+        for font in super::EMBEDDED_FONTS {
+            assert_eq!(&font[..4], &[0, 1, 0, 0], "not a TrueType file");
+        }
+        let license = include_str!("../../assets/fonts/OFL.txt");
+        assert!(license.contains("SIL Open Font License, Version 1.1"));
     }
 
     #[test]

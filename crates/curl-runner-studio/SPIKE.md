@@ -149,9 +149,11 @@ theme.mono_font_family = "Geist Mono".into();
 
 `TextSystem::add_fonts(Vec<Cow<'static, [u8]>>) -> Result<()>`. The theme
 uses an explicitly set family as-is (no fallback probe), so the bytes must be
-registered first. Font files are not vendored yet (license: SIL OFL, from the
-Geist repository); system families (`.SystemUIFont`, `Menlo`) work without
-embedding.
+registered first. The studio vendors the static TTFs it draws (Geist 400,
+500, 600 and italic; Geist Mono 400, 500, 600) from the Geist v1.8.2 release
+in `assets/fonts/` with `OFL.txt` (SIL OFL 1.1) and registers them in
+`app::init`. The test platform's text system lists no fonts, so tests run
+on the fallback families.
 
 ## Import paths
 
@@ -172,8 +174,12 @@ embedding.
   `editor.*` and `syntax`) from our tokens and install it with
   `Theme::update(cx, |t| t.apply_config(&Rc::new(config)))`; that also
   switches to dark and repaints the editor background.
-- Fonts: `cx.text_system().all_font_names()` tells whether Geist / Geist Mono
-  are installed; otherwise `.SystemUIFont` and `Menlo`.
+- Fonts: the embedded Geist / Geist Mono are registered first; only if
+  `add_fonts` fails (checked with `all_font_names()`) does the studio fall
+  back to `.SystemUIFont` and `Menlo`.
+- Icons: `Icon::default().data(svg_bytes)` draws inline SVG (as a mask in
+  the text color), so the tree's glyphs are the mockup's own 16px paths
+  (`ui/icons.rs`) without registering an asset source.
 - `Editor::new(&state).text_size(px(13.)).line_height(px(18.))` overrides the
   editor's default 1.5 line height.
 
