@@ -7,6 +7,7 @@ mod sidebar;
 mod state;
 mod status_bar;
 mod title_bar;
+mod watch;
 mod welcome;
 mod workspace;
 

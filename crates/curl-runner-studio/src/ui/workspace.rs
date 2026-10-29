@@ -1,9 +1,12 @@
 //! The root view: owns the [`AppState`], the editors and the file watcher,
 //! and lays out title bar, sidebar, editor and status bar.
 
-use super::app::{CloseTab, Import, NewCollection, NewRequest, OpenFolder, SaveFile, ui_font};
+use super::app::{
+    CloseTab, Import, NewCollection, NewRequest, OpenFolder, Quit, SaveFile, ui_font,
+};
 use super::state::{self, AppState};
 use super::status_bar::StatusBar;
+use super::watch;
 use super::{color, sidebar::request_label};
 use crate::model::collection::{Collection, TreeNode};
 use crate::model::document::CloseDecision;
@@ -15,7 +18,6 @@ use gpui_kit::component::input::{EditorState, Input, InputEvent, InputState};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
-use notify::Watcher as _;
 use std::cell::Cell;
 use std::collections::HashSet;
 use std::io;
@@ -331,32 +333,36 @@ impl Workspace {
         false
     }
 
+    /// Quits once unsaved changes are saved or dropped.
+    fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.settle_unsaved(
+            Rc::new(|this, _, cx| {
+                this.closing = true;
+                cx.quit();
+            }),
+            window,
+            cx,
+        );
+    }
+
     // Disk changes.
 
     fn watch(&mut self, root: &Path, window: &mut Window, cx: &mut Context<Self>) {
-        let (tx, mut rx) = futures::channel::mpsc::unbounded::<()>();
-        let watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
-            if event.is_ok_and(|e| !e.kind.is_access()) {
-                tx.unbounded_send(()).ok();
-            }
-        })
-        .and_then(|mut w| w.watch(root, notify::RecursiveMode::Recursive).map(|()| w));
-        self._watcher = match watcher {
-            Ok(w) => Some(w),
-            Err(e) => {
-                log::warn!("not watching {}: {e}", root.display());
-                None
-            }
-        };
+        let (watcher, mut rx) = watch::start(root);
+        self._watcher = watcher;
         self._watch_task = Some(cx.spawn_in(window, async move |this, cx| {
-            while rx.next().await.is_some() {
+            while let Some(mut changed) = rx.next().await {
                 // Coalesce a burst (a save, a checkout) into one refresh.
                 cx.background_executor()
                     .timer(Duration::from_millis(100))
                     .await;
-                while rx.try_recv().is_ok() {}
+                while let Ok(more) = rx.try_recv() {
+                    changed.extend(more);
+                }
                 if this
-                    .update_in(cx, |this, window, cx| this.disk_changed(window, cx))
+                    .update_in(cx, |this, window, cx| {
+                        this.disk_changed(&changed, window, cx)
+                    })
                     .is_err()
                 {
                     break;
@@ -365,22 +371,27 @@ impl Workspace {
         }));
     }
 
-    /// Something under the root changed: refresh the tree, reload clean
-    /// tabs whose file changed, flag dirty ones.
-    fn disk_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// YAML files or folders under the root changed: refresh the tree,
+    /// reload clean tabs whose file is in `changed`, flag dirty ones.
+    fn disk_changed(&mut self, changed: &[PathBuf], window: &mut Window, cx: &mut Context<Self>) {
         let Some(collection) = &mut self.state.collection else {
             return;
         };
         collection.refresh();
         let root = collection.root.clone();
-        for (doc, tab) in self.state.open.iter_mut().zip(&self.tabs) {
+        let reread = watch::tabs_to_reread(
+            self.state.open.iter().map(|d| d.rel_path.as_path()),
+            changed,
+        );
+        for ix in reread {
+            let doc = &mut self.state.open[ix];
             let Ok(disk) = std::fs::read_to_string(root.join(&doc.rel_path)) else {
                 continue;
             };
             let reload = !doc.is_dirty() && disk != doc.saved_text;
             doc.on_disk_changed(disk);
             if reload {
-                set_editor_text(&tab.editor, &doc.text, window, cx);
+                set_editor_text(&self.tabs[ix].editor, &doc.text, window, cx);
             }
         }
         cx.notify();
@@ -612,6 +623,7 @@ impl Render for Workspace {
                     this.request_close_tab(ix, window, cx);
                 }
             }))
+            .on_action(cx.listener(|this, _: &Quit, window, cx| this.quit(window, cx)))
             .on_action(cx.listener(|this, _: &NewRequest, _, cx| this.new_request(None, cx)))
             .on_action(cx.listener(|this, _: &NewCollection, _, cx| this.new_collection(cx)))
             .on_action(cx.listener(|this, _: &Import, _, cx| this.import(cx)))
@@ -689,10 +701,12 @@ fn three_buttons(
 
 #[cfg(test)]
 mod tests {
+    use super::super::app::Quit;
     use super::Workspace;
+    use gpui_kit::component::WindowExt as _;
     use gpui_kit::test::TestWindowExt as _;
     use gpui_kit::{
-        AnyWindowHandle, AppContext as _, Bounds, Entity, Point, Role, TestAppContext,
+        Action as _, AnyWindowHandle, AppContext as _, Bounds, Entity, Point, Role, TestAppContext,
         WindowBounds, WindowOptions, px, size,
     };
     use std::path::Path;
@@ -760,5 +774,41 @@ mod tests {
             assert!(ws.state.open[0].text.contains("# x"));
             assert!(ws.state.open[0].is_dirty());
         });
+    }
+
+    #[gpui_kit::test]
+    fn quit_and_window_close_ask_when_a_file_is_dirty(cx: &mut TestAppContext) {
+        let (_dir, window, ws) = open(cx);
+        cx.update_window(window, |_, window, cx| {
+            window.render_frame(cx);
+            window
+                .within("collection-tree")
+                .click(("tree-row", 4usize), cx);
+            window.render_frame(cx);
+            window.input("# x\n", cx);
+            // Dispatch is deferred to the end of this update.
+            window.dispatch_action(Quit.boxed_clone(), cx);
+        })
+        .unwrap();
+        cx.update_window(window, |_, window, cx| {
+            window.render_frame(cx);
+            assert!(window.has_active_dialog(cx), "quit must ask first");
+            window.close_dialog(cx);
+            let closes = ws.update(cx, |ws, cx| ws.should_close(window, cx));
+            assert!(!closes, "window close must ask first");
+            assert!(window.has_active_dialog(cx));
+        })
+        .unwrap();
+        ws.read_with(cx, |ws, _| assert!(!ws.closing));
+    }
+
+    #[gpui_kit::test]
+    fn clean_window_closes_without_asking(cx: &mut TestAppContext) {
+        let (_dir, window, ws) = open(cx);
+        cx.update_window(window, |_, window, cx| {
+            assert!(ws.update(cx, |ws, cx| ws.should_close(window, cx)));
+            assert!(!window.has_active_dialog(cx));
+        })
+        .unwrap();
     }
 }

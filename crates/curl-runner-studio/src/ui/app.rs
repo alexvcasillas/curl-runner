@@ -11,6 +11,8 @@ use std::sync::OnceLock;
 actions!(
     studio,
     [
+        /// Quit, asking first when files have unsaved changes (⌘Q).
+        Quit,
         /// Pick a folder and open it as the collection (⌘O).
         OpenFolder,
         /// Save the active file (⌘S).
@@ -27,10 +29,25 @@ actions!(
     ]
 );
 
+/// The macOS menu bar. Its actions reach the focused window first, so Quit
+/// goes through the workspace's unsaved-changes check.
+pub fn menus() -> Vec<Menu> {
+    vec![
+        Menu::new("curl-runner studio").items([MenuItem::action("Quit curl-runner studio", Quit)]),
+        Menu::new("File").items([
+            MenuItem::action("Open Folder…", OpenFolder),
+            MenuItem::action("Save", SaveFile),
+            MenuItem::separator(),
+            MenuItem::action("Close Tab", CloseTab),
+        ]),
+    ]
+}
+
 /// Every studio shortcut. They apply anywhere in the window, the editor
 /// included.
 pub fn keymap() -> Vec<KeyBinding> {
     vec![
+        KeyBinding::new("cmd-q", Quit, None),
         KeyBinding::new("cmd-o", OpenFolder, None),
         KeyBinding::new("cmd-s", SaveFile, None),
         KeyBinding::new("cmd-w", CloseTab, None),
@@ -66,6 +83,8 @@ pub fn run() {
                 cx.new(|cx| Workspace::new(folder, window, cx))
             })
             .expect("failed to open the studio window");
+            // With no window open there is nothing unsaved: quit directly.
+            cx.on_action(|_: &Quit, cx| cx.quit());
             cx.on_window_closed(|cx, _| {
                 if cx.windows().is_empty() {
                     cx.quit();
@@ -86,6 +105,7 @@ pub fn init(cx: &mut App) {
         Err(e) => log::error!("studio theme does not parse: {e}"),
     }
     cx.bind_keys(keymap());
+    cx.set_menus(menus());
 }
 
 static FONTS: OnceLock<(SharedString, SharedString)> = OnceLock::new();
@@ -302,7 +322,15 @@ mod tests {
             .collect();
         assert_eq!(
             keys,
-            ["cmd-o", "cmd-s", "cmd-w", "cmd-n", "cmd-shift-n", "cmd-i"]
+            [
+                "cmd-q",
+                "cmd-o",
+                "cmd-s",
+                "cmd-w",
+                "cmd-n",
+                "cmd-shift-n",
+                "cmd-i"
+            ]
         );
     }
 }

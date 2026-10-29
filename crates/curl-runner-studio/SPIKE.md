@@ -186,6 +186,17 @@ embedding.
 `.test_support()` on an element makes it queryable with
 `window.within(id).find_all_by_role(role)`.
 
+## Quit
+
+- `cx.set_menus(..)` with `Menu::new(..).items([MenuItem::action(..)])` builds
+  the menu bar; menu and key actions go to the focused window first, so the
+  workspace handles `Quit` (⌘Q) and settles unsaved changes before
+  `cx.quit()`. A global `cx.on_action::<Quit>` quits when no window is open.
+- GPUI 0.3.10 on macOS only implements `applicationWillTerminate`, not
+  `applicationShouldTerminate:`: a quit from the Dock menu, logout or
+  shutdown cannot be intercepted or cancelled (`cx.on_app_quit` runs but
+  cannot veto). Unsaved changes are lost in that case.
+
 ## Fallbacks
 
 None needed: all six items exist in 0.8.1. If a later version drops one, the
