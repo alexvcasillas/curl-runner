@@ -332,7 +332,7 @@ impl Workspace {
             .gap(px(ROW_GAP))
             .h(px(ROW_HEIGHT))
             .pr(px(8.))
-            .pl(px(8. + INDENT * depth as f32))
+            .pl(px(method_x(depth)))
             .rounded(px(6.))
             .text_size(px(13.))
             .text_color(color("text-secondary"))
@@ -404,11 +404,10 @@ impl Workspace {
                         };
                         let toggle = rel_path.clone();
                         let chevron = if group.count == 0 {
-                            div().flex_none().size(px(CHEVRON_SIZE)).into_any_element()
+                            div().into_any_element()
                         } else {
                             div()
                                 .id(("tree-chevron", ix))
-                                .flex_none()
                                 .child(chevron(group.open))
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     cx.stop_propagation();
@@ -421,29 +420,21 @@ impl Workspace {
                                 .into_any_element()
                         };
                         let stack = Stack::new(group.methods.iter().map(String::as_str));
-                        // The chevron hangs into the indent, so the dots
-                        // starts where single rows put their badge.
-                        let pl = 8. + INDENT * depth as f32;
-                        let hang = if pl >= MULTI_HANG + 2. {
-                            MULTI_HANG
-                        } else {
-                            0.
-                        };
-                        row.pl(px(pl - hang))
+                        row.relative()
                             .child(
                                 div()
-                                    .flex()
-                                    .flex_none()
-                                    .items_center()
-                                    .justify_between()
-                                    .w(px(hang.max(MULTI_HANG) + stack.slot_width()))
-                                    .child(chevron)
-                                    .child(method_stack(
-                                        &stack,
-                                        fill,
-                                        (!selected).then(|| (group_name, color("surface-100"))),
-                                    )),
+                                    .absolute()
+                                    .left(px(chevron_x(depth)))
+                                    .top(px((ROW_HEIGHT - CHEVRON_SIZE) / 2.))
+                                    .size(px(CHEVRON_SIZE))
+                                    .child(chevron),
                             )
+                            .child(method_stack(
+                                &stack,
+                                METHOD_BADGE_WIDTH,
+                                fill,
+                                (!selected).then(|| (group_name, color("surface-100"))),
+                            ))
                             .child(name_cell(label))
                             .child(count_cell(group.count))
                     }
@@ -643,7 +634,28 @@ const METHOD_BADGE_WIDTH: f32 = 34.;
 const ROW_GAP: f32 = 8.;
 /// What a multi-request row's chevron takes left of the method slot: the
 /// chevron and a gap.
-const MULTI_HANG: f32 = CHEVRON_SIZE + 4.;
+const MULTI_HANG: f32 = CHEVRON_SIZE + 2.;
+/// Left padding of a depth-0 row: room for a multi-request file's chevron
+/// left of the method column.
+const LEAD: f32 = MULTI_HANG;
+
+/// Where the method column (badge or dots) starts at `depth`, px.
+pub fn method_x(depth: usize) -> f32 {
+    LEAD + INDENT * depth as f32
+}
+
+/// Where the file or request name starts at `depth`, px: the same for
+/// single- and multi-request rows.
+#[cfg(test)]
+pub fn name_x(depth: usize) -> f32 {
+    method_x(depth) + METHOD_BADGE_WIDTH + ROW_GAP
+}
+
+/// Where a multi-request row's chevron starts at `depth`, px: left of the
+/// method column.
+pub fn chevron_x(depth: usize) -> f32 {
+    method_x(depth) - MULTI_HANG
+}
 
 /// The method as coloured mono text in a fixed slot so names line up.
 pub fn method_badge(method: Option<&str>) -> Div {
@@ -697,8 +709,9 @@ fn tree_menu(
 #[cfg(test)]
 mod tests {
     use super::{
-        BADGE_TEXT_SIZE, Group, METHOD_BADGE_WIDTH, ROW_GAP, Row, RowKind, TreeNode,
-        badge_text_size, request_label, visible_rows,
+        BADGE_TEXT_SIZE, CHEVRON_SIZE, Group, INDENT, METHOD_BADGE_WIDTH, MULTI_HANG, ROW_GAP, Row,
+        RowKind, TreeNode, badge_text_size, chevron_x, method_x, name_x, request_label,
+        visible_rows,
     };
     use crate::model::collection::RequestEntry;
 
@@ -706,6 +719,28 @@ mod tests {
     const MONO_ADVANCE_EM: f32 = 0.61;
     use std::collections::HashSet;
     use std::path::PathBuf;
+
+    #[test]
+    fn multi_and_single_rows_share_name_and_method_x() {
+        for depth in 0..4 {
+            // Single rows: padding = method_x, then badge, gap, name.
+            let single_name = method_x(depth) + METHOD_BADGE_WIDTH + ROW_GAP;
+            assert_eq!(name_x(depth), single_name);
+            // Multi rows: same padding; the chevron hangs left of it.
+            assert!(chevron_x(depth) >= 0.);
+            assert_eq!(chevron_x(depth) + MULTI_HANG, method_x(depth));
+            assert!(chevron_x(depth) + CHEVRON_SIZE <= method_x(depth));
+        }
+        assert_eq!(name_x(1) - name_x(0), INDENT);
+    }
+
+    #[test]
+    fn dots_start_at_the_badge_x_and_chip_stays_near_the_name() {
+        // The stack is left-aligned at offset 0 of the method column.
+        assert_eq!(super::Stack::dot_left(0), 0.);
+        let max = super::Stack::new(["GET", "POST", "PUT", "PATCH"]);
+        assert!(max.width() <= METHOD_BADGE_WIDTH + ROW_GAP);
+    }
 
     #[test]
     fn method_badge_fits_every_method_with_room_before_the_name() {

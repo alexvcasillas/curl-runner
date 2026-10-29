@@ -17,12 +17,13 @@ pub const STEP: f32 = 7.;
 /// Most dots; further methods go to the `+N` chip.
 pub const MAX: usize = 3;
 /// Gap between the last dot and the `+N` chip, px.
-pub const CHIP_GAP: f32 = 6.;
+pub const CHIP_GAP: f32 = 3.;
 pub const CHIP_H: f32 = 14.;
-pub const CHIP_PAD: f32 = 4.;
+pub const CHIP_PAD: f32 = 2.5;
 pub const CHIP_RADIUS: f32 = 4.;
 pub const TEXT_SIZE: f32 = 9.5;
 /// Geist Mono's advance, em.
+#[cfg(test)]
 const MONO_ADVANCE_EM: f32 = 0.6;
 
 /// What the stack shows for a file's methods.
@@ -68,6 +69,7 @@ impl Stack {
         self.dots_width() + CHIP_GAP
     }
 
+    #[cfg(test)]
     /// Width of the whole stack, `+N` chip included, px.
     pub fn width(&self) -> f32 {
         match self.more {
@@ -75,33 +77,29 @@ impl Stack {
             n => self.chip_left() + chip_width(n),
         }
     }
-
-    /// Width the stack takes in a row, px: [`Stack::width`] plus the last
-    /// dot's ring when no chip follows it, so the name's gap is measured
-    /// from the visible edge.
-    pub fn slot_width(&self) -> f32 {
-        match (self.dots.len(), self.more) {
-            (0, _) => 0.,
-            (_, 0) => self.width() + RING,
-            _ => self.width(),
-        }
-    }
 }
 
 /// The `+N` chip's width, px.
+#[cfg(test)]
 pub fn chip_width(n: usize) -> f32 {
     let chars = format!("+{n}").len() as f32;
     chars * MONO_ADVANCE_EM * TEXT_SIZE + 2. * CHIP_PAD
 }
 
-/// The stack for `stack`, in a slot of its own [`Stack::slot_width`]. `row_bg` is the ring color
+/// The stack for `stack`, left-aligned in a `column`-px slot (the tree's
+/// method column; a `+N` chip may spill into the gap after it). `row_bg` is the ring color
 /// at rest; while the pointer is over the `group` row the rings take
 /// `hover_bg` (when given) so they keep matching the row.
-pub fn method_stack(stack: &Stack, row_bg: Hsla, hover_bg: Option<(SharedString, Hsla)>) -> Div {
+pub fn method_stack(
+    stack: &Stack,
+    column: f32,
+    row_bg: Hsla,
+    hover_bg: Option<(SharedString, Hsla)>,
+) -> Div {
     let mut slot = div()
         .relative()
         .flex_none()
-        .w(px(stack.slot_width()))
+        .w(px(column))
         .h(px(DOT))
         .font_family(mono_font())
         .font_weight(FontWeight::MEDIUM);
@@ -148,7 +146,7 @@ pub fn method_stack(stack: &Stack, row_bg: Hsla, hover_bg: Option<(SharedString,
 
 #[cfg(test)]
 mod tests {
-    use super::{CHIP_GAP, DOT, MAX, RING, STEP, Stack, chip_width};
+    use super::{CHIP_GAP, DOT, MAX, STEP, Stack, chip_width};
 
     #[test]
     fn dots_keep_distinct_methods_in_order() {
@@ -191,13 +189,6 @@ mod tests {
         let s = Stack::new(["GET", "POST", "PUT", "PATCH", "DELETE"]);
         assert_eq!(s.dots_width(), 22.);
         assert_eq!(s.chip_left(), 22. + CHIP_GAP);
-        assert_eq!(s.width(), 28. + chip_width(2));
-    }
-
-    #[test]
-    fn slot_hugs_its_content() {
-        assert_eq!(Stack::new(["GET"]).slot_width(), DOT + RING);
-        let s = Stack::new(["GET", "POST", "PUT", "PATCH"]);
-        assert_eq!(s.slot_width(), 22. + CHIP_GAP + chip_width(1));
+        assert_eq!(s.width(), 22. + CHIP_GAP + chip_width(2));
     }
 }
