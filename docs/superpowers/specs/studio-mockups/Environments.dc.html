@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Environments</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#000}
+a{color:#52a8ff}a:hover{color:#8ec5ff}
+button{font:inherit;color:inherit}
+.row{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border-radius:6px;font-size:13px;color:#a1a1a1;white-space:nowrap}
+.m{font-family:'Geist Mono',ui-monospace,monospace;font-size:10px;font-weight:500;width:34px;flex-shrink:0;letter-spacing:.02em}
+.ed{position:relative;flex:1;min-height:0;overflow:hidden;padding:8px 0;font-family:'Geist Mono',ui-monospace,monospace;font-size:13px;white-space:pre}
+.ln{display:flex;height:18px;align-items:center;padding-right:24px}
+.ln.cur{background:#111}
+.g{display:flex;align-items:center;width:64px;flex-shrink:0;height:18px;color:#808080}
+.g>.n{width:36px;text-align:right}
+.g>.f{width:24px;display:flex;align-items:center;justify-content:center;color:#808080}
+.ig{display:inline-block;width:2ch;height:18px;flex-shrink:0;box-shadow:inset 1px 0 #1c1c1c}
+.ig.a{box-shadow:inset 1px 0 #3a3a3a}
+.fold{display:inline-flex;align-items:center;height:14px;padding:0 5px;margin-left:6px;border-radius:3px;background:#1f1f1f;color:#a1a1a1;font-size:11px}
+.mt{background:rgba(82,168,255,.14);border-radius:2px}
+.mt.cur{background:rgba(82,168,255,.28);box-shadow:0 0 0 1px #52a8ff}
+.sq{text-decoration:underline wavy #ffb224;text-decoration-thickness:1px;text-underline-offset:4px}
+.caret{display:inline-block;width:2px;height:15px;background:#ededed;margin-left:1px}
+.ghost{color:#8a6a1f;font-style:italic;font-family:Geist,sans-serif;font-size:12px}
+.anchor{position:relative}
+.pop{position:absolute;top:20px;left:-4px;z-index:2;width:340px;white-space:normal;font-family:Geist,sans-serif;font-size:12px;line-height:1.45;color:#ededed;background:#0f0f0f;border:1px solid #2e2e2e;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.6)}
+.pop code{font-family:'Geist Mono',monospace;font-size:11.5px;padding:0 3px;border-radius:3px;background:#1f1f1f}
+.qa{display:flex;align-items:center;gap:8px;height:26px;padding:0 8px;border:0;border-radius:5px;background:none;color:#a1a1a1;font-size:12px;cursor:pointer}
+.qa kbd{font-family:'Geist Mono',monospace;font-size:10.5px;color:#8f8f8f}
+.find{position:absolute;top:8px;right:20px;z-index:3;display:flex;align-items:center;gap:6px;width:300px;height:32px;padding:0 6px 0 10px;font-family:Geist,sans-serif;font-size:12px;background:#0f0f0f;border:1px solid #2e2e2e;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.fb{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;border-radius:4px;color:#8f8f8f;font-family:'Geist Mono',monospace;font-size:11px}
+.sb{position:absolute;top:0;right:0;bottom:0;width:10px;border-left:1px solid #141414}
+.k{color:#ededed}.s{color:#62c073}.d{color:#c792ff}.v{color:#ffb224}.c{color:#8f8f8f}.p{color:#a1a1a1}
+.tab{height:32px;padding:0 12px;display:flex;align-items:center;gap:6px;font-size:13px;color:#a1a1a1;border:0;background:none;border-bottom:1px solid transparent}
+.btn{height:32px;padding:0 12px;border:1px solid #2e2e2e;border-radius:6px;background:#0a0a0a;color:#ededed;display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;white-space:nowrap}
+.btn.sm{height:28px;padding:0 10px;font-size:12px}
+.btn.pri{background:#ededed;color:#0a0a0a;border-color:#ededed;font-weight:500}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;border-radius:999px;padding:2px 8px;white-space:nowrap}
+.ok{color:#62c073;background:rgba(98,192,115,.1);border:1px solid rgba(98,192,115,.25)}
+.bad{color:#ff6166;background:rgba(255,97,102,.1);border:1px solid rgba(255,97,102,.25)}
+.warnp{color:#ffb224;background:rgba(255,178,36,.1);border:1px solid rgba(255,178,36,.25)}
+.neu{color:#a1a1a1;border:1px solid #2e2e2e}
+.mono{font-family:'Geist Mono',ui-monospace,monospace}
+.lbl{font-size:12px;font-weight:500;color:#a1a1a1}
+.card{border:1px solid #1f1f1f;border-radius:8px}
+.th{font-size:12px;color:#8f8f8f;font-weight:500}
+.tr{display:flex;align-items:center;gap:12px;height:28px;padding:0 16px;border-bottom:1px solid #141414;font-size:13px;color:#ededed}
+.grp{display:flex;align-items:center;gap:8px;height:28px;padding:0 16px;background:#0f0f0f;border-bottom:1px solid #1f1f1f;font-size:12px;color:#a1a1a1}
+.kbd{font-family:'Geist Mono',monospace;font-size:11px;border:1px solid #2e2e2e;border-radius:4px;padding:0 5px;color:#a1a1a1}
+.menu{position:absolute;z-index:5;background:#0f0f0f;border:1px solid #2e2e2e;border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.6);padding:4px;font-size:13px}
+.mi{display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:5px;color:#ededed;white-space:nowrap}
+.dif-a{background:rgba(98,192,115,.1);color:#62c073}
+.dif-r{background:rgba(255,97,102,.1);color:#ff6166}
+</style>
+</helmet>
+<div style="height: 900px; width: 100%; display: flex; flex-direction: column; background: #0a0a0a; color: #ededed; font-family: Geist, ui-sans-serif, system-ui, sans-serif; font-size: 13px; overflow: hidden">
+
+  <!-- Title bar -->
+  <header style="height: 44px; flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 16px; border-bottom: 1px solid #1f1f1f; background: #0a0a0a">
+    <div aria-hidden="true" style="display: flex; gap: 8px; margin-right: 8px">
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #3a3a3a"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #3a3a3a"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #3a3a3a"></span>
+    </div>
+    <button type="button" style="display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border: 0; background: none; border-radius: 6px; cursor: pointer">
+      <span aria-hidden="true" style="width: 20px; height: 20px; border-radius: 50%; background: linear-gradient(135deg,#ededed,#878787)"></span>
+      <span style="font-weight: 500">Acme</span>
+    </button>
+    <span aria-hidden="true" style="color: #3a3a3a; font-size: 18px">/</span>
+    <button type="button" style="display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border: 0; background: none; border-radius: 6px; cursor: pointer">
+      <span style="font-weight: 500">Payments API</span>
+      <span style="font-size: 11px; color: #a1a1a1; border: 1px solid #2e2e2e; border-radius: 999px; padding: 1px 8px">Shared · 3</span>
+      <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M5 6l3 3 3-3"/></svg>
+    </button>
+    <div style="flex: 1"></div>
+    <button type="button" style="display: flex; align-items: center; gap: 8px; width: 280px; height: 32px; padding: 0 8px 0 10px; border: 1px solid #2e2e2e; border-radius: 6px; background: #0a0a0a; color: #a1a1a1; cursor: pointer">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+      <span style="flex: 1; text-align: left">Search requests…</span>
+      <kbd style="font-family: 'Geist Mono', monospace; font-size: 11px; border: 1px solid #2e2e2e; border-radius: 4px; padding: 0 5px; color: #a1a1a1">⌘K</kbd>
+    </button>
+    <div style="flex: 1"></div>
+    <label style="display: flex; align-items: center; gap: 8px; color: #a1a1a1">
+      <span>Environment</span>
+      <span style="position: relative; display: flex; align-items: center">
+        <select style="height: 32px; padding: 0 28px 0 10px; border: 1px solid #2e2e2e; border-radius: 6px; background: #0a0a0a; color: #ededed; font: inherit; appearance: none">
+          <option>Staging</option>
+          <option>Production</option>
+          <option>Local</option>
+        </select>
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5" style="position: absolute; right: 9px; pointer-events: none"><path d="M5 6l3 3 3-3"/></svg>
+      </span>
+    </label>
+    <button type="button" style="height: 32px; padding: 0 12px; border: 1px solid #2e2e2e; border-radius: 6px; background: #0a0a0a; cursor: pointer">Run collection</button>
+    <button type="button" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: #ededed; color: #0a0a0a; font-weight: 500; cursor: pointer">
+      <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l9-5.5z"/></svg>
+      Run
+      <kbd style="font-family: 'Geist Mono', monospace; font-size: 11px; color: #4d4d4d">⌘↵</kbd>
+    </button>
+  </header>
+
+  <div style="flex: 1; min-height: 0; display: flex; flex-wrap: wrap">
+
+    <!-- Left: settings -->
+    <nav aria-label="Settings" style="flex: 0 0 240px; min-width: 0; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; border-right: 1px solid #1f1f1f; background: #0a0a0a">
+      <div style="display: flex; align-items: center; gap: 8px; padding: 4px 8px 12px; color: #a1a1a1; font-size: 12px"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 4L6 8l4 4"/></svg> Back to workspace</div>
+      <div class="lbl" style="padding: 4px 8px 6px">Payments API</div>
+        <div class="row"><span style="flex: 1">General</span></div>
+        <div class="row" style="background: #1f1f1f; color: #ededed"><span style="flex: 1">Environments</span><span style="font-size: 11px; color: #878787">3</span></div>
+        <div class="row"><span style="flex: 1">Sharing</span><span style="font-size: 11px; color: #878787">3</span></div>
+        <div class="row"><span style="flex: 1">Run defaults</span></div>
+      <div class="lbl" style="padding: 14px 8px 6px">Workspace · Acme</div>
+        <div class="row"><span style="flex: 1">Members</span></div>
+        <div class="row"><span style="flex: 1">Sync &amp; hosting</span></div>
+        <div class="row"><span style="flex: 1">Billing</span></div>
+      <div class="lbl" style="padding: 14px 8px 6px">App</div>
+        <div class="row"><span style="flex: 1">Appearance</span></div>
+        <div class="row"><span style="flex: 1">Editor</span></div>
+        <div class="row"><span style="flex: 1">Keyboard shortcuts</span></div>
+        <div class="row"><span style="flex: 1">Updates</span></div>
+        <div class="row"><span style="flex: 1">Account</span></div>
+    </nav>
+
+    <!-- Middle: variables -->
+    <main aria-label="Environments" style="flex: 1 1 0; min-width: 0; height: 100%; display: flex; flex-direction: column; background: #0a0a0a">
+      <div style="padding: 20px 24px 12px; display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 18px; font-weight: 500; letter-spacing: -.01em">Environments</span>
+        <span style="font-size: 13px; color: #a1a1a1">Variables fill <span class="mono" style="font-size: 12px">${NAME}</span> placeholders in every request of this collection.</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 4px; padding: 0 24px 12px; border-bottom: 1px solid #1f1f1f">
+        <div role="tablist" aria-label="Environment" style="display: flex; gap: 4px">
+          <button type="button" role="tab" aria-selected="false" style="display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border: 0; border-radius: 6px; color: #a1a1a1; font-size: 13px; cursor: pointer"><span aria-hidden="true" style="width: 6px; height: 6px; border-radius: 50%; background: #878787"></span>Local</button>
+          <button type="button" role="tab" aria-selected="true" style="display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border: 0; border-radius: 6px; background: #1f1f1f; color: #ededed; font-size: 13px; cursor: pointer"><span aria-hidden="true" style="width: 6px; height: 6px; border-radius: 50%; background: #62c073"></span>Staging</button>
+          <button type="button" role="tab" aria-selected="false" style="display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border: 0; border-radius: 6px; color: #a1a1a1; font-size: 13px; cursor: pointer"><span aria-hidden="true" style="width: 6px; height: 6px; border-radius: 50%; background: #ffb224"></span>Production</button>
+        </div>
+        <button type="button" class="btn sm" style="border-style: dashed; color: #a1a1a1"><svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3v10M3 8h10"/></svg> New environment</button>
+        <div style="flex: 1"></div>
+        <button type="button" class="btn sm">Import .env</button>
+        <button type="button" class="btn sm pri"><svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3v10M3 8h10"/></svg> Add variable</button>
+      </div>
+
+      <div role="note" style="display: flex; gap: 10px; margin: 16px 24px 0; padding: 12px 14px; border: 1px solid #1f2a3a; background: #0b1220; border-radius: 8px; font-size: 12px; line-height: 1.5; color: #ededed">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#52a8ff" stroke-width="1.5" style="flex-shrink: 0; margin-top: 2px"><circle cx="8" cy="8" r="6"/><path d="M8 7.25v4M8 5v.5"/></svg>
+        <span><b style="font-weight: 500">How customers bring their own values.</b> When you share this collection, people get the variable names, descriptions and non-secret defaults. Secrets are never shared or synced: each person enters their own, and it stays in their device keychain. Values marked <span style="color: #a1a1a1">Shared by Acme</span> are locked for them.</span>
+      </div>
+
+      <div style="margin: 16px 24px; border: 1px solid #1f1f1f; border-radius: 8px; overflow: hidden">
+        <div style="display: flex; align-items: center; gap: 12px; height: 32px; padding: 0 16px; border-bottom: 1px solid #1f1f1f; background: #0f0f0f">
+          <span class="th" style="width: 180px">Name</span><span class="th" style="flex: 1">Value</span><span class="th" style="width: 150px">Source</span><span class="th" style="width: 110px">Scope</span>
+        </div>
+          <div class="tr" style="height: 40px;"><span style="width: 180px; display: flex; align-items: center; gap: 8px"><span class="mono" style="font-size: 12px; color: #ededed">BASE_URL</span></span><span style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap"><span class="mono" style="font-size: 12px">https://staging.api.example.com</span></span><span style="width: 150px"><span class="pill neu" style="font-weight: 400">Collection default</span></span><span style="width: 110px; font-size: 12px; color: #a1a1a1">All requests</span></div>
+          <div class="tr" style="height: 40px; background: #141414; box-shadow: inset 2px 0 #ededed;"><span style="width: 180px; display: flex; align-items: center; gap: 8px"><span class="mono" style="font-size: 12px; color: #ededed">API_TOKEN</span><span class="pill" style="font-weight: 400; font-size: 11px; padding: 0 6px; color: #a1a1a1; border: 1px solid #2e2e2e">secret</span></span><span style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap"><span class="mono" style="color: #a1a1a1; letter-spacing: .1em">••••••••••••</span><button type="button" aria-label="Reveal value" style="width: 24px; height: 24px; border: 0; background: none; color: #a1a1a1; display: grid; place-items: center; cursor: pointer"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg></button></span><span style="width: 150px"><span class="pill" style="font-weight: 400; color: #c792ff; border: 1px solid rgba(199,146,255,.3); background: rgba(199,146,255,.08)"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5.5" cy="10.5" r="3"/><path d="M7.7 8.3L13 3M11 5l1.5 1.5"/></svg> My keychain</span></span><span style="width: 110px; font-size: 12px; color: #a1a1a1">All requests</span></div>
+          <div class="tr" style="height: 40px;"><span style="width: 180px; display: flex; align-items: center; gap: 8px"><span class="mono" style="font-size: 12px; color: #ededed">WEBHOOK_SECRET</span><span class="pill" style="font-weight: 400; font-size: 11px; padding: 0 6px; color: #a1a1a1; border: 1px solid #2e2e2e">secret</span></span><span style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap"><span class="mono" style="color: #a1a1a1; letter-spacing: .1em">••••••••••••</span><button type="button" aria-label="Reveal value" style="width: 24px; height: 24px; border: 0; background: none; color: #a1a1a1; display: grid; place-items: center; cursor: pointer"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg></button></span><span style="width: 150px"><span class="pill" style="font-weight: 400; color: #c792ff; border: 1px solid rgba(199,146,255,.3); background: rgba(199,146,255,.08)"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5.5" cy="10.5" r="3"/><path d="M7.7 8.3L13 3M11 5l1.5 1.5"/></svg> My keychain</span></span><span style="width: 110px; font-size: 12px; color: #a1a1a1">webhooks/*</span></div>
+          <div class="tr" style="height: 40px; background: rgba(255,178,36,.05);"><span style="width: 180px; display: flex; align-items: center; gap: 8px"><span class="mono" style="font-size: 12px; color: #ffb224">ACCOUNT_ID</span></span><span style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap"><span style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #ffb224"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#ffb224" stroke-width="1.6"><path d="M8 2l6.5 11.5h-13z"/><path d="M8 6.5v3M8 11.5v.5"/></svg> Used by 3 requests</span><button type="button" class="btn sm" style="height: 24px">Set value</button></span><span style="width: 150px"><span class="pill warnp" style="font-weight: 400">Not set</span></span><span style="width: 110px; font-size: 12px; color: #a1a1a1">customers/*</span></div>
+          <div class="tr" style="height: 40px;"><span style="width: 180px; display: flex; align-items: center; gap: 8px"><span class="mono" style="font-size: 12px; color: #ededed">CURRENCY</span></span><span style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap"><span class="mono" style="font-size: 12px">eur</span></span><span style="width: 150px"><span class="pill neu" style="font-weight: 400"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg> Shared by Acme</span></span><span style="width: 110px; font-size: 12px; color: #a1a1a1">All requests</span></div>
+          <div class="tr" style="height: 40px;"><span style="width: 180px; display: flex; align-items: center; gap: 8px"><span class="mono" style="font-size: 12px; color: #ededed">CHARGE_ID</span></span><span style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap"><span class="mono" style="font-size: 12px; color: #8f8f8f">from create-charge → body.id</span></span><span style="width: 150px"><span class="pill" style="font-weight: 400; color: #52a8ff; border: 1px solid rgba(82,168,255,.3); background: rgba(82,168,255,.08)">Captured at run</span></span><span style="width: 110px; font-size: 12px; color: #a1a1a1">charges/*</span></div>
+          <div class="tr" style="height: 40px;"><span style="width: 180px; display: flex; align-items: center; gap: 8px"><span class="mono" style="font-size: 12px; color: #ededed">CUSTOMER_EMAIL</span></span><span style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap"><span class="mono" style="font-size: 12px">test+studio@example.com</span></span><span style="width: 150px"><span class="pill neu" style="font-weight: 400">Collection default</span></span><span style="width: 110px; font-size: 12px; color: #a1a1a1">customers/*</span></div>
+        <div style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; color: #a1a1a1; font-size: 13px"><svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3v10M3 8h10"/></svg> Add variable</div>
+      </div>
+
+      <div style="display: flex; gap: 16px; padding: 0 24px; font-size: 12px; color: #8f8f8f; flex-wrap: wrap">
+        <span style="display: flex; align-items: center; gap: 6px"><span style="color: #c792ff; display: flex"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5.5" cy="10.5" r="3"/><path d="M7.7 8.3L13 3M11 5l1.5 1.5"/></svg></span> Secret — stored in local keychain, never synced</span>
+        <span style="display: flex; align-items: center; gap: 6px"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg> Set by the collection owner, read only for others</span>
+        <span>Resolution order: captured → my keychain → environment → collection default</span>
+      </div>
+    </main>
+
+    <!-- Right: variable detail -->
+    <aside aria-label="Variable detail" style="flex: 0 0 380px; min-width: 0; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px; padding: 20px; border-left: 1px solid #1f1f1f; background: #0a0a0a">
+      <div style="display: flex; align-items: center; gap: 8px">
+        <span class="mono" style="font-size: 14px; font-weight: 500">API_TOKEN</span>
+        <span class="pill" style="font-weight: 400; color: #c792ff; border: 1px solid rgba(199,146,255,.3); background: rgba(199,146,255,.08)"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5.5" cy="10.5" r="3"/><path d="M7.7 8.3L13 3M11 5l1.5 1.5"/></svg> Secret</span>
+        <div style="flex: 1"></div>
+        <span style="font-size: 12px; color: #8f8f8f">Staging</span>
+      </div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <span class="lbl">Value</span>
+          <span style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 6px 0 10px; border: 1px solid #2e2e2e; border-radius: 6px; background: #0a0a0a"><span class="mono" style="flex: 1; color: #a1a1a1; letter-spacing: .1em">••••••••••••••••••••</span><button type="button" aria-label="Reveal value" style="width: 24px; height: 24px; border: 0; background: none; color: #a1a1a1; display: grid; place-items: center; cursor: pointer"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg></button><button type="button" aria-label="Copy" style="width: 24px; height: 24px; border: 0; background: none; color: #a1a1a1; display: grid; place-items: center"><svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M3 10.5V3.5A1 1 0 014 2.5h7"/></svg></button></span>
+          <span style="font-size: 12px; color: #8f8f8f; line-height: 1.45">Stored in macOS Keychain under “curl-runner studio · Payments API · Staging”.</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <span class="lbl">Description shown to people you share with</span>
+          <span style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 6px 0 10px; border: 1px solid #2e2e2e; border-radius: 6px; background: #0a0a0a; height: auto; padding: 8px 10px; line-height: 1.45; color: #ededed">Your secret API key. Create one at dashboard.example.com/keys with the charges:write scope.</span>
+          
+        </div>
+        <label style="display: flex; align-items: flex-start; gap: 10px; font-size: 13px">
+          <span aria-hidden="true" style="width: 28px; height: 16px; border-radius: 999px; background: #ededed; position: relative; flex-shrink: 0; margin-top: 2px"><span style="position: absolute; right: 2px; top: 2px; width: 12px; height: 12px; border-radius: 50%; background: #0a0a0a"></span></span>
+          <span style="display: flex; flex-direction: column; gap: 2px"><span>Secret</span><span style="font-size: 12px; color: #8f8f8f">Masked in the UI, logs and exported reports. Never leaves this device.</span></span>
+        </label>
+        <label style="display: flex; align-items: flex-start; gap: 10px; font-size: 13px">
+          <span aria-hidden="true" style="width: 28px; height: 16px; border-radius: 999px; background: #ededed; position: relative; flex-shrink: 0; margin-top: 2px"><span style="position: absolute; right: 2px; top: 2px; width: 12px; height: 12px; border-radius: 50%; background: #0a0a0a"></span></span>
+          <span style="display: flex; flex-direction: column; gap: 2px"><span>Required for shared users</span><span style="font-size: 12px; color: #8f8f8f">People opening a shared link are asked for it before their first run.</span></span>
+        </label>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <span class="lbl">Used by 18 requests</span>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px">
+          <span class="pill neu" style="font-weight: 400">auth · 2</span><span class="pill neu" style="font-weight: 400">charges · 5</span><span class="pill neu" style="font-weight: 400">customers · 6</span><span class="pill neu" style="font-weight: 400">payouts · 5</span>
+        </div>
+      </div>
+      <div style="flex: 1"></div>
+      <div style="display: flex; gap: 8px">
+        <button type="button" class="btn sm" style="color: #ff6166">Delete variable</button>
+        <div style="flex: 1"></div>
+        <button type="button" class="btn sm">Cancel</button>
+        <button type="button" class="btn sm pri">Save</button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Status bar -->
+  <footer style="height: 28px; flex-shrink: 0; display: flex; align-items: center; gap: 16px; padding: 0 16px; border-top: 1px solid #1f1f1f; font-size: 12px; color: #a1a1a1">
+    <span>Staging</span><span>6 of 7 variables set · 1 missing</span>
+    <div style="flex: 1"></div>
+    <span>Keychain unlocked</span><span>curl-runner 2.1.1</span>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

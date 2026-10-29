@@ -1,0 +1,157 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-10-29T08:40:00Z" },
+  "title": "curl-runner studio",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Workspace \u2014 three columns",
+      "expand": "fill"
+    },
+    "Errors.dc.html": {
+      "x": 1540,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "YAML errors \u2014 unsupported properties & values",
+      "expand": "fill"
+    },
+    "Welcome.dc.html": {
+      "x": 0,
+      "y": 1100,
+      "w": 1440,
+      "h": 900,
+      "title": "First launch \u2014 empty state",
+      "expand": "fill"
+    },
+    "SignIn.dc.html": {
+      "x": 1540,
+      "y": 1100,
+      "w": 1440,
+      "h": 900,
+      "title": "Sign in & server choice",
+      "expand": "fill"
+    },
+    "Palette.dc.html": {
+      "x": 3080,
+      "y": 1100,
+      "w": 1440,
+      "h": 900,
+      "title": "Command palette \u2318K",
+      "expand": "fill"
+    },
+    "Settings.dc.html": {
+      "x": 4620,
+      "y": 1100,
+      "w": 1440,
+      "h": 900,
+      "title": "Settings \u2014 Accounts & sync",
+      "expand": "fill"
+    },
+    "RunCollection.dc.html": {
+      "x": 0,
+      "y": 2200,
+      "w": 1440,
+      "h": 900,
+      "title": "Run collection \u2014 in progress & results",
+      "expand": "fill"
+    },
+    "FailedRequest.dc.html": {
+      "x": 1540,
+      "y": 2200,
+      "w": 1440,
+      "h": 900,
+      "title": "Failed request \u2014 expected vs actual",
+      "expand": "fill"
+    },
+    "History.dc.html": {
+      "x": 3080,
+      "y": 2200,
+      "w": 1440,
+      "h": 900,
+      "title": "Run history",
+      "expand": "fill"
+    },
+    "Environments.dc.html": {
+      "x": 4620,
+      "y": 2200,
+      "w": 1440,
+      "h": 900,
+      "title": "Environments & variables",
+      "expand": "fill"
+    },
+    "Share.dc.html": {
+      "x": 0,
+      "y": 3300,
+      "w": 1440,
+      "h": 900,
+      "title": "Share collection dialog",
+      "expand": "fill"
+    },
+    "OpenShared.dc.html": {
+      "x": 1540,
+      "y": 3300,
+      "w": 1440,
+      "h": 900,
+      "title": "Opening a shared link",
+      "expand": "fill"
+    },
+    "ReadOnly.dc.html": {
+      "x": 3080,
+      "y": 3300,
+      "w": 1440,
+      "h": 900,
+      "title": "Customer view \u2014 read-only collection",
+      "expand": "fill"
+    },
+    "Import.dc.html": {
+      "x": 4620,
+      "y": 3300,
+      "w": 1440,
+      "h": 900,
+      "title": "Import dialog",
+      "expand": "fill"
+    },
+    "NewRequest.dc.html": {
+      "x": 6160,
+      "y": 3300,
+      "w": 1440,
+      "h": 900,
+      "title": "New request / new collection",
+      "expand": "fill"
+    },
+    "SyncConflict.dc.html": {
+      "x": 7700,
+      "y": 3300,
+      "w": 1440,
+      "h": 900,
+      "title": "Offline & sync conflict",
+      "expand": "fill"
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Errors.dc.html",
+    "Welcome.dc.html",
+    "SignIn.dc.html",
+    "Palette.dc.html",
+    "Settings.dc.html",
+    "RunCollection.dc.html",
+    "FailedRequest.dc.html",
+    "History.dc.html",
+    "Environments.dc.html",
+    "Share.dc.html",
+    "OpenShared.dc.html",
+    "ReadOnly.dc.html",
+    "Import.dc.html",
+    "NewRequest.dc.html",
+    "SyncConflict.dc.html"
+  ],
+  "notes": {},
+  "designSystems": []
+}
