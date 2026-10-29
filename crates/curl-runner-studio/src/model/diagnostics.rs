@@ -17,8 +17,6 @@ pub struct StudioDiagnostic {
     pub issue: Option<Issue>,
 }
 
-// Not wired yet: the editor diagnostics view and Run button use it.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Counts {
     pub errors: usize,
@@ -54,8 +52,6 @@ pub fn diagnose(text: &str) -> Vec<StudioDiagnostic> {
     }
 }
 
-// Not wired yet: the editor diagnostics view and Run button use it.
-#[allow(dead_code)]
 pub fn counts(d: &[StudioDiagnostic]) -> Counts {
     let n = |s| d.iter().filter(|x| x.severity == s).count();
     Counts {
@@ -65,8 +61,6 @@ pub fn counts(d: &[StudioDiagnostic]) -> Counts {
 }
 
 /// A document can run when no diagnostic is an error.
-// Not wired yet: the Run button uses it.
-#[allow(dead_code)]
 pub fn can_run(d: &[StudioDiagnostic]) -> bool {
     counts(d).errors == 0
 }

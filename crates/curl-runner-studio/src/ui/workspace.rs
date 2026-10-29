@@ -2,8 +2,10 @@
 //! and lays out title bar, sidebar, editor and status bar.
 
 use super::app::{
-    CloseTab, Import, NewCollection, NewRequest, OpenFolder, Quit, SaveFile, ui_font,
+    CloseTab, Import, NewCollection, NewRequest, OpenFolder, QuickFix, Quit, SaveFile,
+    ToggleProblems, ui_font,
 };
+use super::diagnostics_view::DiagnosticsView;
 use super::state::{self, AppState};
 use super::status_bar::StatusBar;
 use super::watch;
@@ -28,8 +30,14 @@ use std::time::Duration;
 /// A tab's editor; `AppState::open[i]` is the document of `tabs[i]`.
 pub(super) struct EditorTab {
     pub editor: Entity<EditorState>,
+    pub diagnostics: DiagnosticsView,
+    /// The pending re-diagnosis, replaced by every keystroke.
+    pub diagnose: Task<()>,
     _changes: Subscription,
 }
+
+/// Quiet time after the last keystroke before the file is re-diagnosed.
+const DIAGNOSE_DELAY: Duration = Duration::from_millis(150);
 
 /// What to do once unsaved changes are settled.
 type Then = Rc<dyn Fn(&mut Workspace, &mut Window, &mut Context<Workspace>)>;
@@ -40,6 +48,8 @@ pub struct Workspace {
     /// Folders the user collapsed, by path relative to the root.
     pub(super) collapsed: HashSet<PathBuf>,
     pub(super) filter: Entity<InputState>,
+    /// The Problems panel under the editor (⇧⌘M).
+    pub(super) problems_open: bool,
     status: Entity<StatusBar>,
     focus: FocusHandle,
     /// Set once the user agreed to close the window with unsaved changes.
@@ -69,6 +79,7 @@ impl Workspace {
             tabs: Vec::new(),
             collapsed: HashSet::new(),
             filter,
+            problems_open: true,
             status: cx.new(|_| StatusBar::default()),
             focus,
             closing: false,
@@ -130,6 +141,7 @@ impl Workspace {
                 let text = self.state.open[ix].text.clone();
                 let tab = self.new_editor(text, window, cx);
                 self.tabs.push(tab);
+                self.show_diagnostics(ix, cx);
             }
             Ok((_, false)) => {}
             Err(e) => {
@@ -154,19 +166,41 @@ impl Workspace {
                 this.editor_changed(&editor, cx);
             }
         });
+        let diagnostics = DiagnosticsView::attach(&editor, cx.entity().downgrade(), cx);
         EditorTab {
             editor,
+            diagnostics,
+            diagnose: Task::ready(()),
             _changes: changes,
         }
     }
 
-    /// Every edit: the document takes the buffer (and re-diagnoses).
+    /// Every edit: the document takes the buffer and is re-diagnosed once
+    /// typing pauses. The editor dropped its diagnostics on the change, so
+    /// an edit that leaves the document current (a quick fix) gets them back
+    /// right away.
     fn editor_changed(&mut self, editor: &Entity<EditorState>, cx: &mut Context<Self>) {
-        if let Some(ix) = self.tabs.iter().position(|t| &t.editor == editor) {
-            let text = editor.read(cx).value().to_string();
-            self.state.open[ix].set_text(text);
-            cx.notify();
+        let Some(ix) = self.tab_of(editor) else {
+            return;
+        };
+        let text = editor.read(cx).value().to_string();
+        let doc = &mut self.state.open[ix];
+        doc.set_buffer(text);
+        if doc.is_stale() {
+            let editor = editor.clone();
+            self.tabs[ix].diagnose = cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(DIAGNOSE_DELAY).await;
+                this.update(cx, |this, cx| {
+                    if let Some(ix) = this.tab_of(&editor) {
+                        this.flush_diagnostics(ix, cx);
+                    }
+                })
+                .ok();
+            });
+        } else {
+            self.show_diagnostics(ix, cx);
         }
+        cx.notify();
     }
 
     pub(super) fn activate_tab(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -392,6 +426,7 @@ impl Workspace {
             doc.on_disk_changed(disk);
             if reload {
                 set_editor_text(&self.tabs[ix].editor, &doc.text, window, cx);
+                self.show_diagnostics(ix, cx);
             }
         }
         cx.notify();
@@ -408,6 +443,7 @@ impl Workspace {
         doc.resolve_conflict(keep_mine);
         if !keep_mine {
             set_editor_text(&self.tabs[ix].editor, &doc.text, window, cx);
+            self.show_diagnostics(ix, cx);
         }
         cx.notify();
     }
@@ -627,6 +663,11 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &NewRequest, _, cx| this.new_request(None, cx)))
             .on_action(cx.listener(|this, _: &NewCollection, _, cx| this.new_collection(cx)))
             .on_action(cx.listener(|this, _: &Import, _, cx| this.import(cx)))
+            .on_action(cx.listener(|this, _: &QuickFix, window, cx| this.quick_fix(window, cx)))
+            .on_action(cx.listener(|this, _: &ToggleProblems, _, cx| {
+                this.problems_open = !this.problems_open;
+                cx.notify();
+            }))
             .size_full()
             .flex()
             .flex_col()
@@ -634,7 +675,7 @@ impl Render for Workspace {
             .text_color(color("text-primary"))
             .font_family(ui_font())
             .text_size(px(13.))
-            .child(self.render_title_bar())
+            .child(self.render_title_bar(cx))
             .child(
                 div()
                     .flex()
@@ -701,15 +742,17 @@ fn three_buttons(
 
 #[cfg(test)]
 mod tests {
-    use super::super::app::Quit;
+    use super::super::app::{QuickFix, Quit};
     use super::Workspace;
     use gpui_kit::component::WindowExt as _;
+    use gpui_kit::component::input::{CodeActionItem, Position};
     use gpui_kit::test::TestWindowExt as _;
     use gpui_kit::{
         Action as _, AnyWindowHandle, AppContext as _, Bounds, Entity, Point, Role, TestAppContext,
         WindowBounds, WindowOptions, px, size,
     };
     use std::path::Path;
+    use std::time::Duration;
 
     /// A window on a collection of 2 folders and 3 files.
     fn open(cx: &mut TestAppContext) -> (tempfile::TempDir, AnyWindowHandle, Entity<Workspace>) {
@@ -800,6 +843,100 @@ mod tests {
         })
         .unwrap();
         ws.read_with(cx, |ws, _| assert!(!ws.closing));
+    }
+
+    #[gpui_kit::test]
+    fn typing_rediagnoses_after_a_pause(cx: &mut TestAppContext) {
+        let (_dir, window, ws) = open(cx);
+        cx.update_window(window, |_, window, cx| {
+            window.render_frame(cx);
+            window
+                .within("collection-tree")
+                .click(("tree-row", 4usize), cx);
+            window.render_frame(cx);
+            window.input("[", cx);
+        })
+        .unwrap();
+        ws.read_with(cx, |ws, _| {
+            let doc = &ws.state.open[0];
+            assert!(doc.is_stale(), "a keystroke must not diagnose");
+            assert!(doc.diagnostics.is_empty());
+        });
+        cx.executor().advance_clock(Duration::from_millis(200));
+        cx.run_until_parked();
+        ws.read_with(cx, |ws, cx| {
+            let doc = &ws.state.open[0];
+            assert!(!doc.is_stale());
+            assert_eq!(doc.diagnostics.len(), 1, "{:?}", doc.diagnostics);
+            let shown = ws.tabs[0].editor.read(cx).diagnostics().unwrap().len();
+            assert_eq!(shown, 1, "the editor shows the new diagnostics");
+        });
+    }
+
+    #[gpui_kit::test]
+    fn quick_fix_applies_the_fix_at_the_cursor(cx: &mut TestAppContext) {
+        let (dir, window, ws) = open(cx);
+        std::fs::write(
+            dir.path().join("typo.yaml"),
+            "request:\n  url: https://api.example.com\n  timout: 5000\n",
+        )
+        .unwrap();
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.open_file(Path::new("typo.yaml"), window, cx);
+                ws.tabs[0].editor.update(cx, |e, cx| {
+                    e.set_cursor_position(Position::new(2, 4), window, cx)
+                });
+            });
+            window.render_frame(cx);
+            assert_eq!(
+                ws.read(cx).tabs[0]
+                    .editor
+                    .read(cx)
+                    .diagnostics()
+                    .unwrap()
+                    .len(),
+                1
+            );
+            window.dispatch_action(QuickFix.boxed_clone(), cx);
+        })
+        .unwrap();
+        ws.read_with(cx, |ws, cx| {
+            let doc = &ws.state.open[0];
+            assert!(doc.text.contains("  timeout: 5000"), "{}", doc.text);
+            assert!(doc.diagnostics.is_empty(), "{:?}", doc.diagnostics);
+            assert_eq!(ws.tabs[0].editor.read(cx).value().as_ref(), doc.text);
+            assert!(doc.is_dirty());
+        });
+    }
+
+    #[gpui_kit::test]
+    fn code_action_lists_the_fix_and_applies_it(cx: &mut TestAppContext) {
+        let (dir, window, ws) = open(cx);
+        let text = "request:\n  url: https://api.example.com\n  timout: 5000\n";
+        std::fs::write(dir.path().join("typo.yaml"), text).unwrap();
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.open_file(Path::new("typo.yaml"), window, cx)
+            });
+            let editor = ws.read(cx).tabs[0].editor.clone();
+            let at = text.find("timout").unwrap() + 2;
+            let actions = ws.update(cx, |ws, cx| ws.code_actions(&editor, at..at, cx));
+            let fix = ws.read(cx).state.open[0].diagnostics[0].fix.clone();
+            let titles: Vec<_> = actions.iter().map(|a| Some(a.title.clone())).collect();
+            assert_eq!(titles, [fix]);
+            let item = CodeActionItem {
+                provider_id: "curl-runner".into(),
+                action: actions[0].clone(),
+            };
+            // As the menu does: from inside the editor's update.
+            editor.update(cx, |e, cx| e.perform_code_action(&item, window, cx));
+        })
+        .unwrap();
+        ws.read_with(cx, |ws, _| {
+            let doc = &ws.state.open[0];
+            assert!(doc.text.contains("  timeout: 5000"), "{}", doc.text);
+        });
     }
 
     #[gpui_kit::test]

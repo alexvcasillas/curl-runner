@@ -1405,6 +1405,7 @@ dependencies = [
  "gpui-kit",
  "gpui-pre",
  "log",
+ "lsp-types",
  "notify",
  "serde_json",
  "tempfile",

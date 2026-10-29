@@ -22,6 +22,8 @@ gpui-kit = { version = "=0.8.1", features = ["tree-sitter-yaml"] }
 # gpui-kit 0.8.1 pins this exact GPUI; keep both in step when upgrading.
 gpui-pre = "=0.3.10"
 log = "0.4.34"
+# The editor's provider traits speak LSP types; the Kit does not re-export them.
+lsp-types = { version = "0.97.0", features = ["proposed"] }
 notify = "8"
 
 [dev-dependencies]

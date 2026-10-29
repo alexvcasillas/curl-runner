@@ -5,8 +5,6 @@ use curl_runner_core::lint::edit::fix_edit;
 use std::io;
 use std::path::{Path, PathBuf};
 
-// Not wired yet: the editor diagnostics view and Run button use it.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FixError {
     /// The diagnostic index is out of range or the diagnostic has no fix.
@@ -30,6 +28,8 @@ pub struct Document {
     pub diagnostics: Vec<StudioDiagnostic>,
     /// The disk text that conflicted with the dirty buffer.
     disk_text: Option<String>,
+    /// `text` changed since `diagnostics` were computed (see `set_buffer`).
+    stale: bool,
 }
 
 impl Document {
@@ -43,12 +43,36 @@ impl Document {
             disk_conflict: false,
             diagnostics,
             disk_text: None,
+            stale: false,
         })
     }
 
     pub fn set_text(&mut self, text: String) {
         self.text = text;
         self.diagnostics = diagnose(&self.text);
+        self.stale = false;
+    }
+
+    /// Takes the editor's text without diagnosing it, so typing stays cheap;
+    /// `rediagnose` catches up (debounced by the editor).
+    pub fn set_buffer(&mut self, text: String) {
+        if text != self.text {
+            self.text = text;
+            self.stale = true;
+        }
+    }
+
+    /// Whether `diagnostics` lag behind `text`.
+    pub fn is_stale(&self) -> bool {
+        self.stale
+    }
+
+    /// Re-diagnoses the text if it changed since the last diagnosis.
+    pub fn rediagnose(&mut self) {
+        if self.stale {
+            self.diagnostics = diagnose(&self.text);
+            self.stale = false;
+        }
     }
 
     pub fn is_dirty(&self) -> bool {
@@ -92,8 +116,6 @@ impl Document {
 
     /// Apply diagnostic `idx`'s quick fix to the current text. The edit is
     /// computed now, so it always matches the buffer.
-    // Not wired yet: the editor diagnostics view uses it.
-    #[allow(dead_code)]
     pub fn apply_fix(&mut self, idx: usize) -> Result<(), FixError> {
         let issue = self
             .diagnostics
@@ -142,6 +164,27 @@ mod tests {
         assert!(doc.text.contains("method: GET"), "{}", doc.text);
         assert!(doc.diagnostics.is_empty(), "{:?}", doc.diagnostics);
         assert!(doc.is_dirty());
+    }
+
+    #[test]
+    fn set_buffer_defers_diagnosis_until_rediagnose() {
+        let (_d, mut doc) = doc_with("request:\n  url: https://api.example.com\n");
+        assert!(doc.diagnostics.is_empty() && !doc.is_stale());
+        doc.set_buffer(TYPO.into());
+        assert!(doc.is_stale());
+        assert!(doc.diagnostics.is_empty(), "set_buffer must not diagnose");
+        assert_eq!(doc.text, TYPO);
+        doc.rediagnose();
+        assert!(!doc.is_stale());
+        assert_eq!(doc.diagnostics.len(), 1, "{:?}", doc.diagnostics);
+    }
+
+    #[test]
+    fn set_buffer_with_the_same_text_stays_current() {
+        let (_d, mut doc) = doc_with(TYPO);
+        doc.set_buffer(TYPO.into());
+        assert!(!doc.is_stale());
+        assert_eq!(doc.diagnostics.len(), 1);
     }
 
     #[test]

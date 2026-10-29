@@ -197,6 +197,35 @@ embedding.
   shutdown cannot be intercepted or cancelled (`cx.on_app_quit` runs but
   cannot veto). Unsaved changes are lost in that case.
 
+## Diagnostics in the studio (Task 8)
+
+- **Hover:** the editor's built-in diagnostic popover opens on any squiggle
+  and renders `Diagnostic.message` as markdown. A `HoverProvider` would open a
+  second popover over the same range, so the studio puts the hover text
+  (message, then `curl-runner · <path>`) in the message and registers no
+  hover provider.
+- **Gutter icon and line-number color: not possible in 0.8.1.** The gutter
+  has no hook (no per-line icon, no per-line number color). Skipped; the
+  squiggle, line tint, scrollbar tick and Problems row carry the severity.
+- **Line tint:** a `RangeDecoration` fill over the line (with its newline)
+  paints the text's extent plus one cell, not the full row width (fills use
+  the selection geometry).
+- **Scrollbar ticks:** `EditorState::set_scrollbar_renderer` replaces the
+  editor scrollbar; the studio returns `gpui_kit::base::Scrollbar::new(&context)`
+  plus absolutely positioned ticks at `line / lines` of the track
+  (`EditorScrollbarContext` is at `gpui_kit::base::input`).
+- **Applying an edit:** `set_selected_range(range)` then `replace(text)` is
+  one undoable change and emits `InputEvent::Change` (`set_value` does
+  neither). The studio applies quick fixes that way, with the smallest
+  differing range.
+- **Keys:** the Kit binds `cmd-.` and `ctrl-.` to `ToggleCodeActions` in
+  `Input`. A later binding for the same keys in `Input && mode == editor`
+  wins (the studio's `QuickFix`); the menu stays on `ctrl-.` and the
+  editor's context menu ("Show Code Actions").
+- **Test observation:** `window.within(id)` only resolves a scope that has
+  an observed (`.test_support()`) element; give list containers a role and
+  `.test_support()` so an empty list can still be queried.
+
 ## Fallbacks
 
 None needed: all six items exist in 0.8.1. If a later version drops one, the

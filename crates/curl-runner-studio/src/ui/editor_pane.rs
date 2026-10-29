@@ -1,9 +1,13 @@
-//! The editor column: file tabs, breadcrumb, disk-conflict callout and the
-//! YAML editor.
+//! The editor column: file tabs, breadcrumb with problem counts,
+//! disk-conflict callout, the YAML editor and the Problems panel.
 
 use super::color;
+use super::problems_panel::severity_icon;
 use super::sidebar::method_badge;
 use super::workspace::Workspace;
+use crate::model::diagnostics::counts;
+use crate::model::document::Document;
+use curl_runner_core::lint::Severity;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::input::Editor;
 use gpui_kit::component::{Icon, IconName, Sizable as _};
@@ -13,6 +17,15 @@ use std::path::{Component, Path};
 
 const TAB_STRIP_HEIGHT: f32 = 40.;
 const BREADCRUMB_HEIGHT: f32 = 36.;
+
+/// `2 errors`, `1 warning`.
+fn count_label(n: usize, noun: &str) -> String {
+    if n == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{n} {noun}s")
+    }
+}
 
 /// `collection / folders / file` for a file at `rel`.
 pub fn breadcrumb(collection: &str, rel: &Path) -> Vec<String> {
@@ -45,9 +58,12 @@ impl Workspace {
             .text_size(px(13.))
             .line_height(px(18.));
         pane.child(self.render_tabs(cx))
-            .child(self.render_breadcrumb(&doc.rel_path))
+            .child(self.render_breadcrumb(doc))
             .when(doc.disk_conflict, |pane| pane.child(render_conflict(cx)))
             .child(div().flex_1().min_h_0().pt(px(8.)).child(editor))
+            .when(self.problems_open, |pane| {
+                pane.child(self.render_problems(doc, cx))
+            })
     }
 
     fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -133,14 +149,28 @@ impl Workspace {
             .children(tabs)
     }
 
-    fn render_breadcrumb(&self, rel: &Path) -> impl IntoElement + use<> {
+    /// The file's path, then its error and warning counts (hidden at zero)
+    /// and `Unsaved` while dirty.
+    fn render_breadcrumb(&self, doc: &Document) -> impl IntoElement + use<> {
         let collection = self
             .state
             .collection
             .as_ref()
             .map_or("", |c| c.name.as_str());
-        let parts = breadcrumb(collection, rel);
+        let parts = breadcrumb(collection, &doc.rel_path);
         let last = parts.len() - 1;
+        let counts = counts(&doc.diagnostics);
+        let count = |n: usize, severity: Severity, noun: &str| {
+            (n > 0).then(|| {
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .text_color(super::diagnostics_view::severity_color(severity))
+                    .child(severity_icon(severity).size(px(13.)))
+                    .child(count_label(n, noun))
+            })
+        };
         div()
             .flex()
             .flex_none()
@@ -159,6 +189,10 @@ impl Workspace {
                     .child(part);
                 sep.into_iter().chain(std::iter::once(part))
             }))
+            .child(div().flex_1())
+            .children(count(counts.errors, Severity::Error, "error"))
+            .children(count(counts.warnings, Severity::Warning, "warning"))
+            .when(doc.is_dirty(), |bar| bar.child("· Unsaved"))
     }
 }
 
@@ -252,8 +286,14 @@ fn render_nothing_open() -> impl IntoElement {
 
 #[cfg(test)]
 mod tests {
-    use super::breadcrumb;
+    use super::{breadcrumb, count_label};
     use std::path::Path;
+
+    #[test]
+    fn count_label_pluralizes() {
+        assert_eq!(count_label(1, "warning"), "1 warning");
+        assert_eq!(count_label(2, "error"), "2 errors");
+    }
 
     #[test]
     fn breadcrumb_lists_collection_folders_and_file() {

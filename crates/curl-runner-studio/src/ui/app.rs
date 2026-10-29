@@ -5,6 +5,7 @@ use super::workspace::Workspace;
 use crate::theme;
 use gpui_kit::component::{Theme, ThemeConfig};
 use gpui_kit::*;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::OnceLock;
 
@@ -26,6 +27,10 @@ actions!(
         /// Open the New dialog on the From curl template (⌘I). Wired by the
         /// dialogs task.
         Import,
+        /// Apply the first quick fix at the editor's cursor (⌘.).
+        QuickFix,
+        /// Show or hide the Problems panel (⇧⌘M).
+        ToggleProblems,
     ]
 );
 
@@ -54,6 +59,10 @@ pub fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-n", NewRequest, None),
         KeyBinding::new("cmd-shift-n", NewCollection, None),
         KeyBinding::new("cmd-i", Import, None),
+        // Bound after the Kit's `cmd-.` (code actions menu), so it wins in
+        // the editor; the menu stays on `ctrl-.` and the context menu.
+        KeyBinding::new("cmd-.", QuickFix, Some("Input && mode == editor")),
+        KeyBinding::new("cmd-shift-m", ToggleProblems, None),
     ]
 }
 
@@ -78,9 +87,18 @@ pub fn run() {
                 window_min_size: Some(size(px(960.), px(600.))),
                 ..Default::default()
             };
-            let folder = state::last_folder().filter(|p| p.is_dir());
+            let folder = dev_env("CURL_RUNNER_STUDIO_FOLDER")
+                .or_else(state::last_folder)
+                .filter(|p| p.is_dir());
+            let file = dev_env("CURL_RUNNER_STUDIO_OPEN");
             gpui_kit::open_window(options, cx, |window, cx| {
-                cx.new(|cx| Workspace::new(folder, window, cx))
+                cx.new(|cx| {
+                    let mut ws = Workspace::new(folder, window, cx);
+                    if let Some(file) = file {
+                        ws.open_file(&file, window, cx);
+                    }
+                    ws
+                })
             })
             .expect("failed to open the studio window");
             // With no window open there is nothing unsaved: quit directly.
@@ -93,6 +111,14 @@ pub fn run() {
             .detach();
             cx.activate(true);
         });
+}
+
+/// Development aids for looking at a given state without clicking:
+/// `CURL_RUNNER_STUDIO_FOLDER` opens that folder instead of the last one
+/// (without remembering it) and `CURL_RUNNER_STUDIO_OPEN` opens a file by
+/// its path relative to the collection.
+fn dev_env(name: &str) -> Option<PathBuf> {
+    std::env::var_os(name).map(PathBuf::from)
 }
 
 /// Theme, fonts and key bindings. Call after `gpui_kit::init`.
@@ -329,7 +355,9 @@ mod tests {
                 "cmd-w",
                 "cmd-n",
                 "cmd-shift-n",
-                "cmd-i"
+                "cmd-i",
+                "cmd-.",
+                "cmd-shift-m"
             ]
         );
     }

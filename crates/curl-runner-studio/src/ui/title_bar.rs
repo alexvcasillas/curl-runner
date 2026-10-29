@@ -1,4 +1,4 @@
-//! The title bar: the app mark and the open collection.
+//! The title bar: the app mark, the open collection and Run.
 
 use super::app::TITLE_BAR_HEIGHT;
 use super::color;
@@ -8,7 +8,7 @@ use gpui_kit::prelude::*;
 use gpui_kit::*;
 
 impl Workspace {
-    pub(super) fn render_title_bar(&self) -> impl IntoElement + use<> {
+    pub(super) fn render_title_bar(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let collection = match &self.state.collection {
             Some(c) => div().font_weight(FontWeight::MEDIUM).child(c.name.clone()),
             None => div()
@@ -39,5 +39,7 @@ impl Workspace {
                     )
                     .child(collection.px(px(8.))),
             )
+            .child(div().flex_1())
+            .child(div().pr(px(12.)).child(self.render_run_button(cx)))
     }
 }
