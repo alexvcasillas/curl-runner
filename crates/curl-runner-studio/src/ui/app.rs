@@ -117,7 +117,9 @@ pub fn run() {
                 .or_else(|| store.last_folder())
                 .filter(|p| p.is_dir());
             let file = dev_env("CURL_RUNNER_STUDIO_OPEN");
-            let show = std::env::var("CURL_RUNNER_STUDIO_SHOW").ok();
+            let show = std::env::var("CURL_RUNNER_STUDIO_SHOW")
+                .ok()
+                .filter(|s| !s.is_empty());
             gpui_kit::open_window(options, cx, |window, cx| {
                 cx.new(|cx| {
                     let mut ws = Workspace::new(folder, store, window, cx);
@@ -185,7 +187,12 @@ pub fn run() {
 /// selects the open file's first problem and opens its popover (hover
 /// states can't be reached without a pointer).
 fn dev_env(name: &str) -> Option<PathBuf> {
-    std::env::var_os(name).map(PathBuf::from)
+    non_empty(std::env::var_os(name)).map(PathBuf::from)
+}
+
+/// An unset or empty dev variable means "not set".
+fn non_empty(v: Option<std::ffi::OsString>) -> Option<std::ffi::OsString> {
+    v.filter(|v| !v.is_empty())
 }
 
 /// Geist and Geist Mono (SIL OFL 1.1, `assets/fonts/OFL.txt`), one file
@@ -391,7 +398,14 @@ fn theme_config(ui_font: &str, mono_font: &str) -> serde_json::Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{ThemeConfig, font_families, hex, keymap, theme_config};
+    use super::{ThemeConfig, font_families, hex, keymap, non_empty, theme_config};
+
+    #[test]
+    fn empty_dev_vars_count_as_unset() {
+        assert_eq!(non_empty(Some("".into())), None);
+        assert_eq!(non_empty(None), None);
+        assert_eq!(non_empty(Some("a.yaml".into())), Some("a.yaml".into()));
+    }
 
     #[test]
     fn fonts_fall_back_when_geist_is_missing() {
