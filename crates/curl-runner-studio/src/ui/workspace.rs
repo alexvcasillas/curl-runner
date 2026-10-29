@@ -47,6 +47,10 @@ pub struct Workspace {
     pub(super) tabs: Vec<EditorTab>,
     /// Folders the user collapsed, by path relative to the root.
     pub(super) collapsed: HashSet<PathBuf>,
+    /// Multi-request files the user expanded (collapsed by default).
+    pub(super) expanded: HashSet<PathBuf>,
+    /// The request row last clicked inside a multi-request file.
+    pub(super) selected_request: Option<(PathBuf, usize)>,
     pub(super) filter: Entity<InputState>,
     /// The Problems panel under the editor (⇧⌘M).
     pub(super) problems_open: bool,
@@ -88,6 +92,8 @@ impl Workspace {
             state: AppState::default(),
             tabs: Vec::new(),
             collapsed: HashSet::new(),
+            expanded: HashSet::new(),
+            selected_request: None,
             filter,
             problems_open: true,
             store,
@@ -127,6 +133,8 @@ impl Workspace {
         };
         self.tabs.clear();
         self.collapsed.clear();
+        self.expanded.clear();
+        self.selected_request = None;
         self.watch(root, window, cx);
         self.sync_chrome(window, cx);
         true
@@ -576,7 +584,10 @@ impl Workspace {
             Ok(()) => {
                 self.state.renamed(from, &to);
                 if self.collapsed.remove(from) {
-                    self.collapsed.insert(to);
+                    self.collapsed.insert(to.clone());
+                }
+                if self.expanded.remove(from) {
+                    self.expanded.insert(to);
                 }
                 self.sync_chrome(window, cx);
             }

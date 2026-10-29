@@ -1,10 +1,12 @@
 //! The collections column: header, filter and the collection tree.
 
+use super::icons::{self, glyph};
+use super::method_stack::method_stack;
 use super::workspace::Workspace;
 use super::{color, method_color};
 use crate::model::collection::TreeNode;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::Input;
+use gpui_kit::component::input::{Input, Position};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenuItem};
 use gpui_kit::component::{Icon, IconName, Sizable as _};
 use gpui_kit::prelude::*;
@@ -14,6 +16,10 @@ use std::path::{Path, PathBuf};
 
 pub const SIDEBAR_WIDTH: f32 = 264.;
 const ROW_HEIGHT: f32 = 28.;
+const FILTER_HEIGHT: f32 = 30.;
+const CHEVRON_SIZE: f32 = 12.;
+/// Selected tree row (Main.png: `#1f1f1f`).
+const SELECTED_BG: &str = "surface-300";
 /// Indent per tree level; one level lines a request's badge up under its
 /// folder's icon, as in the mockup.
 const INDENT: f32 = 22.;
@@ -31,7 +37,7 @@ pub enum RowKind {
         path: PathBuf,
         name: String,
         open: bool,
-        /// Request files anywhere below the folder.
+        /// Requests anywhere below the folder.
         count: usize,
     },
     File {
@@ -40,18 +46,57 @@ pub enum RowKind {
         label: String,
         method: Option<String>,
         parse_ok: bool,
+        /// Set for a file without a single `request:`: it expands into
+        /// its requests.
+        group: Option<Group>,
+    },
+    /// One request of an expanded multi-request file.
+    Request {
+        rel_path: PathBuf,
+        /// Position in the file's request list.
+        index: usize,
+        method: String,
+        name: String,
+        line: Option<u32>,
     },
 }
 
-/// The rows to draw: folders in `collapsed` hide their children. A non-empty
-/// `filter` keeps files whose name contains it (any case) and folders whose
-/// name contains it (with all their contents), plus the folders leading to
-/// them, shown open.
-pub fn visible_rows(tree: &[TreeNode], collapsed: &HashSet<PathBuf>, filter: &str) -> Vec<Row> {
+/// The expandable part of a multi-request file row.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Group {
+    pub open: bool,
+    pub count: usize,
+    /// Every request's method, in request order.
+    pub methods: Vec<String>,
+}
+
+/// The rows to draw. Folders in `collapsed` hide their children;
+/// multi-request files show theirs only when in `expanded`. A non-empty
+/// `filter` keeps files whose name contains it (any case), requests whose
+/// name contains it (inside their file, shown open) and folders whose name
+/// contains it (with all their contents), plus the folders leading to them,
+/// shown open.
+pub fn visible_rows(
+    tree: &[TreeNode],
+    collapsed: &HashSet<PathBuf>,
+    expanded: &HashSet<PathBuf>,
+    filter: &str,
+) -> Vec<Row> {
     let needle = filter.trim().to_lowercase();
     let mut rows = Vec::new();
-    walk(tree, Path::new(""), 0, collapsed, &needle, false, &mut rows);
+    let open = Open {
+        collapsed,
+        expanded,
+        needle: &needle,
+    };
+    walk(tree, Path::new(""), 0, &open, false, &mut rows);
     rows
+}
+
+struct Open<'a> {
+    collapsed: &'a HashSet<PathBuf>,
+    expanded: &'a HashSet<PathBuf>,
+    needle: &'a str,
 }
 
 /// Appends `nodes`' rows; returns whether any was appended.
@@ -59,32 +104,31 @@ fn walk(
     nodes: &[TreeNode],
     parent: &Path,
     depth: usize,
-    collapsed: &HashSet<PathBuf>,
-    needle: &str,
+    open: &Open,
     shown_whole: bool,
     rows: &mut Vec<Row>,
 ) -> bool {
     let start = rows.len();
-    let matches =
-        |name: &str| shown_whole || needle.is_empty() || name.to_lowercase().contains(needle);
+    let needle = open.needle;
+    let filtering = !needle.is_empty();
+    let matches = |name: &str| shown_whole || !filtering || name.to_lowercase().contains(needle);
     for node in nodes {
         match node {
             TreeNode::Folder { name, children } => {
                 let path = parent.join(name);
-                let filtering = !needle.is_empty();
-                let open = filtering || !collapsed.contains(&path);
+                let is_open = filtering || !open.collapsed.contains(&path);
                 let at = rows.len();
                 rows.push(Row {
                     depth,
                     kind: RowKind::Folder {
                         path: path.clone(),
                         name: name.clone(),
-                        open,
-                        count: file_count(children),
+                        open: is_open,
+                        count: request_count(children),
                     },
                 });
                 let whole = filtering && matches(name);
-                let any = open && walk(children, &path, depth + 1, collapsed, needle, whole, rows);
+                let any = is_open && walk(children, &path, depth + 1, open, whole, rows);
                 if filtering && !whole && !any {
                     rows.truncate(at);
                 }
@@ -93,19 +137,55 @@ fn walk(
                 name,
                 rel_path,
                 method,
+                requests,
                 parse_ok,
             } => {
                 let label = request_label(name);
-                if matches(label) {
-                    rows.push(Row {
-                        depth,
-                        kind: RowKind::File {
-                            rel_path: rel_path.clone(),
-                            label: label.to_string(),
-                            method: method.clone(),
-                            parse_ok: *parse_ok,
-                        },
-                    });
+                let file_hit = matches(label);
+                let multi = method.is_none() && *parse_ok;
+                let hits: Vec<usize> = if multi && !file_hit {
+                    requests
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, r)| r.name.to_lowercase().contains(needle))
+                        .map(|(i, _)| i)
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                if !file_hit && hits.is_empty() {
+                    continue;
+                }
+                let is_open = !hits.is_empty() || open.expanded.contains(rel_path);
+                rows.push(Row {
+                    depth,
+                    kind: RowKind::File {
+                        rel_path: rel_path.clone(),
+                        label: label.to_string(),
+                        method: method.clone(),
+                        parse_ok: *parse_ok,
+                        group: multi.then(|| Group {
+                            open: is_open && !requests.is_empty(),
+                            count: requests.len(),
+                            methods: requests.iter().map(|r| r.method.clone()).collect(),
+                        }),
+                    },
+                });
+                if multi && is_open {
+                    for (index, r) in requests.iter().enumerate() {
+                        if file_hit || hits.contains(&index) {
+                            rows.push(Row {
+                                depth: depth + 1,
+                                kind: RowKind::Request {
+                                    rel_path: rel_path.clone(),
+                                    index,
+                                    method: r.method.clone(),
+                                    name: r.name.clone(),
+                                    line: r.line,
+                                },
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -113,12 +193,14 @@ fn walk(
     rows.len() > start
 }
 
-fn file_count(nodes: &[TreeNode]) -> usize {
+/// Requests below `nodes`: a multi-request file counts each of its
+/// requests, any other file one.
+fn request_count(nodes: &[TreeNode]) -> usize {
     nodes
         .iter()
         .map(|n| match n {
-            TreeNode::Folder { children, .. } => file_count(children),
-            TreeNode::File { .. } => 1,
+            TreeNode::Folder { children, .. } => request_count(children),
+            TreeNode::File { requests, .. } => requests.len().max(1),
         })
         .sum()
 }
@@ -164,11 +246,14 @@ impl Workspace {
         let rows = visible_rows(
             &collection.tree,
             &self.collapsed,
+            &self.expanded,
             &self.filter.read(cx).value(),
         );
         let active = self.state.active_document().map(|d| d.rel_path.clone());
         let tree = div()
             .id("collection-tree")
+            .role(Role::Tree)
+            .test_support()
             .flex()
             .flex_col()
             .flex_1()
@@ -189,7 +274,11 @@ impl Workspace {
                     Button::new("sidebar-new-request")
                         .ghost()
                         .small()
-                        .icon(IconName::Plus)
+                        .icon(
+                            glyph(icons::PLUS)
+                                .size(px(14.))
+                                .text_color(color("text-secondary")),
+                        )
                         .tooltip("New request")
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.new_request(None, window, cx);
@@ -198,14 +287,28 @@ impl Workspace {
             )
             .child(
                 div().px(px(12.)).pb(px(8.)).child(
-                    Input::new(&self.filter)
-                        .small()
-                        .prefix(
-                            Icon::new(IconName::Search)
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .h(px(FILTER_HEIGHT))
+                        .px(px(8.))
+                        .border_1()
+                        .border_color(color("border-100"))
+                        .rounded(px(6.))
+                        .child(
+                            glyph(icons::FILTER)
                                 .size(px(13.))
+                                .flex_none()
                                 .text_color(color("text-secondary")),
                         )
-                        .cleanable(true),
+                        .child(
+                            Input::new(&self.filter)
+                                .appearance(false)
+                                .small()
+                                .px_0()
+                                .cleanable(true),
+                        ),
                 ),
             )
             .child(tree)
@@ -225,7 +328,7 @@ impl Workspace {
             .flex()
             .flex_none()
             .items_center()
-            .gap(px(8.))
+            .gap(px(ROW_GAP))
             .h(px(ROW_HEIGHT))
             .pr(px(8.))
             .pl(px(8. + INDENT * row.depth as f32))
@@ -234,8 +337,8 @@ impl Workspace {
             .text_color(color("text-secondary"))
             .whitespace_nowrap()
             .overflow_hidden()
-            .cursor_pointer()
-            .hover(|s| s.bg(color("surface-100")));
+            .cursor_pointer();
+        let selected_bg = color(SELECTED_BG);
         let ws = cx.entity().downgrade();
         match row.kind {
             RowKind::Folder {
@@ -244,40 +347,19 @@ impl Workspace {
                 open,
                 count,
             } => {
-                let chevron = if open {
-                    IconName::ChevronDown
-                } else {
-                    IconName::ChevronRight
-                };
                 let toggle = path.clone();
                 let menu_path = path.clone();
                 base.text_color(color("text-primary"))
+                    .hover(hover)
+                    .child(chevron(open))
                     .child(
-                        Icon::new(chevron)
-                            .size(px(12.))
-                            .text_color(color("text-secondary")),
-                    )
-                    .child(
-                        Icon::new(IconName::Folder)
+                        glyph(icons::FOLDER)
                             .size(px(14.))
+                            .flex_none()
                             .text_color(color("text-secondary")),
                     )
-                    .child(
-                        div()
-                            .flex_1()
-                            .overflow_hidden()
-                            .text_ellipsis()
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(name),
-                    )
-                    .when(!open, |row| {
-                        row.child(
-                            div()
-                                .text_size(px(11.))
-                                .text_color(color("text-tertiary"))
-                                .child(count.to_string()),
-                        )
-                    })
+                    .child(name_cell(name).font_weight(FontWeight::MEDIUM))
+                    .when(!open, |row| row.child(count_cell(count)))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if !this.collapsed.remove(&toggle) {
                             this.collapsed.insert(toggle.clone());
@@ -294,49 +376,111 @@ impl Workspace {
                 label,
                 method,
                 parse_ok,
+                group,
             } => {
-                let selected = active == Some(rel_path.as_path());
+                let is_active = active == Some(rel_path.as_path());
+                let child_selected = group.as_ref().is_some_and(|g| g.open)
+                    && self
+                        .selected_request
+                        .as_ref()
+                        .is_some_and(|(p, _)| p == &rel_path);
+                let selected = is_active && !child_selected;
                 let open_path = rel_path.clone();
                 let folder = rel_path.parent().map(Path::to_path_buf);
-                base.when(selected, |row| {
-                    row.bg(color("surface-200"))
-                        .text_color(color("text-primary"))
-                })
-                .tooltip({
+                let row = select(base, selected, selected_bg).tooltip({
                     let full = rel_path.display().to_string();
                     move |window, cx| {
                         gpui_kit::component::tooltip::Tooltip::new(full.clone()).build(window, cx)
                     }
-                })
-                .child(method_badge(method.as_deref()))
-                .child(
-                    div()
-                        .flex_1()
-                        .overflow_hidden()
-                        .text_ellipsis()
-                        .child(label),
-                )
-                .when(!parse_ok, |row| {
-                    row.child(
-                        div()
-                            .id(("parse-error", ix))
-                            .flex_none()
-                            .size(px(6.))
-                            .rounded_full()
-                            .bg(color("danger"))
-                            .tooltip(|window, cx| {
-                                gpui_kit::component::tooltip::Tooltip::new("Can't parse this file")
-                                    .build(window, cx)
-                            }),
-                    )
-                })
-                .on_click(cx.listener(move |this, _, window, cx| {
+                });
+                let row = match group {
+                    Some(group) => {
+                        let fill = if selected {
+                            selected_bg
+                        } else {
+                            color("bg-100")
+                        };
+                        let toggle = rel_path.clone();
+                        let chevron = if group.count == 0 {
+                            div().flex_none().size(px(CHEVRON_SIZE)).into_any_element()
+                        } else {
+                            div()
+                                .id(("tree-chevron", ix))
+                                .flex_none()
+                                .child(chevron(group.open))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    cx.stop_propagation();
+                                    if !this.expanded.remove(&toggle) {
+                                        this.expanded.insert(toggle.clone());
+                                    }
+                                    cx.notify();
+                                }))
+                                .test_support()
+                                .into_any_element()
+                        };
+                        row.child(chevron)
+                            .child(method_stack(group.methods.iter().map(String::as_str), fill))
+                            .child(name_cell(label))
+                            .child(count_cell(group.count))
+                    }
+                    None => row
+                        .child(method_badge(method.as_deref()))
+                        .child(name_cell(label))
+                        .child(status_dot(ix, parse_ok)),
+                };
+                row.on_click(cx.listener(move |this, _, window, cx| {
+                    this.selected_request = None;
+                    this.expanded.insert(open_path.clone());
                     this.open_file(&open_path, window, cx);
                 }))
                 .context_menu(move |menu, _, _| tree_menu(menu, &ws, &rel_path, folder.as_deref()))
                 .into_any_element()
             }
+            RowKind::Request {
+                rel_path,
+                index,
+                method,
+                name,
+                line,
+            } => {
+                let selected = active == Some(rel_path.as_path())
+                    && self.selected_request.as_ref() == Some(&(rel_path.clone(), index));
+                let open_path = rel_path.clone();
+                let folder = rel_path.parent().map(Path::to_path_buf);
+                select(base, selected, selected_bg)
+                    .child(method_badge(Some(&method)))
+                    .child(name_cell(name))
+                    .child(status_dot(ix, true))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.open_request(&open_path, index, line, window, cx);
+                    }))
+                    .context_menu(move |menu, _, _| {
+                        tree_menu(menu, &ws, &rel_path, folder.as_deref())
+                    })
+                    .into_any_element()
+            }
         }
+    }
+
+    /// Opens `rel` with request `index` selected and the cursor on its
+    /// `line`.
+    pub(super) fn open_request(
+        &mut self,
+        rel: &Path,
+        index: usize,
+        line: Option<u32>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.selected_request = Some((rel.to_path_buf(), index));
+        self.open_file(rel, window, cx);
+        let Some(ix) = self.state.active else { return };
+        if let (Some(line), true) = (line, self.state.open[ix].rel_path == rel) {
+            self.tabs[ix].editor.update(cx, |e, cx| {
+                e.set_cursor_position(Position::new(line, 0), window, cx);
+            });
+        }
+        cx.notify();
     }
 
     fn render_no_collections(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -393,12 +537,86 @@ impl Workspace {
     }
 }
 
+fn hover(style: StyleRefinement) -> StyleRefinement {
+    style.bg(color("surface-100"))
+}
+
+/// The selected background and text, or the hover background.
+fn select<E: Styled + InteractiveElement>(row: E, selected: bool, bg: Hsla) -> E {
+    if selected {
+        row.bg(bg).text_color(color("text-primary"))
+    } else {
+        row.hover(hover)
+    }
+}
+
+fn chevron(open: bool) -> Icon {
+    glyph(if open {
+        icons::CHEVRON_DOWN
+    } else {
+        icons::CHEVRON_RIGHT
+    })
+    .size(px(CHEVRON_SIZE))
+    .flex_none()
+    .text_color(color("text-secondary"))
+}
+
+fn name_cell(name: impl Into<SharedString>) -> Div {
+    div()
+        .flex_1()
+        .min_w_0()
+        .overflow_hidden()
+        .text_ellipsis()
+        .child(name.into())
+}
+
+fn count_cell(count: usize) -> Div {
+    div()
+        .flex_none()
+        .text_size(px(11.))
+        .text_color(color("text-tertiary"))
+        .child(count.to_string())
+}
+
+/// The status column: a hollow ring until the request has run (runs come
+/// later), a red dot for a file that does not parse.
+fn status_dot(ix: usize, parse_ok: bool) -> AnyElement {
+    let dot = div()
+        .id(("status-dot", ix))
+        .flex_none()
+        .size(px(6.))
+        .rounded_full();
+    if parse_ok {
+        dot.border_1()
+            .border_color(color("text-disabled"))
+            .into_any_element()
+    } else {
+        dot.bg(color("danger"))
+            .tooltip(|window, cx| {
+                gpui_kit::component::tooltip::Tooltip::new("Can't parse this file")
+                    .build(window, cx)
+            })
+            .into_any_element()
+    }
+}
+
 const BADGE_TEXT_SIZE: f32 = 10.;
-/// The advance of Geist Mono and Menlo, in em.
-const MONO_ADVANCE_EM: f32 = 0.61;
-/// Fits `OPTIONS`, the longest method, with room before the name (about
-/// 47px); rows without a method keep the slot so names line up.
-const METHOD_BADGE_WIDTH: f32 = "OPTIONS".len() as f32 * MONO_ADVANCE_EM * BADGE_TEXT_SIZE + 4.;
+/// For methods longer than `DELETE` (`OPTIONS`, custom verbs), so they stay
+/// clear of the name.
+const BADGE_TEXT_SIZE_LONG: f32 = 8.5;
+
+fn badge_text_size(method: &str) -> f32 {
+    if method.len() > "DELETE".len() {
+        BADGE_TEXT_SIZE_LONG
+    } else {
+        BADGE_TEXT_SIZE
+    }
+}
+/// The mockup's 34px slot: `DELETE` runs 3px into the gap, longer methods
+/// are drawn smaller. Rows without a method keep the slot so names line up.
+const METHOD_BADGE_WIDTH: f32 = 34.;
+/// Gap between the badge and the name.
+const ROW_GAP: f32 = 8.;
 
 /// The method as coloured mono text in a fixed slot so names line up.
 pub fn method_badge(method: Option<&str>) -> Div {
@@ -407,7 +625,7 @@ pub fn method_badge(method: Option<&str>) -> Div {
         .flex_none()
         .w(px(METHOD_BADGE_WIDTH))
         .font_family(super::app::mono_font())
-        .text_size(px(BADGE_TEXT_SIZE))
+        .text_size(px(badge_text_size(&text)))
         .font_weight(FontWeight::MEDIUM)
         .text_color(method_color(method.unwrap_or("")))
         .child(text)
@@ -452,21 +670,27 @@ fn tree_menu(
 #[cfg(test)]
 mod tests {
     use super::{
-        BADGE_TEXT_SIZE, METHOD_BADGE_WIDTH, MONO_ADVANCE_EM, Row, RowKind, TreeNode,
-        request_label, visible_rows,
+        BADGE_TEXT_SIZE, Group, METHOD_BADGE_WIDTH, ROW_GAP, Row, RowKind, TreeNode,
+        badge_text_size, request_label, visible_rows,
     };
+    use crate::model::collection::RequestEntry;
+
+    /// The advance of Geist Mono, in em.
+    const MONO_ADVANCE_EM: f32 = 0.61;
     use std::collections::HashSet;
     use std::path::PathBuf;
 
     #[test]
     fn method_badge_fits_every_method_with_room_before_the_name() {
         for method in ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] {
-            let text = method.len() as f32 * MONO_ADVANCE_EM * BADGE_TEXT_SIZE;
+            let text = method.len() as f32 * MONO_ADVANCE_EM * badge_text_size(method);
             assert!(
-                text + 2. <= METHOD_BADGE_WIDTH,
+                // At least 4px of the gap stays clear before the name.
+                text <= METHOD_BADGE_WIDTH + ROW_GAP - 4.,
                 "{method} needs {text}px of {METHOD_BADGE_WIDTH}px"
             );
         }
+        assert_eq!(badge_text_size("DELETE"), BADGE_TEXT_SIZE);
     }
 
     fn file(name: &str, rel: &str, method: Option<&str>) -> TreeNode {
@@ -474,6 +698,25 @@ mod tests {
             name: name.into(),
             rel_path: rel.into(),
             method: method.map(Into::into),
+            requests: Vec::new(),
+            parse_ok: true,
+        }
+    }
+
+    fn multi(name: &str, rel: &str, requests: &[(&str, &str)]) -> TreeNode {
+        TreeNode::File {
+            name: name.into(),
+            rel_path: rel.into(),
+            method: None,
+            requests: requests
+                .iter()
+                .enumerate()
+                .map(|(i, &(method, name))| RequestEntry {
+                    method: method.into(),
+                    name: name.into(),
+                    line: Some(i as u32 * 3 + 1),
+                })
+                .collect(),
             parse_ok: true,
         }
     }
@@ -495,8 +738,12 @@ mod tests {
                     file("list-charges.yml", "charges/list-charges.yml", Some("GET")),
                 ],
             },
-            file("smoke.yaml", "smoke.yaml", None),
+            file("smoke.yaml", "smoke.yaml", Some("GET")),
         ]
+    }
+
+    fn none() -> HashSet<PathBuf> {
+        HashSet::new()
     }
 
     fn labels(rows: &[Row]) -> Vec<String> {
@@ -504,13 +751,14 @@ mod tests {
             .map(|r| match &r.kind {
                 RowKind::Folder { name, .. } => format!("{}{name}/", "  ".repeat(r.depth)),
                 RowKind::File { label, .. } => format!("{}{label}", "  ".repeat(r.depth)),
+                RowKind::Request { name, .. } => format!("{}- {name}", "  ".repeat(r.depth)),
             })
             .collect()
     }
 
     #[test]
     fn rows_list_everything_open_by_default() {
-        let rows = visible_rows(&tree(), &HashSet::new(), "");
+        let rows = visible_rows(&tree(), &none(), &none(), "");
         assert_eq!(
             labels(&rows),
             [
@@ -527,7 +775,7 @@ mod tests {
     #[test]
     fn collapsed_folder_hides_children_and_counts_them() {
         let collapsed = HashSet::from([PathBuf::from("charges")]);
-        let rows = visible_rows(&tree(), &collapsed, "");
+        let rows = visible_rows(&tree(), &collapsed, &none(), "");
         assert_eq!(labels(&rows), ["auth/", "  login", "charges/", "smoke"]);
         assert!(matches!(
             rows[2].kind,
@@ -542,20 +790,20 @@ mod tests {
     #[test]
     fn filter_is_case_insensitive_and_keeps_parents_open() {
         let collapsed = HashSet::from([PathBuf::from("charges")]);
-        let rows = visible_rows(&tree(), &collapsed, "  CHARGE ");
+        let rows = visible_rows(&tree(), &collapsed, &none(), "  CHARGE ");
         assert_eq!(
             labels(&rows),
             ["charges/", "  create-charge", "  list-charges"]
         );
-        let rows = visible_rows(&tree(), &HashSet::new(), "list");
+        let rows = visible_rows(&tree(), &none(), &none(), "list");
         assert_eq!(labels(&rows), ["charges/", "  list-charges"]);
     }
 
     #[test]
     fn filter_matching_a_folder_keeps_its_contents() {
-        let rows = visible_rows(&tree(), &HashSet::new(), "auth");
+        let rows = visible_rows(&tree(), &none(), &none(), "auth");
         assert_eq!(labels(&rows), ["auth/", "  login"]);
-        assert!(visible_rows(&tree(), &HashSet::new(), "nothing").is_empty());
+        assert!(visible_rows(&tree(), &none(), &none(), "nothing").is_empty());
     }
 
     #[test]
@@ -563,5 +811,188 @@ mod tests {
         assert_eq!(request_label("create-charge.yaml"), "create-charge");
         assert_eq!(request_label("a.yml"), "a");
         assert_eq!(request_label("notes"), "notes");
+    }
+
+    fn flows() -> Vec<TreeNode> {
+        vec![TreeNode::Folder {
+            name: "users".into(),
+            children: vec![
+                multi(
+                    "user-flow.yaml",
+                    "users/user-flow.yaml",
+                    &[
+                        ("GET", "Get user"),
+                        ("GET", "User posts"),
+                        ("POST", "Create todo"),
+                    ],
+                ),
+                file("get-user.yaml", "users/get-user.yaml", Some("GET")),
+            ],
+        }]
+    }
+
+    #[test]
+    fn multi_request_file_is_collapsed_by_default_with_count_and_methods() {
+        let rows = visible_rows(&flows(), &none(), &none(), "");
+        assert_eq!(labels(&rows), ["users/", "  user-flow", "  get-user"]);
+        let RowKind::File { group, .. } = &rows[1].kind else {
+            panic!()
+        };
+        assert_eq!(
+            group.as_ref(),
+            Some(&Group {
+                open: false,
+                count: 3,
+                methods: vec!["GET".into(), "GET".into(), "POST".into()],
+            })
+        );
+        let RowKind::File { group, .. } = &rows[2].kind else {
+            panic!()
+        };
+        assert_eq!(group, &None, "single-request files keep the badge");
+        // Folder counts requests, not files.
+        assert!(matches!(rows[0].kind, RowKind::Folder { count: 4, .. }));
+    }
+
+    #[test]
+    fn expanded_file_lists_its_requests_one_level_deeper() {
+        let expanded = HashSet::from([PathBuf::from("users/user-flow.yaml")]);
+        let rows = visible_rows(&flows(), &none(), &expanded, "");
+        assert_eq!(
+            labels(&rows),
+            [
+                "users/",
+                "  user-flow",
+                "    - Get user",
+                "    - User posts",
+                "    - Create todo",
+                "  get-user"
+            ]
+        );
+        assert_eq!(
+            rows[4].kind,
+            RowKind::Request {
+                rel_path: "users/user-flow.yaml".into(),
+                index: 2,
+                method: "POST".into(),
+                name: "Create todo".into(),
+                line: Some(7),
+            }
+        );
+    }
+
+    #[test]
+    fn filter_on_a_request_name_opens_its_file_with_only_the_hits() {
+        let rows = visible_rows(&flows(), &none(), &none(), "posts");
+        assert_eq!(labels(&rows), ["users/", "  user-flow", "    - User posts"]);
+        // A file-name hit keeps the file's own expansion state.
+        let rows = visible_rows(&flows(), &none(), &none(), "flow");
+        assert_eq!(labels(&rows), ["users/", "  user-flow"]);
+    }
+
+    #[test]
+    fn parse_failed_file_is_not_expandable() {
+        let tree = vec![TreeNode::File {
+            name: "bad.yaml".into(),
+            rel_path: "bad.yaml".into(),
+            method: None,
+            requests: Vec::new(),
+            parse_ok: false,
+        }];
+        let rows = visible_rows(&tree, &none(), &none(), "");
+        assert!(matches!(
+            &rows[0].kind,
+            RowKind::File {
+                group: None,
+                parse_ok: false,
+                ..
+            }
+        ));
+    }
+}
+
+#[cfg(test)]
+mod gpui_tests {
+    use super::super::state::StateStore;
+    use super::super::workspace::Workspace;
+    use gpui_kit::test::TestWindowExt as _;
+    use gpui_kit::{
+        AnyWindowHandle, AppContext as _, Bounds, Entity, Point, Role, TestAppContext,
+        WindowBounds, WindowOptions, px, size,
+    };
+    use std::path::Path;
+
+    const FLOW: &str = "requests:\n  - name: One\n    url: https://a.example.com\n  - name: Two\n    method: POST\n    url: https://b.example.com\n";
+
+    fn open(cx: &mut TestAppContext) -> (tempfile::TempDir, AnyWindowHandle, Entity<Workspace>) {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("users")).unwrap();
+        std::fs::write(dir.path().join("users/flow.yaml"), FLOW).unwrap();
+        let root = dir.path().to_path_buf();
+        let (window, ws) = cx.update(|cx| {
+            gpui_kit::init(cx);
+            super::super::app::init(cx);
+            let options = WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: Point::default(),
+                    size: size(px(1440.), px(900.)),
+                })),
+                ..Default::default()
+            };
+            gpui_kit::open_window(options, cx, |window, cx| {
+                cx.new(|cx| Workspace::new(Some(root), StateStore::none(), window, cx))
+            })
+            .unwrap()
+        });
+        (dir, window, ws)
+    }
+
+    #[gpui_kit::test]
+    fn chevron_expands_a_multi_request_file_without_opening_it(cx: &mut TestAppContext) {
+        let (_dir, window, ws) = open(cx);
+        cx.update_window(window, |_, window, cx| {
+            window.render_frame(cx);
+            let rows = |window: &mut gpui_kit::Window| {
+                window
+                    .within("collection-tree")
+                    .find_all_by_role(Role::TreeItem)
+                    .len()
+            };
+            // users/, flow
+            assert_eq!(rows(window), 2);
+            window
+                .within("collection-tree")
+                .click(("tree-chevron", 1usize), cx);
+            window.render_frame(cx);
+            assert_eq!(rows(window), 4);
+        })
+        .unwrap();
+        ws.read_with(cx, |ws, _| assert!(ws.state.open.is_empty()));
+    }
+
+    #[gpui_kit::test]
+    fn clicking_a_request_opens_its_file_at_the_request(cx: &mut TestAppContext) {
+        let (_dir, window, ws) = open(cx);
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, _| {
+                ws.expanded.insert("users/flow.yaml".into());
+            });
+            window.render_frame(cx);
+            window
+                .within("collection-tree")
+                .click(("tree-row", 3usize), cx);
+            window.render_frame(cx);
+        })
+        .unwrap();
+        ws.read_with(cx, |ws, cx| {
+            assert_eq!(ws.state.open.len(), 1);
+            assert_eq!(ws.state.open[0].rel_path, Path::new("users/flow.yaml"));
+            assert_eq!(
+                ws.selected_request,
+                Some(("users/flow.yaml".into(), 1usize))
+            );
+            let cursor = ws.tabs[0].editor.read(cx).cursor_position();
+            assert_eq!(cursor.line, 3, "the second request's item line");
+        });
     }
 }

@@ -2,6 +2,7 @@
 
 use curl_runner_core::discover::find_yaml_files;
 use curl_runner_core::parser::parse_raw_stream;
+use serde_json::Value as Json;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
@@ -16,8 +17,30 @@ pub enum TreeNode {
         rel_path: PathBuf,
         /// `request.method` of single-request files; `None` for `requests:`.
         method: Option<String>,
+        /// Every request of a file without a single `request:` (a
+        /// `requests:` list or a `collection:`), in run order; empty
+        /// otherwise.
+        requests: Vec<RequestEntry>,
         parse_ok: bool,
     },
+}
+
+/// One request of a multi-request file.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RequestEntry {
+    pub method: String,
+    /// `name`, else `url`, else `Request <n>`.
+    pub name: String,
+    /// Zero-based line of the request's list item, when found.
+    pub line: Option<u32>,
+}
+
+/// What the tree shows for one file.
+#[derive(Debug, Default, PartialEq)]
+struct FileMeta {
+    method: Option<String>,
+    requests: Vec<RequestEntry>,
+    parse_ok: bool,
 }
 
 impl TreeNode {
@@ -68,8 +91,10 @@ impl Collection {
                 .components()
                 .map(|c| c.as_os_str().to_string_lossy().into_owned())
                 .collect();
-            let (method, parse_ok) = read_meta(&self.root.join(&rel));
-            insert(&mut tree, &parts, &rel, method, parse_ok);
+            let meta = std::fs::read_to_string(self.root.join(&rel))
+                .map(|text| file_meta(&text))
+                .unwrap_or_default();
+            insert(&mut tree, &parts, &rel, meta);
         }
         sort(&mut tree);
         self.tree = tree;
@@ -138,41 +163,178 @@ fn is_same_file(a: &Path, b: &Path) -> bool {
     a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
 }
 
-/// `(method, parse_ok)` for a file. Only a mapping root is ok: an empty
-/// file, a scalar or a list parses but holds no request.
-fn read_meta(path: &Path) -> (Option<String>, bool) {
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return (None, false);
-    };
-    let Ok(doc) = parse_raw_stream(&text) else {
-        return (None, false);
+/// The tree's view of a file. Only a mapping root is ok: an empty file, a
+/// scalar or a list parses but holds no request. A file whose only request
+/// is `request:` gets its method; any other gets its request list, in the
+/// order the runner runs them (`request`, `requests`, `collection.requests`).
+fn file_meta(text: &str) -> FileMeta {
+    let Ok(doc) = parse_raw_stream(text) else {
+        return FileMeta::default();
     };
     if !doc.is_object() {
-        return (None, false);
+        return FileMeta::default();
     }
-    let method = doc.get("request").map(|r| {
+    let collection = doc.get("collection");
+    let default_method = [
+        collection.and_then(|c| c.get("defaults")),
+        doc.get("global").and_then(|g| g.get("defaults")),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(|d| d.get("method").and_then(|m| m.as_str()))
+    .unwrap_or("GET");
+    let method_of = |r: &Json| {
         r.get("method")
             .and_then(|m| m.as_str())
-            .unwrap_or("GET")
+            .unwrap_or(default_method)
             .to_string()
-    });
-    (method, true)
+    };
+    let single = doc.get("request").filter(|r| r.is_object());
+    let lines: Vec<&str> = text.lines().collect();
+    let mut requests = Vec::new();
+    for (list, key_line) in [
+        (doc.get("requests"), list_key_line(&lines, None)),
+        (
+            collection.and_then(|c| c.get("requests")),
+            list_key_line(&lines, Some("collection")),
+        ),
+    ] {
+        let Some(items) = list.and_then(Json::as_array) else {
+            continue;
+        };
+        let item_lines =
+            key_line.map_or_else(Vec::new, |(at, indent)| list_item_lines(&lines, at, indent));
+        for (i, r) in items.iter().enumerate() {
+            requests.push(RequestEntry {
+                method: method_of(r),
+                name: request_name(r, requests.len()),
+                line: item_lines.get(i).copied(),
+            });
+        }
+    }
+    match single {
+        Some(r) if requests.is_empty() => FileMeta {
+            method: Some(method_of(r)),
+            requests,
+            parse_ok: true,
+        },
+        Some(r) => {
+            let line = lines
+                .iter()
+                .position(|l| is_key(l, "request"))
+                .map(|n| n as u32);
+            requests.insert(
+                0,
+                RequestEntry {
+                    method: method_of(r),
+                    name: request_name(r, 0),
+                    line,
+                },
+            );
+            FileMeta {
+                method: None,
+                requests,
+                parse_ok: true,
+            }
+        }
+        None => FileMeta {
+            method: None,
+            requests,
+            parse_ok: true,
+        },
+    }
 }
 
-fn insert(
-    level: &mut Vec<TreeNode>,
-    parts: &[String],
-    rel: &Path,
-    method: Option<String>,
-    parse_ok: bool,
-) {
+fn request_name(r: &Json, index: usize) -> String {
+    ["name", "url"]
+        .into_iter()
+        .find_map(|k| r.get(k).and_then(|v| v.as_str()).filter(|v| !v.is_empty()))
+        .map_or_else(|| format!("Request {}", index + 1), str::to_string)
+}
+
+fn indent_of(line: &str) -> usize {
+    line.len() - line.trim_start_matches(' ').len()
+}
+
+fn is_blank(line: &str) -> bool {
+    let t = line.trim();
+    t.is_empty() || t.starts_with('#')
+}
+
+/// `line` is `key:` with a block value (nothing after the colon but a comment).
+fn is_key(line: &str, key: &str) -> bool {
+    line.trim_start()
+        .strip_prefix(key)
+        .and_then(|r| r.strip_prefix(':'))
+        .is_some_and(|r| {
+            let r = r.trim();
+            r.is_empty() || r.starts_with('#')
+        })
+}
+
+/// `(line, indent)` of the block `requests:` key at the root, or directly
+/// under the root key `parent`.
+fn list_key_line(lines: &[&str], parent: Option<&str>) -> Option<(usize, usize)> {
+    let Some(parent) = parent else {
+        return lines
+            .iter()
+            .position(|l| indent_of(l) == 0 && is_key(l, "requests"))
+            .map(|n| (n, 0));
+    };
+    let start = lines
+        .iter()
+        .position(|l| indent_of(l) == 0 && is_key(l, parent))?;
+    let mut child_indent = None;
+    for (n, l) in lines.iter().enumerate().skip(start + 1) {
+        if is_blank(l) {
+            continue;
+        }
+        let indent = indent_of(l);
+        if indent == 0 {
+            return None;
+        }
+        let child = *child_indent.get_or_insert(indent);
+        if indent == child && is_key(l, "requests") {
+            return Some((n, indent));
+        }
+    }
+    None
+}
+
+/// Lines of the items of the block list under the key at `key_line`.
+fn list_item_lines(lines: &[&str], key_line: usize, key_indent: usize) -> Vec<u32> {
+    let mut out = Vec::new();
+    let mut item_indent = None;
+    for (n, l) in lines.iter().enumerate().skip(key_line + 1) {
+        if is_blank(l) {
+            continue;
+        }
+        let indent = indent_of(l);
+        let t = l.trim_start();
+        let is_item = t == "-" || t.starts_with("- ");
+        match item_indent {
+            None if is_item && indent >= key_indent => {
+                item_indent = Some(indent);
+                out.push(n as u32);
+            }
+            None => break,
+            Some(i) if indent < i || (indent == i && !is_item) => break,
+            Some(i) if indent == i => out.push(n as u32),
+            Some(_) => {}
+        }
+    }
+    out
+}
+
+fn insert(level: &mut Vec<TreeNode>, parts: &[String], rel: &Path, meta: FileMeta) {
     let [first, rest @ ..] = parts else { return };
     if rest.is_empty() {
         level.push(TreeNode::File {
             name: first.clone(),
             rel_path: rel.to_path_buf(),
-            method,
-            parse_ok,
+            method: meta.method,
+            requests: meta.requests,
+            parse_ok: meta.parse_ok,
         });
         return;
     }
@@ -187,7 +349,7 @@ fn insert(
         level.len() - 1
     });
     if let TreeNode::Folder { children, .. } = &mut level[idx] {
-        insert(children, rest, rel, method, parse_ok);
+        insert(children, rest, rel, meta);
     }
 }
 
@@ -341,5 +503,73 @@ mod tests {
         assert!(c.tree.iter().any(|n| n.name() == "b.yaml"));
         c.delete(Path::new("b.yaml")).unwrap();
         assert!(c.tree.iter().all(|n| n.name() != "b.yaml"));
+    }
+
+    fn entries(meta: &FileMeta) -> Vec<(&str, &str, Option<u32>)> {
+        meta.requests
+            .iter()
+            .map(|r| (r.method.as_str(), r.name.as_str(), r.line))
+            .collect()
+    }
+
+    #[test]
+    fn requests_list_gives_entries_with_lines() {
+        let meta = file_meta(
+            "# flow\nrequests:\n  - name: Get user\n    url: https://x.example.com/u\n\n  - url: https://x.example.com/p\n    method: POST\n  -\n    method: PUT\n",
+        );
+        assert!(meta.parse_ok);
+        assert_eq!(meta.method, None);
+        assert_eq!(
+            entries(&meta),
+            [
+                ("GET", "Get user", Some(2)),
+                ("POST", "https://x.example.com/p", Some(5)),
+                ("PUT", "Request 3", Some(7)),
+            ]
+        );
+    }
+
+    #[test]
+    fn unindented_list_items_are_found() {
+        let meta =
+            file_meta("requests:\n- name: a\n  url: u\n- name: b\n  url: u\nglobal:\n  x: 1\n");
+        assert_eq!(
+            entries(&meta),
+            [("GET", "a", Some(1)), ("GET", "b", Some(3))]
+        );
+    }
+
+    #[test]
+    fn collection_requests_use_collection_default_method() {
+        let meta = file_meta(
+            "collection:\n  name: S\n  defaults:\n    method: POST\n  requests:\n    - name: OK\n      url: u\n    - name: Get\n      method: GET\n      url: u\n",
+        );
+        assert_eq!(
+            entries(&meta),
+            [("POST", "OK", Some(5)), ("GET", "Get", Some(7))]
+        );
+    }
+
+    #[test]
+    fn request_plus_requests_lists_both() {
+        let meta = file_meta("request:\n  url: a\nrequests:\n  - url: b\n    method: DELETE\n");
+        assert_eq!(meta.method, None);
+        assert_eq!(
+            entries(&meta),
+            [("GET", "a", Some(0)), ("DELETE", "b", Some(3))]
+        );
+    }
+
+    #[test]
+    fn single_request_keeps_method_and_no_entries() {
+        let meta = file_meta("request:\n  url: a\n  method: PATCH\n");
+        assert_eq!(meta.method.as_deref(), Some("PATCH"));
+        assert!(meta.requests.is_empty());
+    }
+
+    #[test]
+    fn flow_list_has_entries_without_lines() {
+        let meta = file_meta("requests: [{url: a}, {url: b, name: B}]\n");
+        assert_eq!(entries(&meta), [("GET", "a", None), ("GET", "B", None)]);
     }
 }

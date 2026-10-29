@@ -4,6 +4,8 @@
 mod app;
 mod diagnostics_view;
 mod editor_pane;
+mod icons;
+mod method_stack;
 mod new_dialog;
 mod palette;
 mod problems_panel;
