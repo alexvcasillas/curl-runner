@@ -195,7 +195,7 @@ fn walk(
 
 /// Requests below `nodes`: a multi-request file counts each of its
 /// requests, any other file one.
-fn request_count(nodes: &[TreeNode]) -> usize {
+pub fn request_count(nodes: &[TreeNode]) -> usize {
     nodes
         .iter()
         .map(|n| match n {

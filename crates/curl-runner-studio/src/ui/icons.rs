@@ -36,6 +36,26 @@ pub const INFO: &str = glyph!(
     "1.75",
     r#"<circle cx="8" cy="8" r="6"/><path d="M8 7.5V11M8 5.25v.5"/>"#
 );
+pub const FOLDER_OPEN: &str = glyph!(
+    "1.3",
+    r#"<path d="M2 12.5v-8h4l1.5 1.5H13v1.5"/><path d="M2 12.5l1.8-5h10.7l-1.8 5z"/>"#
+);
+pub const FOLDER_PLUS: &str = glyph!(
+    "1.3",
+    r#"<path d="M2 4.5h4l1.5 1.5H14v6.5H2z"/><path d="M8 7.5v3.5M6.25 9.25h3.5"/>"#
+);
+pub const FILE_PLUS: &str = glyph!(
+    "1.4",
+    r#"<path d="M9 2H3.5v12h9V5.5z"/><path d="M9 2v3.5h3.5"/><path d="M8 7.5v4M6 9.5h4"/>"#
+);
+pub const IMPORT: &str = glyph!(
+    "1.5",
+    r#"<path d="M8 2.5V10M5 7l3 3 3-3"/><path d="M3 9v4h10V9"/>"#
+);
+pub const PANEL_BOTTOM: &str = glyph!(
+    "1.4",
+    r#"<rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M2 9.5h12"/>"#
+);
 /// Filled, unlike the stroke glyphs.
 pub const PLAY: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="#000"><path d="M4 2.5v11l9-5.5z"/></svg>"##;
 
@@ -61,6 +81,11 @@ mod tests {
             WARNING,
             INFO,
             PLAY,
+            FOLDER_OPEN,
+            FOLDER_PLUS,
+            FILE_PLUS,
+            IMPORT,
+            PANEL_BOTTOM,
         ] {
             assert!(svg.starts_with("<svg ") && svg.ends_with("</svg>"), "{svg}");
             assert!(svg.contains(r#"viewBox="0 0 16 16""#));

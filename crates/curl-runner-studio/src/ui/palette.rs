@@ -1,36 +1,64 @@
 //! The command palette (⌘K, `Palette.dc.html`): fuzzy search over the
-//! collection's requests and the studio's actions.
+//! collection's requests and folders and the studio's actions.
+//!
+//! Drawn by the studio rather than the Kit's `Command`, whose fixed row
+//! frame, query field and list scrollbar could not match the mockup (its
+//! scrollbar covered the shortcut chips).
 
-use super::app::{NewCollection, NewRequest, OpenFolder, ToggleProblems, mono_font};
-use super::color;
-use super::sidebar::{method_badge, request_label};
+use super::app::{Import, NewCollection, NewRequest, OpenFolder, ToggleProblems, mono_font};
+use super::icons::{self, glyph};
+use super::sidebar::{request_count, request_label};
 use super::workspace::Workspace;
+use super::{color, method_color};
 use crate::model::collection::TreeNode;
-use gpui_kit::base::actions::Cancel;
+use gpui_kit::base::actions::{Cancel, Confirm, SelectDown, SelectUp};
 use gpui_kit::component::WindowExt as _;
-use gpui_kit::component::command::{Command, CommandGroup, CommandItem, CommandState};
 use gpui_kit::component::dialog::DialogEntrance;
+use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::kbd::Kbd;
+use gpui_kit::component::scroll::Scrollbar;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+
+/// Key context of the palette, for its ↑ ↓ ↵ esc bindings.
+pub const CONTEXT: &str = "Palette";
+
+/// Palette.dc.html measurements, px.
+const WIDTH: f32 = 640.;
+const TOP: f32 = 88.;
+const HEADER_H: f32 = 52.;
+const FOOTER_H: f32 = 36.;
+const ROW_H: f32 = 36.;
+const ROW_PAD_X: f32 = 10.;
+const LIST_PAD_X: f32 = 8.;
+const LEAD_W: f32 = 40.;
+/// Tallest list, from the mockup's 900px window.
+const LIST_MAX_H: f32 = 520.;
+/// Width of the Kit's overlay scrollbar (`gpui-base` `scrollbar.rs`); the
+/// trailing chips must stay clear of it.
+const SCROLLBAR_W: f32 = 16.;
+const _: () = assert!(
+    LIST_PAD_X + ROW_PAD_X >= SCROLLBAR_W,
+    "chips under the scrollbar"
+);
+/// Alpha of the query-match tint (`.hl`).
+const MATCH_ALPHA: f32 = 0.18;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Group {
     Requests,
-    /// Empty until there is more than one collection.
-    Collections,
+    Folders,
     Actions,
 }
 
 impl Group {
-    const ALL: [Group; 3] = [Group::Requests, Group::Collections, Group::Actions];
+    const ALL: [Group; 3] = [Group::Requests, Group::Folders, Group::Actions];
 
     fn label(self) -> &'static str {
         match self {
             Group::Requests => "Requests",
-            Group::Collections => "Collections",
+            Group::Folders => "Collections & folders",
             Group::Actions => "Actions",
         }
     }
@@ -91,29 +119,52 @@ fn match_label(query: &[char], label: &[char]) -> Option<(bool, Vec<usize>)> {
     (rest.peek().is_none()).then_some((false, indices))
 }
 
+/// Matches in display order: grouped by [`Group::ALL`], ranked within.
+fn display_order(matches: &[(usize, Vec<usize>)], items: &[PaletteItem]) -> Vec<usize> {
+    Group::ALL
+        .iter()
+        .flat_map(|g| {
+            matches
+                .iter()
+                .enumerate()
+                .filter(move |(_, (ix, _))| items[*ix].group == *g)
+                .map(|(m, _)| m)
+        })
+        .collect()
+}
+
 /// What ↵ does on an item.
 #[derive(Debug, Clone, PartialEq)]
-enum Target {
+pub enum Target {
     Request {
         rel_path: PathBuf,
         method: Option<String>,
+        /// Position and line of a request inside a multi-request file.
+        request: Option<(usize, Option<u32>)>,
+        parse_ok: bool,
+    },
+    /// Reveals the folder in the tree.
+    Folder {
+        path: PathBuf,
     },
     Action(PaletteAction),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum PaletteAction {
+pub enum PaletteAction {
     OpenFolder,
     NewRequest,
     NewCollection,
+    Import,
     ToggleProblems,
 }
 
 impl PaletteAction {
-    const ALL: [PaletteAction; 4] = [
+    pub const ALL: [PaletteAction; 5] = [
         PaletteAction::OpenFolder,
         PaletteAction::NewRequest,
         PaletteAction::NewCollection,
+        PaletteAction::Import,
         PaletteAction::ToggleProblems,
     ];
 
@@ -122,7 +173,19 @@ impl PaletteAction {
             PaletteAction::OpenFolder => "Open folder…",
             PaletteAction::NewRequest => "New request…",
             PaletteAction::NewCollection => "New collection…",
+            PaletteAction::Import => "Import curl…",
             PaletteAction::ToggleProblems => "Toggle Problems",
+        }
+    }
+
+    /// The row's leading glyph.
+    pub fn icon(self) -> &'static str {
+        match self {
+            PaletteAction::OpenFolder => icons::FOLDER_OPEN,
+            PaletteAction::NewRequest => icons::FILE_PLUS,
+            PaletteAction::NewCollection => icons::FOLDER_PLUS,
+            PaletteAction::Import => icons::IMPORT,
+            PaletteAction::ToggleProblems => icons::PANEL_BOTTOM,
         }
     }
 
@@ -132,44 +195,214 @@ impl PaletteAction {
             PaletteAction::OpenFolder => Box::new(OpenFolder),
             PaletteAction::NewRequest => Box::new(NewRequest),
             PaletteAction::NewCollection => Box::new(NewCollection),
+            PaletteAction::Import => Box::new(Import),
             PaletteAction::ToggleProblems => Box::new(ToggleProblems),
+        }
+    }
+}
+
+/// Every palette entry for a collection named `name` with `tree`: its
+/// requests (each request of a multi-request file on its own row), its
+/// folders, then the actions.
+pub fn palette_entries(name: Option<&str>, tree: &[TreeNode]) -> Vec<(PaletteItem, Target)> {
+    let mut out = Vec::new();
+    collect_requests(tree, &mut out);
+    if let Some(name) = name {
+        collect_folders(name, tree, Path::new(""), &mut out);
+    }
+    out.extend(PaletteAction::ALL.map(|a| {
+        let item = PaletteItem {
+            group: Group::Actions,
+            label: a.label().into(),
+            detail: String::new(),
+        };
+        (item, Target::Action(a))
+    }));
+    out
+}
+
+/// `charges/create-charge.yaml` → `charges /`.
+fn folder_detail(rel_path: &Path) -> String {
+    rel_path
+        .parent()
+        .filter(|p| *p != Path::new(""))
+        .map_or_else(String::new, |p| {
+            let parts: Vec<_> = p.iter().map(|c| c.to_string_lossy()).collect();
+            format!("{} /", parts.join(" / "))
+        })
+}
+
+fn collect_requests(tree: &[TreeNode], out: &mut Vec<(PaletteItem, Target)>) {
+    for node in tree {
+        match node {
+            TreeNode::Folder { children, .. } => collect_requests(children, out),
+            TreeNode::File {
+                name,
+                rel_path,
+                method,
+                requests,
+                parse_ok,
+            } => {
+                let label = request_label(name);
+                if method.is_none() && !requests.is_empty() {
+                    let detail = format!("{} {label}", folder_detail(rel_path))
+                        .trim_start()
+                        .to_string();
+                    for (index, r) in requests.iter().enumerate() {
+                        let item = PaletteItem {
+                            group: Group::Requests,
+                            label: r.name.clone(),
+                            detail: detail.clone(),
+                        };
+                        let target = Target::Request {
+                            rel_path: rel_path.clone(),
+                            method: Some(r.method.clone()),
+                            request: Some((index, r.line)),
+                            parse_ok: *parse_ok,
+                        };
+                        out.push((item, target));
+                    }
+                    continue;
+                }
+                let item = PaletteItem {
+                    group: Group::Requests,
+                    label: label.to_string(),
+                    detail: folder_detail(rel_path),
+                };
+                let target = Target::Request {
+                    rel_path: rel_path.clone(),
+                    method: method.clone(),
+                    request: None,
+                    parse_ok: *parse_ok,
+                };
+                out.push((item, target));
+            }
+        }
+    }
+}
+
+fn collect_folders(
+    collection: &str,
+    tree: &[TreeNode],
+    parent: &Path,
+    out: &mut Vec<(PaletteItem, Target)>,
+) {
+    for node in tree {
+        if let TreeNode::Folder { name, children } = node {
+            let path = parent.join(name);
+            let count = request_count(children);
+            let noun = if count == 1 { "request" } else { "requests" };
+            let mut place = vec![collection.to_string()];
+            place.extend(parent.iter().map(|c| c.to_string_lossy().into_owned()));
+            let item = PaletteItem {
+                group: Group::Folders,
+                label: name.clone(),
+                detail: format!("{} · {count} {noun}", place.join(" / ")),
+            };
+            out.push((item, Target::Folder { path: path.clone() }));
+            collect_folders(collection, children, &path, out);
         }
     }
 }
 
 pub struct Palette {
     ws: WeakEntity<Workspace>,
-    state: Entity<CommandState>,
+    input: Entity<InputState>,
+    scroll: ScrollHandle,
     items: Vec<PaletteItem>,
     targets: Vec<Target>,
+    /// The open collection's name, for the scope chip.
+    scope: Option<SharedString>,
     query: SharedString,
+    /// Position of the highlighted row in display order.
+    selected: usize,
+    /// Scroll the highlighted row into view on the next render.
+    reveal: bool,
+    /// Last pointer position seen over a row.
+    pointer: Option<Point<Pixels>>,
+    _subscription: Subscription,
 }
 
 impl Palette {
-    /// A palette over `tree`'s request files and the studio actions.
     fn new(
         ws: WeakEntity<Workspace>,
+        scope: Option<&str>,
         tree: &[TreeNode],
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let mut entries = Vec::new();
-        collect_requests(tree, &mut entries);
-        entries.extend(PaletteAction::ALL.map(|a| {
-            let item = PaletteItem {
-                group: Group::Actions,
-                label: a.label().into(),
-                detail: String::new(),
-            };
-            (item, Target::Action(a))
-        }));
-        let (items, targets) = entries.into_iter().unzip();
+        let (items, targets) = palette_entries(scope, tree).into_iter().unzip();
+        let input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Search requests and actions"));
+        let _subscription = cx.subscribe_in(&input, window, |this, input, event, _, cx| {
+            if let InputEvent::Change = event {
+                this.query = input.read(cx).value();
+                this.selected = 0;
+                this.reveal = true;
+                cx.notify();
+            }
+        });
         Palette {
             ws,
-            state: cx.new(|cx| CommandState::new(window, cx)),
+            input,
+            scroll: ScrollHandle::new(),
             items,
             targets,
+            scope: scope.map(|s| SharedString::from(s.to_string())),
             query: SharedString::default(),
+            selected: 0,
+            reveal: false,
+            pointer: None,
+            _subscription,
+        }
+    }
+
+    /// Replaces the query, as if typed.
+    pub fn set_query(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.input
+            .update(cx, |s, cx| s.set_value(query.to_string(), window, cx));
+        self.query = query.to_string().into();
+        self.selected = 0;
+        self.reveal = true;
+        cx.notify();
+    }
+
+    /// Whether the pointer really moved to `at`. Only movement picks a
+    /// row: the first event (the pointer resting where the palette opens)
+    /// and repeats at the same spot (sent as rows move under a still
+    /// pointer) leave the keyboard's row highlighted.
+    fn pointer_moved(&mut self, at: Point<Pixels>) -> bool {
+        self.pointer.replace(at).is_some_and(|last| last != at)
+    }
+
+    /// Highlights row `pos` in display order and scrolls it into view
+    /// (development aid, `CURL_RUNNER_STUDIO_SELECT`).
+    pub fn select(&mut self, pos: usize, cx: &mut Context<Self>) {
+        self.selected = pos;
+        self.reveal = true;
+        cx.notify();
+    }
+
+    fn order(&self) -> (Vec<(usize, Vec<usize>)>, Vec<usize>) {
+        let matches = palette_matches(&self.query, &self.items);
+        let order = display_order(&matches, &self.items);
+        (matches, order)
+    }
+
+    fn select_by(&mut self, step: isize, cx: &mut Context<Self>) {
+        let len = self.order().1.len();
+        if len == 0 {
+            return;
+        }
+        self.selected = (self.selected as isize + step).rem_euclid(len as isize) as usize;
+        self.reveal = true;
+        cx.notify();
+    }
+
+    fn confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let (matches, order) = self.order();
+        if let Some(&m) = order.get(self.selected) {
+            self.perform(matches[m].0, window, cx);
         }
     }
 
@@ -181,68 +414,221 @@ impl Palette {
         window.close_dialog(cx);
         self.ws
             .update(cx, |ws, cx| match target {
-                Target::Request { rel_path, .. } => ws.open_file(&rel_path, window, cx),
+                Target::Request {
+                    rel_path,
+                    request: Some((index, line)),
+                    ..
+                } => {
+                    ws.expanded.insert(rel_path.clone());
+                    ws.open_request(&rel_path, index, line, window, cx);
+                }
+                Target::Request { rel_path, .. } => {
+                    ws.selected_request = None;
+                    ws.open_file(&rel_path, window, cx);
+                }
+                Target::Folder { path } => ws.reveal_folder(&path, cx),
                 Target::Action(PaletteAction::OpenFolder) => ws.open_folder(window, cx),
-                Target::Action(PaletteAction::NewRequest) => {
-                    ws.new_request(None, window, cx);
-                }
+                Target::Action(PaletteAction::NewRequest) => drop(ws.new_request(None, window, cx)),
                 Target::Action(PaletteAction::NewCollection) => {
-                    ws.new_collection(window, cx);
+                    drop(ws.new_collection(window, cx));
                 }
+                Target::Action(PaletteAction::Import) => drop(ws.import(window, cx)),
                 Target::Action(PaletteAction::ToggleProblems) => ws.toggle_problems(cx),
             })
             .ok();
     }
 
-    fn render_row(&self, ix: usize, highlights: &[usize]) -> CommandItem {
-        let item = &self.items[ix];
-        let label = item.label.clone();
-        let highlights = highlights.to_vec();
-        let detail = SharedString::from(item.detail.clone());
-        let target = self.targets[ix].clone();
-        CommandItem::new()
-            .label(item.label.clone())
-            .child(move |window, _| {
-                let lead = match &target {
-                    Target::Request { method, .. } => method_badge(method.as_deref()),
-                    Target::Action(_) => div().flex_none().w(px(34.)),
-                };
-                let kbd = match &target {
-                    Target::Action(a) => Kbd::binding_for_action(a.action().as_ref(), None, window),
-                    Target::Request { .. } => None,
-                };
+    fn render_header(&self) -> Div {
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(10.))
+            .h(px(HEADER_H))
+            .px(px(16.))
+            .border_b_1()
+            .border_color(color("border-100"))
+            .child(
+                glyph(icons::SEARCH)
+                    .size(px(16.))
+                    .flex_none()
+                    .text_color(color("text-tertiary")),
+            )
+            .child(
+                div().flex_1().min_w_0().child(
+                    Input::new(&self.input)
+                        .appearance(false)
+                        .p_0()
+                        .text_size(px(15.))
+                        .text_color(color("text-primary")),
+                ),
+            )
+            .children(self.scope.clone().map(|scope| {
                 div()
-                    .flex()
+                    .flex_none()
+                    .px(px(8.))
+                    .py(px(1.))
+                    .rounded_full()
+                    .border_1()
+                    .border_color(color("border-200"))
+                    .text_size(px(11.))
+                    .text_color(color("text-secondary"))
+                    .child(scope)
+            }))
+            .child(key_chip("esc"))
+    }
+
+    fn render_row(
+        &self,
+        pos: usize,
+        ix: usize,
+        highlights: &[usize],
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let item = &self.items[ix];
+        let target = &self.targets[ix];
+        let selected = pos == self.selected;
+        let lead = match target {
+            Target::Request { method, .. } => {
+                let method = method.clone().unwrap_or_default();
+                div()
+                    .flex_none()
+                    .w(px(LEAD_W))
+                    .font_family(mono_font())
+                    .text_size(px(10.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(method_color(&method))
+                    .child(method)
+            }
+            Target::Folder { .. } => lead_icon(icons::FOLDER, 16.),
+            Target::Action(a) => lead_icon(a.icon(), 14.),
+        };
+        let trailing = match target {
+            Target::Action(a) => shortcut(a.action().as_ref(), window).map(key_chip),
+            _ => None,
+        };
+        let broken = matches!(
+            target,
+            Target::Request {
+                parse_ok: false,
+                ..
+            }
+        );
+        div()
+            .id(("palette-row", pos))
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(10.))
+            .h(px(ROW_H))
+            .px(px(ROW_PAD_X))
+            .rounded(px(6.))
+            .text_size(px(13.))
+            .whitespace_nowrap()
+            .overflow_hidden()
+            .cursor_pointer()
+            .text_color(color(if selected {
+                "text-primary"
+            } else {
+                "text-secondary"
+            }))
+            .when(selected, |row| row.bg(color("surface-300")))
+            .child(lead)
+            .child(
+                div()
+                    .flex_none()
+                    // Keeps the match tint glyph-high, like the mockup's.
+                    .line_height(px(17.))
+                    .child(highlighted(&item.label, highlights)),
+            )
+            .child(
+                div()
                     .flex_1()
                     .min_w_0()
-                    .items_center()
-                    .gap(px(10.))
-                    .h(px(28.))
-                    .child(lead)
-                    .child(
-                        div()
-                            .text_color(color("text-primary"))
-                            .child(highlighted(&label, &highlights)),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(12.))
-                            .text_color(color("text-tertiary"))
-                            .child(detail.clone()),
-                    )
-                    .children(kbd.map(|k| k.ml_auto()))
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .text_size(px(12.))
+                    .text_color(color(if selected {
+                        "text-tertiary"
+                    } else {
+                        "text-gutter"
+                    }))
+                    .child(item.detail.clone()),
+            )
+            .when(broken, |row| {
+                row.child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .gap(px(6.))
+                        .text_size(px(12.))
+                        .text_color(color("danger"))
+                        .child(div().size(px(6.)).rounded_full().bg(color("danger")))
+                        .child("Doesn't parse"),
+                )
             })
+            .when(selected && !matches!(target, Target::Action(_)), |row| {
+                row.child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .gap(px(4.))
+                        .text_size(px(12.))
+                        .text_color(color("text-tertiary"))
+                        .child("Open")
+                        .child(key_chip("↵")),
+                )
+            })
+            .children(trailing)
+            .on_mouse_move(cx.listener(move |this, e: &MouseMoveEvent, _, cx| {
+                if this.pointer_moved(e.position) && this.selected != pos {
+                    this.selected = pos;
+                    cx.notify();
+                }
+            }))
+            .on_click(cx.listener(move |this, _, window, cx| this.perform(ix, window, cx)))
     }
 }
 
-/// `label` with the characters at `highlights` bold and underlined.
+fn lead_icon(svg: &'static str, size: f32) -> Div {
+    div().flex().flex_none().items_center().w(px(LEAD_W)).child(
+        glyph(svg)
+            .size(px(size))
+            .text_color(color("text-secondary")),
+    )
+}
+
+/// The first shortcut bound to `action`, as macOS symbols (`⇧⌘N`).
+fn shortcut(action: &dyn Action, window: &Window) -> Option<SharedString> {
+    let binding = window.highest_precedence_binding_for_action(action)?;
+    let key = binding.keystrokes().first()?;
+    Some(Kbd::format(key.as_keystroke()).into())
+}
+
+/// The mockup's `.kb` chip.
+fn key_chip(keys: impl Into<SharedString>) -> Div {
+    div()
+        .flex_none()
+        .px(px(5.))
+        .rounded(px(4.))
+        .border_1()
+        .border_color(color("border-200"))
+        .font_family(mono_font())
+        .text_size(px(11.))
+        .line_height(px(18.))
+        .text_color(color("text-secondary"))
+        .child(keys.into())
+}
+
+/// `label` with the characters at `highlights` in the primary color on a
+/// blue tint.
 fn highlighted(label: &str, highlights: &[usize]) -> StyledText {
     let style = HighlightStyle {
-        font_weight: Some(FontWeight::BOLD),
-        underline: Some(UnderlineStyle {
-            thickness: px(1.),
-            ..Default::default()
-        }),
+        color: Some(color("text-primary")),
+        background_color: Some(color("accent-blue").opacity(MATCH_ALPHA)),
         ..Default::default()
     };
     let ranges = label
@@ -253,120 +639,114 @@ fn highlighted(label: &str, highlights: &[usize]) -> StyledText {
     StyledText::new(label.to_string()).with_highlights(ranges)
 }
 
-/// Every request file in `tree`, depth first.
-fn collect_requests(tree: &[TreeNode], out: &mut Vec<(PaletteItem, Target)>) {
-    for node in tree {
-        match node {
-            TreeNode::Folder { children, .. } => collect_requests(children, out),
-            TreeNode::File {
-                name,
-                rel_path,
-                method,
-                ..
-            } => {
-                let detail = rel_path
-                    .parent()
-                    .filter(|p| *p != Path::new(""))
-                    .map_or_else(String::new, |p| format!("{} /", p.display()));
-                let item = PaletteItem {
-                    group: Group::Requests,
-                    label: request_label(name).to_string(),
-                    detail,
-                };
-                let target = Target::Request {
-                    rel_path: rel_path.clone(),
-                    method: method.clone(),
-                };
-                out.push((item, target));
-            }
-        }
-    }
-}
-
 impl Render for Palette {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let matches = palette_matches(&self.query, &self.items);
-        let count = matches.len();
-        // The item index behind each (section, row) of the command list.
-        let mut sections: Vec<Vec<usize>> = Vec::new();
-        let mut command = Command::new(&self.state)
-            .filterable(false)
-            .bordered(false)
-            .placeholder("Search requests and actions")
-            .max_h(px(420.));
-        for group in Group::ALL {
-            let rows: Vec<_> = matches
-                .iter()
-                .filter(|(ix, _)| self.items[*ix].group == group)
-                .collect();
-            if rows.is_empty() {
-                continue;
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let (matches, order) = self.order();
+        self.selected = self.selected.min(order.len().saturating_sub(1));
+        let mut list = div()
+            .id("palette-list")
+            .flex()
+            .flex_col()
+            .pt(px(6.))
+            .px(px(LIST_PAD_X))
+            .pb(px(8.))
+            .max_h(px(list_max_height(window.viewport_size().height.into())))
+            .overflow_y_scroll()
+            .track_scroll(&self.scroll);
+        let mut child = 0;
+        let mut selected_child = None;
+        let mut group = None;
+        for (pos, &m) in order.iter().enumerate() {
+            let (ix, highlights) = &matches[m];
+            let g = self.items[*ix].group;
+            if group != Some(g) {
+                group = Some(g);
+                list = list.child(
+                    div()
+                        .flex_none()
+                        .pt(px(10.))
+                        .px(px(10.))
+                        .pb(px(4.))
+                        .text_size(px(11.))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(color("text-tertiary"))
+                        .child(g.label()),
+                );
+                child += 1;
             }
-            sections.push(rows.iter().map(|(ix, _)| *ix).collect());
-            command = command.group(
-                CommandGroup::new()
-                    .label(group.label())
-                    .items(rows.iter().map(|(ix, hl)| self.render_row(*ix, hl))),
+            if pos == self.selected {
+                selected_child = Some(child);
+            }
+            list = list.child(self.render_row(pos, *ix, highlights, window, cx));
+            child += 1;
+        }
+        if order.is_empty() {
+            list = list.child(
+                div()
+                    .py(px(24.))
+                    .text_center()
+                    .text_size(px(13.))
+                    .text_color(color("text-tertiary"))
+                    .child("No matches"),
             );
         }
-        let sections = Rc::new(sections);
-        let (on_query, on_confirm) = (cx.entity().downgrade(), cx.entity().downgrade());
-        let command = command
-            .on_query(move |query, _, cx| {
-                let query = SharedString::from(query.to_string());
-                on_query
-                    .update(cx, |this, cx| {
-                        this.query = query;
-                        cx.notify();
-                    })
-                    .ok();
-            })
-            .on_confirm(move |path, window, cx| {
-                if let Some(&ix) = sections.get(path.section).and_then(|s| s.get(path.row)) {
-                    on_confirm
-                        .update(cx, |this, cx| this.perform(ix, window, cx))
-                        .ok();
-                }
-            })
-            .footer(move |_, _, _| legend(count));
+        if std::mem::take(&mut self.reveal)
+            && let Some(child) = selected_child
+        {
+            // Keep the group header in view above the first row.
+            let child = if self.selected == 0 { 0 } else { child };
+            self.scroll.scroll_to_item(child);
+        }
         div()
             .id("palette")
+            .key_context(CONTEXT)
+            .flex()
+            .flex_col()
+            .w_full()
+            .text_color(color("text-primary"))
+            .on_action(cx.listener(|this, _: &SelectUp, _, cx| this.select_by(-1, cx)))
+            .on_action(cx.listener(|this, _: &SelectDown, _, cx| this.select_by(1, cx)))
+            .on_action(cx.listener(|this, _: &Confirm, window, cx| this.confirm(window, cx)))
             // Esc closes the palette, query or not.
             .capture_action(|_: &Cancel, window, cx| {
                 window.close_dialog(cx);
                 cx.stop_propagation();
             })
-            .child(command)
+            .child(self.render_header())
+            .child(
+                div()
+                    .relative()
+                    .flex()
+                    .flex_col()
+                    .child(list)
+                    .child(Scrollbar::vertical(&self.scroll)),
+            )
+            .child(legend(order.len()))
     }
+}
+
+/// The list's height limit in a `viewport`-tall window: the mockup's, or
+/// what fits under the palette's top offset with a margin below.
+fn list_max_height(viewport: f32) -> f32 {
+    (viewport - TOP - HEADER_H - FOOTER_H - 2. - 24.).clamp(ROW_H * 3., LIST_MAX_H)
 }
 
 /// The keyboard legend and the result count.
 fn legend(count: usize) -> impl IntoElement {
-    let key = |k: &'static str| {
-        div()
-            .px(px(5.))
-            .rounded(px(4.))
-            .border_1()
-            .border_color(color("border-200"))
-            .font_family(mono_font())
-            .text_size(px(11.))
-            .line_height(px(18.))
-            .text_color(color("text-secondary"))
-            .child(k)
-    };
     let hint = |keys: &[&'static str], text: &'static str| {
         div()
             .flex()
             .items_center()
             .gap(px(6.))
-            .children(keys.iter().map(|k| key(k)))
+            .children(keys.iter().map(|k| key_chip(*k)))
             .child(text)
     };
     div()
         .flex()
+        .flex_none()
         .items_center()
         .gap(px(16.))
-        .h(px(36.))
+        .h(px(FOOTER_H))
         .px(px(16.))
         .border_t_1()
         .border_color(color("border-100"))
@@ -390,35 +770,59 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Entity<Palette> {
-        let tree = self
-            .state
-            .collection
-            .as_ref()
-            .map_or(&[][..], |c| &c.tree[..]);
+        let (scope, tree) = match &self.state.collection {
+            Some(c) => (Some(c.name.as_str()), &c.tree[..]),
+            None => (None, &[][..]),
+        };
         let ws = cx.entity().downgrade();
-        let palette = cx.new(|cx| Palette::new(ws, tree, window, cx));
+        let palette = cx.new(|cx| Palette::new(ws, scope, tree, window, cx));
         let first_build = std::cell::Cell::new(true);
         let content = palette.clone();
         window.open_dialog(cx, move |dialog, window, cx| {
             if first_build.replace(false) {
-                let state = content.read(cx).state.clone();
-                state.update(cx, |s, cx| s.focus(window, cx));
+                let input = content.read(cx).input.clone();
+                input.update(cx, |s, cx| s.focus(window, cx));
             }
             dialog
                 .entrance(DialogEntrance::None)
-                .w(px(560.))
-                .margin_top(px(88.))
+                .w(px(WIDTH))
+                .margin_top(px(TOP))
                 .p_0()
+                .gap_0()
+                .rounded(px(12.))
+                .bg(color("surface-raised"))
+                .border_color(color("border-200"))
+                .shadow(vec![BoxShadow {
+                    color: hsla(0., 0., 0., 0.7),
+                    offset: point(px(0.), px(24.)),
+                    blur_radius: px(64.),
+                    spread_radius: px(0.),
+                    inset: false,
+                }])
+                .overflow_hidden()
                 .close_button(false)
                 .child(content.clone())
         });
         palette
     }
+
+    /// Shows `folder` in the tree: it and its parents open.
+    pub(super) fn reveal_folder(&mut self, folder: &Path, cx: &mut Context<Self>) {
+        for dir in folder.ancestors() {
+            self.collapsed.remove(dir);
+        }
+        cx.notify();
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Group, PaletteItem, palette_matches};
+    use super::{
+        Group, PaletteAction, PaletteItem, Target, display_order, list_max_height, palette_entries,
+        palette_matches,
+    };
+    use crate::model::collection::{RequestEntry, TreeNode};
+    use std::path::PathBuf;
 
     fn items(labels: &[&str]) -> Vec<PaletteItem> {
         labels
@@ -485,24 +889,152 @@ mod tests {
         assert_eq!(palette_matches("xyz", &items), []);
         assert_eq!(palette_matches("", &items), [(0, vec![]), (1, vec![])]);
     }
+
+    fn tree() -> Vec<TreeNode> {
+        let file = |name: &str, rel: &str, method: Option<&str>| TreeNode::File {
+            name: name.into(),
+            rel_path: rel.into(),
+            method: method.map(Into::into),
+            requests: Vec::new(),
+            parse_ok: true,
+        };
+        vec![
+            TreeNode::Folder {
+                name: "users".into(),
+                children: vec![
+                    file("get-user.yaml", "users/get-user.yaml", Some("GET")),
+                    TreeNode::File {
+                        name: "user-flow.yaml".into(),
+                        rel_path: "users/user-flow.yaml".into(),
+                        method: None,
+                        requests: vec![
+                            RequestEntry {
+                                method: "GET".into(),
+                                name: "Get user".into(),
+                                line: Some(2),
+                            },
+                            RequestEntry {
+                                method: "POST".into(),
+                                name: "Create todo".into(),
+                                line: Some(9),
+                            },
+                        ],
+                        parse_ok: true,
+                    },
+                    TreeNode::Folder {
+                        name: "admin".into(),
+                        children: vec![file("ban.yaml", "users/admin/ban.yaml", Some("POST"))],
+                    },
+                ],
+            },
+            file("smoke.yaml", "smoke.yaml", Some("GET")),
+        ]
+    }
+
+    #[test]
+    fn entries_list_requests_folders_then_actions() {
+        let entries = palette_entries(Some("Examples"), &tree());
+        let rows: Vec<_> = entries
+            .iter()
+            .map(|(i, _)| (i.group, i.label.as_str(), i.detail.as_str()))
+            .collect();
+        assert_eq!(
+            rows[..7],
+            [
+                (Group::Requests, "get-user", "users /"),
+                // Each request of a multi-request file, with the file.
+                (Group::Requests, "Get user", "users / user-flow"),
+                (Group::Requests, "Create todo", "users / user-flow"),
+                (Group::Requests, "ban", "users / admin /"),
+                (Group::Requests, "smoke", ""),
+                (Group::Folders, "users", "Examples · 4 requests"),
+                (Group::Folders, "admin", "Examples / users · 1 request"),
+            ]
+        );
+        assert_eq!(
+            entries[2].1,
+            Target::Request {
+                rel_path: PathBuf::from("users/user-flow.yaml"),
+                method: Some("POST".into()),
+                request: Some((1, Some(9))),
+                parse_ok: true,
+            }
+        );
+        assert_eq!(
+            entries[6].1,
+            Target::Folder {
+                path: "users/admin".into()
+            }
+        );
+        let actions: Vec<_> = entries[7..].iter().map(|(_, t)| t.clone()).collect();
+        assert_eq!(actions, PaletteAction::ALL.map(Target::Action));
+        // No collection: no folders.
+        assert!(
+            palette_entries(None, &tree())
+                .iter()
+                .all(|(i, _)| i.group != Group::Folders)
+        );
+    }
+
+    #[test]
+    fn display_order_groups_ranked_matches() {
+        let mut items = items(&["charges-action", "charge"]);
+        items[0].group = Group::Actions;
+        items.push(PaletteItem {
+            group: Group::Folders,
+            label: "charges".into(),
+            detail: String::new(),
+        });
+        let matches = palette_matches("charge", &items);
+        let shown: Vec<_> = display_order(&matches, &items)
+            .into_iter()
+            .map(|m| items[matches[m].0].label.as_str())
+            .collect();
+        assert_eq!(shown, ["charge", "charges", "charges-action"]);
+    }
+
+    #[test]
+    fn every_action_has_its_own_icon() {
+        let icons: Vec<_> = PaletteAction::ALL.iter().map(|a| a.icon()).collect();
+        for (i, icon) in icons.iter().enumerate() {
+            assert!(icon.starts_with("<svg ") && icon.ends_with("</svg>"));
+            assert!(
+                !icons[i + 1..].contains(icon),
+                "{:?}",
+                PaletteAction::ALL[i]
+            );
+        }
+    }
+
+    #[test]
+    fn list_fits_the_window() {
+        assert_eq!(list_max_height(900.), 520.);
+        assert!(list_max_height(600.) <= 600. - 88. - 52. - 36.);
+    }
 }
 
 #[cfg(test)]
 mod gpui_tests {
     use super::super::workspace::Workspace;
-    use gpui_kit::base::actions::Cancel;
     use gpui_kit::component::WindowExt as _;
     use gpui_kit::{
-        Action as _, AppContext as _, Bounds, Point, TestAppContext, VisualTestContext,
-        WindowBounds, WindowOptions, px, size,
+        AppContext as _, Bounds, Entity, Point, TestAppContext, VisualTestContext, WindowBounds,
+        WindowOptions, px, size,
     };
     use std::path::Path;
 
-    #[gpui_kit::test]
-    fn palette_opens_a_request_and_esc_closes_it(cx: &mut TestAppContext) {
+    /// A workspace on a temporary collection with `extra` more requests.
+    fn open(
+        cx: &mut TestAppContext,
+        extra: usize,
+    ) -> (tempfile::TempDir, Entity<Workspace>, VisualTestContext) {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("charges")).unwrap();
-        for f in ["charges/create-charge.yaml", "smoke.yaml"] {
+        let extra: Vec<_> = (0..extra).map(|i| format!("charges/r{i}.yaml")).collect();
+        let files = ["charges/create-charge.yaml", "smoke.yaml"]
+            .into_iter()
+            .chain(extra.iter().map(String::as_str));
+        for f in files {
             std::fs::write(
                 dir.path().join(f),
                 "request:\n  url: https://api.example.com\n",
@@ -532,24 +1064,21 @@ mod gpui_tests {
             })
             .unwrap()
         });
-        let cx = &mut VisualTestContext::from_window(window, cx);
+        let cx = VisualTestContext::from_window(window, cx);
+        (dir, ws, cx)
+    }
+
+    #[gpui_kit::test]
+    fn palette_opens_a_request_and_esc_closes_it(cx: &mut TestAppContext) {
+        let (_dir, ws, mut vcx) = open(cx, 0);
+        let cx = &mut vcx;
 
         let palette = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.open_palette(window, cx)));
         cx.run_until_parked();
         let labels = palette.read_with(cx, |p, _| {
             p.items.iter().map(|i| i.label.clone()).collect::<Vec<_>>()
         });
-        assert_eq!(
-            labels,
-            [
-                "create-charge",
-                "smoke",
-                "Open folder…",
-                "New request…",
-                "New collection…",
-                "Toggle Problems"
-            ]
-        );
+        assert_eq!(labels[..3], ["create-charge", "smoke", "charges"]);
         cx.update(|window, cx| palette.update(cx, |p, cx| p.perform(0, window, cx)));
         cx.run_until_parked();
         ws.read_with(cx, |ws, _| {
@@ -559,14 +1088,49 @@ mod gpui_tests {
         cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
 
         // Esc closes even with a query typed.
-        let palette = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.open_palette(window, cx)));
+        cx.update(|window, cx| ws.update(cx, |ws, cx| ws.open_palette(window, cx)));
         cx.run_until_parked();
-        let state = palette.read_with(cx, |p, _| p.state.clone());
-        cx.update(|window, cx| {
-            state.update(cx, |s, cx| s.set_query("smo", window, cx));
-            window.dispatch_action(Cancel.boxed_clone(), cx);
-        });
+        cx.simulate_input("smo");
+        cx.run_until_parked();
+        cx.simulate_keystrokes("escape");
         cx.run_until_parked();
         cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
+    }
+
+    #[gpui_kit::test]
+    fn arrows_and_enter_drive_the_palette(cx: &mut TestAppContext) {
+        let (_dir, ws, mut vcx) = open(cx, 20);
+        let cx = &mut vcx;
+        let palette = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.open_palette(window, cx)));
+        cx.run_until_parked();
+        // Typing filters and resets the highlight to the first row.
+        cx.simulate_input("smoke");
+        cx.run_until_parked();
+        assert_eq!(palette.read_with(cx, |p, _| p.query.to_string()), "smoke");
+        cx.simulate_keystrokes("down up up");
+        cx.run_until_parked();
+        // One match: the highlight wraps onto it.
+        assert_eq!(palette.read_with(cx, |p, _| p.selected), 0);
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        ws.read_with(cx, |ws, _| {
+            let doc = ws.state.active_document().unwrap();
+            assert_eq!(doc.rel_path, Path::new("smoke.yaml"));
+        });
+        cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
+
+        // ↓ moves to the second row; ↵ opens it.
+        let palette = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.open_palette(window, cx)));
+        cx.run_until_parked();
+        cx.simulate_keystrokes("down");
+        cx.run_until_parked();
+        assert_eq!(palette.read_with(cx, |p, _| p.selected), 1);
+        cx.simulate_keystrokes("up up");
+        cx.run_until_parked();
+        let last = palette.read_with(cx, |p, _| p.items.len() - 1);
+        assert_eq!(palette.read_with(cx, |p, _| p.selected), last);
+        // The last row is scrolled into view.
+        let offset = palette.read_with(cx, |p, _| p.scroll.offset().y);
+        assert!(offset < px(0.), "{offset:?}");
     }
 }

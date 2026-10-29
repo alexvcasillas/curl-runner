@@ -1,8 +1,10 @@
 //! App setup: theme and fonts, the action and keymap table, the window.
 
+use super::palette;
 use super::state;
 use super::workspace::{Workspace, quit_app};
 use crate::theme;
+use gpui_kit::base::actions::{Cancel, Confirm, SelectDown, SelectUp};
 use gpui_kit::component::{Theme, ThemeConfig};
 use gpui_kit::*;
 use std::borrow::Cow;
@@ -76,6 +78,15 @@ pub fn keymap() -> Vec<KeyBinding> {
         // the editor; the menu stays on `ctrl-.` and the context menu.
         KeyBinding::new("cmd-.", QuickFix, Some("Input && mode == editor")),
         KeyBinding::new("cmd-shift-m", ToggleProblems, None),
+        // The palette's list keys, as the Kit binds them for its `Command`.
+        KeyBinding::new("up", SelectUp, Some(palette::CONTEXT)),
+        KeyBinding::new("down", SelectDown, Some(palette::CONTEXT)),
+        KeyBinding::new(
+            "enter",
+            Confirm { secondary: false },
+            Some(palette::CONTEXT),
+        ),
+        KeyBinding::new("escape", Cancel, Some(palette::CONTEXT)),
     ]
 }
 
@@ -120,7 +131,25 @@ pub fn run() {
                             "new" => drop(ws.new_request(None, window, cx)),
                             "new-collection" => drop(ws.new_collection(window, cx)),
                             "import" => drop(ws.import(window, cx)),
-                            "palette" => drop(ws.open_palette(window, cx)),
+                            "palette" => {
+                                let palette = ws.open_palette(window, cx);
+                                if let Ok(query) = std::env::var("CURL_RUNNER_STUDIO_QUERY") {
+                                    palette.update(cx, |p, cx| p.set_query(&query, window, cx));
+                                }
+                                if let Some(pos) = std::env::var("CURL_RUNNER_STUDIO_SELECT")
+                                    .ok()
+                                    .and_then(|s| s.parse().ok())
+                                {
+                                    // Once the list is laid out, so it can scroll.
+                                    cx.spawn(async move |_, cx| {
+                                        cx.background_executor()
+                                            .timer(std::time::Duration::from_millis(500))
+                                            .await;
+                                        palette.update(cx, |p, cx| p.select(pos, cx));
+                                    })
+                                    .detach();
+                                }
+                            }
                             "problem" => ws.dev_show_first_problem(window, cx),
                             _ => {}
                         });
@@ -143,7 +172,9 @@ pub fn run() {
 /// `CURL_RUNNER_STUDIO_FOLDER` opens that folder instead of the last one
 /// (without remembering it), `CURL_RUNNER_STUDIO_OPEN` opens a file by
 /// its path relative to the collection and `CURL_RUNNER_STUDIO_SHOW` opens
-/// a dialog: `new`, `new-collection`, `import` or `palette`; `problem`
+/// a dialog: `new`, `new-collection`, `import` or `palette` (with the
+/// query in `CURL_RUNNER_STUDIO_QUERY` and the row in
+/// `CURL_RUNNER_STUDIO_SELECT`, if set); `problem`
 /// selects the open file's first problem and opens its popover (hover
 /// states can't be reached without a pointer).
 fn dev_env(name: &str) -> Option<PathBuf> {
@@ -425,7 +456,11 @@ mod tests {
                 "cmd-enter",
                 "cmd-k",
                 "cmd-.",
-                "cmd-shift-m"
+                "cmd-shift-m",
+                "up",
+                "down",
+                "enter",
+                "escape"
             ]
         );
     }

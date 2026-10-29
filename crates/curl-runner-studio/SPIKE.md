@@ -249,6 +249,29 @@ on the fallback families.
   an observed (`.test_support()`) element; give list containers a role and
   `.test_support()` so an empty list can still be queried.
 
+## Command palette
+
+- The Kit's `Command` was replaced by `ui/palette.rs`. Its rows have a fixed
+  frame (`px_2 py_1p5`, `text_sm`, theme accent when highlighted), its query
+  field takes only a prefix, and its list scrollbar (16px wide, overlaid)
+  covered our trailing shortcut chips. The studio palette is a plain
+  `InputState` plus a scrolling `div` (`track_scroll`, `ScrollHandle::scroll_to_item`)
+  with the Kit's overlay `scroll::Scrollbar::vertical` beside it. Rows keep
+  8px list padding + 10px row padding on the right, which clears the 16px
+  scrollbar.
+- Keys: `up`/`down`/`enter`/`escape` are bound to the Kit's `SelectUp`,
+  `SelectDown`, `Confirm` and `Cancel` in the `Palette` key context, as the
+  Kit does for `Command` (`Command` context). The focused `Input` binds the
+  same keys in `Input`, but its single-line handlers propagate, so the
+  palette's bindings run (covered by a test-harness keystroke test).
+- Hover: GPUI sends a mouse move with an unchanged position when rows move
+  under a still pointer (and one when the palette opens under it). The
+  palette only follows the pointer when its position changed, so the
+  keyboard's row stays highlighted.
+- The Kit `Dialog` wraps children in an `overflow_y_scrollbar` body; the
+  palette sizes its list from the viewport (`list_max_height`) so that body
+  never scrolls.
+
 ## Fallbacks
 
 None needed: all six items exist in 0.8.1. If a later version drops one, the
