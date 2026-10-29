@@ -6,7 +6,7 @@ use super::issues::{
     not_plain_object, prop, truthy_prop,
 };
 use super::{request, security};
-use curl_runner_core::model::Json;
+use crate::model::Json;
 
 pub(super) const VALID_GLOBAL_KEYS: &[&str] = &[
     "env",

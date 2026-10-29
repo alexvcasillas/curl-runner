@@ -1,9 +1,9 @@
 //! Console output of `validate` (the reporting half of TS `run`, and
 //! `showValidateHelp`).
 
-use super::issues::{Issue, Severity};
 use crate::colors::{Color, colorize};
 use crate::output::Console;
+use curl_runner_core::lint::{Issue, Severity};
 
 /// TS `color()` (always on in TS; off here when `NO_COLOR` is set).
 #[derive(Clone, Copy)]

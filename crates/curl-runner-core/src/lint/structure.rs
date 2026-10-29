@@ -7,7 +7,7 @@ use super::issues::{
     Crash, Ctx, Fix, FixValue, Res, Severity, is_object, object_keys, prop, truthy, truthy_prop,
 };
 use super::request::validate_request_config;
-use curl_runner_core::model::Json;
+use crate::model::Json;
 
 const VALID_TOP_LEVEL_KEYS: &[&str] = &["version", "global", "collection", "requests", "request"];
 const VALID_COLLECTION_KEYS: &[&str] =

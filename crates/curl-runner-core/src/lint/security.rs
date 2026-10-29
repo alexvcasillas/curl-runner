@@ -1,7 +1,7 @@
 //! Auth and TLS rules (TS `validateAuth`, `validateSSLConfig`).
 
 use super::issues::{Ctx, Res, Severity, as_str, truthy_prop};
-use curl_runner_core::model::Json;
+use crate::model::Json;
 
 const VALID_AUTH_TYPES: &[&str] = &["basic", "bearer", "digest", "ntlm", "oauth2"];
 

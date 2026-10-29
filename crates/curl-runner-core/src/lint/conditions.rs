@@ -4,8 +4,8 @@ use super::issues::{
     Crash, Ctx, Res, Severity, as_num, has_key, is_object, not_plain_object, prop, truthy_prop,
 };
 use super::request::convert_to;
-use curl_runner_core::jsval::{is_js_space, parse_int};
-use curl_runner_core::model::Json;
+use crate::jsval::{is_js_space, parse_int};
+use crate::model::Json;
 
 const VALID_OPERATORS: &[&str] = &[
     "==",

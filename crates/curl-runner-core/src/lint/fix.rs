@@ -6,10 +6,10 @@
 //! are double-quoted.
 
 use super::issues::{FixValue, Issue, array_index};
-use curl_runner_core::jsval::{is_js_space, num_to_string};
-use curl_runner_core::model::Json;
-use curl_runner_core::snapshot::json::js_order;
-use curl_runner_core::yaml_text::{map_key_text, scalar_text};
+use crate::jsval::{is_js_space, num_to_string};
+use crate::model::Json;
+use crate::snapshot::json::js_order;
+use crate::yaml_text::{map_key_text, scalar_text};
 use indexmap::IndexMap;
 
 /// A JS value as `applyFix` can leave it: `undefined` properties and array

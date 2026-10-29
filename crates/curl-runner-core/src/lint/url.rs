@@ -1,8 +1,8 @@
 //! URL rules (TS `validateURL`, `validateProxyURL`).
 
 use super::issues::{Ctx, Fix, FixValue, Severity};
-use curl_runner_core::jsval::parse_int;
-use curl_runner_core::model::Json;
+use crate::jsval::parse_int;
+use crate::model::Json;
 
 /// TS `URL_TYPOS`, in order (the first match wins).
 const URL_TYPOS: &[(&str, &str)] = &[
@@ -194,7 +194,7 @@ pub fn validate_url(cx: &mut Ctx, url: &Json, path: &str) {
             Severity::Error,
             format!(
                 "Invalid port number {}. Must be 1-65535",
-                curl_runner_core::jsval::num_to_string(p)
+                crate::jsval::num_to_string(p)
             ),
         );
     }

@@ -8,6 +8,7 @@ pub mod executor;
 pub mod interpolate;
 pub(crate) mod jsfile;
 pub mod jsval;
+pub mod lint;
 pub mod model;
 pub mod parser;
 pub mod postprocess;

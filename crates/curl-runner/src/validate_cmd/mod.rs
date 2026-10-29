@@ -1,43 +1,21 @@
 //! `curl-runner validate [files...] [--fix] [--quiet] [--strict]`
 //! (`commands/validate.ts`).
 //!
-//! Rules are split by group (`structure`, `global`, `request`, `url`,
-//! `security`, `conditions`); [`PASSES`] is the registry of document-level
-//! passes, run in TS order. Like TS, rules judge the raw parsed YAML (not the
-//! typed model), and the `TypeError`s TS throws on some shapes end the run
-//! with the same message and exit code 1.
+//! The rules live in `curl_runner_core::lint`; this module handles options,
+//! file discovery, `--fix` writes and the printed report. A [`Crash`] (the
+//! `TypeError`s TS throws on some shapes) ends the run with the same message
+//! and exit code 1.
 
-mod conditions;
-mod fix;
-mod global;
-mod issues;
 mod report;
-mod request;
-mod security;
-mod structure;
-mod url;
 
 use crate::colors::Color;
 use crate::output::Console;
 use curl_runner_core::discover::find_yaml_files;
-use curl_runner_core::model::Json;
-use curl_runner_core::parser::{self, ParseError};
-use issues::{Crash, Ctx, Issue, Res, Severity};
+use curl_runner_core::lint::{
+    Crash, Issue, LintOutcome, Severity, fix_document, is_valid, lint_text,
+};
 use report::{Counts, Paint};
 use std::path::Path;
-
-type Pass = fn(&Json, &mut Ctx) -> Res;
-
-/// Document-level passes, in the order TS `validateFile` runs them.
-const PASSES: &[(&str, Pass)] = &[
-    ("variables", structure::collect_defined_variables),
-    ("structure", structure::validate_structure),
-    ("global", structure::validate_global_pass),
-    ("collection", structure::validate_collection_pass),
-    ("request", structure::validate_request_pass),
-    ("requests", structure::validate_requests_pass),
-    ("duplicate names", structure::check_duplicate_names),
-];
 
 #[derive(Default)]
 struct Options {
@@ -67,53 +45,39 @@ struct FileResult {
     fix_skipped: bool,
 }
 
-/// Bun's YAML errors carry no detail (`Unexpected token`/`Unexpected EOF`).
-fn parse_error_message(e: &ParseError) -> String {
-    match e {
-        ParseError::Yaml(y) => {
-            let msg = y.to_string();
-            if msg.contains("end of stream") {
-                "YAML Parse error: Unexpected EOF".into()
-            } else {
-                "YAML Parse error: Unexpected token".into()
-            }
-        }
-        other => other.to_string(),
-    }
-}
-
 fn validate_file(path: &Path, fix: bool) -> Result<FileResult, Crash> {
-    let mut cx = Ctx::default();
-    let parsed = std::fs::read_to_string(path)
-        .map_err(|e| e.to_string())
-        .and_then(|s| parser::parse_raw_stream(&s).map_err(|e| parse_error_message(&e)));
-    let content = match parsed {
-        Ok(c) => c,
-        Err(msg) => {
-            cx.add("", Severity::Error, format!("Failed to parse YAML: {msg}"));
+    let outcome = match std::fs::read_to_string(path) {
+        Ok(text) => lint_text(&text)?,
+        Err(e) => LintOutcome::ParseError(format!("Failed to parse YAML: {e}")),
+    };
+    let (content, issues) = match outcome {
+        LintOutcome::ParseError(message) => {
             return Ok(FileResult {
                 valid: false,
-                issues: cx.issues,
+                issues: vec![Issue {
+                    path: "(root)".into(),
+                    severity: Severity::Error,
+                    message,
+                    fix: None,
+                }],
                 fixed: None,
                 fix_skipped: false,
             });
         }
+        LintOutcome::Linted { content, issues } => (content, issues),
     };
-    for (_, pass) in PASSES {
-        pass(&content, &mut cx)?;
-    }
     // A multi-document file parses to an array of documents; TS rewrote it
     // from that array and erased it. Only a single mapping is rewritten.
-    let has_fixes = fix && cx.issues.iter().any(|i| i.fix.is_some());
+    let has_fixes = fix && issues.iter().any(|i| i.fix.is_some());
     let fix_skipped = has_fixes && !content.is_object();
     let fixed = if has_fixes && !fix_skipped {
-        fix::fix_document(&content, &cx.issues).map(|(text, _)| text)
+        fix_document(&content, &issues).map(|(text, _)| text)
     } else {
         None
     };
     Ok(FileResult {
-        valid: !cx.issues.iter().any(|i| i.severity == Severity::Error),
-        issues: cx.issues,
+        valid: is_valid(&issues),
+        issues,
         fixed,
         fix_skipped,
     })

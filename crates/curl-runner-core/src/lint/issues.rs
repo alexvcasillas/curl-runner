@@ -6,11 +6,11 @@
 //! the raw JSON and reproduce JS property access, `typeof`, truthiness and
 //! the `TypeError`s TS throws on unexpected shapes ([`Crash`]).
 
-use curl_runner_core::jsval::JsVal;
-use curl_runner_core::model::Json;
-use curl_runner_core::snapshot::json::js_entries;
+use crate::jsval::JsVal;
+use crate::model::Json;
+use crate::snapshot::json::js_entries;
 
-pub use crate::output::format::truthy;
+pub use crate::jsval::truthy;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -281,7 +281,7 @@ pub fn not_plain_object(v: &Json) -> bool {
 /// interpolator); its numeric value is only known at run time.
 pub fn is_interpolated(v: &Json) -> bool {
     v.as_str()
-        .is_some_and(|s| !curl_runner_core::interpolate::extract_variables(s).is_empty())
+        .is_some_and(|s| !crate::interpolate::extract_variables(s).is_empty())
 }
 
 /// JS `String(v)`.
@@ -375,7 +375,7 @@ fn has_bearer_jwt(s: &str) -> bool {
         let start = from + off;
         from = start + 1;
         let rest = &s[start + 6..];
-        let after_space = rest.trim_start_matches(curl_runner_core::jsval::is_js_space);
+        let after_space = rest.trim_start_matches(crate::jsval::is_js_space);
         if after_space.len() == rest.len() {
             continue;
         }

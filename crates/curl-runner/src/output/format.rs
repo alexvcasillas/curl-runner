@@ -143,16 +143,7 @@ fn write_json(out: &mut String, v: &Json, indent: Option<usize>, depth: usize) {
     }
 }
 
-/// JS truthiness of an optional JSON value (`result.body ? ... : ...`).
-pub fn truthy(v: Option<&Json>) -> bool {
-    match v {
-        None | Some(Json::Null) => false,
-        Some(Json::Bool(b)) => *b,
-        Some(Json::Number(n)) => n.as_f64().is_some_and(|f| f != 0.0 && !f.is_nan()),
-        Some(Json::String(s)) => !s.is_empty(),
-        Some(_) => true,
-    }
-}
+pub use curl_runner_core::jsval::truthy;
 
 /// `truncate` (by chars).
 #[allow(dead_code)] // watch port
@@ -289,17 +280,6 @@ mod tests {
         assert_eq!(format_percent(0.5, 0), "50%");
         assert_eq!(format_percent(0.123, 2), "12.30%");
         assert_eq!(format_percent(0.0, 1), "0.0%");
-    }
-
-    #[test]
-    fn truthiness() {
-        assert!(!truthy(None));
-        assert!(!truthy(Some(&json!(null))));
-        assert!(!truthy(Some(&json!(""))));
-        assert!(!truthy(Some(&json!(0))));
-        assert!(!truthy(Some(&json!(false))));
-        assert!(truthy(Some(&json!({}))));
-        assert!(truthy(Some(&json!("x"))));
     }
 
     #[test]

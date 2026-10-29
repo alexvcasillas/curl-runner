@@ -7,8 +7,8 @@ use super::issues::{
     js_string, not_plain_object, prop, truthy, truthy_prop,
 };
 use super::{conditions, global, security, url};
-use curl_runner_core::jsval::{num_to_string, parse_int, trim};
-use curl_runner_core::model::Json;
+use crate::jsval::{num_to_string, parse_int, trim};
+use crate::model::Json;
 
 pub const VALID_METHODS: &[&str] = &["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
 
