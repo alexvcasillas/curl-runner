@@ -5,6 +5,8 @@ use curl_runner_core::lint::edit::fix_edit;
 use std::io;
 use std::path::{Path, PathBuf};
 
+// Not wired yet: the editor diagnostics view and Run button use it.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FixError {
     /// The diagnostic index is out of range or the diagnostic has no fix.
@@ -90,6 +92,8 @@ impl Document {
 
     /// Apply diagnostic `idx`'s quick fix to the current text. The edit is
     /// computed now, so it always matches the buffer.
+    // Not wired yet: the editor diagnostics view uses it.
+    #[allow(dead_code)]
     pub fn apply_fix(&mut self, idx: usize) -> Result<(), FixError> {
         let issue = self
             .diagnostics

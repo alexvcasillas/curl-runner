@@ -2,7 +2,7 @@
 
 use curl_runner_core::discover::find_yaml_files;
 use curl_runner_core::parser::parse_raw_stream;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -75,22 +75,39 @@ impl Collection {
         self.tree = tree;
     }
 
+    /// Writes a new file; an existing `rel` fails with `AlreadyExists`.
+    // Not wired yet: the New dialog writes files with it.
+    #[allow(dead_code)]
     pub fn create_file(&mut self, rel: &Path, contents: &str) -> io::Result<()> {
         let path = self.root.join(rel);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(path, contents)?;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)?
+            .write_all(contents.as_bytes())?;
         self.refresh();
         Ok(())
     }
 
+    /// Moves `from` to `to`; an existing `to` fails with `AlreadyExists`,
+    /// unless it is `from` itself under another letter case (a case-only
+    /// rename on a case-insensitive disk).
     pub fn rename(&mut self, from: &Path, to: &Path) -> io::Result<()> {
+        let src = self.root.join(from);
         let dest = self.root.join(to);
+        if dest.symlink_metadata().is_ok() && !is_same_file(&src, &dest) {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!("{} already exists", to.display()),
+            ));
+        }
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::rename(self.root.join(from), dest)?;
+        std::fs::rename(src, dest)?;
         self.refresh();
         Ok(())
     }
@@ -105,6 +122,22 @@ impl Collection {
         self.refresh();
         Ok(())
     }
+}
+
+#[cfg(unix)]
+fn is_same_file(a: &Path, b: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (a.metadata(), b.metadata()) {
+        (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
+        _ => false,
+    }
+}
+
+/// Windows disks are case-insensitive: an existing destination that matches
+/// the source ignoring case is the source.
+#[cfg(not(unix))]
+fn is_same_file(a: &Path, b: &Path) -> bool {
+    a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
 }
 
 /// `(method, parse_ok)` for a file.
@@ -236,6 +269,48 @@ mod tests {
                 "{n}"
             );
         }
+    }
+
+    #[test]
+    fn create_file_refuses_existing_destination() {
+        let d = tempfile::tempdir().unwrap();
+        write(d.path(), "a.yaml", b"original\n");
+        let mut c = Collection::open(d.path()).unwrap();
+        let err = c.create_file(Path::new("a.yaml"), "new\n").unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(
+            std::fs::read_to_string(d.path().join("a.yaml")).unwrap(),
+            "original\n"
+        );
+    }
+
+    #[test]
+    fn rename_refuses_existing_destination() {
+        let d = tempfile::tempdir().unwrap();
+        write(d.path(), "a.yaml", b"a\n");
+        write(d.path(), "b.yaml", b"b\n");
+        let mut c = Collection::open(d.path()).unwrap();
+        let err = c
+            .rename(Path::new("a.yaml"), Path::new("b.yaml"))
+            .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(
+            std::fs::read_to_string(d.path().join("a.yaml")).unwrap(),
+            "a\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(d.path().join("b.yaml")).unwrap(),
+            "b\n"
+        );
+    }
+
+    #[test]
+    fn rename_allows_case_only_change() {
+        let d = tempfile::tempdir().unwrap();
+        write(d.path(), "a.yaml", b"a\n");
+        let mut c = Collection::open(d.path()).unwrap();
+        c.rename(Path::new("a.yaml"), Path::new("A.yaml")).unwrap();
+        assert!(c.tree.iter().any(|n| n.name() == "A.yaml"));
     }
 
     #[test]

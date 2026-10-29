@@ -64,8 +64,9 @@ our tokens (Task 7).
 
 ## 2. Diagnostics (severity, range, message)
 
-- Types: `gpui_kit::component::highlighter::{Diagnostic, DiagnosticSeverity, DiagnosticSet}`
-  (not in `input`).
+- Types: `gpui_kit::component::highlighter::{Diagnostic, DiagnosticSeverity, DiagnosticSet}`.
+  In 0.8.1 these are re-exported from `highlighter` only; `component::input`
+  does not re-export them (checked in `gpui-component-0.8.1/src/input/mod.rs`).
 - `Diagnostic::new(start..end, message).with_severity(DiagnosticSeverity::Warning).with_code("unknown-property").with_source("curl-runner")`;
   `range: Range<Position>`, `severity` is `Error | Warning | Info | Hint`.
 - Set: `state.diagnostics_mut()` returns `Option<&mut DiagnosticSet>` (Some for
@@ -151,6 +152,39 @@ uses an explicitly set family as-is (no fallback probe), so the bytes must be
 registered first. Font files are not vendored yet (license: SIL OFL, from the
 Geist repository); system families (`.SystemUIFont`, `Menlo`) work without
 embedding.
+
+## Import paths
+
+- `gpui_kit::component::input::{EditorState, Editor, InputState, Input, InputEvent,
+  HoverProvider, CodeActionProvider, Rope, RopeExt, Position, RangeDecoration,
+  RangeDecorationStyle, RangeDecorationCollection}`.
+- `gpui_kit::component::highlighter::{Diagnostic, DiagnosticSeverity, DiagnosticSet}`.
+- `gpui_kit::component::{Theme, ThemeConfig, TitleBar, WindowExt, Icon, IconName}`;
+  dialogs `component::dialog::{Dialog, DialogFooter, AlertDialog}`, menus
+  `component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem}`.
+- `use gpui_kit::prelude::*` for `FluentBuilder` (`when`, `map`).
+- Test modules must not glob `gpui_kit::*`: with `test-support` it brings
+  GPUI's `test` macro, which shadows `#[test]` (recursion-limit error).
+
+## Theme and fonts (Task 7)
+
+- Theme: build a `ThemeConfig` (JSON: `colors`, `highlight` with
+  `editor.*` and `syntax`) from our tokens and install it with
+  `Theme::update(cx, |t| t.apply_config(&Rc::new(config)))`; that also
+  switches to dark and repaints the editor background.
+- Fonts: `cx.text_system().all_font_names()` tells whether Geist / Geist Mono
+  are installed; otherwise `.SystemUIFont` and `Menlo`.
+- `Editor::new(&state).text_size(px(13.)).line_height(px(18.))` overrides the
+  editor's default 1.5 line height.
+
+## Test support
+
+`gpui-kit` `test-support` (dev-dependency) resolves the weak optional
+`gpui-fast*` crates into `Cargo.lock` (not compiled). That needed
+`taffy 0.15.0` and `unicode-properties 0.1.3` (from 0.15.1 / 0.1.4).
+`#[gpui_kit::test]` plus `gpui_kit::test::TestWindowExt`: `.role(..)` then
+`.test_support()` on an element makes it queryable with
+`window.within(id).find_all_by_role(role)`.
 
 ## Fallbacks
 

@@ -17,9 +17,17 @@ curl-runner-core.workspace = true
 serde_json = "1.0.154"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+futures = "0.3.34"
 gpui-kit = { version = "=0.8.1", features = ["tree-sitter-yaml"] }
 # gpui-kit 0.8.1 pins this exact GPUI; keep both in step when upgrading.
 gpui-pre = "=0.3.10"
+log = "0.4.34"
+notify = "8"
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+
+# `test-support` for the GPUI smoke tests (`#[gpui_kit::test]`, element queries).
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+gpui-kit = { version = "=0.8.1", features = ["tree-sitter-yaml", "test-support"] }
