@@ -17,13 +17,14 @@ pub struct TextEdit {
 }
 
 impl TextEdit {
-    /// `text` with the edit applied.
-    pub fn apply(&self, text: &str) -> String {
-        let mut out = String::with_capacity(text.len() + self.new_text.len());
-        out.push_str(&text[..self.range.start]);
-        out.push_str(&self.new_text);
-        out.push_str(&text[self.range.end..]);
-        out
+    /// `text` with the edit applied, or `None` when the range is out of
+    /// bounds or not on char boundaries.
+    pub fn apply(&self, text: &str) -> Option<String> {
+        let (head, tail) = (text.get(..self.range.start)?, text.get(self.range.end..)?);
+        if self.range.start > self.range.end {
+            return None;
+        }
+        Some([head, &self.new_text, tail].concat())
     }
 }
 
@@ -36,6 +37,10 @@ impl TextEdit {
 /// The edited text must read back as the data `fix_document` gives, so a
 /// path that ends at or runs through an alias, sits behind a merge key, or
 /// does not resolve exactly to its node gives `None`.
+///
+/// On demand: this parses the text about three times (spans, before and
+/// after the edit), so call it when the user applies a quick fix, not on
+/// every lint.
 pub fn fix_edit(text: &str, issue: &Issue) -> Option<TextEdit> {
     let fix = issue.fix.as_ref()?;
     let (NodeSpans { key, value }, kind) = locate_node(text, &issue.path)?;
@@ -71,7 +76,7 @@ pub fn fix_edit(text: &str, issue: &Issue) -> Option<TextEdit> {
         },
     };
     let before = parser::parse_raw_stream(text).ok()?;
-    let after = parser::parse_raw_stream(&edit.apply(text)).ok()?;
+    let after = parser::parse_raw_stream(&edit.apply(text)?).ok()?;
     (after == fixed_data(&before, &issue.path, &fix.value)).then_some(edit)
 }
 
@@ -86,9 +91,19 @@ fn entry_lines(text: &str, key: Range<usize>, value: Range<usize>) -> Option<Ran
     {
         return None;
     }
-    // A block value ends where the next token starts; back up to its last
-    // character.
-    let last = text[..value.end].trim_end().len().max(key.end);
+    // A block value ends where the next token starts: back up over blank
+    // and comment-only lines (they belong to what follows) to its last
+    // content line.
+    let mut last = value.end;
+    loop {
+        let line_start = text[..last].rfind('\n').map_or(0, |i| i + 1);
+        let line = text[line_start..last].trim();
+        if line_start <= key.end || !(line.is_empty() || line.starts_with('#')) {
+            break;
+        }
+        last = line_start - 1;
+    }
+    let last = last.max(key.end);
     let end = text[last..].find('\n').map_or(text.len(), |i| last + i + 1);
     Some(start..end)
 }
@@ -116,7 +131,10 @@ mod tests {
     /// Apply the fix for the issue at `path`; it must be gone after.
     fn fixed(text: &str, path: &str) -> String {
         let issue = issue_at(text, path);
-        let out = fix_edit(text, &issue).expect("an edit").apply(text);
+        let out = fix_edit(text, &issue)
+            .expect("an edit")
+            .apply(text)
+            .unwrap();
         assert!(
             !lint(&out).contains(&issue),
             "still reported after the edit:\n{out}"
@@ -159,11 +177,31 @@ mod tests {
             fixed(t, "foo"),
             "# head\nrequest:\n  url: https://api.example.com\n"
         );
+        // Blank and comment lines before the next key stay.
+        let t = "foo:\n  a: 1\n\n# Requests below\nrequest:\n  url: https://api.example.com\n";
+        assert_eq!(
+            fixed(t, "foo"),
+            "\n# Requests below\nrequest:\n  url: https://api.example.com\n"
+        );
         let t = "request:\n  url: https://api.example.com\nfoo: 1";
         assert_eq!(
             fixed(t, "foo"),
             "request:\n  url: https://api.example.com\n"
         );
+    }
+
+    #[test]
+    fn apply_rejects_ranges_that_do_not_fit() {
+        let e = |range, new_text: &str| TextEdit {
+            range,
+            new_text: new_text.into(),
+        };
+        assert_eq!(e(1..2, "X").apply("abc").as_deref(), Some("aXc"));
+        assert_eq!(e(2..4, "X").apply("abc"), None);
+        #[allow(clippy::reversed_empty_ranges)]
+        let reversed = 2..1;
+        assert_eq!(e(reversed, "X").apply("abc"), None);
+        assert_eq!(e(1..2, "X").apply("é"), None);
     }
 
     #[test]
@@ -236,7 +274,7 @@ mod tests {
                 let (doc, _) = fix_document(&content, one).unwrap();
                 let edit = fix_edit(t, issue)
                     .unwrap_or_else(|| panic!("no edit for {:?} in\n{t}", issue.path));
-                let out = edit.apply(t);
+                let out = edit.apply(t).unwrap();
                 assert_eq!(
                     summary(&lint(&out)),
                     summary(&lint(&doc)),
