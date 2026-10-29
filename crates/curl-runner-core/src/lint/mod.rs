@@ -13,6 +13,7 @@ mod global;
 mod issues;
 mod request;
 mod security;
+pub mod spans;
 mod structure;
 mod url;
 
