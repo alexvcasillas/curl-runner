@@ -10,11 +10,11 @@
 
 use crate::args::{self, Command};
 use crate::colors;
-use crate::discover::find_yaml_files;
 use crate::exit;
 use crate::output::{self, Console, Logger, OutCfg, Reporter};
 use crate::watch;
 use curl_runner_core::config::{self, CliOptions, ConfigMessage, ExecutionMode};
+use curl_runner_core::discover::find_yaml_files;
 use curl_runner_core::executor::{self, Executor, PreparedRequest, create_summary};
 use curl_runner_core::interpolate;
 use curl_runner_core::model::{ExecutionSummary, GlobalConfig, Json, OutputConfig, RequestConfig};

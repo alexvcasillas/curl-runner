@@ -2,6 +2,7 @@ pub mod condition;
 pub mod config;
 pub mod convert;
 pub mod diff;
+pub mod discover;
 pub mod env;
 pub mod executor;
 pub mod interpolate;

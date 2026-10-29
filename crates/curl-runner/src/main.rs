@@ -4,7 +4,6 @@ mod args;
 mod colors;
 mod convert_cmd;
 mod diff_mode;
-mod discover;
 mod exit;
 mod install;
 mod net;

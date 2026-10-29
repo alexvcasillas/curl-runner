@@ -18,8 +18,8 @@ mod structure;
 mod url;
 
 use crate::colors::Color;
-use crate::discover::find_yaml_files;
 use crate::output::Console;
+use curl_runner_core::discover::find_yaml_files;
 use curl_runner_core::model::Json;
 use curl_runner_core::parser::{self, ParseError};
 use issues::{Crash, Ctx, Issue, Res, Severity};
