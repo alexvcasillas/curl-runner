@@ -983,6 +983,11 @@ request:
         assert_eq!(line_of(BOARD_YAML, range.start), 16);
         assert_eq!(&BOARD_YAML[range.clone()], "2500");
         assert_eq!(text, "got 2000");
+        // Multi-byte text above: the range still lands on the value.
+        let multi = BOARD_YAML.replacen("create-charge", "créé — 💳 create-charge", 1);
+        let hints = expect_hints(&multi, None, &checks);
+        assert_eq!(line_of(&multi, hints[0].0.start), 16);
+        assert_eq!(&multi[hints[0].0.clone()], "2500");
     }
 
     #[test]

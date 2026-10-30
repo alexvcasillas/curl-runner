@@ -32,6 +32,9 @@ pub struct FileRun {
     pub waits: HashMap<usize, Vec<u64>>,
     /// Each request as a curl command line, redacted (Copy as curl).
     pub commands: HashMap<usize, String>,
+    /// [`text_hash`] of the file text each result ran from: its hints show
+    /// only while the file still reads that way.
+    pub ran: HashMap<usize, u64>,
     /// Each request's name as the run announced it, redacted.
     pub names: HashMap<usize, String>,
     /// The request that saved each store value, by value name.
@@ -53,6 +56,7 @@ impl FileRun {
             attempts: HashMap::new(),
             waits: HashMap::new(),
             commands: HashMap::new(),
+            ran: HashMap::new(),
             names: HashMap::new(),
             captured_by: HashMap::new(),
             store: Store::default(),
@@ -114,6 +118,8 @@ pub struct Runs {
     target: Option<RunTarget>,
     /// The active run's files, by group.
     groups: Vec<PathBuf>,
+    /// [`text_hash`] of each group's file as the run read it from disk.
+    group_hashes: Vec<Option<u64>>,
     env: String,
     root: PathBuf,
     /// The last request started, by group and index: the one a `Stored`
@@ -186,6 +192,16 @@ impl Runs {
         match event {
             RunEvent::Started { groups, .. } => {
                 self.groups = groups.into_iter().map(|(f, _)| f).collect();
+                // The run reads disk once it starts; so does this.
+                self.group_hashes = self
+                    .groups
+                    .iter()
+                    .map(|f| {
+                        std::fs::read_to_string(self.root.join(f))
+                            .ok()
+                            .map(|t| text_hash(&t))
+                    })
+                    .collect();
                 for file in &self.groups {
                     let fresh = FileRun::new(&self.env);
                     match &self.target {
@@ -197,6 +213,7 @@ impl Runs {
                             run.attempts.remove(index);
                             run.waits.remove(index);
                             run.commands.remove(index);
+                            run.ran.remove(index);
                             run.load_error = None;
                             run.env = self.env.clone();
                             run.at = Local::now();
@@ -280,7 +297,11 @@ impl Runs {
                 if self.progress.as_ref().is_some_and(|p| p.is(group, index)) {
                     self.progress = None;
                 }
+                let hash = self.group_hashes.get(group).copied().flatten();
                 if let Some(run) = self.run_of(group) {
+                    if let Some(hash) = hash {
+                        run.ran.insert(index, hash);
+                    }
                     run.views.insert(index, ResultView::new(&result));
                     run.results.insert(index, *result);
                 }
@@ -342,6 +363,15 @@ impl Runs {
             });
         counts.get(index).copied().unwrap_or(1)
     }
+}
+
+/// A cheap fingerprint of a file's text, to tell whether a result ran from
+/// what the editor shows.
+pub fn text_hash(text: &str) -> u64 {
+    use std::hash::{Hash as _, Hasher as _};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    text.hash(&mut h);
+    h.finish()
 }
 
 /// `retry.count + 1` for each request of `text`, in run order (`request`,
@@ -452,13 +482,13 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Tab `ix`'s failed-check hints from its file's last run, which ran
-    /// the saved text the tab holds.
+    /// Tab `ix`'s failed-check hints from its file's last run: only the
+    /// results that ran from the text the tab holds now.
     pub(super) fn refresh_result_marks(&mut self, ix: usize) {
         let doc = &self.state.open[ix];
         self.tabs[ix].results = match self.runs.last.get(&doc.rel_path) {
-            Some(run) if !doc.is_dirty() => ResultMarks::new(&doc.text, run),
-            _ => ResultMarks::default(),
+            Some(run) => ResultMarks::new(&doc.text, run),
+            None => ResultMarks::default(),
         };
     }
 
@@ -515,10 +545,8 @@ impl Workspace {
         // picked a tab other than Response.
         if shown_failed && self.inspector_tab == InspectorTab::Response {
             let failed = inspected
-                .and_then(|(file, at)| {
-                    Some(self.runs.last.get(&file)?.views.get(&at)?.passed_all())
-                })
-                .is_some_and(|passed| !passed);
+                .and_then(|(file, at)| Some(self.runs.last.get(&file)?.views.get(&at)?.failed()))
+                .is_some_and(|n| n > 0);
             if failed {
                 self.inspector_tab = InspectorTab::Checks;
             }
@@ -530,8 +558,12 @@ impl Workspace {
         if over {
             // Captured values may now resolve `${store.*}`.
             self.refresh_vars(cx);
+            // Only the files this run ran: others keep hints that followed
+            // their edits.
             for ix in 0..self.tabs.len() {
-                self.refresh_result_marks(ix);
+                if self.runs.groups.contains(&self.state.open[ix].rel_path) {
+                    self.refresh_result_marks(ix);
+                }
             }
         }
         if changed || over {
@@ -979,6 +1011,13 @@ mod ui_tests {
         ));
         assert!(inspector_has(cx, window, "Copy as curl"));
         assert!(inspector_has(cx, window, "Re-run"));
+        ws.update(cx, |ws, cx| ws.copy_as_curl(cx));
+        assert!(inspector_has(cx, window, "Copied"));
+        let copied = cx.read_from_clipboard().and_then(|c| c.text()).unwrap();
+        assert!(copied.starts_with("curl "), "{copied}");
+        cx.executor().advance_clock(Duration::from_millis(1600));
+        cx.run_until_parked();
+        assert!(inspector_has(cx, window, "Copy as curl"));
         ws.read_with(cx, |ws, _| {
             let hints: Vec<&str> = ws.tabs[0]
                 .results
@@ -1011,6 +1050,76 @@ mod ui_tests {
         ws.read_with(cx, |ws, _| {
             assert_eq!(ws.inspector_tab, InspectorTab::Headers)
         });
+    }
+
+    fn hint_lines(cx: &mut TestAppContext, ws: &Entity<Workspace>, rel: &str) -> Vec<u32> {
+        ws.read_with(cx, |ws, _| {
+            let ix = ws.state.position(Path::new(rel)).expect("open");
+            ws.tabs[ix].results.hints.iter().map(|h| h.line).collect()
+        })
+    }
+
+    fn failing(base: &str) -> String {
+        format!("request:\n  url: {base}/status/500\n  expect:\n    status: 200\n")
+    }
+
+    #[gpui_kit::test]
+    fn an_edited_hint_stays_gone_after_other_runs_and_reopening(cx: &mut TestAppContext) {
+        let srv = TestServer::start();
+        let ok = format!("request:\n  url: {}/status/200\n", srv.base_url);
+        let (_dir, window, ws) = open(cx, &[("a.yaml", failing(&srv.base_url)), ("b.yaml", ok)]);
+        run_file(cx, window, &ws, "a.yaml");
+        assert_eq!(hint_lines(cx, &ws, "a.yaml"), [3]);
+        // Type over the hinted line, then save.
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                let text = ws.state.open[0].text.clone();
+                let at = text.find("200").unwrap();
+                ws.tabs[0].editor.update(cx, |e, cx| {
+                    e.set_selected_range(at..at + 3, cx);
+                    e.replace("500", window, cx);
+                });
+            });
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(hint_lines(cx, &ws, "a.yaml").is_empty(), "edited away");
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| assert!(ws.save(0, window, cx)));
+        })
+        .unwrap();
+        run_file(cx, window, &ws, "b.yaml");
+        assert!(hint_lines(cx, &ws, "a.yaml").is_empty(), "another run");
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.request_close_tab(0, window, cx);
+                ws.open_file(Path::new("a.yaml"), window, cx);
+            });
+        })
+        .unwrap();
+        assert!(hint_lines(cx, &ws, "a.yaml").is_empty(), "reopened");
+    }
+
+    #[gpui_kit::test]
+    fn a_reload_moves_hints_with_their_line(cx: &mut TestAppContext) {
+        let srv = TestServer::start();
+        let text = failing(&srv.base_url);
+        let (dir, window, ws) = open(cx, &[("a.yaml", text.clone())]);
+        run_file(cx, window, &ws, "a.yaml");
+        assert_eq!(hint_lines(cx, &ws, "a.yaml"), [3]);
+        std::fs::write(dir.path().join("a.yaml"), format!("# added\n{text}")).unwrap();
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.disk_changed(&["a.yaml".into()], window, cx));
+        })
+        .unwrap();
+        assert_eq!(hint_lines(cx, &ws, "a.yaml"), [4]);
+        let changed = format!("# added\n{}", text.replace("200", "201"));
+        std::fs::write(dir.path().join("a.yaml"), changed).unwrap();
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.disk_changed(&["a.yaml".into()], window, cx));
+        })
+        .unwrap();
+        assert!(hint_lines(cx, &ws, "a.yaml").is_empty());
     }
 
     fn tree_labels(cx: &mut TestAppContext, window: AnyWindowHandle, label: &str) -> usize {

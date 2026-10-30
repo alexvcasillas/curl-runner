@@ -8,7 +8,7 @@
 
 use super::diagnostic_marks::LineMark;
 use super::diagnostics_view::minimal_edit;
-use super::runs::FileRun;
+use super::runs::{FileRun, text_hash};
 use crate::model::result_view::expect_hints;
 use curl_runner_core::lint::Severity;
 use curl_runner_core::lint::spans::locate;
@@ -33,6 +33,9 @@ pub(super) struct ResultHint {
 pub(super) struct ResultMarks {
     pub hints: Vec<ResultHint>,
     pub total_lines: usize,
+    /// The text the hints point into, as these marks last saw it (not the
+    /// document's, which may move first).
+    seen: String,
 }
 
 /// The line holding byte `at`: its number and span.
@@ -43,12 +46,17 @@ fn line_at(text: &str, at: usize) -> (u32, usize, usize) {
 }
 
 impl ResultMarks {
-    /// The hints for `run`'s failed checks in `text`, the file that ran;
-    /// one per line, the first check's.
+    /// The hints for `run`'s failed checks in `text`, from the results that
+    /// ran from exactly `text`; one per line, the first check's.
     pub fn new(text: &str, run: &FileRun) -> Self {
+        let hash = text_hash(text);
         let single = locate(text, "request").is_some();
         let mut hints: Vec<ResultHint> = Vec::new();
-        for (&index, view) in &run.views {
+        let current = run
+            .views
+            .iter()
+            .filter(|(index, _)| run.ran.get(index) == Some(&hash));
+        for (&index, view) in current {
             let at = (!single).then_some(index);
             for (range, hint) in expect_hints(text, at, &view.checks) {
                 let (line, start, end) = line_at(text, range.start.min(text.len()));
@@ -66,19 +74,26 @@ impl ResultMarks {
         }
         hints.sort_by_key(|h| h.line);
         ResultMarks {
-            hints,
             total_lines: text.matches('\n').count() + 1,
+            seen: if hints.is_empty() {
+                String::new()
+            } else {
+                text.to_string()
+            },
+            hints,
         }
     }
 
-    /// Follows the edit from `old` to `new`: hints below it move with their
-    /// line, a hint whose line changed is dropped.
-    pub fn edited(&mut self, old: &str, new: &str) {
-        self.total_lines = new.matches('\n').count() + 1;
+    /// Follows the text to `new` (a keystroke, a quick fix, a reload): hints
+    /// below the change move with their line, a hint whose line changed is
+    /// dropped.
+    pub fn edited(&mut self, new: &str) {
         if self.hints.is_empty() {
             return;
         }
-        let (range, replacement) = minimal_edit(old, new);
+        self.total_lines = new.matches('\n').count() + 1;
+        let old = std::mem::replace(&mut self.seen, new.to_string());
+        let (range, replacement) = minimal_edit(&old, new);
         let first = old[..range.start].matches('\n').count() as u32;
         let last = first + old[range.clone()].matches('\n').count() as u32;
         let delta = replacement.matches('\n').count() as i64 - i64::from(last - first);
@@ -131,7 +146,7 @@ impl ResultMarks {
 
 #[cfg(test)]
 mod tests {
-    use super::{ResultHint, ResultMarks};
+    use super::{ResultHint, ResultMarks, text_hash};
 
     fn marks(text: &str, line: u32, hint: &str) -> ResultMarks {
         let start = text
@@ -149,6 +164,7 @@ mod tests {
                 text: hint.into(),
             }],
             total_lines: 4,
+            seen: text.to_string(),
         }
     }
 
@@ -157,7 +173,7 @@ mod tests {
     #[test]
     fn an_edit_on_the_line_drops_its_hint() {
         let mut m = marks(TEXT, 2, "got 2000");
-        m.edited(TEXT, &TEXT.replace("2500", "2000"));
+        m.edited(&TEXT.replace("2500", "2000"));
         assert!(m.hints.is_empty());
     }
 
@@ -165,16 +181,16 @@ mod tests {
     fn hints_follow_edits_above_and_ignore_edits_below() {
         let mut m = marks(TEXT, 2, "got 2000");
         let above = format!("# note\n{TEXT}");
-        m.edited(TEXT, &above);
+        m.edited(&above);
         assert_eq!(m.hints[0].line, 3);
         assert_eq!(&above[m.hints[0].start..m.hints[0].end], "amount: 2500");
         let below = above.replace("c: 3", "c: 4");
-        m.edited(&above, &below);
+        m.edited(&below);
         assert_eq!(m.hints[0].line, 3);
         // Enter at the end of the line above: the hint moves down a line.
         let at = below.find("b: 2").unwrap() + 4;
         let split = format!("{}\n{}", &below[..at], &below[at..]);
-        m.edited(&below, &split);
+        m.edited(&split);
         assert_eq!(m.hints[0].line, 4);
         assert_eq!(m.total_lines, 7);
     }
@@ -201,6 +217,7 @@ mod tests {
             r.status = Some(status);
             r.body = Some(serde_json::json!({ "amount": amount }));
             run.views.insert(index, ResultView::new(&r));
+            run.ran.insert(index, text_hash(text));
         }
         let m = ResultMarks::new(text, &run);
         let got: Vec<(u32, &str)> = m.hints.iter().map(|h| (h.line, h.text.as_str())).collect();
@@ -208,13 +225,31 @@ mod tests {
         assert_eq!(m.hints[1].line_text, "        amount: 2500");
         assert_eq!(m.total_lines, 10);
         assert!(m.line_marks().iter().all(|l| l.failed_check));
+        // A result that ran from other text shows nothing here.
+        run.ran.insert(1, text_hash("requests: []\n"));
+        assert!(ResultMarks::new(text, &run).hints.is_empty());
+    }
+
+    #[test]
+    fn a_change_without_a_keystroke_moves_hints_from_what_they_saw() {
+        // A reload (or a quick fix, where the document moves before the
+        // editor) adds a line above, then the line itself changes.
+        let mut m = marks(TEXT, 2, "got 2000");
+        let reloaded = format!("x: 0\n{TEXT}");
+        m.edited(&reloaded);
+        assert_eq!(m.hints[0].line, 3);
+        // The same text again (a reload that changed nothing) keeps it.
+        m.edited(&reloaded);
+        assert_eq!(m.hints[0].line, 3);
+        m.edited(&reloaded.replace("2500", "2600"));
+        assert!(m.hints.is_empty());
     }
 
     #[test]
     fn deleting_lines_above_moves_hints_up() {
         let mut m = marks(TEXT, 2, "got 2000");
         let fewer = TEXT.replacen("a: 1\n", "", 1);
-        m.edited(TEXT, &fewer);
+        m.edited(&fewer);
         assert_eq!(m.hints[0].line, 1);
         assert_eq!(m.line_marks()[0].ghost.0, "got 2000");
     }

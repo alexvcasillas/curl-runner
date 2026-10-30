@@ -8,6 +8,7 @@ mod diagnostics_view;
 mod editor_pane;
 mod icons;
 mod inspector;
+mod inspector_failed;
 mod method_stack;
 mod new_dialog;
 mod palette;

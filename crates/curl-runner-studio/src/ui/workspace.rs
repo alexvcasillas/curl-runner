@@ -97,6 +97,8 @@ pub struct Workspace {
     pub(super) inspector_tab: InspectorTab,
     /// The Checks tab's body panel shows the raw body, not the diff.
     pub(super) body_raw: bool,
+    /// Set while Copy as curl reads `Copied`; clears itself.
+    pub(super) copied: Option<Task<()>>,
     /// The active file's variables, resolved for the picked environment.
     pub(super) vars: Vec<ResolvedVar>,
     /// Its references with no value anywhere.
@@ -159,6 +161,7 @@ impl Workspace {
             env_select: None,
             inspector_tab: InspectorTab::Response,
             body_raw: false,
+            copied: None,
             vars: Vec::new(),
             missing: Vec::new(),
             secret_cache: CachedSecrets::new(secrets.clone()),
@@ -423,7 +426,7 @@ impl Workspace {
         self.close_hover(cx);
         self.selected_problem = None;
         let doc = &mut self.state.open[ix];
-        self.tabs[ix].results.edited(&doc.text, &text);
+        self.tabs[ix].results.edited(&text);
         doc.set_buffer(text);
         if doc.is_stale() {
             let editor = editor.clone();
@@ -664,7 +667,12 @@ impl Workspace {
 
     /// YAML files or folders under the root changed: refresh the tree,
     /// reload clean tabs whose file is in `changed`, flag dirty ones.
-    fn disk_changed(&mut self, changed: &[PathBuf], window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn disk_changed(
+        &mut self,
+        changed: &[PathBuf],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(collection) = &mut self.state.collection else {
             return;
         };
@@ -686,10 +694,18 @@ impl Workspace {
             doc.on_disk_changed(disk);
             if reload {
                 set_editor_text(&self.tabs[ix].editor, &doc.text, window, cx);
-                self.show_diagnostics(ix, cx);
+                self.text_replaced(ix, cx);
             }
         }
         cx.notify();
+    }
+
+    /// Tab `ix`'s editor took the document's text without a keystroke
+    /// (no change event): its diagnostics and run hints follow.
+    pub(super) fn text_replaced(&mut self, ix: usize, cx: &mut Context<Self>) {
+        self.show_diagnostics(ix, cx);
+        let text = &self.state.open[ix].text;
+        self.tabs[ix].results.edited(text);
     }
 
     pub(super) fn resolve_conflict(
@@ -703,7 +719,7 @@ impl Workspace {
         doc.resolve_conflict(keep_mine);
         if !keep_mine {
             set_editor_text(&self.tabs[ix].editor, &doc.text, window, cx);
-            self.show_diagnostics(ix, cx);
+            self.text_replaced(ix, cx);
         }
         cx.notify();
     }
