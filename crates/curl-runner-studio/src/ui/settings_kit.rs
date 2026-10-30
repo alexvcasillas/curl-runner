@@ -143,13 +143,14 @@ pub fn nav_item(
         })
 }
 
-/// `‹ Back to workspace`, `size` px text. Wire its click.
-pub fn back_link(id: impl Into<ElementId>, size: f32) -> Observed {
+/// `‹ Back to workspace` (or wherever `label` says), `size` px text. Wire
+/// its click.
+pub fn back_link(id: impl Into<ElementId>, label: &'static str, size: f32) -> Observed {
     div()
         .id(id)
         .role(Role::Button)
         .test_support()
-        .aria_label("Back to workspace")
+        .aria_label(label)
         .flex()
         .flex_none()
         .items_center()
@@ -159,7 +160,7 @@ pub fn back_link(id: impl Into<ElementId>, size: f32) -> Observed {
         .cursor_pointer()
         .hover(|s| s.text_color(color("text-primary")))
         .child(glyph(icons::CHEVRON_LEFT).size(px(13.)))
-        .child("Back to workspace")
+        .child(label)
 }
 
 /// The Settings board's `.card`: a hairline box on `bg-100`.

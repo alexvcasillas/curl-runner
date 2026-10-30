@@ -126,6 +126,9 @@ pub struct Workspace {
     pub(super) settings: Settings,
     /// The app's Settings screen (⌘,), while it is open.
     pub(super) app_settings: Option<Entity<SettingsView>>,
+    /// The Settings page the collection settings were opened from (a
+    /// Credentials Edit): their Esc and Back return to it.
+    settings_origin: Option<AppPage>,
     _app_settings_events: Option<Subscription>,
     /// The collection run screen, once a collection run started.
     pub(super) run_view: Option<Entity<RunView>>,
@@ -214,6 +217,7 @@ impl Workspace {
             _settings_events: None,
             settings,
             app_settings: None,
+            settings_origin: None,
             _app_settings_events: None,
             secrets,
             run_view: None,
@@ -830,6 +834,7 @@ impl Workspace {
         self._settings_events = Some(cx.subscribe_in(&view, window, Self::on_settings_event));
         view.read(cx).focus_handle(cx).focus(window, cx);
         self.settings_view = Some(view);
+        self.settings_origin = None;
         self.close_app_settings();
         self.show_run = false;
         self.show_history = false;
@@ -856,7 +861,10 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         match event {
-            SettingsEvent::Close => self.hide_settings(window, cx),
+            SettingsEvent::Close => match self.settings_origin.take() {
+                Some(page) => self.open_app_settings(page, window, cx),
+                None => self.hide_settings(window, cx),
+            },
             SettingsEvent::Status => self.sync_chrome(window, cx),
             SettingsEvent::OpenApp(page) => self.open_app_settings(*page, window, cx),
             SettingsEvent::Changed => {
@@ -915,6 +923,7 @@ impl Workspace {
         view.read(cx).focus_handle(cx).focus(window, cx);
         self.app_settings = Some(view);
         self.settings_view = None;
+        self.settings_origin = None;
         self._settings_events = None;
         self.close_hover(cx);
         self.sync_chrome(window, cx);
@@ -945,15 +954,27 @@ impl Workspace {
             }
             AppSettingsEvent::EditVariable { environment, name } => {
                 let (environment, name) = (environment.clone(), name.clone());
+                let page = view.read(cx).page();
                 self.open_settings(window, cx);
+                self.return_to(page, cx);
                 self.settings_on(Some(&environment), Some(&name), window, cx);
             }
             AppSettingsEvent::AddVariable => {
+                let page = view.read(cx).page();
                 self.open_settings(window, cx);
+                self.return_to(page, cx);
                 if let Some(view) = self.settings_view.clone() {
                     view.update(cx, |v, cx| v.open_variable(None, window, cx));
                 }
             }
+        }
+    }
+
+    /// The open collection settings return to Settings on `page`.
+    fn return_to(&mut self, page: AppPage, cx: &mut Context<Self>) {
+        if let Some(view) = &self.settings_view {
+            self.settings_origin = Some(page);
+            view.update(cx, |v, cx| v.set_back_to_settings(true, cx));
         }
     }
 

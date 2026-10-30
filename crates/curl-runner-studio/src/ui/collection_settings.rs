@@ -316,6 +316,8 @@ pub struct CollectionSettings {
     rows: Vec<EnvRow>,
     page: Page,
     drawer: Option<Drawer>,
+    /// Opened from the app's Settings: Esc and Back return there.
+    back_to_settings: bool,
     focus: FocusHandle,
     _scan: Task<()>,
 }
@@ -372,6 +374,7 @@ impl CollectionSettings {
             rows: Vec::new(),
             page: Page::Environments,
             drawer: None,
+            back_to_settings: false,
             focus: cx.focus_handle(),
             _scan: scan,
         };
@@ -425,6 +428,12 @@ impl CollectionSettings {
     #[cfg(test)]
     pub fn rows(&self) -> &[EnvRow] {
         &self.rows
+    }
+
+    /// Back and Esc return to the app's Settings, not the workspace.
+    pub fn set_back_to_settings(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.back_to_settings = on;
+        cx.notify();
     }
 
     pub fn status(&self) -> EnvStatus {
@@ -1145,11 +1154,19 @@ impl CollectionSettings {
             .border_color(color("border-100"))
             .bg(color("bg-100"))
             .child(
-                back_link("settings-back", 12.)
-                    .px(px(8.))
-                    .pt(px(4.))
-                    .pb(px(12.))
-                    .on_click(cx.listener(|_, _, _, cx| cx.emit(SettingsEvent::Close))),
+                back_link(
+                    "settings-back",
+                    if self.back_to_settings {
+                        "Back to settings"
+                    } else {
+                        "Back to workspace"
+                    },
+                    12.,
+                )
+                .px(px(8.))
+                .pt(px(4.))
+                .pb(px(12.))
+                .on_click(cx.listener(|_, _, _, cx| cx.emit(SettingsEvent::Close))),
             )
             .child(
                 label_text(self.collection.clone())

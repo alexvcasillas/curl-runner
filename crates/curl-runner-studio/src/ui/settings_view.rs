@@ -14,7 +14,7 @@ use super::icons::{self, glyph};
 use super::inspector::env_label;
 use super::settings_kit::{
     MASK, back_link, card, card_body, card_footer, card_text, card_title, kbd_key, nav_item,
-    primary_button, segment, segments, setting_row, small_button, switch, th,
+    neutral_pill, primary_button, segment, segments, setting_row, small_button, switch, th,
 };
 use super::workspace::notify_error;
 use crate::model::environments::{env_file, is_secret, list_environments};
@@ -36,6 +36,7 @@ pub const CHANGELOG_URL: &str = concat!(
     "/blob/main/packages/cli/CHANGELOG.md"
 );
 const LATER: &str = "Available in a later build";
+const LATER_BADGE: &str = "Later build";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppPage {
@@ -301,7 +302,6 @@ impl SettingsView {
         }
     }
 
-    #[cfg(test)]
     pub fn page(&self) -> AppPage {
         self.page
     }
@@ -464,7 +464,7 @@ impl SettingsView {
             .border_color(color("border-100"))
             .bg(color("bg-100"))
             .child(
-                back_link("app-settings-back", 13.)
+                back_link("app-settings-back", "Back to workspace", 13.)
                     .h(px(32.))
                     .px(px(10.))
                     .on_click(cx.listener(|_, _, _, cx| cx.emit(AppSettingsEvent::Close))),
@@ -760,9 +760,9 @@ impl SettingsView {
 
     fn render_accounts(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         vec![
-            later("server-card", "Server", render_server()).into_any_element(),
-            later("account-card", "Account", render_account()).into_any_element(),
-            later("sync-card", "Sync", render_sync()).into_any_element(),
+            later("server-card", "Server", Badge::Title, render_server()).into_any_element(),
+            later("account-card", "Account", Badge::Row, render_account()).into_any_element(),
+            later("sync-card", "Sync", Badge::Title, render_sync()).into_any_element(),
             self.render_credentials(cx).into_any_element(),
         ]
     }
@@ -976,39 +976,48 @@ impl SettingsView {
     }
 }
 
-/// A card of a later build: drawn dimmed, inert, under a note.
-fn later(id: &'static str, title: &str, content: impl IntoElement) -> impl IntoElement {
+/// Where a later card's badge sits.
+#[derive(Clone, Copy)]
+enum Badge {
+    /// Right of the card's title.
+    Title,
+    /// Centered on the right edge, in place of the card's buttons.
+    Row,
+}
+
+/// The `Later build` badge: the design system's neutral pill.
+fn later_badge() -> Div {
+    neutral_pill()
+        .gap(px(4.))
+        .child(glyph(icons::LOCK).size(px(12.)))
+        .child(LATER_BADGE)
+}
+
+/// A card of a later build: its content dimmed and inert, with the
+/// `Later build` badge at `badge`.
+fn later(
+    id: &'static str,
+    title: &str,
+    badge: Badge,
+    content: impl IntoElement,
+) -> impl IntoElement {
+    let place = div()
+        .absolute()
+        .right(px(24.))
+        .flex()
+        .items_center()
+        .map(|d| match badge {
+            // The title's line: 20px down, 16px type.
+            Badge::Title => d.top(px(20.)).h(px(24.)),
+            Badge::Row => d.top_0().bottom_0(),
+        })
+        .child(later_badge());
     card(id)
         .aria_label(format!("{title}: {LATER}"))
         .child(div().opacity(0.4).child(content))
-        .child(
-            div()
-                .id((id, 1usize))
-                .absolute()
-                .inset_0()
-                .flex()
-                .items_center()
-                .justify_center()
-                // A scrim, so the note reads clearly over the dimmed card.
-                .bg(color("bg-100").opacity(0.55))
-                .occlude()
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(6.))
-                        .h(px(28.))
-                        .px(px(12.))
-                        .rounded_full()
-                        .border_1()
-                        .border_color(color("border-200"))
-                        .bg(color("surface-raised"))
-                        .text_size(px(12.))
-                        .text_color(color("text-secondary"))
-                        .child(glyph(icons::LOCK).size(px(13.)))
-                        .child(LATER),
-                ),
-        )
+        // Takes the pointer, so nothing under it can be clicked.
+        .child(div().id((id, 1usize)).absolute().inset_0().occlude())
+        .child(place)
 }
 
 /// The board's Server card.
@@ -1097,7 +1106,8 @@ fn render_account() -> impl IntoElement {
                         .child("Sign in to sync your collections and share them."),
                 ),
         )
-        .child(small_button("account-sign-in", "Sign in with GitHub").child("Sign in with GitHub"))
+        // The badge takes the buttons' place.
+        .child(div().w(px(96.)).flex_none())
 }
 
 /// The board's Sync card.
@@ -1465,6 +1475,17 @@ mod tests {
         for card in ["Server", "Account", "Sync"] {
             assert!(shows(cx, window, &format!("{card}: {}", super::LATER)));
         }
+        // Their buttons sit under a layer that takes the pointer.
+        let synced = cx
+            .update_window(window, |_, window, cx| {
+                window.render_frame(cx);
+                window
+                    .within("app-settings")
+                    .try_find_by_label("Sync now")
+                    .is_some()
+            })
+            .unwrap();
+        assert!(synced, "drawn, dimmed");
         // The Keychain value never reaches the table, nor its tail.
         assert!(!shows(cx, window, "tok_live_9f3a"));
         assert!(!shows(cx, window, &format!("{}9f3a", super::MASK)));
@@ -1502,6 +1523,35 @@ mod tests {
             assert_eq!(view.read(cx).status().environment, "Staging");
             assert!(view.read(cx).drawer_open_on("API_TOKEN"));
         });
+        // Esc closes the drawer, then returns to Settings › Accounts & sync.
+        cx.update_window(window, |_, window, cx| {
+            window.render_frame(cx);
+            assert!(
+                window
+                    .within("settings-nav")
+                    .try_find_by_label("Back to settings")
+                    .is_some()
+            );
+            window.press("escape", cx);
+            window.render_frame(cx);
+            window.press("escape", cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+        ws.read_with(cx, |ws, cx| {
+            assert!(!ws.settings_shown());
+            let view = ws.app_settings.clone().expect("back in Settings");
+            assert_eq!(view.read(cx).page(), AppPage::Accounts);
+        });
+        // Edit again; this time the collection nav's App row.
+        cx.update_window(window, |_, window, cx| {
+            window.render_frame(cx);
+            window
+                .within("app-settings")
+                .click(("credential-edit", row), cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
         // Its App rows open Settings on their page.
         cx.update_window(window, |_, window, cx| {
             window.render_frame(cx);
