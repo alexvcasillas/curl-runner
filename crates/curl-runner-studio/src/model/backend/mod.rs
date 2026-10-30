@@ -460,6 +460,27 @@ pub trait Backend: Send + Sync {
 /// A default is the Default environment's `.env` value, only for a
 /// non-secret name in `share_default`. Reads no Keychain, by design.
 pub fn shared_vars(root: &Path, meta: &CollectionMeta, share_default: &[String]) -> Vec<SharedVar> {
+    shared_vars_with(root, meta, |name| share_default.iter().any(|n| n == name))
+}
+
+/// What the Share dialog lists: [`shared_vars`] as if every non-secret
+/// name shared its default, so a variable with a `.env` value can offer
+/// `Share default` and show what it would send. Never a payload.
+pub fn share_candidates(root: &Path, meta: &CollectionMeta) -> Vec<SharedVar> {
+    shared_vars_with(root, meta, |_| true)
+}
+
+/// The variables to share, with what [`CollectionMeta::share_defaults`]
+/// ticks: the one Share and sync payload builder.
+pub fn share_payload(root: &Path, meta: &CollectionMeta) -> Vec<SharedVar> {
+    shared_vars(root, meta, &meta.share_defaults())
+}
+
+fn shared_vars_with(
+    root: &Path,
+    meta: &CollectionMeta,
+    share_default: impl Fn(&str) -> bool,
+) -> Vec<SharedVar> {
     use crate::model::environments::UsageIndex;
     let mut names = UsageIndex::scan(root).referenced();
     names.extend(meta.vars.keys().cloned());
@@ -473,7 +494,7 @@ pub fn shared_vars(root: &Path, meta: &CollectionMeta, share_default: &[String])
         .map(|name| {
             let notes = meta.vars.get(&name).cloned().unwrap_or_default();
             let secret = is_secret(&name, &meta.secret_names);
-            let default = (!secret && share_default.contains(&name))
+            let default = (!secret && share_default(&name))
                 .then(|| dotenv.get(&name).cloned())
                 .flatten();
             SharedVar {
@@ -661,6 +682,49 @@ mod tests {
         assert_eq!(scan.unreadable, [PathBuf::from("latin1.yaml")]);
         let gone = scan_sync_files(&root.join("missing"));
         assert!(!gone.root_ok && gone.files.is_empty());
+    }
+
+    #[test]
+    fn payload_shares_only_ticked_non_secret_defaults() {
+        use crate::model::collection_meta::VarMeta;
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path();
+        std::fs::write(
+            root.join("a.yaml"),
+            "request:\n  url: ${BASE_URL}/a?acct=${ACCOUNT_ID}\n  headers:\n    Authorization: ${API_TOKEN}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join(".env"),
+            "BASE_URL=https://api.example.com\nACCOUNT_ID=acct-1\nAPI_TOKEN=sk-plain\n",
+        )
+        .unwrap();
+        let mut meta = CollectionMeta::default();
+        meta.set_secret("API_TOKEN", true);
+        for name in ["BASE_URL", "API_TOKEN"] {
+            meta.vars.insert(
+                name.into(),
+                VarMeta {
+                    share_default: true,
+                    ..VarMeta::default()
+                },
+            );
+        }
+        let by_name = |vars: Vec<SharedVar>| {
+            vars.into_iter()
+                .map(|v| (v.name, v.default))
+                .collect::<std::collections::BTreeMap<_, _>>()
+        };
+        let payload = by_name(share_payload(root, &meta));
+        assert_eq!(
+            payload["BASE_URL"].as_deref(),
+            Some("https://api.example.com")
+        );
+        assert_eq!(payload["ACCOUNT_ID"], None, "not ticked");
+        assert_eq!(payload["API_TOKEN"], None, "a secret, ticked or not");
+        let offered = by_name(share_candidates(root, &meta));
+        assert_eq!(offered["ACCOUNT_ID"].as_deref(), Some("acct-1"));
+        assert_eq!(offered["API_TOKEN"], None);
     }
 
     #[test]

@@ -566,6 +566,7 @@ fn no_secret_reaches_backend() {
         VarMeta {
             description: "Your own token.".into(),
             required_for_shared: true,
+            share_default: true,
         },
     );
     let keychain = MemorySecrets::default();

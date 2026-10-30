@@ -1,8 +1,8 @@
 //! The studio's pure state model: no GPUI, so it compiles on every target.
 
-// Sign-in, accounts and sync use it now; what is left unused is the share
-// half (links, invites, received shares, `shared_vars`, the shipping
-// fixture), for plan 3's Tasks 4–7.
+// Sign-in, accounts, sync and the Share dialog use it now; what is left
+// unused is the receiving half (link parsing, resolving, received shares,
+// the shipping fixture), for plan 3's Tasks 5–7.
 #[cfg_attr(not(test), allow(dead_code))]
 pub mod backend;
 pub mod collection;

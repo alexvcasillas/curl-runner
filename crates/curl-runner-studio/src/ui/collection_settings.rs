@@ -1,8 +1,10 @@
 //! The collection settings page (board: Environments): its own left nav,
-//! the General page (name and folder, read only) and the Environments page:
+//! the General page (name and folder, read only), the Environments page:
 //! one tab per environment, its variables with where each value comes from,
-//! and the drawer that edits one. Secret values live in the Keychain only:
-//! the table never shows them, and the drawer reads one when it opens.
+//! and the drawer that edits one, and the Sharing page (the Share dialog's
+//! controls, board: Share). Secret values live in the Keychain only: the
+//! table never shows them, and the drawer reads one when it opens. A
+//! received collection's shared defaults read `Shared by {org}`, locked.
 //!
 //! It takes the sidebar's, the main area's and the inspector's place. The
 //! workspace re-reads what changed when the page emits [`SettingsEvent`].
@@ -17,7 +19,9 @@ use super::settings_kit::{
     switch, tinted_pill,
 };
 use super::settings_view::AppPage;
+use super::share_dialog::{ShareEvent, ShareMode, ShareSource, ShareView};
 use super::workspace::notify_error;
+use crate::model::backend::{Backend, CollectionKey};
 use crate::model::collection_meta::{CollectionMeta, VarMeta};
 use crate::model::environments::{
     CapturedVar, DEFAULT_ENVIRONMENT, EnvRow, RowSource, UsageIndex, create_environment, env_file,
@@ -51,6 +55,7 @@ const CALLOUT_HEAD: &str = "How customers bring their own values.";
 const CALLOUT_BODY: &str = " When you share this collection, people get the variable names, descriptions and non-secret defaults. Secrets are never shared or synced: each person enters their own, and it stays in their device keychain. Values marked ";
 const CALLOUT_SHARED: &str = "Shared by Acme";
 const CALLOUT_TAIL: &str = " are locked for them.";
+const LEGEND_SHARED: &str = "Set by the collection owner, read only for others";
 /// The largest `.env` file Import reads.
 const IMPORT_MAX_BYTES: u64 = 1 << 20;
 
@@ -70,12 +75,25 @@ pub enum SettingsEvent {
     Status,
     /// One of the `App` rows: the app's Settings on that page.
     OpenApp(AppPage),
+    /// The Sharing page changed the share: re-read `Shared · N`.
+    Shared,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     General,
     Environments,
+    Sharing,
+}
+
+/// What the Sharing page needs beyond the page's own notes.
+pub struct Sharing {
+    pub backend: Arc<dyn Backend>,
+    pub key: CollectionKey,
+    pub requests: usize,
+    pub folders: usize,
+    /// People with access, as the title bar last counted them.
+    pub people: Option<usize>,
 }
 
 /// The status bar while the page is shown.
@@ -318,6 +336,11 @@ pub struct CollectionSettings {
     drawer: Option<Drawer>,
     /// Opened from the app's Settings: Esc and Back return there.
     back_to_settings: bool,
+    /// The Sharing page's server and counts (`None`: no sharing here).
+    sharing: Option<Sharing>,
+    /// The Sharing page's controls, while it is shown.
+    share_view: Option<Entity<ShareView>>,
+    _share_events: Option<Subscription>,
     focus: FocusHandle,
     _scan: Task<()>,
 }
@@ -372,6 +395,9 @@ impl CollectionSettings {
             page: Page::Environments,
             drawer: None,
             back_to_settings: false,
+            sharing: None,
+            share_view: None,
+            _share_events: None,
             focus: cx.focus_handle(),
             _scan: scan,
         };
@@ -414,6 +440,46 @@ impl CollectionSettings {
             &self.captured,
             &*self.process_env,
         );
+        // A received copy: the owner's defaults are listed (and count as
+        // set) in every environment, as `Shared by {org}`.
+        let shared: Vec<(String, String)> = self
+            .meta
+            .received_vars
+            .iter()
+            .filter_map(|v| {
+                let (_, value) = self.meta.shared_by(&v.name)?;
+                Some((v.name.clone(), value.to_string()))
+            })
+            .collect();
+        let dotenv = self.root.join(".env");
+        for (name, value) in shared {
+            match self.rows.iter_mut().find(|r| r.name == name) {
+                Some(row) if row.source == RowSource::NotSet => {
+                    row.source = RowSource::File(dotenv.clone());
+                    row.value = Some(value);
+                }
+                Some(_) => {}
+                None => self.rows.push(EnvRow {
+                    name,
+                    value: Some(value),
+                    source: RowSource::File(dotenv.clone()),
+                    secret: false,
+                    plain_copy: None,
+                }),
+            }
+        }
+    }
+
+    /// The Sharing page's server and counts.
+    pub fn set_sharing(&mut self, sharing: Sharing, cx: &mut Context<Self>) {
+        self.sharing = Some(sharing);
+        cx.notify();
+    }
+
+    /// The Sharing page's controls, when it is shown.
+    #[cfg(test)]
+    pub fn share_view(&self) -> Option<&Entity<ShareView>> {
+        self.share_view.as_ref()
     }
 
     #[cfg(test)]
@@ -467,10 +533,47 @@ impl CollectionSettings {
         cx.notify();
     }
 
-    fn set_page(&mut self, page: Page, cx: &mut Context<Self>) {
+    pub fn set_page(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
         self.page = page;
         self.drawer = None;
+        self.share_view = None;
+        self._share_events = None;
+        if page == Page::Sharing {
+            self.open_sharing(window, cx);
+        }
         cx.notify();
+    }
+
+    /// The Share dialog's controls in page form, on the notes as they are
+    /// now; only for an owner who is signed in.
+    fn open_sharing(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(s) = &self.sharing else { return };
+        if s.backend.account().is_none() || self.meta.read_only_from.is_some() {
+            return;
+        }
+        let src = ShareSource {
+            backend: s.backend.clone(),
+            key: s.key.clone(),
+            root: self.root.clone(),
+            base: self.base.clone(),
+            meta: self.meta.clone(),
+            requests: s.requests,
+            folders: s.folders,
+        };
+        let view = cx.new(|cx| ShareView::new(src, ShareMode::Page, window, cx));
+        self._share_events = Some(cx.subscribe(&view, |this, view, event: &ShareEvent, cx| {
+            if *event == ShareEvent::Changed {
+                let view = view.read(cx);
+                this.meta = view.meta().clone();
+                if let (Some(s), Some(n)) = (&mut this.sharing, view.people()) {
+                    s.people = Some(n);
+                }
+                cx.emit(SettingsEvent::Changed);
+                cx.emit(SettingsEvent::Shared);
+                cx.notify();
+            }
+        }));
+        self.share_view = Some(view);
     }
 
     /// Esc: the drawer first, then the page.
@@ -764,9 +867,11 @@ impl CollectionSettings {
         if secret || elsewhere.is_empty() {
             self.meta.set_secret(&name, secret);
         }
+        // Share default is the Share dialog's; a secret drops it.
         let notes = VarMeta {
             description,
             required_for_shared: required,
+            share_default: !secret && self.meta.vars.get(&name).is_some_and(|v| v.share_default),
         };
         if notes == VarMeta::default() {
             self.meta.vars.remove(&name);
@@ -1101,6 +1206,7 @@ impl Render for CollectionSettings {
             .child(match self.page {
                 Page::General => self.render_general().into_any_element(),
                 Page::Environments => self.render_environments(cx).into_any_element(),
+                Page::Sharing => self.render_sharing().into_any_element(),
             })
             .children(drawer)
     }
@@ -1128,8 +1234,9 @@ impl CollectionSettings {
         };
         let page_item =
             |id: &'static str, label: &'static str, page: Page, cx: &mut Context<Self>| {
-                item(id, label, Some(self.page == page))
-                    .on_click(cx.listener(move |this, _, _, cx| this.set_page(page, cx)))
+                item(id, label, Some(self.page == page)).on_click(
+                    cx.listener(move |this, _, window, cx| this.set_page(page, window, cx)),
+                )
             };
         // The app's own settings, on the Settings screen.
         let app_item =
@@ -1192,7 +1299,16 @@ impl CollectionSettings {
                         .child(self.environments.len().to_string()),
                 ),
             )
-            .child(disabled("settings-sharing", "Sharing"))
+            .child(
+                page_item("settings-sharing", "Sharing", Page::Sharing, cx).children(
+                    self.sharing.as_ref().and_then(|s| s.people).map(|n| {
+                        div()
+                            .text_size(px(11.))
+                            .text_color(color("text-tertiary"))
+                            .child(n.to_string())
+                    }),
+                ),
+            )
             .child(section("Workspace", false, false))
             .child(disabled("settings-members", "Members"))
             .child(disabled("settings-sync", "Sync & hosting"))
@@ -1296,6 +1412,69 @@ impl CollectionSettings {
             )
     }
 
+    /// Some row is a received copy's `Shared by {org}` default.
+    fn shared_rows(&self) -> bool {
+        self.rows
+            .iter()
+            .any(|r| self.meta.shared_by(&r.name).is_some())
+    }
+
+    fn render_sharing(&self) -> impl IntoElement + use<> {
+        let subtitle = div()
+            .text_size(px(13.))
+            .line_height(relative(1.5))
+            .text_color(color("text-secondary"))
+            .child("People you share with can open and run every request with their own credentials. They can't change anything.");
+        // Why there is nothing to change: received, or not signed in.
+        let note = match (&self.meta.read_only_from, &self.sharing) {
+            (Some(org), _) => Some(format!(
+                "Shared with you by {org}. Only the owner can change who has access."
+            )),
+            (None, Some(s)) if s.backend.account().is_some() => None,
+            (None, _) => Some("Sign in to share this collection.".to_string()),
+        };
+        div()
+            .id("sharing-page")
+            .role(Role::Main)
+            .test_support()
+            .aria_label("Sharing")
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .child(self.render_header("Sharing", subtitle))
+            .child(
+                div()
+                    .id("sharing-scroll")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .px(px(24.))
+                    .pt(px(8.))
+                    .pb(px(24.))
+                    .child(
+                        div()
+                            .max_w(px(640.))
+                            .children(note.map(|n| {
+                                div()
+                                    .id("sharing-note")
+                                    .test_support()
+                                    .aria_label(n.clone())
+                                    .px(px(16.))
+                                    .py(px(14.))
+                                    .border_1()
+                                    .border_color(color("border-100"))
+                                    .rounded(px(8.))
+                                    .text_size(px(13.))
+                                    .text_color(color("text-secondary"))
+                                    .child(n)
+                            }))
+                            .children(self.share_view.clone()),
+                    ),
+            )
+    }
+
     fn render_environments(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let subtitle = div()
             .flex()
@@ -1331,7 +1510,7 @@ impl CollectionSettings {
                     .pb(px(24.))
                     .child(render_callout())
                     .child(self.render_table(cx))
-                    .child(render_legend()),
+                    .child(render_legend(self.shared_rows())),
             )
     }
 
@@ -1516,7 +1695,15 @@ impl CollectionSettings {
             _ => r.name.clone(),
         };
         let uses = self.usage.total(&used_as);
+        // A received copy's owner default: shown, locked.
+        let shared = self
+            .meta
+            .shared_by(&r.name)
+            .map(|(org, value)| (org.to_string(), value.to_string()));
         let value = match (&r.source, r.secret) {
+            _ if shared.is_some() => {
+                mono(shared.as_ref().map(|s| s.1.clone()).unwrap_or_default()).into_any_element()
+            }
             (RowSource::NotSet, _) => div()
                 .flex()
                 .items_center()
@@ -1572,6 +1759,7 @@ impl CollectionSettings {
         };
         // What the smoke tests read: never a secret's value.
         let value_label = match (&r.source, r.secret) {
+            _ if shared.is_some() => shared.as_ref().map(|s| s.1.clone()).unwrap_or_default(),
             (RowSource::NotSet, _) => used_by_text(uses),
             (RowSource::Captured { request, path }, _) => {
                 captured_text(request.as_deref(), path.as_deref())
@@ -1582,8 +1770,15 @@ impl CollectionSettings {
             },
             (_, false) => r.value.clone().unwrap_or_default(),
         };
-        let source_text = source_label(&r.source, &self.root);
+        let source_text = match &shared {
+            Some((org, _)) => format!("Shared by {org}"),
+            None => source_label(&r.source, &self.root),
+        };
         let source = match &r.source {
+            _ if shared.is_some() => neutral_pill()
+                .gap(px(6.))
+                .child(glyph(icons::LOCK).size(px(12.)))
+                .child(source_text.clone()),
             RowSource::Keychain => tinted_pill("accent-purple")
                 .child(key_icon(12.))
                 .child("My keychain"),
@@ -1598,7 +1793,7 @@ impl CollectionSettings {
             .scope(&self.root, &used_as)
             .unwrap_or_else(|| "—".into());
         let name = r.name.clone();
-        let clickable = !matches!(r.source, RowSource::Captured { .. });
+        let clickable = !matches!(r.source, RowSource::Captured { .. }) && shared.is_none();
         div()
             .id(("env-row", ix))
             .role(Role::Row)
@@ -2006,7 +2201,8 @@ fn render_callout() -> impl IntoElement {
         .child(div().flex_1().min_w_0().child(styled))
 }
 
-fn render_legend() -> impl IntoElement {
+/// `shared`: the lock's `Set by the collection owner` joins the legend.
+fn render_legend(shared: bool) -> impl IntoElement {
     div()
         .flex()
         .flex_wrap()
@@ -2026,7 +2222,24 @@ fn render_legend() -> impl IntoElement {
                 )
                 .child("Secret — stored in local keychain, never synced"),
         )
-        .child("Resolution order: captured → my keychain → environment → collection default")
+        .when(shared, |d| {
+            d.child(
+                div()
+                    .id("legend-shared")
+                    .test_support()
+                    .aria_label(LEGEND_SHARED)
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .child(glyph(icons::LOCK).size(px(12.)))
+                    .child(LEGEND_SHARED),
+            )
+        })
+        .child(
+            div().w_full().child(
+                "Resolution order: captured → my keychain → environment → collection default",
+            ),
+        )
 }
 
 #[cfg(test)]
@@ -2106,6 +2319,20 @@ mod tests {
         Entity<Workspace>,
         Arc<MemorySecrets>,
     ) {
+        open_with(cx, base, super::super::workspace::test_backend())
+    }
+
+    /// [`open`] on `backend`.
+    fn open_with(
+        cx: &mut TestAppContext,
+        base: &Path,
+        backend: Arc<dyn crate::model::backend::Backend>,
+    ) -> (
+        tempfile::TempDir,
+        AnyWindowHandle,
+        Entity<Workspace>,
+        Arc<MemorySecrets>,
+    ) {
         let dir = tempfile::tempdir().unwrap();
         let files = [
             (".env", "BASE_URL=https://api.example.com\n"),
@@ -2150,16 +2377,7 @@ mod tests {
                 ..Default::default()
             };
             gpui_kit::open_window(options, cx, |window, cx| {
-                cx.new(|cx| {
-                    Workspace::new(
-                        Some(root),
-                        store,
-                        shared,
-                        super::super::workspace::test_backend(),
-                        window,
-                        cx,
-                    )
-                })
+                cx.new(|cx| Workspace::new(Some(root), store, shared, backend, window, cx))
             })
             .unwrap()
         });
@@ -2703,5 +2921,145 @@ mod tests {
         assert_eq!(secrets.get(&service, "NEW_KEY").as_deref(), Some("plain"));
         let meta = CollectionMeta::load(state.path(), dir.path());
         assert!(meta.secret_names.contains(&"NEW_KEY".to_string()));
+    }
+
+    fn open_environments(cx: &mut TestAppContext, window: AnyWindowHandle) {
+        cx.update_window(window, |_, window, cx| {
+            window.dispatch_action(super::super::app::OpenEnvironments.boxed_clone(), cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+    }
+
+    fn found(cx: &mut TestAppContext, window: AnyWindowHandle, id: &'static str) -> bool {
+        cx.update_window(window, |_, window, cx| {
+            window.render_frame(cx);
+            window.try_find(id).is_some()
+        })
+        .unwrap()
+    }
+
+    #[gpui_kit::test]
+    fn shared_by_rows_are_locked_and_only_for_received_copies(cx: &mut TestAppContext) {
+        use crate::model::backend::SharedVar;
+        let state = tempfile::tempdir().unwrap();
+        let (dir, window, ws, _) = open(cx, state.path());
+        open_environments(cx, window);
+        assert!(!shows(cx, window, "Shared by Acme"), "owned: no locks");
+        assert!(!found(cx, window, "legend-shared"));
+        cx.update_window(window, |_, window, cx| window.press("escape", cx))
+            .unwrap();
+        // A received copy, as adding a shared link leaves it.
+        let mut meta = CollectionMeta::load(state.path(), dir.path());
+        meta.read_only_from = Some("Acme".into());
+        let var = |name: &str, secret: bool, default: Option<&str>| SharedVar {
+            name: name.into(),
+            description: String::new(),
+            required: false,
+            secret,
+            default: default.map(String::from),
+        };
+        meta.received_vars = vec![
+            var("CURRENCY", false, Some("eur")),
+            var("BASE_URL", false, Some("https://api.example.com/shipping")),
+            var("API_TOKEN", true, None),
+        ];
+        meta.save(state.path(), dir.path()).unwrap();
+        open_environments(cx, window);
+        let rows = ws.read_with(cx, |ws, cx| {
+            ws.settings_view.as_ref().unwrap().read(cx).rows().to_vec()
+        });
+        let currency = rows
+            .iter()
+            .position(|r| r.name == "CURRENCY")
+            .expect("listed");
+        assert_eq!(rows[currency].value.as_deref(), Some("eur"));
+        let base_url = rows.iter().position(|r| r.name == "BASE_URL").unwrap();
+        let label = |cx: &mut TestAppContext, id: &'static str, ix: usize| {
+            cx.update_window(window, |_, window, cx| {
+                window.render_frame(cx);
+                window.find((id, ix)).label().map(String::from)
+            })
+            .unwrap()
+        };
+        assert_eq!(
+            label(cx, "env-source", currency).as_deref(),
+            Some("Shared by Acme")
+        );
+        assert_eq!(label(cx, "env-value", currency).as_deref(), Some("eur"));
+        assert_eq!(
+            label(cx, "env-source", base_url).as_deref(),
+            Some("Shared by Acme")
+        );
+        assert_eq!(
+            label(cx, "env-value", base_url).as_deref(),
+            Some("https://api.example.com/shipping"),
+            "the owner's, over the local file's"
+        );
+        assert!(
+            shows(cx, window, "My keychain"),
+            "a secret stays the customer's own"
+        );
+        assert!(found(cx, window, "legend-shared"));
+        assert!(shows(
+            cx,
+            window,
+            "Set by the collection owner, read only for others"
+        ));
+        // Locked: a click opens no drawer.
+        cx.update_window(window, |_, window, cx| {
+            window.click(("env-row", currency), cx)
+        })
+        .unwrap();
+        let view = ws.read_with(cx, |ws, _| ws.settings_view.clone().unwrap());
+        assert!(!view.read_with(cx, |v, _| v.drawer_open_on("CURRENCY")));
+        assert!(view.read_with(cx, |v, _| v.status().summary.ends_with("1 missing")));
+    }
+
+    #[gpui_kit::test]
+    fn sharing_page_shares_like_the_dialog(cx: &mut TestAppContext) {
+        use crate::model::backend::SignInMethod;
+        let state = tempfile::tempdir().unwrap();
+        let backend = super::super::workspace::test_backend();
+        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        let (_dir, window, ws, _) = open_with(cx, state.path(), backend.clone());
+        open_environments(cx, window);
+        cx.update_window(window, |_, window, cx| window.click("settings-sharing", cx))
+            .unwrap();
+        cx.run_until_parked();
+        let view = ws.read_with(cx, |ws, _| ws.settings_view.clone().unwrap());
+        let share = view
+            .read_with(cx, |v, _| v.share_view().cloned())
+            .expect("the page shows the controls");
+        assert!(found(cx, window, "sharing-page"));
+        assert!(found(cx, window, "share-link"));
+        assert!(
+            !found(cx, window, "share-close"),
+            "page form: no dialog chrome"
+        );
+        assert!(!found(cx, window, "share-default-API_TOKEN"));
+        cx.update_window(window, |_, window, cx| {
+            window.click("share-default-BASE_URL", cx)
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(share.read_with(cx, |s, _| s.shares_default("BASE_URL")));
+        // The page's notes, the workspace's and the saved ones agree.
+        assert!(view.read_with(cx, |v, _| v.meta().vars["BASE_URL"].share_default));
+        assert!(ws.read_with(cx, |ws, _| ws.meta.vars["BASE_URL"].share_default));
+        assert_eq!(ws.read_with(cx, |ws, _| ws.sync.people), Some(1));
+    }
+
+    #[gpui_kit::test]
+    fn sharing_page_signed_out_asks_to_sign_in(cx: &mut TestAppContext) {
+        let state = tempfile::tempdir().unwrap();
+        let (_dir, window, ws, _) = open(cx, state.path());
+        open_environments(cx, window);
+        cx.update_window(window, |_, window, cx| window.click("settings-sharing", cx))
+            .unwrap();
+        cx.run_until_parked();
+        assert!(shows(cx, window, "Sign in to share this collection."));
+        let view = ws.read_with(cx, |ws, _| ws.settings_view.clone().unwrap());
+        assert!(view.read_with(cx, |v, _| v.share_view().is_none()));
     }
 }

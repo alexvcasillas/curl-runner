@@ -6,7 +6,7 @@ use super::app::{
     OpenHistory, OpenPalette, OpenSettings, QuickFix, Rerun, RunActive, RunCollection,
     RunRequestUnderCursor, SaveFile, Stop, ToggleProblems, ui_font,
 };
-use super::collection_settings::{CollectionSettings, EnvStatus, SettingsEvent};
+use super::collection_settings::{CollectionSettings, EnvStatus, SettingsEvent, Sharing};
 use super::diagnostic_popover::DiagnosticHover;
 use super::diagnostics_view::DiagnosticsView;
 use super::history_view::{HistoryView, HistoryViewEvent, usage_text};
@@ -157,6 +157,9 @@ pub struct Workspace {
     session_connection: Option<Connection>,
     /// The open collection's sync: pending changes, offline, conflicts.
     pub(super) sync: super::sync::SyncState,
+    /// The Share dialog, while it is open.
+    pub(super) share_view: Option<Entity<super::share_dialog::ShareView>>,
+    pub(super) _share_events: Option<Subscription>,
     pub(super) status: Entity<StatusBar>,
     focus: FocusHandle,
     /// Set once the user agreed to close the window with unsaved changes.
@@ -253,6 +256,8 @@ impl Workspace {
             _sign_in_events: None,
             session_connection: None,
             sync: Default::default(),
+            share_view: None,
+            _share_events: None,
             status,
             focus,
             closing: false,
@@ -886,8 +891,20 @@ impl Workspace {
             self.environment.clone(),
             self.captured_vars(),
         );
-        let view =
-            cx.new(|cx| CollectionSettings::new(root, name, base, secrets, env, captured, cx));
+        let sharing = self.share_source().map(|src| Sharing {
+            backend: src.backend,
+            key: src.key,
+            requests: src.requests,
+            folders: src.folders,
+            people: self.sync.people,
+        });
+        let view = cx.new(|cx| {
+            let mut view = CollectionSettings::new(root, name, base, secrets, env, captured, cx);
+            if let Some(sharing) = sharing {
+                view.set_sharing(sharing, cx);
+            }
+            view
+        });
         self._settings_events = Some(cx.subscribe_in(&view, window, Self::on_settings_event));
         view.read(cx).focus_handle(cx).focus(window, cx);
         self.settings_view = Some(view);
@@ -923,6 +940,7 @@ impl Workspace {
                 None => self.hide_settings(window, cx),
             },
             SettingsEvent::Status => self.sync_chrome(window, cx),
+            SettingsEvent::Shared => self.refresh_share(window, cx),
             SettingsEvent::OpenApp(page) => self.open_app_settings(*page, window, cx),
             SettingsEvent::Changed => {
                 self.meta = view.read(cx).meta().clone();

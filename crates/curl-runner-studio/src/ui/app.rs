@@ -1,5 +1,6 @@
 //! App setup: theme and fonts, the action and keymap table, the window.
 
+use super::collection_settings::Page;
 use super::palette;
 use super::settings_view::AppPage;
 use super::state;
@@ -427,6 +428,20 @@ pub fn run() {
                                 })
                                 .detach();
                             }
+                            "share" => {
+                                ws.open_share(window, cx);
+                                let fill = dev_string("CURL_RUNNER_STUDIO_FILL");
+                                if let (Some(view), Some(fill)) = (&ws.share_view, fill) {
+                                    let emails = fill.split(',').map(String::from).collect();
+                                    view.update(cx, |v, cx| v.dev_invite(emails, cx));
+                                }
+                            }
+                            "sharing" => {
+                                ws.open_settings(window, cx);
+                                if let Some(view) = &ws.settings_view {
+                                    view.update(cx, |v, cx| v.set_page(Page::Sharing, window, cx));
+                                }
+                            }
                             "export" => {
                                 if let Some(view) = &ws.run_view {
                                     view.update(cx, |v, cx| v.open_export_menu(cx));
@@ -553,7 +568,10 @@ fn toggle_dev(backend: &Arc<dyn Backend>, flip: fn(&dyn DevControls), cx: &mut A
 /// `CURL_RUNNER_STUDIO_ENV` names, with `CURL_RUNNER_STUDIO_VAR` naming the
 /// variable whose drawer opens) and `settings` the app's Settings (on the
 /// page `CURL_RUNNER_STUDIO_PAGE` names: `general`, `editor`,
-/// `appearance`, `accounts`, `shortcuts` or `updates`) and `signin` the
+/// `appearance`, `accounts`, `shortcuts` or `updates`), `share` the Share
+/// dialog (inviting the comma-separated addresses in
+/// `CURL_RUNNER_STUDIO_FILL`), `sharing` the collection's Sharing page
+/// and `signin` the
 /// sign-in screen (with a server URL in `CURL_RUNNER_STUDIO_FILL`: the
 /// Self-hosted card on it, tested; `CURL_RUNNER_STUDIO_SUBMIT=1` then
 /// presses its primary button); hover and click states can't be

@@ -22,6 +22,7 @@ mod run_view;
 mod runs;
 mod settings_kit;
 mod settings_view;
+mod share_dialog;
 mod sidebar;
 mod sign_in;
 mod state;

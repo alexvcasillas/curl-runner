@@ -2,6 +2,8 @@
 //! names are secret and each variable's description. Kept on this device
 //! under `{base}/meta/{root hash}.json`, never in the collection.
 
+use crate::model::backend::SharedVar;
+use crate::model::environments::is_secret;
 use crate::model::history::root_hash;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -16,6 +18,9 @@ pub struct VarMeta {
     pub description: String,
     /// They are asked for it before their first run.
     pub required_for_shared: bool,
+    /// Share the Default environment's (`.env`) value with the collection
+    /// (non-secret names only; a secret never shares one).
+    pub share_default: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,6 +35,11 @@ pub struct CollectionMeta {
     pub vars: BTreeMap<String, VarMeta>,
     /// The environment the collection was last set up for, if any.
     pub environment: Option<String>,
+    /// A received copy: the org that shared it. Read only.
+    pub read_only_from: Option<String>,
+    /// A received copy's variables as the owner shared them: their
+    /// non-secret defaults are `Shared by {org}` and locked.
+    pub received_vars: Vec<SharedVar>,
 }
 
 impl CollectionMeta {
@@ -69,6 +79,25 @@ impl CollectionMeta {
         }
         let json = serde_json::to_string_pretty(self).map_err(io::Error::other)?;
         crate::model::write_atomic(&path, &json)
+    }
+
+    /// The names whose Default value is shared, secrets left out.
+    pub fn share_defaults(&self) -> Vec<String> {
+        self.vars
+            .iter()
+            .filter(|(name, v)| v.share_default && !is_secret(name, &self.secret_names))
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// A received copy's locked default for `name`: `(org, value)`.
+    pub fn shared_by(&self, name: &str) -> Option<(&str, &str)> {
+        let org = self.read_only_from.as_deref()?;
+        self.received_vars
+            .iter()
+            .find(|v| v.name == name && !v.secret)
+            .and_then(|v| v.default.as_deref())
+            .map(|value| (org, value))
     }
 
     /// Marks or unmarks `name` as secret (a `SECRET_` name always is).
@@ -125,6 +154,7 @@ mod tests {
             VarMeta {
                 description: "Your API key.".into(),
                 required_for_shared: true,
+                share_default: false,
             },
         );
         meta.save(base.path(), a.path()).unwrap();
@@ -175,6 +205,55 @@ mod tests {
             CollectionMeta::load_or_init(None, &a).id,
             CollectionMeta::load_or_init(None, &b).id
         );
+    }
+
+    #[test]
+    fn sharing_fields_default_and_round_trip() {
+        // Notes saved before sharing existed still load.
+        let old: CollectionMeta =
+            serde_json::from_str(r#"{"id":"0a1b2c3d","vars":{"BASE_URL":{"description":"x"}}}"#)
+                .unwrap();
+        assert!(!old.vars["BASE_URL"].share_default);
+        assert_eq!(old.read_only_from, None);
+        assert!(old.received_vars.is_empty());
+        let mut meta = CollectionMeta::default();
+        meta.set_secret("API_TOKEN", true);
+        for name in ["BASE_URL", "API_TOKEN", "SECRET_KEY", "ACCOUNT_ID"] {
+            meta.vars.insert(
+                name.into(),
+                VarMeta {
+                    share_default: name != "ACCOUNT_ID",
+                    ..VarMeta::default()
+                },
+            );
+        }
+        assert_eq!(meta.share_defaults(), ["BASE_URL"], "never a secret");
+        meta.read_only_from = Some("Acme".into());
+        meta.received_vars = vec![
+            SharedVar {
+                name: "CURRENCY".into(),
+                description: String::new(),
+                required: false,
+                secret: false,
+                default: Some("eur".into()),
+            },
+            SharedVar {
+                name: "API_TOKEN".into(),
+                description: String::new(),
+                required: true,
+                secret: true,
+                default: Some("leak".into()),
+            },
+        ];
+        assert_eq!(meta.shared_by("CURRENCY"), Some(("Acme", "eur")));
+        assert_eq!(meta.shared_by("API_TOKEN"), None, "a secret is never shown");
+        assert_eq!(meta.shared_by("BASE_URL"), None);
+        let base = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        meta.save(base.path(), root.path()).unwrap();
+        assert_eq!(CollectionMeta::load(base.path(), root.path()), meta);
+        meta.read_only_from = None;
+        assert_eq!(meta.shared_by("CURRENCY"), None, "only received copies");
     }
 
     #[test]

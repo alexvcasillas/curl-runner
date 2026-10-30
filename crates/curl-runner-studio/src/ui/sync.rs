@@ -474,16 +474,13 @@ impl Workspace {
     pub(super) fn share_blocked(&self) -> Option<&'static str> {
         if self.backend.account().is_none() {
             Some("Sign in to share")
+        } else if self.meta.read_only_from.is_some() {
+            Some("Shared with you: only the owner shares it")
         } else if !self.sync_on() || self.sync.offline {
             Some("Go online to share")
         } else {
             None
         }
-    }
-
-    /// Opens the Share dialog (Task 4).
-    pub(super) fn open_share(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        cx.notify();
     }
 
     /// Opens the conflict dialog (Task 7).
