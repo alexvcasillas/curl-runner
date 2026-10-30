@@ -16,8 +16,8 @@ use super::workspace::notify_error;
 use crate::model::collection_meta::{CollectionMeta, VarMeta};
 use crate::model::environments::{
     CapturedVar, DEFAULT_ENVIRONMENT, EnvRow, RowSource, UsageIndex, create_environment, env_file,
-    environment_rows, import_dotenv, is_secret, list_environments, move_to_file, move_to_keychain,
-    remove_env_var, write_env_var,
+    environment_rows, file_readers, import_dotenv, is_secret, list_environments, move_to_file,
+    move_to_keychain, name_in_env_files, remove_env_var, remove_env_var_at, write_env_var,
 };
 use crate::model::secrets::{CachedSecrets, SecretStore, service_name};
 use curl_runner_core::env::parse_env_content;
@@ -48,6 +48,9 @@ const CALLOUT_SHARED: &str = "Shared by Acme";
 const CALLOUT_TAIL: &str = " are locked for them.";
 /// The largest `.env` file Import reads.
 const IMPORT_MAX_BYTES: u64 = 1 << 20;
+
+/// A process-environment lookup.
+type ProcessEnv = std::rc::Rc<dyn Fn(&str) -> Option<String>>;
 
 /// What the page asks of the workspace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,6 +133,95 @@ fn used_by_text(n: usize) -> String {
     }
 }
 
+/// What Save does with the drawer's value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValueWrite {
+    Nothing,
+    /// Into the Keychain, and out of this environment's own file.
+    Keychain,
+    /// Into the Keychain, out of a file this tab does not own (`.env` on
+    /// Staging, a `.local` override): asks what to do with that copy.
+    KeychainFrom(PathBuf),
+    /// Into this environment's file.
+    File,
+    /// Out of the Keychain into this environment's file: asks first.
+    KeychainToFile,
+}
+
+/// The write a Save makes. A value is written only when typed into, or
+/// when it moves between the file and the Keychain: a never-edited value
+/// is never written (an empty Keychain item would count as set, and win
+/// over the shell).
+pub fn plan_value(secret: bool, source: &RowSource, edited: bool, own_file: &Path) -> ValueWrite {
+    match (secret, source) {
+        (true, RowSource::File(p)) if p == own_file => ValueWrite::Keychain,
+        (true, RowSource::File(p)) => ValueWrite::KeychainFrom(p.clone()),
+        (true, _) if edited => ValueWrite::Keychain,
+        (false, RowSource::Keychain) => ValueWrite::KeychainToFile,
+        (false, _) if edited => ValueWrite::File,
+        _ => ValueWrite::Nothing,
+    }
+}
+
+/// The drawer's note under the value: where it is and where Save puts it.
+pub fn where_stored(source: &RowSource, secret: bool, own_file: &Path, service: &str) -> String {
+    let file = |p: &Path| {
+        p.file_name().map_or_else(
+            || p.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        )
+    };
+    let keychain = format!("macOS Keychain under “{service}”");
+    match (source, secret) {
+        (RowSource::Keychain, true) => format!("Stored in {keychain}."),
+        (RowSource::Keychain, false) => format!(
+            "In the Keychain now. Save moves it to {}, in plain text.",
+            file(own_file)
+        ),
+        (RowSource::Process, true) => format!(
+            "Set in your shell environment. A value saved here goes to the {keychain} and wins over the shell."
+        ),
+        (RowSource::Process, false) => format!(
+            "Overridden by your shell environment. Edits are saved to {}, but the shell value wins.",
+            file(own_file)
+        ),
+        (RowSource::File(p), true) => {
+            format!(
+                "In plain text in {}. Save moves it to the Keychain.",
+                file(p)
+            )
+        }
+        (RowSource::File(p), false) if p == own_file => {
+            format!("Stored in {} in the collection folder.", file(p))
+        }
+        (RowSource::File(p), false) => {
+            format!("From {}. Edits are saved to {}.", file(p), file(own_file))
+        }
+        (_, true) => format!("Saved to the {keychain}."),
+        (_, false) => format!("Saved to {} in the collection folder.", file(own_file)),
+    }
+}
+
+/// How the person answered a Save question.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Confirmed {
+    /// Not asked yet.
+    No,
+    /// Store in file / Remove the copy / OK.
+    Yes,
+    /// Write the Keychain, leave the plain copy where it is.
+    KeepCopy,
+}
+
+/// `Plain copy remains in .env`.
+fn plain_copy_text(p: &Path) -> String {
+    let file = p.file_name().map_or_else(
+        || p.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    );
+    format!("Plain copy remains in {file}")
+}
+
 /// The variable being edited.
 struct Drawer {
     /// `None`: a new variable, named in `name_input`.
@@ -163,6 +255,8 @@ pub struct CollectionSettings {
     keychain_locked: bool,
     usage: Arc<UsageIndex>,
     captured: Vec<CapturedVar>,
+    /// The process environment rows resolve through (tests swap it).
+    process_env: ProcessEnv,
     rows: Vec<EnvRow>,
     page: Page,
     drawer: Option<Drawer>,
@@ -218,6 +312,7 @@ impl CollectionSettings {
             keychain_locked: false,
             usage: Arc::default(),
             captured,
+            process_env: std::rc::Rc::new(|k: &str| std::env::var(k).ok()),
             rows: Vec::new(),
             page: Page::Environments,
             drawer: None,
@@ -256,8 +351,14 @@ impl CollectionSettings {
             &self.keychain,
             &self.usage.referenced(),
             &self.captured,
-            &|k| std::env::var(k).ok(),
+            &*self.process_env,
         );
+    }
+
+    #[cfg(test)]
+    pub fn set_process_env(&mut self, env: impl Fn(&str) -> Option<String> + 'static) {
+        self.process_env = std::rc::Rc::new(env);
+        self.reload_rows();
     }
 
     #[cfg(test)]
@@ -469,9 +570,30 @@ impl CollectionSettings {
             .unwrap_or_else(|| ".env".into())
     }
 
-    /// Saves the drawer. A Keychain value about to go into a file asks
-    /// first (`confirmed` once it did).
-    fn save(&mut self, confirmed: bool, window: &mut Window, cx: &mut Context<Self>) {
+    fn own_file(&self) -> PathBuf {
+        env_file(&self.root, &self.environment).unwrap_or_else(|_| self.root.join(".env"))
+    }
+
+    /// The other environments with a Keychain item for `name` (names only).
+    fn keychain_elsewhere(&self, name: &str) -> Vec<String> {
+        self.environments
+            .iter()
+            .filter(|e| **e != self.environment)
+            .filter(|e| {
+                let service = service_name(&self.collection, e);
+                // Unreadable counts as holding it: the mark stays.
+                self.secrets
+                    .try_names(&service)
+                    .map_or(true, |n| n.iter().any(|n| n == name))
+            })
+            .map(|e| env_label(e))
+            .collect()
+    }
+
+    /// Saves the drawer. Moving a value out of the Keychain, leaving a
+    /// plain copy behind, or unmarking a name other environments keep secret
+    /// asks first (`confirmed` once it did).
+    pub fn save(&mut self, confirmed: Confirmed, window: &mut Window, cx: &mut Context<Self>) {
         let Some(name) = self.drawer_name(cx) else {
             return;
         };
@@ -495,40 +617,65 @@ impl CollectionSettings {
             return;
         }
         let secret = d.secret || is_secret(&name, &[]);
-        let in_keychain = d.source == RowSource::Keychain;
-        let value = d.value.read(cx).value().to_string();
-        let changed = d.edited || new || d.source == RowSource::NotSet;
-        if !secret && in_keychain && !confirmed {
-            self.confirm_plain_text(window, cx);
-            return;
+        let own_file = self.own_file();
+        let plan = plan_value(secret, &d.source, d.edited, &own_file);
+        let unmarking = !secret && self.meta.secret_names.contains(&name);
+        let elsewhere = if unmarking {
+            self.keychain_elsewhere(&name)
+        } else {
+            Vec::new()
+        };
+        if confirmed == Confirmed::No {
+            match &plan {
+                ValueWrite::KeychainFrom(p) => {
+                    self.confirm_copy(p.clone(), window, cx);
+                    return;
+                }
+                ValueWrite::KeychainToFile => {
+                    self.confirm_plain_text(&name, elsewhere, true, window, cx);
+                    return;
+                }
+                _ if !elsewhere.is_empty() => {
+                    self.confirm_plain_text(&name, elsewhere, false, window, cx);
+                    return;
+                }
+                _ => {}
+            }
         }
+        let value = d.value.read(cx).value().to_string();
         let (root, env, service) = (self.root.clone(), self.environment.clone(), self.service());
         let secrets: &dyn SecretStore = &*self.secrets;
-        let written = if secret {
-            // Also moves a value that sat in the file.
-            let moving = matches!(d.source, RowSource::File(_));
-            if changed || moving || !in_keychain {
-                move_to_keychain(&root, &env, &name, &value, secrets, &service)
-            } else {
-                Ok(())
+        let written = match &plan {
+            ValueWrite::Nothing => Ok(()),
+            ValueWrite::Keychain => move_to_keychain(&root, &env, &name, &value, secrets, &service),
+            ValueWrite::KeychainFrom(p) => {
+                move_to_keychain(&root, &env, &name, &value, secrets, &service).and_then(|()| {
+                    match confirmed {
+                        Confirmed::Yes => remove_env_var_at(&root, p, &name),
+                        _ => Ok(()),
+                    }
+                })
             }
-        } else if in_keychain {
-            let value = (d.edited || d.read_error.is_none()).then_some(value.as_str());
-            move_to_file(&root, &env, &name, value, secrets, &service)
-        } else if changed {
-            write_env_var(&root, &env, &name, &value)
-        } else {
-            Ok(())
+            ValueWrite::File => write_env_var(&root, &env, &name, &value),
+            ValueWrite::KeychainToFile => {
+                let value = (d.edited || d.read_error.is_none()).then_some(value.as_str());
+                move_to_file(&root, &env, &name, value, secrets, &service)
+            }
         };
         if let Err(e) = written {
             notify_error(format!("Couldn't save {name}: {e}"), window, cx);
             return;
         }
         let description = d.description.read(cx).value().trim().to_string();
-        self.meta.set_secret(&name, secret);
+        let required = d.required;
+        // Unmarked here, a name other environments keep in the Keychain
+        // stays secret collection-wide.
+        if secret || elsewhere.is_empty() {
+            self.meta.set_secret(&name, secret);
+        }
         let notes = VarMeta {
             description,
-            required_for_shared: d.required,
+            required_for_shared: required,
         };
         if notes == VarMeta::default() {
             self.meta.vars.remove(&name);
@@ -552,20 +699,114 @@ impl CollectionSettings {
         }
     }
 
-    fn confirm_plain_text(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let file = self.file_name();
+    /// Before a Keychain value goes into a file, or a name other
+    /// environments keep secret is unmarked.
+    fn confirm_plain_text(
+        &self,
+        name: &str,
+        elsewhere: Vec<String>,
+        to_file: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let mut text = Vec::new();
+        if to_file {
+            text.push(format!(
+                "This value will be stored in plain text in {}",
+                self.file_name()
+            ));
+        }
+        if !elsewhere.is_empty() {
+            text.push(format!("{name} stays secret in {}.", elsewhere.join(", ")));
+        }
+        let description = text.join(". ");
+        let (title, ok) = if to_file {
+            ("Store this value in a file?", "Store in file")
+        } else {
+            ("Keep it secret elsewhere?", "OK")
+        };
         let this = cx.entity().downgrade();
         window.open_alert_dialog(cx, move |alert, _, _| {
             let this = this.clone();
             alert
-                .title("Store this value in a file?")
-                .description(format!("This value will be stored in plain text in {file}"))
-                .ok_text("Store in file")
+                .title(title)
+                .description(description.clone())
+                .ok_text(ok)
                 .show_cancel(true)
                 .on_ok(move |_, window, cx| {
-                    this.update(cx, |this, cx| this.save(true, window, cx)).ok();
+                    this.update(cx, |this, cx| this.save(Confirmed::Yes, window, cx))
+                        .ok();
                     true
                 })
+        });
+    }
+
+    /// Before a value moves into the Keychain from a file this tab does
+    /// not own: Remove the copy there, Keep it, or Cancel.
+    fn confirm_copy(&self, file: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        let file_name = file
+            .file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        let readers = match file_readers(&file_name).as_deref() {
+            Some("") | None => "every environment reads".to_string(),
+            Some(env) => format!("the {} environment reads", env_label(env)),
+        };
+        // A `.local` override is the person's own: never written.
+        let removable = !file_name.ends_with(".local");
+        let description = if removable {
+            format!("A copy remains in {file_name}, which {readers}. Remove it there too?")
+        } else {
+            format!(
+                "A copy remains in {file_name}, which {readers}. It is your local override, so the studio leaves it."
+            )
+        };
+        let this = cx.entity().downgrade();
+        window.open_dialog(cx, move |dialog, _, _| {
+            let (keep, remove) = (this.clone(), this.clone());
+            dialog
+                .w(px(480.))
+                .title("Move to the Keychain?")
+                .child(
+                    div()
+                        .text_color(color("text-secondary"))
+                        .child(description.clone()),
+                )
+                .footer(
+                    DialogFooter::new()
+                        .child(
+                            Button::new("copy-cancel")
+                                .ghost()
+                                .label("Cancel")
+                                .on_click(|_, window, cx| window.close_dialog(cx)),
+                        )
+                        .child(
+                            Button::new("copy-keep")
+                                .outline()
+                                .label("Keep copy")
+                                .on_click(move |_, window, cx| {
+                                    window.close_dialog(cx);
+                                    keep.update(cx, |this, cx| {
+                                        this.save(Confirmed::KeepCopy, window, cx)
+                                    })
+                                    .ok();
+                                }),
+                        )
+                        .when(removable, |f| {
+                            f.child(
+                                Button::new("copy-remove")
+                                    .primary()
+                                    .label("Remove")
+                                    .on_click(move |_, window, cx| {
+                                        window.close_dialog(cx);
+                                        remove
+                                            .update(cx, |this, cx| {
+                                                this.save(Confirmed::Yes, window, cx)
+                                            })
+                                            .ok();
+                                    }),
+                            )
+                        }),
+                )
         });
     }
 
@@ -602,6 +843,19 @@ impl CollectionSettings {
             .and_then(|()| self.secrets.delete(&service, name));
         if let Err(e) = removed {
             notify_error(format!("Couldn't delete {name}: {e}"), window, cx);
+        }
+        // The mark goes once no environment's file or Keychain (names only)
+        // has the name; an unreadable Keychain keeps it.
+        let left = self.environments.iter().any(|e| {
+            name_in_env_files(&self.root, e, name)
+                || self
+                    .secrets
+                    .try_names(&service_name(&self.collection, e))
+                    .map_or(true, |n| n.iter().any(|n| n == name))
+        });
+        if !left && self.meta.secret_names.iter().any(|n| n == name) {
+            self.meta.set_secret(name, false);
+            self.save_meta(window, cx);
         }
         self.drawer = None;
         self.reload();
@@ -1319,6 +1573,17 @@ impl CollectionSettings {
                         .text_color(color("text-secondary"))
                         .child(glyph(icons::EYE).size(px(14.))),
                 )
+                .children(r.plain_copy.as_ref().map(|p| {
+                    div()
+                        .flex()
+                        .min_w_0()
+                        .items_center()
+                        .gap(px(6.))
+                        .text_size(px(12.))
+                        .text_color(color("warning"))
+                        .child(glyph(icons::WARNING).size(px(12.)).flex_none())
+                        .child(div().text_ellipsis().child(plain_copy_text(p)))
+                }))
                 .into_any_element(),
             (_, false) => mono(r.value.clone().unwrap_or_default()).into_any_element(),
         };
@@ -1328,7 +1593,10 @@ impl CollectionSettings {
             (RowSource::Captured { request, path }, _) => {
                 captured_text(request.as_deref(), path.as_deref())
             }
-            (_, true) => "Masked".into(),
+            (_, true) => match &r.plain_copy {
+                Some(p) => format!("Masked · {}", plain_copy_text(p)),
+                None => "Masked".into(),
+            },
             (_, false) => r.value.clone().unwrap_or_default(),
         };
         let source_text = source_label(&r.source, &self.root);
@@ -1534,11 +1802,7 @@ impl CollectionSettings {
                     }
                 }))
         });
-        let where_stored = if secret {
-            format!("Stored in macOS Keychain under “{}”.", self.service())
-        } else {
-            format!("Stored in {} in the collection folder.", self.file_name())
-        };
+        let where_stored = where_stored(&d.source, secret, &self.own_file(), &self.service());
         let value = div()
             .flex()
             .flex_col()
@@ -1663,7 +1927,9 @@ impl CollectionSettings {
             .child(
                 primary_button("drawer-save", "Save")
                     .child("Save")
-                    .on_click(cx.listener(|this, _, window, cx| this.save(false, window, cx))),
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.save(Confirmed::No, window, cx)),
+                    ),
             );
         Some(
             div()
@@ -1783,10 +2049,11 @@ fn render_legend() -> impl IntoElement {
 #[cfg(test)]
 mod tests {
     use super::{
-        CollectionMeta, EnvRow, Path, RowSource, SecretStore, captured_text, service_name,
-        source_label, summary_text, used_by_text,
+        CollectionMeta, CollectionSettings, Confirmed, EnvRow, Path, RowSource, SecretStore,
+        ValueWrite, captured_text, plan_value, service_name, source_label, summary_text,
+        used_by_text, where_stored,
     };
-    use gpui_kit::{AppContext as _, Entity, px, size};
+    use gpui_kit::{AppContext as _, Entity, Focusable as _, px, size};
     use std::sync::Arc;
 
     fn row(name: &str, source: RowSource) -> EnvRow {
@@ -1795,6 +2062,7 @@ mod tests {
             value: None,
             source,
             secret: false,
+            plain_copy: None,
         }
     }
 
@@ -1982,7 +2250,20 @@ mod tests {
             window.within("variable-drawer").click("secret-toggle", cx);
             let view = ws.read(cx).settings_view.clone().unwrap();
             let value = view.read(cx).drawer.as_ref().unwrap().value.clone();
-            value.update(cx, |s, cx| s.set_value("acct_123", window, cx));
+            // Typed, as a person would: only an edited value is written.
+            value.read(cx).focus_handle(cx).focus(window, cx);
+            window.render_frame(cx);
+            window.input("acct_123", cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+        let (edited, typed) = ws.read_with(cx, |ws, cx| {
+            let view = ws.settings_view.clone().unwrap();
+            let d = view.read(cx).drawer.as_ref().unwrap();
+            (d.edited, d.value.read(cx).value().to_string())
+        });
+        assert_eq!((edited, typed.as_str()), (true, "acct_123"));
+        cx.update_window(window, |_, window, cx| {
             window.render_frame(cx);
             window.within("variable-drawer").click("drawer-save", cx);
         })
@@ -2042,11 +2323,270 @@ mod tests {
         cx.update_window(window, |_, window, cx| {
             let view = ws.read(cx).settings_view.clone().unwrap();
             window.close_dialog(cx);
-            view.update(cx, |v, cx| v.save(true, window, cx));
+            view.update(cx, |v, cx| v.save(Confirmed::Yes, window, cx));
         })
         .unwrap();
         let staging = std::fs::read_to_string(dir.path().join(".env.staging")).unwrap();
         assert!(staging.contains("API_TOKEN=tok_live_1"), "{staging}");
         assert_eq!(secrets.get(&service, "API_TOKEN"), None);
+    }
+
+    #[test]
+    fn save_writes_only_edited_or_moving_values() {
+        let own = Path::new("/c/.env.staging");
+        let default = RowSource::File("/c/.env".into());
+        let staging = RowSource::File(own.into());
+        // Never-edited: nothing written, whatever the source.
+        for source in [RowSource::Process, RowSource::NotSet, RowSource::Keychain] {
+            assert_eq!(
+                plan_value(true, &source, false, own),
+                ValueWrite::Nothing,
+                "{source:?}"
+            );
+        }
+        assert_eq!(
+            plan_value(false, &RowSource::NotSet, false, own),
+            ValueWrite::Nothing
+        );
+        assert_eq!(plan_value(false, &staging, false, own), ValueWrite::Nothing);
+        assert_eq!(
+            plan_value(false, &RowSource::Process, false, own),
+            ValueWrite::Nothing
+        );
+        // Edited or moving.
+        assert_eq!(
+            plan_value(true, &RowSource::Process, true, own),
+            ValueWrite::Keychain
+        );
+        assert_eq!(plan_value(true, &staging, false, own), ValueWrite::Keychain);
+        assert_eq!(
+            plan_value(true, &default, false, own),
+            ValueWrite::KeychainFrom("/c/.env".into())
+        );
+        assert_eq!(
+            plan_value(false, &RowSource::Keychain, false, own),
+            ValueWrite::KeychainToFile
+        );
+        assert_eq!(
+            plan_value(false, &RowSource::NotSet, true, own),
+            ValueWrite::File
+        );
+    }
+
+    #[test]
+    fn where_stored_follows_the_source() {
+        let own = Path::new("/c/.env.staging");
+        let svc = "curl-runner studio · Payments API · staging";
+        let text = |s: &RowSource, secret| where_stored(s, secret, own, svc);
+        assert_eq!(
+            text(&RowSource::Keychain, true),
+            "Stored in macOS Keychain under “curl-runner studio · Payments API · staging”."
+        );
+        assert_eq!(
+            text(&RowSource::Process, false),
+            "Overridden by your shell environment. Edits are saved to .env.staging, but the shell value wins."
+        );
+        assert_eq!(
+            text(&RowSource::File("/c/.env".into()), true),
+            "In plain text in .env. Save moves it to the Keychain."
+        );
+        assert_eq!(
+            text(&RowSource::NotSet, true),
+            "Saved to the macOS Keychain under “curl-runner studio · Payments API · staging”."
+        );
+        assert_eq!(
+            text(&RowSource::NotSet, false),
+            "Saved to .env.staging in the collection folder."
+        );
+        assert_eq!(
+            text(&RowSource::File(own.into()), false),
+            "Stored in .env.staging in the collection folder."
+        );
+    }
+
+    /// Opens the page, then the drawer on `var`.
+    fn drawer_on(
+        cx: &mut TestAppContext,
+        window: AnyWindowHandle,
+        ws: &Entity<Workspace>,
+        var: &str,
+    ) -> Entity<CollectionSettings> {
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.open_settings(window, cx);
+                ws.dev_settings(None, Some(var), window, cx);
+            });
+            window.render_frame(cx);
+        })
+        .unwrap();
+        ws.read_with(cx, |ws, _| ws.settings_view.clone().unwrap())
+    }
+
+    fn save(
+        cx: &mut TestAppContext,
+        window: AnyWindowHandle,
+        view: &Entity<CollectionSettings>,
+        how: Confirmed,
+    ) -> bool {
+        cx.update_window(window, |_, window, cx| {
+            view.update(cx, |v, cx| v.save(how, window, cx));
+            window.render_frame(cx);
+            let asked = window.has_active_dialog(cx);
+            window.close_dialog(cx);
+            asked
+        })
+        .unwrap()
+    }
+
+    fn mark(state: &Path, root: &Path, names: &[&str]) {
+        let mut meta = CollectionMeta::load(state, root);
+        for n in names {
+            meta.set_secret(n, true);
+        }
+        meta.save(state, root).unwrap();
+    }
+
+    #[gpui_kit::test]
+    fn secret_from_the_default_file_asks_about_the_copy(cx: &mut TestAppContext) {
+        let state = tempfile::tempdir().unwrap();
+        let (dir, window, ws, secrets) = open(cx, state.path());
+        let name = dir
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let service = service_name(&name, "staging");
+        let env = dir.path().join(".env");
+        std::fs::write(
+            &env,
+            "BASE_URL=https://api.example.com\nPLAIN_KEY=k1\nOTHER_KEY=k2\n",
+        )
+        .unwrap();
+        mark(state.path(), dir.path(), &["PLAIN_KEY", "OTHER_KEY"]);
+        // Remove: the Keychain gets it, `.env` loses it.
+        let view = drawer_on(cx, window, &ws, "PLAIN_KEY");
+        assert!(
+            save(cx, window, &view, Confirmed::No),
+            "asks about the copy"
+        );
+        assert_eq!(
+            secrets.get(&service, "PLAIN_KEY"),
+            None,
+            "nothing before an answer"
+        );
+        let view = drawer_on(cx, window, &ws, "PLAIN_KEY");
+        save(cx, window, &view, Confirmed::Yes);
+        assert_eq!(secrets.get(&service, "PLAIN_KEY").as_deref(), Some("k1"));
+        let text = std::fs::read_to_string(&env).unwrap();
+        assert!(!text.contains("PLAIN_KEY"), "{text}");
+        // Keep copy: the Keychain gets it, `.env` keeps it, the row warns.
+        let view = drawer_on(cx, window, &ws, "OTHER_KEY");
+        save(cx, window, &view, Confirmed::KeepCopy);
+        assert_eq!(secrets.get(&service, "OTHER_KEY").as_deref(), Some("k2"));
+        assert!(
+            std::fs::read_to_string(&env)
+                .unwrap()
+                .contains("OTHER_KEY=k2")
+        );
+        let row = view.read_with(cx, |v, _| {
+            v.rows()
+                .iter()
+                .find(|r| r.name == "OTHER_KEY")
+                .cloned()
+                .unwrap()
+        });
+        assert_eq!(row.source, RowSource::Keychain);
+        assert_eq!(row.plain_copy, Some(env.clone()));
+        assert!(shows(cx, window, "Masked · Plain copy remains in .env"));
+    }
+
+    #[gpui_kit::test]
+    fn unedited_saves_write_no_value(cx: &mut TestAppContext) {
+        let state = tempfile::tempdir().unwrap();
+        let (dir, window, ws, secrets) = open(cx, state.path());
+        let name = dir
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let service = service_name(&name, "staging");
+        mark(state.path(), dir.path(), &["SHELL_TOKEN"]);
+        // A shell-sourced secret: Save leaves the Keychain alone.
+        let view = drawer_on(cx, window, &ws, "SHELL_TOKEN");
+        cx.update_window(window, |_, window, cx| {
+            view.update(cx, |v, cx| {
+                v.set_process_env(|k| (k == "SHELL_TOKEN").then(|| "from-shell".into()));
+                v.open_variable(Some("SHELL_TOKEN"), window, cx);
+            });
+        })
+        .unwrap();
+        let source = view.read_with(cx, |v, _| v.drawer.as_ref().unwrap().source.clone());
+        assert_eq!(source, RowSource::Process);
+        save(cx, window, &view, Confirmed::No);
+        assert_eq!(secrets.get(&service, "SHELL_TOKEN"), None);
+        // A Not set variable, description only: notes change, nothing else.
+        let view = drawer_on(cx, window, &ws, "ACCOUNT_ID");
+        cx.update_window(window, |_, window, cx| {
+            let d = view.read(cx).drawer.as_ref().unwrap().description.clone();
+            d.update(cx, |s, cx| {
+                s.set_value("The account to test with.", window, cx)
+            });
+        })
+        .unwrap();
+        save(cx, window, &view, Confirmed::No);
+        assert_eq!(secrets.get(&service, "ACCOUNT_ID"), None);
+        let staging = std::fs::read_to_string(dir.path().join(".env.staging")).unwrap();
+        assert!(!staging.contains("ACCOUNT_ID"), "{staging}");
+        let meta = CollectionMeta::load(state.path(), dir.path());
+        assert_eq!(
+            meta.vars["ACCOUNT_ID"].description,
+            "The account to test with."
+        );
+    }
+
+    #[gpui_kit::test]
+    fn secret_marks_follow_other_environments(cx: &mut TestAppContext) {
+        let state = tempfile::tempdir().unwrap();
+        let (dir, window, ws, secrets) = open(cx, state.path());
+        let name = dir
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        std::fs::write(dir.path().join(".env.production"), "").unwrap();
+        secrets
+            .set(&service_name(&name, "production"), "API_TOKEN", "prod")
+            .unwrap();
+        // Unmarked on Staging, it stays secret: Production keeps an item.
+        let view = drawer_on(cx, window, &ws, "API_TOKEN");
+        cx.update_window(window, |_, window, cx| {
+            view.update(cx, |v, cx| v.toggle_secret(window, cx));
+        })
+        .unwrap();
+        save(cx, window, &view, Confirmed::Yes);
+        let meta = CollectionMeta::load(state.path(), dir.path());
+        assert!(meta.secret_names.contains(&"API_TOKEN".to_string()));
+        // Deleted everywhere, the mark goes.
+        let staging = dir.path().join(".env.staging");
+        for env in ["staging", "production"] {
+            cx.update_window(window, |_, window, cx| {
+                view.update(cx, |v, cx| {
+                    v.select_environment(env, cx);
+                    v.delete("API_TOKEN", window, cx);
+                });
+            })
+            .unwrap();
+            let meta = CollectionMeta::load(state.path(), dir.path());
+            let marked = meta.secret_names.contains(&"API_TOKEN".to_string());
+            assert_eq!(marked, env == "staging", "after {env}");
+        }
+        assert!(
+            !std::fs::read_to_string(staging)
+                .unwrap()
+                .contains("API_TOKEN")
+        );
     }
 }

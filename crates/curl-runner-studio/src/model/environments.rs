@@ -338,6 +338,50 @@ pub fn remove_env_var(root: &Path, env: &str, name: &str) -> io::Result<()> {
     })
 }
 
+/// Removes `name` from `file`, a `.env` or `.env.{env}` file in `root` (a
+/// file another environment owns). `*.local` overrides are refused.
+pub fn remove_env_var_at(root: &Path, file: &Path, name: &str) -> io::Result<()> {
+    let refuse = || {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "{} is not an environment file the studio writes.",
+                file.display()
+            ),
+        )
+    };
+    if file.parent() != Some(root) {
+        return Err(refuse());
+    }
+    let file_name = file.file_name().ok_or_else(refuse)?.to_string_lossy();
+    let env = match file_name.as_ref() {
+        ".env" => DEFAULT_ENVIRONMENT,
+        n => n.strip_prefix(".env.").ok_or_else(refuse)?,
+    };
+    // `env_file` refuses `local` and `x.local`.
+    remove_env_var(root, env, name)
+}
+
+/// Which environments read `file_name` (a `.env*` file): `Some("")` for
+/// `.env` and `.env.local` (every one), `Some(env)` for `.env.{env}[.local]`.
+pub fn file_readers(file_name: &str) -> Option<String> {
+    let rest = file_name.strip_prefix(".env")?;
+    if rest.is_empty() || rest == ".local" {
+        return Some(String::new());
+    }
+    let env = rest.strip_prefix('.')?;
+    let env = env.strip_suffix(".local").unwrap_or(env);
+    (!env.is_empty()).then(|| env.to_string())
+}
+
+/// Whether any `.env` file environment `env` loads sets `name`.
+pub fn name_in_env_files(root: &Path, env: &str, name: &str) -> bool {
+    let env = Some(env).filter(|e| *e != DEFAULT_ENVIRONMENT);
+    env::env_file_paths(root, env).iter().any(|p| {
+        std::fs::read_to_string(p).is_ok_and(|t| env::parse_env_content(&t).contains_key(name))
+    })
+}
+
 /// Imports `.env` text into environment `env`: secret names (see
 /// [`is_secret`]) go to `secrets` under `service` and out of the file,
 /// the rest into the file. Returns how many variables were imported.
@@ -423,17 +467,25 @@ fn edit_env_file(
         Err(e) => return Err(e),
     };
     let mut lines: Vec<String> = content.split('\n').map(String::from).collect();
+    // A symlink to a `*.local` override is still the user's own file.
+    if path
+        .file_name()
+        .is_some_and(|n| n.to_string_lossy().ends_with(".local"))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "{} is a local override: the studio never writes it.",
+                path.display()
+            ),
+        ));
+    }
     edit(&mut lines)?;
     let out = lines.join("\n");
     if out == content {
         return Ok(());
     }
-    let permissions = std::fs::metadata(&path).ok().map(|m| m.permissions());
-    crate::model::write_atomic(&path, &out)?;
-    if let Some(p) = permissions {
-        std::fs::set_permissions(&path, p)?;
-    }
-    Ok(())
+    crate::model::write_atomic(&path, &out)
 }
 
 /// The key a `.env` line sets, as core's parser reads it.
@@ -524,6 +576,10 @@ fn set_line(lines: &mut Vec<String>, name: &str, value: &str) -> io::Result<()> 
             lines.insert(at, line);
         }
         _ => {
+            // The last line had no line break: it gets the file's.
+            if crlf && let Some(last) = lines.last_mut() {
+                last.push('\r');
+            }
             lines.push(line);
             lines.push(String::new());
         }
@@ -764,6 +820,8 @@ pub struct EnvRow {
     pub value: Option<String>,
     pub source: RowSource,
     pub secret: bool,
+    /// A Keychain value that still has a plain-text copy in this file.
+    pub plain_copy: Option<PathBuf>,
 }
 
 /// Environment `env`'s variables as the Environments screen lists them:
@@ -823,11 +881,21 @@ pub fn environment_rows(
             } else {
                 (None, RowSource::NotSet)
             };
+            let plain_copy = (source == RowSource::Keychain)
+                .then(|| {
+                    files
+                        .iter()
+                        .rev()
+                        .find(|(_, vars)| vars.contains_key(&name))
+                        .map(|(p, _)| p.clone())
+                })
+                .flatten();
             EnvRow {
                 value: value.filter(|_| !secret),
                 name,
                 source,
                 secret,
+                plain_copy,
             }
         })
         .collect();
@@ -839,6 +907,7 @@ pub fn environment_rows(
             path: c.path.clone(),
         },
         secret: false,
+        plain_copy: None,
     }));
     rows
 }
@@ -1041,7 +1110,7 @@ mod tests {
         write_env_var(d.path(), "crlf", "C", "4").unwrap();
         assert_eq!(
             fs::read_to_string(d.path().join(".env.crlf")).unwrap(),
-            "A=3\r\nB=2\nC=4\r\n"
+            "A=3\r\nB=2\r\nC=4\r\n"
         );
         remove_env_var(d.path(), "staging", "REGION").unwrap();
         let after = fs::read_to_string(&file).unwrap();
@@ -1306,5 +1375,60 @@ mod tests {
             ]
         );
         assert!(rows[2].secret && rows[3].secret && !rows[0].secret);
+    }
+
+    #[test]
+    fn remove_env_var_at_owned_files_only() {
+        let d = tempfile::tempdir().unwrap();
+        for f in [".env", ".env.local", ".env.staging.local"] {
+            fs::write(d.path().join(f), "A=1\nB=2\n").unwrap();
+        }
+        remove_env_var_at(d.path(), &d.path().join(".env"), "A").unwrap();
+        assert_eq!(fs::read_to_string(d.path().join(".env")).unwrap(), "B=2\n");
+        for f in [".env.local", ".env.staging.local"] {
+            assert!(remove_env_var_at(d.path(), &d.path().join(f), "A").is_err());
+            assert_eq!(fs::read_to_string(d.path().join(f)).unwrap(), "A=1\nB=2\n");
+        }
+        let elsewhere = tempfile::tempdir().unwrap();
+        assert!(remove_env_var_at(d.path(), &elsewhere.path().join(".env"), "B").is_err());
+        assert_eq!(file_readers(".env").as_deref(), Some(""));
+        assert_eq!(file_readers(".env.local").as_deref(), Some(""));
+        assert_eq!(file_readers(".env.staging").as_deref(), Some("staging"));
+        assert_eq!(
+            file_readers(".env.staging.local").as_deref(),
+            Some("staging")
+        );
+        assert!(name_in_env_files(d.path(), "Default", "B"));
+        assert!(!name_in_env_files(d.path(), "Default", "C"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_local_override_and_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().unwrap();
+        let local = d.path().join(".env.staging.local");
+        fs::write(&local, "A=1\n").unwrap();
+        std::os::unix::fs::symlink(&local, d.path().join(".env.staging")).unwrap();
+        assert!(write_env_var(d.path(), "staging", "A", "2").is_err());
+        assert_eq!(fs::read_to_string(&local).unwrap(), "A=1\n");
+        let own = d.path().join(".env.qa");
+        fs::write(&own, "A=1\n").unwrap();
+        fs::set_permissions(&own, fs::Permissions::from_mode(0o600)).unwrap();
+        write_env_var(d.path(), "qa", "A", "2").unwrap();
+        assert_eq!(
+            fs::metadata(&own).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+
+    #[test]
+    fn keychain_rows_flag_a_plain_copy() {
+        let d = tempfile::tempdir().unwrap();
+        fs::write(d.path().join(".env"), "API_KEY=plain\n").unwrap();
+        let marked = vec!["API_KEY".to_string()];
+        let rows = environment_rows(d.path(), "staging", &marked, &marked, &[], &[], &|_| None);
+        assert_eq!(rows[0].source, RowSource::Keychain);
+        assert_eq!(rows[0].plain_copy, Some(d.path().join(".env")));
     }
 }
