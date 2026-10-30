@@ -45,15 +45,15 @@ impl InspectorTab {
     }
 }
 
-/// The tabs a result shows: Attempts only after a retry.
+/// The tabs a result shows: Attempts only after a retry, and then no
+/// Request tab (Copy as curl has it), so the strip fits the column.
 pub fn visible_tabs(attempts: usize) -> Vec<InspectorTab> {
     use InspectorTab::*;
-    let mut tabs = vec![Response, Checks];
     if attempts > 1 {
-        tabs.push(Attempts);
+        vec![Response, Checks, Attempts, Headers, Timing]
+    } else {
+        vec![Response, Checks, Headers, Timing, Request]
     }
-    tabs.extend([Headers, Timing, Request]);
-    tabs
 }
 
 /// A JSON token kind, colored like the YAML editor's tokens.
@@ -344,6 +344,13 @@ pub fn rerun_target(file: &std::path::Path, index: usize, requests: usize) -> Ru
     }
 }
 
+impl ResultView {
+    /// Every check passed (true without checks).
+    pub fn passed_all(&self) -> bool {
+        self.passed == self.checks.len()
+    }
+}
+
 fn header_text(v: &HeaderValue) -> String {
     match v {
         HeaderValue::One(s) => s.clone(),
@@ -622,14 +629,7 @@ impl Workspace {
                 .text_color(color("text-disabled"))
                 .child("·")
         };
-        let mut facts = div()
-            .flex()
-            .flex_1()
-            .min_w_0()
-            .overflow_hidden()
-            .whitespace_nowrap()
-            .items_center()
-            .gap(px(8.));
+        let mut facts = div().flex().flex_none().items_center().gap(px(8.));
         let duration = v.duration.clone().map(|d| {
             if attempts > 1 {
                 format!("{d} total")
@@ -646,6 +646,7 @@ impl Workspace {
             facts = facts.child(
                 div()
                     .flex_none()
+                    .whitespace_nowrap()
                     .text_color(color("text-secondary"))
                     .child(fact),
             );
@@ -657,14 +658,6 @@ impl Workspace {
             (false, false) => color("danger"),
         };
         let summary = checks_summary(v.passed, v.checks.len());
-        let where_when = format!("{} · {}", env_label(&run.env), ago(run.at, Local::now()));
-        let where_when = move || {
-            div()
-                .flex_none()
-                .text_size(px(12.))
-                .text_color(color("text-secondary"))
-                .child(where_when.clone())
-        };
         let actions = (!v.ok).then(|| {
             div()
                 .flex()
@@ -688,7 +681,6 @@ impl Workspace {
                     cx.listener(|this, _, window, cx| this.rerun(window, cx)),
                 ))
         });
-        let failed = actions.is_some();
         div()
             .flex()
             .flex_col()
@@ -710,7 +702,7 @@ impl Workspace {
                             .role(Role::Label)
                             .test_support()
                             .aria_label(v.status.clone())
-                            // A long status gives way to the buttons.
+                            // Only the status gives way when the row can't fit.
                             .flex_shrink(1.)
                             .min_w_0()
                             .whitespace_nowrap()
@@ -728,10 +720,19 @@ impl Workspace {
                             .child(v.status.clone()),
                     )
                     .child(facts)
-                    .map(|row| match actions {
-                        Some(actions) => row.child(actions),
-                        None => row.child(where_when()),
-                    }),
+                    .child(div().flex_1())
+                    .child(
+                        div()
+                            .flex_none()
+                            .whitespace_nowrap()
+                            .text_size(px(12.))
+                            .text_color(color("text-secondary"))
+                            .child(format!(
+                                "{} · {}",
+                                env_label(&run.env),
+                                ago(run.at, Local::now())
+                            )),
+                    ),
             )
             .child(
                 div()
@@ -741,37 +742,50 @@ impl Workspace {
                     .text_size(px(12.))
                     .text_color(color("text-secondary"))
                     .child(
+                        // The summary may wrap; the buttons keep their width.
                         div()
-                            .id("inspector-checks")
-                            .role(Role::Label)
-                            .test_support()
-                            .aria_label(summary.clone())
                             .flex()
-                            .flex_none()
+                            .flex_1()
+                            .min_w_0()
                             .items_center()
-                            .gap(px(6.))
-                            .text_color(checks_color)
-                            .when(!v.checks.is_empty(), |d| {
-                                d.child(
-                                    glyph(if all_passed {
-                                        icons::CHECK
-                                    } else {
-                                        icons::CROSS
+                            .gap(px(8.))
+                            .child(
+                                div()
+                                    .id("inspector-checks")
+                                    .role(Role::Label)
+                                    .test_support()
+                                    .aria_label(summary.clone())
+                                    .flex()
+                                    .flex_shrink(1.)
+                                    .min_w_0()
+                                    .items_center()
+                                    .gap(px(6.))
+                                    .text_color(checks_color)
+                                    .when(!v.checks.is_empty(), |d| {
+                                        d.child(
+                                            glyph(if all_passed {
+                                                icons::CHECK
+                                            } else {
+                                                icons::CROSS
+                                            })
+                                            .size(px(13.))
+                                            .flex_none(),
+                                        )
                                     })
-                                    .size(px(13.))
-                                    .flex_none(),
-                                )
-                            })
-                            .child(summary),
+                                    .child(div().min_w_0().child(summary)),
+                            )
+                            .child(dot())
+                            .child(
+                                div()
+                                    .flex_shrink(1.)
+                                    // Wraps at the space, never inside `attempts`
+                                    // (12px Geist).
+                                    .min_w(px(54.))
+                                    .when(attempts > 1, |d| d.text_color(color("warning")))
+                                    .child(plural(attempts, "attempt", "attempts")),
+                            ),
                     )
-                    .child(dot())
-                    .child(
-                        div()
-                            .flex_none()
-                            .when(attempts > 1, |d| d.text_color(color("warning")))
-                            .child(plural(attempts, "attempt", "attempts")),
-                    )
-                    .when(failed, |row| row.child(div().flex_1()).child(where_when())),
+                    .children(actions),
             )
             .children(missing_line(&self.missing).map(missing_note))
     }
@@ -791,7 +805,7 @@ impl Workspace {
             .flex()
             .flex_none()
             .items_end()
-            // Six tabs with counts can outgrow the 400px column.
+            // A safety net: the tabs fit the 400px column.
             .overflow_x_scroll()
             .h(px(40.))
             .px(px(8.))
@@ -800,7 +814,10 @@ impl Workspace {
             .children(tabs.into_iter().map(|tab| {
                 let failed = v.checks.len() - v.passed;
                 let (count, count_color) = match tab {
-                    InspectorTab::Headers => (Some(v.headers.len()), "text-tertiary"),
+                    // Dropped beside the Attempts tab, as on the board.
+                    InspectorTab::Headers if attempts <= 1 => {
+                        (Some(v.headers.len()), "text-tertiary")
+                    }
                     InspectorTab::Attempts => (Some(attempts), "text-tertiary"),
                     InspectorTab::Checks => (Some(failed), "danger"),
                     _ => (None, "text-tertiary"),
@@ -1440,13 +1457,11 @@ fn render_diff_card(
         .bg(color("surface-raised"))
         .text_size(px(12.))
         .text_color(color("text-secondary"))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .text_ellipsis()
-                .child("Response body · diff against expected"),
-        )
+        .child(div().flex_1().min_w_0().text_ellipsis().child(if raw {
+            "Response body"
+        } else {
+            "Response body · diff against expected"
+        }))
         .child(
             div()
                 .flex()
@@ -1864,8 +1879,9 @@ mod tests {
     }
 
     #[test]
-    fn attempts_tab_only_after_a_retry() {
+    fn attempts_tab_replaces_request_after_a_retry() {
         assert!(!visible_tabs(1).contains(&InspectorTab::Attempts));
+        assert!(visible_tabs(1).contains(&InspectorTab::Request));
         assert_eq!(
             visible_tabs(3),
             [
@@ -1874,7 +1890,6 @@ mod tests {
                 InspectorTab::Attempts,
                 InspectorTab::Headers,
                 InspectorTab::Timing,
-                InspectorTab::Request
             ]
         );
     }

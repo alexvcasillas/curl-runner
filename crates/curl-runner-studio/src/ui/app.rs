@@ -176,6 +176,9 @@ pub fn run() {
                     if let Some(tab) = tab {
                         ws.dev_show_tab(&tab);
                     }
+                    if dev_string("CURL_RUNNER_STUDIO_BODY").as_deref() == Some("raw") {
+                        ws.body_raw = true;
+                    }
                     if run {
                         cx.defer_in(window, |ws, window, cx| ws.run_active(window, cx));
                     }
@@ -239,7 +242,8 @@ pub fn run() {
 /// selects the open file's first problem and opens its popover (hover
 /// states can't be reached without a pointer). `CURL_RUNNER_STUDIO_LINE`
 /// puts the cursor on a zero-based line, `CURL_RUNNER_STUDIO_TAB` picks the
-/// inspector tab, `CURL_RUNNER_STUDIO_RUN` runs the open file once and
+/// inspector tab, `CURL_RUNNER_STUDIO_BODY=raw` shows the Checks tab's body
+/// raw instead of diffed, `CURL_RUNNER_STUDIO_RUN` runs the open file once and
 /// `CURL_RUNNER_STUDIO_SIZE` (`960x600`) sizes the window.
 ///
 /// Debug builds only: a release build ignores them all.

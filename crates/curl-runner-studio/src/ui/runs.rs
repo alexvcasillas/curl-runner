@@ -1,7 +1,7 @@
 //! The workspace's runs: each file's last results, the run in flight and
 //! the drain that applies its events.
 
-use super::inspector::ResultView;
+use super::inspector::{InspectorTab, ResultView};
 use super::result_marks::ResultMarks;
 use super::run_button::run_state;
 use super::workspace::Workspace;
@@ -497,9 +497,31 @@ impl Workspace {
             return true;
         }
         let changed = !events.is_empty();
+        let inspected = self.state.active.map(|ix| {
+            (
+                self.state.open[ix].rel_path.clone(),
+                self.tabs[ix].cursor_request,
+            )
+        });
         let mut over = false;
+        let mut shown_failed = false;
         for e in events {
+            if let (RunEvent::Result { group, index, .. }, Some((file, at))) = (&e, &inspected) {
+                shown_failed |= self.runs.groups.get(*group) == Some(file) && index == at;
+            }
             over |= self.runs.apply(e);
+        }
+        // A fresh result with failed checks opens on them, unless the user
+        // picked a tab other than Response.
+        if shown_failed && self.inspector_tab == InspectorTab::Response {
+            let failed = inspected
+                .and_then(|(file, at)| {
+                    Some(self.runs.last.get(&file)?.views.get(&at)?.passed_all())
+                })
+                .is_some_and(|passed| !passed);
+            if failed {
+                self.inspector_tab = InspectorTab::Checks;
+            }
         }
         if gone && !over {
             self.runs.finish();
@@ -813,6 +835,7 @@ mod tests {
 #[cfg(test)]
 mod ui_tests {
     use super::super::app::RunActive;
+    use super::super::inspector::InspectorTab;
     use super::super::state::StateStore;
     use super::super::workspace::{Workspace, test_secrets};
     use gpui_kit::test::TestWindowExt as _;
@@ -942,8 +965,9 @@ mod ui_tests {
         );
         let (_dir, window, ws) = open(cx, &[("charge.yaml", yaml)]);
         run_file(cx, window, &ws, "charge.yaml");
-        ws.update(cx, |ws, _| {
-            ws.inspector_tab = super::super::inspector::InspectorTab::Checks
+        // Failed checks: the inspector opened on them.
+        ws.read_with(cx, |ws, _| {
+            assert_eq!(ws.inspector_tab, InspectorTab::Checks)
         });
         assert!(inspector_has(cx, window, "2 of 4 checks failed"));
         assert!(inspector_has(cx, window, "body.amount mismatch"));
@@ -963,6 +987,29 @@ mod ui_tests {
                 .map(|h| h.text.as_str())
                 .collect();
             assert_eq!(hints, ["got 2000", "got \"pending\""]);
+        });
+    }
+
+    #[gpui_kit::test]
+    fn failed_checks_keep_a_tab_the_user_picked(cx: &mut TestAppContext) {
+        let srv = TestServer::start();
+        let bad = format!(
+            "request:\n  url: {}/status/500\n  expect:\n    status: 200\n",
+            srv.base_url
+        );
+        let ok = format!(
+            "request:\n  url: {}/status/200\n  expect:\n    status: 200\n",
+            srv.base_url
+        );
+        let (_dir, window, ws) = open(cx, &[("bad.yaml", bad), ("ok.yaml", ok)]);
+        run_file(cx, window, &ws, "ok.yaml");
+        ws.read_with(cx, |ws, _| {
+            assert_eq!(ws.inspector_tab, InspectorTab::Response)
+        });
+        ws.update(cx, |ws, _| ws.inspector_tab = InspectorTab::Headers);
+        run_file(cx, window, &ws, "bad.yaml");
+        ws.read_with(cx, |ws, _| {
+            assert_eq!(ws.inspector_tab, InspectorTab::Headers)
         });
     }
 
