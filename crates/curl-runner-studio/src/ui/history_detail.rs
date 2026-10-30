@@ -7,12 +7,13 @@ use super::{
     entry_title, env_pill, failure_detail, menu_item, menu_panel, slower_text, small_button,
     unchanged_note, when_text,
 };
+use crate::model::duration_text;
 use crate::model::history::{EntryKind, HistoryEntry, StoredResult, compare, duration_series};
 use crate::ui::app::mono_font;
 use crate::ui::color;
 use crate::ui::icons::{self, glyph};
 use crate::ui::inspector::env_label;
-use crate::ui::run_view::{ExportFormat, elapsed_text};
+use crate::ui::run_view::ExportFormat;
 use crate::ui::sidebar::method_badge;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
@@ -170,7 +171,7 @@ impl HistoryView {
                     ))
                     .child(stat(
                         "Duration",
-                        elapsed_text(e.duration_ms),
+                        duration_text(e.duration_ms),
                         "text-primary",
                     ))
                     .child(stat(

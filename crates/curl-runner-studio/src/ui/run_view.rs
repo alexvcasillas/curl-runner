@@ -12,6 +12,7 @@ use super::icons::{self, glyph};
 use super::inspector::env_label;
 use super::sidebar::method_badge;
 use super::workspace::notify_error;
+use crate::model::duration_text;
 use crate::model::environments::EnvCtx;
 use crate::model::export::{cli_command, to_json, to_junit, to_markdown};
 use crate::model::result_view::checks;
@@ -410,18 +411,6 @@ fn fallback_name(file: &Path, index: usize, count: usize) -> String {
         format!("Request {}", index + 1)
     } else {
         label_of(file)
-    }
-}
-
-/// `840 ms`, `4.8 s`, `2 min 4 s`.
-pub fn elapsed_text(ms: f64) -> String {
-    if ms < 1000. {
-        format!("{} ms", ms.round() as u64)
-    } else if ms < 60_000. {
-        format!("{:.1} s", ms / 1000.)
-    } else {
-        let s = (ms / 1000.).round() as u64;
-        format!("{} min {} s", s / 60, s % 60)
     }
 }
 
@@ -1078,7 +1067,7 @@ impl RunView {
             };
             Some(format!(
                 "{verb} {}",
-                elapsed_text(b.elapsed().as_secs_f64() * 1000.)
+                duration_text(b.elapsed().as_secs_f64() * 1000.)
             ))
         } else {
             b.eta_ms().map(eta_text)
@@ -1225,10 +1214,10 @@ impl RunView {
             let running = usize::from(b.running.is_some());
             ("Queued", b.queued(), format!("{running} running now"))
         };
-        let elapsed = elapsed_text(b.elapsed().as_secs_f64() * 1000.);
+        let elapsed = duration_text(b.elapsed().as_secs_f64() * 1000.);
         let avg = b.average_ms().map_or_else(
             || "no requests yet".to_string(),
-            |a| format!("avg {} per request", elapsed_text(a)),
+            |a| format!("avg {} per request", duration_text(a)),
         );
         div()
             .flex()
@@ -1500,7 +1489,7 @@ impl RunView {
                             .font_family(mono_font())
                             .text_size(px(12.))
                             .text_color(color("text-secondary"))
-                            .child(elapsed_text(ms)),
+                            .child(duration_text(ms)),
                     )
             }
             None => dash(),
@@ -1686,7 +1675,7 @@ fn state_icon(id: impl Into<ElementId>, state: RowState) -> AnyElement {
 mod tests {
     use super::{
         Board, BoardStatus, ExportFormat, Labels, Local, PathBuf, RowState, RunConfig, RunEvent,
-        RunOutcome, elapsed_text, eta_text, folder_summary, report_file_name, write_atomic,
+        RunOutcome, eta_text, folder_summary, report_file_name, write_atomic,
     };
     use crate::model::run::SharedRedactor;
     use curl_runner_core::executor::create_summary;
@@ -1879,9 +1868,6 @@ mod tests {
 
     #[test]
     fn texts_follow_the_board() {
-        assert_eq!(elapsed_text(196.4), "196 ms");
-        assert_eq!(elapsed_text(4_800.), "4.8 s");
-        assert_eq!(elapsed_text(124_000.), "2 min 4 s");
         assert_eq!(eta_text(5_200.), "~6 s left");
         assert_eq!(eta_text(10.), "~1 s left");
         assert_eq!(eta_text(90_000.), "~2 min left");

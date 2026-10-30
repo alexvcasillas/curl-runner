@@ -14,6 +14,19 @@ pub mod secrets;
 pub mod settings;
 pub mod templates;
 
+/// A duration as every screen and report shows it: `196 ms`, `4.8 s`,
+/// `2 min 4 s`.
+pub fn duration_text(ms: f64) -> String {
+    if ms < 1000. {
+        format!("{} ms", ms.round() as u64)
+    } else if ms < 60_000. {
+        format!("{:.1} s", ms / 1000.)
+    } else {
+        let s = (ms / 1000.).round() as u64;
+        format!("{} min {} s", s / 60, s % 60)
+    }
+}
+
 /// Writes `text` to `path` through a temp file in the same folder and a
 /// rename, so a crash never leaves half a file.
 pub fn write_atomic(path: &std::path::Path, text: &str) -> std::io::Result<()> {
@@ -46,6 +59,15 @@ pub fn write_atomic(path: &std::path::Path, text: &str) -> std::io::Result<()> {
         .inspect_err(|_| {
             let _ = std::fs::remove_file(&tmp);
         })
+}
+
+#[cfg(test)]
+#[test]
+fn duration_text_reads_like_the_boards() {
+    assert_eq!(duration_text(196.4), "196 ms");
+    assert_eq!(duration_text(1240.), "1.2 s");
+    assert_eq!(duration_text(4_800.), "4.8 s");
+    assert_eq!(duration_text(124_000.), "2 min 4 s");
 }
 
 #[cfg(all(test, unix))]

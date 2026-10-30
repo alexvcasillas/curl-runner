@@ -5,11 +5,10 @@
 use super::app::mono_font;
 use super::color;
 use super::icons::{self, glyph};
-use super::inspector::{
-    BODY_MAX_HEIGHT, DiffView, JsonTok, ResultView, format_ms, format_wait, section,
-};
+use super::inspector::{BODY_MAX_HEIGHT, DiffView, JsonTok, ResultView, format_wait, section};
 use super::runs::FileRun;
 use super::workspace::Workspace;
+use crate::model::duration_text;
 use crate::model::result_view::{AttemptRow, DiffKind, attempt_rows};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
@@ -357,7 +356,7 @@ pub(super) fn render_timeline(
                                     div()
                                         .text_size(px(12.))
                                         .text_color(color("text-secondary"))
-                                        .child(format_ms(r.duration_ms)),
+                                        .child(duration_text(r.duration_ms)),
                                 ),
                         )
                         .child(

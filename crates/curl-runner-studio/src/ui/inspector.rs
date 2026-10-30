@@ -10,11 +10,13 @@ use super::inspector_failed::{
 use super::runs::FileRun;
 use super::workspace::Workspace;
 use crate::model::collection::{request_at_line, request_lines};
+use crate::model::duration_text;
+use crate::model::history::relative_time;
 use crate::model::result_view::{
     Check, DiffKind, body_diff, checks, display_body, retry_line, status_line, timing_segments,
 };
 use crate::model::run::RunTarget;
-use chrono::{DateTime, Local};
+use chrono::Local;
 use curl_runner_core::model::{ExecutionResult, HeaderValue, Json};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{Sizable as _, Size};
@@ -120,15 +122,6 @@ pub fn json_tokens(text: &str) -> Vec<(Range<usize>, JsonTok)> {
     out
 }
 
-/// `184 ms`, or `1.24 s` from a second.
-pub fn format_ms(ms: f64) -> String {
-    if ms < 1000. {
-        format!("{} ms", ms.round() as u64)
-    } else {
-        format!("{:.2} s", ms / 1000.)
-    }
-}
-
 /// `412 B`, `1.2 KB`, `3.4 MB`.
 pub fn format_bytes(bytes: f64) -> String {
     const KB: f64 = 1024.;
@@ -138,17 +131,6 @@ pub fn format_bytes(bytes: f64) -> String {
         format!("{:.1} KB", bytes / KB)
     } else {
         format!("{:.1} MB", bytes / (KB * KB))
-    }
-}
-
-/// `just now`, `2 min ago`, `3 h ago`, else the date.
-pub fn ago(at: DateTime<Local>, now: DateTime<Local>) -> String {
-    let secs = (now - at).num_seconds().max(0);
-    match secs {
-        0..60 => "just now".to_string(),
-        60..3600 => format!("{} min ago", secs / 60),
-        3600..86400 => format!("{} h ago", secs / 3600),
-        _ => at.format("%b %-d").to_string(),
     }
 }
 
@@ -445,7 +427,7 @@ impl ResultView {
             http_ok: r.status.is_some_and(|s| s < 400),
             diff,
             retry: retry_line(req.retry.as_ref()),
-            duration: r.metrics.as_ref().map(|m| format_ms(m.duration)),
+            duration: r.metrics.as_ref().map(|m| duration_text(m.duration)),
             size: r.metrics.as_ref().and_then(|m| m.size).map(format_bytes),
             passed,
             checks,
@@ -774,7 +756,7 @@ impl Workspace {
                             .child(format!(
                                 "{} · {}",
                                 env_label(&run.env),
-                                ago(run.at, Local::now())
+                                relative_time(run.at, Local::now())
                             )),
                     ),
             )
@@ -1292,7 +1274,7 @@ fn render_timing(v: &ResultView) -> impl IntoElement + use<> {
                         .flex_1()
                         .flex_basis(px(0.))
                         .min_w_0()
-                        .child(format!("{name} {}", format_ms(*ms)))
+                        .child(format!("{name} {}", duration_text(*ms)))
                 })),
         )
 }
@@ -1425,11 +1407,10 @@ fn render_request(r: &SentRequest) -> impl IntoElement + use<> {
 #[cfg(test)]
 mod tests {
     use super::{
-        DiffKind, ExecutionResult, InspectorTab, JsonTok, Local, ResultView, RunTarget, ago,
-        body_lines, checks_summary, env_label, format_bytes, format_ms, format_wait, json_tokens,
-        marked_line, missing_line, rerun_target, visible_tabs,
+        DiffKind, ExecutionResult, InspectorTab, JsonTok, ResultView, RunTarget, body_lines,
+        checks_summary, env_label, format_bytes, format_wait, json_tokens, marked_line,
+        missing_line, rerun_target, visible_tabs,
     };
-    use chrono::TimeZone as _;
 
     #[test]
     fn json_tokens_tell_keys_from_values() {
@@ -1497,8 +1478,6 @@ mod tests {
 
     #[test]
     fn formats_follow_the_board() {
-        assert_eq!(format_ms(184.4), "184 ms");
-        assert_eq!(format_ms(1240.), "1.24 s");
         assert_eq!(format_bytes(412.), "412 B");
         assert_eq!(format_bytes(1536.), "1.5 KB");
         assert_eq!(format_bytes(3.5 * 1024. * 1024.), "3.5 MB");
@@ -1517,16 +1496,6 @@ mod tests {
             Some("2 variables not set: A, B")
         );
         assert_eq!(missing_line(&[]), None);
-    }
-
-    #[test]
-    fn ago_reads_like_the_board() {
-        let now = Local.with_ymd_and_hms(2026, 10, 30, 12, 0, 0).unwrap();
-        let before = |s| now - chrono::Duration::seconds(s);
-        assert_eq!(ago(before(5), now), "just now");
-        assert_eq!(ago(before(150), now), "2 min ago");
-        assert_eq!(ago(before(7300), now), "2 h ago");
-        assert_eq!(ago(before(3 * 86400), now), "Oct 27");
     }
 
     #[test]

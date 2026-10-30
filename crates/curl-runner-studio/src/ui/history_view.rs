@@ -11,8 +11,9 @@ use super::app::mono_font;
 use super::color;
 use super::icons::{self, glyph};
 use super::inspector::env_label;
-use super::run_view::{ExportFormat, elapsed_text, pill, report_file_name, write_atomic};
+use super::run_view::{ExportFormat, pill, report_file_name, write_atomic};
 use super::workspace::notify_error;
+use crate::model::duration_text;
 use crate::model::environments::EnvCtx;
 use crate::model::export::{cli_command, to_markdown};
 use crate::model::history::{
@@ -955,7 +956,7 @@ impl HistoryView {
                     .font_family(mono_font())
                     .text_size(px(12.))
                     .text_color(color("text-secondary"))
-                    .child(elapsed_text(e.duration_ms)),
+                    .child(duration_text(e.duration_ms)),
             )
     }
 }

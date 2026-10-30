@@ -151,15 +151,6 @@ pub fn to_junit(s: &ExecutionSummary, groups: &[(PathBuf, usize)], r: &Redactor)
     out
 }
 
-/// `184 ms`, or `4.8 s` from 1000 ms.
-fn human_ms(ms: f64) -> String {
-    if ms >= 1000.0 {
-        format!("{:.1} s", ms / 1000.0)
-    } else {
-        format!("{} ms", ms.round() as i64)
-    }
-}
-
 /// Table cells must not break the row.
 fn cell(s: &str) -> String {
     s.replace('|', "\\|").replace(['\n', '\r'], " ")
@@ -177,7 +168,7 @@ pub fn to_markdown(s: &ExecutionSummary, title_text: &str, env: &str, r: &Redact
         r.redact(env),
         s.successful,
         failed.len(),
-        human_ms(s.duration)
+        crate::model::duration_text(s.duration)
     ));
     out.push_str("| Method | Request | Status | Duration | Result |\n|---|---|---|---|---|\n");
     for res in &s.results {
@@ -194,7 +185,7 @@ pub fn to_markdown(s: &ExecutionSummary, title_text: &str, env: &str, r: &Redact
             method(res),
             cell(&r.redact(&title(res))),
             status,
-            human_ms(duration_ms(res)),
+            crate::model::duration_text(duration_ms(res)),
             verdict
         ));
     }
