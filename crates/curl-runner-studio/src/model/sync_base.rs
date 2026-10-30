@@ -2,12 +2,33 @@
 //! studio last synced it, in `{base}/sync/{collection id}.json`. It tells
 //! pending changes (hash differs from base), deletions (in base, gone
 //! locally) and lets the server spot conflicts (its copy is not the base).
+//! The last sync's conflicts are kept with it, so a reopen shows them and
+//! the ones found here (`held`) are never overwritten by the next pull.
 
+use super::backend::Conflict;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-/// Relative path → hash last synced.
-pub type SyncBase = HashMap<PathBuf, u64>;
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SyncBase {
+    /// Relative path → hash last synced.
+    pub files: HashMap<PathBuf, u64>,
+    /// What the last sync left changed on both sides.
+    pub conflicts: Vec<Conflict>,
+    /// Paths of `conflicts` found by this client (a file changed on disk
+    /// while the server's copy came down): pulls skip them until resolved.
+    pub held: Vec<PathBuf>,
+}
+
+/// The file's form: `/`-joined keys, sorted.
+#[derive(Default, Serialize, Deserialize)]
+#[serde(default)]
+struct Stored {
+    files: BTreeMap<String, u64>,
+    conflicts: Vec<Conflict>,
+    held: Vec<String>,
+}
 
 fn path(base: &Path, id: &str) -> Option<PathBuf> {
     let safe = !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
@@ -26,27 +47,37 @@ fn key(rel: &Path) -> String {
 /// synced). `base` `None` keeps nothing.
 pub fn load(base: Option<&Path>, id: &str) -> SyncBase {
     let Some(file) = base.and_then(|b| path(b, id)) else {
-        return SyncBase::new();
+        return SyncBase::default();
     };
-    std::fs::read(file)
+    let stored: Stored = std::fs::read(file)
         .ok()
-        .and_then(|bytes| serde_json::from_slice::<BTreeMap<String, u64>>(&bytes).ok())
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(k, v)| (PathBuf::from(k), v))
-        .collect()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default();
+    SyncBase {
+        files: stored
+            .files
+            .into_iter()
+            .map(|(k, v)| (PathBuf::from(k), v))
+            .collect(),
+        conflicts: stored.conflicts,
+        held: stored.held.into_iter().map(PathBuf::from).collect(),
+    }
 }
 
 /// Writes atomically; `base` `None` is a no-op.
-pub fn save(base: Option<&Path>, id: &str, map: &SyncBase) -> std::io::Result<()> {
+pub fn save(base: Option<&Path>, id: &str, sync: &SyncBase) -> std::io::Result<()> {
     let Some(file) = base.and_then(|b| path(b, id)) else {
         return Ok(());
     };
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let sorted: BTreeMap<String, u64> = map.iter().map(|(k, v)| (key(k), *v)).collect();
-    let json = serde_json::to_string_pretty(&sorted).map_err(std::io::Error::other)?;
+    let stored = Stored {
+        files: sync.files.iter().map(|(k, v)| (key(k), *v)).collect(),
+        conflicts: sync.conflicts.clone(),
+        held: sync.held.iter().map(|p| key(p)).collect(),
+    };
+    let json = serde_json::to_string_pretty(&stored).map_err(std::io::Error::other)?;
     super::write_atomic(&file, &json)
 }
 
@@ -57,15 +88,28 @@ mod tests {
     #[test]
     fn base_round_trips_and_ignores_bad_ids() {
         let d = tempfile::tempdir().unwrap();
-        let map = SyncBase::from([(PathBuf::from("rates/get.yaml"), 42u64)]);
-        save(Some(d.path()), "2230f875", &map).unwrap();
+        let conflict = Conflict {
+            rel: "rates/get.yaml".into(),
+            local: "a: 2\n".into(),
+            server: "a: 3\n".into(),
+            server_author: "Acme".into(),
+            server_at: chrono::Utc::now(),
+            local_deleted: false,
+            server_deleted: false,
+        };
+        let sync = SyncBase {
+            files: HashMap::from([(PathBuf::from("rates/get.yaml"), 42u64)]),
+            conflicts: vec![conflict],
+            held: vec!["rates/get.yaml".into()],
+        };
+        save(Some(d.path()), "2230f875", &sync).unwrap();
         assert!(d.path().join("sync/2230f875.json").is_file());
-        assert_eq!(load(Some(d.path()), "2230f875"), map);
-        assert!(load(Some(d.path()), "other").is_empty());
-        save(Some(d.path()), "../x", &map).unwrap();
+        assert_eq!(load(Some(d.path()), "2230f875"), sync);
+        assert_eq!(load(Some(d.path()), "other"), SyncBase::default());
+        save(Some(d.path()), "../x", &sync).unwrap();
         assert!(!d.path().join("x.json").exists());
-        assert!(load(None, "2230f875").is_empty());
+        assert_eq!(load(None, "2230f875"), SyncBase::default());
         std::fs::write(d.path().join("sync/bad.json"), "{not json").unwrap();
-        assert!(load(Some(d.path()), "bad").is_empty());
+        assert_eq!(load(Some(d.path()), "bad"), SyncBase::default());
     }
 }

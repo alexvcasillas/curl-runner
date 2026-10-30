@@ -753,7 +753,11 @@ fn deletions_remove_owned_files_and_received_copies_are_told() {
             f.with_base(Some(h))
         })
         .collect();
-    block_on(b.sync(&owner, &a_based, &[PathBuf::from("b.yaml")])).unwrap();
+    let del = |rel: &str, text: &str| SyncDeletion {
+        rel: rel.into(),
+        base: SyncFile::hash_of(text),
+    };
+    block_on(b.sync(&owner, &a_based, &[del("b.yaml", "b: 1\n")])).unwrap();
     assert!(!b.state().synced[&owner.id].files.contains_key("b.yaml"));
     // The copy synced both before: told to remove b.yaml; its own
     // deletions are ignored (read only).
@@ -765,7 +769,7 @@ fn deletions_remove_owned_files_and_received_copies_are_told() {
             f.with_base(Some(h))
         })
         .collect();
-    let report = block_on(b.sync(&copy, &copy_local, &[PathBuf::from("a.yaml")])).unwrap();
+    let report = block_on(b.sync(&copy, &copy_local, &[del("a.yaml", "a: 1\n")])).unwrap();
     assert_eq!(report.deleted, [PathBuf::from("b.yaml")]);
     assert!(b.state().synced[&owner.id].files.contains_key("a.yaml"));
     // A file the copy never synced is not "deleted".
@@ -775,5 +779,46 @@ fn deletions_remove_owned_files_and_received_copies_are_told() {
             .unwrap()
             .deleted
             .is_empty()
+    );
+}
+
+#[test]
+fn owned_pulls_newer_and_refuses_stale_deletions() {
+    let d = tempfile::tempdir().unwrap();
+    let b = signed_in_mock(d.path());
+    let k = key();
+    let h = SyncFile::hash_of;
+    block_on(b.sync(
+        &k,
+        &files(&[("a.yaml", "a: 1\n"), ("b.yaml", "b: 1\n")]),
+        &[],
+    ))
+    .unwrap();
+    // Another device pushes a: 2 and b: 2.
+    let other = vec![
+        SyncFile::new("a.yaml", "a: 2\n").with_base(Some(h("a: 1\n"))),
+        SyncFile::new("b.yaml", "b: 2\n").with_base(Some(h("b: 1\n"))),
+    ];
+    assert_eq!(block_on(b.sync(&k, &other, &[])).unwrap().pushed, 2);
+    // This one never touched a (local == base): it pulls theirs, no
+    // conflict. It deleted b, which the server changed since: a conflict.
+    let mine = vec![SyncFile::new("a.yaml", "a: 1\n").with_base(Some(h("a: 1\n")))];
+    let gone = [SyncDeletion {
+        rel: "b.yaml".into(),
+        base: h("b: 1\n"),
+    }];
+    let report = block_on(b.sync(&k, &mine, &gone)).unwrap();
+    assert_eq!(report.pushed, 0);
+    assert_eq!(report.pulled, vec![SyncFile::new("a.yaml", "a: 2\n")]);
+    assert_eq!(report.conflicts.len(), 1);
+    let c = &report.conflicts[0];
+    assert!(c.local_deleted && !c.server_deleted);
+    assert_eq!(
+        (c.rel.clone(), c.server.as_str()),
+        (PathBuf::from("b.yaml"), "b: 2\n")
+    );
+    assert!(
+        b.state().synced[&k.id].files.contains_key("b.yaml"),
+        "theirs kept"
     );
 }

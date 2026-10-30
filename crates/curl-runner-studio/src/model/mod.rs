@@ -40,7 +40,10 @@ pub fn write_atomic(path: &std::path::Path, text: &str) -> std::io::Result<()> {
     let name = path
         .file_name()
         .map_or_else(|| "file".into(), |n| n.to_string_lossy().into_owned());
-    let tmp = path.with_file_name(format!(".{name}.tmp"));
+    // Unique per process and call: concurrent writers never share one.
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = path.with_file_name(format!(".{name}.{}.{seq}.tmp", std::process::id()));
     // The replaced file's permissions, from the start: the content is never
     // on disk under a wider mode than the file it replaces.
     let kept = std::fs::metadata(path).ok().map(|m| m.permissions());
@@ -93,5 +96,21 @@ mod tests {
         );
         // A new file gets the default mode.
         super::write_atomic(&d.path().join("new"), "x").unwrap();
+    }
+    #[test]
+    fn concurrent_atomic_writes_never_collide() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("base.json");
+        let texts: Vec<String> = (0..16).map(|i| format!("{i}\n").repeat(500)).collect();
+        std::thread::scope(|s| {
+            for t in &texts {
+                let p = &p;
+                s.spawn(move || super::write_atomic(p, t).unwrap());
+            }
+        });
+        let end = std::fs::read_to_string(&p).unwrap();
+        assert!(texts.contains(&end), "one whole write wins");
+        let left = std::fs::read_dir(d.path()).unwrap().count();
+        assert_eq!(left, 1, "no temp files left");
     }
 }

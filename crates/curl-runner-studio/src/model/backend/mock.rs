@@ -10,8 +10,8 @@ use super::fixtures::{self, CONFLICT_AUTHOR};
 use super::{
     Access, Account, Backend, BackendError, BoxFut, CollectionKey, Conflict, ConnectionInfo,
     DevControls, DevToggles, Expiry, Person, ReceivedShare, Role, Server, ShareLink, ShareSettings,
-    ShareUpdate, SharedCollection, SharedSnapshot, SharedVar, SignInMethod, SyncFile, SyncReport,
-    SyncStatus,
+    ShareUpdate, SharedCollection, SharedSnapshot, SharedVar, SignInMethod, SyncDeletion, SyncFile,
+    SyncReport, SyncStatus,
 };
 use chrono::{DateTime, Days, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
@@ -470,7 +470,7 @@ impl Backend for MockBackend {
         &self,
         collection: &CollectionKey,
         local: &[SyncFile],
-        deleted: &[PathBuf],
+        deleted: &[SyncDeletion],
     ) -> BoxFut<'_, SyncReport> {
         // Paths and hashes only: the log stays small, and request text is
         // the caller's to check.
@@ -550,26 +550,54 @@ impl Backend for MockBackend {
                 .cloned();
             let changed: Vec<SyncFile> = changed.into_iter().cloned().collect();
             let col = s.synced.entry(key.id.clone()).or_default();
-            for rel in &deleted {
-                col.files.remove(&rel_key(rel));
+            for d in &deleted {
+                let k = rel_key(&d.rel);
+                match col.files.get(&k) {
+                    Some(sf) if sf.hash == d.base => {
+                        col.files.remove(&k);
+                    }
+                    // Changed on the server since: theirs stays.
+                    Some(sf) => report.conflicts.push(Conflict {
+                        rel: d.rel.clone(),
+                        local: String::new(),
+                        server: sf.text.clone(),
+                        server_author: sf.author.clone(),
+                        server_at: sf.at,
+                        local_deleted: true,
+                        server_deleted: false,
+                    }),
+                    None => {}
+                }
             }
             for f in &changed {
                 if forced.as_ref().is_some_and(|c| c.rel == f.rel) {
                     continue;
                 }
                 let k = rel_key(&f.rel);
-                // Changed on the server since this client's base: theirs
-                // stays, the client is told.
                 if let Some(sf) = col.files.get(&k)
                     && f.base != Some(sf.hash)
                 {
-                    report.conflicts.push(Conflict {
-                        rel: f.rel.clone(),
-                        local: f.text.clone(),
-                        server: sf.text.clone(),
-                        server_author: sf.author.clone(),
-                        server_at: sf.at,
-                    });
+                    if f.base == Some(f.hash) {
+                        // Unchanged here, newer there: pull theirs.
+                        report.pulled.push(SyncFile {
+                            rel: f.rel.clone(),
+                            hash: sf.hash,
+                            text: sf.text.clone(),
+                            base: None,
+                        });
+                    } else {
+                        // Changed on both sides: theirs stays, the client
+                        // is told.
+                        report.conflicts.push(Conflict {
+                            rel: f.rel.clone(),
+                            local: f.text.clone(),
+                            server: sf.text.clone(),
+                            server_author: sf.author.clone(),
+                            server_at: sf.at,
+                            local_deleted: false,
+                            server_deleted: false,
+                        });
+                    }
                     continue;
                 }
                 let file = ServerFile {
@@ -599,6 +627,8 @@ impl Backend for MockBackend {
                     server,
                     server_author: CONFLICT_AUTHOR.into(),
                     server_at: at,
+                    local_deleted: false,
+                    server_deleted: false,
                 });
             }
             col.synced_at = Some(now);

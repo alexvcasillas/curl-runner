@@ -5,19 +5,20 @@
 //!
 //! Sync is on only while signed in and not `Continue offline`. The client
 //! keeps, per collection, the hash of each file as it last synced it (the
-//! base, [`sync_base`]). Pending changes are the files whose hash is not
-//! their base, plus files in the base that are gone (deletions). Each file
-//! goes with its base, so the server reports a conflict when its copy is
-//! neither: conflicts survive a restart and are rebuilt on every sync.
-//! Offline, the count keeps growing and a probe runs every
-//! [`OFFLINE_POLL`] (or on the next save); once back, the waiting changes
-//! go.
+//! base, [`sync_base`]) with the last sync's conflicts. Pending changes are
+//! the files whose hash is not their base, plus files in the base that are
+//! really gone (deletions; an unreadable file is not gone). Each file goes
+//! with its base, so the server pulls, pushes or reports a conflict file by
+//! file. A folder that can't be read sends nothing. Offline, the count
+//! keeps growing and a probe runs every [`OFFLINE_POLL`] (or on the next
+//! save); once back, the waiting changes go.
 
 use super::backend_call;
 use super::color;
 use super::workspace::Workspace;
 use crate::model::backend::{
-    BackendError, Conflict, SyncFile, SyncReport, SyncStatus, scan_sync_files,
+    BackendError, Conflict, SyncDeletion, SyncFile, SyncReport, SyncScan, SyncStatus,
+    scan_sync_files,
 };
 use crate::model::history::relative_time;
 use crate::model::sync_base::{self, SyncBase};
@@ -39,7 +40,8 @@ const RELATIVE_TICK: Duration = Duration::from_secs(30);
 /// The workspace's sync state for the open collection.
 #[derive(Default)]
 pub(super) struct SyncState {
-    /// Each file's hash as this client last synced it (persisted).
+    /// Each file's hash as this client last synced it, and the last
+    /// sync's conflicts (persisted).
     base: SyncBase,
     /// Changed, new or deleted files the server does not have yet.
     pub(super) pending: usize,
@@ -49,6 +51,8 @@ pub(super) struct SyncState {
     again: bool,
     /// The last call failed as offline.
     pub(super) offline: bool,
+    /// The collection folder could not be read: nothing is sent.
+    pub(super) unreadable: bool,
     /// When the last sync finished (or the server's, on open).
     at: Option<DateTime<Utc>>,
     /// Files the last sync found changed on both sides (Task 7 resolves).
@@ -58,12 +62,23 @@ pub(super) struct SyncState {
     /// `people` came from the server (a fetch got through); else the next
     /// successful sync fetches it.
     share_known: bool,
+    /// Writes the base, one at a time; outlives a collection switch.
+    saver: BaseSaver,
     debounce: Option<Task<()>>,
     poll: Option<Task<()>>,
     scan: Option<Task<()>>,
     task: Option<Task<()>>,
     share: Option<Task<()>>,
     tick: Option<Task<()>>,
+}
+
+/// Base saves in order: at most one write in flight, and per collection
+/// only the latest waiting one is kept.
+#[derive(Default)]
+struct BaseSaver {
+    queue: Vec<(String, Option<PathBuf>, SyncBase)>,
+    busy: bool,
+    task: Option<Task<()>>,
 }
 
 /// What the sidebar footer (and the status bar) say about sync.
@@ -79,6 +94,8 @@ pub enum SyncLine {
     Waiting(usize),
     Offline(usize),
     Conflicts(usize),
+    /// The collection folder can't be read: nothing is synced.
+    CantRead,
 }
 
 fn changes(n: usize) -> String {
@@ -105,6 +122,7 @@ impl SyncLine {
             SyncLine::Offline(n) => format!("Offline · {} waiting", changes(*n)),
             SyncLine::Conflicts(1) => "1 conflict".into(),
             SyncLine::Conflicts(n) => format!("{n} conflicts"),
+            SyncLine::CantRead => "Can't read the collection folder".into(),
         }
     }
 
@@ -117,7 +135,7 @@ impl SyncLine {
             SyncLine::Synced(_) => Some(("success", false)),
             SyncLine::Waiting(_) => Some(("warning", false)),
             SyncLine::Offline(_) => Some(("warning", true)),
-            SyncLine::Conflicts(_) => Some(("danger", false)),
+            SyncLine::Conflicts(_) | SyncLine::CantRead => Some(("danger", false)),
         }
     }
 
@@ -125,6 +143,7 @@ impl SyncLine {
     pub fn text_color(&self) -> &'static str {
         match self {
             SyncLine::Offline(_) => "warning",
+            SyncLine::CantRead => "danger",
             _ => "text-secondary",
         }
     }
@@ -138,6 +157,7 @@ impl SyncLine {
                 | SyncLine::Waiting(_)
                 | SyncLine::Offline(_)
                 | SyncLine::Conflicts(_)
+                | SyncLine::CantRead
         )
     }
 }
@@ -152,42 +172,64 @@ pub(super) fn sync_dot(token: &'static str, ring: bool) -> Div {
     }
 }
 
-/// Changes waiting: `files` whose hash is not their base (less `held`
-/// conflicts), plus, with `deletions`, `base` paths no longer on disk
-/// (`too_big` files are still there).
-fn pending_of(
-    files: &[SyncFile],
-    too_big: &[PathBuf],
-    base: &SyncBase,
-    held: &HashSet<PathBuf>,
-    deletions: bool,
-) -> usize {
-    let changed = files
+/// The scan can't be trusted: the root can't be listed, or it lists
+/// nothing although files were synced before (an unmounted or emptied
+/// folder). Nothing is sent then, deletions least of all.
+fn untrusted(scan: &SyncScan, base: &SyncBase) -> bool {
+    let nothing = scan.files.is_empty() && scan.too_big.is_empty() && scan.unreadable.is_empty();
+    !scan.root_ok || (nothing && !base.files.is_empty())
+}
+
+/// Changes waiting: files whose hash is not their base (less `held`
+/// conflicts), plus, with `deletions`, base paths no longer on disk.
+fn pending_of(scan: &SyncScan, base: &SyncBase, held: &HashSet<PathBuf>, deletions: bool) -> usize {
+    let changed = scan
+        .files
         .iter()
-        .filter(|f| !held.contains(&f.rel) && base.get(&f.rel) != Some(&f.hash))
+        .filter(|f| !held.contains(&f.rel) && base.files.get(&f.rel) != Some(&f.hash))
         .count();
     let deleted = if deletions {
-        deleted_of(files, too_big, base).len()
+        deleted_of(scan, base).len()
     } else {
         0
     };
     changed + deleted
 }
 
-/// The `base` paths gone from disk.
-fn deleted_of(files: &[SyncFile], too_big: &[PathBuf], base: &SyncBase) -> Vec<PathBuf> {
-    let here: HashSet<&Path> = files
+/// The base paths the scan did not see at all (too-big and unreadable files
+/// are still there), with their base hash.
+fn deleted_of(scan: &SyncScan, base: &SyncBase) -> Vec<SyncDeletion> {
+    let here: HashSet<&Path> = scan
+        .files
         .iter()
         .map(|f| f.rel.as_path())
-        .chain(too_big.iter().map(PathBuf::as_path))
+        .chain(scan.too_big.iter().map(PathBuf::as_path))
+        .chain(scan.unreadable.iter().map(PathBuf::as_path))
         .collect();
-    let mut gone: Vec<PathBuf> = base
-        .keys()
-        .filter(|rel| !here.contains(rel.as_path()))
-        .cloned()
+    let mut gone: Vec<SyncDeletion> = base
+        .files
+        .iter()
+        .filter(|(rel, _)| !here.contains(rel.as_path()))
+        .map(|(rel, hash)| SyncDeletion {
+            rel: rel.clone(),
+            base: *hash,
+        })
         .collect();
-    gone.sort();
+    gone.sort_by(|a, b| a.rel.cmp(&b.rel));
     gone
+}
+
+/// Only paths the OS says are not there: a folder that can't be read
+/// (permissions, I/O) is not a deletion.
+fn really_gone(root: &Path, deleted: Vec<SyncDeletion>) -> Vec<SyncDeletion> {
+    deleted
+        .into_iter()
+        .filter(|d| {
+            root.join(&d.rel)
+                .symlink_metadata()
+                .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+        })
+        .collect()
 }
 
 /// A pulled path is written only inside the collection, as a visible YAML
@@ -222,15 +264,28 @@ struct Applied {
     written: Vec<(PathBuf, u64)>,
     /// Paths removed (or already gone) for the server's deletions.
     removed: Vec<PathBuf>,
-    /// Files changed on disk while the sync was in flight: left alone.
+    /// Files changed on disk while the sync was in flight, or held from an
+    /// earlier one: left alone.
     conflicts: Vec<Conflict>,
+    /// Files that could not be read: left alone, their base kept.
+    errors: Vec<PathBuf>,
+}
+
+/// The disk text of `path`: `Ok(None)` when it is not there; any other
+/// failure is an error, never "gone".
+fn read_disk(path: &Path) -> Result<Option<String>, ()> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err(()),
+    }
 }
 
 /// Applies the server's newer files and deletions under `root`. A file is
 /// written only if the disk still holds what was `sent` (or it is absent and
-/// was not sent), and removed only if the disk still holds its `base`;
-/// anything else is a conflict by `author`, so an edit saved meanwhile is
-/// never clobbered.
+/// was not sent), and removed only if the disk still holds its base;
+/// anything else, and any path still `held` from an earlier conflict, is a
+/// conflict by `author`, so an edit saved meanwhile is never clobbered.
 fn apply_pulled(
     root: &Path,
     report: &SyncReport,
@@ -242,10 +297,12 @@ fn apply_pulled(
     let Ok(real_root) = root.canonicalize() else {
         return out;
     };
-    let conflict = |rel: &Path, local: String, server: String| Conflict {
+    let conflict = |rel: &Path, local: Option<String>, server: Option<&str>| Conflict {
         rel: rel.to_path_buf(),
-        local,
-        server,
+        local_deleted: local.is_none(),
+        local: local.unwrap_or_default(),
+        server_deleted: server.is_none(),
+        server: server.unwrap_or_default().to_string(),
         server_author: author.to_string(),
         server_at: Utc::now(),
     };
@@ -262,15 +319,17 @@ fn apply_pulled(
     };
     for f in &report.pulled {
         let Some(path) = inside(&f.rel) else { continue };
-        let disk = std::fs::read_to_string(&path).ok();
+        let Ok(disk) = read_disk(&path) else {
+            out.errors.push(f.rel.clone());
+            continue;
+        };
         let unchanged = match (&disk, sent.get(&f.rel)) {
             (Some(d), Some(h)) => SyncFile::hash_of(d) == *h,
             (None, None) => true,
             _ => false,
         };
-        if !unchanged {
-            out.conflicts
-                .push(conflict(&f.rel, disk.unwrap_or_default(), f.text.clone()));
+        if !unchanged || base.held.contains(&f.rel) {
+            out.conflicts.push(conflict(&f.rel, disk, Some(&f.text)));
             continue;
         }
         let Some(dir) = path.parent() else { continue };
@@ -282,20 +341,30 @@ fn apply_pulled(
         }
         match crate::model::write_atomic(&path, &f.text) {
             Ok(()) => out.written.push((f.rel.clone(), f.hash)),
-            Err(e) => log::warn!("sync: couldn't write {}: {e}", f.rel.display()),
+            Err(e) => {
+                log::warn!("sync: couldn't write {}: {e}", f.rel.display());
+                out.errors.push(f.rel.clone());
+            }
         }
     }
     for rel in &report.deleted {
         let Some(path) = inside(rel) else { continue };
-        match std::fs::read_to_string(&path) {
-            Err(_) => out.removed.push(rel.clone()),
-            Ok(d) if base.get(rel) == Some(&SyncFile::hash_of(&d)) => {
+        match read_disk(&path) {
+            Err(()) => out.errors.push(rel.clone()),
+            Ok(None) => out.removed.push(rel.clone()),
+            Ok(Some(d))
+                if !base.held.contains(rel)
+                    && base.files.get(rel) == Some(&SyncFile::hash_of(&d)) =>
+            {
                 match std::fs::remove_file(&path) {
                     Ok(()) => out.removed.push(rel.clone()),
-                    Err(e) => log::warn!("sync: couldn't remove {}: {e}", rel.display()),
+                    Err(e) => {
+                        log::warn!("sync: couldn't remove {}: {e}", rel.display());
+                        out.errors.push(rel.clone());
+                    }
                 }
             }
-            Ok(d) => out.conflicts.push(conflict(rel, d, String::new())),
+            Ok(Some(d)) => out.conflicts.push(conflict(rel, Some(d), None)),
         }
     }
     out
@@ -315,6 +384,8 @@ impl Workspace {
         let s = &self.sync;
         if !self.sync_on() {
             SyncLine::LocalOnly
+        } else if s.unreadable {
+            SyncLine::CantRead
         } else if !s.conflicts.is_empty() {
             SyncLine::Conflicts(s.conflicts.len())
         } else if s.offline {
@@ -329,14 +400,19 @@ impl Workspace {
     }
 
     /// Starts over for the open collection (opened, signed in or out, the
-    /// server changed): the persisted base, the server's last sync time,
-    /// the share's people, the waiting count and, with "Sync
+    /// server changed): the persisted base and conflicts, the server's last
+    /// sync time, the share's people, the waiting count and, with "Sync
     /// automatically", a sync (which also rebuilds conflicts).
     pub(super) fn start_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.sync = SyncState::default();
+        let saver = std::mem::take(&mut self.sync.saver);
+        self.sync = SyncState {
+            saver,
+            ..SyncState::default()
+        };
         let key = self.collection_key().filter(|_| self.sync_on());
         if let Some(key) = key {
             self.sync.base = sync_base::load(self.store.base(), &key.id);
+            self.sync.conflicts = self.sync.base.conflicts.clone();
             if let SyncStatus::Synced { at, .. } = self.backend.sync_status(&key) {
                 self.sync.at = Some(at);
             }
@@ -437,16 +513,13 @@ impl Workspace {
         self.sync.scan = Some(cx.spawn_in(window, async move |this, cx| {
             let scan = scan.await;
             this.update_in(cx, |this, window, cx| {
-                let held = this.held_back();
-                this.sync.pending = pending_of(
-                    &scan.files,
-                    &scan.too_big,
-                    &this.sync.base,
-                    &held,
-                    deletions,
-                );
-                if schedule && this.sync.pending > 0 {
-                    this.schedule_sync(window, cx);
+                this.sync.unreadable = untrusted(&scan, &this.sync.base);
+                if !this.sync.unreadable {
+                    let held = this.held_back();
+                    this.sync.pending = pending_of(&scan, &this.sync.base, &held, deletions);
+                    if schedule && this.sync.pending > 0 {
+                        this.schedule_sync(window, cx);
+                    }
                 }
                 this.sync_changed(cx);
             })
@@ -468,9 +541,9 @@ impl Workspace {
         }));
     }
 
-    /// One sync: every tracked file with its base up, deletions too, the
-    /// server's newer files and deletions down. While one is in flight,
-    /// queues one more.
+    /// One sync: every tracked file with its base up, real deletions too,
+    /// the server's newer files and deletions down. While one is in flight,
+    /// queues one more. A folder that can't be read sends nothing.
     fn run_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(key) = self.collection_key().filter(|_| self.sync_on()) else {
             return;
@@ -491,24 +564,40 @@ impl Workspace {
         let base = self.sync.base.clone();
         let backend = self.backend.clone();
         self.sync.task = Some(cx.spawn_in(window, async move |this, cx| {
-            let scan_root = root.clone();
-            let scan = cx
-                .background_spawn(async move { scan_sync_files(&scan_root) })
+            let (scan_root, scan_base) = (root.clone(), base.clone());
+            let scanned = cx
+                .background_spawn(async move {
+                    let scan = scan_sync_files(&scan_root);
+                    if untrusted(&scan, &scan_base) {
+                        return None;
+                    }
+                    let deleted = if received.is_some() {
+                        // Read-only copies never delete (Task 6).
+                        Vec::new()
+                    } else {
+                        really_gone(&scan_root, deleted_of(&scan, &scan_base))
+                    };
+                    Some((scan, deleted))
+                })
                 .await;
+            let Some((scan, deleted)) = scanned else {
+                this.update(cx, |this, cx| {
+                    this.sync.running = false;
+                    this.sync.again = false;
+                    this.sync.unreadable = true;
+                    this.sync_changed(cx);
+                })
+                .ok();
+                return;
+            };
             for rel in &scan.too_big {
                 log::info!("sync: {} stays local (over 1 MB)", rel.display());
             }
-            // Read-only copies never delete (Task 6 keeps them unedited).
-            let deleted = if received.is_some() {
-                Vec::new()
-            } else {
-                deleted_of(&scan.files, &scan.too_big, &base)
-            };
             let files: Vec<SyncFile> = scan
                 .files
                 .into_iter()
                 .map(|f| {
-                    let b = base.get(&f.rel).copied();
+                    let b = base.files.get(&f.rel).copied();
                     f.with_base(b)
                 })
                 .collect();
@@ -543,43 +632,54 @@ impl Workspace {
     fn sync_done(
         &mut self,
         sent: HashMap<PathBuf, u64>,
-        deleted: Vec<PathBuf>,
+        deleted: Vec<SyncDeletion>,
         result: Result<SyncReport, BackendError>,
         applied: Applied,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.sync.running = false;
+        self.sync.unreadable = false;
         match result {
             Ok(report) => {
+                // The server's conflicts first; ours for other paths.
                 let mut conflicts = report.conflicts;
-                conflicts.extend(applied.conflicts);
-                let conflicted: HashSet<PathBuf> =
-                    conflicts.iter().map(|c| c.rel.clone()).collect();
-                let base = &mut self.sync.base;
-                for (rel, hash) in sent {
-                    if !conflicted.contains(&rel) {
-                        base.insert(rel, hash);
+                let held: Vec<PathBuf> = applied.conflicts.iter().map(|c| c.rel.clone()).collect();
+                for c in applied.conflicts {
+                    if !conflicts.iter().any(|s| s.rel == c.rel) {
+                        conflicts.push(c);
                     }
                 }
-                for rel in deleted.iter().chain(&applied.removed) {
-                    base.remove(rel);
+                let keep: HashSet<PathBuf> = conflicts
+                    .iter()
+                    .map(|c| c.rel.clone())
+                    .chain(applied.errors.iter().cloned())
+                    .collect();
+                let base = &mut self.sync.base;
+                for (rel, hash) in sent {
+                    if !keep.contains(&rel) {
+                        base.files.insert(rel, hash);
+                    }
+                }
+                for d in deleted.iter().filter(|d| !keep.contains(&d.rel)) {
+                    base.files.remove(&d.rel);
+                }
+                for rel in applied.removed.iter().filter(|r| !keep.contains(*r)) {
+                    base.files.remove(rel);
                 }
                 for (rel, hash) in &applied.written {
-                    base.insert(rel.clone(), *hash);
+                    base.files.insert(rel.clone(), *hash);
                 }
+                base.conflicts = conflicts.clone();
+                base.held = held;
                 self.sync.conflicts = conflicts;
-                if let Some(key) = self.collection_key() {
-                    let (dir, map) = (
-                        self.store.base().map(Path::to_path_buf),
-                        self.sync.base.clone(),
+                self.save_base(cx);
+                for rel in &applied.errors {
+                    super::workspace::notify_error(
+                        format!("Couldn't read {}; it was left as it is.", rel.display()),
+                        window,
+                        cx,
                     );
-                    cx.background_spawn(async move {
-                        if let Err(e) = sync_base::save(dir.as_deref(), &key.id, &map) {
-                            log::warn!("sync: couldn't save the sync base: {e}");
-                        }
-                    })
-                    .detach();
                 }
                 self.sync.at = Some(Utc::now());
                 self.sync.offline = false;
@@ -610,6 +710,45 @@ impl Workspace {
             self.run_sync(window, cx);
         }
         self.sync_changed(cx);
+    }
+
+    /// Queues the base for writing: one write at a time, the latest per
+    /// collection wins.
+    fn save_base(&mut self, cx: &mut Context<Self>) {
+        let Some(key) = self.collection_key() else {
+            return;
+        };
+        let dir = self.store.base().map(Path::to_path_buf);
+        let saver = &mut self.sync.saver;
+        saver.queue.retain(|(id, _, _)| *id != key.id);
+        saver.queue.push((key.id, dir, self.sync.base.clone()));
+        if saver.busy {
+            return;
+        }
+        saver.busy = true;
+        saver.task = Some(cx.spawn(async move |this, cx| {
+            loop {
+                let next = this
+                    .update(cx, |this, _| {
+                        let saver = &mut this.sync.saver;
+                        if saver.queue.is_empty() {
+                            saver.busy = false;
+                            None
+                        } else {
+                            Some(saver.queue.remove(0))
+                        }
+                    })
+                    .ok()
+                    .flatten();
+                let Some((id, dir, base)) = next else { break };
+                let saved = cx
+                    .background_spawn(async move { sync_base::save(dir.as_deref(), &id, &base) })
+                    .await;
+                if let Err(e) = saved {
+                    log::warn!("sync: couldn't save the sync base: {e}");
+                }
+            }
+        }));
     }
 
     /// Offline: a sync every [`OFFLINE_POLL`] until one gets through.
@@ -645,8 +784,8 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::{
-        HashMap, HashSet, Path, PathBuf, SyncBase, SyncFile, SyncLine, SyncReport, Utc,
-        apply_pulled, deleted_of, pending_of, writable,
+        HashMap, HashSet, Path, PathBuf, SyncBase, SyncDeletion, SyncFile, SyncLine, SyncReport,
+        SyncScan, Utc, apply_pulled, deleted_of, pending_of, really_gone, untrusted, writable,
     };
 
     #[test]
@@ -680,34 +819,134 @@ mod tests {
         }
     }
 
+    fn base_of(files: &[(&str, u64)]) -> SyncBase {
+        SyncBase {
+            files: files.iter().map(|(r, h)| (PathBuf::from(r), *h)).collect(),
+            ..SyncBase::default()
+        }
+    }
+
     #[test]
     fn pending_counts_changed_and_new_files_not_held_ones() {
-        let files = [
-            SyncFile::new("a.yaml", "a"),
-            SyncFile::new("b.yaml", "b"),
-            SyncFile::new("c.yaml", "c"),
-        ];
-        let synced = HashMap::from([
-            (PathBuf::from("a.yaml"), SyncFile::hash_of("a")),
-            (PathBuf::from("b.yaml"), SyncFile::hash_of("old")),
-        ]);
+        let scan = SyncScan {
+            files: vec![
+                SyncFile::new("a.yaml", "a"),
+                SyncFile::new("b.yaml", "b"),
+                SyncFile::new("c.yaml", "c"),
+            ],
+            too_big: vec!["huge.yaml".into()],
+            unreadable: vec!["locked.yaml".into()],
+            root_ok: true,
+        };
+        let h = SyncFile::hash_of;
+        let synced = base_of(&[("a.yaml", h("a")), ("b.yaml", h("old"))]);
         let held = HashSet::from([PathBuf::from("c.yaml")]);
-        assert_eq!(pending_of(&files, &[], &synced, &held, true), 1);
-        assert_eq!(pending_of(&files, &[], &synced, &HashSet::new(), true), 2);
-        // Deletions: in the base, gone from disk (a too-big file is not).
-        let mut base = synced.clone();
-        base.insert("gone.yaml".into(), 1);
-        base.insert("huge.yaml".into(), 2);
-        let big = [PathBuf::from("huge.yaml")];
+        assert_eq!(pending_of(&scan, &synced, &held, true), 1);
+        assert_eq!(pending_of(&scan, &synced, &HashSet::new(), true), 2);
+        // Deletions: in the base, not seen at all (too big or unreadable
+        // files are still there).
+        let base = base_of(&[
+            ("a.yaml", h("a")),
+            ("b.yaml", h("old")),
+            ("gone.yaml", 1),
+            ("huge.yaml", 2),
+            ("locked.yaml", 3),
+        ]);
+        let gone = deleted_of(&scan, &base);
         assert_eq!(
-            deleted_of(&files, &big, &base),
-            [PathBuf::from("gone.yaml")]
+            gone,
+            [SyncDeletion {
+                rel: "gone.yaml".into(),
+                base: 1
+            }]
         );
-        assert_eq!(pending_of(&files, &big, &base, &held, true), 2);
+        assert_eq!(pending_of(&scan, &base, &held, true), 2);
+        assert_eq!(pending_of(&scan, &base, &held, false), 1, "read only");
+    }
+
+    #[test]
+    fn an_unreadable_or_emptied_folder_is_not_trusted() {
+        let base = base_of(&[("a.yaml", 1)]);
+        let ok = SyncScan {
+            root_ok: true,
+            ..SyncScan::default()
+        };
+        assert!(untrusted(&ok, &base), "nothing seen, something synced");
+        assert!(!untrusted(&ok, &SyncBase::default()), "a new, empty folder");
+        assert!(
+            untrusted(&SyncScan::default(), &SyncBase::default()),
+            "no root"
+        );
+        let locked = SyncScan {
+            unreadable: vec!["a.yaml".into()],
+            root_ok: true,
+            ..SyncScan::default()
+        };
+        assert!(!untrusted(&locked, &base));
+    }
+
+    #[test]
+    fn only_paths_the_os_says_are_missing_are_gone() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("here.yaml"), "a: 1\n").unwrap();
+        let del = |rel: &str| SyncDeletion {
+            rel: rel.into(),
+            base: 1,
+        };
+        let gone = really_gone(d.path(), vec![del("here.yaml"), del("gone.yaml")]);
+        assert_eq!(gone, [del("gone.yaml")]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_files_are_never_overwritten_or_removed() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path();
+        std::fs::create_dir(root.join("locked")).unwrap();
+        std::fs::write(root.join("locked/a.yaml"), "a: 1\n").unwrap();
+        std::fs::set_permissions(root.join("locked"), std::fs::Permissions::from_mode(0o000))
+            .unwrap();
+        let base = base_of(&[("locked/a.yaml", SyncFile::hash_of("a: 1\n"))]);
+        let out = apply_pulled(
+            root,
+            &report(
+                &[SyncFile::new("locked/a.yaml", "a: 2\n")],
+                &["locked/a.yaml"],
+            ),
+            &HashMap::new(),
+            &base,
+            "Acme",
+        );
+        std::fs::set_permissions(root.join("locked"), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+        assert!(out.written.is_empty() && out.removed.is_empty());
+        assert_eq!(out.errors.len(), 2);
         assert_eq!(
-            pending_of(&files, &big, &base, &held, false),
-            1,
-            "read only"
+            std::fs::read_to_string(root.join("locked/a.yaml")).unwrap(),
+            "a: 1\n"
+        );
+    }
+
+    #[test]
+    fn held_conflicts_are_not_pulled_over() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("a.yaml"), "a: mine\n").unwrap();
+        let mut base = base_of(&[("a.yaml", SyncFile::hash_of("a: 1\n"))]);
+        base.held = vec!["a.yaml".into()];
+        let sent = HashMap::from([(PathBuf::from("a.yaml"), SyncFile::hash_of("a: mine\n"))]);
+        let out = apply_pulled(
+            d.path(),
+            &report(&[SyncFile::new("a.yaml", "a: theirs\n")], &[]),
+            &sent,
+            &base,
+            "Acme",
+        );
+        assert!(out.written.is_empty());
+        assert_eq!(out.conflicts.len(), 1);
+        assert_eq!(
+            std::fs::read_to_string(d.path().join("a.yaml")).unwrap(),
+            "a: mine\n"
         );
     }
 
@@ -734,7 +973,13 @@ mod tests {
             SyncFile::new("b.yaml", "b: theirs\n"),
             SyncFile::new("new/c.yaml", "c: theirs\n"),
         ];
-        let out = apply_pulled(root, &report(&pulled, &[]), &sent, &SyncBase::new(), "Acme");
+        let out = apply_pulled(
+            root,
+            &report(&pulled, &[]),
+            &sent,
+            &SyncBase::default(),
+            "Acme",
+        );
         let read = |rel: &str| std::fs::read_to_string(root.join(rel)).unwrap();
         assert_eq!(read("a.yaml"), "a: saved meanwhile\n", "kept");
         assert_eq!(read("b.yaml"), "b: theirs\n");
@@ -758,7 +1003,7 @@ mod tests {
             root,
             &report(&[SyncFile::new("d.yaml", "d: theirs\n")], &[]),
             &sent,
-            &SyncBase::new(),
+            &SyncBase::default(),
             "Acme",
         );
         assert_eq!(out.conflicts.len(), 1);
@@ -771,10 +1016,10 @@ mod tests {
         let root = d.path();
         std::fs::write(root.join("same.yaml"), "s: 1\n").unwrap();
         std::fs::write(root.join("edited.yaml"), "e: 2\n").unwrap();
-        let base = SyncBase::from([
-            (PathBuf::from("same.yaml"), SyncFile::hash_of("s: 1\n")),
-            (PathBuf::from("edited.yaml"), SyncFile::hash_of("e: 1\n")),
-            (PathBuf::from("gone.yaml"), 7),
+        let base = base_of(&[
+            ("same.yaml", SyncFile::hash_of("s: 1\n")),
+            ("edited.yaml", SyncFile::hash_of("e: 1\n")),
+            ("gone.yaml", 7),
         ]);
         let out = apply_pulled(
             root,
@@ -808,7 +1053,7 @@ mod tests {
             d.path(),
             &report(&pulled, &[]),
             &HashMap::new(),
-            &SyncBase::new(),
+            &SyncBase::default(),
             "Acme",
         );
         assert!(out.written.is_empty());
@@ -1217,7 +1462,7 @@ mod gpui_tests {
         cx.executor().advance_clock(SYNC_DELAY);
         cx.run_until_parked();
         let last = syncs(&backend).pop().unwrap();
-        assert!(last.ends_with("[\"b.yaml\"])"), "{last}");
+        assert!(last.contains("SyncDeletion { rel: \"b.yaml\""), "{last}");
         assert!(matches!(line(cx, &ws), SyncLine::Synced(_)));
         let key = key(&ws, cx);
         futures::executor::block_on(backend.update_share(&key, ShareUpdate::default())).unwrap();
@@ -1233,6 +1478,206 @@ mod gpui_tests {
         .unwrap();
         cx.run_until_parked();
         assert!(syncs(&backend).pop().unwrap().ends_with("[])"));
+    }
+
+    #[cfg(unix)]
+    #[gpui_kit::test]
+    fn unreadable_file_is_not_deleted_on_the_server(cx: &mut TestAppContext) {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = collection(&[("a.yaml", REQUEST), ("b.yaml", REQUEST)]);
+        let state = tempfile::tempdir().unwrap();
+        let backend = signed_in();
+        let (window, ws) = open_in(
+            cx,
+            dir.path(),
+            backend.clone(),
+            StateStore::at(state.path()),
+        );
+        let b = dir.path().join("b.yaml");
+        std::fs::set_permissions(&b, std::fs::Permissions::from_mode(0o000)).unwrap();
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.sync_now(window, cx))
+        })
+        .unwrap();
+        cx.run_until_parked();
+        std::fs::set_permissions(&b, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let last = syncs(&backend).pop().unwrap();
+        assert!(last.ends_with(", [])"), "no deletion: {last}");
+        assert!(matches!(line(cx, &ws), SyncLine::Synced(_)));
+        let key = key(&ws, cx);
+        futures::executor::block_on(backend.update_share(&key, ShareUpdate::default())).unwrap();
+        let files = futures::executor::block_on(backend.fetch_shared(&key.id))
+            .unwrap()
+            .files;
+        assert_eq!(files.len(), 2, "b.yaml stays on the server");
+    }
+
+    #[gpui_kit::test]
+    fn removed_folder_sends_nothing(cx: &mut TestAppContext) {
+        let dir = collection(&[("a.yaml", REQUEST), ("b.yaml", REQUEST)]);
+        let state = tempfile::tempdir().unwrap();
+        let backend = signed_in();
+        let (window, ws) = open_in(
+            cx,
+            dir.path(),
+            backend.clone(),
+            StateStore::at(state.path()),
+        );
+        let before = syncs(&backend).len();
+        // Emptied, then gone: neither sends a thing.
+        for rel in ["a.yaml", "b.yaml"] {
+            std::fs::remove_file(dir.path().join(rel)).unwrap();
+        }
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.sync_now(window, cx))
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(
+            syncs(&backend).len(),
+            before,
+            "an emptied folder is suspicious"
+        );
+        assert_eq!(line(cx, &ws), SyncLine::CantRead);
+        std::fs::remove_dir_all(dir.path()).unwrap();
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.sync_now(window, cx))
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(syncs(&backend).len(), before);
+        assert!(shows(
+            cx,
+            window,
+            "sidebar-sync",
+            "Can't read the collection folder"
+        ));
+        assert!(shows(
+            cx,
+            window,
+            "status-bar",
+            "Can't read the collection folder"
+        ));
+        let key = key(&ws, cx);
+        futures::executor::block_on(backend.update_share(&key, ShareUpdate::default())).unwrap();
+        let files = futures::executor::block_on(backend.fetch_shared(&key.id))
+            .unwrap()
+            .files;
+        assert_eq!(files.len(), 2, "the server copy is intact");
+    }
+
+    #[gpui_kit::test]
+    fn newer_server_copy_is_pulled_when_unchanged_here(cx: &mut TestAppContext) {
+        let dir = collection(&[("a.yaml", REQUEST)]);
+        let state = tempfile::tempdir().unwrap();
+        let backend = signed_in();
+        let (window, ws) = open_in(
+            cx,
+            dir.path(),
+            backend.clone(),
+            StateStore::at(state.path()),
+        );
+        // Another device pushes on top of what this one synced.
+        let key = key(&ws, cx);
+        let theirs = "request:\n  url: https://api.example.com/theirs\n";
+        let other = crate::model::backend::SyncFile::new("a.yaml", theirs)
+            .with_base(Some(crate::model::backend::SyncFile::hash_of(REQUEST)));
+        futures::executor::block_on(backend.sync(&key, &[other], &[])).unwrap();
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.sync_now(window, cx))
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.yaml")).unwrap(),
+            theirs
+        );
+        assert!(matches!(line(cx, &ws), SyncLine::Synced(_)));
+        // The base follows: nothing waits, nothing conflicts next time.
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.sync_now(window, cx))
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(matches!(line(cx, &ws), SyncLine::Synced(_)));
+    }
+
+    #[gpui_kit::test]
+    fn conflicts_found_here_come_back_on_reopen(cx: &mut TestAppContext) {
+        let dir = collection(&[("a.yaml", REQUEST)]);
+        let state = tempfile::tempdir().unwrap();
+        let backend = signed_in();
+        let (window, ws) = open_in(
+            cx,
+            dir.path(),
+            backend.clone(),
+            StateStore::at(state.path()),
+        );
+        let key = key(&ws, cx);
+        let conflict = crate::model::backend::Conflict {
+            rel: "a.yaml".into(),
+            local: "a: mine\n".into(),
+            server: "a: theirs\n".into(),
+            server_author: "Acme".into(),
+            server_at: chrono::Utc::now(),
+            local_deleted: false,
+            server_deleted: false,
+        };
+        cx.update_window(window, |_, _, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.sync.base.conflicts = vec![conflict.clone()];
+                ws.sync.base.held = vec!["a.yaml".into()];
+                ws.save_base(cx);
+            })
+        })
+        .unwrap();
+        cx.run_until_parked();
+        let stored = crate::model::sync_base::load(Some(state.path()), &key.id);
+        assert_eq!(stored.held, [std::path::PathBuf::from("a.yaml")]);
+        std::fs::write(
+            state.path().join("settings.json"),
+            r#"{"sync":{"automatic":false}}"#,
+        )
+        .unwrap();
+        let (window, ws) = open_in(
+            cx,
+            dir.path(),
+            backend.clone(),
+            StateStore::at(state.path()),
+        );
+        assert_eq!(line(cx, &ws), SyncLine::Conflicts(1));
+        assert!(shows(cx, window, "sidebar-sync", "Resolve"));
+    }
+
+    #[gpui_kit::test]
+    fn quick_base_saves_end_with_the_newest(cx: &mut TestAppContext) {
+        let dir = collection(&[("a.yaml", REQUEST)]);
+        let state = tempfile::tempdir().unwrap();
+        let backend = signed_in();
+        let (window, ws) = open_in(
+            cx,
+            dir.path(),
+            backend.clone(),
+            StateStore::at(state.path()),
+        );
+        let key = key(&ws, cx);
+        cx.update_window(window, |_, _, cx| {
+            ws.update(cx, |ws, cx| {
+                for n in 1..=5u64 {
+                    ws.sync.base.files.insert("a.yaml".into(), n);
+                    ws.save_base(cx);
+                }
+                assert!(
+                    ws.sync.saver.queue.len() <= 1,
+                    "latest wins while one is in flight"
+                );
+            })
+        })
+        .unwrap();
+        cx.run_until_parked();
+        let stored = crate::model::sync_base::load(Some(state.path()), &key.id);
+        assert_eq!(stored.files[std::path::Path::new("a.yaml")], 5);
+        ws.read_with(cx, |ws, _| assert!(!ws.sync.saver.busy));
     }
 
     #[gpui_kit::test]

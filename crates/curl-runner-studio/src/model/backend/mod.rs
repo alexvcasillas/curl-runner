@@ -188,13 +188,30 @@ pub struct SyncReport {
     pub deleted: Vec<PathBuf>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Conflict {
     pub rel: PathBuf,
+    /// Empty when `local_deleted`.
     pub local: String,
+    /// Empty when `server_deleted`.
     pub server: String,
     pub server_author: String,
     pub server_at: DateTime<Utc>,
+    /// This side deleted the file; the server changed it.
+    #[serde(default)]
+    pub local_deleted: bool,
+    /// The server deleted the file; this side changed it.
+    #[serde(default)]
+    pub server_deleted: bool,
+}
+
+/// A file this client synced before and no longer has, with the hash it
+/// last synced: the server deletes it only if its copy is still that.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncDeletion {
+    pub rel: PathBuf,
+    pub base: u64,
 }
 
 /// The sidebar footer's state for one collection.
@@ -405,16 +422,21 @@ pub trait Backend: Send + Sync {
     fn sign_out(&self) -> BoxFut<'_, ()>;
     fn account(&self) -> Option<Account>;
     fn sync_status(&self, collection: &CollectionKey) -> SyncStatus;
-    /// Pushes the `local` files the server does not have and removes the
-    /// `deleted` ones (paths this client synced before and no longer has);
-    /// pulls what it has newer (shared collections, which never push or
-    /// delete). A file whose server copy is neither its `base` nor its
-    /// hash is a conflict: reported, the server copy kept.
+    /// Reconciles `local` (each with its `base`) and `deleted` with the
+    /// server's copy, file by file:
+    /// - server copy is the base (or missing): the local change is pushed,
+    ///   a deletion applied;
+    /// - local is the base: the server's newer copy is `pulled`;
+    /// - server, base and local all differ: a [`Conflict`], the server copy
+    ///   kept (a deletion of a file the server changed is one too).
+    ///
+    /// Shared (received) collections never push or delete: they pull, and
+    /// report in `deleted` the files the owner removed.
     fn sync(
         &self,
         collection: &CollectionKey,
         local: &[SyncFile],
-        deleted: &[PathBuf],
+        deleted: &[SyncDeletion],
     ) -> BoxFut<'_, SyncReport>;
     fn share_settings(&self, collection: &CollectionKey) -> BoxFut<'_, ShareSettings>;
     fn update_share(
@@ -477,6 +499,11 @@ pub struct SyncScan {
     pub files: Vec<SyncFile>,
     /// Tracked files over [`MAX_SYNC_BYTES`], relative to the root.
     pub too_big: Vec<PathBuf>,
+    /// Tracked files found but not read (permissions, not UTF-8, I/O, a
+    /// link out): still there, never deletions.
+    pub unreadable: Vec<PathBuf>,
+    /// The root itself could be listed; if not, nothing else is trusted.
+    pub root_ok: bool,
 }
 
 /// The collection at `root`'s YAML files, as synced: request files and
@@ -484,8 +511,14 @@ pub struct SyncScan {
 /// nothing that resolves outside `root` (a symlink out) and nothing over
 /// [`MAX_SYNC_BYTES`].
 pub fn scan_sync_files(root: &Path) -> SyncScan {
+    let mut scan = SyncScan {
+        root_ok: std::fs::read_dir(root).is_ok(),
+        ..SyncScan::default()
+    };
+    if !scan.root_ok {
+        return scan;
+    }
     let real_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    let mut scan = SyncScan::default();
     let rels = curl_runner_core::discover::find_yaml_files(&[], true, root)
         .into_iter()
         .map(|f| PathBuf::from(f.strip_prefix("./").unwrap_or(&f)))
@@ -501,17 +534,23 @@ pub fn scan_sync_files(root: &Path) -> SyncScan {
             .canonicalize()
             .is_ok_and(|real| real.starts_with(&real_root));
         let Ok(meta) = std::fs::metadata(&path) else {
+            scan.unreadable.push(rel);
             continue;
         };
-        if !inside || !meta.is_file() {
+        if !meta.is_file() {
+            continue;
+        }
+        if !inside {
+            scan.unreadable.push(rel);
             continue;
         }
         if meta.len() > MAX_SYNC_BYTES {
             scan.too_big.push(rel);
             continue;
         }
-        if let Ok(text) = std::fs::read_to_string(&path) {
-            scan.files.push(SyncFile::new(rel, text));
+        match std::fs::read_to_string(&path) {
+            Ok(text) => scan.files.push(SyncFile::new(rel, text)),
+            Err(_) => scan.unreadable.push(rel),
         }
     }
     scan
@@ -605,6 +644,23 @@ mod tests {
         let rels: Vec<_> = scan.files.iter().map(|f| f.rel.clone()).collect();
         assert_eq!(rels, [PathBuf::from("small.yaml")]);
         assert_eq!(scan.too_big, [PathBuf::from("big.yaml")]);
+        if cfg!(unix) {
+            assert_eq!(scan.unreadable, [PathBuf::from("link.yaml")], "a link out");
+        }
+        assert!(scan.root_ok);
+    }
+
+    #[test]
+    fn unreadable_files_and_missing_roots_are_told_apart() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path();
+        std::fs::write(root.join("ok.yaml"), "a: 1\n").unwrap();
+        std::fs::write(root.join("latin1.yaml"), b"a: caf\xe9\n").unwrap();
+        let scan = scan_sync_files(root);
+        assert_eq!(scan.files.len(), 1);
+        assert_eq!(scan.unreadable, [PathBuf::from("latin1.yaml")]);
+        let gone = scan_sync_files(&root.join("missing"));
+        assert!(!gone.root_ok && gone.files.is_empty());
     }
 
     #[test]
@@ -640,6 +696,8 @@ mod tests {
             server: String::new(),
             server_author: "Sam".into(),
             server_at: Utc::now(),
+            local_deleted: false,
+            server_deleted: false,
         };
         assert_eq!(
             BackendError::Conflict(Box::new(c)).to_string(),
