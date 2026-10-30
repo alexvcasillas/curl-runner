@@ -154,7 +154,6 @@ pub fn env_label(name: &str) -> String {
 pub fn checks_summary(passed: usize, total: usize) -> String {
     match total {
         0 => "No checks".to_string(),
-        1 if passed == 1 => "1 of 1 checks passed".to_string(),
         _ if passed == total => format!("{passed} of {total} checks passed"),
         _ => {
             let failed = total - passed;
@@ -187,7 +186,7 @@ pub fn missing_line(missing: &[String]) -> Option<String> {
 pub const BODY_MAX_HEIGHT: f32 = 420.;
 /// Bodies up to this many lines wrap with a hanging indent, one element per
 /// line; longer ones wrap as one text, so huge bodies stay cheap.
-pub const HANGING_INDENT_MAX_LINES: usize = 1000;
+pub const HANGING_INDENT_MAX_LINES: usize = 300;
 
 /// The response body as shown.
 pub struct BodyView {
@@ -434,7 +433,7 @@ impl Workspace {
                 .child(self.render_result_header(run, index, view))
                 .child(self.render_result_tabs(run, index, view, cx))
                 .child(self.render_result_body(run, index, view, cx)),
-            None if self.runs.is_running_file(file) => aside.child(centered(
+            None if self.runs.is_pending(file, index) => aside.child(centered(
                 div()
                     .text_color(color("text-secondary"))
                     .child("Waiting to run…"),
@@ -451,20 +450,7 @@ impl Workspace {
                 .flex_col()
                 .items_center()
                 .gap(px(12.))
-                .children(missing_line(&self.missing).map(|line| {
-                    div()
-                        .id("inspector-missing")
-                        .role(Role::Label)
-                        .test_support()
-                        .aria_label(line.clone())
-                        .flex()
-                        .items_center()
-                        .gap(px(6.))
-                        .text_size(px(12.))
-                        .text_color(color("warning"))
-                        .child(glyph(icons::WARNING).size(px(13.)).flex_none())
-                        .child(line)
-                }))
+                .children(missing_line(&self.missing).map(missing_note))
                 .child(
                     div()
                         .flex()
@@ -584,6 +570,7 @@ impl Workspace {
                     .child(dot())
                     .child(plural(attempts, "attempt", "attempts")),
             )
+            .children(missing_line(&self.missing).map(missing_note))
     }
 
     fn render_result_tabs(
@@ -703,6 +690,22 @@ impl Workspace {
             InspectorTab::Request => content.child(render_request(&v.request)),
         }
     }
+}
+
+/// The amber `1 variable not set: API_TOKEN` line.
+fn missing_note(line: String) -> impl IntoElement {
+    div()
+        .id("inspector-missing")
+        .role(Role::Label)
+        .test_support()
+        .aria_label(line.clone())
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .text_size(px(12.))
+        .text_color(color("warning"))
+        .child(glyph(icons::WARNING).size(px(13.)).flex_none())
+        .child(line)
 }
 
 /// `child` in the middle of the inspector.

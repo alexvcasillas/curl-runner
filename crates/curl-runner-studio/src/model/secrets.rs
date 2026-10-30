@@ -1,7 +1,7 @@
 //! Secret values of an environment. They live only in a [`SecretStore`] (the
 //! macOS Keychain in the app), never on disk.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
 
 /// Where secret values are kept: one item per `service` (collection and
@@ -105,9 +105,109 @@ impl SecretStore for KeychainSecrets {
     }
 }
 
+/// A read-through cache over another store: each item is read once until
+/// [`CachedSecrets::invalidate`]. Writes go through and update the cache.
+/// The studio resolves variables with it so typing never reads the Keychain.
+pub struct CachedSecrets {
+    inner: std::sync::Arc<dyn SecretStore>,
+    cache: Mutex<HashMap<(String, String), Option<String>>>,
+}
+
+impl CachedSecrets {
+    pub fn new(inner: std::sync::Arc<dyn SecretStore>) -> Self {
+        CachedSecrets {
+            inner,
+            cache: Mutex::default(),
+        }
+    }
+
+    /// Forget every cached value (after an environment switch or a secret
+    /// edited elsewhere).
+    pub fn invalidate(&self) {
+        self.cache().clear();
+    }
+
+    fn cache(&self) -> std::sync::MutexGuard<'_, HashMap<(String, String), Option<String>>> {
+        self.cache.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+impl SecretStore for CachedSecrets {
+    fn get(&self, service: &str, name: &str) -> Option<String> {
+        let key = (service.to_string(), name.to_string());
+        if let Some(v) = self.cache().get(&key) {
+            return v.clone();
+        }
+        let v = self.inner.get(service, name);
+        self.cache().insert(key, v.clone());
+        v
+    }
+
+    fn set(&self, service: &str, name: &str, value: &str) -> Result<(), String> {
+        self.inner.set(service, name, value)?;
+        self.cache().insert(
+            (service.to_string(), name.to_string()),
+            Some(value.to_string()),
+        );
+        Ok(())
+    }
+
+    fn delete(&self, service: &str, name: &str) -> Result<(), String> {
+        self.inner.delete(service, name)?;
+        self.cache()
+            .insert((service.to_string(), name.to_string()), None);
+        Ok(())
+    }
+
+    fn names(&self, service: &str) -> Vec<String> {
+        self.inner.names(service)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Counts reads of the store under it.
+    struct Counting(MemorySecrets, std::sync::atomic::AtomicUsize);
+
+    impl SecretStore for Counting {
+        fn get(&self, service: &str, name: &str) -> Option<String> {
+            self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.0.get(service, name)
+        }
+        fn set(&self, service: &str, name: &str, value: &str) -> Result<(), String> {
+            self.0.set(service, name, value)
+        }
+        fn delete(&self, service: &str, name: &str) -> Result<(), String> {
+            self.0.delete(service, name)
+        }
+        fn names(&self, service: &str) -> Vec<String> {
+            self.0.names(service)
+        }
+    }
+
+    #[test]
+    fn cached_secrets_read_once_until_invalidated() {
+        let inner = std::sync::Arc::new(Counting(MemorySecrets::default(), Default::default()));
+        inner.0.set("s", "SECRET_A", "1").unwrap();
+        let cached = CachedSecrets::new(inner.clone());
+        let reads = || inner.1.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(cached.get("s", "SECRET_A").as_deref(), Some("1"));
+        assert_eq!(cached.get("s", "SECRET_A").as_deref(), Some("1"));
+        assert_eq!(cached.get("s", "SECRET_MISSING"), None);
+        assert_eq!(cached.get("s", "SECRET_MISSING"), None);
+        assert_eq!(reads(), 2, "one read per item");
+        inner.0.set("s", "SECRET_A", "2").unwrap();
+        assert_eq!(cached.get("s", "SECRET_A").as_deref(), Some("1"), "cached");
+        cached.invalidate();
+        assert_eq!(cached.get("s", "SECRET_A").as_deref(), Some("2"));
+        cached.set("s", "SECRET_A", "3").unwrap();
+        assert_eq!(cached.get("s", "SECRET_A").as_deref(), Some("3"));
+        cached.delete("s", "SECRET_A").unwrap();
+        assert_eq!(cached.get("s", "SECRET_A"), None);
+        assert_eq!(reads(), 3);
+    }
 
     #[test]
     fn service_name_names_collection_and_environment() {

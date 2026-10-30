@@ -69,6 +69,7 @@ pub enum RunStatus {
 /// The request being sent right now.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Progress {
+    pub group: usize,
     pub file: PathBuf,
     pub index: usize,
     /// Transfers finished so far.
@@ -78,6 +79,10 @@ pub struct Progress {
 }
 
 impl Progress {
+    fn is(&self, group: usize, index: usize) -> bool {
+        self.group == group && self.index == index
+    }
+
     /// `Running… attempt 2 of 3`, or `Running…` without retries.
     pub fn label(&self) -> String {
         if self.max_attempts > 1 {
@@ -151,6 +156,17 @@ impl Runs {
             }
     }
 
+    /// Whether request `index` of `file` is still to run in the active run:
+    /// a one-request run leaves the file's other requests alone.
+    pub fn is_pending(&self, file: &Path, index: usize) -> bool {
+        match &self.target {
+            Some(RunTarget::Request { file: f, index: i }) => {
+                self.active.is_some() && f == file && *i == index
+            }
+            _ => self.is_running_file(file),
+        }
+    }
+
     /// Applies one event; `true` once the run is over.
     pub fn apply(&mut self, event: RunEvent) -> bool {
         match event {
@@ -182,6 +198,7 @@ impl Runs {
                 if let Some(file) = self.groups.get(group).cloned() {
                     let max_attempts = self.max_attempts_of(&file, index);
                     self.progress = Some(Progress {
+                        group,
                         file,
                         index,
                         done: 0,
@@ -196,7 +213,7 @@ impl Runs {
                 outcome,
             } => {
                 if let Some(p) = &mut self.progress
-                    && p.index == index
+                    && p.is(group, index)
                 {
                     p.done = attempt;
                 }
@@ -221,7 +238,7 @@ impl Runs {
                 index,
                 result,
             } => {
-                if self.progress.as_ref().is_some_and(|p| p.index == index) {
+                if self.progress.as_ref().is_some_and(|p| p.is(group, index)) {
                     self.progress = None;
                 }
                 if let Some(run) = self.run_of(group) {
@@ -324,7 +341,11 @@ pub fn max_attempts(text: &str) -> Vec<u32> {
 impl Workspace {
     /// Saves what `target` reads, then runs it in the picked environment.
     /// A file with errors does not run.
+    /// Ignored while a run is in flight (Stop comes first).
     pub fn run(&mut self, target: RunTarget, window: &mut Window, cx: &mut Context<Self>) {
+        if self.runs.active.is_some() {
+            return;
+        }
         let Some(collection) = &self.state.collection else {
             return;
         };
@@ -623,8 +644,55 @@ mod tests {
     }
 
     #[test]
+    fn a_request_run_leaves_the_other_requests_settled() {
+        let (tx, events) = std::sync::mpsc::channel::<RunEvent>();
+        drop(tx);
+        let mut r = runs(RunTarget::Request {
+            file: "a.yaml".into(),
+            index: 1,
+        });
+        r.active = Some(crate::model::run::RunHandle::for_test(events));
+        assert!(r.is_pending(Path::new("a.yaml"), 1));
+        assert!(!r.is_pending(Path::new("a.yaml"), 0));
+        assert!(!r.is_pending(Path::new("b.yaml"), 1));
+        r.target = Some(RunTarget::File("a.yaml".into()));
+        assert!(r.is_pending(Path::new("a.yaml"), 0));
+    }
+
+    #[test]
+    fn progress_is_matched_by_group_and_index() {
+        let mut r = Runs {
+            target: Some(RunTarget::Collection),
+            ..Runs::default()
+        };
+        r.apply(RunEvent::Started {
+            total: 2,
+            groups: vec![("a.yaml".into(), 1), ("b.yaml".into(), 1)],
+        });
+        r.apply(RunEvent::RequestStarted {
+            group: 1,
+            index: 0,
+            name: "b".into(),
+        });
+        // Same index, other group: not the running request.
+        r.apply(RunEvent::Result {
+            group: 0,
+            index: 0,
+            result: result(200),
+        });
+        assert_eq!(r.progress.as_ref().map(|p| p.group), Some(1));
+        r.apply(RunEvent::Result {
+            group: 1,
+            index: 0,
+            result: result(200),
+        });
+        assert_eq!(r.progress, None);
+    }
+
+    #[test]
     fn progress_label_counts_attempts() {
         let mut p = Progress {
+            group: 0,
             file: "a.yaml".into(),
             index: 0,
             done: 1,
@@ -788,6 +856,42 @@ mod ui_tests {
         run_file(cx, window, &ws, "bad.yaml");
         assert_eq!(tree_labels(cx, window, "Failed"), 1);
         assert_eq!(tree_labels(cx, window, "Passed"), 1);
+    }
+
+    #[gpui_kit::test]
+    fn run_is_ignored_while_a_run_is_active(cx: &mut TestAppContext) {
+        let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+        let log = seen.clone();
+        let srv = TestServer::with_handler(move |req| {
+            log.lock().unwrap().push(req.url.clone());
+            std::thread::sleep(Duration::from_millis(400));
+            Response::from_data(b"{}".to_vec())
+        });
+        let yaml = format!("request:\n  url: {}/slow\n", srv.base_url);
+        let (_dir, window, ws) = open(cx, &[("slow.yaml", yaml)]);
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.open_file(Path::new("slow.yaml"), window, cx);
+                ws.run_active(window, cx);
+            });
+        })
+        .unwrap();
+        // The first request is in flight before Run is pressed again.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while seen.lock().unwrap().is_empty() {
+            assert!(Instant::now() < deadline, "the run did not start");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.run_active(window, cx);
+                ws.run_request_under_cursor(window, cx);
+                ws.run(crate::model::run::RunTarget::Collection, window, cx);
+            });
+        })
+        .unwrap();
+        wait_for_run(cx, &ws);
+        assert_eq!(*seen.lock().unwrap(), ["/slow"], "one run, not restarted");
     }
 
     #[gpui_kit::test]

@@ -20,7 +20,7 @@ use crate::model::environments::{
     DEFAULT_ENVIRONMENT, EnvCtx, ResolvedVar, list_environments, missing_vars, referenced_vars,
     resolve_vars,
 };
-use crate::model::secrets::SecretStore;
+use crate::model::secrets::{CachedSecrets, SecretStore};
 use futures::StreamExt as _;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
@@ -97,6 +97,8 @@ pub struct Workspace {
     /// Its references with no value anywhere.
     pub(super) missing: Vec<String>,
     pub(super) secrets: Arc<dyn SecretStore>,
+    /// `secrets` read once per item, for resolving variables while typing.
+    secret_cache: CachedSecrets,
     status: Entity<StatusBar>,
     focus: FocusHandle,
     /// Set once the user agreed to close the window with unsaved changes.
@@ -153,6 +155,7 @@ impl Workspace {
             inspector_tab: InspectorTab::Response,
             vars: Vec::new(),
             missing: Vec::new(),
+            secret_cache: CachedSecrets::new(secrets.clone()),
             secrets,
             status: cx.new(|_| StatusBar::default()),
             focus,
@@ -194,6 +197,7 @@ impl Workspace {
         self.expanded.clear();
         self.selected_request = None;
         self.runs = Runs::default();
+        self.secret_cache.invalidate();
         self.environment = self
             .store
             .environment(root)
@@ -266,11 +270,18 @@ impl Workspace {
             return;
         }
         self.environment = name.to_string();
+        self.invalidate_secrets();
         if let Some(c) = &self.state.collection {
             self.store.remember_environment(&c.root, name);
         }
         self.refresh_vars(cx);
         cx.notify();
+    }
+
+    /// Drops cached Keychain values, so the next lookup reads them again
+    /// (after an environment switch, or once secrets are edited).
+    pub(super) fn invalidate_secrets(&mut self) {
+        self.secret_cache.invalidate();
     }
 
     /// The active file's variables for the picked environment, for the
@@ -294,7 +305,7 @@ impl Workspace {
                 let vars = resolve_vars(
                     &names,
                     &captured,
-                    &*self.secrets,
+                    &self.secret_cache,
                     &ctx,
                     std::slice::from_ref(&doc.rel_path),
                 );

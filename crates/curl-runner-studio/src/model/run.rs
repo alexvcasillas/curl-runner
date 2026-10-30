@@ -130,6 +130,17 @@ impl RunHandle {
     }
 }
 
+#[cfg(test)]
+impl RunHandle {
+    /// A handle on `events` with no run behind it.
+    pub fn for_test(events: Receiver<RunEvent>) -> Self {
+        RunHandle {
+            events,
+            cancel: Arc::default(),
+        }
+    }
+}
+
 impl Drop for RunHandle {
     fn drop(&mut self) {
         self.stop();
