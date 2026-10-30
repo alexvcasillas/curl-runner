@@ -158,7 +158,8 @@ pub struct Workspace {
     /// The open collection's sync: pending changes, offline, conflicts.
     pub(super) sync: super::sync::SyncState,
     /// The Share dialog, while it is open.
-    pub(super) share_view: Option<Entity<super::share_dialog::ShareView>>,
+    /// Held by the dialog itself, so any close drops it.
+    pub(super) share_view: Option<WeakEntity<super::share_dialog::ShareView>>,
     pub(super) _share_events: Option<Subscription>,
     pub(super) status: Entity<StatusBar>,
     focus: FocusHandle,

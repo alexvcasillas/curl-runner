@@ -836,6 +836,8 @@ pub enum RowSource {
         request: Option<String>,
         path: Option<String>,
     },
+    /// A received copy's default, set by the owner `org`: read only.
+    Shared(String),
     NotSet,
 }
 

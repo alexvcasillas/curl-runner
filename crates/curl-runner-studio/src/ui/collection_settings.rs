@@ -19,7 +19,9 @@ use super::settings_kit::{
     switch, tinted_pill,
 };
 use super::settings_view::AppPage;
-use super::share_dialog::{ShareEvent, ShareMode, ShareSource, ShareView};
+use super::share_dialog::{
+    SUBTITLE as SHARE_SUBTITLE, ShareEvent, ShareMode, ShareSource, ShareView,
+};
 use super::workspace::notify_error;
 use crate::model::backend::{Backend, CollectionKey};
 use crate::model::collection_meta::{CollectionMeta, VarMeta};
@@ -135,6 +137,7 @@ pub fn source_label(source: &RowSource, root: &Path) -> String {
         RowSource::Keychain => "My keychain".into(),
         RowSource::Process => "Shell environment".into(),
         RowSource::Captured { .. } => "Captured at run".into(),
+        RowSource::Shared(org) => format!("Shared by {org}"),
         RowSource::NotSet => "Not set".into(),
     }
 }
@@ -441,31 +444,27 @@ impl CollectionSettings {
             &*self.process_env,
         );
         // A received copy: the owner's defaults are listed (and count as
-        // set) in every environment, as `Shared by {org}`.
-        let shared: Vec<(String, String)> = self
+        // set) in every environment, as `Shared by {org}`, over any local
+        // value.
+        let shared: Vec<EnvRow> = self
             .meta
             .received_vars
             .iter()
             .filter_map(|v| {
-                let (_, value) = self.meta.shared_by(&v.name)?;
-                Some((v.name.clone(), value.to_string()))
-            })
-            .collect();
-        let dotenv = self.root.join(".env");
-        for (name, value) in shared {
-            match self.rows.iter_mut().find(|r| r.name == name) {
-                Some(row) if row.source == RowSource::NotSet => {
-                    row.source = RowSource::File(dotenv.clone());
-                    row.value = Some(value);
-                }
-                Some(_) => {}
-                None => self.rows.push(EnvRow {
-                    name,
-                    value: Some(value),
-                    source: RowSource::File(dotenv.clone()),
+                let (org, value) = self.meta.shared_by(&v.name)?;
+                Some(EnvRow {
+                    name: v.name.clone(),
+                    value: Some(value.to_string()),
+                    source: RowSource::Shared(org.to_string()),
                     secret: false,
                     plain_copy: None,
-                }),
+                })
+            })
+            .collect();
+        for row in shared {
+            match self.rows.iter_mut().find(|r| r.name == row.name) {
+                Some(r) => *r = row,
+                None => self.rows.push(row),
             }
         }
     }
@@ -598,6 +597,13 @@ impl CollectionSettings {
         let row = name
             .and_then(|n| self.rows.iter().find(|r| r.name == n))
             .cloned();
+        // The owner's shared default is read only here.
+        if row
+            .as_ref()
+            .is_some_and(|r| matches!(r.source, RowSource::Shared(_)))
+        {
+            return;
+        }
         let (value, read_error) = match &row {
             Some(r) => self.read_value(r),
             None => (String::new(), None),
@@ -695,7 +701,9 @@ impl CollectionSettings {
                     .unwrap_or_default();
                 (value, None)
             }
-            RowSource::Process => (row.value.clone().unwrap_or_default(), None),
+            RowSource::Process | RowSource::Shared(_) => {
+                (row.value.clone().unwrap_or_default(), None)
+            }
             RowSource::Captured { .. } | RowSource::NotSet => (String::new(), None),
         }
     }
@@ -1416,7 +1424,7 @@ impl CollectionSettings {
     fn shared_rows(&self) -> bool {
         self.rows
             .iter()
-            .any(|r| self.meta.shared_by(&r.name).is_some())
+            .any(|r| matches!(r.source, RowSource::Shared(_)))
     }
 
     fn render_sharing(&self) -> impl IntoElement + use<> {
@@ -1424,7 +1432,7 @@ impl CollectionSettings {
             .text_size(px(13.))
             .line_height(relative(1.5))
             .text_color(color("text-secondary"))
-            .child("People you share with can open and run every request with their own credentials. They can't change anything.");
+            .child(SHARE_SUBTITLE);
         // Why there is nothing to change: received, or not signed in.
         let note = match (&self.meta.read_only_from, &self.sharing) {
             (Some(org), _) => Some(format!(
@@ -1695,15 +1703,7 @@ impl CollectionSettings {
             _ => r.name.clone(),
         };
         let uses = self.usage.total(&used_as);
-        // A received copy's owner default: shown, locked.
-        let shared = self
-            .meta
-            .shared_by(&r.name)
-            .map(|(org, value)| (org.to_string(), value.to_string()));
         let value = match (&r.source, r.secret) {
-            _ if shared.is_some() => {
-                mono(shared.as_ref().map(|s| s.1.clone()).unwrap_or_default()).into_any_element()
-            }
             (RowSource::NotSet, _) => div()
                 .flex()
                 .items_center()
@@ -1759,7 +1759,6 @@ impl CollectionSettings {
         };
         // What the smoke tests read: never a secret's value.
         let value_label = match (&r.source, r.secret) {
-            _ if shared.is_some() => shared.as_ref().map(|s| s.1.clone()).unwrap_or_default(),
             (RowSource::NotSet, _) => used_by_text(uses),
             (RowSource::Captured { request, path }, _) => {
                 captured_text(request.as_deref(), path.as_deref())
@@ -1770,12 +1769,10 @@ impl CollectionSettings {
             },
             (_, false) => r.value.clone().unwrap_or_default(),
         };
-        let source_text = match &shared {
-            Some((org, _)) => format!("Shared by {org}"),
-            None => source_label(&r.source, &self.root),
-        };
+        let source_text = source_label(&r.source, &self.root);
         let source = match &r.source {
-            _ if shared.is_some() => neutral_pill()
+            // A received copy's owner default: locked.
+            RowSource::Shared(_) => neutral_pill()
                 .gap(px(6.))
                 .child(glyph(icons::LOCK).size(px(12.)))
                 .child(source_text.clone()),
@@ -1793,7 +1790,7 @@ impl CollectionSettings {
             .scope(&self.root, &used_as)
             .unwrap_or_else(|| "—".into());
         let name = r.name.clone();
-        let clickable = !matches!(r.source, RowSource::Captured { .. }) && shared.is_none();
+        let clickable = !matches!(r.source, RowSource::Captured { .. } | RowSource::Shared(_));
         div()
             .id(("env-row", ix))
             .role(Role::Row)

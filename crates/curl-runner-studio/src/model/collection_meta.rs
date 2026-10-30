@@ -95,7 +95,7 @@ impl CollectionMeta {
         let org = self.read_only_from.as_deref()?;
         self.received_vars
             .iter()
-            .find(|v| v.name == name && !v.secret)
+            .find(|v| v.name == name && !v.secret && !is_secret(name, &self.secret_names))
             .and_then(|v| v.default.as_deref())
             .map(|value| (org, value))
     }
@@ -248,6 +248,9 @@ mod tests {
         assert_eq!(meta.shared_by("CURRENCY"), Some(("Acme", "eur")));
         assert_eq!(meta.shared_by("API_TOKEN"), None, "a secret is never shown");
         assert_eq!(meta.shared_by("BASE_URL"), None);
+        meta.received_vars[0].name = "SECRET_CURRENCY".into();
+        assert_eq!(meta.shared_by("SECRET_CURRENCY"), None, "secret here");
+        meta.received_vars[0].name = "CURRENCY".into();
         let base = tempfile::tempdir().unwrap();
         let root = tempfile::tempdir().unwrap();
         meta.save(base.path(), root.path()).unwrap();

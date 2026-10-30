@@ -431,7 +431,7 @@ pub fn run() {
                             "share" => {
                                 ws.open_share(window, cx);
                                 let fill = dev_string("CURL_RUNNER_STUDIO_FILL");
-                                if let (Some(view), Some(fill)) = (&ws.share_view, fill) {
+                                if let (Some(view), Some(fill)) = (ws.share_view(), fill) {
                                     let emails = fill.split(',').map(String::from).collect();
                                     view.update(cx, |v, cx| v.dev_invite(emails, cx));
                                 }
