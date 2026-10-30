@@ -38,11 +38,13 @@ pub const NAV_WIDTH: f32 = 248.;
 const CONTENT_WIDTH: f32 = 760.;
 /// The studio's own version, and the CLI's it runs requests with.
 pub const STUDIO_VERSION: &str = env!("CARGO_PKG_VERSION");
-/// The CLI's changelog (the studio ships in the same release train).
-pub const CHANGELOG_URL: &str = concat!(
-    env!("CARGO_PKG_REPOSITORY"),
-    "/blob/main/packages/cli/CHANGELOG.md"
-);
+/// The changelog on the website (the studio ships in the CLI's release train).
+const CHANGELOG_URL: &str = "https://www.curl-runner.com/changelog";
+
+/// The changelog, opened at this build's release.
+pub fn changelog_url() -> String {
+    format!("{CHANGELOG_URL}#{}", curl_runner_core::VERSION)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppPage {
@@ -522,7 +524,7 @@ impl SettingsView {
                     .child(format!("CLI {} ·\u{a0}", curl_runner_core::VERSION))
                     .child(
                         link("app-settings-changelog", "Changelog")
-                            .on_click(|_, _, cx| cx.open_url(CHANGELOG_URL)),
+                            .on_click(|_, _, cx| cx.open_url(&changelog_url())),
                     ),
             );
         div()
@@ -1545,7 +1547,7 @@ fn render_updates() -> impl IntoElement {
                 .child(
                     small_button("updates-changelog", "Changelog")
                         .child("Changelog")
-                        .on_click(|_, _, cx| cx.open_url(CHANGELOG_URL)),
+                        .on_click(|_, _, cx| cx.open_url(&changelog_url())),
                 ),
         )
 }
@@ -1595,8 +1597,13 @@ mod tests {
         assert_eq!(AppPage::parse("accounts"), Some(AppPage::Accounts));
         assert_eq!(AppPage::parse("shortcuts"), Some(AppPage::Shortcuts));
         assert_eq!(AppPage::parse("nope"), None);
-        assert!(super::CHANGELOG_URL.starts_with("https://github.com/"));
-        assert!(super::CHANGELOG_URL.ends_with("/CHANGELOG.md"));
+        assert_eq!(
+            super::changelog_url(),
+            format!(
+                "https://www.curl-runner.com/changelog#{}",
+                curl_runner_core::VERSION
+            )
+        );
     }
 
     #[test]
