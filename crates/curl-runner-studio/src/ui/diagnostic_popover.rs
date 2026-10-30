@@ -373,6 +373,7 @@ mod tests {
                     Workspace::new(
                         Some(root),
                         super::super::state::StateStore::none(),
+                        super::super::workspace::test_secrets(),
                         window,
                         cx,
                     )

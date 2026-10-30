@@ -1002,7 +1002,15 @@ mod gpui_tests {
                 ..Default::default()
             };
             gpui_kit::open_window(options, cx, |window, cx| {
-                cx.new(|cx| Workspace::new(Some(root), StateStore::none(), window, cx))
+                cx.new(|cx| {
+                    Workspace::new(
+                        Some(root),
+                        StateStore::none(),
+                        super::super::workspace::test_secrets(),
+                        window,
+                        cx,
+                    )
+                })
             })
             .unwrap()
         });

@@ -245,6 +245,30 @@ fn file_meta(text: &str) -> FileMeta {
     }
 }
 
+/// The zero-based line of each request of `text` in run order (`None` where
+/// it was not found): one entry for a lone `request:`, none when the file
+/// does not parse.
+pub fn request_lines(text: &str) -> Vec<Option<u32>> {
+    let meta = file_meta(text);
+    if meta.method.is_some() {
+        let line = text
+            .lines()
+            .position(|l| is_key(l, "request"))
+            .map(|n| n as u32);
+        return vec![line];
+    }
+    meta.requests.iter().map(|r| r.line).collect()
+}
+
+/// The request whose item holds `line`: the last one starting at or above
+/// it, else the first.
+pub fn request_at_line(lines: &[Option<u32>], line: u32) -> usize {
+    lines
+        .iter()
+        .rposition(|l| l.is_some_and(|l| l <= line))
+        .unwrap_or(0)
+}
+
 fn request_name(r: &Json, index: usize) -> String {
     ["name", "url"]
         .into_iter()
@@ -365,6 +389,20 @@ fn sort(level: &mut [TreeNode]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn request_lines_follow_the_cursor() {
+        let flow = "# flow\nrequests:\n  - name: One\n    url: a\n  - name: Two\n    url: b\n";
+        let lines = request_lines(flow);
+        assert_eq!(lines, [Some(2), Some(4)]);
+        assert_eq!(request_at_line(&lines, 0), 0, "above the first: the first");
+        assert_eq!(request_at_line(&lines, 3), 0);
+        assert_eq!(request_at_line(&lines, 4), 1);
+        assert_eq!(request_at_line(&lines, 99), 1);
+        assert_eq!(request_lines("request:\n  url: a\n"), [Some(0)]);
+        assert!(request_lines("[").is_empty());
+        assert_eq!(request_at_line(&[], 3), 0);
+    }
 
     fn write(dir: &Path, rel: &str, text: &[u8]) {
         let p = dir.join(rel);

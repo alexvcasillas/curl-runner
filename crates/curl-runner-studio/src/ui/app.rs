@@ -3,6 +3,7 @@
 use super::palette;
 use super::state;
 use super::workspace::{Workspace, quit_app};
+use crate::model::secrets::{KeychainSecrets, SecretStore};
 use crate::theme;
 use gpui_kit::base::actions::{Cancel, Confirm, SelectDown, SelectUp};
 use gpui_kit::component::{Theme, ThemeConfig};
@@ -10,7 +11,7 @@ use gpui_kit::*;
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 actions!(
     studio,
@@ -37,6 +38,12 @@ actions!(
         QuickFix,
         /// Show or hide the Problems panel (⇧⌘M).
         ToggleProblems,
+        /// Save and run the active file (⌘↵).
+        RunActive,
+        /// Save and run only the request under the cursor (⌥⌘↵).
+        RunRequestUnderCursor,
+        /// Save and run every file of the collection.
+        RunCollection,
     ]
 );
 
@@ -54,6 +61,11 @@ pub fn menus() -> Vec<Menu> {
             MenuItem::action("Save", SaveFile),
             MenuItem::separator(),
             MenuItem::action("Close Tab", CloseTab),
+        ]),
+        Menu::new("Run").items([
+            MenuItem::action("Run", RunActive),
+            MenuItem::action("Run Request Under Cursor", RunRequestUnderCursor),
+            MenuItem::action("Run Collection", RunCollection),
         ]),
     ]
 }
@@ -78,6 +90,15 @@ pub fn keymap() -> Vec<KeyBinding> {
         // the editor; the menu stays on `ctrl-.` and the context menu.
         KeyBinding::new("cmd-.", QuickFix, Some("Input && mode == editor")),
         KeyBinding::new("cmd-shift-m", ToggleProblems, None),
+        KeyBinding::new("cmd-enter", RunActive, None),
+        KeyBinding::new("alt-cmd-enter", RunRequestUnderCursor, None),
+        // Bound after the Kit's editor keys, so they win in the YAML editor.
+        KeyBinding::new("cmd-enter", RunActive, Some("Input && mode == editor")),
+        KeyBinding::new(
+            "alt-cmd-enter",
+            RunRequestUnderCursor,
+            Some("Input && mode == editor"),
+        ),
         // The palette's list keys, as the Kit binds them for its `Command`.
         KeyBinding::new("up", SelectUp, Some(palette::CONTEXT)),
         KeyBinding::new("down", SelectDown, Some(palette::CONTEXT)),
@@ -117,14 +138,25 @@ pub fn run() {
                 .or_else(|| store.last_folder())
                 .filter(|p| p.is_dir());
             let file = dev_env("CURL_RUNNER_STUDIO_OPEN");
-            let show = std::env::var("CURL_RUNNER_STUDIO_SHOW")
-                .ok()
-                .filter(|s| !s.is_empty());
+            let show = dev_string("CURL_RUNNER_STUDIO_SHOW");
+            let run = dev_string("CURL_RUNNER_STUDIO_RUN").is_some();
+            let line = dev_string("CURL_RUNNER_STUDIO_LINE").and_then(|l| l.parse::<u32>().ok());
+            let tab = dev_string("CURL_RUNNER_STUDIO_TAB");
+            let secrets: Arc<dyn SecretStore> = Arc::new(KeychainSecrets);
             gpui_kit::open_window(options, cx, |window, cx| {
                 cx.new(|cx| {
-                    let mut ws = Workspace::new(folder, store, window, cx);
+                    let mut ws = Workspace::new(folder, store, secrets, window, cx);
                     if let Some(file) = file {
                         ws.open_file(&file, window, cx);
+                    }
+                    if let Some(line) = line {
+                        ws.dev_move_cursor(line, window, cx);
+                    }
+                    if let Some(tab) = tab {
+                        ws.dev_show_tab(&tab);
+                    }
+                    if run {
+                        cx.defer_in(window, |ws, window, cx| ws.run_active(window, cx));
                     }
                     if let Some(show) = show {
                         // Dialogs need the window's root, which exists once
@@ -133,7 +165,7 @@ pub fn run() {
                             "new" | "duplicate" => {
                                 let dialog = ws.new_request(None, window, cx);
                                 let fill =
-                                    std::env::var("CURL_RUNNER_STUDIO_FILL").unwrap_or_default();
+                                    dev_string("CURL_RUNNER_STUDIO_FILL").unwrap_or_default();
                                 let duplicate = show == "duplicate";
                                 dialog.update(cx, |d, cx| d.dev_fill(&fill, duplicate, window, cx));
                             }
@@ -141,11 +173,10 @@ pub fn run() {
                             "import" => drop(ws.import(window, cx)),
                             "palette" => {
                                 let palette = ws.open_palette(window, cx);
-                                if let Ok(query) = std::env::var("CURL_RUNNER_STUDIO_QUERY") {
+                                if let Some(query) = dev_string("CURL_RUNNER_STUDIO_QUERY") {
                                     palette.update(cx, |p, cx| p.set_query(&query, window, cx));
                                 }
-                                if let Some(pos) = std::env::var("CURL_RUNNER_STUDIO_SELECT")
-                                    .ok()
+                                if let Some(pos) = dev_string("CURL_RUNNER_STUDIO_SELECT")
                                     .and_then(|s| s.parse().ok())
                                 {
                                     // Once the list is laid out, so it can scroll.
@@ -185,14 +216,26 @@ pub fn run() {
 /// query in `CURL_RUNNER_STUDIO_QUERY` and the row in
 /// `CURL_RUNNER_STUDIO_SELECT`, if set); `problem`
 /// selects the open file's first problem and opens its popover (hover
-/// states can't be reached without a pointer).
+/// states can't be reached without a pointer). `CURL_RUNNER_STUDIO_LINE`
+/// puts the cursor on a zero-based line, `CURL_RUNNER_STUDIO_TAB` picks the
+/// inspector tab and `CURL_RUNNER_STUDIO_RUN` runs the open file once.
+///
+/// Debug builds only: a release build ignores them all.
 fn dev_env(name: &str) -> Option<PathBuf> {
-    non_empty(std::env::var_os(name)).map(PathBuf::from)
+    dev_value(std::env::var_os(name), DEV_HOOKS).map(PathBuf::from)
 }
 
-/// An unset or empty dev variable means "not set".
-fn non_empty(v: Option<std::ffi::OsString>) -> Option<std::ffi::OsString> {
-    v.filter(|v| !v.is_empty())
+fn dev_string(name: &str) -> Option<String> {
+    dev_env(name).map(|p| p.to_string_lossy().into_owned())
+}
+
+/// The dev variables are read in debug builds only.
+const DEV_HOOKS: bool = cfg!(debug_assertions);
+
+/// A dev variable's value when hooks are `enabled`; unset or empty means
+/// "not set".
+fn dev_value(v: Option<std::ffi::OsString>, enabled: bool) -> Option<std::ffi::OsString> {
+    v.filter(|v| enabled && !v.is_empty())
 }
 
 /// Geist and Geist Mono (SIL OFL 1.1, `assets/fonts/OFL.txt`), one file
@@ -398,13 +441,28 @@ fn theme_config(ui_font: &str, mono_font: &str) -> serde_json::Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{ThemeConfig, font_families, hex, keymap, non_empty, theme_config};
+    use super::{DEV_HOOKS, ThemeConfig, dev_value, font_families, hex, keymap, theme_config};
 
     #[test]
     fn empty_dev_vars_count_as_unset() {
-        assert_eq!(non_empty(Some("".into())), None);
-        assert_eq!(non_empty(None), None);
-        assert_eq!(non_empty(Some("a.yaml".into())), Some("a.yaml".into()));
+        assert_eq!(dev_value(Some("".into()), true), None);
+        assert_eq!(dev_value(None, true), None);
+        assert_eq!(
+            dev_value(Some("a.yaml".into()), true),
+            Some("a.yaml".into())
+        );
+    }
+
+    #[test]
+    fn dev_hooks_ignored_in_release() {
+        assert_eq!(DEV_HOOKS, cfg!(debug_assertions));
+        assert_eq!(dev_value(Some("a.yaml".into()), false), None);
+        let got = dev_value(Some("a.yaml".into()), DEV_HOOKS);
+        if cfg!(debug_assertions) {
+            assert_eq!(got, Some("a.yaml".into()));
+        } else {
+            assert_eq!(got, None);
+        }
     }
 
     #[test]
@@ -478,6 +536,10 @@ mod tests {
                 "cmd-k",
                 "cmd-.",
                 "cmd-shift-m",
+                "cmd-enter",
+                "alt-cmd-enter",
+                "cmd-enter",
+                "alt-cmd-enter",
                 "up",
                 "down",
                 "enter",

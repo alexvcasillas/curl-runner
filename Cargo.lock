@@ -1410,6 +1410,7 @@ dependencies = [
  "lsp-types",
  "notify",
  "security-framework",
+ "serde",
  "serde_json",
  "tempfile",
  "testkit",

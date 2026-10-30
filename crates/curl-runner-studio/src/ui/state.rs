@@ -117,23 +117,57 @@ impl StateStore {
     /// Records `p` as the folder to reopen. Failures are logged, not fatal.
     pub fn remember_folder(&self, p: &Path) {
         let Some(base) = &self.base else { return };
-        if let Err(e) = remember_folder_in(base, p) {
+        let value = serde_json::Value::from(p.to_string_lossy());
+        if let Err(e) = update_state_in(base, |json| json["lastFolder"] = value) {
             log::warn!("could not save the last folder: {e}");
+        }
+    }
+
+    /// The environment last picked for the collection at `root`.
+    pub fn environment(&self, root: &Path) -> Option<String> {
+        let json = read_state_in(self.base.as_deref()?)?;
+        json["environments"][root.to_string_lossy().as_ref()]
+            .as_str()
+            .map(String::from)
+    }
+
+    /// Records `name` as the environment of the collection at `root`.
+    pub fn remember_environment(&self, root: &Path, name: &str) {
+        let Some(base) = &self.base else { return };
+        let key = root.to_string_lossy().into_owned();
+        let result = update_state_in(base, |json| {
+            if !json["environments"].is_object() {
+                json["environments"] = serde_json::json!({});
+            }
+            json["environments"][key] = name.into();
+        });
+        if let Err(e) = result {
+            log::warn!("could not save the environment: {e}");
         }
     }
 }
 
 const STATE_FILE: &str = "state.json";
 
-fn last_folder_in(dir: &Path) -> Option<PathBuf> {
+fn read_state_in(dir: &Path) -> Option<serde_json::Value> {
     let text = std::fs::read_to_string(dir.join(STATE_FILE)).ok()?;
-    let json: serde_json::Value = serde_json::from_str(&text).ok()?;
-    json["lastFolder"].as_str().map(PathBuf::from)
+    serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .filter(serde_json::Value::is_object)
 }
 
-fn remember_folder_in(dir: &Path, p: &Path) -> io::Result<()> {
+fn last_folder_in(dir: &Path) -> Option<PathBuf> {
+    read_state_in(dir)?["lastFolder"]
+        .as_str()
+        .map(PathBuf::from)
+}
+
+/// Rewrites the state file with `edit` applied, keeping the other keys; a
+/// missing or corrupt file starts empty.
+fn update_state_in(dir: &Path, edit: impl FnOnce(&mut serde_json::Value)) -> io::Result<()> {
     std::fs::create_dir_all(dir)?;
-    let json = serde_json::json!({ "lastFolder": p.to_string_lossy() });
+    let mut json = read_state_in(dir).unwrap_or_else(|| serde_json::json!({}));
+    edit(&mut json);
     std::fs::write(dir.join(STATE_FILE), format!("{json:#}\n"))
 }
 
@@ -158,6 +192,23 @@ mod tests {
         let raw = std::fs::read_to_string(base.join(STATE_FILE)).unwrap();
         let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(json["lastFolder"], "/tmp/Payments API");
+    }
+
+    #[test]
+    fn environment_is_kept_per_collection_beside_the_last_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = StateStore::at(dir.path());
+        let (a, b) = (Path::new("/tmp/Payments API"), Path::new("/tmp/Shipping"));
+        assert_eq!(store.environment(a), None);
+        store.remember_folder(a);
+        store.remember_environment(a, "staging");
+        store.remember_environment(b, "production");
+        store.remember_environment(a, "local");
+        assert_eq!(store.environment(a).as_deref(), Some("local"));
+        assert_eq!(store.environment(b).as_deref(), Some("production"));
+        assert_eq!(store.last_folder(), Some(a.to_path_buf()));
+        StateStore::none().remember_environment(a, "x");
+        assert_eq!(StateStore::none().environment(a), None);
     }
 
     #[test]

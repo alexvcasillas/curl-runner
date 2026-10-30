@@ -2,24 +2,32 @@
 //! and lays out title bar, sidebar, editor and status bar.
 
 use super::app::{
-    CloseTab, Import, NewCollection, NewRequest, OpenFolder, OpenPalette, QuickFix, SaveFile,
-    ToggleProblems, ui_font,
+    CloseTab, Import, NewCollection, NewRequest, OpenFolder, OpenPalette, QuickFix, RunActive,
+    RunCollection, RunRequestUnderCursor, SaveFile, ToggleProblems, ui_font,
 };
 use super::diagnostic_popover::DiagnosticHover;
 use super::diagnostics_view::DiagnosticsView;
+use super::inspector::{InspectorTab, env_label};
 use super::problems_panel::PanelTab;
+use super::runs::Runs;
 use super::state::{AppState, StateStore};
-use super::status_bar::StatusBar;
+use super::status_bar::{StatusBar, source_groups};
 use super::watch;
 use super::{color, sidebar::request_label};
-use crate::model::collection::{Collection, TreeNode};
+use crate::model::collection::{Collection, TreeNode, request_at_line, request_lines};
 use crate::model::document::CloseDecision;
+use crate::model::environments::{
+    DEFAULT_ENVIRONMENT, EnvCtx, ResolvedVar, list_environments, missing_vars, referenced_vars,
+    resolve_vars,
+};
+use crate::model::secrets::SecretStore;
 use futures::StreamExt as _;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::dialog::DialogFooter;
 use gpui_kit::component::input::{EditorState, Input, InputEvent, InputState};
 use gpui_kit::component::notification::Notification;
+use gpui_kit::component::select::{SelectEvent, SelectState};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::cell::Cell;
@@ -27,6 +35,7 @@ use std::collections::HashSet;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// A tab's editor; `AppState::open[i]` is the document of `tabs[i]`.
@@ -35,7 +44,12 @@ pub(super) struct EditorTab {
     pub diagnostics: DiagnosticsView,
     /// The pending re-diagnosis, replaced by every keystroke.
     pub diagnose: Task<()>,
+    /// Each request's first line, as of the last diagnosis.
+    pub request_lines: Vec<Option<u32>>,
+    /// The request holding the cursor (zero-based), which the inspector shows.
+    pub cursor_request: usize,
     _changes: Subscription,
+    _cursor: Subscription,
 }
 
 /// Quiet time after the last keystroke before the file is re-diagnosed.
@@ -70,6 +84,19 @@ pub struct Workspace {
     pub(super) hover_pinned: bool,
     /// Where the last folder is remembered.
     pub(super) store: StateStore,
+    /// Each file's last run and the run in flight.
+    pub(super) runs: Runs,
+    /// The picked environment: `Default` or a `.env.{name}` name.
+    pub(super) environment: String,
+    /// `Default`, then the collection's `.env.{name}` names.
+    pub(super) environments: Vec<String>,
+    pub(super) env_select: Option<Entity<SelectState<Vec<SharedString>>>>,
+    pub(super) inspector_tab: InspectorTab,
+    /// The active file's variables, resolved for the picked environment.
+    pub(super) vars: Vec<ResolvedVar>,
+    /// Its references with no value anywhere.
+    pub(super) missing: Vec<String>,
+    pub(super) secrets: Arc<dyn SecretStore>,
     status: Entity<StatusBar>,
     focus: FocusHandle,
     /// Set once the user agreed to close the window with unsaved changes.
@@ -80,12 +107,14 @@ pub struct Workspace {
     _watcher: Option<notify::RecommendedWatcher>,
     _watch_task: Option<Task<()>>,
     _filter_changes: Subscription,
+    _env_changes: Option<Subscription>,
 }
 
 impl Workspace {
     pub fn new(
         folder: Option<PathBuf>,
         store: StateStore,
+        secrets: Arc<dyn SecretStore>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -117,6 +146,14 @@ impl Workspace {
             on_popover: false,
             hover_pinned: false,
             store,
+            runs: Runs::default(),
+            environment: DEFAULT_ENVIRONMENT.to_string(),
+            environments: Vec::new(),
+            env_select: None,
+            inspector_tab: InspectorTab::Response,
+            vars: Vec::new(),
+            missing: Vec::new(),
+            secrets,
             status: cx.new(|_| StatusBar::default()),
             focus,
             closing: false,
@@ -124,6 +161,7 @@ impl Workspace {
             _watcher: None,
             _watch_task: None,
             _filter_changes: filter_changes,
+            _env_changes: None,
         };
         if let Some(folder) = folder {
             this.open_collection(&folder, window, cx);
@@ -155,6 +193,12 @@ impl Workspace {
         self.collapsed.clear();
         self.expanded.clear();
         self.selected_request = None;
+        self.runs = Runs::default();
+        self.environment = self
+            .store
+            .environment(root)
+            .unwrap_or_else(|| DEFAULT_ENVIRONMENT.to_string());
+        self.load_environments(window, cx);
         self.watch(root, window, cx);
         self.sync_chrome(window, cx);
         true
@@ -170,7 +214,123 @@ impl Workspace {
         let editor = self.state.active.map(|i| self.tabs[i].editor.clone());
         self.status
             .update(cx, |s, cx| s.set(name.map(Into::into), editor, cx));
+        self.refresh_vars(cx);
         cx.notify();
+    }
+
+    // Environments and variables.
+
+    /// Reads the collection's environments and rebuilds the picker; a
+    /// remembered environment that is gone falls back to `Default`.
+    fn load_environments(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(collection) = &self.state.collection else {
+            return;
+        };
+        self.environments = list_environments(&collection.root);
+        if !self.environments.contains(&self.environment) {
+            self.environment = DEFAULT_ENVIRONMENT.to_string();
+        }
+        let labels: Vec<SharedString> = self
+            .environments
+            .iter()
+            .map(|e| env_label(e).into())
+            .collect();
+        let selected = self
+            .environments
+            .iter()
+            .position(|e| e == &self.environment)
+            .map(gpui_kit::component::IndexPath::new);
+        let select = cx.new(|cx| SelectState::new(labels, selected, window, cx));
+        self._env_changes = Some(cx.subscribe(
+            &select,
+            |this, _, event: &SelectEvent<Vec<SharedString>>, cx| {
+                let SelectEvent::Confirm(Some(label)) = event else {
+                    return;
+                };
+                let picked = this
+                    .environments
+                    .iter()
+                    .find(|e| env_label(e) == label.as_ref())
+                    .cloned();
+                if let Some(name) = picked {
+                    this.set_environment(&name, cx);
+                }
+            },
+        ));
+        self.env_select = Some(select);
+    }
+
+    /// Picks `name` for the collection's runs and remembers it.
+    pub(super) fn set_environment(&mut self, name: &str, cx: &mut Context<Self>) {
+        if self.environment == name {
+            return;
+        }
+        self.environment = name.to_string();
+        if let Some(c) = &self.state.collection {
+            self.store.remember_environment(&c.root, name);
+        }
+        self.refresh_vars(cx);
+        cx.notify();
+    }
+
+    /// The active file's variables for the picked environment, for the
+    /// status bar and the inspector's missing-variable warning.
+    pub(super) fn refresh_vars(&mut self, cx: &mut Context<Self>) {
+        let (vars, missing) = match (&self.state.collection, self.state.active_document()) {
+            (Some(c), Some(doc)) => {
+                let ctx = EnvCtx {
+                    root: c.root.clone(),
+                    collection: c.name.clone(),
+                    environment: self.environment.clone(),
+                    marked_secret: Vec::new(),
+                };
+                let captured = self
+                    .runs
+                    .last
+                    .get(&doc.rel_path)
+                    .map(|r| r.store.clone())
+                    .unwrap_or_default();
+                let names = referenced_vars(&doc.text);
+                let vars = resolve_vars(
+                    &names,
+                    &captured,
+                    &*self.secrets,
+                    &ctx,
+                    std::slice::from_ref(&doc.rel_path),
+                );
+                let missing = missing_vars(&doc.text, &vars);
+                (vars, missing)
+            }
+            _ => (Vec::new(), Vec::new()),
+        };
+        let env = self
+            .state
+            .collection
+            .as_ref()
+            .map(|_| SharedString::from(env_label(&self.environment)));
+        let groups = source_groups(&vars, &missing);
+        let missing_count = missing.len();
+        self.vars = vars;
+        self.missing = missing;
+        self.status
+            .update(cx, |s, cx| s.set_vars(env, groups, missing_count, cx));
+    }
+
+    /// The file's request lines changed: re-read them and follow the cursor.
+    fn refresh_request_lines(&mut self, ix: usize, cx: &mut Context<Self>) {
+        self.tabs[ix].request_lines = request_lines(&self.state.open[ix].text);
+        self.cursor_moved(ix, cx);
+    }
+
+    /// Keeps the inspector on the request under the cursor.
+    fn cursor_moved(&mut self, ix: usize, cx: &mut Context<Self>) {
+        let tab = &mut self.tabs[ix];
+        let line = tab.editor.read(cx).cursor_position().line;
+        let request = request_at_line(&tab.request_lines, line);
+        if tab.cursor_request != request {
+            tab.cursor_request = request;
+            cx.notify();
+        }
     }
 
     // Tabs and editors.
@@ -182,6 +342,7 @@ impl Workspace {
                 let tab = self.new_editor(text, window, cx);
                 self.tabs.push(tab);
                 self.show_diagnostics(ix, cx);
+                self.refresh_request_lines(ix, cx);
             }
             Ok((_, false)) => {}
             Err(e) => {
@@ -199,19 +360,27 @@ impl Workspace {
                 .language("yaml")
                 .line_number(true)
                 .folding(true)
-                .default_value(text)
+                .default_value(text.clone())
         });
         let changes = cx.subscribe(&editor, |this, editor, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 this.editor_changed(&editor, cx);
             }
         });
+        let cursor = cx.observe(&editor, |this, editor, cx| {
+            if let Some(ix) = this.tab_of(&editor) {
+                this.cursor_moved(ix, cx);
+            }
+        });
         let diagnostics = DiagnosticsView::attach(&editor, cx.entity().downgrade(), cx);
         EditorTab {
+            request_lines: request_lines(&text),
             editor,
             diagnostics,
             diagnose: Task::ready(()),
+            cursor_request: 0,
             _changes: changes,
+            _cursor: cursor,
         }
     }
 
@@ -237,12 +406,15 @@ impl Workspace {
                 this.update(cx, |this, cx| {
                     if let Some(ix) = this.tab_of(&editor) {
                         this.flush_diagnostics(ix, cx);
+                        this.refresh_request_lines(ix, cx);
+                        this.refresh_vars(cx);
                     }
                 })
                 .ok();
             });
         } else {
             self.show_diagnostics(ix, cx);
+            self.refresh_request_lines(ix, cx);
         }
         cx.notify();
     }
@@ -331,7 +503,7 @@ impl Workspace {
     }
 
     /// Saves tab `ix`; reports and returns `false` on failure.
-    fn save(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) -> bool {
+    pub(super) fn save(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) -> bool {
         let Some(collection) = &mut self.state.collection else {
             return false;
         };
@@ -472,6 +644,9 @@ impl Workspace {
         };
         collection.refresh();
         let root = collection.root.clone();
+        if list_environments(&root) != self.environments {
+            self.load_environments(window, cx);
+        }
         let reread = watch::tabs_to_reread(
             self.state.open.iter().map(|d| d.rel_path.as_path()),
             changed,
@@ -690,7 +865,8 @@ impl Workspace {
 
 impl Render for Workspace {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let main = if self.state.collection.is_some() {
+        let open = self.state.collection.is_some();
+        let main = if open {
             self.render_editor_pane(cx).into_any_element()
         } else {
             self.render_welcome(cx).into_any_element()
@@ -724,6 +900,13 @@ impl Render for Workspace {
             }))
             .on_action(cx.listener(|this, _: &QuickFix, window, cx| this.quick_fix(window, cx)))
             .on_action(cx.listener(|this, _: &ToggleProblems, _, cx| this.toggle_problems(cx)))
+            .on_action(cx.listener(|this, _: &RunActive, window, cx| this.run_active(window, cx)))
+            .on_action(cx.listener(|this, _: &RunRequestUnderCursor, window, cx| {
+                this.run_request_under_cursor(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &RunCollection, window, cx| {
+                this.run(crate::model::run::RunTarget::Collection, window, cx)
+            }))
             .size_full()
             .flex()
             .flex_col()
@@ -738,7 +921,8 @@ impl Render for Workspace {
                     .flex_1()
                     .min_h_0()
                     .child(self.render_sidebar(cx))
-                    .child(main),
+                    .child(main)
+                    .when(open, |row| row.child(self.render_inspector(cx))),
             )
             .child(self.status.clone())
     }
@@ -772,6 +956,12 @@ fn set_editor_text(editor: &Entity<EditorState>, text: &str, window: &mut Window
         e.set_value(text, window, cx);
         e.set_cursor_position(cursor, window, cx);
     });
+}
+
+/// Secrets for tests: in memory, never the user's Keychain.
+#[cfg(test)]
+pub(super) fn test_secrets() -> Arc<dyn SecretStore> {
+    Arc::new(crate::model::secrets::MemorySecrets::default())
 }
 
 pub(super) fn notify_error(message: String, window: &mut Window, cx: &mut App) {
@@ -855,7 +1045,15 @@ mod tests {
                 ..Default::default()
             };
             gpui_kit::open_window(options, cx, |window, cx| {
-                cx.new(|cx| Workspace::new(Some(root), StateStore::none(), window, cx))
+                cx.new(|cx| {
+                    Workspace::new(
+                        Some(root),
+                        StateStore::none(),
+                        super::super::workspace::test_secrets(),
+                        window,
+                        cx,
+                    )
+                })
             })
             .unwrap()
         });

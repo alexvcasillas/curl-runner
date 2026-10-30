@@ -3,9 +3,9 @@
 pub mod collection;
 pub mod diagnostics;
 pub mod document;
-// The run engine; the UI picks it up in later plan-2 tasks.
-#[allow(dead_code)]
 pub mod environments;
+// Parts of these (history, body diffs, Re-run failed, editing secrets) are
+// picked up by later plan-2 tasks.
 #[allow(dead_code)]
 pub mod history;
 #[allow(dead_code)]

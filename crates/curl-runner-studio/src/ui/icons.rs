@@ -56,6 +56,12 @@ pub const PANEL_BOTTOM: &str = glyph!(
     "1.4",
     r#"<rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M2 9.5h12"/>"#
 );
+pub const CHECK: &str = glyph!("1.7", r#"<path d="M3 8.5l3 3 7-7"/>"#);
+pub const CROSS: &str = glyph!("1.7", r#"<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>"#);
+pub const COPY: &str = glyph!(
+    "1.4",
+    r#"<rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M3 10.5V3.5A1 1 0 014 2.5h7"/>"#
+);
 /// Filled, unlike the stroke glyphs.
 pub const PLAY: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="#000"><path d="M4 2.5v11l9-5.5z"/></svg>"##;
 
@@ -86,6 +92,9 @@ mod tests {
             FILE_PLUS,
             IMPORT,
             PANEL_BOTTOM,
+            CHECK,
+            CROSS,
+            COPY,
         ] {
             assert!(svg.starts_with("<svg ") && svg.ends_with("</svg>"), "{svg}");
             assert!(svg.contains(r#"viewBox="0 0 16 16""#));
