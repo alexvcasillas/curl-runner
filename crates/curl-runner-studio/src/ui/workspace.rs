@@ -3,16 +3,18 @@
 
 use super::app::{
     CloseTab, CopyAsCurl, Import, NewCollection, NewRequest, OpenFolder, OpenPalette, QuickFix,
-    Rerun, RunActive, RunCollection, RunRequestUnderCursor, SaveFile, ToggleProblems, ui_font,
+    Rerun, RunActive, RunCollection, RunRequestUnderCursor, SaveFile, Stop, ToggleProblems,
+    ui_font,
 };
 use super::diagnostic_popover::DiagnosticHover;
 use super::diagnostics_view::DiagnosticsView;
 use super::inspector::{InspectorTab, env_label};
 use super::problems_panel::PanelTab;
 use super::result_marks::ResultMarks;
+use super::run_view::{Labels, RunView, RunViewEvent};
 use super::runs::Runs;
 use super::state::{AppState, StateStore};
-use super::status_bar::{StatusBar, source_groups};
+use super::status_bar::{RunLine, StatusBar, StatusBarEvent, source_groups};
 use super::watch;
 use super::{color, sidebar::request_label};
 use crate::model::collection::{Collection, TreeNode, request_at_line, request_lines};
@@ -21,6 +23,9 @@ use crate::model::environments::{
     DEFAULT_ENVIRONMENT, EnvCtx, ResolvedVar, list_environments, missing_vars, referenced_vars,
     resolve_vars,
 };
+use crate::model::history::{EntryKind, History, entry_from_outcome};
+use crate::model::run::RunEvent;
+use crate::model::run::{RunOutcome, RunTarget};
 use crate::model::secrets::{CachedSecrets, SecretStore};
 use futures::StreamExt as _;
 use gpui_kit::component::WindowExt as _;
@@ -106,6 +111,13 @@ pub struct Workspace {
     pub(super) secrets: Arc<dyn SecretStore>,
     /// `secrets` read once per item, for resolving variables while typing.
     secret_cache: CachedSecrets,
+    /// The collection run screen, once a collection run started.
+    pub(super) run_view: Option<Entity<RunView>>,
+    /// The run screen takes the editor's and the inspector's place.
+    pub(super) show_run: bool,
+    /// The run screen follows the active run (it is a collection run).
+    run_view_live: bool,
+    _run_view_events: Option<Subscription>,
     status: Entity<StatusBar>,
     focus: FocusHandle,
     /// Set once the user agreed to close the window with unsaved changes.
@@ -117,6 +129,7 @@ pub struct Workspace {
     _watch_task: Option<Task<()>>,
     _filter_changes: Subscription,
     _env_changes: Option<Subscription>,
+    _status_events: Subscription,
 }
 
 impl Workspace {
@@ -135,6 +148,14 @@ impl Workspace {
         });
         let focus = cx.focus_handle();
         focus.focus(window, cx);
+        let status = cx.new(|_| StatusBar::default());
+        let status_events = cx.subscribe_in(
+            &status,
+            window,
+            |this, _, event: &StatusBarEvent, window, cx| match event {
+                StatusBarEvent::OpenRun => this.show_run_view(window, cx),
+            },
+        );
         let ws = cx.entity().downgrade();
         window.on_window_should_close(cx, move |window, cx| {
             ws.update(cx, |this, cx| this.should_close(window, cx))
@@ -166,7 +187,11 @@ impl Workspace {
             missing: Vec::new(),
             secret_cache: CachedSecrets::new(secrets.clone()),
             secrets,
-            status: cx.new(|_| StatusBar::default()),
+            run_view: None,
+            show_run: false,
+            run_view_live: false,
+            _run_view_events: None,
+            status,
             focus,
             closing: false,
             asking: std::rc::Weak::new(),
@@ -174,6 +199,7 @@ impl Workspace {
             _watch_task: None,
             _filter_changes: filter_changes,
             _env_changes: None,
+            _status_events: status_events,
         };
         if let Some(folder) = folder {
             this.open_collection(&folder, window, cx);
@@ -206,6 +232,10 @@ impl Workspace {
         self.expanded.clear();
         self.selected_request = None;
         self.runs = Runs::default();
+        self.run_view = None;
+        self.show_run = false;
+        self.run_view_live = false;
+        self._run_view_events = None;
         self.secret_cache.invalidate();
         self.environment = self
             .store
@@ -224,11 +254,223 @@ impl Workspace {
             Some(name) => format!("curl-runner studio — {name}"),
             None => "curl-runner studio".to_string(),
         });
-        let editor = self.state.active.map(|i| self.tabs[i].editor.clone());
+        // The run screen has no cursor to show.
+        let editor = self
+            .state
+            .active
+            .filter(|_| !self.run_shown())
+            .map(|i| self.tabs[i].editor.clone());
         self.status
             .update(cx, |s, cx| s.set(name.map(Into::into), editor, cx));
         self.refresh_vars(cx);
+        self.sync_run_status(cx);
         cx.notify();
+    }
+
+    // The collection run screen.
+
+    /// Whether the run screen takes the main area.
+    pub(super) fn run_shown(&self) -> bool {
+        self.show_run && self.run_view.is_some()
+    }
+
+    /// Opens a fresh run screen on the collection run that just started.
+    pub(super) fn open_run_view(
+        &mut self,
+        target: RunTarget,
+        ctx: EnvCtx,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let labels = self.run_labels();
+        let name = ctx.collection.clone();
+        let view = cx.new(|cx| RunView::new(name, ctx, target, labels, cx));
+        self._run_view_events = Some(cx.subscribe_in(&view, window, Self::on_run_view_event));
+        self.run_view = Some(view);
+        self.run_view_live = true;
+        self.show_run_view(window, cx);
+    }
+
+    /// Each file's requests as the tree lists them: `(method, name)`.
+    fn run_labels(&self) -> Labels {
+        fn walk(nodes: &[TreeNode], out: &mut Labels) {
+            for n in nodes {
+                match n {
+                    TreeNode::Folder { children, .. } => walk(children, out),
+                    TreeNode::File {
+                        name,
+                        rel_path,
+                        method,
+                        requests,
+                        ..
+                    } => {
+                        let rows = if requests.is_empty() {
+                            vec![(
+                                method.clone().unwrap_or_else(|| "GET".into()),
+                                request_label(name).to_string(),
+                            )]
+                        } else {
+                            requests
+                                .iter()
+                                .map(|r| (r.method.clone(), r.name.clone()))
+                                .collect()
+                        };
+                        out.insert(rel_path.clone(), rows);
+                    }
+                }
+            }
+        }
+        let mut out = Labels::new();
+        if let Some(c) = &self.state.collection {
+            walk(&c.tree, &mut out);
+        }
+        out
+    }
+
+    pub(super) fn show_run_view(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(view) = self.run_view.clone() else {
+            return;
+        };
+        self.show_run = true;
+        self.close_hover(cx);
+        view.read(cx).focus_handle(cx).focus(window, cx);
+        self.sync_chrome(window, cx);
+    }
+
+    /// Back to the editor; the run goes on.
+    pub(super) fn hide_run_view(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_run = false;
+        if self.state.active.is_some() {
+            self.focus_active_editor(window, cx);
+        } else {
+            self.focus.focus(window, cx);
+        }
+        self.sync_chrome(window, cx);
+    }
+
+    fn on_run_view_event(
+        &mut self,
+        _: &Entity<RunView>,
+        event: &RunViewEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            RunViewEvent::Open { file, index } => {
+                self.open_run_result(file.clone(), *index, window, cx)
+            }
+            RunViewEvent::Stop => self.stop_run(),
+            RunViewEvent::RerunFailed(files) => {
+                self.run(RunTarget::Files(files.clone()), window, cx)
+            }
+            RunViewEvent::Close => self.hide_run_view(window, cx),
+        }
+    }
+
+    /// Stops the run in flight, if any (Stop, ⌘.).
+    pub(super) fn stop_run(&mut self) {
+        if let Some(handle) = &self.runs.active {
+            handle.stop();
+        }
+    }
+
+    /// A run-table row was clicked: its file, with the cursor (and so the
+    /// inspector) on the request; a failed result opens on its checks.
+    fn open_run_result(
+        &mut self,
+        file: PathBuf,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.show_run = false;
+        self.open_file(&file, window, cx);
+        let Some(ix) = self.state.position(&file) else {
+            return;
+        };
+        if let Some(line) = self.tabs[ix].request_lines.get(index).copied().flatten() {
+            self.tabs[ix].editor.update(cx, |e, cx| {
+                e.set_cursor_position(
+                    gpui_kit::component::input::Position::new(line, 0),
+                    window,
+                    cx,
+                );
+            });
+        }
+        self.tabs[ix].cursor_request = index;
+        if self.tabs[ix].request_lines.len() > 1 {
+            self.expanded.insert(file.clone());
+            self.selected_request = Some((file.clone(), index));
+        }
+        let view = self.runs.last.get(&file).and_then(|r| r.views.get(&index));
+        self.inspector_tab = match view {
+            Some(v) if !v.ok || v.failed() > 0 => InspectorTab::Checks,
+            _ => InspectorTab::Response,
+        };
+        self.sync_chrome(window, cx);
+    }
+
+    /// The status bar's run line, from the run screen.
+    pub(super) fn sync_run_status(&mut self, cx: &mut Context<Self>) {
+        let shown = self.run_shown();
+        let line = self.run_view.as_ref().map(|v| {
+            let v = v.read(cx);
+            RunLine {
+                label: v.status_label().into(),
+                running: !v.board.is_finished(),
+                config: shown.then(|| v.config_label().into()),
+            }
+        });
+        self.status.update(cx, |s, cx| s.set_run(line, cx));
+    }
+
+    /// Hands the collection run's event to its screen; at the finish,
+    /// records the run in the history (and prunes it).
+    pub(super) fn forward_run_event(&mut self, event: &RunEvent, cx: &mut Context<Self>) {
+        if !self.run_view_live || matches!(event, RunEvent::Stored { .. }) {
+            return;
+        }
+        let Some(view) = self.run_view.clone() else {
+            return;
+        };
+        view.update(cx, |v, cx| v.apply(event, cx));
+        if let RunEvent::Finished(o) = event {
+            self.run_view_live = false;
+            let target = view.read(cx).target().clone();
+            self.record_history(o, &target, cx);
+        }
+    }
+
+    /// Writes the finished collection run to the history, off the main
+    /// thread, redacted with the run's own redactor.
+    fn record_history(&self, o: &RunOutcome, target: &RunTarget, cx: &mut Context<Self>) {
+        let (Some(base), Some(c)) = (self.store.base(), &self.state.collection) else {
+            return;
+        };
+        let history = History::open(base, &c.root);
+        let target = match target {
+            RunTarget::Files(files) => files
+                .iter()
+                .map(|f| f.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(", "),
+            _ => "collection".to_string(),
+        };
+        let mut entry = entry_from_outcome(
+            o,
+            &target,
+            EntryKind::CollectionRun,
+            &self.environment,
+            &o.redactor.lock(),
+        );
+        entry.collection = c.name.clone();
+        cx.background_spawn(async move {
+            if let Err(e) = history.record(&entry) {
+                log::warn!("Couldn't record the run in the history: {e}");
+            }
+            history.prune(chrono::Local::now());
+        })
+        .detach();
     }
 
     // Environments and variables.
@@ -908,10 +1150,11 @@ impl Workspace {
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let open = self.state.collection.is_some();
-        let main = if open {
-            self.render_editor_pane(cx).into_any_element()
-        } else {
-            self.render_welcome(cx).into_any_element()
+        let run_shown = open && self.run_shown();
+        let main = match &self.run_view {
+            Some(view) if run_shown => view.clone().into_any_element(),
+            _ if open => self.render_editor_pane(cx).into_any_element(),
+            _ => self.render_welcome(cx).into_any_element(),
         };
         div()
             .id("workspace")
@@ -947,8 +1190,9 @@ impl Render for Workspace {
                 this.run_request_under_cursor(window, cx)
             }))
             .on_action(cx.listener(|this, _: &RunCollection, window, cx| {
-                this.run(crate::model::run::RunTarget::Collection, window, cx)
+                this.run(RunTarget::Collection, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &Stop, _, _| this.stop_run()))
             .on_action(cx.listener(|this, _: &CopyAsCurl, _, cx| this.copy_as_curl(cx)))
             .on_action(cx.listener(|this, _: &Rerun, window, cx| this.rerun(window, cx)))
             .size_full()
@@ -966,7 +1210,9 @@ impl Render for Workspace {
                     .min_h_0()
                     .child(self.render_sidebar(cx))
                     .child(main)
-                    .when(open, |row| row.child(self.render_inspector(cx))),
+                    .when(open && !run_shown, |row| {
+                        row.child(self.render_inspector(cx))
+                    }),
             )
             .child(self.status.clone())
     }

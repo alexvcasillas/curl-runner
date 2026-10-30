@@ -58,6 +58,7 @@ pub enum RunEvent {
         total: usize,
         /// Each file and its request count, in run order.
         groups: Vec<(PathBuf, usize)>,
+        config: RunConfig,
     },
     RequestStarted {
         group: usize,
@@ -103,6 +104,40 @@ pub enum RunEvent {
     Finished(RunOutcome),
 }
 
+/// The run's effective execution settings (the merged global config), for
+/// the status bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RunConfig {
+    /// Requests in flight at once: 1 when sequential, `None` for parallel
+    /// without `maxConcurrency` (unbounded).
+    pub concurrency: Option<u64>,
+    /// `continueOnError`: a failure does not stop its file's group.
+    pub continue_on_error: bool,
+}
+
+/// The redactor a run used, shared so exports and history mask exactly what
+/// the run masked. Its `Debug` hides the secrets it holds.
+#[derive(Clone, Default)]
+pub struct SharedRedactor(pub Arc<Mutex<Redactor>>);
+
+impl SharedRedactor {
+    /// `text` with every secret of the run masked.
+    pub fn redact(&self, text: &str) -> String {
+        lock(&self.0).redact(text)
+    }
+
+    /// The redactor itself, for the export and history functions.
+    pub fn lock(&self) -> std::sync::MutexGuard<'_, Redactor> {
+        lock(&self.0)
+    }
+}
+
+impl std::fmt::Debug for SharedRedactor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SharedRedactor(..)")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RunOutcome {
     /// Redacted, like every event.
@@ -118,6 +153,12 @@ pub struct RunOutcome {
     /// `summary.results`; 0 for skipped requests and load failures.
     pub attempts: Vec<u32>,
     pub started_at: chrono::DateTime<chrono::Local>,
+    /// The redactor the run used (every secret value it knew): exports and
+    /// history redact with it, so they mask exactly what the run masked.
+    pub redactor: SharedRedactor,
+    /// Names (never values) of the secrets read from the Keychain, sorted:
+    /// what the CLI needs set in its environment to repeat the run.
+    pub keychain_names: Vec<String>,
 }
 
 /// A run in progress. Dropping it stops the run.
@@ -174,6 +215,8 @@ pub fn start_run(req: RunRequest, secrets: Arc<dyn SecretStore>) -> RunHandle {
             stores: Vec::new(),
             attempts: Vec::new(),
             started_at,
+            redactor: SharedRedactor::default(),
+            keychain_names: Vec::new(),
         };
         let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             execute(&req, &*secrets, &flags, &tx, &mut outcome)
@@ -285,6 +328,10 @@ fn execute(
         r.register_request_secrets(&typed);
         Arc::new(Mutex::new(r))
     };
+    out.redactor = SharedRedactor(redactor.clone());
+    let mut names: Vec<String> = keychain.keys().cloned().collect();
+    names.sort();
+    out.keychain_names = names;
 
     let mut groups = group_by_file(&paths, run.requests);
     let mut offset = 0;
@@ -301,6 +348,7 @@ fn execute(
         offset = *index;
     }
     let total: usize = groups.iter().map(|(_, r)| r.len()).sum();
+    let parallel = run.global.execution.as_deref() == Some("parallel");
     let _ = tx.send(RunEvent::Started {
         total,
         groups: files
@@ -308,6 +356,14 @@ fn execute(
             .zip(&groups)
             .map(|(f, (_, r))| (f.clone(), r.len()))
             .collect(),
+        config: RunConfig {
+            concurrency: match run.global.max_concurrency {
+                _ if !parallel => Some(1),
+                Some(n) if n > 0 => Some(n),
+                _ => None,
+            },
+            continue_on_error: run.global.continue_on_error == Some(true),
+        },
     });
 
     let seed = match req.target {
@@ -586,6 +642,81 @@ fn redact_json(v: &mut Json, r: &Redactor) {
     }
 }
 
+/// A collection-run table row's state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowState {
+    Queued,
+    Running,
+    Passed,
+    Failed,
+    /// Not run: skipped by its config, or left over when the run stopped or
+    /// its file stopped at a failure.
+    Skipped,
+}
+
+/// One request of a collection run: `group` and `index` as in the events.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowRef {
+    pub group: usize,
+    pub index: usize,
+    pub file: PathBuf,
+    pub name: String,
+}
+
+/// The rows of one top-level folder, in run order. `folder` is empty for
+/// files at the collection root.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FolderGroup {
+    pub folder: String,
+    pub rows: Vec<RowRef>,
+}
+
+/// The run's groups (`RunEvent::Started`) as table rows under their
+/// top-level folder, folders in order of first appearance. `names` labels
+/// request `index` of a file.
+pub fn group_rows(
+    groups: &[(PathBuf, usize)],
+    names: impl Fn(&Path, usize) -> String,
+) -> Vec<FolderGroup> {
+    let mut out: Vec<FolderGroup> = Vec::new();
+    for (group, (file, count)) in groups.iter().enumerate() {
+        let mut parts = file.components().filter_map(|c| match c {
+            Component::Normal(p) => Some(p.to_string_lossy().into_owned()),
+            _ => None,
+        });
+        let first = parts.next().unwrap_or_default();
+        let folder = if parts.next().is_some() {
+            first
+        } else {
+            String::new()
+        };
+        let rows = (0..*count).map(|index| RowRef {
+            group,
+            index,
+            file: file.clone(),
+            name: names(file, index),
+        });
+        match out.iter_mut().find(|g| g.folder == folder) {
+            Some(g) => g.rows.extend(rows),
+            None => out.push(FolderGroup {
+                folder,
+                rows: rows.collect(),
+            }),
+        }
+    }
+    out
+}
+
+/// Time left: the average of the finished requests' durations times the
+/// requests still to run; `None` before the first finishes.
+pub fn eta_ms(done: &[f64], remaining: usize) -> Option<f64> {
+    if done.is_empty() {
+        return None;
+    }
+    let avg = done.iter().sum::<f64>() / done.len() as f64;
+    Some(avg * remaining as f64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -685,7 +816,7 @@ mod tests {
         let kinds: Vec<&str> = events
             .iter()
             .map(|e| match e {
-                RunEvent::Started { total, groups } => {
+                RunEvent::Started { total, groups, .. } => {
                     assert_eq!(*total, 2);
                     assert_eq!(groups, &[(PathBuf::from("two.yaml"), 2)]);
                     "started"
@@ -1116,5 +1247,138 @@ mod tests {
             relative_to(Path::new("/c/a.yaml"), root),
             Path::new("a.yaml")
         );
+    }
+
+    #[test]
+    fn group_rows_by_top_folder() {
+        let groups = [
+            (PathBuf::from("auth/login.yaml"), 1),
+            (PathBuf::from("charges/create.yaml"), 1),
+            (PathBuf::from("smoke.yaml"), 1),
+            (PathBuf::from("auth/deep/refresh.yaml"), 2),
+        ];
+        let g = group_rows(&groups, |f, i| {
+            format!("{}#{i}", f.file_stem().unwrap().to_string_lossy())
+        });
+        type Shape<'a> = Vec<(&'a str, Vec<(usize, usize, &'a str)>)>;
+        let shape: Shape = g
+            .iter()
+            .map(|g| {
+                (
+                    g.folder.as_str(),
+                    g.rows
+                        .iter()
+                        .map(|r| (r.group, r.index, r.name.as_str()))
+                        .collect(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                (
+                    "auth",
+                    vec![(0, 0, "login#0"), (3, 0, "refresh#0"), (3, 1, "refresh#1")]
+                ),
+                ("charges", vec![(1, 0, "create#0")]),
+                ("", vec![(2, 0, "smoke#0")]),
+            ]
+        );
+        assert_eq!(g[0].rows[1].file, Path::new("auth/deep/refresh.yaml"));
+        assert!(group_rows(&[], |_, _| String::new()).is_empty());
+    }
+
+    #[test]
+    fn eta_from_average() {
+        assert_eq!(eta_ms(&[], 3), None);
+        assert_eq!(eta_ms(&[100.0, 300.0], 3), Some(600.0));
+        assert_eq!(eta_ms(&[100.0], 0), Some(0.0));
+    }
+
+    #[test]
+    fn started_carries_the_effective_config() {
+        let srv = TestServer::start();
+        let d = tempfile::tempdir().unwrap();
+        let url = format!("{}/status/200", srv.base_url);
+        fs::write(
+            d.path().join("a.yaml"),
+            format!("global:\n  continueOnError: true\nrequest:\n  url: {url}\n"),
+        )
+        .unwrap();
+        fs::write(
+            d.path().join("b.yaml"),
+            format!(
+                "global:\n  execution: parallel\n  maxConcurrency: 3\nrequest:\n  url: {url}\n"
+            ),
+        )
+        .unwrap();
+        let config = |target| {
+            run(d.path(), target, None)
+                .into_iter()
+                .find_map(|e| match e {
+                    RunEvent::Started { config, .. } => Some(config),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        assert_eq!(
+            config(RunTarget::File("a.yaml".into())),
+            RunConfig {
+                concurrency: Some(1),
+                continue_on_error: true
+            }
+        );
+        assert_eq!(
+            config(RunTarget::File("b.yaml".into())),
+            RunConfig {
+                concurrency: Some(3),
+                continue_on_error: false
+            }
+        );
+    }
+
+    #[test]
+    fn reports_from_a_real_run_never_hold_a_secret() {
+        use crate::model::export::{to_json, to_junit, to_markdown};
+        use crate::model::history::{EntryKind, entry_from_outcome};
+        let srv = TestServer::start();
+        let d = tempfile::tempdir().unwrap();
+        // The echo returns the secret in the body and headers; the check
+        // fails, so the failure text quotes it too.
+        let yaml = format!(
+            "request:\n  name: auth ${{SECRET_PLAIN}}\n  url: {}/echo?k=${{SECRET_PLAIN}}\n  method: POST\n  body:\n    note: ${{SECRET_PLAIN}}\n  expect:\n    status: 201\n",
+            srv.base_url
+        );
+        fs::write(d.path().join("auth.yaml"), yaml).unwrap();
+        let c = ctx(d.path());
+        let secrets = MemorySecrets::default();
+        secrets
+            .set(&c.service(), "SECRET_PLAIN", "opensesame42")
+            .unwrap();
+        let h = start_run(
+            RunRequest {
+                target: RunTarget::Collection,
+                ctx: c,
+                seed: None,
+            },
+            Arc::new(secrets),
+        );
+        let events: Vec<RunEvent> = h.events.iter().collect();
+        let o = outcome(&events);
+        assert_eq!(o.summary.results.len(), 1);
+        assert_eq!(o.keychain_names, ["SECRET_PLAIN"]);
+        let r = o.redactor.lock();
+        let groups = [(PathBuf::from("auth.yaml"), 1)];
+        let entry = entry_from_outcome(o, "collection", EntryKind::CollectionRun, "Default", &r);
+        for text in [
+            to_json(&o.summary, &r),
+            to_junit(&o.summary, &groups, &r),
+            to_markdown(&o.summary, "Run · Payments API", "Default", &r),
+            serde_json::to_string(&entry).unwrap(),
+            format!("{:?}", o.redactor),
+        ] {
+            assert!(!text.contains("opensesame42"), "{text}");
+        }
+        assert!(to_json(&o.summary, &r).contains("[REDACTED]"));
     }
 }

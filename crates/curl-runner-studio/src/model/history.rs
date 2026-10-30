@@ -409,6 +409,8 @@ mod tests {
             stores: vec![],
             attempts: vec![3],
             started_at: at(2, 9),
+            redactor: Default::default(),
+            keychain_names: vec![],
         }
     }
 

@@ -6,7 +6,9 @@
 
 use super::color;
 use crate::model::environments::{ResolvedVar, VarSource};
+use gpui_kit::component::Sizable as _;
 use gpui_kit::component::input::{EditorState, Position};
+use gpui_kit::component::spinner::Spinner;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::collections::HashMap;
@@ -23,8 +25,27 @@ pub struct StatusBar {
     /// `BASE_URL · API_TOKEN from local keychain`, one per source.
     sources: Vec<SharedString>,
     missing: usize,
+    /// The collection run, while there is one to show.
+    run: Option<RunLine>,
     _cursor_watch: Option<Subscription>,
 }
+
+/// The collection run's part of the bar: `Running 14/22` on the left
+/// (clicking it shows the run screen) and, while the screen is shown, its
+/// `Concurrency 1 · stop on failure on` on the right.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RunLine {
+    pub label: SharedString,
+    pub running: bool,
+    pub config: Option<SharedString>,
+}
+
+/// What the bar asks of the workspace.
+pub enum StatusBarEvent {
+    OpenRun,
+}
+
+impl EventEmitter<StatusBarEvent> for StatusBar {}
 
 /// The active file's resolved variables grouped by source, in first-use
 /// order: `BASE_URL · API_TOKEN from local keychain`. A captured value whose
@@ -119,13 +140,25 @@ impl StatusBar {
     }
 }
 
+impl StatusBar {
+    /// Shows (or with `None` hides) the collection run's line.
+    pub fn set_run(&mut self, run: Option<RunLine>, cx: &mut Context<Self>) {
+        if self.run != run {
+            self.run = run;
+            cx.notify();
+        }
+    }
+}
+
 /// `Ln 15, Col 5`, one-based like every editor shows it.
 fn cursor_label(p: Position) -> String {
     format!("Ln {}, Col {}", p.line + 1, p.character + 1)
 }
 
 impl Render for StatusBar {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let run = self.run.clone();
+        let config = run.as_ref().and_then(|r| r.config.clone());
         div()
             .id("status-bar")
             .flex()
@@ -138,6 +171,29 @@ impl Render for StatusBar {
             .border_color(color("border-100"))
             .text_size(px(12.))
             .text_color(color("text-secondary"))
+            .when_some(run, |bar, run| {
+                bar.child(
+                    div()
+                        .id("status-run")
+                        .role(Role::Button)
+                        .test_support()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .gap(px(6.))
+                        .cursor_pointer()
+                        .hover(|s| s.text_color(color("text-primary")))
+                        .when(run.running, |d| {
+                            d.child(
+                                Spinner::new()
+                                    .with_size(px(11.))
+                                    .color(color("accent-blue")),
+                            )
+                        })
+                        .child(run.label)
+                        .on_click(cx.listener(|_, _, _, cx| cx.emit(StatusBarEvent::OpenRun))),
+                )
+            })
             .children(self.environment.clone().or_else(|| self.collection.clone()))
             .children(
                 self.sources
@@ -153,6 +209,7 @@ impl Render for StatusBar {
                 )
             })
             .child(div().flex_1())
+            .children(config)
             .when_some(self.cursor, |bar, cursor| {
                 bar.child("YAML").child(cursor_label(cursor))
             })

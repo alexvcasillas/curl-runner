@@ -462,12 +462,16 @@ impl Workspace {
         let handle = start_run(
             RunRequest {
                 target: target.clone(),
-                ctx,
+                ctx: ctx.clone(),
                 seed,
             },
             self.secrets.clone(),
         );
-        self.runs.begin(target, &root, &self.environment, handle);
+        self.runs
+            .begin(target.clone(), &root, &self.environment, handle);
+        if matches!(target, RunTarget::Collection | RunTarget::Files(_)) {
+            self.open_run_view(target, ctx, window, cx);
+        }
         self.runs.drain = Some(cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(DRAIN_EVERY).await;
@@ -539,6 +543,7 @@ impl Workspace {
             if let (RunEvent::Result { group, index, .. }, Some((file, at))) = (&e, &inspected) {
                 shown_failed |= self.runs.groups.get(*group) == Some(file) && index == at;
             }
+            self.forward_run_event(&e, cx);
             over |= self.runs.apply(e);
         }
         // A fresh result with failed checks opens on them, unless the user
@@ -567,6 +572,7 @@ impl Workspace {
             }
         }
         if changed || over {
+            self.sync_run_status(cx);
             cx.notify();
         }
         over
@@ -602,6 +608,8 @@ mod tests {
             stores,
             attempts: vec![],
             started_at: Local::now(),
+            redactor: Default::default(),
+            keychain_names: vec![],
         })
     }
 
@@ -609,6 +617,7 @@ mod tests {
         RunEvent::Started {
             total: n,
             groups: vec![(file.into(), n)],
+            config: Default::default(),
         }
     }
 
@@ -818,6 +827,7 @@ mod tests {
         r.apply(RunEvent::Started {
             total: 2,
             groups: vec![("a.yaml".into(), 1), ("b.yaml".into(), 1)],
+            config: Default::default(),
         });
         r.apply(RunEvent::RequestStarted {
             group: 1,
@@ -1120,6 +1130,57 @@ mod ui_tests {
         })
         .unwrap();
         assert!(hint_lines(cx, &ws, "a.yaml").is_empty());
+    }
+
+    #[gpui_kit::test]
+    fn a_quick_fix_above_moves_the_hint_with_its_line(cx: &mut TestAppContext) {
+        let srv = TestServer::start();
+        // `extra` is an unknown top-level key: a warning (the file still
+        // runs) whose fix deletes its line.
+        let text = format!("extra: 1\n{}", failing(&srv.base_url));
+        let (_dir, window, ws) = open(cx, &[("a.yaml", text)]);
+        run_file(cx, window, &ws, "a.yaml");
+        assert_eq!(hint_lines(cx, &ws, "a.yaml"), [4]);
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.tabs[0].editor.update(cx, |e, cx| {
+                    e.set_cursor_position(
+                        // On the warning's squiggle (the value).
+                        gpui_kit::component::input::Position::new(0, 7),
+                        window,
+                        cx,
+                    )
+                });
+            });
+            window.render_frame(cx);
+            window.dispatch_action(super::super::app::QuickFix.boxed_clone(), cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+        ws.read_with(cx, |ws, _| {
+            assert!(
+                !ws.state.open[0].text.contains("extra"),
+                "the fix ran: {:?}",
+                ws.state.open[0].diagnostics
+            );
+        });
+        assert_eq!(hint_lines(cx, &ws, "a.yaml"), [3], "the hint followed");
+        // Undo puts the line back: the hint goes back down with it.
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.tabs[0].editor.update(cx, |e, cx| {
+                    e.set_cursor_position(
+                        gpui_kit::component::input::Position::new(0, 0),
+                        window,
+                        cx,
+                    );
+                    e.replace("extra: 1\n", window, cx);
+                });
+            });
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(hint_lines(cx, &ws, "a.yaml"), [4], "an inserted line above");
     }
 
     fn tree_labels(cx: &mut TestAppContext, window: AnyWindowHandle, label: &str) -> usize {

@@ -15,6 +15,7 @@ mod palette;
 mod problems_panel;
 mod result_marks;
 mod run_button;
+mod run_view;
 mod runs;
 mod sidebar;
 mod state;

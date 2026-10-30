@@ -66,6 +66,20 @@ pub const RERUN: &str = glyph!(
     "1.5",
     r#"<path d="M13 8a5 5 0 11-1.5-3.5"/><path d="M13 2.5v3h-3"/>"#
 );
+pub const DOWNLOAD: &str = glyph!(
+    "1.5",
+    r#"<path d="M8 2.5v8M4.5 7L8 10.5 11.5 7M3 13.5h10"/>"#
+);
+/// The board's dashed ring for a queued request.
+pub const QUEUED: &str = glyph!(
+    "1.5",
+    r#"<circle cx="8" cy="8" r="5.5" stroke-dasharray="2 2"/>"#
+);
+/// A request that did not run.
+pub const SKIPPED: &str = glyph!(
+    "1.5",
+    r#"<circle cx="8" cy="8" r="5.5"/><path d="M5.5 8h5"/>"#
+);
 /// Filled, unlike the stroke glyphs.
 pub const PLAY: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="#000"><path d="M4 2.5v11l9-5.5z"/></svg>"##;
 
@@ -100,6 +114,9 @@ mod tests {
             CROSS,
             COPY,
             RERUN,
+            DOWNLOAD,
+            QUEUED,
+            SKIPPED,
         ] {
             assert!(svg.starts_with("<svg ") && svg.ends_with("</svg>"), "{svg}");
             assert!(svg.contains(r#"viewBox="0 0 16 16""#));

@@ -23,6 +23,11 @@ use gpui_kit::*;
 use std::ops::Range;
 
 pub const INSPECTOR_WIDTH: f32 = 400.;
+/// Tab padding and label-to-count gap, tighter than the board's 12/6 so
+/// `Response, Checks 1, Headers 22, Timing, Request` fit 400px unscrolled.
+const TAB_PADDING: f32 = 10.;
+const TAB_GAP: f32 = 5.;
+const TAB_STRIP_PADDING: f32 = 6.;
 /// How long Copy as curl reads `Copied`.
 const COPIED_FOR: std::time::Duration = std::time::Duration::from_millis(1500);
 
@@ -852,7 +857,7 @@ impl Workspace {
             // A safety net: the tabs fit the 400px column.
             .overflow_x_scroll()
             .h(px(40.))
-            .px(px(8.))
+            .px(px(TAB_STRIP_PADDING))
             .border_b_1()
             .border_color(color("border-100"))
             .children(tabs.into_iter().map(|tab| {
@@ -872,9 +877,9 @@ impl Workspace {
                     .flex()
                     .flex_none()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(px(TAB_GAP))
                     .h(px(32.))
-                    .px(px(12.))
+                    .px(px(TAB_PADDING))
                     .text_size(px(13.))
                     .border_b_1()
                     .cursor_pointer()

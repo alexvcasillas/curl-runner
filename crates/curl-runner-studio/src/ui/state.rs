@@ -109,6 +109,11 @@ impl StateStore {
         StateStore::default()
     }
 
+    /// Where studio data lives (run history too); `None` keeps nothing.
+    pub fn base(&self) -> Option<&Path> {
+        self.base.as_deref()
+    }
+
     /// The folder opened last, if it is still recorded.
     pub fn last_folder(&self) -> Option<PathBuf> {
         last_folder_in(self.base.as_deref()?)

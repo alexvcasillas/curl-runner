@@ -3,6 +3,7 @@
 use super::palette;
 use super::state;
 use super::workspace::{Workspace, quit_app};
+use crate::model::run::RunTarget;
 use crate::model::secrets::{KeychainSecrets, SecretStore};
 use crate::theme;
 use gpui_kit::base::actions::{Cancel, Confirm, SelectDown, SelectUp};
@@ -49,6 +50,10 @@ actions!(
         CopyAsCurl,
         /// Run the inspector's request again.
         Rerun,
+        /// Stop the run in flight (⌘. on the run screen).
+        Stop,
+        /// Leave the run screen for the editor; the run goes on (esc).
+        CloseRun,
     ]
 );
 
@@ -71,6 +76,8 @@ pub fn menus() -> Vec<Menu> {
             MenuItem::action("Run", RunActive),
             MenuItem::action("Run Request Under Cursor", RunRequestUnderCursor),
             MenuItem::action("Run Collection", RunCollection),
+            MenuItem::separator(),
+            MenuItem::action("Stop", Stop),
         ]),
     ]
 }
@@ -94,6 +101,10 @@ pub fn keymap() -> Vec<KeyBinding> {
         // Bound after the Kit's `cmd-.` (code actions menu), so it wins in
         // the editor; the menu stays on `ctrl-.` and the context menu.
         KeyBinding::new("cmd-.", QuickFix, Some("Input && mode == editor")),
+        // ⌘. is Quick Fix in the editor; on the run screen (focused while
+        // it is shown, never inside an editor) it stops the run.
+        KeyBinding::new("cmd-.", Stop, Some("RunView")),
+        KeyBinding::new("escape", CloseRun, Some("RunView")),
         KeyBinding::new("cmd-shift-m", ToggleProblems, None),
         KeyBinding::new("cmd-enter", RunActive, None),
         KeyBinding::new("alt-cmd-enter", RunRequestUnderCursor, None),
@@ -158,7 +169,7 @@ pub fn run() {
                 .filter(|p| p.is_dir());
             let file = dev_env("CURL_RUNNER_STUDIO_OPEN");
             let show = dev_string("CURL_RUNNER_STUDIO_SHOW");
-            let run = dev_string("CURL_RUNNER_STUDIO_RUN").is_some();
+            let run = dev_string("CURL_RUNNER_STUDIO_RUN");
             let line = dev_string("CURL_RUNNER_STUDIO_LINE").and_then(|l| l.parse::<u32>().ok());
             let tab = dev_string("CURL_RUNNER_STUDIO_TAB");
             let secrets: Arc<dyn SecretStore> = Arc::new(KeychainSecrets);
@@ -179,8 +190,14 @@ pub fn run() {
                     if dev_string("CURL_RUNNER_STUDIO_BODY").as_deref() == Some("raw") {
                         ws.body_raw = true;
                     }
-                    if run {
-                        cx.defer_in(window, |ws, window, cx| ws.run_active(window, cx));
+                    if let Some(run) = run {
+                        cx.defer_in(window, move |ws, window, cx| {
+                            if run == "collection" {
+                                ws.run(RunTarget::Collection, window, cx);
+                            } else {
+                                ws.run_active(window, cx);
+                            }
+                        });
                     }
                     if let Some(show) = show {
                         // Dialogs need the window's root, which exists once
@@ -214,6 +231,11 @@ pub fn run() {
                                 }
                             }
                             "problem" => ws.dev_show_first_problem(window, cx),
+                            "export" => {
+                                if let Some(view) = &ws.run_view {
+                                    view.update(cx, |v, cx| v.open_export_menu(cx));
+                                }
+                            }
                             _ => {}
                         });
                     }
@@ -239,11 +261,14 @@ pub fn run() {
 /// `name|METHOD|url`), `new-collection`, `import` or `palette` (with the
 /// query in `CURL_RUNNER_STUDIO_QUERY` and the row in
 /// `CURL_RUNNER_STUDIO_SELECT`, if set); `problem`
-/// selects the open file's first problem and opens its popover (hover
-/// states can't be reached without a pointer). `CURL_RUNNER_STUDIO_LINE`
+/// selects the open file's first problem and opens its popover and `export`
+/// opens the run screen's Export menu (with
+/// `CURL_RUNNER_STUDIO_RUN=collection`); hover and click states can't be
+/// reached without a pointer. `CURL_RUNNER_STUDIO_LINE`
 /// puts the cursor on a zero-based line, `CURL_RUNNER_STUDIO_TAB` picks the
 /// inspector tab, `CURL_RUNNER_STUDIO_BODY=raw` shows the Checks tab's body
-/// raw instead of diffed, `CURL_RUNNER_STUDIO_RUN` runs the open file once and
+/// raw instead of diffed, `CURL_RUNNER_STUDIO_RUN` runs the open file once
+/// (`collection`: the whole collection, on the run screen) and
 /// `CURL_RUNNER_STUDIO_SIZE` (`960x600`) sizes the window.
 ///
 /// Debug builds only: a release build ignores them all.
@@ -576,6 +601,8 @@ mod tests {
                 "cmd-enter",
                 "cmd-k",
                 "cmd-.",
+                "cmd-.",
+                "escape",
                 "cmd-shift-m",
                 "cmd-enter",
                 "alt-cmd-enter",
