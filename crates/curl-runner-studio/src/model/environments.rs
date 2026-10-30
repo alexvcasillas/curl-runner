@@ -1,8 +1,11 @@
 //! Environments (`.env.{name}` files) and where each `${VAR}` gets its value.
 
 use crate::model::secrets::{SecretStore, service_name};
+use curl_runner_core::config::{self, CliOptions};
 use curl_runner_core::env;
 use curl_runner_core::interpolate::{self, Store, extract_variables, resolve_dynamic_variable};
+use curl_runner_core::model::GlobalConfig;
+use curl_runner_core::parser;
 use curl_runner_core::parser::parse_raw_stream;
 use serde_json::Value as Json;
 use std::path::{Path, PathBuf};
@@ -75,13 +78,49 @@ impl EnvCtx {
         Some(self.environment.as_str()).filter(|e| *e != DEFAULT_ENVIRONMENT && !e.is_empty())
     }
 
+    /// The CLI options a run of this context uses (the picked environment
+    /// as `--env`).
+    pub fn cli_options(&self) -> CliOptions {
+        CliOptions {
+            env: self.env_name().map(String::from),
+            ..Default::default()
+        }
+    }
+
     /// The Keychain service of this collection and environment.
     pub fn service(&self) -> String {
         service_name(&self.collection, &self.environment)
     }
 }
 
-/// Resolve `names` the way a run does. `store.NAME` reads the captured store
+/// The environment whose `.env` files a run of `files` (relative to the
+/// root) loads: the picked one, else what `load_run` resolves from the
+/// files' `global.env.environment` and `curl-runner.yaml` (`env` is the
+/// lookup `config::resolve` reads `CURL_RUNNER_*` overrides through).
+pub fn effective_environment(
+    ctx: &EnvCtx,
+    files: &[PathBuf],
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
+    if let Some(e) = ctx.env_name() {
+        return Some(e.to_string());
+    }
+    let mut folded = GlobalConfig::default();
+    for f in files {
+        let global =
+            parser::load_raw(&ctx.root.join(f)).and_then(|raw| parser::global_from_raw(&raw));
+        if let Ok(g) = global {
+            folded = config::merge_global_configs(&folded, &g);
+        }
+    }
+    let project = config::load_config_file(&ctx.root).config;
+    config::resolve(folded, Some(project), env, &ctx.cli_options())
+        .env
+        .and_then(|e| e.environment)
+}
+
+/// Resolve `names` (referenced by `files`, relative to the root) the way a
+/// run of `files` does. `store.NAME` reads the captured store
 /// only. A plain `NAME` never does: Keychain (secret names only), then the
 /// process env, then the environment's `.env` files (core's fallback, as in
 /// the CLI).
@@ -90,8 +129,16 @@ pub fn resolve_vars(
     captured: &Store,
     secrets: &dyn SecretStore,
     ctx: &EnvCtx,
+    files: &[PathBuf],
 ) -> Vec<ResolvedVar> {
-    resolve_vars_with(names, captured, secrets, ctx, &interpolate::process_env)
+    resolve_vars_with(
+        names,
+        captured,
+        secrets,
+        ctx,
+        files,
+        &interpolate::process_env,
+    )
 }
 
 /// [`resolve_vars`] with an injectable process env (tests).
@@ -100,10 +147,12 @@ fn resolve_vars_with(
     captured: &Store,
     secrets: &dyn SecretStore,
     ctx: &EnvCtx,
+    files: &[PathBuf],
     process_env: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<ResolvedVar> {
+    let environment = effective_environment(ctx, files, process_env);
     // Later files win, as in `env::load_env_files`.
-    let files: Vec<_> = env::env_file_paths(&ctx.root, ctx.env_name())
+    let files: Vec<_> = env::env_file_paths(&ctx.root, environment.as_deref())
         .into_iter()
         .rev()
         .filter_map(|p| {
@@ -270,7 +319,7 @@ mod tests {
         let process = |k: &str| (k == "SECRET_TOKEN").then(|| "from-process".to_string());
         let none = |_: &str| None;
         let one = |env: &dyn Fn(&str) -> Option<String>| {
-            resolve_vars_with(&names, &store, &secrets, &ctx, env).remove(0)
+            resolve_vars_with(&names, &store, &secrets, &ctx, &[], env).remove(0)
         };
 
         let v = one(&process);
@@ -300,7 +349,7 @@ mod tests {
         let names = referenced_vars(yaml);
         assert_eq!(names, ["store.ID", "store.SECRET_ID", "ID"]);
         let none = |_: &str| None;
-        let v = resolve_vars_with(&names, &store, &secrets, &ctx, &none);
+        let v = resolve_vars_with(&names, &store, &secrets, &ctx, &[], &none);
         assert_eq!(v[0].value.as_deref(), Some("abc"));
         assert_eq!(v[0].source, Some(VarSource::Captured));
         assert_eq!(v[1].value, None);
@@ -316,7 +365,7 @@ mod tests {
         let ctx = ctx(d.path(), DEFAULT_ENVIRONMENT);
         let secrets = MemorySecrets::default();
         secrets.set(&ctx.service(), "BASE_URL", "x").unwrap();
-        let v = resolve_vars(&["BASE_URL".into()], &Store::new(), &secrets, &ctx);
+        let v = resolve_vars(&["BASE_URL".into()], &Store::new(), &secrets, &ctx, &[]);
         assert_eq!(v[0].source, None);
         assert_eq!(v[0].value, None);
     }
@@ -333,8 +382,50 @@ mod tests {
             &Store::new(),
             &MemorySecrets::default(),
             &ctx(d.path(), DEFAULT_ENVIRONMENT),
+            &[],
         );
         assert_eq!(missing_vars(yaml, &resolved), ["API_TOKEN"]);
+    }
+
+    #[test]
+    fn default_uses_the_environment_the_yaml_picks() {
+        let d = tempfile::tempdir().unwrap();
+        fs::write(d.path().join(".env"), "HOST=default.example.com\n").unwrap();
+        fs::write(d.path().join(".env.staging"), "HOST=staging.example.com\n").unwrap();
+        fs::write(
+            d.path().join("a.yaml"),
+            "global:\n  env:\n    environment: staging\nrequest:\n  url: https://${HOST}\n",
+        )
+        .unwrap();
+        let ctx = ctx(d.path(), DEFAULT_ENVIRONMENT);
+        let none = |_: &str| None;
+        let files = [PathBuf::from("a.yaml")];
+        assert_eq!(
+            effective_environment(&ctx, &files, &none).as_deref(),
+            Some("staging")
+        );
+        let v = resolve_vars_with(
+            &["HOST".into()],
+            &Store::new(),
+            &MemorySecrets::default(),
+            &ctx,
+            &files,
+            &none,
+        );
+        assert_eq!(v[0].value.as_deref(), Some("staging.example.com"));
+        assert_eq!(
+            v[0].source,
+            Some(VarSource::EnvFile(d.path().join(".env.staging")))
+        );
+        // The picked environment wins (it is `--env`).
+        let picked = EnvCtx {
+            environment: "qa".into(),
+            ..ctx.clone()
+        };
+        assert_eq!(
+            effective_environment(&picked, &files, &none).as_deref(),
+            Some("qa")
+        );
     }
 
     #[test]

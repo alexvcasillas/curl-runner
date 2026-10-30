@@ -8,19 +8,19 @@
 
 use crate::model::environments::{EnvCtx, is_secret};
 use crate::model::secrets::SecretStore;
-use curl_runner_core::config::{self, CliOptions};
+use curl_runner_core::config;
 use curl_runner_core::discover::find_yaml_files;
 use curl_runner_core::executor::{
     self, AttemptOutcome, EventSink, Executor, PreparedRequest, create_summary,
 };
-use curl_runner_core::interpolate::{self, Store};
+use curl_runner_core::interpolate::{self, Store, extract_variables};
 use curl_runner_core::model::{
     ExecutionResult, ExecutionSummary, HeaderValue, Headers, Json, RequestConfig,
 };
 use curl_runner_core::security::redact::Redactor;
 use curl_runner_core::snapshot::ManagerHook;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -45,7 +45,8 @@ pub struct RunRequest {
     pub target: RunTarget,
     pub ctx: EnvCtx,
     /// The file's response store from its last run; seeds single-file
-    /// targets (`File`, `Request`).
+    /// targets (`File`, `Request`). Ignored for files with `execution:
+    /// parallel` (core's parallel runner has no store).
     pub seed: Option<Store>,
 }
 
@@ -109,7 +110,7 @@ pub struct RunOutcome {
     pub started_at: chrono::DateTime<chrono::Local>,
 }
 
-/// A run in progress. Dropping it does not stop the run.
+/// A run in progress. Dropping it stops the run.
 pub struct RunHandle {
     pub events: Receiver<RunEvent>,
     cancel: Arc<Cancel>,
@@ -123,6 +124,12 @@ impl RunHandle {
         if let Some(flag) = lock(&self.cancel.current).clone() {
             flag.store(true, Ordering::SeqCst);
         }
+    }
+}
+
+impl Drop for RunHandle {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
@@ -180,14 +187,23 @@ fn execute(
     let files = target_files(&req.target, root);
     let paths: Vec<PathBuf> = files.iter().map(|f| root.join(f)).collect();
 
-    // Secret values come from the Keychain only, read once per run.
+    // Secret names: marked ones and every secret the files reference,
+    // each read from the Keychain once per run (no item search).
+    let mut secret_names: Vec<String> = marked.clone();
+    for p in &paths {
+        let text = std::fs::read_to_string(p).unwrap_or_default();
+        for v in extract_variables(&text) {
+            let name = v.name.split(':').next().unwrap_or_default();
+            if is_secret(name, marked) && !secret_names.iter().any(|n| n == name) {
+                secret_names.push(name.to_string());
+            }
+        }
+    }
     let service = req.ctx.service();
     let keychain: Arc<HashMap<String, String>> = Arc::new(
-        secrets
-            .names(&service)
-            .into_iter()
-            .filter(|n| is_secret(n, marked))
-            .filter_map(|n| Some((n.clone(), secrets.get(&service, &n)?)))
+        secret_names
+            .iter()
+            .filter_map(|n| Some((n.clone(), secrets.get(&service, n)?)))
             .collect(),
     );
     // Keychain, then the process env; core adds the `.env` files after both.
@@ -200,10 +216,7 @@ fn execute(
                 .or_else(|| interpolate::process_env(k))
         }
     };
-    let cli = CliOptions {
-        env: req.ctx.env_name().map(String::from),
-        ..Default::default()
-    };
+    let cli = req.ctx.cli_options();
     let project = config::load_config_file(root).config;
     let run = match executor::load_run(&paths, Some(&project), &cli, &lookup, root) {
         Ok(r) => r,
@@ -218,16 +231,28 @@ fn execute(
     };
 
     let redactor = {
+        // Every value a secret name has, whatever its source.
         let mut r = Redactor::default();
-        r.add_secrets(keychain.values().cloned());
         let vars = run.global.variables.clone().unwrap_or_default();
-        r.add_secrets(
+        secret_names.extend(
             run.dotenv
-                .iter()
-                .chain(&vars)
-                .filter(|(k, _)| is_secret(k, marked))
-                .map(|(_, v)| v.clone()),
+                .keys()
+                .chain(vars.keys())
+                .filter(|k| is_secret(k, marked))
+                .cloned(),
         );
+        for name in &secret_names {
+            r.add_secrets(
+                [
+                    keychain.get(name).cloned(),
+                    interpolate::process_env(name),
+                    run.dotenv.get(name).cloned(),
+                    vars.get(name).cloned(),
+                ]
+                .into_iter()
+                .flatten(),
+            );
+        }
         // As the CLI does: every request's inline secrets up front, so a
         // later request's token echoed by an earlier response is masked.
         let typed: Vec<RequestConfig> = run
@@ -298,6 +323,7 @@ fn execute(
             group,
             offset,
             redactor: redactor.clone(),
+            root: root.to_path_buf(),
             store: seed.clone().unwrap_or_default(),
         };
         let s = ex.run(reqs, &mut sink);
@@ -314,7 +340,7 @@ fn execute(
     out.stopped = cancel.stopped.load(Ordering::SeqCst) && summary.results.len() < total;
     let r = lock(&redactor);
     for result in &mut summary.results {
-        redact_result(result, &r);
+        prepare_result(result, &r, root);
     }
     out.summary = summary;
 }
@@ -327,10 +353,19 @@ fn target_files(target: &RunTarget, root: &Path) -> Vec<PathBuf> {
         // The tree's files: every YAML file but the project config.
         RunTarget::Collection => find_yaml_files(&[], true, root)
             .into_iter()
-            .map(|f| PathBuf::from(f.strip_prefix("./").unwrap_or(&f)))
+            .map(|f| relative_to(Path::new(&f), root))
             .filter(|p| !config::CONFIG_FILE_PATHS.iter().any(|c| p == Path::new(c)))
             .collect(),
     }
+}
+
+/// `path` relative to `root` (when under it), without `.` components.
+fn relative_to(path: &Path, root: &Path) -> PathBuf {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .components()
+        .filter(|c| !matches!(c, Component::CurDir))
+        .collect()
 }
 
 /// Requests per file, in file order (files with no requests keep an empty
@@ -359,6 +394,7 @@ struct Sink {
     /// Position in the file of the group's first request.
     offset: usize,
     redactor: Arc<Mutex<Redactor>>,
+    root: PathBuf,
     store: Store,
 }
 
@@ -417,7 +453,7 @@ impl EventSink for Sink {
 
     fn on_result(&mut self, index: usize, result: &ExecutionResult) {
         let mut result = result.clone();
-        redact_result(&mut result, &lock(&self.redactor));
+        prepare_result(&mut result, &lock(&self.redactor), &self.root);
         self.send(RunEvent::Result {
             group: self.group,
             index: self.at(index),
@@ -434,10 +470,27 @@ impl EventSink for Sink {
     }
 }
 
-/// Mask every string of `result` that could carry a secret: the request
-/// (URL, headers, body, auth...), response headers and body, the error and
-/// snapshot or diff details.
+/// Make a result safe to leave the run thread: every string redacted and
+/// `source_file` relative to the root, like the CLI's paths.
+fn prepare_result(result: &mut ExecutionResult, r: &Redactor, root: &Path) {
+    redact_result(result, r);
+    if let Some(f) = &mut result.request.source_file {
+        *f = relative_to(Path::new(f), root)
+            .to_string_lossy()
+            .into_owned();
+    }
+}
+
+/// Mask every string of `result`: a JSON round trip of the whole result, so
+/// new fields are covered too; field by field if the round trip fails.
 fn redact_result(result: &mut ExecutionResult, r: &Redactor) {
+    if let Ok(mut j) = serde_json::to_value(&*result) {
+        redact_json(&mut j, r);
+        if let Ok(v) = serde_json::from_value(j) {
+            *result = v;
+            return;
+        }
+    }
     /// A JSON round trip of a serde type with every string redacted.
     macro_rules! via_json {
         ($v:expr) => {
@@ -463,8 +516,11 @@ fn redact_result(result: &mut ExecutionResult, r: &Redactor) {
     if let Some(body) = &mut result.body {
         redact_json(body, r);
     }
-    if let Some(e) = &mut result.error {
-        *e = r.redact(e);
+    for s in [&mut result.error, &mut result.skip_reason]
+        .into_iter()
+        .flatten()
+    {
+        *s = r.redact(s);
     }
     if let Some(s) = result.snapshot_result.take() {
         result.snapshot_result = via_json!(s);
@@ -497,6 +553,7 @@ mod tests {
     use super::*;
     use crate::model::environments::DEFAULT_ENVIRONMENT;
     use crate::model::secrets::MemorySecrets;
+    use curl_runner_core::config::CliOptions;
     use std::fs;
     use std::time::{Duration, Instant};
     use testkit::{Response, TestServer};
@@ -604,6 +661,9 @@ mod tests {
             })
             .collect();
         assert_eq!(indexes, [0, 1]);
+        for r in results(&events) {
+            assert_eq!(r.request.source_file.as_deref(), Some("two.yaml"));
+        }
         let o = outcome(&events);
         assert_eq!(o.summary.successful, 2);
         assert!(!o.stopped);
@@ -783,10 +843,11 @@ mod tests {
         let srv = TestServer::start();
         let d = tempfile::tempdir().unwrap();
         let yaml = format!(
-            "request:\n  url: {}/echo?k=${{SECRET_PLAIN}}\n  method: POST\n  headers:\n    Authorization: Bearer ${{API_TOKEN}}\n  body:\n    note: ${{SECRET_PLAIN}}\n",
+            "request:\n  url: {}/echo?k=${{SECRET_PLAIN}}\n  method: POST\n  headers:\n    Authorization: Bearer ${{API_TOKEN}}\n  body:\n    note: ${{SECRET_PLAIN}}\n    file: ${{SECRET_FILE}}\n",
             srv.base_url
         );
         fs::write(d.path().join("auth.yaml"), yaml).unwrap();
+        fs::write(d.path().join(".env"), "SECRET_FILE=dotenvvalue99\n").unwrap();
         let mut c = ctx(d.path());
         c.marked_secret = vec!["API_TOKEN".into()];
         let secrets = MemorySecrets::default();
@@ -803,7 +864,8 @@ mod tests {
                 ctx: c,
                 seed: None,
             },
-            Arc::new(secrets),
+            // An item search that finds nothing must not drop secrets.
+            Arc::new(NoNames(secrets)),
         );
         let events: Vec<RunEvent> = h.events.iter().collect();
         let r = results(&events);
@@ -815,6 +877,148 @@ mod tests {
             let dbg = format!("{e:?}");
             assert!(!dbg.contains("sk_live_abc"), "{dbg}");
             assert!(!dbg.contains("opensesame42"), "{dbg}");
+            assert!(!dbg.contains("dotenvvalue99"), "{dbg}");
         }
+    }
+
+    /// A store whose item search finds nothing (a failed Keychain search).
+    struct NoNames(MemorySecrets);
+
+    impl SecretStore for NoNames {
+        fn get(&self, service: &str, name: &str) -> Option<String> {
+            self.0.get(service, name)
+        }
+        fn set(&self, service: &str, name: &str, value: &str) -> Result<(), String> {
+            self.0.set(service, name, value)
+        }
+        fn delete(&self, service: &str, name: &str) -> Result<(), String> {
+            self.0.delete(service, name)
+        }
+        fn names(&self, _service: &str) -> Vec<String> {
+            Vec::new()
+        }
+    }
+
+    #[test]
+    fn secret_in_skip_reason_is_masked() {
+        let srv = TestServer::start();
+        let d = tempfile::tempdir().unwrap();
+        let yaml = format!(
+            "request:\n  url: {}/echo\n  when: \"store.code == ${{SECRET_CODE}}\"\n",
+            srv.base_url
+        );
+        fs::write(d.path().join("when.yaml"), yaml).unwrap();
+        let c = ctx(d.path());
+        let secrets = MemorySecrets::default();
+        secrets
+            .set(&c.service(), "SECRET_CODE", "opensesame42")
+            .unwrap();
+        let h = start_run(
+            RunRequest {
+                target: RunTarget::File("when.yaml".into()),
+                ctx: c,
+                seed: None,
+            },
+            Arc::new(secrets),
+        );
+        let events: Vec<RunEvent> = h.events.iter().collect();
+        let r = results(&events);
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].skipped, Some(true));
+        let reason = r[0].skip_reason.as_deref().unwrap_or_default();
+        assert!(reason.contains("[REDACTED]"), "{reason}");
+        for e in &events {
+            assert!(!format!("{e:?}").contains("opensesame42"));
+        }
+    }
+
+    #[test]
+    fn redaction_round_trip_keeps_a_clean_result() {
+        let srv = TestServer::start();
+        let req = RequestConfig {
+            name: Some("echo".into()),
+            url: format!("{}/echo?a=1", srv.base_url),
+            method: Some("POST".into()),
+            body: Some(serde_json::json!({"n": 1.5, "s": "x", "z": null})),
+            ..Default::default()
+        };
+        let s = Executor::new(Default::default()).run(
+            vec![PreparedRequest::from_typed(&req)],
+            &mut executor::NoopSink,
+        );
+        let original = s.results[0].clone();
+        assert!(original.body.is_some() && original.headers.is_some());
+        let mut redacted = original.clone();
+        let mut r = Redactor::default();
+        r.set_pattern_redaction(false);
+        redact_result(&mut redacted, &r);
+        assert_eq!(redacted, original);
+    }
+
+    #[test]
+    fn stop_during_retry_wait_ends_quickly() {
+        let srv = TestServer::start();
+        let d = tempfile::tempdir().unwrap();
+        let yaml = format!(
+            "request:\n  url: {}/status/503\n  retry:\n    count: 3\n    delay: 5000\n",
+            srv.base_url
+        );
+        fs::write(d.path().join("retry.yaml"), yaml).unwrap();
+        let h = start_run(
+            RunRequest {
+                target: RunTarget::File("retry.yaml".into()),
+                ctx: ctx(d.path()),
+                seed: None,
+            },
+            Arc::new(MemorySecrets::default()),
+        );
+        loop {
+            match h.events.recv_timeout(Duration::from_secs(5)).unwrap() {
+                RunEvent::RetryWait { delay_ms, .. } => {
+                    assert_eq!(delay_ms, 5000);
+                    break;
+                }
+                RunEvent::Finished(_) => panic!("finished early"),
+                _ => {}
+            }
+        }
+        let at = Instant::now();
+        h.stop();
+        let finished = loop {
+            if let RunEvent::Finished(o) = h.events.recv_timeout(Duration::from_secs(5)).unwrap() {
+                break o;
+            }
+        };
+        assert!(at.elapsed() < Duration::from_secs(1), "{:?}", at.elapsed());
+        assert!(finished.stopped);
+    }
+
+    #[test]
+    fn dropping_the_handle_stops_the_run() {
+        let d = tempfile::tempdir().unwrap();
+        let h = start_run(
+            RunRequest {
+                target: RunTarget::Collection,
+                ctx: ctx(d.path()),
+                seed: None,
+            },
+            Arc::new(MemorySecrets::default()),
+        );
+        let cancel = h.cancel.clone();
+        drop(h);
+        assert!(cancel.stopped.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn relative_to_handles_dot_and_root_prefixes() {
+        let root = Path::new("/c");
+        assert_eq!(
+            relative_to(Path::new("./a/b.yaml"), root),
+            Path::new("a/b.yaml")
+        );
+        assert_eq!(
+            relative_to(Path::new("/c/a.yaml"), root),
+            Path::new("a.yaml")
+        );
     }
 }
