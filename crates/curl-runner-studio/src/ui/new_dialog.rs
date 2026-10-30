@@ -1329,15 +1329,20 @@ mod tests {
             assert!(d.source.is_some());
             out
         });
-        let summary: Vec<(String, Option<&str>, usize)> = sources
+        // Paths, not their text: Windows separators differ.
+        let summary: Vec<(PathBuf, Option<&str>, usize)> = sources
             .iter()
-            .map(|s| (s.rel.display().to_string(), s.method.as_deref(), s.count))
+            .map(|s| (s.rel.clone(), s.method.as_deref(), s.count))
             .collect();
         assert_eq!(
             summary,
             [
-                ("charges/create-charge.yaml".to_string(), Some("GET"), 0),
-                ("flow.yaml".to_string(), Some("POST"), 2),
+                (
+                    ["charges", "create-charge.yaml"].iter().collect(),
+                    Some("GET"),
+                    0
+                ),
+                (PathBuf::from("flow.yaml"), Some("POST"), 2),
             ]
         );
     }

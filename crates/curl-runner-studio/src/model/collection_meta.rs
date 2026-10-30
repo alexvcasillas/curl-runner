@@ -54,9 +54,9 @@ impl CollectionMeta {
         let mut meta = CollectionMeta::load(base, root);
         if meta.id.is_empty() {
             meta.id = new_id(root);
-            if let Err(e) = meta.save(base, root) {
-                log::warn!("Couldn't save the collection's id: {e}");
-            }
+            // Unsaved, it still holds for this session; the next launch
+            // picks again (and finds this session's Keychain items gone).
+            let _ = meta.save(base, root);
         }
         meta
     }

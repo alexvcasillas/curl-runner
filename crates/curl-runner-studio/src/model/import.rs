@@ -748,19 +748,21 @@ mod tests {
         let d = dst.path();
         write(d, "imported/a.yaml", "kept\n");
         let plan = plan_yaml_copy(s, Some(d), Path::new("imported")).unwrap();
-        let summary: Vec<(String, String)> = plan
-            .iter()
-            .map(|p| (p.rel.display().to_string(), p.to.display().to_string()))
-            .collect();
+        // Paths, not their text: Windows separators differ.
+        let summary: Vec<(PathBuf, PathBuf)> =
+            plan.iter().map(|p| (p.rel.clone(), p.to.clone())).collect();
+        let pair = |rel: &str, to: &str| -> (PathBuf, PathBuf) {
+            (rel.split('/').collect(), to.split('/').collect())
+        };
         assert_eq!(
             summary,
             [
-                ("a.yaml".into(), "imported/a-2.yaml".into()),
-                ("b.yml".into(), "imported/b.yml".into()),
-                ("nested/c.yaml".into(), "imported/nested/c.yaml".into()),
-                (
-                    "nested/curl-runner.yaml".into(),
-                    "imported/nested/curl-runner.yaml".into()
+                pair("a.yaml", "imported/a-2.yaml"),
+                pair("b.yml", "imported/b.yml"),
+                pair("nested/c.yaml", "imported/nested/c.yaml"),
+                pair(
+                    "nested/curl-runner.yaml",
+                    "imported/nested/curl-runner.yaml"
                 ),
             ]
         );
