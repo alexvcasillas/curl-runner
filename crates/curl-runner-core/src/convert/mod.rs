@@ -18,6 +18,8 @@ mod yaml_to_ir;
 pub use batch::extract_curl_commands;
 pub use curl_parser::{parse_curl, parse_tokens};
 pub use generator::{generate_curl_from_ir, shell_quote};
+/// The map type of [`CurlRunnerIr`] fields, so callers can rebuild them.
+pub use jsutil::JsMap;
 pub use normalizer::{NormalizeError, normalize};
 pub use tokenizer::tokenize;
 pub use types::*;

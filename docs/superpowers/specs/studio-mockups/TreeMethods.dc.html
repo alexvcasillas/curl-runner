@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Studio workspace</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+.wrap{height:900px;width:100%;background:#0a0a0a;color:#ededed;font-family:Geist,ui-sans-serif,system-ui,sans-serif;font-size:13px;display:flex;flex-direction:column;box-sizing:border-box;padding:32px 40px;gap:24px}
+.top .t{font-size:20px;font-weight:600}.top .d{color:#a1a1a1;margin-top:6px}
+.cols{display:flex;gap:28px;flex:1;min-height:0}
+.col{flex:1;display:flex;flex-direction:column;gap:14px;min-width:0}
+.hd .t{font-weight:500}.hd .d{color:#8f8f8f;font-size:12px;margin-top:4px;line-height:1.45;min-height:34px}
+.side{border:1px solid #1f1f1f;border-radius:8px;padding:10px 8px;background:#0a0a0a}
+.sh{display:flex;justify-content:space-between;color:#a1a1a1;padding:4px 8px 10px}
+.row{--rowbg:#0a0a0a;display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border-radius:6px;color:#a1a1a1;white-space:nowrap}
+.row.f{color:#ededed;font-weight:500}
+.row.c{padding-left:22px}.row.cc{padding-left:52px}
+.row.hov{--rowbg:#141414;background:#141414;color:#ededed}
+.row.sel{--rowbg:#1a1a1a;background:#1a1a1a;color:#ededed}
+.name{flex:1;overflow:hidden;text-overflow:ellipsis}.name.sub{color:#8f8f8f}
+.cnt{color:#8f8f8f;font-size:12px}
+.m{font-family:'Geist Mono',monospace;font-size:10px;font-weight:500;width:44px;flex-shrink:0}
+.ring{width:6px;height:6px;border-radius:50%;border:1px solid #4d4d4d}
+.stack{position:relative;width:96px;height:18px;flex-shrink:0;display:inline-block}
+.pill{position:absolute;top:1px;width:40px;box-sizing:border-box;text-align:left;padding-left:5px;font-family:'Geist Mono',monospace;font-size:9.5px;font-weight:500;line-height:14px;border-radius:4px;border:1.5px solid var(--rowbg)}
+
+.txt{position:absolute;top:2px;font-family:'Geist Mono',monospace;font-size:10.5px;font-weight:600;letter-spacing:.02em;-webkit-text-stroke:3px var(--rowbg);paint-order:stroke fill}
+.dot{position:absolute;top:5px;width:8px;height:8px;border-radius:50%;box-shadow:0 0 0 1.5px #0a0a0a}
+.plus{position:absolute;margin-left:0;top:1px;font-family:'Geist Mono',monospace;font-size:9.5px;line-height:14px;padding:0 4px;border-radius:4px;color:#a1a1a1;background:#1f1f1f}
+</style>
+</helmet>
+<div class="wrap"><div class="top"><div class="t">Multi-request files in the tree</div><div class="d">Files with a <code>requests:</code> list or a <code>collection:</code> show their methods instead of an empty slot. Expanded: one row per request. Max 3 methods, then +N.</div></div><div class="cols"><section class="col"><div class="hd"><div class="t">A · Pill deck</div><div class="d">Pill deck: methods in request order, each one layered on top of the previous and shifted 12px right (GET at the bottom, POST over it), so the first letters of every method stay visible; borders use the row background (black, or the selected gray) so each edge reads cleanly; +N past 3.</div></div>
+<div class="side"><div class="sh">Collections<span>+</span></div><div class="row f"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M5 6l3 3 3-3"></path></svg><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.4"><path d="M2 4.5h4l1.5 1.5H14v6.5H2z"></path></svg><span class="name">posts</span></div>
+<div class="row c"><span class="m" style="color:#52a8ff">GET</span><span class="name">list-posts</span><span class="ring"></span></div>
+<div class="row c"><span class="m" style="color:#62c073">POST</span><span class="name">create-post</span><span class="ring"></span></div>
+<div class="row c"><span class="m" style="color:#c792ff">PATCH</span><span class="name">update-post</span><span class="ring"></span></div>
+<div class="row c"><span class="m" style="color:#ff6166">DELETE</span><span class="name">delete-post</span><span class="ring"></span></div>
+<div class="row f"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M5 6l3 3 3-3"></path></svg><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.4"><path d="M2 4.5h4l1.5 1.5H14v6.5H2z"></path></svg><span class="name">users</span></div>
+<div class="row c sel"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M5 6l3 3 3-3"></path></svg><span class="stack"><span class="pill" style="color:#52a8ff;background:linear-gradient(rgba(82,168,255,.16),rgba(82,168,255,.16)),var(--rowbg);left:0px;z-index:1">GET</span><span class="pill" style="color:#62c073;background:linear-gradient(rgba(98,192,115,.16),rgba(98,192,115,.16)),var(--rowbg);left:12px;z-index:2">POST</span></span><span class="name">user-flow</span><span class="cnt">3</span></div>
+<div class="row cc"><span class="m" style="color:#52a8ff">GET</span><span class="name sub">Get user</span><span class="ring"></span></div>
+<div class="row cc"><span class="m" style="color:#52a8ff">GET</span><span class="name sub">User posts</span><span class="ring"></span></div>
+<div class="row cc"><span class="m" style="color:#62c073">POST</span><span class="name sub">Create todo</span><span class="ring"></span></div>
+<div class="row c"><span class="m" style="color:#52a8ff">GET</span><span class="name">get-user</span><span class="ring"></span></div>
+<div class="row f"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M5 6l3 3 3-3"></path></svg><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.4"><path d="M2 4.5h4l1.5 1.5H14v6.5H2z"></path></svg><span class="name">playground</span></div>
+<div class="row c"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M6 5l3 3-3 3"></path></svg><span class="stack"><span class="pill" style="color:#52a8ff;background:linear-gradient(rgba(82,168,255,.16),rgba(82,168,255,.16)),var(--rowbg);left:0px;z-index:1">GET</span><span class="pill" style="color:#62c073;background:linear-gradient(rgba(98,192,115,.16),rgba(98,192,115,.16)),var(--rowbg);left:12px;z-index:2">POST</span><span class="pill" style="color:#ffb224;background:linear-gradient(rgba(255,178,36,.16),rgba(255,178,36,.16)),var(--rowbg);left:24px;z-index:3">PUT</span><span class="plus" style="left:70px">+2</span></span><span class="name">smoke-suite</span><span class="cnt">7</span></div>
+<div class="row c"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M6 5l3 3-3 3"></path></svg><span class="stack"><span class="pill" style="color:#52a8ff;background:linear-gradient(rgba(82,168,255,.16),rgba(82,168,255,.16)),var(--rowbg);left:0px;z-index:1">GET</span></span><span class="name">status-codes</span><span class="cnt">3</span></div>
+<div class="row c"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M6 5l3 3-3 3"></path></svg><span class="stack"><span class="pill" style="color:#62c073;background:linear-gradient(rgba(98,192,115,.16),rgba(98,192,115,.16)),var(--rowbg);left:0px;z-index:1">POST</span><span class="pill" style="color:#52a8ff;background:linear-gradient(rgba(82,168,255,.16),rgba(82,168,255,.16)),var(--rowbg);left:12px;z-index:2">GET</span><span class="pill" style="color:#ffb224;background:linear-gradient(rgba(255,178,36,.16),rgba(255,178,36,.16)),var(--rowbg);left:24px;z-index:3">PUT</span></span><span class="name">checkout-flow</span><span class="cnt">5</span></div></div></section><section class="col"><div class="hd"><div class="t">B · Overlapping text, outline = row background</div><div class="d">Method words layered left to right: the left one lowest, each one to the right on top, shifted 8px. The text stroke takes the row background: black at rest, the hover gray on hover (get-user, checkout-flow), the selected gray when selected (user-flow).</div></div>
+<div class="side"><div class="sh">Collections<span>+</span></div><div class="row f"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M5 6l3 3 3-3"></path></svg><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.4"><path d="M2 4.5h4l1.5 1.5H14v6.5H2z"></path></svg><span class="name">posts</span></div>
+<div class="row c"><span class="m" style="color:#52a8ff">GET</span><span class="name">list-posts</span><span class="ring"></span></div>
+<div class="row c"><span class="m" style="color:#62c073">POST</span><span class="name">create-post</span><span class="ring"></span></div>
+<div class="row c"><span class="m" style="color:#c792ff">PATCH</span><span class="name">update-post</span><span class="ring"></span></div>
+<div class="row c"><span class="m" style="color:#ff6166">DELETE</span><span class="name">delete-post</span><span class="ring"></span></div>
+<div class="row f"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M5 6l3 3 3-3"></path></svg><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.4"><path d="M2 4.5h4l1.5 1.5H14v6.5H2z"></path></svg><span class="name">users</span></div>
+<div class="row c sel"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M5 6l3 3 3-3"></path></svg><span class="stack"><span class="txt" style="color:#52a8ff;left:0px;top:2px;z-index:1">GET</span><span class="txt" style="color:#62c073;left:8px;top:2px;z-index:2">POST</span></span><span class="name">user-flow</span><span class="cnt">3</span></div>
+<div class="row cc"><span class="m" style="color:#52a8ff">GET</span><span class="name sub">Get user</span><span class="ring"></span></div>
+<div class="row cc"><span class="m" style="color:#52a8ff">GET</span><span class="name sub">User posts</span><span class="ring"></span></div>
+<div class="row cc"><span class="m" style="color:#62c073">POST</span><span class="name sub">Create todo</span><span class="ring"></span></div>
+<div class="row c hov"><span class="m" style="color:#52a8ff">GET</span><span class="name">get-user</span><span class="ring"></span></div>
+<div class="row f"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M5 6l3 3 3-3"></path></svg><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.4"><path d="M2 4.5h4l1.5 1.5H14v6.5H2z"></path></svg><span class="name">playground</span></div>
+<div class="row c"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M6 5l3 3-3 3"></path></svg><span class="stack"><span class="txt" style="color:#52a8ff;left:0px;top:2px;z-index:1">GET</span><span class="txt" style="color:#62c073;left:8px;top:2px;z-index:2">POST</span><span class="txt" style="color:#ffb224;left:16px;top:2px;z-index:3">PUT</span><span class="plus" style="left:52px">+2</span></span><span class="name">smoke-suite</span><span class="cnt">7</span></div>
+<div class="row c"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M6 5l3 3-3 3"></path></svg><span class="stack"><span class="txt" style="color:#52a8ff;left:0px;top:2px;z-index:1">GET</span></span><span class="name">status-codes</span><span class="cnt">3</span></div>
+<div class="row c hov"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M6 5l3 3-3 3"></path></svg><span class="stack"><span class="txt" style="color:#62c073;left:0px;top:2px;z-index:1">POST</span><span class="txt" style="color:#52a8ff;left:8px;top:2px;z-index:2">GET</span><span class="txt" style="color:#ffb224;left:16px;top:2px;z-index:3">PUT</span></span><span class="name">checkout-flow</span><span class="cnt">5</span></div></div></section><section class="col"><div class="hd"><div class="t">C · Method dots</div><div class="d">Quietest: one colored dot per method, overlapped; +N. Loses the method names in the row.</div></div>
+<div class="side"><div class="sh">Collections<span>+</span></div><div class="row f"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M5 6l3 3 3-3"></path></svg><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.4"><path d="M2 4.5h4l1.5 1.5H14v6.5H2z"></path></svg><span class="name">posts</span></div>
+<div class="row c"><span class="m" style="color:#52a8ff">GET</span><span class="name">list-posts</span><span class="ring"></span></div>
+<div class="row c"><span class="m" style="color:#62c073">POST</span><span class="name">create-post</span><span class="ring"></span></div>
+<div class="row c"><span class="m" style="color:#c792ff">PATCH</span><span class="name">update-post</span><span class="ring"></span></div>
+<div class="row c"><span class="m" style="color:#ff6166">DELETE</span><span class="name">delete-post</span><span class="ring"></span></div>
+<div class="row f"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M5 6l3 3 3-3"></path></svg><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.4"><path d="M2 4.5h4l1.5 1.5H14v6.5H2z"></path></svg><span class="name">users</span></div>
+<div class="row c sel"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M5 6l3 3 3-3"></path></svg><span class="stack"><span class="dot" style="background:#52a8ff;left:0px;z-index:10"></span><span class="dot" style="background:#62c073;left:7px;z-index:9"></span></span><span class="name">user-flow</span><span class="cnt">3</span></div>
+<div class="row cc"><span class="m" style="color:#52a8ff">GET</span><span class="name sub">Get user</span><span class="ring"></span></div>
+<div class="row cc"><span class="m" style="color:#52a8ff">GET</span><span class="name sub">User posts</span><span class="ring"></span></div>
+<div class="row cc"><span class="m" style="color:#62c073">POST</span><span class="name sub">Create todo</span><span class="ring"></span></div>
+<div class="row c"><span class="m" style="color:#52a8ff">GET</span><span class="name">get-user</span><span class="ring"></span></div>
+<div class="row f"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M5 6l3 3 3-3"></path></svg><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.4"><path d="M2 4.5h4l1.5 1.5H14v6.5H2z"></path></svg><span class="name">playground</span></div>
+<div class="row c"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M6 5l3 3-3 3"></path></svg><span class="stack"><span class="dot" style="background:#52a8ff;left:0px;z-index:10"></span><span class="dot" style="background:#62c073;left:7px;z-index:9"></span><span class="dot" style="background:#ffb224;left:14px;z-index:8"></span><span class="plus" style="left:27px">+2</span></span><span class="name">smoke-suite</span><span class="cnt">7</span></div>
+<div class="row c"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M6 5l3 3-3 3"></path></svg><span class="stack"><span class="dot" style="background:#52a8ff;left:0px;z-index:10"></span></span><span class="name">status-codes</span><span class="cnt">3</span></div>
+<div class="row c"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#a1a1a1" stroke-width="1.5"><path d="M6 5l3 3-3 3"></path></svg><span class="stack"><span class="dot" style="background:#62c073;left:0px;z-index:10"></span><span class="dot" style="background:#52a8ff;left:7px;z-index:9"></span><span class="dot" style="background:#ffb224;left:14px;z-index:8"></span></span><span class="name">checkout-flow</span><span class="cnt">5</span></div></div></section></div></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

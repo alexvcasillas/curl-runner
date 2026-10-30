@@ -25,6 +25,7 @@ use std::collections::HashMap;
 use std::ffi::CStr;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
+use std::ops::Range;
 use unsafe_libyaml as unsafe_yaml;
 
 /// The node-copy budget for aliases (guards against "billion laughs").
@@ -278,13 +279,13 @@ pub(crate) fn resolve_plain(t: &str, tag: Tag) -> Value {
 
 /// The libyaml parser (freed on drop). It reads `input` in place, so the
 /// lifetime ties the parser to the borrowed bytes.
-struct Parser<'a> {
+pub(crate) struct Parser<'a> {
     raw: Box<MaybeUninit<unsafe_yaml::yaml_parser_t>>,
     _input: PhantomData<&'a [u8]>,
 }
 
 impl<'a> Parser<'a> {
-    fn new(input: &'a [u8]) -> Option<Parser<'a>> {
+    pub(crate) fn new(input: &'a [u8]) -> Option<Parser<'a>> {
         let mut raw = Box::new(MaybeUninit::<unsafe_yaml::yaml_parser_t>::uninit());
         // SAFETY: `raw` is a valid allocation; libyaml initializes it, and
         // `input` outlives the parser (enforced by `'a`).
@@ -378,7 +379,7 @@ fn node_count(v: &Value) -> usize {
 
 /// A libyaml event, copied out so the C event can be freed before any of it
 /// is used (so no early return can leak it).
-enum Event {
+pub(crate) enum Event {
     StreamEnd,
     DocumentStart,
     DocumentEnd,
@@ -398,6 +399,13 @@ enum Event {
 impl Parser<'_> {
     /// The next event, or `None` on a libyaml error.
     fn next(&mut self) -> Option<Event> {
+        self.next_marked().map(|(ev, _)| ev)
+    }
+
+    /// The next event with its source range (`mark.index`, a byte offset:
+    /// libyaml advances it by each character's UTF-8 width), or `None` on a
+    /// libyaml error.
+    pub(crate) fn next_marked(&mut self) -> Option<(Event, Range<usize>)> {
         let mut ev = MaybeUninit::<unsafe_yaml::yaml_event_t>::uninit();
         // SAFETY: the parser is initialized. On success the event is
         // initialized; its data is copied into owned values and the event is
@@ -407,6 +415,7 @@ impl Parser<'_> {
                 return None;
             }
             let ev = ev.assume_init_mut();
+            let span = ev.start_mark.index as usize..ev.end_mark.index as usize;
             let owned = |p: *const u8| c_bytes(p).map(<[u8]>::to_vec);
             let out = match ev.type_ {
                 unsafe_yaml::YAML_STREAM_END_EVENT => Event::StreamEnd,
@@ -441,8 +450,14 @@ impl Parser<'_> {
                 _ => Event::Other,
             };
             unsafe_yaml::yaml_event_delete(ev);
-            Some(out)
+            Some((out, span))
         }
+    }
+
+    /// The 0-based line of the last libyaml error.
+    pub(crate) fn problem_line(&self) -> usize {
+        // SAFETY: initialized in `new`; reading a plain field.
+        unsafe { self.raw.assume_init_ref() }.problem_mark.line as usize
     }
 }
 

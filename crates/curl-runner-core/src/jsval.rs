@@ -399,6 +399,17 @@ pub fn regex_test(pattern: &str, input: &str, case_insensitive: bool) -> Option<
     Some(re.is_match(cap_regex_input(input)).unwrap_or(false))
 }
 
+/// JS truthiness of an optional JSON value (`result.body ? ... : ...`).
+pub fn truthy(v: Option<&Json>) -> bool {
+    match v {
+        None | Some(Json::Null) => false,
+        Some(Json::Bool(b)) => *b,
+        Some(Json::Number(n)) => n.as_f64().is_some_and(|f| f != 0.0 && !f.is_nan()),
+        Some(Json::String(s)) => !s.is_empty(),
+        Some(_) => true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -516,5 +527,16 @@ mod tests {
             assert_eq!(regex_test("^X$", "x", true), Some(true));
             assert_eq!(regex_test("^X$", "x", false), Some(false));
         }
+    }
+
+    #[test]
+    fn truthiness() {
+        assert!(!truthy(None));
+        assert!(!truthy(Some(&serde_json::json!(null))));
+        assert!(!truthy(Some(&serde_json::json!(""))));
+        assert!(!truthy(Some(&serde_json::json!(0))));
+        assert!(!truthy(Some(&serde_json::json!(false))));
+        assert!(truthy(Some(&serde_json::json!({}))));
+        assert!(truthy(Some(&serde_json::json!("x"))));
     }
 }

@@ -13,6 +13,7 @@ categories = ["development-tools::testing", "web-programming::http-client"]
 curl = { version = "0.4", default-features = false, features = ["static-curl", "http2", "rustls"] }
 curl-sys = { version = "0.4", default-features = false }
 form_urlencoded = "1"
+globset = "0.4.21"
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 indexmap = { version = "2.14.2", features = ["serde"] }
 rand = "0.10.3"

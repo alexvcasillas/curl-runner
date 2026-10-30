@@ -1,0 +1,19 @@
+<!-- @dsCard group="Overlays" height=380 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dialog — preview</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+</head>
+<body>
+<div class="cr-scrim"><div class="cr-dialog" role="dialog" aria-labelledby="dt">
+<div class="cr-dialog-head"><h2 id="dt">New request</h2><p>Adds a YAML file to <span class="cr-mono">Payments API / charges</span>.</p></div>
+<div class="cr-dialog-body">
+<div class="cr-field" style="width:auto"><label for="n1">Name</label><input id="n1" class="cr-input is-focus" value="refund-charge"></div>
+<div style="display:flex;gap:8px"><span class="cr-select" style="width:110px"><select id="n2" class="cr-input cr-input-mono" aria-label="Method"><option>POST</option></select><svg class="cr-icon" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></span><input id="n3" aria-label="URL" class="cr-input cr-input-mono" style="flex:1" value="${BASE_URL}/v1/refunds"></div>
+</div>
+<div class="cr-dialog-foot"><span class="cr-hint" style="margin-right:auto"><span class="cr-kbd">⌘↵</span> to create</span><button type="button" class="cr-btn cr-btn-ghost">Cancel</button><button type="button" class="cr-btn cr-btn-primary">Create request</button></div>
+</div></div>
+</body>
+</html>

@@ -1,11 +1,11 @@
 //! Response diffing in the CLI: the post-run `handleDiffMode` and the
 //! `curl-runner diff <label1> <label2> [file]` subcommand (`cli.ts`).
 
-use crate::discover::find_yaml_files;
 use crate::output::diff::DiffFormatter;
 use crate::output::{Console, Logger, OutCfg};
 use curl_runner_core::config::CliOptions;
 use curl_runner_core::diff::{BaselineManager, DiffOrchestrator};
+use curl_runner_core::discover::find_yaml_files;
 use curl_runner_core::model::{DiffConfig, DiffSetting, ExecutionResult, GlobalDiffConfig};
 use curl_runner_core::security::redact::Redactor;
 use std::path::Path;

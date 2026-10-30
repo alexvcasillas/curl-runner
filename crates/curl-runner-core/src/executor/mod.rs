@@ -23,7 +23,7 @@ mod parallel;
 pub mod retry;
 mod sequential;
 
-pub use events::{EventSink, NoopSink, SnapshotHook};
+pub use events::{AttemptOutcome, EventSink, NoopSink, SnapshotHook};
 pub use loader::{LoadError, LoadedRun, load_run};
 
 use crate::interpolate::{self, EnvLookup, InterpCtx, Store};
@@ -67,6 +67,7 @@ pub struct Executor {
     env: Arc<EnvFn>,
     redactor: Option<Arc<Mutex<Redactor>>>,
     snapshot: Option<Mutex<Box<dyn SnapshotHook>>>,
+    initial_store: Option<Store>,
 }
 
 // Compile-time guarantees: an `Executor` is `Send + Sync` and boxed
@@ -90,6 +91,7 @@ impl Executor {
             env: Arc::new(interpolate::process_env),
             redactor: None,
             snapshot: None,
+            initial_store: None,
         }
     }
 
@@ -118,6 +120,13 @@ impl Executor {
     /// Snapshot comparison hook (see [`SnapshotHook`]).
     pub fn with_snapshot_hook(mut self, hook: Box<dyn SnapshotHook>) -> Self {
         self.snapshot = Some(Mutex::new(hook));
+        self
+    }
+
+    /// Seed the sequential runner's response store (captured values from
+    /// earlier runs). The parallel runner has no store and ignores it.
+    pub fn with_store(mut self, store: Store) -> Self {
+        self.initial_store = Some(store);
         self
     }
 

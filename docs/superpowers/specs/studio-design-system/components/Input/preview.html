@@ -1,0 +1,18 @@
+<!-- @dsCard group="Forms" height=200 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Input — preview</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+</head>
+<body>
+<div class="cr-stage" style="align-items:flex-start">
+<div class="cr-field"><label for="i1">Name</label><input id="i1" class="cr-input" value="Create charge"></div>
+<div class="cr-field"><label for="i2">URL</label><input id="i2" class="cr-input cr-input-mono is-focus" value="${BASE_URL}/v1/charges"><span class="cr-hint">Variables resolve from the active environment.</span></div>
+<div class="cr-field"><label for="i3">Server URL</label><input id="i3" class="cr-input cr-input-mono is-error" value="htps://runner.example.com"><span class="cr-hint cr-hint-error">Use a URL that starts with https://</span></div>
+<div class="cr-field"><label for="i4">Environment</label><span class="cr-select"><select id="i4" class="cr-input"><option>Staging</option><option>Production</option><option>Local</option></select><svg class="cr-icon" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></span></div>
+<div class="cr-field"><label for="i5">Owner</label><input id="i5" class="cr-input" value="Acme" disabled></div>
+</div>
+</body>
+</html>
