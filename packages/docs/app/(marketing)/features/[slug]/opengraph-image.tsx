@@ -63,7 +63,7 @@ export default async function Image({ params }: { params: Promise<{ slug: string
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
         <div style={{ fontSize: 24, letterSpacing: '0.06em', color: BRAND }}>
-          {eyebrow(feature?.title ?? 'Features')}
+          {eyebrow(feature ? `${feature.title}${feature.preview ? ' (preview)' : ''}` : 'Features')}
         </div>
         <div
           style={{

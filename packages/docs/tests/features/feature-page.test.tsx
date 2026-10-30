@@ -59,7 +59,7 @@ describe('feature page', () => {
 
   it('omits the previous card on the first feature and the next card on the last', async () => {
     expect(await render('parallel-execution')).not.toContain('Previous');
-    expect(await render('env-files')).not.toContain('>Next<');
+    expect(await render('studio')).not.toContain('>Next<');
   });
 
   it('builds metadata from the feature', async () => {

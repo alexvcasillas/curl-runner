@@ -1,3 +1,5 @@
+import { type Screenshot, studioScreenshots } from '@/lib/studio';
+
 export interface Benefit {
   title: string;
   description: string;
@@ -27,6 +29,12 @@ export interface FeatureData {
     linkText: string;
     href: string;
   };
+  /** Released as a preview and not distributed yet: the page says so and how to try it. */
+  preview?: boolean;
+  /** App screenshots, shown between the intro and the example. */
+  screenshots?: Screenshot[];
+  /** Replaces the "Install curl-runner" button. */
+  secondaryCta?: { label: string; href: string };
 }
 
 /** Trim the template's outer blank lines and end with one newline, like a file. */
@@ -1031,6 +1039,67 @@ request:
       'CI logs that must not leak credentials',
     ],
     keywords: ['env files', 'dotenv', 'secret redaction', 'environment variables', 'API keys'],
+  },
+  {
+    slug: 'studio',
+    title: 'Studio',
+    seoTitle: 'curl-runner studio: a macOS app for YAML API tests (preview)',
+    headline: 'Edit, run and debug suites in a native app.',
+    description:
+      'A macOS app for the request files you already have. Edit YAML with live validation, run one request or a whole collection, and read every check, retry and timing.',
+    example: {
+      filename: 'charges/capture-charge.yaml',
+      yaml: yaml(`
+request:
+  name: Capture charge
+  url: \${BASE_URL}/charges/ch_1042/capture
+  method: POST
+  headers:
+    Authorization: Bearer \${SECRET_API_KEY}
+  retry:
+    count: 2
+    delay: 250
+  expect:
+    status: 200
+    body:
+      status: succeeded
+      captured: true
+`),
+    },
+    benefits: [
+      {
+        title: 'The files you already have',
+        description:
+          'Open a folder of YAML and it becomes a collection. The studio saves plain YAML back, so the CLI and CI run the same files.',
+      },
+      {
+        title: 'Failures you can read',
+        description:
+          'Expected against actual for every check, a diff of the body and each retry attempt, next to the line that asked for it.',
+      },
+      {
+        title: 'Local by default',
+        description:
+          'Run history stays on your machine, environments come from your .env files and secrets live in the macOS Keychain.',
+      },
+    ],
+    goodFor: [
+      'Writing a new suite with validation as you type',
+      'Debugging a failing check against a real response',
+      'Comparing a run with the one before it',
+      'Switching between local and staging environments',
+    ],
+    keywords: [
+      'curl-runner studio',
+      'API client',
+      'macOS app',
+      'YAML editor',
+      'API testing GUI',
+      'run history',
+    ],
+    preview: true,
+    screenshots: studioScreenshots(),
+    secondaryCta: { label: 'What’s new in 2.2.0', href: '/changelog#2.2.0' },
   },
 ];
 
