@@ -81,15 +81,13 @@ impl History {
         }
     }
 
-    /// Write atomically: a temp file, then a rename.
+    /// Write atomically: a temp file, then a rename. The name starts with
+    /// the run's local time ([`STAMP`]), which [`Self::prune`] reads.
     pub fn record(&self, e: &HistoryEntry) -> io::Result<()> {
         std::fs::create_dir_all(&self.dir)?;
-        let name = format!("{}-{}.json", e.at.format("%Y%m%dT%H%M%S"), e.id);
-        let tmp = self.dir.join(format!(".{name}.tmp"));
-        std::fs::write(&tmp, serde_json::to_vec(e).map_err(io::Error::other)?)?;
-        std::fs::rename(&tmp, self.dir.join(name)).inspect_err(|_| {
-            let _ = std::fs::remove_file(&tmp);
-        })
+        let name = format!("{}-{}.json", e.at.format(STAMP), e.id);
+        let json = serde_json::to_string(e).map_err(io::Error::other)?;
+        crate::model::write_atomic(&self.dir.join(name), &json)
     }
 
     /// Newest first; unreadable files are skipped.
@@ -103,15 +101,20 @@ impl History {
         out
     }
 
-    /// Delete everything older than 30 days.
+    /// Delete everything older than 30 days, by the time in the file's
+    /// name (no file is read); a file whose name has none goes by its
+    /// modification time.
     pub fn prune(&self, now: DateTime<Local>) {
         let cutoff = now - Duration::days(KEEP_DAYS);
         for (path, _) in self.files() {
-            let old = std::fs::read(&path)
-                .ok()
-                .and_then(|b| serde_json::from_slice::<HistoryEntry>(&b).ok())
-                .is_some_and(|e| e.at < cutoff);
-            if old {
+            let at = path
+                .file_name()
+                .and_then(|n| stamp_of(&n.to_string_lossy()))
+                .or_else(|| {
+                    let modified = std::fs::metadata(&path).ok()?.modified().ok()?;
+                    Some(DateTime::<Local>::from(modified))
+                });
+            if at.is_some_and(|at| at < cutoff) {
                 let _ = std::fs::remove_file(path);
             }
         }
@@ -136,6 +139,18 @@ impl History {
             })
             .filter_map(|f| Some((f.path(), f.metadata().ok()?.len())))
     }
+}
+
+/// An entry file name's leading local time: `20261030T120000-{id}.json`.
+const STAMP: &str = "%Y%m%dT%H%M%S";
+
+/// The run time in an entry file's name, if it has one.
+fn stamp_of(name: &str) -> Option<DateTime<Local>> {
+    let (stamp, _) = name.split_once('-')?;
+    chrono::NaiveDateTime::parse_from_str(stamp, STAMP)
+        .ok()?
+        .and_local_timezone(Local)
+        .earliest()
 }
 
 /// The collection's key under the studio's data folder: the FNV-1a hash of
@@ -504,6 +519,56 @@ mod tests {
         h.prune(now);
         assert_eq!(h.list(), [fresh]);
         assert_eq!(h.usage().0, 1);
+    }
+
+    #[test]
+    fn prune_goes_by_name_then_mtime_without_reading() {
+        let (_d, h) = history();
+        let now = Local::now();
+        h.record(&entry("aaaa0001", now - Duration::days(1), vec![]))
+            .unwrap();
+        let write = |name: &str, age: i64| {
+            let path = h.dir.join(name);
+            std::fs::write(&path, "{ not json").unwrap();
+            let when = std::time::SystemTime::from(now - Duration::days(age));
+            std::fs::File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(when)
+                .unwrap();
+            path
+        };
+        let old_junk = write("junk.json", 31);
+        let new_junk = write("other.json", 2);
+        // Named old, touched today: the name wins, and it is never read.
+        let stamp = (now - Duration::days(40)).format(STAMP);
+        let old_named = write(&format!("{stamp}-bad.json"), 0);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let locked = std::fs::Permissions::from_mode(0o000);
+            std::fs::set_permissions(&old_named, locked).unwrap();
+        }
+        h.prune(now);
+        assert!(!old_junk.exists(), "unparseable and old by mtime");
+        assert!(new_junk.exists(), "unparseable but recent");
+        assert!(!old_named.exists(), "old by its name");
+        assert_eq!(h.list().len(), 1);
+    }
+
+    #[test]
+    fn record_leaves_no_temp_file() {
+        let (_d, h) = history();
+        let e = entry("aaaa0001", at(1, 9), vec![]);
+        h.record(&e).unwrap();
+        h.record(&e).unwrap();
+        let names: Vec<String> = std::fs::read_dir(&h.dir)
+            .unwrap()
+            .map(|f| f.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names.len(), 1, "{names:?}");
+        assert_eq!(h.list(), [e]);
     }
 
     #[test]
