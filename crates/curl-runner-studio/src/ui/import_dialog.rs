@@ -251,16 +251,15 @@ impl ImportDialog {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // A received copy is never a target: the pick is refused.
-        if let Some(d) = &dir
-            && self
-                .ws
+        // A received copy (or the studio's own folder) is never a target:
+        // the pick is refused, and an earlier one goes with it, so the
+        // dialog asks for a folder again.
+        let refused = dir.as_ref().is_some_and(|d| {
+            self.ws
                 .update(cx, |ws, cx| ws.refuse_received(d, window, cx))
                 .unwrap_or(true)
-        {
-            return;
-        }
-        self.picked_target = dir;
+        });
+        self.picked_target = if refused { None } else { dir };
         if let (Some(dir), Some(for_folder)) = (&self.picked_target, &self.env.for_folder) {
             let mut env = for_folder(dir);
             env.for_folder = self.env.for_folder.clone();

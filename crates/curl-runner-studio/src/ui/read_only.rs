@@ -15,7 +15,10 @@ use super::workspace::{Workspace, edit_notes, notify_error};
 use crate::model::backend::SyncFile;
 use crate::model::collection::read_only_text;
 use crate::model::history::relative_time;
-use crate::model::shared_copy::{UpdatePlan, apply_update, duplicate, plan_update, received_from};
+use crate::model::shared_copy::{
+    STATE_FOLDER_TEXT, UpdatePlan, apply_update, duplicate, holds_studio_state, plan_update,
+    received_from,
+};
 use crate::model::sync_base::SyncBase;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::notification::Notification;
@@ -80,18 +83,34 @@ impl Workspace {
 
     /// For a folder picked to write into (an import target, a new
     /// collection) that is a received copy, shows `Read only · shared by
-    /// {org}` and returns `true`: nothing is written.
+    /// {org}` (or, for the studio's own folder, [`STATE_FOLDER_TEXT`]) and
+    /// returns `true`: nothing is written.
     pub(super) fn refuse_received(
         &mut self,
         dir: &Path,
         window: &mut Window,
         cx: &mut App,
     ) -> bool {
-        let Some(org) = received_from(self.store.base(), dir) else {
-            return false;
-        };
-        self.toast_read_only(&org, window, cx);
-        true
+        match self.refusal_of(dir) {
+            Some(text) => {
+                self.toast(text, window, cx);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Why a folder picked by hand can't take files: a received copy (or a
+    /// folder in one), or the studio's own data folder or one holding it.
+    fn refusal_of(&self, dir: &Path) -> Option<String> {
+        let base = self.store.base();
+        if let Some(org) = received_from(base, dir) {
+            Some(read_only_text(&org))
+        } else if holds_studio_state(base, dir) {
+            Some(STATE_FOLDER_TEXT.to_string())
+        } else {
+            None
+        }
     }
 
     /// [`refuse_read_only`] or [`refuse_received`] for writing into
@@ -105,16 +124,19 @@ impl Workspace {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<String> {
-        let org = self
+        let text = self
             .read_only_org()
-            .map(str::to_string)
-            .or_else(|| received_from(self.store.base(), dir))?;
-        self.toast_read_only(&org, window, cx);
-        Some(read_only_text(&org))
+            .map(read_only_text)
+            .or_else(|| self.refusal_of(dir))?;
+        self.toast(text.clone(), window, cx);
+        Some(text)
     }
 
     fn toast_read_only(&mut self, org: &str, window: &mut Window, cx: &mut App) {
-        let text = read_only_text(org);
+        self.toast(read_only_text(org), window, cx);
+    }
+
+    fn toast(&mut self, text: String, window: &mut Window, cx: &mut App) {
         #[cfg(test)]
         self.toasts.push(text.clone());
         window.push_notification(Notification::warning(text), cx);
@@ -393,7 +415,7 @@ mod gpui_tests {
     use super::super::palette::PaletteAction;
     use super::super::state::StateStore;
     use super::super::workspace::{Workspace, test_backend, wait_for_run};
-    use super::DUPLICATED;
+    use super::{DUPLICATED, STATE_FOLDER_TEXT};
     use crate::model::backend::{
         Account, Backend, BoxFut, CollectionKey, ConnectionInfo, DevControls, Person,
         ReceivedShare, Server, ShareLink, ShareSettings, ShareUpdate, SharedCollection,
@@ -1180,6 +1202,48 @@ mod gpui_tests {
         })
         .unwrap();
         assert!(mine.path().join("first.yaml").exists());
+    }
+
+    #[gpui_kit::test]
+    fn the_studio_folder_is_never_a_target(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        let (window, ws) = nothing_open(cx, &s);
+        let base = s.state.path().to_path_buf();
+        let told = |cx: &mut TestAppContext| ws.read_with(cx, |ws, _| ws.toasts.clone());
+        let dialog = cx
+            .update_window(window, |_, window, cx| {
+                ws.update(cx, |ws, cx| ws.import(window, cx).unwrap())
+            })
+            .unwrap();
+        let mine = tempfile::tempdir().unwrap();
+        let (ok, state) = (mine.path().to_path_buf(), base.clone());
+        cx.update_window(window, |_, window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.dev_fill("curl https://api.example.com/v1/x", None, window, cx);
+                d.set_target(Some(ok.clone()), window, cx);
+                assert_eq!(d.picked_target.as_deref(), Some(ok.as_path()));
+                // Refused: the earlier pick goes too.
+                d.set_target(Some(state.clone()), window, cx);
+                assert_eq!(d.picked_target, None);
+                d.picked_target = Some(state);
+                d.import(window, cx);
+                assert_eq!(d.error.as_deref(), Some(STATE_FOLDER_TEXT));
+            });
+        })
+        .unwrap();
+        cx.update_window(window, |_, window, cx| window.close_dialog(cx))
+            .unwrap();
+        let text = "request:\n  url: https://api.example.com\n".to_string();
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.create_collection(base.clone(), "first.yaml".into(), text, window, cx)
+            });
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(told(cx), [STATE_FOLDER_TEXT; 3]);
+        assert!(!base.join("first.yaml").exists());
+        ws.read_with(cx, |ws, _| assert!(ws.state.collection.is_none()));
     }
 
     #[gpui_kit::test]

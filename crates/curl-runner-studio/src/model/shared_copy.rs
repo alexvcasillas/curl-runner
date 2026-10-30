@@ -56,6 +56,22 @@ pub fn received_from(base: Option<&Path>, dir: &Path) -> Option<String> {
     real.starts_with(&shared).then(|| "its owner".to_string())
 }
 
+/// What a write into the studio's own folder is refused with.
+pub const STATE_FOLDER_TEXT: &str = "That folder holds the studio's data. Pick another one.";
+
+/// `dir` is the studio's data folder `{base}` or holds it (any ancestor of
+/// `{base}/shared`, canonicalized): as a collection it would take in the
+/// received copies and the studio's own files. A folder not made yet holds
+/// nothing.
+pub fn holds_studio_state(base: Option<&Path>, dir: &Path) -> bool {
+    let Some(base) = base else { return false };
+    let Ok(real) = dir.canonicalize() else {
+        return false;
+    };
+    let base = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
+    base.join("shared").starts_with(&real)
+}
+
 /// [`received_from`] as a yes or no.
 pub fn is_received(base: Option<&Path>, dir: &Path) -> bool {
     received_from(base, dir).is_some()
@@ -435,6 +451,9 @@ pub fn duplicate(
     if is_received(base, dest) {
         return Err("That folder is a shared collection. Pick another one.".into());
     }
+    if holds_studio_state(base, dest) {
+        return Err(STATE_FOLDER_TEXT.into());
+    }
     let mut notes = CollectionMeta::load_or_init(base, dest);
     let plan = crate::model::import::plan_yaml_copy(from, Some(dest), Path::new(""))
         .map_err(|e| format!("Couldn't read {}: {e}", from.display()))?;
@@ -513,6 +532,27 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    #[test]
+    fn the_studio_folder_and_its_ancestors_hold_state() {
+        let d = tempfile::tempdir().unwrap();
+        let base = d.path().join("a/studio");
+        std::fs::create_dir_all(base.join("shared/acme-x")).unwrap();
+        std::fs::create_dir_all(d.path().join("a/other")).unwrap();
+        let holds = |dir: &std::path::Path| super::holds_studio_state(Some(&base), dir);
+        assert!(holds(&base));
+        assert!(holds(&d.path().join("a")));
+        assert!(holds(d.path()));
+        assert!(holds(&base.join("shared")));
+        assert!(holds(&d.path().join("a/other/..")), "canonicalized");
+        assert!(
+            !holds(&base.join("shared/acme-x")),
+            "a copy: received_from's"
+        );
+        assert!(!holds(&d.path().join("a/other")));
+        assert!(!holds(&d.path().join("a/new")), "not made yet");
+        assert!(!super::holds_studio_state(None, d.path()));
     }
 
     #[test]
