@@ -155,7 +155,9 @@ pub struct Workspace {
     /// The sign-in screen's answer this session, for a store that keeps
     /// nothing (no base): it is not asked again until the next launch.
     session_connection: Option<Connection>,
-    status: Entity<StatusBar>,
+    /// The open collection's sync: pending changes, offline, conflicts.
+    pub(super) sync: super::sync::SyncState,
+    pub(super) status: Entity<StatusBar>,
     focus: FocusHandle,
     /// Set once the user agreed to close the window with unsaved changes.
     closing: bool,
@@ -193,6 +195,10 @@ impl Workspace {
             |this, _, event: &StatusBarEvent, window, cx| match event {
                 StatusBarEvent::OpenRun => this.show_run_view(window, cx),
                 StatusBarEvent::OpenEnvironments => this.open_settings(window, cx),
+                StatusBarEvent::Sync if !this.sync.conflicts.is_empty() => {
+                    this.open_conflicts(window, cx)
+                }
+                StatusBarEvent::Sync => this.sync_now(window, cx),
             },
         );
         let ws = cx.entity().downgrade();
@@ -246,6 +252,7 @@ impl Workspace {
             sign_in_origin: None,
             _sign_in_events: None,
             session_connection: None,
+            sync: Default::default(),
             status,
             focus,
             closing: false,
@@ -327,6 +334,7 @@ impl Workspace {
             .unwrap_or_else(|| DEFAULT_ENVIRONMENT.to_string());
         self.load_environments(window, cx);
         self.watch(root, window, cx);
+        self.start_sync(window, cx);
         self.sync_chrome(window, cx);
         true
     }
@@ -1019,7 +1027,7 @@ impl Workspace {
                 let page = view.read(cx).page();
                 self.open_sign_in(Some(page), window, cx);
             }
-            AppSettingsEvent::AccountChanged => cx.notify(),
+            AppSettingsEvent::AccountChanged => self.start_sync(window, cx),
             AppSettingsEvent::SyncNow => self.sync_now(window, cx),
             AppSettingsEvent::AddVariable => {
                 let page = view.read(cx).page();
@@ -1106,6 +1114,7 @@ impl Workspace {
             self.session_connection = Some(*connection);
         }
         self.close_sign_in(window, cx);
+        self.start_sync(window, cx);
     }
 
     /// Welcome's cloud chip: its dot's token and its text.
@@ -1120,12 +1129,6 @@ impl Workspace {
             Server::Cloud => ("success", "Connected to curl-runner Cloud".into()),
             Server::SelfHosted { url } => ("success", format!("Self-hosted · {}", host_of(&url))),
         }
-    }
-
-    /// `Sync now` (Settings, later the sidebar footer). The sync itself,
-    /// payload and result, is plan 3's Task 3.
-    pub(super) fn sync_now(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        cx.notify();
     }
 
     /// The open collection settings return to Settings on `page`.
@@ -1448,6 +1451,7 @@ impl Workspace {
         }
         // The method badge may have changed.
         collection.refresh();
+        self.mark_changed(window, cx);
         cx.notify();
         true
     }
@@ -1598,6 +1602,7 @@ impl Workspace {
                 self.text_replaced(ix, cx);
             }
         }
+        self.mark_changed(window, cx);
         cx.notify();
     }
 

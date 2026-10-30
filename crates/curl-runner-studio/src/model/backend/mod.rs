@@ -445,21 +445,59 @@ pub fn shared_vars(root: &Path, meta: &CollectionMeta, share_default: &[String])
     vars
 }
 
+/// The largest file sync sends; bigger ones stay local (and are listed in
+/// [`SyncScan::too_big`]).
+pub const MAX_SYNC_BYTES: u64 = 1024 * 1024;
+
+/// What [`scan_sync_files`] found.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SyncScan {
+    pub files: Vec<SyncFile>,
+    /// Tracked files over [`MAX_SYNC_BYTES`], relative to the root.
+    pub too_big: Vec<PathBuf>,
+}
+
 /// The collection at `root`'s YAML files, as synced: request files and
-/// `curl-runner.yaml`, no hidden paths (so no `.env*`, nothing in `.git`).
-pub fn sync_files(root: &Path) -> Vec<SyncFile> {
-    curl_runner_core::discover::find_yaml_files(&[], true, root)
+/// `curl-runner.yaml`, no hidden paths (so no `.env*`, nothing in `.git`),
+/// nothing that resolves outside `root` (a symlink out) and nothing over
+/// [`MAX_SYNC_BYTES`].
+pub fn scan_sync_files(root: &Path) -> SyncScan {
+    let real_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let mut scan = SyncScan::default();
+    let rels = curl_runner_core::discover::find_yaml_files(&[], true, root)
         .into_iter()
         .map(|f| PathBuf::from(f.strip_prefix("./").unwrap_or(&f)))
         .filter(|rel| {
-            rel.components()
-                .all(|c| !c.as_os_str().to_string_lossy().starts_with('.'))
-        })
-        .filter_map(|rel| {
-            let text = std::fs::read_to_string(root.join(&rel)).ok()?;
-            Some(SyncFile::new(rel, text))
-        })
-        .collect()
+            rel.components().all(|c| {
+                matches!(c, std::path::Component::Normal(_))
+                    && !c.as_os_str().to_string_lossy().starts_with('.')
+            })
+        });
+    for rel in rels {
+        let path = root.join(&rel);
+        let inside = path
+            .canonicalize()
+            .is_ok_and(|real| real.starts_with(&real_root));
+        let Ok(meta) = std::fs::metadata(&path) else {
+            continue;
+        };
+        if !inside || !meta.is_file() {
+            continue;
+        }
+        if meta.len() > MAX_SYNC_BYTES {
+            scan.too_big.push(rel);
+            continue;
+        }
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            scan.files.push(SyncFile::new(rel, text));
+        }
+    }
+    scan
+}
+
+/// [`scan_sync_files`]' files.
+pub fn sync_files(root: &Path) -> Vec<SyncFile> {
+    scan_sync_files(root).files
 }
 
 /// The backend the UI tests run on: the mock, in memory, with no latency.
@@ -527,6 +565,24 @@ mod tests {
         let rels: Vec<_> = files.iter().map(|f| f.rel.clone()).collect();
         assert_eq!(rels, [PathBuf::from("rates/get.yaml")]);
         assert_eq!(files[0].hash, SyncFile::hash_of("request:\n  url: x\n"));
+    }
+
+    #[test]
+    fn sync_files_skip_big_files_and_links_out() {
+        let d = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let root = d.path();
+        std::fs::write(root.join("small.yaml"), "a: 1\n").unwrap();
+        let big = format!("a: \"{}\"\n", "x".repeat(MAX_SYNC_BYTES as usize));
+        std::fs::write(root.join("big.yaml"), big).unwrap();
+        std::fs::write(outside.path().join("out.yaml"), "secret: 1\n").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(outside.path().join("out.yaml"), root.join("link.yaml"))
+            .unwrap();
+        let scan = scan_sync_files(root);
+        let rels: Vec<_> = scan.files.iter().map(|f| f.rel.clone()).collect();
+        assert_eq!(rels, [PathBuf::from("small.yaml")]);
+        assert_eq!(scan.too_big, [PathBuf::from("big.yaml")]);
     }
 
     #[test]

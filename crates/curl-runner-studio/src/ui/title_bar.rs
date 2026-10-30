@@ -77,7 +77,17 @@ impl Workspace {
                             .text_color(color("border-200"))
                             .child("/"),
                     )
-                    .child(collection.px(px(8.))),
+                    .child(
+                        div()
+                            .flex()
+                            .min_w_0()
+                            .items_center()
+                            .gap(px(8.))
+                            .px(px(8.))
+                            .child(collection)
+                            .children(self.render_shared_pill(cx))
+                            .children(self.render_offline_pill()),
+                    ),
             )
             .child(self.render_search_button(cx))
             .child(
@@ -97,6 +107,35 @@ impl Workspace {
                     .children(self.render_run_collection(cx))
                     .child(self.render_run_button(cx)),
             )
+    }
+
+    /// The Main board's `Shared · 3`: people with access, while the
+    /// collection has a share link. Opens Share.
+    fn render_shared_pill(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        let people = self.sync.people.filter(|_| self.sync_on())?;
+        let text = format!("Shared · {people}");
+        Some(
+            pill("title-shared", text, "text-secondary", "border-200")
+                .cursor_pointer()
+                .hover(|s| s.bg(color("surface-100")))
+                .on_click(cx.listener(|this, _, window, cx| this.open_share(window, cx)))
+                .test_support(),
+        )
+    }
+
+    /// The SyncConflict board's amber `Offline`, while sync can't reach
+    /// the server.
+    fn render_offline_pill(&self) -> Option<impl IntoElement + use<>> {
+        (self.sync_on() && self.sync.offline).then(|| {
+            pill(
+                "title-offline",
+                "Offline".into(),
+                "warning",
+                "warning-border",
+            )
+            .bg(color("warning-subtle"))
+            .test_support()
+        })
     }
 
     /// "Environment" and the picker, once a collection is open.
@@ -201,6 +240,24 @@ impl Workspace {
                 this.open_palette(window, cx);
             }))
     }
+}
+
+/// A title-bar pill: 11px, fully rounded, `1px 8px`.
+fn pill(id: &'static str, text: String, fg: &str, border: &str) -> Stateful<Div> {
+    div()
+        .id(id)
+        .role(Role::Button)
+        .aria_label(text.clone())
+        .flex_none()
+        .px(px(8.))
+        .py(px(1.))
+        .border_1()
+        .border_color(color(border))
+        .rounded_full()
+        .text_size(px(11.))
+        .font_weight(FontWeight::NORMAL)
+        .text_color(color(fg))
+        .child(text)
 }
 
 const SEARCH_WIDTH: f32 = 280.;

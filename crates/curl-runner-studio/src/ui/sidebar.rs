@@ -3,6 +3,7 @@
 use super::icons::{self, glyph};
 use super::method_stack::{Stack, method_stack};
 use super::runs::RunStatus;
+use super::sync::{SyncLine, sync_dot};
 use super::workspace::Workspace;
 use super::{color, method_color};
 use crate::model::collection::TreeNode;
@@ -316,6 +317,7 @@ impl Workspace {
                 ),
             )
             .child(tree)
+            .child(self.render_sync_footer(cx))
     }
 
     fn render_row(
@@ -604,6 +606,94 @@ impl Workspace {
                     }))
                     .child("Change"),
             )
+    }
+}
+
+impl Workspace {
+    /// The Main board's foot: `● Synced 2 min ago` and `Share`; offline,
+    /// the SyncConflict board's amber `Offline · 3 changes waiting`; with
+    /// conflicts, `1 conflict · Resolve`; signed out, `Local only` and a
+    /// disabled Share.
+    fn render_sync_footer(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let line = self.sync_line();
+        let text = line.text(chrono::Utc::now());
+        let on = !matches!(line, SyncLine::LocalOnly);
+        let share = div()
+            .id("sidebar-share")
+            .role(Role::Button)
+            .test_support()
+            .aria_label("Share")
+            .flex_none()
+            .px(px(10.))
+            .py(px(4.))
+            .border_1()
+            .border_color(color("border-200"))
+            .rounded(px(6.))
+            .line_height(relative(1.4))
+            .child("Share");
+        let share = if on {
+            share
+                .text_color(color("text-primary"))
+                .cursor_pointer()
+                .hover(|s| s.bg(color("surface-100")))
+                .on_click(cx.listener(|this, _, window, cx| this.open_share(window, cx)))
+        } else {
+            share
+                .text_color(color("text-disabled"))
+                .tooltip(|window, cx| {
+                    gpui_kit::component::tooltip::Tooltip::new("Sign in to share").build(window, cx)
+                })
+        };
+        let resolve = matches!(line, SyncLine::Conflicts(_)).then(|| {
+            div()
+                .id("sidebar-resolve")
+                .role(Role::Button)
+                .test_support()
+                .aria_label("Resolve")
+                .flex_none()
+                .text_color(color("text-primary"))
+                .cursor_pointer()
+                .hover(|s| s.underline())
+                .on_click(cx.listener(|this, _, window, cx| this.open_conflicts(window, cx)))
+                .child("Resolve")
+        });
+        div()
+            .id("sidebar-sync")
+            .role(Role::Group)
+            .test_support()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(8.))
+            .px(px(16.))
+            .py(px(12.))
+            .border_t_1()
+            .border_color(color("border-100"))
+            .text_size(px(12.))
+            .text_color(color("text-secondary"))
+            .children(line.dot().map(|(token, ring)| sync_dot(token, ring)))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.))
+                    .line_height(relative(1.4))
+                    .child(
+                        div()
+                            .id("sidebar-sync-status")
+                            .role(Role::Status)
+                            .test_support()
+                            .aria_label(text.clone())
+                            .min_w_0()
+                            .text_ellipsis()
+                            .text_color(color(line.text_color()))
+                            .child(text),
+                    )
+                    .when_some(resolve, |d, resolve| d.child("·").child(resolve)),
+            )
+            .child(share)
     }
 }
 

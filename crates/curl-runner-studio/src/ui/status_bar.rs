@@ -6,6 +6,7 @@
 
 use super::collection_settings::EnvStatus;
 use super::color;
+use super::sync::{SyncLine, sync_dot};
 use crate::model::environments::{ResolvedVar, VarSource};
 use gpui_kit::component::Sizable as _;
 use gpui_kit::component::input::{EditorState, Position};
@@ -33,6 +34,8 @@ pub struct StatusBar {
     history: Option<SharedString>,
     /// The Environments page's footer, while it is shown.
     environments: Option<EnvStatus>,
+    /// The sidebar footer's sync state, when it asks for attention.
+    sync: Option<SyncLine>,
     _cursor_watch: Option<Subscription>,
 }
 
@@ -51,6 +54,8 @@ pub enum StatusBarEvent {
     OpenRun,
     /// The environment name was clicked.
     OpenEnvironments,
+    /// The sync item was clicked: resolve conflicts, else sync now.
+    Sync,
 }
 
 impl EventEmitter<StatusBarEvent> for StatusBar {}
@@ -178,6 +183,16 @@ impl StatusBar {
     }
 }
 
+impl StatusBar {
+    /// Shows (or with `None` hides) the sync item.
+    pub fn set_sync(&mut self, line: Option<SyncLine>, cx: &mut Context<Self>) {
+        if self.sync != line {
+            self.sync = line;
+            cx.notify();
+        }
+    }
+}
+
 /// `Ln 15, Col 5`, one-based like every editor shows it.
 fn cursor_label(p: Position) -> String {
     format!("Ln {}, Col {}", p.line + 1, p.character + 1)
@@ -259,6 +274,10 @@ impl Render for StatusBar {
             })
             .when(self.history.is_none(), |bar| self.render_vars(bar, cx))
             .child(div().flex_1())
+            .when_some(
+                self.sync.clone().filter(|_| self.history.is_none()),
+                |bar, line| bar.child(render_sync(&line, cx)),
+            )
             .when(self.history.is_none(), |bar| {
                 bar.children(config).when_some(self.cursor, |bar, cursor| {
                     bar.child("YAML").child(cursor_label(cursor))
@@ -303,6 +322,26 @@ impl StatusBar {
                 )
             })
     }
+}
+
+/// The footer's sync state, compact: `● Offline · 3 changes waiting`.
+fn render_sync(line: &SyncLine, cx: &mut Context<StatusBar>) -> impl IntoElement + use<> {
+    let text = line.text(chrono::Utc::now());
+    div()
+        .id("status-sync")
+        .role(Role::Button)
+        .test_support()
+        .aria_label(text.clone())
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(px(6.))
+        .cursor_pointer()
+        .text_color(color(line.text_color()))
+        .hover(|s| s.text_color(color("text-primary")))
+        .children(line.dot().map(|(token, ring)| sync_dot(token, ring)))
+        .child(text)
+        .on_click(cx.listener(|_, _, _, cx| cx.emit(StatusBarEvent::Sync)))
 }
 
 #[cfg(test)]

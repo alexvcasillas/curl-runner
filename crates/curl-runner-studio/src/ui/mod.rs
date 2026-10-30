@@ -26,6 +26,7 @@ mod sidebar;
 mod sign_in;
 mod state;
 mod status_bar;
+mod sync;
 mod title_bar;
 mod watch;
 mod welcome;

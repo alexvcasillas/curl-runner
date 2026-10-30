@@ -466,8 +466,20 @@ fn install_dev_menu(
     if backend.dev().is_none() {
         return;
     }
-    let b = backend.clone();
-    cx.on_action(move |_: &DevOffline, cx| toggle_dev(&b, |d| d.set_offline(!d.offline()), cx));
+    let (b, ws) = (backend.clone(), workspace.clone());
+    cx.on_action(move |_: &DevOffline, cx| {
+        toggle_dev(&b, |d| d.set_offline(!d.offline()), cx);
+        // A sync finds out at once: it fails offline, or flushes the
+        // waiting changes once back.
+        let ws = ws.clone();
+        cx.defer(move |cx| {
+            window
+                .update(cx, |_, window, cx| {
+                    ws.update(cx, |ws, cx| ws.sync_now(window, cx)).ok();
+                })
+                .ok();
+        });
+    });
     let b = backend.clone();
     cx.on_action(move |_: &DevConflictNextSync, cx| {
         toggle_dev(
