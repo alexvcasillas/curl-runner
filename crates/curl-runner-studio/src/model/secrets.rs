@@ -13,7 +13,22 @@ pub trait SecretStore: Send + Sync {
     fn delete(&self, service: &str, name: &str) -> Result<(), String>;
     /// The names stored under `service`, sorted.
     fn names(&self, service: &str) -> Vec<String>;
+
+    /// [`SecretStore::get`] that tells a missing item (`Ok(None)`) from a
+    /// store that could not be read (a locked Keychain).
+    fn try_get(&self, service: &str, name: &str) -> Result<Option<String>, String> {
+        Ok(self.get(service, name))
+    }
+
+    /// [`SecretStore::names`] that reports a store that could not be read.
+    fn try_names(&self, service: &str) -> Result<Vec<String>, String> {
+        Ok(self.names(service))
+    }
 }
+
+/// `errSecItemNotFound`.
+#[cfg(target_os = "macos")]
+const NOT_FOUND: i32 = -25300;
 
 /// The Keychain service of a collection's environment.
 pub fn service_name(collection: &str, environment: &str) -> String {
@@ -68,8 +83,15 @@ pub struct KeychainSecrets;
 #[cfg(target_os = "macos")]
 impl SecretStore for KeychainSecrets {
     fn get(&self, service: &str, name: &str) -> Option<String> {
-        let bytes = security_framework::passwords::get_generic_password(service, name).ok()?;
-        String::from_utf8(bytes).ok()
+        self.try_get(service, name).ok().flatten()
+    }
+
+    fn try_get(&self, service: &str, name: &str) -> Result<Option<String>, String> {
+        match security_framework::passwords::get_generic_password(service, name) {
+            Ok(bytes) => Ok(String::from_utf8(bytes).ok()),
+            Err(e) if e.code() == NOT_FOUND => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
     }
 
     fn set(&self, service: &str, name: &str, value: &str) -> Result<(), String> {
@@ -78,8 +100,6 @@ impl SecretStore for KeychainSecrets {
     }
 
     fn delete(&self, service: &str, name: &str) -> Result<(), String> {
-        /// `errSecItemNotFound`.
-        const NOT_FOUND: i32 = -25300;
         match security_framework::passwords::delete_generic_password(service, name) {
             Err(e) if e.code() != NOT_FOUND => Err(e.to_string()),
             _ => Ok(()),
@@ -87,21 +107,29 @@ impl SecretStore for KeychainSecrets {
     }
 
     fn names(&self, service: &str) -> Vec<String> {
+        self.try_names(service).unwrap_or_default()
+    }
+
+    fn try_names(&self, service: &str) -> Result<Vec<String>, String> {
         use security_framework::item::{ItemClass, ItemSearchOptions, Limit};
-        let found = ItemSearchOptions::new()
+        let found = match ItemSearchOptions::new()
             .class(ItemClass::generic_password())
             .service(service)
             .load_attributes(true)
             .limit(Limit::All)
             .search()
-            .unwrap_or_default();
+        {
+            Ok(found) => found,
+            Err(e) if e.code() == NOT_FOUND => Vec::new(),
+            Err(e) => return Err(e.to_string()),
+        };
         let mut names: Vec<String> = found
             .iter()
             .filter_map(|r| r.simplify_dict()?.remove("acct"))
             .collect();
         names.sort();
         names.dedup();
-        names
+        Ok(names)
     }
 }
 
@@ -134,13 +162,18 @@ impl CachedSecrets {
 
 impl SecretStore for CachedSecrets {
     fn get(&self, service: &str, name: &str) -> Option<String> {
+        self.try_get(service, name).ok().flatten()
+    }
+
+    /// A failed read is not cached: the next one asks again.
+    fn try_get(&self, service: &str, name: &str) -> Result<Option<String>, String> {
         let key = (service.to_string(), name.to_string());
         if let Some(v) = self.cache().get(&key) {
-            return v.clone();
+            return Ok(v.clone());
         }
-        let v = self.inner.get(service, name);
+        let v = self.inner.try_get(service, name)?;
         self.cache().insert(key, v.clone());
-        v
+        Ok(v)
     }
 
     fn set(&self, service: &str, name: &str, value: &str) -> Result<(), String> {
@@ -161,6 +194,10 @@ impl SecretStore for CachedSecrets {
 
     fn names(&self, service: &str) -> Vec<String> {
         self.inner.names(service)
+    }
+
+    fn try_names(&self, service: &str) -> Result<Vec<String>, String> {
+        self.inner.try_names(service)
     }
 }
 
@@ -207,6 +244,42 @@ mod tests {
         cached.delete("s", "SECRET_A").unwrap();
         assert_eq!(cached.get("s", "SECRET_A"), None);
         assert_eq!(reads(), 3);
+    }
+
+    /// A Keychain that can't be read until it is unlocked.
+    struct Lockable(MemorySecrets, std::sync::atomic::AtomicBool);
+
+    impl SecretStore for Lockable {
+        fn get(&self, service: &str, name: &str) -> Option<String> {
+            self.try_get(service, name).ok().flatten()
+        }
+        fn try_get(&self, service: &str, name: &str) -> Result<Option<String>, String> {
+            if self.1.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err("locked".into());
+            }
+            Ok(self.0.get(service, name))
+        }
+        fn set(&self, service: &str, name: &str, value: &str) -> Result<(), String> {
+            self.0.set(service, name, value)
+        }
+        fn delete(&self, service: &str, name: &str) -> Result<(), String> {
+            self.0.delete(service, name)
+        }
+        fn names(&self, service: &str) -> Vec<String> {
+            self.0.names(service)
+        }
+    }
+
+    #[test]
+    fn a_failed_read_is_reported_and_not_cached() {
+        let inner = std::sync::Arc::new(Lockable(MemorySecrets::default(), true.into()));
+        inner.0.set("s", "SECRET_A", "1").unwrap();
+        let cached = CachedSecrets::new(inner.clone());
+        assert!(cached.try_get("s", "SECRET_A").is_err());
+        assert_eq!(cached.get("s", "SECRET_A"), None);
+        inner.1.store(false, std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(cached.try_get("s", "SECRET_A"), Ok(Some("1".into())));
+        assert_eq!(MemorySecrets::default().try_names("s"), Ok(vec![]));
     }
 
     #[test]

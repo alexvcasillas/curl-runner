@@ -4,6 +4,7 @@
 //! A view of its own: it follows the active editor's cursor, so moving it
 //! repaints only this bar.
 
+use super::collection_settings::EnvStatus;
 use super::color;
 use crate::model::environments::{ResolvedVar, VarSource};
 use gpui_kit::component::Sizable as _;
@@ -30,6 +31,8 @@ pub struct StatusBar {
     /// `142 runs stored · 3.1 MB` while the History screen is shown: the
     /// bar then reads as the board's history footer.
     history: Option<SharedString>,
+    /// The Environments page's footer, while it is shown.
+    environments: Option<EnvStatus>,
     _cursor_watch: Option<Subscription>,
 }
 
@@ -46,6 +49,8 @@ pub struct RunLine {
 /// What the bar asks of the workspace.
 pub enum StatusBarEvent {
     OpenRun,
+    /// The environment name was clicked.
+    OpenEnvironments,
 }
 
 impl EventEmitter<StatusBarEvent> for StatusBar {}
@@ -163,6 +168,16 @@ impl StatusBar {
     }
 }
 
+impl StatusBar {
+    /// Shows (or with `None` hides) the Environments page's footer.
+    pub fn set_environments(&mut self, status: Option<EnvStatus>, cx: &mut Context<Self>) {
+        if self.environments != status {
+            self.environments = status;
+            cx.notify();
+        }
+    }
+}
+
 /// `Ln 15, Col 5`, one-based like every editor shows it.
 fn cursor_label(p: Position) -> String {
     format!("Ln {}, Col {}", p.line + 1, p.character + 1)
@@ -170,6 +185,26 @@ fn cursor_label(p: Position) -> String {
 
 impl Render for StatusBar {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if let Some(env) = &self.environments {
+            // The Environments board's footer.
+            return div()
+                .id("status-bar")
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap(px(16.))
+                .h(px(STATUS_BAR_HEIGHT))
+                .px(px(16.))
+                .border_t_1()
+                .border_color(color("border-100"))
+                .text_size(px(12.))
+                .text_color(color("text-secondary"))
+                .child(env.environment.clone())
+                .child(env.summary.clone())
+                .child(div().flex_1())
+                .child(env.keychain.clone())
+                .child(format!("curl-runner {}", curl_runner_core::VERSION));
+        }
         // The history footer reads as the board's: its two strings only.
         let run = self.run.clone().filter(|_| self.history.is_none());
         let config = run.as_ref().and_then(|r| r.config.clone());
@@ -212,7 +247,7 @@ impl Render for StatusBar {
                 bar.child(div().flex_none().child(usage))
                     .child("History stays on this device unless you share a run")
             })
-            .when(self.history.is_none(), |bar| self.render_vars(bar))
+            .when(self.history.is_none(), |bar| self.render_vars(bar, cx))
             .child(div().flex_1())
             .when(self.history.is_none(), |bar| {
                 bar.children(config).when_some(self.cursor, |bar, cursor| {
@@ -225,8 +260,25 @@ impl Render for StatusBar {
 
 impl StatusBar {
     /// The environment, where variables come from and the missing count.
-    fn render_vars(&self, bar: Stateful<Div>) -> Stateful<Div> {
-        bar.children(self.environment.clone().or_else(|| self.collection.clone()))
+    fn render_vars(&self, bar: Stateful<Div>, cx: &mut Context<Self>) -> Stateful<Div> {
+        let env = self.environment.clone().map(|env| {
+            div()
+                .id("status-environment")
+                .role(Role::Button)
+                .test_support()
+                .flex_none()
+                .cursor_pointer()
+                .hover(|s| s.text_color(color("text-primary")))
+                .child(env)
+                .on_click(cx.listener(|_, _, _, cx| cx.emit(StatusBarEvent::OpenEnvironments)))
+                .into_any_element()
+        });
+        let name = env.or_else(|| {
+            self.collection
+                .clone()
+                .map(|c| div().child(c).into_any_element())
+        });
+        bar.children(name)
             .children(
                 self.sources
                     .iter()

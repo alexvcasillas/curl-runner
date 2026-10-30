@@ -6,7 +6,8 @@
 //! scrollbar covered the shortcut chips).
 
 use super::app::{
-    Import, NewCollection, NewRequest, OpenFolder, OpenHistory, ToggleProblems, mono_font,
+    Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder, OpenHistory, ToggleProblems,
+    mono_font,
 };
 use super::icons::{self, glyph};
 use super::sidebar::{request_count, request_label};
@@ -160,16 +161,18 @@ pub enum PaletteAction {
     Import,
     ToggleProblems,
     OpenHistory,
+    Environments,
 }
 
 impl PaletteAction {
-    pub const ALL: [PaletteAction; 6] = [
+    pub const ALL: [PaletteAction; 7] = [
         PaletteAction::OpenFolder,
         PaletteAction::NewRequest,
         PaletteAction::NewCollection,
         PaletteAction::Import,
         PaletteAction::ToggleProblems,
         PaletteAction::OpenHistory,
+        PaletteAction::Environments,
     ];
 
     fn label(self) -> &'static str {
@@ -180,6 +183,7 @@ impl PaletteAction {
             PaletteAction::Import => "Import curl…",
             PaletteAction::ToggleProblems => "Toggle Problems",
             PaletteAction::OpenHistory => "Open history",
+            PaletteAction::Environments => "Environments…",
         }
     }
 
@@ -192,6 +196,7 @@ impl PaletteAction {
             PaletteAction::Import => icons::IMPORT,
             PaletteAction::ToggleProblems => icons::PANEL_BOTTOM,
             PaletteAction::OpenHistory => icons::HISTORY,
+            PaletteAction::Environments => icons::KEY,
         }
     }
 
@@ -204,6 +209,7 @@ impl PaletteAction {
             PaletteAction::Import => Box::new(Import),
             PaletteAction::ToggleProblems => Box::new(ToggleProblems),
             PaletteAction::OpenHistory => Box::new(OpenHistory),
+            PaletteAction::Environments => Box::new(OpenEnvironments),
         }
     }
 }
@@ -442,6 +448,7 @@ impl Palette {
                 Target::Action(PaletteAction::Import) => drop(ws.import(window, cx)),
                 Target::Action(PaletteAction::ToggleProblems) => ws.toggle_problems(cx),
                 Target::Action(PaletteAction::OpenHistory) => ws.open_history(window, cx),
+                Target::Action(PaletteAction::Environments) => ws.open_settings(window, cx),
             })
             .ok();
     }

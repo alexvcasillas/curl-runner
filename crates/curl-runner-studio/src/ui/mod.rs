@@ -2,6 +2,7 @@
 //! status bar, built with GPUI-kit (macOS only).
 
 mod app;
+mod collection_settings;
 mod diagnostic_marks;
 mod diagnostic_popover;
 mod diagnostics_view;

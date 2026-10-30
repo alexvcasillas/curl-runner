@@ -1,6 +1,7 @@
 //! The studio's pure state model: no GPUI, so it compiles on every target.
 
 pub mod collection;
+pub mod collection_meta;
 pub mod diagnostics;
 pub mod document;
 pub mod environments;
@@ -16,3 +17,16 @@ pub mod run;
 #[allow(dead_code)]
 pub mod secrets;
 pub mod templates;
+
+/// Writes `text` to `path` through a temp file in the same folder and a
+/// rename, so a crash never leaves half a file.
+pub fn write_atomic(path: &std::path::Path, text: &str) -> std::io::Result<()> {
+    let name = path
+        .file_name()
+        .map_or_else(|| "file".into(), |n| n.to_string_lossy().into_owned());
+    let tmp = path.with_file_name(format!(".{name}.tmp"));
+    std::fs::write(&tmp, text)?;
+    std::fs::rename(&tmp, path).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
+}

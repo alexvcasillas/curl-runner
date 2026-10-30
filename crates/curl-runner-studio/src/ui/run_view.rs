@@ -515,18 +515,7 @@ pub fn report(
     }
 }
 
-/// Writes `text` to `path` through a temp file in the same folder and a
-/// rename, so a crash never leaves half a report.
-pub fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
-    let name = path
-        .file_name()
-        .map_or_else(|| "report".into(), |n| n.to_string_lossy().into_owned());
-    let tmp = path.with_file_name(format!(".{name}.tmp"));
-    std::fs::write(&tmp, text)?;
-    std::fs::rename(&tmp, path).inspect_err(|_| {
-        let _ = std::fs::remove_file(&tmp);
-    })
-}
+pub use crate::model::write_atomic;
 
 /// What the run view asks of the workspace.
 #[derive(Debug, Clone, PartialEq)]

@@ -87,6 +87,22 @@ pub const SKIPPED: &str = glyph!(
     "1.5",
     r#"<circle cx="8" cy="8" r="5.5"/><path d="M5.5 8h5"/>"#
 );
+pub const CHEVRON_LEFT: &str = glyph!("1.5", r#"<path d="M10 4L6 8l4 4"/>"#);
+/// A key: a Keychain value.
+pub const KEY: &str = glyph!(
+    "1.5",
+    r#"<circle cx="5.5" cy="10.5" r="3"/><path d="M7.7 8.3L13 3M11 5l1.5 1.5"/>"#
+);
+/// Reveal a masked value.
+pub const EYE: &str = glyph!(
+    "1.4",
+    r#"<path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/>"#
+);
+/// Mask it again.
+pub const EYE_OFF: &str = glyph!(
+    "1.4",
+    r#"<path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/><path d="M2.5 13.5l11-11"/>"#
+);
 /// Filled, unlike the stroke glyphs.
 pub const PLAY: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="#000"><path d="M4 2.5v11l9-5.5z"/></svg>"##;
 
@@ -126,6 +142,10 @@ mod tests {
             HISTORY,
             QUEUED,
             SKIPPED,
+            CHEVRON_LEFT,
+            KEY,
+            EYE,
+            EYE_OFF,
         ] {
             assert!(svg.starts_with("<svg ") && svg.ends_with("</svg>"), "{svg}");
             assert!(svg.contains(r#"viewBox="0 0 16 16""#));

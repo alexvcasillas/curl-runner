@@ -72,12 +72,8 @@ pub struct History {
 impl History {
     /// `{base}/history/{hash of the root}/`, created on the first `record`.
     pub fn open(base: &Path, collection_root: &Path) -> History {
-        let root = collection_root
-            .canonicalize()
-            .unwrap_or_else(|_| collection_root.to_path_buf());
-        let hash = fnv1a(root.to_string_lossy().as_bytes());
         History {
-            dir: base.join("history").join(format!("{hash:016x}")),
+            dir: base.join("history").join(root_hash(collection_root)),
         }
     }
 
@@ -136,6 +132,15 @@ impl History {
             })
             .filter_map(|f| Some((f.path(), f.metadata().ok()?.len())))
     }
+}
+
+/// The collection's key under the studio's data folder: the FNV-1a hash of
+/// its canonical root, as 16 hex digits (`history/{hash}`, `meta/{hash}.json`).
+pub fn root_hash(collection_root: &Path) -> String {
+    let root = collection_root
+        .canonicalize()
+        .unwrap_or_else(|_| collection_root.to_path_buf());
+    format!("{:016x}", fnv1a(root.to_string_lossy().as_bytes()))
 }
 
 /// FNV-1a 64: stable across releases, unlike `DefaultHasher`.

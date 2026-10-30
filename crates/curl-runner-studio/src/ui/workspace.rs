@@ -2,10 +2,11 @@
 //! and lays out title bar, sidebar, editor and status bar.
 
 use super::app::{
-    CloseTab, CopyAsCurl, Import, NewCollection, NewRequest, OpenFolder, OpenHistory, OpenPalette,
-    QuickFix, Rerun, RunActive, RunCollection, RunRequestUnderCursor, SaveFile, Stop,
-    ToggleProblems, ui_font,
+    CloseTab, CopyAsCurl, Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder,
+    OpenHistory, OpenPalette, QuickFix, Rerun, RunActive, RunCollection, RunRequestUnderCursor,
+    SaveFile, Stop, ToggleProblems, ui_font,
 };
+use super::collection_settings::{CollectionSettings, SettingsEvent};
 use super::diagnostic_popover::DiagnosticHover;
 use super::diagnostics_view::DiagnosticsView;
 use super::history_view::{HistoryView, HistoryViewEvent, usage_text};
@@ -19,10 +20,11 @@ use super::status_bar::{RunLine, StatusBar, StatusBarEvent, source_groups};
 use super::watch;
 use super::{color, sidebar::request_label};
 use crate::model::collection::{Collection, TreeNode, request_at_line, request_lines};
+use crate::model::collection_meta::CollectionMeta;
 use crate::model::document::CloseDecision;
 use crate::model::environments::{
-    DEFAULT_ENVIRONMENT, EnvCtx, ResolvedVar, list_environments, missing_vars, referenced_vars,
-    resolve_vars,
+    CapturedVar, DEFAULT_ENVIRONMENT, EnvCtx, ResolvedVar, list_environments, missing_vars,
+    referenced_vars, resolve_vars, store_paths,
 };
 use crate::model::history::{History, HistoryEntry, entry_from_outcome, target_key, target_of};
 use crate::model::run::RunEvent;
@@ -110,8 +112,14 @@ pub struct Workspace {
     /// Its references with no value anywhere.
     pub(super) missing: Vec<String>,
     pub(super) secrets: Arc<dyn SecretStore>,
-    /// `secrets` read once per item, for resolving variables while typing.
-    secret_cache: CachedSecrets,
+    /// `secrets` read once per item, for resolving variables while typing
+    /// (and for the Environments page).
+    secret_cache: Arc<CachedSecrets>,
+    /// The open collection's notes: secret names, descriptions.
+    pub(super) meta: CollectionMeta,
+    /// The collection settings page (Environments), while it is open.
+    pub(super) settings_view: Option<Entity<CollectionSettings>>,
+    _settings_events: Option<Subscription>,
     /// The collection run screen, once a collection run started.
     pub(super) run_view: Option<Entity<RunView>>,
     /// The run screen takes the editor's and the inspector's place.
@@ -160,6 +168,7 @@ impl Workspace {
             window,
             |this, _, event: &StatusBarEvent, window, cx| match event {
                 StatusBarEvent::OpenRun => this.show_run_view(window, cx),
+                StatusBarEvent::OpenEnvironments => this.open_settings(window, cx),
             },
         );
         let ws = cx.entity().downgrade();
@@ -191,7 +200,10 @@ impl Workspace {
             copied: None,
             vars: Vec::new(),
             missing: Vec::new(),
-            secret_cache: CachedSecrets::new(secrets.clone()),
+            secret_cache: Arc::new(CachedSecrets::new(secrets.clone())),
+            meta: CollectionMeta::default(),
+            settings_view: None,
+            _settings_events: None,
             secrets,
             run_view: None,
             show_run: false,
@@ -248,6 +260,13 @@ impl Workspace {
         self.history_view = None;
         self.show_history = false;
         self._history_events = None;
+        self.settings_view = None;
+        self._settings_events = None;
+        self.meta = self
+            .store
+            .base()
+            .map(|b| CollectionMeta::load(b, root))
+            .unwrap_or_default();
         self.secret_cache.invalidate();
         self.environment = self
             .store
@@ -270,16 +289,18 @@ impl Workspace {
         let editor = self
             .state
             .active
-            .filter(|_| !self.run_shown() && !self.history_shown())
+            .filter(|_| !self.run_shown() && !self.history_shown() && !self.settings_shown())
             .map(|i| self.tabs[i].editor.clone());
         let usage = self
             .history_view
             .as_ref()
             .filter(|_| self.history_shown())
             .map(|v| usage_text(v.read(cx).usage()).into());
+        let settings = self.settings_view.as_ref().map(|v| v.read(cx).status());
         self.status.update(cx, |s, cx| {
             s.set(name.map(Into::into), editor, cx);
             s.set_history(usage, cx);
+            s.set_environments(settings, cx);
         });
         self.refresh_vars(cx);
         self.sync_run_status(cx);
@@ -352,6 +373,7 @@ impl Workspace {
         };
         self.show_run = true;
         self.show_history = false;
+        self.settings_view = None;
         self.close_hover(cx);
         view.read(cx).focus_handle(cx).focus(window, cx);
         self.sync_chrome(window, cx);
@@ -517,7 +539,8 @@ impl Workspace {
             Some(v) => v.clone(),
             None => {
                 let (root, name) = (c.root.clone(), c.name.clone());
-                let view = cx.new(|cx| HistoryView::new(root, name, cx));
+                let marked = self.meta.secret_names.clone();
+                let view = cx.new(|cx| HistoryView::new(root, name, marked, cx));
                 self._history_events = Some(cx.subscribe_in(&view, window, Self::on_history_event));
                 self.history_view = Some(view.clone());
                 view
@@ -525,6 +548,7 @@ impl Workspace {
         };
         self.show_history = true;
         self.show_run = false;
+        self.settings_view = None;
         self.close_hover(cx);
         view.read(cx).focus_handle(cx).focus(window, cx);
         self.reload_history(cx);
@@ -674,23 +698,41 @@ impl Workspace {
         if !self.environments.contains(&self.environment) {
             self.environment = DEFAULT_ENVIRONMENT.to_string();
         }
-        let labels: Vec<SharedString> = self
+        let mut labels: Vec<SharedString> = self
             .environments
             .iter()
             .map(|e| env_label(e).into())
             .collect();
+        labels.push(MANAGE_ENVIRONMENTS.into());
         let selected = self
             .environments
             .iter()
             .position(|e| e == &self.environment)
             .map(gpui_kit::component::IndexPath::new);
         let select = cx.new(|cx| SelectState::new(labels, selected, window, cx));
-        self._env_changes = Some(cx.subscribe(
+        self._env_changes = Some(cx.subscribe_in(
             &select,
-            |this, _, event: &SelectEvent<Vec<SharedString>>, cx| {
+            window,
+            |this, select, event: &SelectEvent<Vec<SharedString>>, window, cx| {
                 let SelectEvent::Confirm(Some(label)) = event else {
                     return;
                 };
+                if label.as_ref() == MANAGE_ENVIRONMENTS {
+                    // Not an environment: the picker keeps the current one.
+                    let at = this
+                        .environments
+                        .iter()
+                        .position(|e| e == &this.environment);
+                    select.update(cx, |s, cx| {
+                        s.set_selected_index(
+                            at.map(gpui_kit::component::IndexPath::new),
+                            window,
+                            cx,
+                        )
+                    });
+                    this.open_settings(window, cx);
+                    return;
+                }
                 let picked = this
                     .environments
                     .iter()
@@ -724,17 +766,139 @@ impl Workspace {
         self.secret_cache.invalidate();
     }
 
+    /// The picked environment of `c`, with the collection's secret names.
+    pub(super) fn env_ctx(&self, c: &Collection) -> EnvCtx {
+        EnvCtx {
+            root: c.root.clone(),
+            collection: c.name.clone(),
+            environment: self.environment.clone(),
+            marked_secret: self.meta.secret_names.clone(),
+        }
+    }
+
+    // The collection settings page.
+
+    pub(super) fn settings_shown(&self) -> bool {
+        self.settings_view.is_some()
+    }
+
+    /// Opens the collection settings on Environments, on the picked
+    /// environment, read afresh.
+    pub(super) fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(c) = &self.state.collection else {
+            return;
+        };
+        let (root, name) = (c.root.clone(), c.name.clone());
+        let base = self.store.base().map(Path::to_path_buf);
+        let (secrets, env, captured) = (
+            self.secret_cache.clone(),
+            self.environment.clone(),
+            self.captured_vars(),
+        );
+        let view =
+            cx.new(|cx| CollectionSettings::new(root, name, base, secrets, env, captured, cx));
+        self._settings_events = Some(cx.subscribe_in(&view, window, Self::on_settings_event));
+        view.read(cx).focus_handle(cx).focus(window, cx);
+        self.settings_view = Some(view);
+        self.show_run = false;
+        self.show_history = false;
+        self.close_hover(cx);
+        self.sync_chrome(window, cx);
+    }
+
+    pub(super) fn hide_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings_view = None;
+        self._settings_events = None;
+        if self.state.active.is_some() {
+            self.focus_active_editor(window, cx);
+        } else {
+            self.focus.focus(window, cx);
+        }
+        self.sync_chrome(window, cx);
+    }
+
+    fn on_settings_event(
+        &mut self,
+        view: &Entity<CollectionSettings>,
+        event: &SettingsEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            SettingsEvent::Close => self.hide_settings(window, cx),
+            SettingsEvent::Status => self.sync_chrome(window, cx),
+            SettingsEvent::Changed => {
+                self.meta = view.read(cx).meta().clone();
+                self.invalidate_secrets();
+                if let Some(c) = &self.state.collection
+                    && list_environments(&c.root) != self.environments
+                {
+                    self.load_environments(window, cx);
+                }
+                if let Some(h) = &self.history_view {
+                    let marked = self.meta.secret_names.clone();
+                    h.update(cx, |h, _| h.set_marked(marked));
+                }
+                self.sync_chrome(window, cx);
+            }
+        }
+    }
+
+    /// The values the last run of each file saved: names and origins only.
+    fn captured_vars(&self) -> Vec<CapturedVar> {
+        let Some(c) = &self.state.collection else {
+            return Vec::new();
+        };
+        let mut out: Vec<CapturedVar> = Vec::new();
+        for (file, run) in &self.runs.last {
+            if run.store.is_empty() {
+                continue;
+            }
+            let paths = std::fs::read_to_string(c.root.join(file))
+                .map(|t| store_paths(&t))
+                .unwrap_or_default();
+            for name in run.store.keys() {
+                let (named, path) = paths.get(name).cloned().unzip();
+                out.push(CapturedVar {
+                    name: name.clone(),
+                    request: run.captured_by.get(name).cloned().or(named.flatten()),
+                    path,
+                });
+            }
+        }
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        out.dedup_by(|a, b| a.name == b.name);
+        out
+    }
+
+    /// The settings page on tab `env` (`CURL_RUNNER_STUDIO_ENV`), with the
+    /// drawer on `var` (`CURL_RUNNER_STUDIO_VAR`).
+    pub(super) fn dev_settings(
+        &mut self,
+        env: Option<&str>,
+        var: Option<&str>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(view) = self.settings_view.clone() else {
+            return;
+        };
+        view.update(cx, |v, cx| {
+            if let Some(env) = env {
+                v.select_environment(env, cx);
+            }
+            if let Some(var) = var {
+                v.open_variable(Some(var), window, cx);
+            }
+        });
+    }
+
     /// The active file's variables for the picked environment, for the
     /// status bar and the inspector's missing-variable warning.
     pub(super) fn refresh_vars(&mut self, cx: &mut Context<Self>) {
         let (vars, missing) = match (&self.state.collection, self.state.active_document()) {
             (Some(c), Some(doc)) => {
-                let ctx = EnvCtx {
-                    root: c.root.clone(),
-                    collection: c.name.clone(),
-                    environment: self.environment.clone(),
-                    marked_secret: Vec::new(),
-                };
+                let ctx = self.env_ctx(c);
                 let captured = self
                     .runs
                     .last
@@ -745,7 +909,7 @@ impl Workspace {
                 let vars = resolve_vars(
                     &names,
                     &captured,
-                    &self.secret_cache,
+                    &*self.secret_cache,
                     &ctx,
                     std::slice::from_ref(&doc.rel_path),
                 );
@@ -1339,9 +1503,11 @@ impl Workspace {
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let open = self.state.collection.is_some();
+        let settings = self.settings_view.clone().filter(|_| open);
         let run_shown = open && self.run_shown();
         let history_shown = open && self.history_shown();
         let main = match (&self.history_view, &self.run_view) {
+            _ if settings.is_some() => div().into_any_element(),
             (Some(view), _) if history_shown => view.clone().into_any_element(),
             (_, Some(view)) if run_shown => view.clone().into_any_element(),
             _ if open => self.render_editor_pane(cx).into_any_element(),
@@ -1389,6 +1555,11 @@ impl Render for Workspace {
             .on_action(
                 cx.listener(|this, _: &OpenHistory, window, cx| this.toggle_history(window, cx)),
             )
+            .on_action(
+                cx.listener(|this, _: &OpenEnvironments, window, cx| {
+                    this.open_settings(window, cx)
+                }),
+            )
             .size_full()
             .flex()
             .flex_col()
@@ -1397,8 +1568,10 @@ impl Render for Workspace {
             .font_family(ui_font())
             .text_size(px(13.))
             .child(self.render_title_bar(window, cx))
-            .child(
-                div()
+            .child(match settings {
+                // The page brings its own nav and drawer.
+                Some(view) => div().flex().flex_1().min_h_0().child(view),
+                None => div()
                     .flex()
                     .flex_1()
                     .min_h_0()
@@ -1407,10 +1580,13 @@ impl Render for Workspace {
                     .when(open && !run_shown && !history_shown, |row| {
                         row.child(self.render_inspector(cx))
                     }),
-            )
+            })
             .child(self.status.clone())
     }
 }
+
+/// The environment picker's last item: opens the Environments page.
+pub(super) const MANAGE_ENVIRONMENTS: &str = "Manage environments…";
 
 /// Quits through the window's workspace, so unsaved changes are settled
 /// even when focus is in a dialog or the palette: the Kit draws those beside

@@ -5,7 +5,6 @@ use super::inspector::{InspectorTab, ResultView};
 use super::result_marks::ResultMarks;
 use super::run_button::run_state;
 use super::workspace::Workspace;
-use crate::model::environments::EnvCtx;
 use crate::model::run::{RunEvent, RunHandle, RunRequest, RunTarget, start_run};
 use chrono::{DateTime, Local};
 use curl_runner_core::executor::AttemptOutcome;
@@ -438,7 +437,6 @@ impl Workspace {
             return;
         };
         let root = collection.root.clone();
-        let name = collection.name.clone();
         let file = match &target {
             RunTarget::File(f) | RunTarget::Request { file: f, .. } => Some(f.clone()),
             RunTarget::Collection | RunTarget::Files(_) => None,
@@ -463,12 +461,10 @@ impl Workspace {
             .as_ref()
             .and_then(|f| self.runs.last.get(f))
             .map(|r| r.store.clone());
-        let ctx = EnvCtx {
-            root: root.clone(),
-            collection: name,
-            environment: self.environment.clone(),
-            marked_secret: Vec::new(),
+        let Some(collection) = &self.state.collection else {
+            return;
         };
+        let ctx = self.env_ctx(collection);
         let handle = start_run(
             RunRequest {
                 target: target.clone(),

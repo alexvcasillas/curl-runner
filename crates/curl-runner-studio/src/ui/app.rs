@@ -58,6 +58,11 @@ actions!(
         OpenHistory,
         /// Leave the run history for the editor (esc).
         CloseHistory,
+        /// Show the collection's environments and variables.
+        OpenEnvironments,
+        /// Close the variable drawer, else leave the collection settings
+        /// for the editor (esc).
+        CloseSettings,
     ]
 );
 
@@ -84,6 +89,7 @@ pub fn menus() -> Vec<Menu> {
             MenuItem::action("Stop", Stop),
             MenuItem::separator(),
             MenuItem::action("History", OpenHistory),
+            MenuItem::action("Environments…", OpenEnvironments),
         ]),
     ]
 }
@@ -113,6 +119,7 @@ pub fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("escape", CloseRun, Some("RunView")),
         KeyBinding::new("cmd-y", OpenHistory, None),
         KeyBinding::new("escape", CloseHistory, Some("HistoryView")),
+        KeyBinding::new("escape", CloseSettings, Some("CollectionSettings")),
         KeyBinding::new("cmd-shift-m", ToggleProblems, None),
         KeyBinding::new("cmd-enter", RunActive, None),
         KeyBinding::new("alt-cmd-enter", RunRequestUnderCursor, None),
@@ -240,6 +247,31 @@ pub fn run() {
                             }
                             "problem" => ws.dev_show_first_problem(window, cx),
                             "history" => ws.open_history(window, cx),
+                            "environments" => {
+                                let env = dev_string("CURL_RUNNER_STUDIO_ENV");
+                                let var = dev_string("CURL_RUNNER_STUDIO_VAR");
+                                // After a `CURL_RUNNER_STUDIO_RUN`, so its
+                                // captured values are listed.
+                                cx.spawn_in(window, async move |ws, cx| {
+                                    for _ in 0..150 {
+                                        let running = ws
+                                            .update(cx, |ws, _| ws.runs.active.is_some())
+                                            .unwrap_or(false);
+                                        if !running {
+                                            break;
+                                        }
+                                        cx.background_executor()
+                                            .timer(std::time::Duration::from_millis(100))
+                                            .await;
+                                    }
+                                    ws.update_in(cx, |ws, window, cx| {
+                                        ws.open_settings(window, cx);
+                                        ws.dev_settings(env.as_deref(), var.as_deref(), window, cx);
+                                    })
+                                    .ok();
+                                })
+                                .detach();
+                            }
                             "export" => {
                                 if let Some(view) = &ws.run_view {
                                     view.update(cx, |v, cx| v.open_export_menu(cx));
@@ -272,7 +304,10 @@ pub fn run() {
 /// `CURL_RUNNER_STUDIO_SELECT`, if set); `problem`
 /// selects the open file's first problem and opens its popover and `export`
 /// opens the run screen's Export menu (with
-/// `CURL_RUNNER_STUDIO_RUN=collection`) and `history` the History screen; hover and click states can't be
+/// `CURL_RUNNER_STUDIO_RUN=collection`), `history` the History screen and
+/// `environments` the collection's Environments (on the tab
+/// `CURL_RUNNER_STUDIO_ENV` names, with `CURL_RUNNER_STUDIO_VAR` naming the
+/// variable whose drawer opens); hover and click states can't be
 /// reached without a pointer. `CURL_RUNNER_STUDIO_LINE`
 /// puts the cursor on a zero-based line, `CURL_RUNNER_STUDIO_TAB` picks the
 /// inspector tab, `CURL_RUNNER_STUDIO_BODY=raw` shows the Checks tab's body
@@ -613,6 +648,7 @@ mod tests {
                 "cmd-.",
                 "escape",
                 "cmd-y",
+                "escape",
                 "escape",
                 "cmd-shift-m",
                 "cmd-enter",

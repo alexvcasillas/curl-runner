@@ -235,6 +235,8 @@ enum Menu {
 pub struct HistoryView {
     root: PathBuf,
     collection: String,
+    /// The collection's secret names, for the CLI command it copies.
+    marked: Vec<String>,
     /// Newest first.
     entries: Vec<HistoryEntry>,
     loaded: bool,
@@ -264,10 +266,16 @@ impl Focusable for HistoryView {
 }
 
 impl HistoryView {
-    pub fn new(root: PathBuf, collection: String, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        root: PathBuf,
+        collection: String,
+        marked: Vec<String>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         HistoryView {
             root,
             collection,
+            marked,
             entries: Vec::new(),
             loaded: false,
             usage: (0, 0),
@@ -309,6 +317,10 @@ impl HistoryView {
         }
         self.rebuild();
         cx.notify();
+    }
+
+    pub fn set_marked(&mut self, marked: Vec<String>) {
+        self.marked = marked;
     }
 
     pub fn usage(&self) -> (usize, u64) {
@@ -423,7 +435,7 @@ impl HistoryView {
             root: self.root.clone(),
             collection: self.collection.clone(),
             environment: e.environment.clone(),
-            marked_secret: Vec::new(),
+            marked_secret: self.marked.clone(),
         };
         let command = cli_command(&target_of(e), &ctx, &[]);
         cx.write_to_clipboard(ClipboardItem::new_string(command));
