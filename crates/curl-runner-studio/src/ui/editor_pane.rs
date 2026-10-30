@@ -44,6 +44,18 @@ fn count_parts(errors: usize, warnings: usize) -> Vec<(Severity, String)> {
     parts
 }
 
+/// `items` with `sep()` between each pair: `2 errors · 1 warning`.
+fn with_separators<T>(items: impl IntoIterator<Item = T>, sep: impl Fn() -> T) -> Vec<T> {
+    let mut out = Vec::new();
+    for item in items {
+        if !out.is_empty() {
+            out.push(sep());
+        }
+        out.push(item);
+    }
+    out
+}
+
 /// The breadcrumb's save state.
 fn save_label(dirty: bool) -> &'static str {
     if dirty { "· Unsaved" } else { "· Saved" }
@@ -249,7 +261,26 @@ impl Workspace {
                         .text_color(super::diagnostics_view::severity_color(severity))
                         .child(severity_icon(severity, 13.))
                         .child(label)
+                        .into_any_element()
                 });
+        let failures = self.last_run_failures(&doc.rel_path).map(|label| {
+            div()
+                .id("breadcrumb-run")
+                .role(Role::Label)
+                .test_support()
+                .aria_label(label.clone())
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .text_color(color("danger"))
+                .child(glyph(icons::CROSS).size(px(12.)).flex_none())
+                .child(label)
+                .into_any_element()
+        });
+        // `2 errors · 1 warning · …`, then `· Saved`.
+        let trail = with_separators(counts.chain(failures), || {
+            div().child("·").into_any_element()
+        });
         div()
             .flex()
             .flex_none()
@@ -269,20 +300,7 @@ impl Workspace {
                 sep.into_iter().chain(std::iter::once(part))
             }))
             .child(div().flex_1())
-            .children(counts)
-            .children(self.last_run_failures(&doc.rel_path).map(|label| {
-                div()
-                    .id("breadcrumb-run")
-                    .role(Role::Label)
-                    .test_support()
-                    .aria_label(label.clone())
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .text_color(color("danger"))
-                    .child(glyph(icons::CROSS).size(px(12.)).flex_none())
-                    .child(label)
-            }))
+            .children(trail)
             .child(save_label(doc.is_dirty()))
     }
 }
@@ -490,7 +508,7 @@ fn render_nothing_open() -> impl IntoElement {
 
 #[cfg(test)]
 mod tests {
-    use super::{breadcrumb, count_label, count_parts, save_label};
+    use super::{breadcrumb, count_label, count_parts, save_label, with_separators};
     use curl_runner_core::lint::Severity;
     use std::path::Path;
 
@@ -509,6 +527,17 @@ mod tests {
         );
         assert_eq!(count_parts(1, 0), [(Severity::Error, "1 error".into())]);
         assert_eq!(count_parts(0, 0), []);
+    }
+
+    #[test]
+    fn counts_read_with_a_dot_between() {
+        let parts = count_parts(2, 1).into_iter().map(|(_, l)| l);
+        assert_eq!(
+            with_separators(parts, || "·".to_string()).join(" "),
+            "2 errors · 1 warning"
+        );
+        assert_eq!(with_separators(["one"], || "·"), ["one"]);
+        assert!(with_separators(Vec::<&str>::new(), || "·").is_empty());
     }
 
     #[test]

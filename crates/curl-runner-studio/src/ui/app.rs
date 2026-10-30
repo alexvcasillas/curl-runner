@@ -321,7 +321,7 @@ pub fn run() {
         let folder = dev_env("CURL_RUNNER_STUDIO_FOLDER")
             .or_else(|| store.last_folder().filter(|_| reopen))
             .filter(|p| p.is_dir());
-        let file = dev_env("CURL_RUNNER_STUDIO_OPEN");
+        let file = dev_env("CURL_RUNNER_STUDIO_OPEN").and_then(inside_collection);
         let show = dev_string("CURL_RUNNER_STUDIO_SHOW");
         let run = dev_string("CURL_RUNNER_STUDIO_RUN");
         let line = dev_string("CURL_RUNNER_STUDIO_LINE").and_then(|l| l.parse::<u32>().ok());
@@ -630,6 +630,19 @@ fn dev_env(name: &str) -> Option<PathBuf> {
     dev_value(std::env::var_os(name), DEV_HOOKS).map(PathBuf::from)
 }
 
+/// `CURL_RUNNER_STUDIO_OPEN` names a file inside the collection: a path
+/// that is absolute or climbs out with `..` is ignored.
+fn inside_collection(rel: PathBuf) -> Option<PathBuf> {
+    use std::path::Component;
+    let ok = rel
+        .components()
+        .all(|c| matches!(c, Component::Normal(_) | Component::CurDir));
+    if !ok {
+        log::warn!("CURL_RUNNER_STUDIO_OPEN must be inside the collection; ignored");
+    }
+    ok.then_some(rel)
+}
+
 fn dev_string(name: &str) -> Option<String> {
     dev_env(name).map(|p| p.to_string_lossy().into_owned())
 }
@@ -856,6 +869,17 @@ mod tests {
             dev_value(Some("a.yaml".into()), true),
             Some("a.yaml".into())
         );
+    }
+
+    #[test]
+    fn dev_open_stays_inside_the_collection() {
+        use std::path::PathBuf;
+        let inside = |p: &str| super::inside_collection(PathBuf::from(p));
+        assert_eq!(inside("rates/get.yaml"), Some("rates/get.yaml".into()));
+        assert_eq!(inside("./a.yaml"), Some("./a.yaml".into()));
+        for bad in ["/etc/passwd", "../x.yaml", "a/../../x.yaml"] {
+            assert_eq!(inside(bad), None, "{bad}");
+        }
     }
 
     #[test]
