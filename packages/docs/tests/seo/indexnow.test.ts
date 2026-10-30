@@ -81,7 +81,9 @@ describe('indexnow', () => {
 
   it('posts the payload as JSON', async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 202 }));
-    await expect(submit([`${SITE_URL}/docs`], fetchImpl)).resolves.toBe(202);
+    await expect(submit([`${SITE_URL}/docs`], fetchImpl as unknown as typeof fetch)).resolves.toBe(
+      202,
+    );
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(ENDPOINT);
     expect(init.method).toBe('POST');
@@ -90,6 +92,8 @@ describe('indexnow', () => {
 
   it('throws on an error answer', async () => {
     const fetchImpl = vi.fn(async () => new Response('Invalid key', { status: 403 }));
-    await expect(submit([`${SITE_URL}/docs`], fetchImpl)).rejects.toThrow('403: Invalid key');
+    await expect(
+      submit([`${SITE_URL}/docs`], fetchImpl as unknown as typeof fetch),
+    ).rejects.toThrow('403: Invalid key');
   });
 });
