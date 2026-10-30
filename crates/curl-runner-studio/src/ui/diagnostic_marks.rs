@@ -28,6 +28,9 @@ pub(super) struct LineMark {
     pub severity: Severity,
     /// The inline hint: the first diagnostic on the line.
     pub ghost: (String, Severity),
+    /// A failed check of the last run (`result_marks`), not a diagnostic:
+    /// a cross in the gutter.
+    pub failed_check: bool,
 }
 
 /// One [`LineMark`] per line holding a diagnostic start, in line order.
@@ -50,6 +53,7 @@ pub(super) fn line_marks(text: &str, diagnostics: &[StudioDiagnostic]) -> Vec<Li
                 end: text[start..].find('\n').map_or(text.len(), |i| start + i),
                 severity: d.severity,
                 ghost: (ghost_text(&d.message).to_string(), d.severity),
+                failed_check: false,
             }),
         }
     }
@@ -137,15 +141,28 @@ struct Placed {
 /// call it from a `canvas` placed after the editor, so `range_to_bounds`
 /// and `input_bounds` read the layout the editor just painted. Lines
 /// scrolled out or folded away have no bounds and are skipped. The line
-/// `hide_ghost` (its popover is open) gets no inline hint.
+/// `hide_ghost` (its popover is open) gets no inline hint. `checks` are the
+/// last run's failed-check lines (`result_marks`), for a text of
+/// `total_lines`; a line with a diagnostic shows the diagnostic.
 pub(super) fn paint_marks(
     editor: &Entity<EditorState>,
     marks: &Marks,
+    checks: &[LineMark],
+    total_lines: usize,
     hide_ghost: Option<u32>,
     window: &mut Window,
     cx: &mut App,
 ) {
-    if marks.lines.is_empty() {
+    let lines: Vec<&LineMark> = marks
+        .lines
+        .iter()
+        .chain(
+            checks
+                .iter()
+                .filter(|c| !marks.lines.iter().any(|m| m.line == c.line)),
+        )
+        .collect();
+    if lines.is_empty() {
         return;
     }
     let (line_height, input, placed, squiggles) = {
@@ -154,8 +171,7 @@ pub(super) fn paint_marks(
             return;
         };
         let cursor_line = state.cursor_position().line;
-        let placed: Vec<Option<Placed>> = marks
-            .lines
+        let placed: Vec<Option<Placed>> = lines
             .iter()
             .map(|m| {
                 let start = state.range_to_bounds(&(m.start..m.start))?;
@@ -175,7 +191,7 @@ pub(super) fn paint_marks(
         (line_height, state.input_bounds(), placed, squiggles)
     };
     let mono = font(mono_font());
-    let digits = number_digits(marks.total_lines);
+    let digits = number_digits(marks.total_lines.max(total_lines));
     let number_width = window
         .text_system()
         .shape_line(
@@ -192,7 +208,7 @@ pub(super) fn paint_marks(
     );
 
     window.with_content_mask(Some(ContentMask { bounds: input }), |window| {
-        for (m, p) in marks.lines.iter().zip(&placed) {
+        for (m, p) in lines.iter().zip(&placed) {
             let Some(p) = p else { continue };
             // The Kit's gutter cell (number and fold chevron), repainted.
             let under = if p.current { "surface-100" } else { "bg-100" };
@@ -235,7 +251,11 @@ pub(super) fn paint_marks(
                 ),
                 size(px(GUTTER_ICON), px(GUTTER_ICON)),
             );
-            let glyph = severity_glyph(m.severity);
+            let glyph = if m.failed_check {
+                icons::CROSS
+            } else {
+                severity_glyph(m.severity)
+            };
             window
                 .paint_svg(
                     icon,
@@ -264,7 +284,7 @@ pub(super) fn paint_marks(
             );
             window.paint_underline(origin, bounds.size.width.max(px(6.)), &style);
         }
-        for (m, p) in marks.lines.iter().zip(&placed) {
+        for (m, p) in lines.iter().zip(&placed) {
             let Some(p) = p else { continue };
             if hide_ghost == Some(m.line) {
                 continue;
@@ -329,6 +349,7 @@ mod tests {
                     end: 11,
                     severity: Severity::Error,
                     ghost: ("Unknown key \"b\"".into(), Severity::Warning),
+                    failed_check: false,
                 },
                 LineMark {
                     line: 2,
@@ -336,6 +357,7 @@ mod tests {
                     end: 16,
                     severity: Severity::Info,
                     ghost: ("info".into(), Severity::Info),
+                    failed_check: false,
                 },
             ]
         );

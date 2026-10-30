@@ -64,6 +64,13 @@ pub enum RunEvent {
         index: usize,
         name: String,
     },
+    /// The request as a curl command line (the CLI's dry-run output),
+    /// redacted.
+    Command {
+        group: usize,
+        index: usize,
+        command: String,
+    },
     Attempt {
         group: usize,
         index: usize,
@@ -445,6 +452,15 @@ impl EventSink for Sink {
         });
     }
 
+    fn on_command(&mut self, index: usize, _req: &RequestConfig, command: &str) {
+        let command = lock(&self.redactor).redact(command);
+        self.send(RunEvent::Command {
+            group: self.group,
+            index: self.at(index),
+            command,
+        });
+    }
+
     fn on_attempt(
         &mut self,
         index: usize,
@@ -675,6 +691,7 @@ mod tests {
                     "started"
                 }
                 RunEvent::RequestStarted { .. } => "request",
+                RunEvent::Command { .. } => "command",
                 RunEvent::Attempt { .. } => "attempt",
                 RunEvent::Result { .. } => "result",
                 RunEvent::Finished(_) => "finished",
@@ -684,8 +701,8 @@ mod tests {
         assert_eq!(
             kinds,
             [
-                "started", "request", "attempt", "result", "request", "attempt", "result",
-                "finished"
+                "started", "request", "command", "attempt", "result", "request", "command",
+                "attempt", "result", "finished"
             ]
         );
         let indexes: Vec<usize> = events
@@ -916,6 +933,48 @@ mod tests {
             assert!(!dbg.contains("opensesame42"), "{dbg}");
             assert!(!dbg.contains("dotenvvalue99"), "{dbg}");
         }
+    }
+
+    #[test]
+    fn command_is_sent_redacted() {
+        let srv = TestServer::start();
+        let d = tempfile::tempdir().unwrap();
+        let yaml = format!(
+            "requests:\n  - url: {0}/status/200\n  - url: {0}/echo\n    headers:\n      X-Key: ${{SECRET_KEY}}\n",
+            srv.base_url
+        );
+        fs::write(d.path().join("cmd.yaml"), yaml).unwrap();
+        let c = ctx(d.path());
+        let secrets = MemorySecrets::default();
+        secrets
+            .set(&c.service(), "SECRET_KEY", "opensesame42")
+            .unwrap();
+        let events = run_with(
+            d.path(),
+            RunTarget::File("cmd.yaml".into()),
+            None,
+            Arc::new(secrets),
+        );
+        let commands: Vec<(usize, &str)> = events
+            .iter()
+            .filter_map(|e| match e {
+                RunEvent::Command {
+                    group: 0,
+                    index,
+                    command,
+                } => Some((*index, command.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(commands.len(), 2, "{commands:?}");
+        assert_eq!(commands[1].0, 1);
+        assert!(commands[1].1.starts_with("curl "), "{}", commands[1].1);
+        assert!(
+            commands[1].1.contains("X-Key: [REDACTED]"),
+            "{}",
+            commands[1].1
+        );
+        assert!(!commands[1].1.contains("opensesame42"));
     }
 
     /// A store whose item search finds nothing (a failed Keychain search).

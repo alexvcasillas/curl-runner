@@ -186,7 +186,7 @@ fn covers(d: &StudioDiagnostic, range: &Range<usize>) -> bool {
 
 /// The smallest edit turning `old` into `new`: a byte range of `old` and
 /// its replacement, so the editor keeps its undo history and cursor.
-fn minimal_edit<'a>(old: &str, new: &'a str) -> (Range<usize>, &'a str) {
+pub(super) fn minimal_edit<'a>(old: &str, new: &'a str) -> (Range<usize>, &'a str) {
     let mut start = old
         .bytes()
         .zip(new.bytes())

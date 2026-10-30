@@ -8,7 +8,10 @@
 //! and [`DIFF_MAX_LINES`].
 
 use curl_runner_core::executor::AttemptOutcome;
-use curl_runner_core::model::{ExecutionResult, HeaderValue, Json, Metrics, StatusExpect};
+use curl_runner_core::lint::spans::locate;
+use curl_runner_core::model::{
+    ExecutionResult, HeaderValue, Json, Metrics, RetryConfig, StatusExpect,
+};
 use curl_runner_core::validate::{
     get_array_value, is_array_selector, is_regex_pattern, validate_body_properties,
     validate_headers, validate_range_pattern, validate_status,
@@ -16,6 +19,7 @@ use curl_runner_core::validate::{
 use indexmap::IndexMap;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::ops::Range;
 
 /// The body text cap, in bytes.
 pub const BODY_LIMIT: usize = 256 * 1024;
@@ -694,6 +698,69 @@ pub fn status_line(result: &ExecutionResult) -> String {
     }
 }
 
+/// The YAML path (validator syntax, under `expect`) a check label came from:
+/// `body.amount` is `body.amount`, `header.X` is `headers.X`.
+fn expect_path(label: &str) -> String {
+    match label.strip_prefix("header.") {
+        Some(name) => format!("headers.{name}"),
+        None => label.to_string(),
+    }
+}
+
+/// Inline `got 2000` hints for the failed checks of the request at
+/// `request_index` (`None`: the file's single `request`), one per failed
+/// check whose expectation is in `text`: the expected value's byte range
+/// and the hint.
+pub fn expect_hints(
+    text: &str,
+    request_index: Option<usize>,
+    checks: &[Check],
+) -> Vec<(Range<usize>, String)> {
+    let bases: Vec<String> = match request_index {
+        None => vec!["request".into()],
+        Some(i) => vec![
+            format!("requests[{i}]"),
+            format!("collection.requests[{i}]"),
+        ],
+    };
+    let Some(base) = bases.into_iter().find(|b| locate(text, b).is_some()) else {
+        return Vec::new();
+    };
+    checks
+        .iter()
+        .filter(|c| !c.passed)
+        .filter_map(|c| {
+            let spans = locate(text, &format!("{base}.expect.{}", expect_path(&c.label)))?;
+            let got = c.actual.as_deref().unwrap_or("nothing");
+            Some((spans.value, format!("got {got}")))
+        })
+        .collect()
+}
+
+/// `2`, `1.5`: a backoff factor as written.
+fn factor(f: f64) -> String {
+    if f.fract() == 0.0 && f.abs() < 1e15 {
+        format!("{}", f as i64)
+    } else {
+        f.to_string()
+    }
+}
+
+/// `count 3 · delay 1000 · backoff ×2`, the parts the request sets; `None`
+/// without a retry.
+pub fn retry_line(retry: Option<&RetryConfig>) -> Option<String> {
+    let r = retry?;
+    let parts: Vec<String> = [
+        r.count.map(|c| format!("count {c}")),
+        r.delay.map(|d| format!("delay {d}")),
+        r.backoff.map(|b| format!("backoff ×{}", factor(b))),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -868,6 +935,103 @@ mod tests {
         assert_eq!(rows[2].wait_ms, None);
         let ok = attempt_rows(&[(1, outcome(200, 1.0))], &[], 0, false);
         assert_eq!(ok[0].note, "Response received");
+    }
+
+    /// The FailedRequest board's file.
+    const BOARD_YAML: &str = "# Fetch the charge created in create-charge
+request:
+  name: Get charge
+  url: ${BASE_URL}/v1/charges/${CHARGE_ID}
+  method: GET
+  headers:
+    Authorization: Bearer ${API_TOKEN}
+  retry:
+    count: 3
+    delay: 1000
+    backoff: 2
+  expect:
+    status: 200
+    body:
+      id: \"^ch_\"
+      amount: 2500
+      status: succeeded
+";
+
+    fn check(label: &str, actual: Option<&str>, passed: bool) -> Check {
+        Check {
+            label: label.into(),
+            expected: String::new(),
+            actual: actual.map(str::to_string),
+            passed,
+        }
+    }
+
+    fn line_of(text: &str, at: usize) -> usize {
+        text[..at].matches('\n').count() + 1
+    }
+
+    #[test]
+    fn expect_hints_point_at_failed_leaves() {
+        let checks = [
+            check("status", Some("200"), true),
+            check("body.id", Some("\"ch_1\""), true),
+            check("body.amount", Some("2000"), false),
+        ];
+        let hints = expect_hints(BOARD_YAML, None, &checks);
+        assert_eq!(hints.len(), 1);
+        let (range, text) = &hints[0];
+        assert_eq!(line_of(BOARD_YAML, range.start), 16);
+        assert_eq!(&BOARD_YAML[range.clone()], "2500");
+        assert_eq!(text, "got 2000");
+    }
+
+    #[test]
+    fn expect_hints_follow_the_request_index_and_labels() {
+        let yaml = "requests:\n  - url: a\n    expect:\n      status: 200\n  - url: b\n    expect:\n      status: 201\n      headers:\n        x-id: \"1\"\n      body:\n        items:\n          - 1\n";
+        let checks = [
+            check("status", Some("503"), false),
+            check("header.x-id", None, false),
+            check("body.items[0]", Some("[2 items]"), false),
+            check("responseTime", None, false),
+        ];
+        let hints = expect_hints(yaml, Some(1), &checks);
+        let found: Vec<(usize, &str)> = hints
+            .iter()
+            .map(|(r, t)| (line_of(yaml, r.start), t.as_str()))
+            .collect();
+        assert_eq!(
+            found,
+            [(7, "got 503"), (9, "got nothing"), (12, "got [2 items]")]
+        );
+        assert!(expect_hints(yaml, Some(5), &checks).is_empty());
+        assert!(expect_hints("[", None, &checks).is_empty());
+        let nested = "collection:\n  requests:\n    - url: a\n      expect:\n        status: 200\n";
+        assert_eq!(expect_hints(nested, Some(0), &checks[..1]).len(), 1);
+    }
+
+    #[test]
+    fn retry_line_reads_like_the_board() {
+        let r = RetryConfig {
+            count: Some(3),
+            delay: Some(1000),
+            backoff: Some(2.0),
+            ..Default::default()
+        };
+        assert_eq!(
+            retry_line(Some(&r)).as_deref(),
+            Some("count 3 · delay 1000 · backoff ×2")
+        );
+        let half = RetryConfig {
+            count: Some(2),
+            backoff: Some(1.5),
+            ..Default::default()
+        };
+        assert_eq!(
+            retry_line(Some(&half)).as_deref(),
+            Some("count 2 · backoff ×1.5")
+        );
+        assert_eq!(retry_line(Some(&RetryConfig::default())), None);
+        assert_eq!(retry_line(None), None);
     }
 
     #[test]

@@ -9,6 +9,7 @@ use crate::model::environments::{ResolvedVar, VarSource};
 use gpui_kit::component::input::{EditorState, Position};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
+use std::collections::HashMap;
 
 pub const STATUS_BAR_HEIGHT: f32 = 28.;
 
@@ -26,32 +27,51 @@ pub struct StatusBar {
 }
 
 /// The active file's resolved variables grouped by source, in first-use
-/// order: `BASE_URL · API_TOKEN from local keychain`. Names without a value
-/// are left out (they are `missing`, counted apart); so is everything when
+/// order: `BASE_URL · API_TOKEN from local keychain`. A captured value whose
+/// request is known reads `CHARGE_ID captured from create-charge`
+/// (`captured_by`: value name to request name). Names without a value are
+/// left out (they are `missing`, counted apart); so is everything when
 /// nothing is referenced.
-pub fn source_groups(vars: &[ResolvedVar], missing: &[String]) -> Vec<SharedString> {
+pub fn source_groups(
+    vars: &[ResolvedVar],
+    missing: &[String],
+    captured_by: &HashMap<String, String>,
+) -> Vec<SharedString> {
+    // (the text after the names, the names)
     let mut groups: Vec<(String, Vec<&str>)> = Vec::new();
     for v in vars {
         if missing.contains(&v.name) {
             continue;
         }
         let Some(source) = &v.source else { continue };
-        let from = match source {
-            VarSource::Keychain => "local keychain".to_string(),
-            VarSource::Process => "shell environment".to_string(),
-            VarSource::Captured => "last run".to_string(),
-            VarSource::EnvFile(p) => p
-                .file_name()
-                .map_or_else(|| p.display().to_string(), |n| n.to_string_lossy().into()),
+        let mut name = v.name.as_str();
+        let tail = match source {
+            VarSource::Keychain => "from local keychain".to_string(),
+            VarSource::Process => "from shell environment".to_string(),
+            VarSource::Captured => {
+                let key = name.strip_prefix("store.").unwrap_or(name);
+                match captured_by.get(key) {
+                    Some(by) => {
+                        name = key;
+                        format!("captured from {by}")
+                    }
+                    None => "from last run".to_string(),
+                }
+            }
+            VarSource::EnvFile(p) => format!(
+                "from {}",
+                p.file_name()
+                    .map_or_else(|| p.display().to_string(), |n| n.to_string_lossy().into())
+            ),
         };
-        match groups.iter_mut().find(|(f, _)| *f == from) {
-            Some((_, names)) => names.push(&v.name),
-            None => groups.push((from, vec![&v.name])),
+        match groups.iter_mut().find(|(t, _)| *t == tail) {
+            Some((_, names)) => names.push(name),
+            None => groups.push((tail, vec![name])),
         }
     }
     groups
         .into_iter()
-        .map(|(from, names)| format!("{} from {from}", names.join(" · ")).into())
+        .map(|(tail, names)| format!("{} {tail}", names.join(" · ")).into())
         .collect()
 }
 
@@ -142,7 +162,7 @@ impl Render for StatusBar {
 
 #[cfg(test)]
 mod tests {
-    use super::{Position, cursor_label, source_groups};
+    use super::{HashMap, Position, cursor_label, source_groups};
     use crate::model::environments::{ResolvedVar, VarSource};
 
     fn var(name: &str, source: Option<VarSource>) -> ResolvedVar {
@@ -163,7 +183,7 @@ mod tests {
             var("store.id", Some(VarSource::Captured)),
             var("ACCOUNT_ID", None),
         ];
-        let groups = source_groups(&vars, &["ACCOUNT_ID".into()]);
+        let groups = source_groups(&vars, &["ACCOUNT_ID".into()], &HashMap::new());
         assert_eq!(
             groups,
             [
@@ -172,7 +192,21 @@ mod tests {
                 "store.id from last run",
             ]
         );
-        assert!(source_groups(&[], &[]).is_empty());
+        assert!(source_groups(&[], &[], &HashMap::new()).is_empty());
+        let by = HashMap::from([("CHARGE_ID".to_string(), "create-charge".to_string())]);
+        let vars = [
+            var("BASE_URL", Some(VarSource::Keychain)),
+            var("store.CHARGE_ID", Some(VarSource::Captured)),
+            var("store.other", Some(VarSource::Captured)),
+        ];
+        assert_eq!(
+            source_groups(&vars, &[], &by),
+            [
+                "BASE_URL from local keychain",
+                "CHARGE_ID captured from create-charge",
+                "store.other from last run",
+            ]
+        );
     }
 
     #[test]

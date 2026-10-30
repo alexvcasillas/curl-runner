@@ -4,6 +4,7 @@
 use super::color;
 use super::diagnostic_marks::{EDITOR_TEXT, paint_marks};
 use super::diagnostic_popover::severity_icon;
+use super::icons::{self, glyph};
 use super::sidebar::method_badge;
 use super::workspace::Workspace;
 use crate::model::diagnostics::counts;
@@ -81,10 +82,22 @@ impl Workspace {
             .line_height(px(18.));
         // Painted after the editor, from the layout it just painted.
         let marks = self.tabs[active].diagnostics.marks.clone();
+        let results = &self.tabs[active].results;
+        let (checks, total_lines) = (results.line_marks(), results.total_lines);
         let hide_ghost = self.hovered_line();
         let overlay = canvas(
             |_, _, _| {},
-            move |_, _, window, cx| paint_marks(&state, &marks.borrow(), hide_ghost, window, cx),
+            move |_, _, window, cx| {
+                paint_marks(
+                    &state,
+                    &marks.borrow(),
+                    &checks,
+                    total_lines,
+                    hide_ghost,
+                    window,
+                    cx,
+                )
+            },
         )
         .absolute()
         .size_full();
@@ -240,6 +253,19 @@ impl Workspace {
             }))
             .child(div().flex_1())
             .children(counts)
+            .children(self.last_run_failures(&doc.rel_path).map(|label| {
+                div()
+                    .id("breadcrumb-run")
+                    .role(Role::Label)
+                    .test_support()
+                    .aria_label(label.clone())
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .text_color(color("danger"))
+                    .child(glyph(icons::CROSS).size(px(12.)).flex_none())
+                    .child(label)
+            }))
             .child(save_label(doc.is_dirty()))
     }
 }

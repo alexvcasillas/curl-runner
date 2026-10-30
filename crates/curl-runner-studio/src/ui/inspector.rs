@@ -8,8 +8,10 @@ use super::runs::FileRun;
 use super::workspace::Workspace;
 use crate::model::collection::{request_at_line, request_lines};
 use crate::model::result_view::{
-    AttemptRow, Check, attempt_rows, checks, display_body, status_line, timing_segments,
+    AttemptRow, Check, DiffKind, attempt_rows, body_diff, checks, display_body, retry_line,
+    status_line, timing_segments,
 };
+use crate::model::run::RunTarget;
 use chrono::{DateTime, Local};
 use curl_runner_core::model::{ExecutionResult, HeaderValue, Json};
 use gpui_kit::component::spinner::Spinner;
@@ -255,6 +257,9 @@ pub struct ResultView {
     /// `201 Created`; `No response` or `Skipped` without a status.
     pub status: String,
     pub ok: bool,
+    /// The response itself succeeded (below 400), whatever the checks say:
+    /// the status pill's color.
+    pub http_ok: bool,
     pub duration: Option<String>,
     pub size: Option<String>,
     pub checks: Vec<Check>,
@@ -265,6 +270,78 @@ pub struct ResultView {
     pub timing: Vec<(&'static str, f64)>,
     pub error: Option<String>,
     pub request: SentRequest,
+    /// The body against `expect.body`, when a body check failed.
+    pub diff: Option<DiffView>,
+    /// `count 3 · delay 1000 · backoff ×2`.
+    pub retry: Option<String>,
+}
+
+/// One line of the body diff, ready to draw.
+pub struct DiffRow {
+    pub kind: DiffKind,
+    /// The line as pretty-printed.
+    pub text: SharedString,
+    /// Token ranges of `text`.
+    pub tokens: Vec<(Range<usize>, JsonTok)>,
+    /// An added or removed line as the Diff view shows it: `+` or `-` in
+    /// the indent's first column.
+    pub marked: SharedString,
+}
+
+pub struct DiffView {
+    pub rows: Vec<DiffRow>,
+    pub truncated: bool,
+}
+
+/// `text` with `marker` and a space over its first two columns of indent.
+pub fn marked_line(marker: char, text: &str) -> String {
+    let rest = text.strip_prefix("  ").unwrap_or(text);
+    format!("{marker} {rest}")
+}
+
+impl DiffView {
+    fn new(expected: &Json, actual: &Json) -> Self {
+        let diff = body_diff(expected, actual);
+        let rows = diff
+            .lines
+            .into_iter()
+            .map(|l| {
+                let marked = match l.kind {
+                    DiffKind::Same => String::new(),
+                    DiffKind::Added => marked_line('+', &l.text),
+                    DiffKind::Removed => marked_line('-', &l.text),
+                };
+                DiffRow {
+                    kind: l.kind,
+                    tokens: json_tokens(&l.text),
+                    text: l.text.into(),
+                    marked: marked.into(),
+                }
+            })
+            .collect();
+        DiffView {
+            rows,
+            truncated: diff.truncated,
+        }
+    }
+}
+
+/// `1.0 s`: a retry wait as the timeline shows it.
+pub fn format_wait(ms: u64) -> String {
+    format!("{:.1} s", ms as f64 / 1000.)
+}
+
+/// What Re-run runs: the one request of a multi-request file, else the
+/// file.
+pub fn rerun_target(file: &std::path::Path, index: usize, requests: usize) -> RunTarget {
+    if requests > 1 {
+        RunTarget::Request {
+            file: file.to_path_buf(),
+            index,
+        }
+    } else {
+        RunTarget::File(file.to_path_buf())
+    }
 }
 
 fn header_text(v: &HeaderValue) -> String {
@@ -314,9 +391,23 @@ impl ResultView {
             (None, _) => "No response".to_string(),
         };
         let req = &r.request;
+        let body_failed = checks
+            .iter()
+            .any(|c| !c.passed && c.label.starts_with("body"));
+        let diff = match (req.expect.as_ref().and_then(|e| e.body.as_ref()), &r.body) {
+            (Some(expected), Some(actual))
+                if body_failed && !matches!(actual, Json::String(_) | Json::Null) =>
+            {
+                Some(DiffView::new(expected, actual))
+            }
+            _ => None,
+        };
         ResultView {
             status,
             ok: r.success,
+            http_ok: r.status.is_some_and(|s| s < 400),
+            diff,
+            retry: retry_line(req.retry.as_ref()),
             duration: r.metrics.as_ref().map(|m| format_ms(m.duration)),
             size: r.metrics.as_ref().and_then(|m| m.size).map(format_bytes),
             passed,
@@ -377,6 +468,52 @@ impl Workspace {
         }
     }
 
+    /// The inspector's file and request, when a file is open.
+    fn inspected(&self) -> Option<(usize, usize)> {
+        let ix = self.state.active?;
+        Some((ix, self.tabs[ix].cursor_request))
+    }
+
+    /// Copies the inspector's request as the curl command it ran as.
+    pub(super) fn copy_as_curl(&mut self, cx: &mut Context<Self>) {
+        let Some((ix, index)) = self.inspected() else {
+            return;
+        };
+        let command = self
+            .runs
+            .last
+            .get(&self.state.open[ix].rel_path)
+            .and_then(|r| r.commands.get(&index));
+        if let Some(command) = command {
+            cx.write_to_clipboard(ClipboardItem::new_string(command.clone()));
+        }
+    }
+
+    /// Runs the inspector's request again, as it ran.
+    pub(super) fn rerun(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((ix, index)) = self.inspected() else {
+            return;
+        };
+        let file = self.state.open[ix].rel_path.clone();
+        let target = rerun_target(&file, index, self.tabs[ix].request_lines.len());
+        self.run(target, window, cx);
+    }
+
+    /// Failed checks across `file`'s last run, and whether any request
+    /// failed: the breadcrumb's `2 checks failed on last run`.
+    pub(super) fn last_run_failures(&self, file: &std::path::Path) -> Option<String> {
+        let run = self.runs.last.get(file)?;
+        let failed: usize = run.views.values().map(|v| v.checks.len() - v.passed).sum();
+        match failed {
+            0 if run.views.values().all(|v| v.ok) && run.load_error.is_none() => None,
+            0 => Some("Failed on last run".to_string()),
+            n => Some(format!(
+                "{} failed on last run",
+                plural(n, "check", "checks")
+            )),
+        }
+    }
+
     pub(super) fn render_inspector(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let aside = div()
             .id("inspector")
@@ -430,7 +567,7 @@ impl Workspace {
         }
         match run.and_then(|r| Some((r, r.views.get(&index)?))) {
             Some((run, view)) => aside
-                .child(self.render_result_header(run, index, view))
+                .child(self.render_result_header(run, index, view, cx))
                 .child(self.render_result_tabs(run, index, view, cx))
                 .child(self.render_result_body(run, index, view, cx)),
             None if self.runs.is_pending(file, index) => aside.child(centered(
@@ -464,22 +601,54 @@ impl Workspace {
     }
 
     /// Status pill, time and size, environment and age; then the checks and
-    /// attempts summary.
-    fn render_result_header(&self, run: &FileRun, index: usize, v: &ResultView) -> Div {
-        let (fg, bg, border) = if v.ok {
+    /// attempts summary. A failed result trades the environment and age for
+    /// Copy as curl and Re-run, and moves them to the summary line.
+    fn render_result_header(
+        &self,
+        run: &FileRun,
+        index: usize,
+        v: &ResultView,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let (fg, bg, border) = if v.ok || v.http_ok {
             ("success", "success-subtle", "success-border")
         } else {
             ("danger", "danger-subtle", "danger-border")
         };
-        let dot = || div().text_color(color("text-disabled")).child("·");
-        let mut facts = div().flex().items_center().gap(px(8.));
+        let attempts = run.attempt_count(index).max(1);
+        let dot = || {
+            div()
+                .flex_none()
+                .text_color(color("text-disabled"))
+                .child("·")
+        };
+        let mut facts = div()
+            .flex()
+            .flex_1()
+            .min_w_0()
+            .overflow_hidden()
+            .whitespace_nowrap()
+            .items_center()
+            .gap(px(8.));
+        let duration = v.duration.clone().map(|d| {
+            if attempts > 1 {
+                format!("{d} total")
+            } else {
+                d
+            }
+        });
         let mut first = true;
-        for fact in [v.duration.clone(), v.size.clone()].into_iter().flatten() {
+        for fact in [duration, v.size.clone()].into_iter().flatten() {
             if !first {
                 facts = facts.child(dot());
             }
             first = false;
-            facts = facts.child(div().text_color(color("text-secondary")).child(fact));
+            facts = facts.child(
+                div()
+                    .flex_none()
+                    .text_color(color("text-secondary"))
+                    .child(fact),
+            );
         }
         let all_passed = v.passed == v.checks.len();
         let checks_color = match (v.checks.is_empty(), all_passed) {
@@ -488,7 +657,38 @@ impl Workspace {
             (false, false) => color("danger"),
         };
         let summary = checks_summary(v.passed, v.checks.len());
-        let attempts = run.attempt_count(index).max(1);
+        let where_when = format!("{} · {}", env_label(&run.env), ago(run.at, Local::now()));
+        let where_when = move || {
+            div()
+                .flex_none()
+                .text_size(px(12.))
+                .text_color(color("text-secondary"))
+                .child(where_when.clone())
+        };
+        let actions = (!v.ok).then(|| {
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap(px(8.))
+                .when(run.commands.contains_key(&index), |d| {
+                    d.child(small_button(
+                        "inspector-copy-curl",
+                        icons::COPY,
+                        "Copy as curl",
+                        false,
+                        cx.listener(|this, _, _, cx| this.copy_as_curl(cx)),
+                    ))
+                })
+                .child(small_button(
+                    "inspector-rerun",
+                    icons::RERUN,
+                    "Re-run",
+                    true,
+                    cx.listener(|this, _, window, cx| this.rerun(window, cx)),
+                ))
+        });
+        let failed = actions.is_some();
         div()
             .flex()
             .flex_col()
@@ -510,7 +710,11 @@ impl Workspace {
                             .role(Role::Label)
                             .test_support()
                             .aria_label(v.status.clone())
-                            .flex_none()
+                            // A long status gives way to the buttons.
+                            .flex_shrink(1.)
+                            .min_w_0()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
                             .px(px(8.))
                             .py(px(2.))
                             .rounded_full()
@@ -524,18 +728,10 @@ impl Workspace {
                             .child(v.status.clone()),
                     )
                     .child(facts)
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .flex_none()
-                            .text_size(px(12.))
-                            .text_color(color("text-secondary"))
-                            .child(format!(
-                                "{} · {}",
-                                env_label(&run.env),
-                                ago(run.at, Local::now())
-                            )),
-                    ),
+                    .map(|row| match actions {
+                        Some(actions) => row.child(actions),
+                        None => row.child(where_when()),
+                    }),
             )
             .child(
                 div()
@@ -551,6 +747,7 @@ impl Workspace {
                             .test_support()
                             .aria_label(summary.clone())
                             .flex()
+                            .flex_none()
                             .items_center()
                             .gap(px(6.))
                             .text_color(checks_color)
@@ -568,7 +765,13 @@ impl Workspace {
                             .child(summary),
                     )
                     .child(dot())
-                    .child(plural(attempts, "attempt", "attempts")),
+                    .child(
+                        div()
+                            .flex_none()
+                            .when(attempts > 1, |d| d.text_color(color("warning")))
+                            .child(plural(attempts, "attempt", "attempts")),
+                    )
+                    .when(failed, |row| row.child(div().flex_1()).child(where_when())),
             )
             .children(missing_line(&self.missing).map(missing_note))
     }
@@ -588,20 +791,25 @@ impl Workspace {
             .flex()
             .flex_none()
             .items_end()
+            // Six tabs with counts can outgrow the 400px column.
+            .overflow_x_scroll()
             .h(px(40.))
             .px(px(8.))
             .border_b_1()
             .border_color(color("border-100"))
             .children(tabs.into_iter().map(|tab| {
-                let count = match tab {
-                    InspectorTab::Headers => Some(v.headers.len()),
-                    InspectorTab::Attempts => Some(attempts),
-                    _ => None,
+                let failed = v.checks.len() - v.passed;
+                let (count, count_color) = match tab {
+                    InspectorTab::Headers => (Some(v.headers.len()), "text-tertiary"),
+                    InspectorTab::Attempts => (Some(attempts), "text-tertiary"),
+                    InspectorTab::Checks => (Some(failed), "danger"),
+                    _ => (None, "text-tertiary"),
                 };
                 let selected = tab == current;
                 div()
                     .id(("inspector-tab", tab as usize))
                     .flex()
+                    .flex_none()
                     .items_center()
                     .gap(px(6.))
                     .h(px(32.))
@@ -623,7 +831,7 @@ impl Workspace {
                     .children(count.filter(|n| *n > 0).map(|n| {
                         div()
                             .text_size(px(11.))
-                            .text_color(color("text-tertiary"))
+                            .text_color(color(count_color))
                             .child(n.to_string())
                     }))
                     .on_click(cx.listener(move |this, _, _, cx| {
@@ -663,19 +871,28 @@ impl Workspace {
         match self.shown_tab(&visible_tabs(attempts)) {
             InspectorTab::Response => content
                 .child(render_body_card(v, cx))
-                .when(!v.checks.is_empty(), |c| c.child(render_checks(v, false)))
+                .when(!v.checks.is_empty(), |c| c.child(render_checks(v)))
                 .when(!v.timing.is_empty(), |c| c.child(render_timing(v))),
-            InspectorTab::Checks => content.child(if v.checks.is_empty() {
-                note("This request has no checks.").into_any_element()
-            } else {
-                render_checks(v, true).into_any_element()
-            }),
+            InspectorTab::Checks => {
+                let rows = timeline_rows(run, index, v);
+                content
+                    .child(if v.checks.is_empty() {
+                        note("This request has no checks.").into_any_element()
+                    } else {
+                        render_check_list(v).into_any_element()
+                    })
+                    .children(
+                        v.diff
+                            .as_ref()
+                            .map(|d| render_diff_card(d, self.body_raw, cx)),
+                    )
+                    .when(rows.len() > 1, |c| {
+                        c.child(render_timeline(&rows, v.retry.as_deref(), v.ok))
+                    })
+            }
             InspectorTab::Attempts => {
-                let rows = run.attempts.get(&index).map_or_else(Vec::new, |a| {
-                    let waits = run.waits.get(&index).cloned().unwrap_or_default();
-                    attempt_rows(a, &waits, v.checks.len() - v.passed, v.ok)
-                });
-                content.child(render_attempts(&rows))
+                let rows = timeline_rows(run, index, v);
+                content.child(render_timeline(&rows, v.retry.as_deref(), v.ok))
             }
             InspectorTab::Headers => content.child(if v.headers.is_empty() {
                 note("No response headers.").into_any_element()
@@ -916,8 +1133,8 @@ fn render_body_card(v: &ResultView, cx: &mut Context<Workspace>) -> impl IntoEle
         )
 }
 
-/// One row per check; `detail` adds expected and actual to failed ones.
-fn render_checks(v: &ResultView, detail: bool) -> impl IntoElement + use<> {
+/// One row per check, under the response body.
+fn render_checks(v: &ResultView) -> impl IntoElement + use<> {
     div()
         .flex()
         .flex_col()
@@ -929,14 +1146,7 @@ fn render_checks(v: &ResultView, detail: bool) -> impl IntoElement + use<> {
             } else {
                 (icons::CROSS, color("danger"))
             };
-            let right = if c.passed || !detail {
-                c.expected.clone()
-            } else {
-                match &c.actual {
-                    Some(actual) => format!("expected {} · got {actual}", c.expected),
-                    None => format!("expected {}", c.expected),
-                }
-            };
+            let right = c.expected.clone();
             div()
                 .flex()
                 .items_center()
@@ -1021,59 +1231,445 @@ fn render_timing(v: &ResultView) -> impl IntoElement + use<> {
         )
 }
 
-fn render_attempts(rows: &[AttemptRow]) -> impl IntoElement + use<> {
+/// `run`'s attempts at request `index`, as timeline rows.
+fn timeline_rows(run: &FileRun, index: usize, v: &ResultView) -> Vec<AttemptRow> {
+    run.attempts.get(&index).map_or_else(Vec::new, |a| {
+        let waits = run.waits.get(&index).cloned().unwrap_or_default();
+        attempt_rows(a, &waits, v.checks.len() - v.passed, v.ok)
+    })
+}
+
+/// The board's `.btn.sm`, outlined or (`primary`) filled.
+fn small_button(
+    id: &'static str,
+    icon: &'static str,
+    label: &'static str,
+    primary: bool,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    let (bg, fg, border) = if primary {
+        ("primary", "on-primary", "primary")
+    } else {
+        ("bg-100", "text-primary", "border-200")
+    };
+    div()
+        .id(id)
+        .on_click(on_click)
+        .role(Role::Button)
+        .test_support()
+        .aria_label(label)
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(px(8.))
+        .h(px(28.))
+        .px(px(10.))
+        .rounded(px(6.))
+        .border_1()
+        .border_color(color(border))
+        .bg(color(bg))
+        .text_size(px(12.))
+        .text_color(color(fg))
+        .when(primary, |b| {
+            b.font_weight(FontWeight::MEDIUM)
+                .hover(|s| s.bg(color("primary-hover")))
+        })
+        .when(!primary, |b| b.hover(|s| s.bg(color("surface-100"))))
+        .cursor_pointer()
+        .child(glyph(icon).size(px(13.)).flex_none())
+        .child(label)
+}
+
+/// The Checks tab: a compact row per passed check, a card with expected
+/// and actual per failed one.
+fn render_check_list(v: &ResultView) -> impl IntoElement + use<> {
+    let mono_row = || {
+        div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .h(px(30.))
+            .px(px(10.))
+    };
+    let label = |text: &str| {
+        div()
+            .flex_1()
+            .min_w_0()
+            .text_ellipsis()
+            .font_family(mono_font())
+            .text_size(px(12.))
+            .child(text.to_string())
+    };
     div()
         .flex()
         .flex_col()
-        .gap(px(2.))
-        .child(section("Attempts").pb(px(6.)))
-        .children(rows.iter().map(|r| {
-            let status = r.status.map_or_else(|| "—".to_string(), |s| s.to_string());
-            let ok = r.status.is_some_and(|s| s < 400);
+        .flex_none()
+        .gap(px(6.))
+        .children(v.checks.iter().map(move |c| {
+            if c.passed {
+                return mono_row()
+                    .child(
+                        glyph(icons::CHECK)
+                            .size(px(13.))
+                            .flex_none()
+                            .text_color(color("success")),
+                    )
+                    .child(label(&c.label))
+                    .child(
+                        div()
+                            .flex_none()
+                            .max_w(px(200.))
+                            .text_ellipsis()
+                            .font_family(mono_font())
+                            .text_size(px(12.))
+                            .text_color(color("text-secondary"))
+                            .child(c.expected.clone()),
+                    )
+                    .into_any_element();
+            }
+            let line = |name: &'static str, value: String, tone: &str| {
+                div()
+                    .flex()
+                    .px(px(10.))
+                    .bg(color(tone).opacity(0.1))
+                    .text_color(color(tone))
+                    .child(
+                        div()
+                            .flex_none()
+                            .w(px(70.))
+                            .text_color(color("text-tertiary"))
+                            .child(name),
+                    )
+                    .child(div().flex_1().min_w_0().child(value))
+            };
+            let verdict = if c.actual.is_some() {
+                "mismatch"
+            } else {
+                "missing"
+            };
             div()
-                .flex()
-                .flex_col()
-                .gap(px(2.))
-                .py(px(6.))
+                .id(SharedString::from(format!("check-{}", c.label)))
+                .role(Role::Group)
+                .test_support()
+                .aria_label(format!("{} {verdict}", c.label))
+                .flex_none()
+                .border_1()
+                .border_color(color("danger-border"))
+                .rounded(px(6.))
+                .overflow_hidden()
                 .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
+                    mono_row()
+                        .bg(color("danger-subtle"))
                         .child(
-                            div()
-                                .w(px(64.))
-                                .text_color(color("text-secondary"))
-                                .child(format!("Attempt {}", r.attempt)),
+                            glyph(icons::CROSS)
+                                .size(px(13.))
+                                .flex_none()
+                                .text_color(color("danger")),
                         )
+                        .child(label(&c.label))
                         .child(
                             div()
-                                .font_family(mono_font())
+                                .flex_none()
                                 .text_size(px(12.))
-                                .text_color(color(if ok { "success" } else { "danger" }))
-                                .child(status),
-                        )
-                        .child(div().flex_1())
-                        .child(
-                            div()
-                                .text_size(px(12.))
-                                .text_color(color("text-secondary"))
-                                .child(format_ms(r.duration_ms)),
+                                .text_color(color("danger"))
+                                .child(verdict),
                         ),
                 )
                 .child(
                     div()
+                        .font_family(mono_font())
                         .text_size(px(12.))
-                        .text_color(color("text-secondary"))
-                        .child(r.note.clone()),
+                        .line_height(px(22.))
+                        .child(line("expected", c.expected.clone(), "success"))
+                        .child(line(
+                            "actual",
+                            c.actual.clone().unwrap_or_else(|| "nothing".into()),
+                            "danger",
+                        )),
                 )
-                .children(r.wait_ms.map(|w| {
-                    div()
-                        .text_size(px(12.))
-                        .text_color(color("text-tertiary"))
-                        .child(format!("Waited {}", format_ms(w as f64)))
-                }))
+                .into_any_element()
         }))
+}
+
+/// JSON text with the YAML theme's token colors.
+fn json_text(text: &SharedString, tokens: &[(Range<usize>, JsonTok)]) -> StyledText {
+    let styles = tokens
+        .iter()
+        .map(|(r, t)| {
+            let c = color(match t {
+                JsonTok::Key => "syntax-key",
+                JsonTok::String => "syntax-string",
+                JsonTok::Number => "syntax-number",
+                JsonTok::Punct => "syntax-punctuation",
+            });
+            let style = HighlightStyle {
+                color: Some(c),
+                ..Default::default()
+            };
+            (r.clone(), style)
+        })
+        .collect::<Vec<_>>();
+    StyledText::new(text.clone()).with_highlights(styles)
+}
+
+/// `Response body · diff against expected`, with the Diff | Raw switch.
+fn render_diff_card(
+    d: &DiffView,
+    raw: bool,
+    cx: &mut Context<Workspace>,
+) -> impl IntoElement + use<> {
+    let segment = |id: &'static str, label: &'static str, on: bool| {
+        div()
+            .id(id)
+            .px(px(6.))
+            .rounded(px(3.))
+            .cursor_pointer()
+            .when(on, |s| {
+                s.bg(color("surface-300")).text_color(color("text-primary"))
+            })
+            .when(!on, |s| s.hover(|s| s.text_color(color("text-primary"))))
+            .child(label)
+    };
+    let header = div()
+        .flex()
+        .items_center()
+        .h(px(32.))
+        .px(px(12.))
+        .border_b_1()
+        .border_color(color("border-100"))
+        .bg(color("surface-raised"))
+        .text_size(px(12.))
+        .text_color(color("text-secondary"))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .text_ellipsis()
+                .child("Response body · diff against expected"),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .gap(px(2.))
+                .p(px(1.))
+                .rounded(px(5.))
+                .border_1()
+                .border_color(color("border-200"))
+                .child(
+                    segment("diff-mode-diff", "Diff", !raw).on_click(cx.listener(
+                        |this, _, _, cx| {
+                            this.body_raw = false;
+                            cx.notify();
+                        },
+                    )),
+                )
+                .child(segment("diff-mode-raw", "Raw", raw).on_click(cx.listener(
+                    |this, _, _, cx| {
+                        this.body_raw = true;
+                        cx.notify();
+                    },
+                ))),
+        );
+    let rows = d
+        .rows
+        .iter()
+        .filter(|r| !raw || r.kind != DiffKind::Added)
+        .map(|r| {
+            let row = div().flex().min_h(px(20.)).px(px(12.));
+            let (indent, rest) = if raw || r.kind == DiffKind::Same {
+                let at = r.text.len() - r.text.trim_start_matches(' ').len();
+                (r.text[..at].to_string(), None)
+            } else {
+                let at = r.marked.len() - r.marked[1..].trim_start_matches(' ').len();
+                (r.marked[..at].to_string(), Some(r.marked[at..].to_string()))
+            };
+            let row = row.when(!indent.is_empty(), |row| {
+                row.child(div().flex_none().whitespace_nowrap().child(indent.clone()))
+            });
+            match rest {
+                Some(rest) => {
+                    let tone = if r.kind == DiffKind::Added {
+                        "success"
+                    } else {
+                        "danger"
+                    };
+                    row.bg(color(tone).opacity(0.1))
+                        .text_color(color(tone))
+                        .child(div().flex_1().min_w_0().child(rest))
+                }
+                None => {
+                    let at = indent.len();
+                    let text: SharedString = r.text[at..].to_string().into();
+                    let tokens: Vec<(Range<usize>, JsonTok)> = r
+                        .tokens
+                        .iter()
+                        .filter(|(t, _)| t.start >= at)
+                        .map(|(t, k)| (t.start - at..t.end - at, *k))
+                        .collect();
+                    row.child(div().flex_1().min_w_0().child(json_text(&text, &tokens)))
+                }
+            }
+        });
+    div()
+        .id("inspector-diff")
+        .flex_none()
+        .border_1()
+        .border_color(color("border-100"))
+        .rounded(px(8.))
+        .overflow_hidden()
+        .child(header)
+        .child(
+            div()
+                .id("inspector-diff-body")
+                .py(px(6.))
+                .font_family(mono_font())
+                .text_size(px(12.))
+                .line_height(px(20.))
+                .text_color(color("syntax-punctuation"))
+                .max_h(px(BODY_MAX_HEIGHT))
+                .overflow_y_scroll()
+                .children(rows)
+                .when(d.truncated, |b| {
+                    b.child(
+                        div()
+                            .px(px(12.))
+                            .pt(px(8.))
+                            .font_family(super::app::ui_font())
+                            .text_color(color("text-tertiary"))
+                            .child("Showing first 256 KB"),
+                    )
+                }),
+        )
+}
+
+/// The retry timeline: a ring per attempt on a rail, the wait between.
+fn render_timeline(rows: &[AttemptRow], retry: Option<&str>, ok: bool) -> impl IntoElement + use<> {
+    const RING: f32 = 11.;
+    let last = rows.len().saturating_sub(1);
+    let rail = || div().w(px(1.)).bg(color("border-200"));
+    let mut list = div().flex().flex_col().gap(px(8.));
+    for (i, r) in rows.iter().enumerate() {
+        let status_ok = r.status.is_some_and(|s| s < 400);
+        // The last ring tells the result; earlier ones, their attempt.
+        let ring_ok = if i == last { ok } else { status_ok };
+        let title = format!("Attempt {}", r.attempt);
+        list = list.child(
+            div()
+                .relative()
+                .flex()
+                .gap(px(12.))
+                .pb(px(6.))
+                .when(i < last, |d| {
+                    d.child(rail().absolute().left(px(5.)).top(px(18.)).bottom(px(-6.)))
+                })
+                .child(
+                    div()
+                        .flex_none()
+                        .size(px(RING))
+                        .mt(px(4.))
+                        .rounded_full()
+                        .border_2()
+                        .border_color(color(if ring_ok { "success" } else { "danger" }))
+                        .bg(color("bg-100")),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .gap(px(2.))
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.))
+                                .child(
+                                    div()
+                                        .id(SharedString::from(format!("attempt-{}", r.attempt)))
+                                        .role(Role::Label)
+                                        .test_support()
+                                        .aria_label(title.clone())
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .child(title),
+                                )
+                                .child(
+                                    div()
+                                        .font_family(mono_font())
+                                        .text_size(px(12.))
+                                        .text_color(color(if status_ok {
+                                            "success"
+                                        } else {
+                                            "danger"
+                                        }))
+                                        .child(
+                                            r.status
+                                                .map_or_else(|| "—".to_string(), |s| s.to_string()),
+                                        ),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .text_color(color("text-secondary"))
+                                        .child(format_ms(r.duration_ms)),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .id(SharedString::from(format!("attempt-note-{}", r.attempt)))
+                                .role(Role::Label)
+                                .test_support()
+                                .aria_label(r.note.clone())
+                                .text_size(px(12.))
+                                .text_color(color("text-tertiary"))
+                                .child(r.note.clone()),
+                        ),
+                ),
+        );
+        if let Some(wait) = r.wait_ms {
+            list = list.child(
+                div()
+                    .flex()
+                    .gap(px(12.))
+                    .pb(px(6.))
+                    .text_size(px(11.))
+                    .text_color(color("text-tertiary"))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_none()
+                            .justify_center()
+                            .w(px(RING))
+                            .child(rail().h(px(14.))),
+                    )
+                    .child(
+                        div()
+                            .font_family(mono_font())
+                            .child(format!("wait {}", format_wait(wait))),
+                    ),
+            );
+        }
+    }
+    div()
+        .flex()
+        .flex_col()
+        .flex_none()
+        .gap(px(8.))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .child(section("Retry timeline").flex_1())
+                .children(retry.map(|line| {
+                    div()
+                        .font_family(mono_font())
+                        .text_size(px(11.))
+                        .text_color(color("text-tertiary"))
+                        .child(line.to_string())
+                })),
+        )
+        .child(list)
 }
 
 fn key_values(pairs: &[(String, String)]) -> impl IntoElement + use<> {
@@ -1163,8 +1759,9 @@ fn render_request(r: &SentRequest) -> impl IntoElement + use<> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ExecutionResult, InspectorTab, JsonTok, Local, ResultView, ago, body_lines, checks_summary,
-        env_label, format_bytes, format_ms, json_tokens, missing_line, visible_tabs,
+        DiffKind, ExecutionResult, InspectorTab, JsonTok, Local, ResultView, RunTarget, ago,
+        body_lines, checks_summary, env_label, format_bytes, format_ms, format_wait, json_tokens,
+        marked_line, missing_line, rerun_target, visible_tabs,
     };
     use chrono::TimeZone as _;
 
@@ -1311,5 +1908,73 @@ mod tests {
         assert_eq!(v.request.method, "POST");
         assert_eq!(v.request.headers[0].1, "Bearer ***");
         assert!(v.body.unwrap().text.contains("\"ch_1\""));
+    }
+
+    #[test]
+    fn diff_rows_mark_the_indent_like_the_board() {
+        assert_eq!(
+            marked_line('+', "  \"amount\": 2500,"),
+            "+ \"amount\": 2500,"
+        );
+        assert_eq!(marked_line('-', "    \"x\": 1"), "-   \"x\": 1");
+        assert_eq!(marked_line('+', "{"), "+ {");
+        assert_eq!(format_wait(1000), "1.0 s");
+        assert_eq!(format_wait(500), "0.5 s");
+    }
+
+    #[test]
+    fn rerun_runs_what_ran() {
+        let file = std::path::Path::new("charges/get.yaml");
+        assert_eq!(
+            rerun_target(file, 1, 3),
+            RunTarget::Request {
+                file: file.into(),
+                index: 1
+            }
+        );
+        assert_eq!(rerun_target(file, 0, 1), RunTarget::File(file.into()));
+    }
+
+    #[test]
+    fn failed_body_check_gets_a_diff_and_retry_line() {
+        let mut request = curl_runner_core::model::RequestConfig {
+            url: "https://api.example.com/charges/ch_1".into(),
+            ..Default::default()
+        };
+        request.expect = serde_json::from_value(
+            serde_json::json!({ "status": 200, "body": { "amount": 2500 } }),
+        )
+        .ok();
+        request.retry =
+            serde_json::from_value(serde_json::json!({ "count": 3, "delay": 1000, "backoff": 2 }))
+                .ok();
+        let mut r = ExecutionResult::new(request, false);
+        r.status = Some(200);
+        r.body = Some(serde_json::json!({ "id": "ch_1", "amount": 2000 }));
+        let v = ResultView::new(&r);
+        assert!(v.http_ok && !v.ok);
+        assert_eq!(
+            v.retry.as_deref(),
+            Some("count 3 · delay 1000 · backoff ×2")
+        );
+        let diff = v.diff.expect("a diff");
+        let changed: Vec<(DiffKind, &str)> = diff
+            .rows
+            .iter()
+            .filter(|r| r.kind != DiffKind::Same)
+            .map(|r| (r.kind, r.marked.as_ref()))
+            .collect();
+        assert_eq!(
+            changed,
+            [
+                (DiffKind::Added, "+ \"amount\": 2500"),
+                (DiffKind::Removed, "- \"amount\": 2000")
+            ]
+        );
+        r.body = Some(serde_json::json!({ "id": "ch_1", "amount": 2500 }));
+        assert!(
+            ResultView::new(&r).diff.is_none(),
+            "no diff when the body passes"
+        );
     }
 }

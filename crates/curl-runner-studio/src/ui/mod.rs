@@ -12,6 +12,7 @@ mod method_stack;
 mod new_dialog;
 mod palette;
 mod problems_panel;
+mod result_marks;
 mod run_button;
 mod runs;
 mod sidebar;

@@ -44,6 +44,11 @@ actions!(
         RunRequestUnderCursor,
         /// Save and run every file of the collection.
         RunCollection,
+        /// Copy the inspector's request as the curl command it ran as,
+        /// redacted.
+        CopyAsCurl,
+        /// Run the inspector's request again.
+        Rerun,
     ]
 );
 

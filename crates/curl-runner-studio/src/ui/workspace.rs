@@ -2,13 +2,14 @@
 //! and lays out title bar, sidebar, editor and status bar.
 
 use super::app::{
-    CloseTab, Import, NewCollection, NewRequest, OpenFolder, OpenPalette, QuickFix, RunActive,
-    RunCollection, RunRequestUnderCursor, SaveFile, ToggleProblems, ui_font,
+    CloseTab, CopyAsCurl, Import, NewCollection, NewRequest, OpenFolder, OpenPalette, QuickFix,
+    Rerun, RunActive, RunCollection, RunRequestUnderCursor, SaveFile, ToggleProblems, ui_font,
 };
 use super::diagnostic_popover::DiagnosticHover;
 use super::diagnostics_view::DiagnosticsView;
 use super::inspector::{InspectorTab, env_label};
 use super::problems_panel::PanelTab;
+use super::result_marks::ResultMarks;
 use super::runs::Runs;
 use super::state::{AppState, StateStore};
 use super::status_bar::{StatusBar, source_groups};
@@ -48,6 +49,8 @@ pub(super) struct EditorTab {
     pub request_lines: Vec<Option<u32>>,
     /// The request holding the cursor (zero-based), which the inspector shows.
     pub cursor_request: usize,
+    /// The last run's failed checks, shown on their `expect` lines.
+    pub results: ResultMarks,
     _changes: Subscription,
     _cursor: Subscription,
 }
@@ -92,6 +95,8 @@ pub struct Workspace {
     pub(super) environments: Vec<String>,
     pub(super) env_select: Option<Entity<SelectState<Vec<SharedString>>>>,
     pub(super) inspector_tab: InspectorTab,
+    /// The Checks tab's body panel shows the raw body, not the diff.
+    pub(super) body_raw: bool,
     /// The active file's variables, resolved for the picked environment.
     pub(super) vars: Vec<ResolvedVar>,
     /// Its references with no value anywhere.
@@ -153,6 +158,7 @@ impl Workspace {
             environments: Vec::new(),
             env_select: None,
             inspector_tab: InspectorTab::Response,
+            body_raw: false,
             vars: Vec::new(),
             missing: Vec::new(),
             secret_cache: CachedSecrets::new(secrets.clone()),
@@ -319,7 +325,13 @@ impl Workspace {
             .collection
             .as_ref()
             .map(|_| SharedString::from(env_label(&self.environment)));
-        let groups = source_groups(&vars, &missing);
+        let captured_by = self
+            .state
+            .active_document()
+            .and_then(|doc| self.runs.last.get(&doc.rel_path))
+            .map(|r| r.captured_by.clone())
+            .unwrap_or_default();
+        let groups = source_groups(&vars, &missing, &captured_by);
         let missing_count = missing.len();
         self.vars = vars;
         self.missing = missing;
@@ -354,6 +366,7 @@ impl Workspace {
                 self.tabs.push(tab);
                 self.show_diagnostics(ix, cx);
                 self.refresh_request_lines(ix, cx);
+                self.refresh_result_marks(ix);
             }
             Ok((_, false)) => {}
             Err(e) => {
@@ -390,6 +403,7 @@ impl Workspace {
             diagnostics,
             diagnose: Task::ready(()),
             cursor_request: 0,
+            results: ResultMarks::default(),
             _changes: changes,
             _cursor: cursor,
         }
@@ -409,6 +423,7 @@ impl Workspace {
         self.close_hover(cx);
         self.selected_problem = None;
         let doc = &mut self.state.open[ix];
+        self.tabs[ix].results.edited(&doc.text, &text);
         doc.set_buffer(text);
         if doc.is_stale() {
             let editor = editor.clone();
@@ -918,6 +933,8 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &RunCollection, window, cx| {
                 this.run(crate::model::run::RunTarget::Collection, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &CopyAsCurl, _, cx| this.copy_as_curl(cx)))
+            .on_action(cx.listener(|this, _: &Rerun, window, cx| this.rerun(window, cx)))
             .size_full()
             .flex()
             .flex_col()

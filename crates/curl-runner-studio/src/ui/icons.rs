@@ -62,6 +62,10 @@ pub const COPY: &str = glyph!(
     "1.4",
     r#"<rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M3 10.5V3.5A1 1 0 014 2.5h7"/>"#
 );
+pub const RERUN: &str = glyph!(
+    "1.5",
+    r#"<path d="M13 8a5 5 0 11-1.5-3.5"/><path d="M13 2.5v3h-3"/>"#
+);
 /// Filled, unlike the stroke glyphs.
 pub const PLAY: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="#000"><path d="M4 2.5v11l9-5.5z"/></svg>"##;
 
@@ -95,6 +99,7 @@ mod tests {
             CHECK,
             CROSS,
             COPY,
+            RERUN,
         ] {
             assert!(svg.starts_with("<svg ") && svg.ends_with("</svg>"), "{svg}");
             assert!(svg.contains(r#"viewBox="0 0 16 16""#));

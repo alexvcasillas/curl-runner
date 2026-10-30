@@ -2,6 +2,7 @@
 //! the drain that applies its events.
 
 use super::inspector::ResultView;
+use super::result_marks::ResultMarks;
 use super::run_button::run_state;
 use super::workspace::Workspace;
 use crate::model::environments::EnvCtx;
@@ -29,6 +30,12 @@ pub struct FileRun {
     pub views: BTreeMap<usize, ResultView>,
     pub attempts: HashMap<usize, Vec<(u32, AttemptOutcome)>>,
     pub waits: HashMap<usize, Vec<u64>>,
+    /// Each request as a curl command line, redacted (Copy as curl).
+    pub commands: HashMap<usize, String>,
+    /// Each request's name as the run announced it, redacted.
+    pub names: HashMap<usize, String>,
+    /// The request that saved each store value, by value name.
+    pub captured_by: HashMap<String, String>,
     /// The file's response store at the end of the run. Unredacted: it only
     /// seeds the next run, never the screen.
     pub store: Store,
@@ -39,12 +46,15 @@ pub struct FileRun {
 }
 
 impl FileRun {
-    fn new(env: &str) -> Self {
+    pub(super) fn new(env: &str) -> Self {
         FileRun {
             results: BTreeMap::new(),
             views: BTreeMap::new(),
             attempts: HashMap::new(),
             waits: HashMap::new(),
+            commands: HashMap::new(),
+            names: HashMap::new(),
+            captured_by: HashMap::new(),
             store: Store::default(),
             load_error: None,
             env: env.to_string(),
@@ -106,6 +116,9 @@ pub struct Runs {
     groups: Vec<PathBuf>,
     env: String,
     root: PathBuf,
+    /// The last request started, by group and index: the one a `Stored`
+    /// event belongs to.
+    last_started: Option<(usize, usize)>,
     /// Each file's `retry.count + 1` per request, read once per run.
     max_attempts: HashMap<PathBuf, Vec<u32>>,
     drain: Option<Task<()>>,
@@ -119,6 +132,7 @@ impl Runs {
         self.groups.clear();
         self.progress = None;
         self.max_attempts.clear();
+        self.last_started = None;
         self.env = env.to_string();
         self.root = root.to_path_buf();
     }
@@ -182,19 +196,35 @@ impl Runs {
                             run.views.remove(index);
                             run.attempts.remove(index);
                             run.waits.remove(index);
+                            run.commands.remove(index);
                             run.load_error = None;
                             run.env = self.env.clone();
                             run.at = Local::now();
                         }
                         _ => {
                             // The store carries over: it seeds the next run.
-                            let store = self.last.remove(file).map(|r| r.store).unwrap_or_default();
-                            self.last.insert(file.clone(), FileRun { store, ..fresh });
+                            let (store, captured_by) = self
+                                .last
+                                .remove(file)
+                                .map(|r| (r.store, r.captured_by))
+                                .unwrap_or_default();
+                            self.last.insert(
+                                file.clone(),
+                                FileRun {
+                                    store,
+                                    captured_by,
+                                    ..fresh
+                                },
+                            );
                         }
                     }
                 }
             }
-            RunEvent::RequestStarted { group, index, .. } => {
+            RunEvent::RequestStarted { group, index, name } => {
+                self.last_started = Some((group, index));
+                if let Some(run) = self.run_of(group) {
+                    run.names.insert(index, name);
+                }
                 if let Some(file) = self.groups.get(group).cloned() {
                     let max_attempts = self.max_attempts_of(&file, index);
                     self.progress = Some(Progress {
@@ -204,6 +234,15 @@ impl Runs {
                         done: 0,
                         max_attempts,
                     });
+                }
+            }
+            RunEvent::Command {
+                group,
+                index,
+                command,
+            } => {
+                if let Some(run) = self.run_of(group) {
+                    run.commands.insert(index, command);
                 }
             }
             RunEvent::Attempt {
@@ -247,7 +286,16 @@ impl Runs {
                 }
             }
             RunEvent::Stored { group, values } => {
+                let by = self
+                    .last_started
+                    .filter(|(g, _)| *g == group)
+                    .map(|(_, index)| index);
                 if let Some(run) = self.run_of(group) {
+                    if let Some(name) = by.and_then(|i| run.names.get(&i)).cloned() {
+                        for key in values.keys() {
+                            run.captured_by.insert(key.clone(), name.clone());
+                        }
+                    }
                     run.store.extend(values);
                 }
             }
@@ -404,6 +452,16 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Tab `ix`'s failed-check hints from its file's last run, which ran
+    /// the saved text the tab holds.
+    pub(super) fn refresh_result_marks(&mut self, ix: usize) {
+        let doc = &self.state.open[ix];
+        self.tabs[ix].results = match self.runs.last.get(&doc.rel_path) {
+            Some(run) if !doc.is_dirty() => ResultMarks::new(&doc.text, run),
+            _ => ResultMarks::default(),
+        };
+    }
+
     /// Runs the active file (Run, ⌘↵).
     pub(super) fn run_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(doc) = self.state.active_document() {
@@ -450,6 +508,9 @@ impl Workspace {
         if over {
             // Captured values may now resolve `${store.*}`.
             self.refresh_vars(cx);
+            for ix in 0..self.tabs.len() {
+                self.refresh_result_marks(ix);
+            }
         }
         if changed || over {
             cx.notify();
@@ -552,6 +613,41 @@ mod tests {
         assert_eq!(run.store, store);
         assert_eq!(run.env, "staging");
         assert!(r.active.is_none() && r.target.is_none());
+    }
+
+    #[test]
+    fn commands_and_capturers_are_kept_per_request() {
+        let mut r = runs(RunTarget::File("a.yaml".into()));
+        r.apply(started("a.yaml", 1));
+        r.apply(RunEvent::RequestStarted {
+            group: 0,
+            index: 0,
+            name: "create-charge".into(),
+        });
+        r.apply(RunEvent::Command {
+            group: 0,
+            index: 0,
+            command: "curl -X POST https://api.example.com".into(),
+        });
+        r.apply(RunEvent::Result {
+            group: 0,
+            index: 0,
+            result: result(201),
+        });
+        r.apply(RunEvent::Stored {
+            group: 0,
+            values: Store::from([("CHARGE_ID".to_string(), "ch_1".to_string())]),
+        });
+        r.apply(finished(vec![]));
+        let run = &r.last[Path::new("a.yaml")];
+        assert_eq!(run.commands[&0], "curl -X POST https://api.example.com");
+        assert_eq!(run.captured_by["CHARGE_ID"], "create-charge");
+        // A new file run keeps what seeds it, and who captured it.
+        r.target = Some(RunTarget::File("a.yaml".into()));
+        r.apply(started("a.yaml", 1));
+        let run = &r.last[Path::new("a.yaml")];
+        assert!(run.commands.is_empty());
+        assert_eq!(run.captured_by["CHARGE_ID"], "create-charge");
     }
 
     #[test]
@@ -824,6 +920,50 @@ mod ui_tests {
         run_file(cx, window, &ws, "ok.yaml");
         assert!(inspector_has(cx, window, "200 OK"), "status pill");
         assert!(inspector_has(cx, window, "1 of 1 checks passed"));
+    }
+
+    #[gpui_kit::test]
+    fn failed_run_shows_checks_and_timeline(cx: &mut TestAppContext) {
+        let calls = Arc::new(Mutex::new(0));
+        let count = calls.clone();
+        let srv = TestServer::with_handler(move |_| {
+            let mut n = count.lock().unwrap();
+            *n += 1;
+            if *n < 3 {
+                Response::from_data(b"{}".to_vec()).with_status_code(503)
+            } else {
+                Response::from_data(br#"{"id":"ch_1","amount":2000,"status":"pending"}"#.to_vec())
+                    .with_header("Content-Type", "application/json")
+            }
+        });
+        let yaml = format!(
+            "request:\n  url: {}/charge\n  retry:\n    count: 2\n    delay: 1\n  expect:\n    status: 200\n    body:\n      id: \"^ch_\"\n      amount: 2500\n      status: succeeded\n",
+            srv.base_url
+        );
+        let (_dir, window, ws) = open(cx, &[("charge.yaml", yaml)]);
+        run_file(cx, window, &ws, "charge.yaml");
+        ws.update(cx, |ws, _| {
+            ws.inspector_tab = super::super::inspector::InspectorTab::Checks
+        });
+        assert!(inspector_has(cx, window, "2 of 4 checks failed"));
+        assert!(inspector_has(cx, window, "body.amount mismatch"));
+        assert!(inspector_has(cx, window, "Attempt 3"));
+        assert!(inspector_has(
+            cx,
+            window,
+            "Response received · 2 checks failed — no retries left"
+        ));
+        assert!(inspector_has(cx, window, "Copy as curl"));
+        assert!(inspector_has(cx, window, "Re-run"));
+        ws.read_with(cx, |ws, _| {
+            let hints: Vec<&str> = ws.tabs[0]
+                .results
+                .hints
+                .iter()
+                .map(|h| h.text.as_str())
+                .collect();
+            assert_eq!(hints, ["got 2000", "got \"pending\""]);
+        });
     }
 
     fn tree_labels(cx: &mut TestAppContext, window: AnyWindowHandle, label: &str) -> usize {
