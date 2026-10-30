@@ -24,6 +24,8 @@ import { CHANGELOG_PATH, getReleaseDates, parseChangelog } from '@/lib/changelog
 
 const real = readFileSync(CHANGELOG_PATH, 'utf8');
 const headingCount = real.match(/^## \d+\.\d+\.\d+\s*$/gm)?.length ?? 0;
+/** The newest `## x.y.z` heading: read, not hardcoded, so releases don't break these tests. */
+const newest = real.match(/^## (\d+\.\d+\.\d+)\s*$/m)?.[1] ?? '';
 
 describe('parseChangelog on packages/cli/CHANGELOG.md', () => {
   const releases = parseChangelog(real);
@@ -34,11 +36,14 @@ describe('parseChangelog on packages/cli/CHANGELOG.md', () => {
     expect(releases.at(-1)?.version).toBe('1.0.1');
   });
 
+  it('lists the newest heading first', () => {
+    expect(releases[0].version).toBe(newest);
+  });
+
   it('reads 2.1.0 as a minor release with a headline', () => {
-    const [first] = releases;
-    expect(first.version).toBe('2.1.0');
-    expect(first.bump).toBe('minor');
-    expect(first.entries[0].headline).toBe('Install with Homebrew');
+    const release = releases.find((r) => r.version === '2.1.0');
+    expect(release?.bump).toBe('minor');
+    expect(release?.entries[0].headline).toBe('Install with Homebrew');
   });
 
   it('reads 2.0.0 as a major release with its PR and short commit', () => {
@@ -179,8 +184,8 @@ describe('getReleaseDates', () => {
     expect(dates['1.24.0']).toBeUndefined();
     expect(dates['1.23.5']).toBeUndefined();
     expect(Object.keys(dates)).not.toContain('docs-v1');
-    // 2.1.0 is the newest heading and absent from the API.
-    expect(Number.isNaN(Date.parse(dates['2.1.0']))).toBe(false);
+    // The newest heading is absent from the API.
+    expect(Number.isNaN(Date.parse(dates[newest]))).toBe(false);
   });
 
   it('falls back to the build time when git is unavailable', async () => {
@@ -191,6 +196,6 @@ describe('getReleaseDates', () => {
     );
     const before = Date.now();
     const dates = await getReleaseDates();
-    expect(Date.parse(dates['2.1.0'])).toBeGreaterThanOrEqual(before - 1000);
+    expect(Date.parse(dates[newest])).toBeGreaterThanOrEqual(before - 1000);
   });
 });
