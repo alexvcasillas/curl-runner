@@ -4,15 +4,20 @@
 
 use super::app::{CreateNew, mono_font};
 use super::icons::{self, glyph};
+use super::inspector::env_label;
 use super::new_dialog::{collect_folders, display_path, folder_label};
 use super::settings_kit::label_text;
 use super::workspace::{Workspace, notify_error};
 use super::{color, method_color};
 use crate::model::collection::Collection;
+use crate::model::environments::resolve_vars;
 use crate::model::import::{
-    CopyPlan, CurlImport, convert_commands, copy_planned, curl_targets, plan_yaml_copy, write_new,
+    CopyPlan, CurlImport, Extracted, ImportEnv, convert_commands, copy_planned, curl_targets,
+    plan_yaml_copy, replaced_note, write_new,
 };
+use crate::model::secrets::{SecretStore as _, service_name};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::dialog::DialogEntrance;
 use gpui_kit::component::input::{Editor, EditorState, InputEvent, Textarea, TextareaState};
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
@@ -21,6 +26,7 @@ use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 /// Sizes from the board.
 const DIALOG_W: f32 = 1080.;
@@ -77,13 +83,30 @@ pub struct ImportDialog {
     pub(super) source: Option<PathBuf>,
     plan: Result<Vec<CopyPlan>, String>,
     pub(super) error: Option<String>,
+    /// The environment the import resolves `BASE_URL` and variables in.
+    env: ImportContext,
+    /// Save the extracted secret values to the Keychain on Import.
+    pub(super) save_secrets: bool,
     _subscriptions: Vec<Subscription>,
+}
+
+/// A variable's current value, by name.
+pub(super) type VarLookup = Rc<dyn Fn(&str) -> Option<String>>;
+
+/// What the workspace hands the dialog about the picked environment.
+pub(super) struct ImportContext {
+    /// `Default` or a `.env.{name}` name.
+    pub environment: String,
+    pub base_url: Option<String>,
+    /// A variable's current value (Keychain, process env, `.env`).
+    pub known: VarLookup,
 }
 
 impl ImportDialog {
     fn new(
         ws: WeakEntity<Workspace>,
         collection: Option<(&Collection, PathBuf)>,
+        env: ImportContext,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -145,6 +168,8 @@ impl ImportDialog {
             source: None,
             plan: Ok(Vec::new()),
             error: None,
+            env,
+            save_secrets: true,
             _subscriptions: subscriptions,
         }
     }
@@ -172,7 +197,14 @@ impl ImportDialog {
     /// Re-converts the pasted text and refreshes the previews.
     fn convert(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let text = self.curl.read(cx).value();
-        let imports = convert_commands(&text);
+        let known = self.env.known.clone();
+        let imports = convert_commands(
+            &text,
+            &ImportEnv {
+                base_url: self.env.base_url.as_deref(),
+                known: &*known,
+            },
+        );
         // Several commands: the first opens, the others fold, so every
         // command's row shows in the list.
         if imports.len() != self.imports.len() {
@@ -252,11 +284,18 @@ impl ImportDialog {
         match result {
             Ok((root, first)) => {
                 window.close_dialog(cx);
-                let opened_collection = self.root.is_none();
+                let imported = Imported {
+                    root,
+                    opened: self.root.is_none(),
+                    first,
+                    secrets: match self.tab {
+                        ImportTab::Curl => self.extracted(),
+                        _ => Vec::new(),
+                    },
+                    save_secrets: self.save_secrets,
+                };
                 self.ws
-                    .update(cx, |ws, cx| {
-                        ws.imported(&root, opened_collection, first.as_deref(), window, cx)
-                    })
+                    .update(cx, |ws, cx| ws.imported(imported, window, cx))
                     .ok();
             }
             Err(e) => {
@@ -264,6 +303,23 @@ impl ImportDialog {
                 cx.notify();
             }
         }
+    }
+
+    /// Every value taken out of the commands that will be written, once
+    /// per variable.
+    fn extracted(&self) -> Vec<Extracted> {
+        let mut out: Vec<Extracted> = Vec::new();
+        for (import, target) in self.imports.iter().zip(&self.targets) {
+            if target.is_none() {
+                continue;
+            }
+            for e in &import.extracted {
+                if !out.iter().any(|o| o.var == e.var) {
+                    out.push(e.clone());
+                }
+            }
+        }
+        out
     }
 
     /// The files on disk: the root they went into and the first one.
@@ -529,7 +585,11 @@ impl ImportDialog {
             card.children((0..n).map(|i| self.render_section(i, max_h, cx)))
         };
         let notes = self.render_notes(single);
-        column(false).child(header).child(card).children(notes)
+        column(false)
+            .child(header)
+            .child(card)
+            .children(notes)
+            .children(self.render_replaced(cx))
     }
 
     /// Command `i` in the preview list: its file and folded YAML (at most
@@ -622,6 +682,43 @@ impl ImportDialog {
         section.child(header).when(open, |s| {
             s.child(preview_editor(editor, Some(fit.min(max_h))))
         })
+    }
+
+    /// What was moved out of the files, and whether the values go to the
+    /// Keychain.
+    fn render_replaced(&self, cx: &mut Context<Self>) -> Option<Div> {
+        let extracted = self.extracted();
+        let base_url = self
+            .imports
+            .iter()
+            .zip(&self.targets)
+            .any(|(i, t)| t.is_some() && i.base_url);
+        let vars: Vec<&str> = extracted.iter().map(|e| e.var.as_str()).collect();
+        let text = replaced_note(&vars, base_url)?;
+        let env = env_label(&self.env.environment);
+        let save = self.save_secrets;
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(8.))
+                .child(note(icons::INFO, "accent-blue", text))
+                .when(!extracted.is_empty(), |d| {
+                    d.child(
+                        div().pl(px(21.)).text_size(px(12.)).child(
+                            Checkbox::new("import-save-secrets")
+                                .checked(save)
+                                .label(format!(
+                                    "Save the extracted values to the Keychain for {env}"
+                                ))
+                                .on_click(cx.listener(|this, checked: &bool, _, cx| {
+                                    this.save_secrets = *checked;
+                                    cx.notify();
+                                })),
+                        ),
+                    )
+                }),
+        )
     }
 
     /// The conversion's warnings under the preview; with several commands
@@ -1052,8 +1149,9 @@ impl Workspace {
     ) -> Entity<ImportDialog> {
         let folder = self.default_folder();
         let ws = cx.entity().downgrade();
+        let env = self.import_context();
         let collection = self.state.collection.as_ref().map(|c| (c, folder));
-        let dialog = cx.new(|cx| ImportDialog::new(ws, collection, window, cx));
+        let dialog = cx.new(|cx| ImportDialog::new(ws, collection, env, window, cx));
         let content = dialog.clone();
         let first_build = std::cell::Cell::new(true);
         window.open_dialog(cx, move |d, window, cx| {
@@ -1072,30 +1170,107 @@ impl Workspace {
         dialog
     }
 
+    /// The picked environment's `BASE_URL` and a lookup of the values its
+    /// variables hold, for the Import dialog.
+    fn import_context(&self) -> ImportContext {
+        let environment = self.environment.clone();
+        let Some(c) = &self.state.collection else {
+            return ImportContext {
+                environment,
+                base_url: None,
+                known: Rc::new(|_| None),
+            };
+        };
+        let ctx = self.env_ctx(c);
+        let secrets = self.secret_cache.clone();
+        let known = Rc::new(move |name: &str| {
+            resolve_vars(
+                &[name.to_string()],
+                &Default::default(),
+                &*secrets,
+                &ctx,
+                &[],
+            )
+            .into_iter()
+            .next()
+            .and_then(|v| v.value)
+        });
+        ImportContext {
+            environment,
+            base_url: known("BASE_URL"),
+            known,
+        }
+    }
+
     /// After an import: the tree shows the new files and the first opens;
-    /// a new collection (`opened`) is opened and remembered first.
-    fn imported(
-        &mut self,
-        root: &Path,
-        opened: bool,
-        first: Option<&Path>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    /// a new collection (`opened`) is opened and remembered first. The
+    /// extracted secrets are marked secret in the collection and, when
+    /// asked, saved to the Keychain for the picked environment; their
+    /// values go nowhere else.
+    fn imported(&mut self, imported: Imported, window: &mut Window, cx: &mut Context<Self>) {
+        let Imported {
+            root,
+            opened,
+            first,
+            secrets,
+            save_secrets,
+        } = imported;
         if opened {
-            if !self.open_collection(root, window, cx) {
+            if !self.open_collection(&root, window, cx) {
                 return;
             }
-            self.remember_folder(root);
+            self.remember_folder(&root);
         } else if let Some(c) = &mut self.state.collection {
             c.refresh();
         }
+        if !secrets.is_empty()
+            && let Some(c) = &self.state.collection
+        {
+            let (collection, root) = (c.name.clone(), c.root.clone());
+            for e in &secrets {
+                self.meta.set_secret(&e.var, true);
+            }
+            if let Some(base) = self.store.base()
+                && let Err(e) = self.meta.save(base, &root)
+            {
+                notify_error(
+                    format!("Couldn't save the collection's notes: {e}"),
+                    window,
+                    cx,
+                );
+            }
+            if save_secrets {
+                let service = service_name(&collection, &self.environment);
+                for e in &secrets {
+                    if let Err(err) = self.secret_cache.set(&service, &e.var, &e.value) {
+                        notify_error(
+                            format!("Couldn't save {} to the Keychain: {err}", e.var),
+                            window,
+                            cx,
+                        );
+                    }
+                }
+            }
+            self.invalidate_secrets();
+        }
         match first {
-            Some(first) => self.open_file(first, window, cx),
+            Some(first) => self.open_file(&first, window, cx),
             None => notify_error("Nothing was imported.".into(), window, cx),
         }
+        self.refresh_vars(cx);
         cx.notify();
     }
+}
+
+/// What an Import wrote, for the workspace to follow up on.
+struct Imported {
+    root: PathBuf,
+    /// A new collection: open it.
+    opened: bool,
+    first: Option<PathBuf>,
+    /// The secret values taken out of the files.
+    secrets: Vec<Extracted>,
+    save_secrets: bool,
 }
 
 #[cfg(test)]
@@ -1274,5 +1449,62 @@ mod tests {
             assert_eq!(ws.recent.len(), 1);
         });
         assert_eq!(store.recent()[0].path, target.path());
+    }
+
+    const KEYED: &str = concat!("curl -X POST https://api.example.com/v1/customers -H 'Authorization: Bearer sk_test", "_51HxAbCdEfGhIjKlMnOpQrSt'");
+
+    /// Imports `KEYED` with the Keychain box `save`; returns the file and
+    /// what the Keychain holds for API_TOKEN.
+    fn import_keyed(cx: &mut TestAppContext, save: bool) -> (String, Option<String>, Vec<String>) {
+        let dir = collection();
+        std::fs::write(
+            dir.path().join(".env"),
+            "BASE_URL=https://api.example.com\n",
+        )
+        .unwrap();
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        cx.update(|window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.dev_fill(KEYED, None, window, cx);
+                d.save_secrets = save;
+            })
+        });
+        cx.update(|window, cx| window.render_frame(cx));
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        cx.run_until_parked();
+        let text = std::fs::read_to_string(dir.path().join("create-customer.yaml")).unwrap();
+        let (stored, marked) = ws.read_with(cx, |ws, _| {
+            let c = ws.state.collection.as_ref().unwrap();
+            let service = crate::model::secrets::service_name(&c.name, &ws.environment);
+            (
+                ws.secrets.get(&service, "API_TOKEN"),
+                ws.meta.secret_names.clone(),
+            )
+        });
+        (text, stored, marked)
+    }
+
+    #[gpui_kit::test]
+    fn extracted_secrets_go_to_the_keychain_not_the_file(cx: &mut TestAppContext) {
+        let (text, stored, marked) = import_keyed(cx, true);
+        assert!(!text.contains("sk_test_51Hx"), "{text}");
+        assert!(text.contains("url: ${BASE_URL}/v1/customers"), "{text}");
+        assert!(
+            text.contains("Authorization: Bearer ${API_TOKEN}"),
+            "{text}"
+        );
+        assert_eq!(stored.as_deref(), Some(concat!("sk_test", "_51HxAbCdEfGhIjKlMnOpQrSt")));
+        assert_eq!(marked, ["API_TOKEN"]);
+    }
+
+    #[gpui_kit::test]
+    fn unchecked_the_keychain_is_left_alone(cx: &mut TestAppContext) {
+        let (text, stored, marked) = import_keyed(cx, false);
+        assert!(!text.contains("sk_test_51Hx"), "{text}");
+        assert_eq!(stored, None);
+        // Still a secret: it shows as Not set, never as a plain value.
+        assert_eq!(marked, ["API_TOKEN"]);
     }
 }

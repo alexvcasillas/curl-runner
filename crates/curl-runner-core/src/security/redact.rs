@@ -14,6 +14,12 @@ pub const REDACTED: &str = "[REDACTED]";
 static SENSITIVE_HEADER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)authorization|api[-_]?key|token|secret|cookie").unwrap());
 
+/// Whether a header named `name` carries a secret value (`Authorization`,
+/// API keys, tokens, secrets, cookies), as the redactor judges it.
+pub fn is_sensitive_header(name: &str) -> bool {
+    SENSITIVE_HEADER.is_match(name)
+}
+
 /// `^Bearer\s+(\S+)$`, case-insensitive.
 static BEARER_VALUE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^Bearer\s+(\S+)$").unwrap());
@@ -219,6 +225,23 @@ impl Redactor {
 mod tests {
     use super::*;
     use crate::model::AuthConfig;
+
+    #[test]
+    fn sensitive_header_names() {
+        for name in [
+            "Authorization",
+            "X-API-Key",
+            "api_key",
+            "X-Auth-Token",
+            "Cookie",
+            "X-Client-Secret",
+        ] {
+            assert!(is_sensitive_header(name), "{name}");
+        }
+        for name in ["Content-Type", "Accept", "X-Request-Id"] {
+            assert!(!is_sensitive_header(name), "{name}");
+        }
+    }
 
     #[test]
     fn redact_secrets_skips_patterns() {

@@ -1,6 +1,8 @@
 //! Starter text for new request files and the file names they get.
 
-use curl_runner_core::convert::{YamlOptions, normalize, parse_curl, serialize_to_yaml};
+use curl_runner_core::convert::{
+    CurlRunnerIr, YamlOptions, normalize, parse_curl, serialize_to_yaml,
+};
 use curl_runner_core::lint::spans::locate;
 use curl_runner_core::yaml_text::yaml_str;
 use std::ops::Range;
@@ -83,19 +85,30 @@ pub struct FromCurl {
 /// request `name`. Warnings also stay in the file as `# Warning:` comments,
 /// as `convert` writes them.
 pub fn request_from_curl(name: &str, curl: &str) -> Result<FromCurl, String> {
+    Ok(file_from_ir(curl_to_ir(curl)?, name))
+}
+
+/// `curl` parsed and normalized as `convert curl` does, before it is
+/// written out.
+pub fn curl_to_ir(curl: &str) -> Result<CurlRunnerIr, String> {
     let curl = curl.trim();
     if curl.split_whitespace().next() != Some("curl") {
         return Err("Paste a command that starts with curl.".into());
     }
-    let mut ir = normalize(&parse_curl(curl)).map_err(|e| e.to_string())?;
+    let ir = normalize(&parse_curl(curl)).map_err(|e| e.to_string())?;
     if ir.url.is_empty() {
         return Err("The command has no URL.".into());
     }
+    Ok(ir)
+}
+
+/// The request file for `ir`, named `name`.
+pub fn file_from_ir(mut ir: CurlRunnerIr, name: &str) -> FromCurl {
     ir.name = Some(name.to_string()).filter(|n| !n.is_empty());
-    Ok(FromCurl {
+    FromCurl {
         yaml: serialize_to_yaml(&ir, YamlOptions::default()),
         warnings: ir.warnings,
-    })
+    }
 }
 
 /// The curl commands in pasted text: one per paragraph (commands split

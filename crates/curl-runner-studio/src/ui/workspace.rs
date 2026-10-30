@@ -116,7 +116,7 @@ pub struct Workspace {
     pub(super) secrets: Arc<dyn SecretStore>,
     /// `secrets` read once per item, for resolving variables while typing
     /// (and for the Environments page).
-    secret_cache: Arc<CachedSecrets>,
+    pub(super) secret_cache: Arc<CachedSecrets>,
     /// The open collection's notes: secret names, descriptions.
     pub(super) meta: CollectionMeta,
     /// The collection settings page (Environments), while it is open.

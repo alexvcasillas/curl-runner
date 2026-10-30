@@ -243,6 +243,7 @@ pub fn run() {
                 .and_then(|s| parse_size(&s))
                 .unwrap_or((1440., 900.));
             let bounds = Bounds::centered(None, size(px(w), px(h)), cx);
+            let background = dev_string("CURL_RUNNER_STUDIO_BACKGROUND").is_some();
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 titlebar: Some(TitlebarOptions {
@@ -252,6 +253,9 @@ pub fn run() {
                     traffic_light_position: Some(point(px(16.), px(15.))),
                 }),
                 app_owns_titlebar_drag: true,
+                // Dev screenshots open behind the other windows, so they
+                // never take the keyboard from whoever is typing.
+                focus: !background,
                 window_min_size: Some(size(px(WINDOW_MIN_WIDTH), px(WINDOW_MIN_HEIGHT))),
                 ..Default::default()
             };
@@ -385,7 +389,9 @@ pub fn run() {
                 }
             })
             .detach();
-            cx.activate(true);
+            if !background {
+                cx.activate(true);
+            }
         });
 }
 
@@ -415,7 +421,9 @@ pub fn run() {
 /// (`collection`: the whole collection, on the run screen),
 /// `CURL_RUNNER_STUDIO_SIZE` (`960x600`) sizes the window and
 /// `CURL_RUNNER_STUDIO_STATE` keeps the studio's state (last folder, Recent,
-/// settings, history) in that folder instead of Application Support.
+/// settings, history) in that folder instead of Application Support, and
+/// `CURL_RUNNER_STUDIO_BACKGROUND` opens the window without focusing it or
+/// activating the app (for screenshots).
 ///
 /// Debug builds only: a release build ignores them all.
 fn dev_env(name: &str) -> Option<PathBuf> {

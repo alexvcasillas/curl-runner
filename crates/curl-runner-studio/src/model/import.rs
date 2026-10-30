@@ -2,7 +2,9 @@
 //! the YAML files of another folder copied into the collection. Nothing
 //! here overwrites a file; a name that is taken gets `-2`, `-3`, ….
 
-use super::templates::{FromCurl, file_name_for, request_from_curl, request_name_for};
+use super::templates::{FromCurl, curl_to_ir, file_from_ir, file_name_for, request_name_for};
+use curl_runner_core::convert::{CurlRunnerIr, JsMap};
+use curl_runner_core::security::redact::is_sensitive_header;
 use std::collections::HashSet;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
@@ -17,50 +19,343 @@ pub struct CurlImport {
     /// The request's name, from its method and path.
     pub name: String,
     pub converted: Result<FromCurl, String>,
+    /// The secret values taken out of the file, by variable.
+    pub extracted: Vec<Extracted>,
+    /// The URL's origin became `${BASE_URL}`.
+    pub base_url: bool,
+}
+
+/// A secret value moved out of an imported request into a variable. Its
+/// `Debug` never shows the value.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Extracted {
+    pub var: String,
+    pub value: String,
+    /// Where it was: `header Authorization`, `query token`, ….
+    pub place: String,
+}
+
+impl std::fmt::Debug for Extracted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Extracted")
+            .field("var", &self.var)
+            .field("place", &self.place)
+            .finish_non_exhaustive()
+    }
+}
+
+/// What an import can look up: the environment's `BASE_URL`, and the value
+/// a variable already has (Keychain, process env, `.env`), so an extracted
+/// value never takes over a name that holds something else.
+pub struct ImportEnv<'a> {
+    pub base_url: Option<&'a str>,
+    pub known: &'a dyn Fn(&str) -> Option<String>,
 }
 
 /// Converts each command in `text` (see
-/// [`split_curl_commands`](super::templates::split_curl_commands)).
-pub fn convert_commands(text: &str) -> Vec<CurlImport> {
+/// [`split_curl_commands`](super::templates::split_curl_commands)), with
+/// its secrets moved into variables and its origin into `${BASE_URL}`
+/// when that is where `BASE_URL` points.
+pub fn convert_commands(text: &str, env: &ImportEnv) -> Vec<CurlImport> {
+    // Values extracted so far: the same value keeps its variable across
+    // commands, a different one gets the next name.
+    let mut taken: Vec<Extracted> = Vec::new();
     super::templates::split_curl_commands(text)
         .into_iter()
         .map(|command| {
-            let converted = request_from_curl("", &command).and_then(|unnamed| {
-                let (method, url) = method_and_url(&unnamed.yaml);
-                let name = request_name_for(&method, &url);
-                request_from_curl(&name, &command).map(|c| (name, c))
-            });
-            match converted {
-                Ok((name, mut c)) => {
-                    c.yaml.insert_str(0, IMPORTED_HEADER);
-                    CurlImport {
+            let ir = match curl_to_ir(&command) {
+                Ok(ir) => ir,
+                Err(e) => {
+                    return CurlImport {
                         command,
-                        name,
-                        converted: Ok(c),
-                    }
+                        name: String::new(),
+                        converted: Err(e),
+                        extracted: Vec::new(),
+                        base_url: false,
+                    };
                 }
-                Err(e) => CurlImport {
-                    command,
-                    name: String::new(),
-                    converted: Err(e),
-                },
+            };
+            let known = |name: &str| {
+                taken
+                    .iter()
+                    .find(|e| e.var == name)
+                    .map(|e| e.value.clone())
+                    .or_else(|| (env.known)(name))
+            };
+            let (mut ir, extracted) = scrub_secrets(ir, &known);
+            let base_url = env.base_url.is_some_and(|b| use_base_url(&mut ir, b));
+            let method = if ir.method.is_empty() {
+                "GET"
+            } else {
+                &ir.method
+            };
+            let name = request_name_for(method, &ir.url);
+            let mut converted = file_from_ir(ir, &name);
+            // Belt and braces: a warning comment may quote the command.
+            for e in extracted.iter().filter(|e| e.value.len() >= 6) {
+                let var = format!("${{{}}}", e.var);
+                converted.yaml = converted.yaml.replace(&e.value, &var);
+                for w in &mut converted.warnings {
+                    *w = w.replace(&e.value, &var);
+                }
+            }
+            converted.yaml = unquote_references(&converted.yaml);
+            converted.yaml.insert_str(0, IMPORTED_HEADER);
+            for e in &extracted {
+                if !taken.iter().any(|t| t.var == e.var) {
+                    taken.push(e.clone());
+                }
+            }
+            CurlImport {
+                command,
+                name,
+                converted: Ok(converted),
+                extracted,
+                base_url,
             }
         })
         .collect()
 }
 
-/// `request.method` (GET when absent) and `request.url` of a converted file.
-fn method_and_url(yaml: &str) -> (String, String) {
-    let field = |key: &str| {
-        yaml.lines().find_map(|l| {
-            l.strip_prefix(&format!("  {key}: "))
-                .map(|v| v.trim().trim_matches(['"', '\'']).to_string())
-        })
+/// Query parameters whose values are secrets.
+const SECRET_PARAMS: [&str; 9] = [
+    "token",
+    "access_token",
+    "api_key",
+    "apikey",
+    "key",
+    "secret",
+    "password",
+    "sig",
+    "signature",
+];
+
+/// `ir` with its secret values (bearer token, basic credentials, sensitive
+/// headers as the CLI's redactor judges them, secret query parameters)
+/// replaced by `${VAR}` references, and what was taken out. A bearer token
+/// becomes an `Authorization: Bearer ${API_TOKEN}` header. Values that
+/// already reference a variable are left alone. `known` gives a name's
+/// current value: a name holding another value is skipped for `_2`, `_3`.
+pub fn scrub_secrets(
+    mut ir: CurlRunnerIr,
+    known: &dyn Fn(&str) -> Option<String>,
+) -> (CurlRunnerIr, Vec<Extracted>) {
+    let mut out: Vec<Extracted> = Vec::new();
+    let mut take = |base: &str, value: &str, place: String| -> String {
+        let var = pick_var(base, value, known, &out);
+        if !out.iter().any(|e| e.var == var) {
+            out.push(Extracted {
+                var: var.clone(),
+                value: value.to_string(),
+                place,
+            });
+        }
+        format!("${{{var}}}")
     };
-    (
-        field("method").unwrap_or_else(|| "GET".into()),
-        field("url").unwrap_or_default(),
-    )
+    let mut headers = JsMap::new();
+    if let Some(auth) = ir.auth.take() {
+        match auth.kind.as_str() {
+            "bearer" => {
+                let token = auth.token.unwrap_or_default();
+                let value = if token.is_empty() || is_reference(&token) {
+                    token
+                } else {
+                    take("API_TOKEN", &token, "bearer token".into())
+                };
+                headers.insert("Authorization", format!("Bearer {value}"));
+            }
+            _ => {
+                let mut auth = auth;
+                for (field, base) in [
+                    (&mut auth.username, "API_USER"),
+                    (&mut auth.password, "API_PASSWORD"),
+                ] {
+                    if let Some(v) = field.as_mut().filter(|v| !v.is_empty() && !is_reference(v)) {
+                        *v = take(base, v, format!("basic auth {}", base[4..].to_lowercase()));
+                    }
+                }
+                ir.auth = Some(auth);
+            }
+        }
+    }
+    for (name, value) in ir.headers.entries() {
+        let value = if value.is_empty() || is_reference(value) || !secret_header(name) {
+            value.clone()
+        } else if name.eq_ignore_ascii_case("authorization") {
+            // Keep the scheme: `Token abc` → `Token ${API_TOKEN}`.
+            match value.split_once(' ') {
+                Some((scheme, cred)) => format!(
+                    "{scheme} {}",
+                    take("API_TOKEN", cred.trim(), format!("header {name}"))
+                ),
+                None => take("API_TOKEN", value, format!("header {name}")),
+            }
+        } else {
+            take(&header_var(name), value, format!("header {name}"))
+        };
+        headers.insert(name.clone(), value);
+    }
+    ir.headers = headers;
+    if let Some(params) = ir.params.take() {
+        let mut kept = JsMap::new();
+        for (name, value) in params.entries() {
+            let secret = SECRET_PARAMS.iter().any(|p| p.eq_ignore_ascii_case(name));
+            let value = if secret && !value.is_empty() && !is_reference(value) {
+                take(&param_var(name), value, format!("query {name}"))
+            } else {
+                value.clone()
+            };
+            kept.insert(name.clone(), value);
+        }
+        ir.params = Some(kept);
+    }
+    (ir, out)
+}
+
+/// `${BASE_URL}` in place of the URL's start when `base_url` (the
+/// environment's value) is that start: the same origin, and the same path
+/// prefix if it has one. Returns whether it replaced it.
+pub fn use_base_url(ir: &mut CurlRunnerIr, base_url: &str) -> bool {
+    let base = base_url.trim().trim_end_matches('/');
+    if !base.contains("://") || is_reference(&ir.url) {
+        return false;
+    }
+    let Some(rest) = ir.url.strip_prefix(base) else {
+        return false;
+    };
+    if !(rest.is_empty() || rest.starts_with(['/', '?', '#'])) {
+        return false;
+    }
+    ir.url = format!("${{BASE_URL}}{rest}");
+    true
+}
+
+/// The note under the preview: which variables took the secrets and the
+/// host, in the board's words.
+pub fn replaced_note(vars: &[&str], base_url: bool) -> Option<String> {
+    let list = |vars: &[&str]| {
+        let refs: Vec<String> = vars.iter().map(|v| format!("${{{v}}}")).collect();
+        match refs.as_slice() {
+            [] => String::new(),
+            [one] => one.clone(),
+            [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+        }
+    };
+    let host = " the host with ${BASE_URL}";
+    match (vars.len(), base_url) {
+        (0, false) => None,
+        (0, true) => Some("The host was replaced with ${BASE_URL}.".to_string()),
+        (n, _) => Some(format!(
+            "The live {} replaced with {}{}. Nothing secret is saved in the file.",
+            if n == 1 { "key was" } else { "keys were" },
+            list(vars),
+            if base_url {
+                format!(" and{host}")
+            } else {
+                String::new()
+            },
+        )),
+    }
+}
+
+/// `key: "${BASE_URL}/v1/x"` written plain (`key: ${BASE_URL}/v1/x`), as
+/// the board shows it: only double-quoted values with a `${…}` reference
+/// and nothing a plain YAML scalar would read differently.
+fn unquote_references(yaml: &str) -> String {
+    let plain = |v: &str| {
+        v.contains("${")
+            && !v.starts_with(' ')
+            && !v.ends_with(' ')
+            && !v.contains(": ")
+            && !v.contains(" #")
+            && v.chars()
+                .all(|c| c.is_ascii_alphanumeric() || " ${}_-./:?&=+,;@~%".contains(c))
+    };
+    let mut out = String::with_capacity(yaml.len());
+    for line in yaml.split_inclusive('\n') {
+        let body = line.trim_end_matches('\n');
+        let unquoted = body.split_once(": \"").and_then(|(key, rest)| {
+            let value = rest.strip_suffix('"')?;
+            (!key.trim_start().starts_with('#') && plain(value)).then(|| format!("{key}: {value}"))
+        });
+        match unquoted {
+            Some(l) => {
+                out.push_str(&l);
+                out.push_str(&line[body.len()..]);
+            }
+            None => out.push_str(line),
+        }
+    }
+    out
+}
+
+/// `${NAME}` somewhere in the value: it already points at a variable.
+fn is_reference(value: &str) -> bool {
+    value.contains("${")
+}
+
+/// A secret header: the CLI redactor's names, plus `X-…-Key`.
+fn secret_header(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    is_sensitive_header(name) || lower.ends_with("-key") || lower.ends_with("_key")
+}
+
+/// `X-Auth-Token` → `AUTH_TOKEN`, `x-api-key` → `API_KEY`.
+fn header_var(name: &str) -> String {
+    let lower = name.to_ascii_lowercase();
+    screaming(lower.strip_prefix("x-").unwrap_or(&lower))
+}
+
+/// `access_token` → `ACCESS_TOKEN`; a bare key is `API_KEY`.
+fn param_var(name: &str) -> String {
+    match name.to_ascii_lowercase().as_str() {
+        "key" | "apikey" | "api_key" => "API_KEY".into(),
+        other => screaming(other),
+    }
+}
+
+fn screaming(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_uppercase());
+        } else if !out.is_empty() && !out.ends_with('_') {
+            out.push('_');
+        }
+    }
+    let out = out.trim_end_matches('_');
+    if out.is_empty() {
+        "SECRET".into()
+    } else {
+        out.to_string()
+    }
+}
+
+/// `base`, or `base_2`, `base_3`, …: the first name that is free or
+/// already holds `value`.
+fn pick_var(
+    base: &str,
+    value: &str,
+    known: &dyn Fn(&str) -> Option<String>,
+    out: &[Extracted],
+) -> String {
+    (1..)
+        .map(|n| {
+            if n == 1 {
+                base.to_string()
+            } else {
+                format!("{base}_{n}")
+            }
+        })
+        .find(|var| {
+            let held = out
+                .iter()
+                .find(|e| &e.var == var)
+                .map(|e| e.value.clone())
+                .or_else(|| known(var));
+            held.is_none_or(|v| v == value)
+        })
+        .expect("an unbounded range finds a free name")
 }
 
 /// `path` if `taken` says it is free, else `stem-2.ext`, `stem-3.ext`, ….
@@ -293,7 +588,7 @@ mod tests {
                     curl https://api.example.com/v1/customers/cus_8f2k1Abc\n\
                     curl -X POST https://api.example.com/v1/customers -d name=Bob\n\n\
                     hello world";
-        let imports = convert_commands(text);
+        let imports = convert_commands(text, &NO_ENV);
         assert_eq!(imports.len(), 4);
         let names: Vec<&str> = imports.iter().map(|i| i.name.as_str()).collect();
         assert_eq!(
@@ -321,6 +616,166 @@ mod tests {
                 Some(PathBuf::from("customers/create-customer-2.yaml")),
                 None,
             ]
+        );
+    }
+
+    /// No errors: the file reads back (style hints are fine).
+    fn assert_parses(yaml: &str) {
+        let errors: Vec<_> = diagnose(yaml)
+            .into_iter()
+            .filter(|d| d.severity == curl_runner_core::lint::Severity::Error)
+            .collect();
+        assert!(errors.is_empty(), "{errors:?}\n{yaml}");
+    }
+
+    const NO_ENV: ImportEnv = ImportEnv {
+        base_url: None,
+        known: &|_| None,
+    };
+
+    const LIVE_KEY: &str = concat!("sk_live", "_51HxAbCdEfGhIjKlMnOpQrSt");
+
+    fn one(command: &str, env: &ImportEnv) -> (String, Vec<Extracted>, bool) {
+        let mut imports = convert_commands(command, env);
+        assert_eq!(imports.len(), 1);
+        let i = imports.remove(0);
+        (i.converted.unwrap().yaml, i.extracted, i.base_url)
+    }
+
+    #[test]
+    fn the_board_command_keeps_no_secret() {
+        let command = format!(
+            "curl -X POST https://api.example.com/v1/customers \\\n  -H \"Authorization: Bearer {LIVE_KEY}\" \\\n  -H \"Content-Type: application/json\" \\\n  -d @customer.json \\\n  --retry 3 \\\n  --max-time 10"
+        );
+        let env = ImportEnv {
+            base_url: Some("https://api.example.com/"),
+            known: &|_| None,
+        };
+        let (yaml, extracted, base_url) = one(&command, &env);
+        assert!(base_url);
+        for line in [
+            "  name: create-customer",
+            "  url: ${BASE_URL}/v1/customers",
+            "  headers:",
+            "    Authorization: Bearer ${API_TOKEN}",
+            "    Content-Type: application/json",
+        ] {
+            assert!(yaml.lines().any(|l| l == line), "{line:?} in\n{yaml}");
+        }
+        assert!(!yaml.contains(LIVE_KEY), "{yaml}");
+        assert!(!yaml.contains("sk_live"), "{yaml}");
+        assert!(!yaml.contains("auth:"), "{yaml}");
+        assert_eq!(extracted.len(), 1);
+        assert_eq!(extracted[0].var, "API_TOKEN");
+        assert_eq!(extracted[0].value, LIVE_KEY);
+        // Debug never prints the value.
+        assert!(!format!("{extracted:?}").contains(LIVE_KEY));
+        assert_parses(&yaml);
+        assert_eq!(
+            replaced_note(&["API_TOKEN"], true).unwrap(),
+            "The live key was replaced with ${API_TOKEN} and the host with ${BASE_URL}. \
+             Nothing secret is saved in the file."
+        );
+    }
+
+    #[test]
+    fn another_host_keeps_its_url() {
+        let env = ImportEnv {
+            base_url: Some("https://staging.example.com"),
+            known: &|_| None,
+        };
+        let (yaml, _, base_url) = one("curl https://api.example.com/v1/charges", &env);
+        assert!(!base_url);
+        assert!(
+            yaml.contains("url: https://api.example.com/v1/charges"),
+            "{yaml}"
+        );
+        // A prefix that isn't a whole origin doesn't match either.
+        let env = ImportEnv {
+            base_url: Some("https://api.example.co"),
+            known: &|_| None,
+        };
+        assert!(!one("curl https://api.example.com/x", &env).2);
+        assert_eq!(replaced_note(&[], false), None);
+    }
+
+    #[test]
+    fn query_params_and_basic_auth_move_into_variables() {
+        let (yaml, extracted, _) = one(
+            "curl -u admin:hunter2-long 'https://api.example.com/v1/x?access_token=tok_abcdef12&page=2&key=k_99999999'",
+            &NO_ENV,
+        );
+        let vars: Vec<(&str, &str)> = extracted
+            .iter()
+            .map(|e| (e.var.as_str(), e.value.as_str()))
+            .collect();
+        assert_eq!(
+            vars,
+            [
+                ("API_USER", "admin"),
+                ("API_PASSWORD", "hunter2-long"),
+                ("ACCESS_TOKEN", "tok_abcdef12"),
+                ("API_KEY", "k_99999999"),
+            ]
+        );
+        for secret in ["hunter2-long", "tok_abcdef12", "k_99999999"] {
+            assert!(!yaml.contains(secret), "{secret} in {yaml}");
+        }
+        assert!(yaml.contains("${ACCESS_TOKEN}"), "{yaml}");
+        assert!(yaml.contains("page"), "{yaml}");
+        assert_parses(&yaml);
+    }
+
+    #[test]
+    fn named_headers_and_references() {
+        let (yaml, extracted, _) = one(
+            "curl https://api.example.com -H 'X-Auth-Token: abcdef123456' -H 'X-API-Key: ${MY_KEY}' -H 'X-Client-Key: zzzzzzzz' -H 'Accept: text/plain'",
+            &NO_ENV,
+        );
+        let vars: Vec<&str> = extracted.iter().map(|e| e.var.as_str()).collect();
+        assert_eq!(vars, ["AUTH_TOKEN", "CLIENT_KEY"]);
+        assert!(yaml.contains("    X-Api-Key: ${MY_KEY}\n"), "{yaml}");
+        assert!(yaml.contains("    X-Auth-Token: ${AUTH_TOKEN}\n"), "{yaml}");
+        assert_parses(&yaml);
+        assert!(yaml.contains("Accept: text/plain"), "{yaml}");
+        assert!(
+            !yaml.contains("abcdef123456") && !yaml.contains("zzzzzzzz"),
+            "{yaml}"
+        );
+        // An already-referenced bearer token stays as it is.
+        let (yaml, extracted, _) = one(
+            "curl https://api.example.com -H 'Authorization: Bearer ${API_TOKEN}'",
+            &NO_ENV,
+        );
+        assert!(extracted.is_empty());
+        assert!(
+            yaml.contains("Authorization: Bearer ${API_TOKEN}"),
+            "{yaml}"
+        );
+    }
+
+    #[test]
+    fn a_name_holding_another_value_is_not_reused() {
+        let env = ImportEnv {
+            base_url: None,
+            known: &|n| (n == "API_TOKEN").then(|| "other-token".to_string()),
+        };
+        let text = "curl https://a.example.com -H 'Authorization: Bearer tok_one_111'\n\n\
+                    curl https://b.example.com -H 'Authorization: Bearer tok_one_111'\n\n\
+                    curl https://c.example.com -H 'Authorization: Bearer tok_two_222'";
+        let vars: Vec<Vec<String>> = convert_commands(text, &env)
+            .iter()
+            .map(|i| i.extracted.iter().map(|e| e.var.clone()).collect())
+            .collect();
+        assert_eq!(vars, [["API_TOKEN_2"], ["API_TOKEN_2"], ["API_TOKEN_3"]]);
+        // The value the environment already holds keeps its name.
+        let env = ImportEnv {
+            base_url: None,
+            known: &|n| (n == "API_TOKEN").then(|| "tok_one_111".to_string()),
+        };
+        assert_eq!(
+            convert_commands(text, &env)[0].extracted[0].var,
+            "API_TOKEN"
         );
     }
 }
