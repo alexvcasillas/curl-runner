@@ -9,6 +9,8 @@
 pub mod fixtures;
 mod mock;
 
+// Only the macOS app constructs the mock; off macOS the UI isn't built.
+#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 pub use mock::{MOCK_LATENCY, MockBackend};
 
 use crate::model::collection_meta::CollectionMeta;
