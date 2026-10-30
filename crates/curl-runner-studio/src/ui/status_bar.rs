@@ -27,6 +27,9 @@ pub struct StatusBar {
     missing: usize,
     /// The collection run, while there is one to show.
     run: Option<RunLine>,
+    /// `142 runs stored · 3.1 MB` while the History screen is shown: the
+    /// bar then reads as the board's history footer.
+    history: Option<SharedString>,
     _cursor_watch: Option<Subscription>,
 }
 
@@ -150,6 +153,16 @@ impl StatusBar {
     }
 }
 
+impl StatusBar {
+    /// Shows (or with `None` hides) the history footer.
+    pub fn set_history(&mut self, usage: Option<SharedString>, cx: &mut Context<Self>) {
+        if self.history != usage {
+            self.history = usage;
+            cx.notify();
+        }
+    }
+}
+
 /// `Ln 15, Col 5`, one-based like every editor shows it.
 fn cursor_label(p: Position) -> String {
     format!("Ln {}, Col {}", p.line + 1, p.character + 1)
@@ -194,7 +207,25 @@ impl Render for StatusBar {
                         .on_click(cx.listener(|_, _, _, cx| cx.emit(StatusBarEvent::OpenRun))),
                 )
             })
-            .children(self.environment.clone().or_else(|| self.collection.clone()))
+            .when_some(self.history.clone(), |bar, usage| {
+                bar.child(div().flex_none().child(usage))
+                    .child("History stays on this device unless you share a run")
+            })
+            .when(self.history.is_none(), |bar| self.render_vars(bar))
+            .child(div().flex_1())
+            .when(self.history.is_none(), |bar| {
+                bar.children(config).when_some(self.cursor, |bar, cursor| {
+                    bar.child("YAML").child(cursor_label(cursor))
+                })
+            })
+            .child(format!("curl-runner {}", curl_runner_core::VERSION))
+    }
+}
+
+impl StatusBar {
+    /// The environment, where variables come from and the missing count.
+    fn render_vars(&self, bar: Stateful<Div>) -> Stateful<Div> {
+        bar.children(self.environment.clone().or_else(|| self.collection.clone()))
             .children(
                 self.sources
                     .iter()
@@ -208,12 +239,6 @@ impl Render for StatusBar {
                         .child(format!("{} missing", self.missing)),
                 )
             })
-            .child(div().flex_1())
-            .children(config)
-            .when_some(self.cursor, |bar, cursor| {
-                bar.child("YAML").child(cursor_label(cursor))
-            })
-            .child(format!("curl-runner {}", curl_runner_core::VERSION))
     }
 }
 

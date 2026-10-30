@@ -2,12 +2,13 @@
 //! and lays out title bar, sidebar, editor and status bar.
 
 use super::app::{
-    CloseTab, CopyAsCurl, Import, NewCollection, NewRequest, OpenFolder, OpenPalette, QuickFix,
-    Rerun, RunActive, RunCollection, RunRequestUnderCursor, SaveFile, Stop, ToggleProblems,
-    ui_font,
+    CloseTab, CopyAsCurl, Import, NewCollection, NewRequest, OpenFolder, OpenHistory, OpenPalette,
+    QuickFix, Rerun, RunActive, RunCollection, RunRequestUnderCursor, SaveFile, Stop,
+    ToggleProblems, ui_font,
 };
 use super::diagnostic_popover::DiagnosticHover;
 use super::diagnostics_view::DiagnosticsView;
+use super::history_view::{HistoryView, HistoryViewEvent, usage_text};
 use super::inspector::{InspectorTab, env_label};
 use super::problems_panel::PanelTab;
 use super::result_marks::ResultMarks;
@@ -23,7 +24,7 @@ use crate::model::environments::{
     DEFAULT_ENVIRONMENT, EnvCtx, ResolvedVar, list_environments, missing_vars, referenced_vars,
     resolve_vars,
 };
-use crate::model::history::{EntryKind, History, entry_from_outcome};
+use crate::model::history::{History, HistoryEntry, entry_from_outcome, target_key, target_of};
 use crate::model::run::RunEvent;
 use crate::model::run::{RunOutcome, RunTarget};
 use crate::model::secrets::{CachedSecrets, SecretStore};
@@ -118,6 +119,11 @@ pub struct Workspace {
     /// The run screen follows the active run (it is a collection run).
     run_view_live: bool,
     _run_view_events: Option<Subscription>,
+    /// The History screen, once opened for this collection.
+    pub(super) history_view: Option<Entity<HistoryView>>,
+    /// The History screen takes the editor's and the inspector's place.
+    show_history: bool,
+    _history_events: Option<Subscription>,
     status: Entity<StatusBar>,
     focus: FocusHandle,
     /// Set once the user agreed to close the window with unsaved changes.
@@ -191,6 +197,9 @@ impl Workspace {
             show_run: false,
             run_view_live: false,
             _run_view_events: None,
+            history_view: None,
+            show_history: false,
+            _history_events: None,
             status,
             focus,
             closing: false,
@@ -236,6 +245,9 @@ impl Workspace {
         self.show_run = false;
         self.run_view_live = false;
         self._run_view_events = None;
+        self.history_view = None;
+        self.show_history = false;
+        self._history_events = None;
         self.secret_cache.invalidate();
         self.environment = self
             .store
@@ -254,14 +266,21 @@ impl Workspace {
             Some(name) => format!("curl-runner studio — {name}"),
             None => "curl-runner studio".to_string(),
         });
-        // The run screen has no cursor to show.
+        // The run and history screens have no cursor to show.
         let editor = self
             .state
             .active
-            .filter(|_| !self.run_shown())
+            .filter(|_| !self.run_shown() && !self.history_shown())
             .map(|i| self.tabs[i].editor.clone());
-        self.status
-            .update(cx, |s, cx| s.set(name.map(Into::into), editor, cx));
+        let usage = self
+            .history_view
+            .as_ref()
+            .filter(|_| self.history_shown())
+            .map(|v| usage_text(v.read(cx).usage()).into());
+        self.status.update(cx, |s, cx| {
+            s.set(name.map(Into::into), editor, cx);
+            s.set_history(usage, cx);
+        });
         self.refresh_vars(cx);
         self.sync_run_status(cx);
         cx.notify();
@@ -332,6 +351,7 @@ impl Workspace {
             return;
         };
         self.show_run = true;
+        self.show_history = false;
         self.close_hover(cx);
         view.read(cx).focus_handle(cx).focus(window, cx);
         self.sync_chrome(window, cx);
@@ -427,7 +447,15 @@ impl Workspace {
     /// Hands the collection run's event to its screen; at the finish,
     /// records the run in the history (and prunes it).
     pub(super) fn forward_run_event(&mut self, event: &RunEvent, cx: &mut Context<Self>) {
-        if !self.run_view_live || matches!(event, RunEvent::Stored { .. }) {
+        if !self.run_view_live {
+            // A file or request run: no run screen, but it is history too.
+            if let (RunEvent::Finished(o), Some(target)) = (event, self.runs.target()) {
+                let (target, env) = (target.clone(), self.runs.env().to_string());
+                self.record_history(o, &target, &env, cx);
+            }
+            return;
+        }
+        if matches!(event, RunEvent::Stored { .. }) {
             return;
         }
         let Some(view) = self.run_view.clone() else {
@@ -444,7 +472,7 @@ impl Workspace {
         }
     }
 
-    /// Writes the finished collection run to the history, off the main
+    /// Writes the finished run to the history, off the main
     /// thread, redacted with the run's own redactor. `env` is the one the
     /// run used (the picker may have changed since).
     fn record_history(
@@ -458,29 +486,150 @@ impl Workspace {
             return;
         };
         let history = History::open(base, &c.root);
-        let target = match target {
-            RunTarget::Files(files) => files
-                .iter()
-                .map(|f| f.to_string_lossy())
-                .collect::<Vec<_>>()
-                .join(", "),
-            _ => "collection".to_string(),
-        };
-        let mut entry = entry_from_outcome(
-            o,
-            &target,
-            EntryKind::CollectionRun,
-            env,
-            &o.redactor.lock(),
-        );
+        let (target, kind) = target_key(target);
+        let mut entry = entry_from_outcome(o, &target, kind, env, &o.redactor.lock());
         entry.collection = c.name.clone();
-        cx.background_spawn(async move {
+        let write = cx.background_spawn(async move {
             if let Err(e) = history.record(&entry) {
                 log::warn!("Couldn't record the run in the history: {e}");
             }
             history.prune(chrono::Local::now());
+        });
+        cx.spawn(async move |this, cx| {
+            write.await;
+            this.update(cx, |this, cx| this.reload_history(cx)).ok();
         })
         .detach();
+    }
+
+    // The History screen.
+
+    pub(super) fn history_shown(&self) -> bool {
+        self.show_history && self.history_view.is_some()
+    }
+
+    /// Shows the History screen (⌘Y), reading the stored runs afresh.
+    pub(super) fn open_history(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(c) = &self.state.collection else {
+            return;
+        };
+        let view = match &self.history_view {
+            Some(v) => v.clone(),
+            None => {
+                let (root, name) = (c.root.clone(), c.name.clone());
+                let view = cx.new(|cx| HistoryView::new(root, name, cx));
+                self._history_events = Some(cx.subscribe_in(&view, window, Self::on_history_event));
+                self.history_view = Some(view.clone());
+                view
+            }
+        };
+        self.show_history = true;
+        self.show_run = false;
+        self.close_hover(cx);
+        view.read(cx).focus_handle(cx).focus(window, cx);
+        self.reload_history(cx);
+        self.sync_chrome(window, cx);
+    }
+
+    /// ⌘Y again leaves it.
+    fn toggle_history(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.history_shown() {
+            self.hide_history(window, cx);
+        } else {
+            self.open_history(window, cx);
+        }
+    }
+
+    pub(super) fn hide_history(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_history = false;
+        if self.state.active.is_some() {
+            self.focus_active_editor(window, cx);
+        } else {
+            self.focus.focus(window, cx);
+        }
+        self.sync_chrome(window, cx);
+    }
+
+    /// Reads the stored runs off the main thread into the shown screen.
+    fn reload_history(&mut self, cx: &mut Context<Self>) {
+        let (Some(view), Some(base), Some(c)) = (
+            self.history_view.clone().filter(|_| self.show_history),
+            self.store.base(),
+            &self.state.collection,
+        ) else {
+            return;
+        };
+        let history = History::open(base, &c.root);
+        let read = cx.background_spawn(async move { (history.list(), history.usage()) });
+        cx.spawn(async move |this, cx| {
+            let (entries, usage) = read.await;
+            view.update(cx, |v, cx| v.set_entries(entries, usage, cx));
+            this.update(cx, |this, cx| {
+                let usage = this.history_shown().then(|| usage_text(usage).into());
+                this.status.update(cx, |s, cx| s.set_history(usage, cx));
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn on_history_event(
+        &mut self,
+        _: &Entity<HistoryView>,
+        event: &HistoryViewEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            HistoryViewEvent::Close => self.hide_history(window, cx),
+            HistoryViewEvent::Rerun(e) => self.rerun_history(e, window, cx),
+        }
+    }
+
+    /// Runs a stored run's target again. A request is found by its file
+    /// and name (its position may have changed); one that is gone, or a
+    /// file that is, gets a notice instead.
+    fn rerun_history(&mut self, e: &HistoryEntry, window: &mut Window, cx: &mut Context<Self>) {
+        if self.runs.active.is_some() {
+            window.push_notification(
+                Notification::warning("A run is in flight. Stop it first."),
+                cx,
+            );
+            return;
+        }
+        let Some(c) = &mut self.state.collection else {
+            return;
+        };
+        c.refresh();
+        let exists = |f: &Path| find_file(&c.tree, f).is_some();
+        let target = match target_of(e) {
+            RunTarget::Collection => Some(RunTarget::Collection),
+            RunTarget::Files(fs) => {
+                let fs: Vec<PathBuf> = fs.into_iter().filter(|f| exists(f)).collect();
+                (!fs.is_empty()).then_some(RunTarget::Files(fs))
+            }
+            RunTarget::File(f) => exists(&f).then_some(RunTarget::File(f)),
+            RunTarget::Request { file, .. } => {
+                let name = e.results.first().map(|r| r.name.as_str()).unwrap_or("");
+                find_file(&c.tree, &file)
+                    .and_then(|requests| requests.iter().position(|r| r.name == name))
+                    .map(|index| RunTarget::Request { file, index })
+            }
+        };
+        let Some(target) = target else {
+            let (title, _) = super::history_view::entry_title(e);
+            window.push_notification(
+                Notification::warning(format!("{title} is no longer in the collection.")),
+                cx,
+            );
+            return;
+        };
+        self.show_history = false;
+        if let RunTarget::File(f) | RunTarget::Request { file: f, .. } = &target {
+            self.open_file(f, window, cx);
+        }
+        self.run(target, window, cx);
+        self.sync_chrome(window, cx);
     }
 
     // Environments and variables.
@@ -1161,8 +1310,10 @@ impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let open = self.state.collection.is_some();
         let run_shown = open && self.run_shown();
-        let main = match &self.run_view {
-            Some(view) if run_shown => view.clone().into_any_element(),
+        let history_shown = open && self.history_shown();
+        let main = match (&self.history_view, &self.run_view) {
+            (Some(view), _) if history_shown => view.clone().into_any_element(),
+            (_, Some(view)) if run_shown => view.clone().into_any_element(),
             _ if open => self.render_editor_pane(cx).into_any_element(),
             _ => self.render_welcome(cx).into_any_element(),
         };
@@ -1205,6 +1356,9 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &Stop, _, _| this.stop_run()))
             .on_action(cx.listener(|this, _: &CopyAsCurl, _, cx| this.copy_as_curl(cx)))
             .on_action(cx.listener(|this, _: &Rerun, window, cx| this.rerun(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &OpenHistory, window, cx| this.toggle_history(window, cx)),
+            )
             .size_full()
             .flex()
             .flex_col()
@@ -1220,7 +1374,7 @@ impl Render for Workspace {
                     .min_h_0()
                     .child(self.render_sidebar(cx))
                     .child(main)
-                    .when(open && !run_shown, |row| {
+                    .when(open && !run_shown && !history_shown, |row| {
                         row.child(self.render_inspector(cx))
                     }),
             )
@@ -1246,6 +1400,20 @@ pub(super) fn quit_app(cx: &mut App) {
         }
         None => cx.quit(),
     }
+}
+
+/// The requests of the file at `rel` in `tree` (empty for a one-request
+/// file), or `None` when there is no such file.
+fn find_file<'a>(
+    tree: &'a [TreeNode],
+    rel: &Path,
+) -> Option<&'a [crate::model::collection::RequestEntry]> {
+    tree.iter().find_map(|n| match n {
+        TreeNode::Folder { children, .. } => find_file(children, rel),
+        TreeNode::File {
+            rel_path, requests, ..
+        } => (rel_path == rel).then_some(requests.as_slice()),
+    })
 }
 
 /// Replaces an editor's text from disk, keeping the cursor where it was.

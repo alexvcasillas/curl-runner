@@ -143,6 +143,16 @@ impl Runs {
         self.root = root.to_path_buf();
     }
 
+    /// What the active run runs.
+    pub fn target(&self) -> Option<&RunTarget> {
+        self.target.as_ref()
+    }
+
+    /// The environment the active run uses.
+    pub fn env(&self) -> &str {
+        &self.env
+    }
+
     /// Request `index` of `file`, or with `None` the whole file: failed if
     /// any result failed (or the file did not load), passed once every
     /// result so far passed, else not run.

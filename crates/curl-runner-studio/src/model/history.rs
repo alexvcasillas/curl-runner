@@ -6,7 +6,7 @@
 //! and a run's captured-value stores are never persisted.
 
 use crate::model::result_view::checks;
-use crate::model::run::RunOutcome;
+use crate::model::run::{RunOutcome, RunTarget};
 use chrono::{DateTime, Duration, Local};
 use curl_runner_core::model::Json;
 use curl_runner_core::security::redact::Redactor;
@@ -40,6 +40,10 @@ pub struct HistoryEntry {
     pub duration_ms: f64,
     pub retries: u32,
     pub results: Vec<StoredResult>,
+    /// The curl-runner version that ran it; empty in entries written before
+    /// it was stored.
+    #[serde(default)]
+    pub version: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -211,6 +215,7 @@ pub fn entry_from_outcome(
         duration_ms: o.summary.duration,
         retries,
         results,
+        version: curl_runner_core::VERSION.to_string(),
     }
 }
 
@@ -280,15 +285,102 @@ pub fn previous_for<'a>(entries: &'a [HistoryEntry], e: &HistoryEntry) -> Option
         .max_by_key(|o| o.at)
 }
 
-/// Durations of the last `n` runs of a target and environment, oldest first.
-pub fn duration_series(entries: &[HistoryEntry], target: &str, env: &str, n: usize) -> Vec<f64> {
+/// Durations of the last `n` runs of `e`'s target and environment up to
+/// and including `e`, oldest first (so `e` is the last).
+pub fn duration_series(entries: &[HistoryEntry], e: &HistoryEntry, n: usize) -> Vec<f64> {
     let mut runs: Vec<&HistoryEntry> = entries
         .iter()
-        .filter(|e| e.target == target && e.environment == env)
+        .filter(|o| o.target == e.target && o.environment == e.environment && o.at <= e.at)
         .collect();
     runs.sort_by_key(|e| e.at);
     let skip = runs.len().saturating_sub(n);
     runs[skip..].iter().map(|e| e.duration_ms).collect()
+}
+
+/// How a run target is stored: `collection`, the files of a re-run joined
+/// by `, `, a file path, or `file#index` for one request of a file.
+pub fn target_key(t: &RunTarget) -> (String, EntryKind) {
+    match t {
+        RunTarget::Collection => ("collection".into(), EntryKind::CollectionRun),
+        RunTarget::Files(fs) => (
+            fs.iter()
+                .map(|f| f.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(", "),
+            EntryKind::CollectionRun,
+        ),
+        RunTarget::File(f) => (f.to_string_lossy().into_owned(), EntryKind::Request),
+        RunTarget::Request { file, index } => (
+            format!("{}#{index}", file.to_string_lossy()),
+            EntryKind::Request,
+        ),
+    }
+}
+
+/// The target an entry ran, from its [`target_key`].
+pub fn target_of(e: &HistoryEntry) -> RunTarget {
+    match e.kind {
+        EntryKind::CollectionRun if e.target == "collection" => RunTarget::Collection,
+        EntryKind::CollectionRun => {
+            RunTarget::Files(e.target.split(", ").map(PathBuf::from).collect())
+        }
+        EntryKind::Request => match e.target.rsplit_once('#') {
+            Some((file, n)) if n.parse::<usize>().is_ok() => RunTarget::Request {
+                file: file.into(),
+                index: n.parse().unwrap_or_default(),
+            },
+            _ => RunTarget::File(e.target.clone().into()),
+        },
+    }
+}
+
+/// The History screen's kind tabs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum KindFilter {
+    #[default]
+    All,
+    CollectionRuns,
+    Requests,
+    /// Runs with at least one request that did not pass.
+    Failed,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Filter {
+    pub kind: KindFilter,
+    /// `None`: every environment.
+    pub environment: Option<String>,
+}
+
+/// Indices of the entries `f` keeps, in their order.
+pub fn filter_entries(e: &[HistoryEntry], f: &Filter) -> Vec<usize> {
+    e.iter()
+        .enumerate()
+        .filter(|(_, e)| match f.kind {
+            KindFilter::All => true,
+            KindFilter::CollectionRuns => e.kind == EntryKind::CollectionRun,
+            KindFilter::Requests => e.kind == EntryKind::Request,
+            KindFilter::Failed => e.passed < e.total,
+        })
+        .filter(|(_, e)| {
+            f.environment
+                .as_ref()
+                .is_none_or(|env| *env == e.environment)
+        })
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// The list's day heading: `Today`, `Yesterday`, else `Oct 27`.
+pub fn day_bucket(at: DateTime<Local>, now: DateTime<Local>) -> String {
+    let (day, today) = (at.date_naive(), now.date_naive());
+    if day == today {
+        "Today".to_string()
+    } else if today.pred_opt() == Some(day) {
+        "Yesterday".to_string()
+    } else {
+        at.format("%b %-d").to_string()
+    }
 }
 
 #[cfg(test)]
@@ -331,6 +423,7 @@ mod tests {
             duration_ms: 10.0,
             retries: 0,
             results,
+            version: "2.1.1".into(),
         }
     }
 
@@ -516,10 +609,83 @@ mod tests {
         let cur = list[0].clone();
         assert_eq!(previous_for(&list, &cur).unwrap().id, "b");
         assert!(previous_for(&list, &list[3]).is_none());
+        assert_eq!(duration_series(&list, &cur, 12), [10.0, 20.0, 30.0]);
+        assert_eq!(duration_series(&list, &cur, 2), [20.0, 30.0]);
+        // Runs after the picked one are not in its series.
+        assert_eq!(duration_series(&list, &list[2], 12), [10.0, 20.0]);
+    }
+
+    #[test]
+    fn filter_failed_only() {
+        let ok = entry("a", at(1, 9), vec![]);
+        let mut bad = entry("b", at(2, 9), vec![]);
+        bad.passed = 0;
+        let mut req = entry("c", at(3, 9), vec![]);
+        req.kind = EntryKind::Request;
+        req.environment = "prod".into();
+        let list = [ok, bad, req];
+        let only = |kind, environment: Option<&str>| {
+            filter_entries(
+                &list,
+                &Filter {
+                    kind,
+                    environment: environment.map(Into::into),
+                },
+            )
+        };
+        assert_eq!(only(KindFilter::Failed, None), [1]);
+        assert_eq!(only(KindFilter::All, None), [0, 1, 2]);
+        assert_eq!(only(KindFilter::CollectionRuns, None), [0, 1]);
+        assert_eq!(only(KindFilter::Requests, None), [2]);
+        assert_eq!(only(KindFilter::All, Some("staging")), [0, 1]);
+        assert!(only(KindFilter::Failed, Some("prod")).is_empty());
+    }
+
+    #[test]
+    fn day_buckets() {
+        let now = Local.with_ymd_and_hms(2026, 10, 30, 0, 30, 0).unwrap();
+        assert_eq!(day_bucket(at(30, 0), now), "Today");
+        assert_eq!(day_bucket(at(29, 23), now), "Yesterday");
+        assert_eq!(day_bucket(at(29, 0), now), "Yesterday");
+        assert_eq!(day_bucket(at(28, 23), now), "Oct 28");
+        assert_eq!(day_bucket(at(7, 9), now), "Oct 7");
+        let jan = Local.with_ymd_and_hms(2027, 1, 1, 8, 0, 0).unwrap();
+        let eve = Local.with_ymd_and_hms(2026, 12, 31, 22, 0, 0).unwrap();
+        assert_eq!(day_bucket(eve, jan), "Yesterday");
+    }
+
+    #[test]
+    fn old_entries_without_a_version_still_load() {
+        let (_d, h) = history();
+        let mut v = serde_json::to_value(entry("aaaa0001", at(1, 9), vec![])).unwrap();
+        v.as_object_mut().unwrap().remove("version");
+        std::fs::create_dir_all(&h.dir).unwrap();
+        std::fs::write(h.dir.join("20261001T090000-aaaa0001.json"), v.to_string()).unwrap();
+        assert_eq!(h.list()[0].version, "");
+    }
+
+    #[test]
+    fn target_keys_round_trip() {
+        for t in [
+            RunTarget::Collection,
+            RunTarget::Files(vec!["a.yaml".into(), "b/c.yaml".into()]),
+            RunTarget::File("charges/get-charge.yaml".into()),
+            RunTarget::Request {
+                file: "charges/list.yaml".into(),
+                index: 2,
+            },
+        ] {
+            let (key, kind) = target_key(&t);
+            let mut e = entry("a", at(1, 9), vec![]);
+            (e.target, e.kind) = (key, kind);
+            assert_eq!(target_of(&e), t);
+        }
         assert_eq!(
-            duration_series(&list, "a.yaml", "staging", 12),
-            [10.0, 20.0, 30.0]
+            target_key(&RunTarget::Request {
+                file: "a.yaml".into(),
+                index: 1
+            }),
+            ("a.yaml#1".to_string(), EntryKind::Request)
         );
-        assert_eq!(duration_series(&list, "a.yaml", "staging", 2), [20.0, 30.0]);
     }
 }

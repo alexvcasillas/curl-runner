@@ -801,7 +801,7 @@ fn key_chip(keys: &'static str) -> Div {
 }
 
 /// The board's 12px pill: `(text, background, border)` tokens.
-fn pill(tokens: (&str, &str, &str)) -> Div {
+pub(super) fn pill(tokens: (&str, &str, &str)) -> Div {
     let (fg, bg, border) = tokens;
     div()
         .flex()

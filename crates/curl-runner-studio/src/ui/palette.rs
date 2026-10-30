@@ -5,7 +5,9 @@
 //! frame, query field and list scrollbar could not match the mockup (its
 //! scrollbar covered the shortcut chips).
 
-use super::app::{Import, NewCollection, NewRequest, OpenFolder, ToggleProblems, mono_font};
+use super::app::{
+    Import, NewCollection, NewRequest, OpenFolder, OpenHistory, ToggleProblems, mono_font,
+};
 use super::icons::{self, glyph};
 use super::sidebar::{request_count, request_label};
 use super::workspace::Workspace;
@@ -157,15 +159,17 @@ pub enum PaletteAction {
     NewCollection,
     Import,
     ToggleProblems,
+    OpenHistory,
 }
 
 impl PaletteAction {
-    pub const ALL: [PaletteAction; 5] = [
+    pub const ALL: [PaletteAction; 6] = [
         PaletteAction::OpenFolder,
         PaletteAction::NewRequest,
         PaletteAction::NewCollection,
         PaletteAction::Import,
         PaletteAction::ToggleProblems,
+        PaletteAction::OpenHistory,
     ];
 
     fn label(self) -> &'static str {
@@ -175,6 +179,7 @@ impl PaletteAction {
             PaletteAction::NewCollection => "New collection…",
             PaletteAction::Import => "Import curl…",
             PaletteAction::ToggleProblems => "Toggle Problems",
+            PaletteAction::OpenHistory => "Open history",
         }
     }
 
@@ -186,6 +191,7 @@ impl PaletteAction {
             PaletteAction::NewCollection => icons::FOLDER_PLUS,
             PaletteAction::Import => icons::IMPORT,
             PaletteAction::ToggleProblems => icons::PANEL_BOTTOM,
+            PaletteAction::OpenHistory => icons::HISTORY,
         }
     }
 
@@ -197,6 +203,7 @@ impl PaletteAction {
             PaletteAction::NewCollection => Box::new(NewCollection),
             PaletteAction::Import => Box::new(Import),
             PaletteAction::ToggleProblems => Box::new(ToggleProblems),
+            PaletteAction::OpenHistory => Box::new(OpenHistory),
         }
     }
 }
@@ -434,6 +441,7 @@ impl Palette {
                 }
                 Target::Action(PaletteAction::Import) => drop(ws.import(window, cx)),
                 Target::Action(PaletteAction::ToggleProblems) => ws.toggle_problems(cx),
+                Target::Action(PaletteAction::OpenHistory) => ws.open_history(window, cx),
             })
             .ok();
     }
@@ -1004,6 +1012,15 @@ mod tests {
                 PaletteAction::ALL[i]
             );
         }
+    }
+
+    #[test]
+    fn history_is_an_action() {
+        let entries = palette_entries(None, &[]);
+        let items: Vec<_> = entries.iter().map(|(i, _)| i.clone()).collect();
+        let top = palette_matches("history", &items)[0].0;
+        assert_eq!(items[top].label, "Open history");
+        assert_eq!(entries[top].1, Target::Action(PaletteAction::OpenHistory));
     }
 
     #[test]

@@ -70,6 +70,13 @@ pub const DOWNLOAD: &str = glyph!(
     "1.5",
     r#"<path d="M8 2.5v8M4.5 7L8 10.5 11.5 7M3 13.5h10"/>"#
 );
+/// Slower than the previous run (History).
+pub const TREND: &str = glyph!("1.6", r#"<path d="M3 11l4-4 3 3 3-5"/>"#);
+/// A clock with a back arrow: the run history.
+pub const HISTORY: &str = glyph!(
+    "1.4",
+    r#"<path d="M2.5 8a5.5 5.5 0 101.6-3.9"/><path d="M2.5 2.5v2.5H5"/><path d="M8 5.5V8l1.75 1.75"/>"#
+);
 /// The board's dashed ring for a queued request.
 pub const QUEUED: &str = glyph!(
     "1.5",
@@ -115,6 +122,8 @@ mod tests {
             COPY,
             RERUN,
             DOWNLOAD,
+            TREND,
+            HISTORY,
             QUEUED,
             SKIPPED,
         ] {

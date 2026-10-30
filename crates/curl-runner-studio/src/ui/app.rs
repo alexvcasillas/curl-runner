@@ -54,6 +54,10 @@ actions!(
         Stop,
         /// Leave the run screen for the editor; the run goes on (esc).
         CloseRun,
+        /// Show the run history, or leave it when it is shown (⌘Y).
+        OpenHistory,
+        /// Leave the run history for the editor (esc).
+        CloseHistory,
     ]
 );
 
@@ -78,6 +82,8 @@ pub fn menus() -> Vec<Menu> {
             MenuItem::action("Run Collection", RunCollection),
             MenuItem::separator(),
             MenuItem::action("Stop", Stop),
+            MenuItem::separator(),
+            MenuItem::action("History", OpenHistory),
         ]),
     ]
 }
@@ -105,6 +111,8 @@ pub fn keymap() -> Vec<KeyBinding> {
         // it is shown, never inside an editor) it stops the run.
         KeyBinding::new("cmd-.", Stop, Some("RunView")),
         KeyBinding::new("escape", CloseRun, Some("RunView")),
+        KeyBinding::new("cmd-y", OpenHistory, None),
+        KeyBinding::new("escape", CloseHistory, Some("HistoryView")),
         KeyBinding::new("cmd-shift-m", ToggleProblems, None),
         KeyBinding::new("cmd-enter", RunActive, None),
         KeyBinding::new("alt-cmd-enter", RunRequestUnderCursor, None),
@@ -231,6 +239,7 @@ pub fn run() {
                                 }
                             }
                             "problem" => ws.dev_show_first_problem(window, cx),
+                            "history" => ws.open_history(window, cx),
                             "export" => {
                                 if let Some(view) = &ws.run_view {
                                     view.update(cx, |v, cx| v.open_export_menu(cx));
@@ -263,7 +272,7 @@ pub fn run() {
 /// `CURL_RUNNER_STUDIO_SELECT`, if set); `problem`
 /// selects the open file's first problem and opens its popover and `export`
 /// opens the run screen's Export menu (with
-/// `CURL_RUNNER_STUDIO_RUN=collection`); hover and click states can't be
+/// `CURL_RUNNER_STUDIO_RUN=collection`) and `history` the History screen; hover and click states can't be
 /// reached without a pointer. `CURL_RUNNER_STUDIO_LINE`
 /// puts the cursor on a zero-based line, `CURL_RUNNER_STUDIO_TAB` picks the
 /// inspector tab, `CURL_RUNNER_STUDIO_BODY=raw` shows the Checks tab's body
@@ -602,6 +611,8 @@ mod tests {
                 "cmd-k",
                 "cmd-.",
                 "cmd-.",
+                "escape",
+                "cmd-y",
                 "escape",
                 "cmd-shift-m",
                 "cmd-enter",
