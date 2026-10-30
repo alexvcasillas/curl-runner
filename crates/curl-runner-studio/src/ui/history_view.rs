@@ -728,8 +728,8 @@ impl HistoryView {
                     .min_w_0()
                     .text_size(px(12.))
                     .text_color(color("text-tertiary"))
-                    .whitespace_nowrap()
-                    .text_ellipsis()
+                    // Wraps as the board's does when the tabs need the room.
+                    .line_height(relative(1.3))
                     .child("Kept on this device · last 30 days"),
             )
             .child(div().flex_1())
