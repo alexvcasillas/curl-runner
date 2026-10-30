@@ -374,6 +374,20 @@ pub fn file_readers(file_name: &str) -> Option<String> {
     (!env.is_empty()).then(|| env.to_string())
 }
 
+/// Every `.env` file environment `env` loads that sets `name`, the one that
+/// wins first (`*.local` overrides included).
+pub fn plain_copies(root: &Path, env: &str, name: &str) -> Vec<PathBuf> {
+    let env = Some(env).filter(|e| *e != DEFAULT_ENVIRONMENT);
+    let mut files: Vec<PathBuf> = env::env_file_paths(root, env)
+        .into_iter()
+        .filter(|p| {
+            std::fs::read_to_string(p).is_ok_and(|t| env::parse_env_content(&t).contains_key(name))
+        })
+        .collect();
+    files.reverse();
+    files
+}
+
 /// Whether any `.env` file environment `env` loads sets `name`.
 pub fn name_in_env_files(root: &Path, env: &str, name: &str) -> bool {
     let env = Some(env).filter(|e| *e != DEFAULT_ENVIRONMENT);

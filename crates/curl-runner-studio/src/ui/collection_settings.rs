@@ -17,7 +17,8 @@ use crate::model::collection_meta::{CollectionMeta, VarMeta};
 use crate::model::environments::{
     CapturedVar, DEFAULT_ENVIRONMENT, EnvRow, RowSource, UsageIndex, create_environment, env_file,
     environment_rows, file_readers, import_dotenv, is_secret, list_environments, move_to_file,
-    move_to_keychain, name_in_env_files, remove_env_var, remove_env_var_at, write_env_var,
+    move_to_keychain, name_in_env_files, plain_copies, remove_env_var, remove_env_var_at,
+    write_env_var,
 };
 use crate::model::secrets::{CachedSecrets, SecretStore, service_name};
 use curl_runner_core::env::parse_env_content;
@@ -137,11 +138,9 @@ fn used_by_text(n: usize) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValueWrite {
     Nothing,
-    /// Into the Keychain, and out of this environment's own file.
+    /// Into the Keychain, and out of this environment's own file. Plain
+    /// copies in the other files it reads are asked about first.
     Keychain,
-    /// Into the Keychain, out of a file this tab does not own (`.env` on
-    /// Staging, a `.local` override): asks what to do with that copy.
-    KeychainFrom(PathBuf),
     /// Into this environment's file.
     File,
     /// Out of the Keychain into this environment's file: asks first.
@@ -152,10 +151,9 @@ pub enum ValueWrite {
 /// when it moves between the file and the Keychain: a never-edited value
 /// is never written (an empty Keychain item would count as set, and win
 /// over the shell).
-pub fn plan_value(secret: bool, source: &RowSource, edited: bool, own_file: &Path) -> ValueWrite {
+pub fn plan_value(secret: bool, source: &RowSource, edited: bool) -> ValueWrite {
     match (secret, source) {
-        (true, RowSource::File(p)) if p == own_file => ValueWrite::Keychain,
-        (true, RowSource::File(p)) => ValueWrite::KeychainFrom(p.clone()),
+        (true, RowSource::File(_)) => ValueWrite::Keychain,
         (true, _) if edited => ValueWrite::Keychain,
         (false, RowSource::Keychain) => ValueWrite::KeychainToFile,
         (false, _) if edited => ValueWrite::File,
@@ -185,6 +183,10 @@ pub fn where_stored(source: &RowSource, secret: bool, own_file: &Path, service: 
             "Overridden by your shell environment. Edits are saved to {}, but the shell value wins.",
             file(own_file)
         ),
+        (RowSource::File(p), true) if file(p).ends_with(".local") => format!(
+            "In plain text in {}. The studio never edits .local files — remove it there yourself.",
+            file(p)
+        ),
         (RowSource::File(p), true) => {
             format!(
                 "In plain text in {}. Save moves it to the Keychain.",
@@ -200,6 +202,54 @@ pub fn where_stored(source: &RowSource, secret: bool, own_file: &Path, service: 
         (_, true) => format!("Saved to the {keychain}."),
         (_, false) => format!("Saved to {} in the collection folder.", file(own_file)),
     }
+}
+
+/// The copy confirmation: `A copy remains in .env, which every environment
+/// reads. Remove it there too?`, or `Copies remain in .env.staging and .env,
+/// …`. `.local` files are named apart: the studio never edits them.
+pub fn copies_text(files: &[PathBuf]) -> String {
+    let name = |p: &PathBuf| {
+        p.file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
+    };
+    let (local, removable): (Vec<String>, Vec<String>) =
+        files.iter().map(name).partition(|n| n.ends_with(".local"));
+    let readers = |names: &[String]| {
+        let envs: Vec<Option<String>> = names.iter().map(|n| file_readers(n)).collect();
+        match envs.as_slice() {
+            [Some(e), rest @ ..] if !e.is_empty() && rest.iter().all(|r| r.as_ref() == Some(e)) => {
+                format!("the {} environment reads", env_label(e))
+            }
+            _ => "every environment reads".to_string(),
+        }
+    };
+    let and = |names: &[String]| match names {
+        [] => String::new(),
+        [one] => one.clone(),
+        [init @ .., last] => format!("{} and {last}", init.join(", ")),
+    };
+    let mut text = Vec::new();
+    match removable.len() {
+        0 => {}
+        1 => text.push(format!(
+            "A copy remains in {}, which {}. Remove it there too?",
+            and(&removable),
+            readers(&removable)
+        )),
+        _ => text.push(format!(
+            "Copies remain in {}, which {}. Remove them there too?",
+            and(&removable),
+            readers(&removable)
+        )),
+    }
+    if !local.is_empty() {
+        let verb = if local.len() == 1 { "is" } else { "are" };
+        text.push(format!(
+            "{} {verb} your local override, so the studio leaves it; remove it there yourself.",
+            and(&local)
+        ));
+    }
+    text.join(" ")
 }
 
 /// How the person answered a Save question.
@@ -618,7 +668,14 @@ impl CollectionSettings {
         }
         let secret = d.secret || is_secret(&name, &[]);
         let own_file = self.own_file();
-        let plan = plan_value(secret, &d.source, d.edited, &own_file);
+        let plan = plan_value(secret, &d.source, d.edited);
+        // Every plain copy the environment reads; the own file's goes with
+        // the move, the others are asked about.
+        let copies: Vec<PathBuf> = match plan {
+            ValueWrite::Keychain => plain_copies(&self.root, &self.environment, &name),
+            _ => Vec::new(),
+        };
+        let asks_copies = copies.iter().any(|p| *p != own_file);
         let unmarking = !secret && self.meta.secret_names.contains(&name);
         let elsewhere = if unmarking {
             self.keychain_elsewhere(&name)
@@ -627,8 +684,8 @@ impl CollectionSettings {
         };
         if confirmed == Confirmed::No {
             match &plan {
-                ValueWrite::KeychainFrom(p) => {
-                    self.confirm_copy(p.clone(), window, cx);
+                ValueWrite::Keychain if asks_copies => {
+                    self.confirm_copy(copies, window, cx);
                     return;
                 }
                 ValueWrite::KeychainToFile => {
@@ -645,17 +702,29 @@ impl CollectionSettings {
         let value = d.value.read(cx).value().to_string();
         let (root, env, service) = (self.root.clone(), self.environment.clone(), self.service());
         let secrets: &dyn SecretStore = &*self.secrets;
+        // A copy that could not be removed once the Keychain has the value:
+        // the name is still marked secret, then the error is shown.
+        let mut leftover: Option<String> = None;
         let written = match &plan {
             ValueWrite::Nothing => Ok(()),
-            ValueWrite::Keychain => move_to_keychain(&root, &env, &name, &value, secrets, &service),
-            ValueWrite::KeychainFrom(p) => {
-                move_to_keychain(&root, &env, &name, &value, secrets, &service).and_then(|()| {
-                    match confirmed {
-                        Confirmed::Yes => remove_env_var_at(&root, p, &name),
-                        _ => Ok(()),
+            ValueWrite::Keychain if asks_copies && confirmed == Confirmed::KeepCopy => secrets
+                .set(&service, &name, &value)
+                .map_err(std::io::Error::other),
+            ValueWrite::Keychain => move_to_keychain(&root, &env, &name, &value, secrets, &service)
+                .inspect(|()| {
+                    let failed: Vec<String> = copies
+                        .iter()
+                        .filter(|p| **p != own_file && !p.to_string_lossy().ends_with(".local"))
+                        .filter_map(|p| {
+                            remove_env_var_at(&root, p, &name)
+                                .err()
+                                .map(|e| e.to_string())
+                        })
+                        .collect();
+                    if !failed.is_empty() {
+                        leftover = Some(failed.join("; "));
                     }
-                })
-            }
+                }),
             ValueWrite::File => write_env_var(&root, &env, &name, &value),
             ValueWrite::KeychainToFile => {
                 let value = (d.edited || d.read_error.is_none()).then_some(value.as_str());
@@ -686,7 +755,14 @@ impl CollectionSettings {
         self.drawer = None;
         self.reload();
         cx.emit(SettingsEvent::Changed);
-        window.push_notification(Notification::success(format!("Saved {name}")), cx);
+        match leftover {
+            Some(e) => notify_error(
+                format!("{name} is in the Keychain, but a plain copy could not be removed: {e}"),
+                window,
+                cx,
+            ),
+            None => window.push_notification(Notification::success(format!("Saved {name}")), cx),
+        }
         self.focus.focus(window, cx);
         cx.notify();
     }
@@ -741,25 +817,14 @@ impl CollectionSettings {
         });
     }
 
-    /// Before a value moves into the Keychain from a file this tab does
-    /// not own: Remove the copy there, Keep it, or Cancel.
-    fn confirm_copy(&self, file: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        let file_name = file
-            .file_name()
-            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-        let readers = match file_readers(&file_name).as_deref() {
-            Some("") | None => "every environment reads".to_string(),
-            Some(env) => format!("the {} environment reads", env_label(env)),
-        };
-        // A `.local` override is the person's own: never written.
-        let removable = !file_name.ends_with(".local");
-        let description = if removable {
-            format!("A copy remains in {file_name}, which {readers}. Remove it there too?")
-        } else {
-            format!(
-                "A copy remains in {file_name}, which {readers}. It is your local override, so the studio leaves it."
-            )
-        };
+    /// Before a value moves into the Keychain while plain copies remain in
+    /// files the environment reads: Remove them, Keep them, or Cancel.
+    fn confirm_copy(&self, files: Vec<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
+        let description = copies_text(&files);
+        // `.local` overrides are the person's own: never written.
+        let removable = files
+            .iter()
+            .any(|p| !p.to_string_lossy().ends_with(".local"));
         let this = cx.entity().downgrade();
         window.open_dialog(cx, move |dialog, _, _| {
             let (keep, remove) = (this.clone(), this.clone());
@@ -2050,8 +2115,8 @@ fn render_legend() -> impl IntoElement {
 mod tests {
     use super::{
         CollectionMeta, CollectionSettings, Confirmed, EnvRow, Path, RowSource, SecretStore,
-        ValueWrite, captured_text, plan_value, service_name, source_label, summary_text,
-        used_by_text, where_stored,
+        ValueWrite, captured_text, copies_text, plan_value, service_name, source_label,
+        summary_text, used_by_text, where_stored,
     };
     use gpui_kit::{AppContext as _, Entity, Focusable as _, px, size};
     use std::sync::Arc;
@@ -2333,43 +2398,60 @@ mod tests {
 
     #[test]
     fn save_writes_only_edited_or_moving_values() {
-        let own = Path::new("/c/.env.staging");
+        let staging = RowSource::File("/c/.env.staging".into());
         let default = RowSource::File("/c/.env".into());
-        let staging = RowSource::File(own.into());
         // Never-edited: nothing written, whatever the source.
         for source in [RowSource::Process, RowSource::NotSet, RowSource::Keychain] {
             assert_eq!(
-                plan_value(true, &source, false, own),
+                plan_value(true, &source, false),
                 ValueWrite::Nothing,
                 "{source:?}"
             );
         }
         assert_eq!(
-            plan_value(false, &RowSource::NotSet, false, own),
+            plan_value(false, &RowSource::NotSet, false),
             ValueWrite::Nothing
         );
-        assert_eq!(plan_value(false, &staging, false, own), ValueWrite::Nothing);
+        assert_eq!(plan_value(false, &staging, false), ValueWrite::Nothing);
         assert_eq!(
-            plan_value(false, &RowSource::Process, false, own),
+            plan_value(false, &RowSource::Process, false),
             ValueWrite::Nothing
         );
         // Edited or moving.
         assert_eq!(
-            plan_value(true, &RowSource::Process, true, own),
+            plan_value(true, &RowSource::Process, true),
             ValueWrite::Keychain
         );
-        assert_eq!(plan_value(true, &staging, false, own), ValueWrite::Keychain);
+        assert_eq!(plan_value(true, &staging, false), ValueWrite::Keychain);
+        assert_eq!(plan_value(true, &default, false), ValueWrite::Keychain);
         assert_eq!(
-            plan_value(true, &default, false, own),
-            ValueWrite::KeychainFrom("/c/.env".into())
-        );
-        assert_eq!(
-            plan_value(false, &RowSource::Keychain, false, own),
+            plan_value(false, &RowSource::Keychain, false),
             ValueWrite::KeychainToFile
         );
         assert_eq!(
-            plan_value(false, &RowSource::NotSet, true, own),
+            plan_value(false, &RowSource::NotSet, true),
             ValueWrite::File
+        );
+    }
+
+    #[test]
+    fn copies_text_lists_every_copy() {
+        let p = |n: &str| std::path::PathBuf::from(format!("/c/{n}"));
+        assert_eq!(
+            copies_text(&[p(".env")]),
+            "A copy remains in .env, which every environment reads. Remove it there too?"
+        );
+        assert_eq!(
+            copies_text(&[p(".env.staging"), p(".env")]),
+            "Copies remain in .env.staging and .env, which every environment reads. Remove them there too?"
+        );
+        assert_eq!(
+            copies_text(&[p(".env.staging")]),
+            "A copy remains in .env.staging, which the Staging environment reads. Remove it there too?"
+        );
+        assert_eq!(
+            copies_text(&[p(".env.staging.local"), p(".env")]),
+            "A copy remains in .env, which every environment reads. Remove it there too? .env.staging.local is your local override, so the studio leaves it; remove it there yourself."
         );
     }
 
@@ -2377,6 +2459,15 @@ mod tests {
     fn where_stored_follows_the_source() {
         let own = Path::new("/c/.env.staging");
         let svc = "curl-runner studio · Payments API · staging";
+        assert_eq!(
+            where_stored(
+                &RowSource::File("/c/.env.staging.local".into()),
+                true,
+                own,
+                svc
+            ),
+            "In plain text in .env.staging.local. The studio never edits .local files — remove it there yourself."
+        );
         let text = |s: &RowSource, secret| where_stored(s, secret, own, svc);
         assert_eq!(
             text(&RowSource::Keychain, true),
@@ -2588,5 +2679,120 @@ mod tests {
                 .unwrap()
                 .contains("API_TOKEN")
         );
+    }
+
+    #[gpui_kit::test]
+    fn moving_to_the_keychain_removes_every_plain_copy(cx: &mut TestAppContext) {
+        let state = tempfile::tempdir().unwrap();
+        let (dir, window, ws, secrets) = open(cx, state.path());
+        let name = dir
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let service = service_name(&name, "staging");
+        let (env, staging) = (dir.path().join(".env"), dir.path().join(".env.staging"));
+        std::fs::write(&env, "BASE_URL=https://api.example.com\nAPP_KEY=old\n").unwrap();
+        std::fs::write(
+            &staging,
+            "BASE_URL=https://staging.api.example.com\nAPP_KEY=new\n",
+        )
+        .unwrap();
+        mark(state.path(), dir.path(), &["APP_KEY"]);
+        // Its source is `.env.staging`, but `.env` holds a copy too.
+        let view = drawer_on(cx, window, &ws, "APP_KEY");
+        assert!(
+            save(cx, window, &view, Confirmed::No),
+            "asks about both copies"
+        );
+        assert_eq!(secrets.get(&service, "APP_KEY"), None);
+        let view = drawer_on(cx, window, &ws, "APP_KEY");
+        save(cx, window, &view, Confirmed::Yes);
+        assert_eq!(secrets.get(&service, "APP_KEY").as_deref(), Some("new"));
+        for f in [&env, &staging] {
+            let text = std::fs::read_to_string(f).unwrap();
+            assert!(
+                !text.contains("APP_KEY") && text.contains("BASE_URL"),
+                "{text}"
+            );
+        }
+    }
+
+    #[gpui_kit::test]
+    fn an_edited_shell_secret_asks_about_the_file_copy(cx: &mut TestAppContext) {
+        let state = tempfile::tempdir().unwrap();
+        let (dir, window, ws, secrets) = open(cx, state.path());
+        let name = dir
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let service = service_name(&name, "staging");
+        let env = dir.path().join(".env");
+        std::fs::write(
+            &env,
+            "BASE_URL=https://api.example.com\nSHELL_TOKEN=plain\n",
+        )
+        .unwrap();
+        mark(state.path(), dir.path(), &["SHELL_TOKEN"]);
+        let view = drawer_on(cx, window, &ws, "SHELL_TOKEN");
+        let open_edited = |cx: &mut TestAppContext| {
+            cx.update_window(window, |_, window, cx| {
+                view.update(cx, |v, cx| {
+                    v.set_process_env(|k| (k == "SHELL_TOKEN").then(|| "from-shell".into()));
+                    v.open_variable(Some("SHELL_TOKEN"), window, cx);
+                    let d = v.drawer.as_mut().unwrap();
+                    assert_eq!(d.source, RowSource::Process);
+                    d.edited = true;
+                    d.value.update(cx, |s, cx| s.set_value("typed", window, cx));
+                });
+            })
+            .unwrap();
+        };
+        open_edited(cx);
+        assert!(save(cx, window, &view, Confirmed::No), "asks about .env");
+        assert_eq!(secrets.get(&service, "SHELL_TOKEN"), None);
+        open_edited(cx);
+        save(cx, window, &view, Confirmed::Yes);
+        assert_eq!(
+            secrets.get(&service, "SHELL_TOKEN").as_deref(),
+            Some("typed")
+        );
+        assert!(
+            !std::fs::read_to_string(&env)
+                .unwrap()
+                .contains("SHELL_TOKEN")
+        );
+    }
+
+    #[cfg(unix)]
+    #[gpui_kit::test]
+    fn a_copy_that_cannot_be_removed_still_marks_the_secret(cx: &mut TestAppContext) {
+        use std::os::unix::fs::PermissionsExt as _;
+        let state = tempfile::tempdir().unwrap();
+        let (dir, window, ws, secrets) = open(cx, state.path());
+        let name = dir
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let service = service_name(&name, "staging");
+        std::fs::write(dir.path().join(".env"), "BASE_URL=x\nNEW_KEY=plain\n").unwrap();
+        let view = drawer_on(cx, window, &ws, "NEW_KEY");
+        cx.update_window(window, |_, window, cx| {
+            view.update(cx, |v, cx| v.toggle_secret(window, cx));
+        })
+        .unwrap();
+        // The folder is read-only: `.env` can't be rewritten.
+        let perms = |m| std::fs::Permissions::from_mode(m);
+        std::fs::set_permissions(dir.path(), perms(0o555)).unwrap();
+        save(cx, window, &view, Confirmed::Yes);
+        std::fs::set_permissions(dir.path(), perms(0o755)).unwrap();
+        assert_eq!(secrets.get(&service, "NEW_KEY").as_deref(), Some("plain"));
+        let meta = CollectionMeta::load(state.path(), dir.path());
+        assert!(meta.secret_names.contains(&"NEW_KEY".to_string()));
     }
 }
