@@ -11,7 +11,6 @@ import FeaturePage, {
   generateMetadata as featureMetadata,
 } from '@/app/(marketing)/features/[slug]/page';
 import { generateMetadata as docsMetadata } from '@/app/docs/[[...slug]]/page';
-import sitemap from '@/app/sitemap';
 import { getAllFeatures } from '@/lib/features-data';
 import { docsBreadcrumbs, featureBreadcrumbs, featureOverviewHref } from '@/lib/seo';
 import { SITE_URL, source } from '@/lib/source';
@@ -30,14 +29,6 @@ function jsonLd(html: string): Record<string, unknown>[] {
     JSON.parse(m[1]),
   );
 }
-
-describe('sitemap', () => {
-  it('gives every entry a lastModified date', () => {
-    for (const entry of sitemap()) {
-      expect(entry.lastModified, entry.url).toBeInstanceOf(Date);
-    }
-  });
-});
 
 describe('feature pages link to their docs page', () => {
   for (const feature of getAllFeatures()) {

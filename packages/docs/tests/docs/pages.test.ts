@@ -91,6 +91,15 @@ describe('docs pages', () => {
     }
   });
 
+  // Search engines flag shorter descriptions as too short and cut longer ones off.
+  it('keeps every description between 110 and 160 characters', () => {
+    for (const page of source.getPages()) {
+      const length = page.data.description?.length ?? 0;
+      expect(length, page.url).toBeGreaterThanOrEqual(110);
+      expect(length, page.url).toBeLessThanOrEqual(160);
+    }
+  });
+
   it('lists each moved page in the sidebar tree, not as a link entry', () => {
     const meta = JSON.parse(readFileSync(join(CONTENT_DIR, 'meta.json'), 'utf8')) as {
       pages: string[];
