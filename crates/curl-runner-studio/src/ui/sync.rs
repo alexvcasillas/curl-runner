@@ -446,6 +446,7 @@ impl Workspace {
         self.drop_share(window, cx);
         // Which received copies the server (still) records.
         self.refresh_received_all();
+        self.variables_resend = None;
         let saver = std::mem::take(&mut self.sync.saver);
         self.sync = SyncState {
             saver,
@@ -756,6 +757,13 @@ impl Workspace {
                 self.sync.poll = None;
                 if !self.sync.share_known {
                     self.refresh_share(window, cx);
+                }
+                // A received copy takes its owner's variables as shared
+                // now; an owned, shared collection sends its own again (a
+                // synced file may use new ones).
+                match report.variables {
+                    Some(vars) if self.pull_only() => self.take_shared_vars(vars, window, cx),
+                    _ => self.variables_changed(window, cx),
                 }
                 let touched: Vec<PathBuf> = applied
                     .written

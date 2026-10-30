@@ -388,6 +388,8 @@ impl Workspace {
             // passed on by `notes_changed`.
             SettingsEvent::Changed => {
                 self.invalidate_secrets();
+                // A Default value may be a shared default: it goes again.
+                self.variables_changed(window, cx);
                 if let Some(c) = &self.state.collection
                     && list_environments(&c.root) != self.environments
                 {

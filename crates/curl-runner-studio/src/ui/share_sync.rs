@@ -523,6 +523,19 @@ impl ShareSync {
         cx.notify();
     }
 
+    /// The variables go again as they are now (a description, a lock or a
+    /// shared `.env` default changed), unless a call that sends them is
+    /// already waiting.
+    pub fn resend_variables(&mut self, cx: &mut Context<Self>) {
+        let waiting = self
+            .queue
+            .iter()
+            .any(|op| matches!(op, Op::Open | Op::Variables { .. }));
+        if !waiting {
+            self.push(Op::Variables { tick: None }, cx);
+        }
+    }
+
     pub fn invite(&mut self, email: String, cx: &mut Context<Self>) {
         self.invite_error = None;
         self.push(Op::Invite(email), cx);
@@ -538,7 +551,41 @@ impl ShareSync {
     }
 }
 
+/// Quiet time after the last change before the share's variables go
+/// again.
+pub(super) const VARIABLES_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+
 impl Workspace {
+    /// Something the share's variables are built from changed (the notes,
+    /// a Default value, a synced file): when the open collection is this
+    /// account's and has a share link, they go again [`VARIABLES_DELAY`]
+    /// after the last such change, through the share's queue (made if
+    /// needed), so the people it is shared with get them on their next
+    /// sync or `Check for updates`.
+    pub(super) fn variables_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.shares_variables() {
+            return;
+        }
+        self.variables_resend = Some(cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor().timer(VARIABLES_DELAY).await;
+            this.update_in(cx, |this, window, cx| {
+                this.variables_resend = None;
+                if !this.shares_variables() {
+                    return;
+                }
+                if let Some(sync) = this.share_sync(window, cx) {
+                    sync.update(cx, |s, cx| s.resend_variables(cx));
+                }
+            })
+            .ok();
+        }));
+    }
+
+    /// The open collection is this account's, online, with a share link.
+    fn shares_variables(&self) -> bool {
+        !self.pull_only() && self.sync_on() && !self.sync.offline && self.sync.people.is_some()
+    }
+
     /// What the share needs of the open collection.
     pub(super) fn share_source(&self, cx: &App) -> Option<ShareSource> {
         let c = self.state.collection.as_ref()?;

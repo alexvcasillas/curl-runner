@@ -1412,6 +1412,96 @@ mod gpui_tests {
     }
 
     #[gpui_kit::test]
+    fn an_owners_changes_send_the_variables_again_once_shared(cx: &mut TestAppContext) {
+        use super::super::collection_settings::SettingsEvent;
+        use super::super::share_sync::VARIABLES_DELAY;
+        let dir = collection();
+        let backend = signed_in();
+        let (window, ws) = open(cx, dir.path(), backend.clone());
+        let describe = |cx: &mut TestAppContext, text: &'static str| {
+            ws.update(cx, |ws, cx| {
+                edit_notes(&ws.notes, cx, |m| {
+                    m.vars.entry("BASE_URL".into()).or_default().description = text.into()
+                })
+            });
+        };
+        let settle = |cx: &mut TestAppContext| {
+            cx.executor().advance_clock(VARIABLES_DELAY);
+            cx.run_until_parked();
+        };
+        // No link yet: nothing goes.
+        describe(cx, "Where it runs");
+        settle(cx);
+        assert!(update_shares(&backend).is_empty());
+        // Shared, with BASE_URL's default locked.
+        let _view = open_share(cx, window, &ws);
+        for id in ["share-default-BASE_URL", "share-lock-BASE_URL"] {
+            cx.update_window(window, |_, window, cx| {
+                window.render_frame(cx);
+                window.click(id, cx);
+            })
+            .unwrap();
+            cx.run_until_parked();
+        }
+        cx.update_window(window, |_, window, cx| window.close_dialog(cx))
+            .unwrap();
+        settle(cx);
+        let sent = update_shares(&backend).len();
+        // The Default value changes on the Environments page: it goes.
+        std::fs::write(
+            dir.path().join(".env"),
+            DOTENV.replace("api.example.com/shipping", "api.example.com/v2"),
+        )
+        .unwrap();
+        let page = cx
+            .update_window(window, |_, window, cx| {
+                ws.update(cx, |ws, cx| {
+                    ws.open_settings(window, cx);
+                    ws.settings_view.clone().unwrap()
+                })
+            })
+            .unwrap();
+        page.update(cx, |_, cx| cx.emit(SettingsEvent::Changed));
+        settle(cx);
+        let calls = update_shares(&backend);
+        assert_eq!(calls.len(), sent + 1, "{calls:?}");
+        let last = calls.last().unwrap();
+        assert!(last.contains("https://api.example.com/v2"), "{last}");
+        assert!(last.contains("locked: true"), "{last}");
+        // Two quick description edits: one call, with the last.
+        describe(cx, "Where the API runs");
+        describe(cx, "Where the shipping API runs");
+        settle(cx);
+        let calls = update_shares(&backend);
+        assert_eq!(calls.len(), sent + 2, "{calls:?}");
+        assert!(calls[sent + 1].contains("Where the shipping API runs"));
+        // A synced file that uses a new variable: it goes after the sync.
+        let rates = dir.path().join("rates/get-rates.yaml");
+        std::fs::write(
+            &rates,
+            format!("{REQUEST}  params:\n    region: ${{API_REGION}}\n"),
+        )
+        .unwrap();
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.sync_now(window, cx))
+        })
+        .unwrap();
+        cx.run_until_parked();
+        settle(cx);
+        let last = update_shares(&backend).pop().unwrap();
+        assert!(last.contains("API_REGION"), "{last}");
+        // Never a value it wasn't asked to share.
+        for value in [
+            "acct-4242",
+            "sk-dotenv-secret",
+            "sk-signing",
+            KEYCHAIN_VALUE,
+        ] {
+            assert!(!last.contains(value), "{value}");
+        }
+    }
+
+    #[gpui_kit::test]
     fn share_creates_link_and_copy_puts_it_on_clipboard(cx: &mut TestAppContext) {
         let dir = collection();
         let backend = signed_in();

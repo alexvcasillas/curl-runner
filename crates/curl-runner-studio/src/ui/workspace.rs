@@ -126,6 +126,11 @@ pub struct Workspace {
     /// it to disk on each change.
     pub(super) notes: Entity<CollectionMeta>,
     _notes_saved: Option<Subscription>,
+    /// The notes' share-relevant part (secret marks, variables) as last
+    /// seen: a change sends the share's variables again.
+    pub(super) shared_notes: Option<SharedNotes>,
+    /// The share's variables, going again shortly (debounced).
+    pub(super) variables_resend: Option<Task<()>>,
     /// How many times the notes were written (tests count them).
     #[cfg(test)]
     pub(super) notes_saves: usize,
@@ -276,6 +281,8 @@ impl Workspace {
             secret_cache: Arc::new(CachedSecrets::new(secrets.clone())),
             notes: cx.new(|_| CollectionMeta::default()),
             _notes_saved: None,
+            shared_notes: None,
+            variables_resend: None,
             #[cfg(test)]
             notes_saves: 0,
             settings_view: None,
@@ -404,6 +411,8 @@ impl Workspace {
         // Settings would still list the previous collection's credentials.
         self.close_app_settings();
         self.settings_origin = None;
+        self.shared_notes = Some(SharedNotes::of(&meta));
+        self.variables_resend = None;
         self.notes = cx.new(|_| meta);
         self._notes_saved = Some(
             cx.observe_in(&self.notes, window, |this, notes, window, cx| {
@@ -710,6 +719,11 @@ impl Workspace {
         if let Some(h) = &self.history_view {
             let marked = self.notes.read(cx).secret_names.clone();
             h.update(cx, |h, _| h.set_marked(marked));
+        }
+        let seen = SharedNotes::of(self.notes.read(cx));
+        if self.shared_notes.as_ref() != Some(&seen) {
+            self.shared_notes = Some(seen);
+            self.variables_changed(window, cx);
         }
         self.refresh_vars(cx);
     }
@@ -1550,6 +1564,23 @@ pub(super) fn wait_for_run(cx: &mut gpui_kit::TestAppContext, ws: &Entity<Worksp
 /// Changes the collection's notes in place. Their observers (the workspace
 /// saves them; the page and the share redraw) hear of it only when
 /// something changed. Returns whether it did.
+/// What of the notes a share sends: secret marks and each variable's notes
+/// (description, required, Share default, lock).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SharedNotes {
+    secret_names: Vec<String>,
+    vars: std::collections::BTreeMap<String, crate::model::collection_meta::VarMeta>,
+}
+
+impl SharedNotes {
+    pub(super) fn of(meta: &CollectionMeta) -> SharedNotes {
+        SharedNotes {
+            secret_names: meta.secret_names.clone(),
+            vars: meta.vars.clone(),
+        }
+    }
+}
+
 pub(super) fn edit_notes(
     notes: &Entity<CollectionMeta>,
     cx: &mut App,

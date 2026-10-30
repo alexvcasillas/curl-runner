@@ -12,14 +12,16 @@
 
 use super::backend_call;
 use super::workspace::{Workspace, edit_notes, notify_error};
-use crate::model::backend::SyncFile;
+use crate::model::backend::{SharedVar, SyncFile};
 use crate::model::collection::read_only_text;
+use crate::model::environments::resolve_vars;
 use crate::model::history::relative_time;
 use crate::model::shared_copy::{
     STATE_FOLDER_TEXT, UpdatePlan, apply_update, duplicate, holds_studio_state, plan_update,
     received_from,
 };
 use crate::model::sync_base::SyncBase;
+use curl_runner_core::interpolate::Store;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::prelude::*;
@@ -42,6 +44,11 @@ pub fn updated_ago(
     let mut c = text.chars();
     c.next()
         .map_or_else(String::new, |f| f.to_lowercase().chain(c).collect())
+}
+
+/// `Acme added API_REGION — set it in Environments`.
+pub fn added_text(org: &str, name: &str) -> String {
+    format!("{org} added {name} — set it in Environments")
 }
 
 /// `Update 3 files from Acme?`.
@@ -194,16 +201,22 @@ impl Workspace {
         let id = share.id.clone();
         let call = backend_call(cx, &self.backend, move |b| b.fetch_shared(&id));
         self.update_check = Some(cx.spawn_in(window, async move |this, cx| {
-            let planned = match call.await {
+            let (planned, vars) = match call.await {
                 Ok(snapshot) => {
                     let at = root.clone();
-                    cx.background_spawn(async move { plan_update(&at, snapshot.files) })
-                        .await
+                    let files = snapshot.files;
+                    let plan = cx
+                        .background_spawn(async move { plan_update(&at, files) })
+                        .await;
+                    (plan, Some(snapshot.variables))
                 }
-                Err(e) => Err(format!(
-                    "Couldn't check for updates: {}",
-                    e.link_text(&share.owner_org)
-                )),
+                Err(e) => (
+                    Err(format!(
+                        "Couldn't check for updates: {}",
+                        e.link_text(&share.owner_org)
+                    )),
+                    None,
+                ),
             };
             this.update_in(cx, |this, window, cx| {
                 this.update_check = None;
@@ -214,7 +227,12 @@ impl Workspace {
                     .as_ref()
                     .is_some_and(|c| c.root == root);
                 if same {
-                    this.update_checked(planned, window, cx);
+                    // The variables need no confirm: they are the owner's
+                    // notes, never a file or a value of the user's.
+                    if let Some(vars) = vars {
+                        this.take_shared_vars(vars, window, cx);
+                    }
+                    this.update_checked(root, planned, window, cx);
                 }
             })
             .ok();
@@ -224,6 +242,7 @@ impl Workspace {
 
     fn update_checked(
         &mut self,
+        root: PathBuf,
         planned: Result<UpdatePlan, String>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -244,8 +263,9 @@ impl Workspace {
         self.toasts.push(title.clone());
         let ws = cx.entity().downgrade();
         let plan = Rc::new(plan);
+        let root = Rc::new(root);
         window.open_alert_dialog(cx, move |alert, _, _| {
-            let (ws, plan) = (ws.clone(), plan.clone());
+            let (ws, plan, root) = (ws.clone(), plan.clone(), root.clone());
             alert
                 .title(title.clone())
                 .description(format!(
@@ -254,18 +274,22 @@ impl Workspace {
                 .ok_text("Update")
                 .show_cancel(true)
                 .on_ok(move |_, window, cx| {
-                    ws.update(cx, |this, cx| this.apply_shared_update(&plan, window, cx))
-                        .ok();
+                    ws.update(cx, |this, cx| {
+                        this.apply_shared_update(&root, &plan, window, cx)
+                    })
+                    .ok();
                     true
                 })
         });
     }
 
-    /// Writes the confirmed update: the YAML files only, through the same
-    /// path checks as a sync pull; then the sync base, the notes' updated
-    /// time and the tree.
+    /// Writes the confirmed update into `root`, the copy it was planned
+    /// for (refused if another collection is open by now): the YAML files
+    /// only, through the same path checks as a sync pull; then the sync
+    /// base, the notes' updated time and the tree.
     pub(super) fn apply_shared_update(
         &mut self,
+        root: &Path,
         plan: &UpdatePlan,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -273,6 +297,14 @@ impl Workspace {
         let (Some(c), Some(org)) = (&self.state.collection, self.read_only_org()) else {
             return;
         };
+        if c.root != root {
+            return notify_error(
+                "Another collection is open now; nothing was updated. Check for updates again."
+                    .into(),
+                window,
+                cx,
+            );
+        }
         let (root, org) = (c.root.clone(), org.to_string());
         if let Err(e) = apply_update(&root, plan) {
             notify_error(e, window, cx);
@@ -301,6 +333,61 @@ impl Workspace {
             Notification::success(format!("Updated {n} {files} from {org}")),
             cx,
         );
+    }
+
+    /// A received copy takes its owner's variables as shared now (from a
+    /// sync or `Check for updates`): through the notes (the workspace's one
+    /// writer, which saves them and redoes the status bar's missing count),
+    /// with new names' descriptions and secret marks. A newly required
+    /// variable with no value here yet gets `{org} added {NAME} — set it
+    /// in Environments`.
+    pub(super) fn take_shared_vars(
+        &mut self,
+        vars: Vec<SharedVar>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(org) = self.read_only_org().map(str::to_string) else {
+            return;
+        };
+        let before = self.meta(cx).received_vars.clone();
+        if before == vars {
+            return;
+        }
+        let newly_required: Vec<String> = vars
+            .iter()
+            .filter(|v| v.required && !before.iter().any(|b| b.name == v.name && b.required))
+            .map(|v| v.name.clone())
+            .collect();
+        edit_notes(&self.notes, cx, |meta| {
+            for v in &vars {
+                if v.secret {
+                    meta.set_secret(&v.name, true);
+                }
+                let notes = meta.vars.entry(v.name.clone()).or_default();
+                notes.description = v.description.clone();
+                notes.required_for_shared = v.required;
+            }
+            meta.received_vars = vars;
+        });
+        let Some(c) = &self.state.collection else {
+            return;
+        };
+        let ctx = self.env_ctx(c, cx);
+        let unset: Vec<String> = resolve_vars(
+            &newly_required,
+            &Store::default(),
+            &*self.secret_cache,
+            &ctx,
+            &[],
+        )
+        .into_iter()
+        .filter(|r| r.value.is_none())
+        .map(|r| r.name)
+        .collect();
+        for name in unset {
+            self.toast(added_text(&org, &name), window, cx);
+        }
     }
 
     /// `Duplicate to my workspace`: a folder picker, then [`duplicate_to`].
@@ -517,6 +604,8 @@ mod gpui_tests {
 
     struct Studio {
         state: tempfile::TempDir,
+        /// The copy's folder under the state dir.
+        folder: &'static str,
         secrets: Arc<MemorySecrets>,
         spy: Arc<Spy>,
         window: AnyWindowHandle,
@@ -525,7 +614,7 @@ mod gpui_tests {
 
     impl Studio {
         fn root(&self) -> PathBuf {
-            self.state.path().join("shared/acme-shipping-api")
+            self.state.path().join(self.folder)
         }
 
         fn read(&self, rel: &str) -> String {
@@ -536,13 +625,29 @@ mod gpui_tests {
     /// A studio with Acme's Shipping API added from its link (the Add
     /// flow, `BASE_URL` as given) and open: a received, read-only copy.
     fn received(cx: &mut TestAppContext, signed_in: bool, base_url: Option<&str>) -> Studio {
-        let state = tempfile::tempdir().unwrap();
-        let store = StateStore::at(state.path());
-        let secrets = Arc::new(MemorySecrets::default());
         let inner = test_backend();
         if signed_in {
             futures::executor::block_on(inner.sign_in(SignInMethod::GitHub)).unwrap();
         }
+        let mut fill = vec![("API_TOKEN", TOKEN)];
+        if let Some(url) = base_url {
+            fill.insert(0, ("BASE_URL", url));
+        }
+        added(cx, inner, LINK, &fill, "shared/acme-shipping-api")
+    }
+
+    /// A studio with the share `link` added (its fields filled from
+    /// `fill`) into `folder` and open.
+    fn added(
+        cx: &mut TestAppContext,
+        inner: Arc<dyn Backend>,
+        link: &str,
+        fill: &[(&str, &str)],
+        folder: &'static str,
+    ) -> Studio {
+        let state = tempfile::tempdir().unwrap();
+        let store = StateStore::at(state.path());
+        let secrets = Arc::new(MemorySecrets::default());
         let spy = Arc::new(Spy {
             inner,
             sent: Mutex::default(),
@@ -573,7 +678,7 @@ mod gpui_tests {
             })
             .unwrap();
         cx.update_window(window, |_, window, cx| {
-            view.update(cx, |v, cx| v.paste(LINK, window, cx));
+            view.update(cx, |v, cx| v.paste(link, window, cx));
             window.render_frame(cx);
             window.click("open-shared-open", cx);
         })
@@ -582,16 +687,16 @@ mod gpui_tests {
         click(cx, window, "open-shared-continue");
         cx.update_window(window, |_, window, cx| {
             view.update(cx, |v, cx| {
-                if let Some(url) = base_url {
-                    v.fill("BASE_URL", url, window, cx);
+                for (name, value) in fill {
+                    v.fill(name, value, window, cx);
                 }
-                v.fill("API_TOKEN", TOKEN, window, cx);
             });
         })
         .unwrap();
         click(cx, window, "open-shared-add");
         let s = Studio {
             state,
+            folder,
             secrets,
             spy,
             window,
@@ -977,6 +1082,36 @@ mod gpui_tests {
     }
 
     #[gpui_kit::test]
+    fn an_update_lands_only_in_the_copy_it_was_planned_for(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        let before = snapshot(&s);
+        let mut theirs = before.clone();
+        theirs[0] = SyncFile::new(theirs[0].rel.clone(), "request:\n  url: https://new\n");
+        let plan = crate::model::shared_copy::plan_update(&s.root(), theirs).unwrap();
+        assert_eq!(plan.count(), 1);
+        // Planned for another copy (one open when the check started).
+        let elsewhere = s.state.path().join("shared/acme-other");
+        let ws = s.ws.clone();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.apply_shared_update(&elsewhere, &plan, window, cx)
+            });
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(snapshot(&s), before, "nothing written here");
+        let root = s.root();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.apply_shared_update(&root, &plan, window, cx)
+            });
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_ne!(snapshot(&s), before, "its own copy takes it");
+    }
+
+    #[gpui_kit::test]
     fn duplicate_copies_yaml_not_env_and_is_editable(cx: &mut TestAppContext) {
         let s = received(cx, false, None);
         let dest = tempfile::tempdir().unwrap();
@@ -1212,6 +1347,104 @@ mod gpui_tests {
         click(cx, s.window, "conflict-take-theirs");
         assert_eq!(s.read(RATES), owners);
         assert!(s.spy.sent.lock().unwrap().is_empty());
+    }
+
+    #[gpui_kit::test]
+    fn shared_variables_follow_the_owner_on_sync_and_check(cx: &mut TestAppContext) {
+        use crate::model::backend::SharedVar;
+        use futures::executor::block_on;
+        let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+        let log = seen.clone();
+        let srv = testkit::TestServer::with_handler(move |req| {
+            let currency = req
+                .headers
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case("x-currency"))
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default();
+            log.lock().unwrap().push(currency);
+            testkit::Response::from_data(b"{}".to_vec())
+                .with_header("Content-Type", "application/json")
+        });
+        // The owner (the mock's one account) shares Payments API with
+        // CURRENCY locked to eur.
+        let inner = test_backend();
+        block_on(inner.sign_in(SignInMethod::GitHub)).unwrap();
+        let owner = CollectionKey {
+            id: "0a0b0c0d".into(),
+            name: "Payments API".into(),
+        };
+        let v1 = "request:\n  name: Rates\n  url: ${BASE_URL}/rates\n  headers:\n    X-Currency: ${CURRENCY}\n";
+        block_on(inner.sync(&owner, &[SyncFile::new("rates.yaml", v1)], &[])).unwrap();
+        let vars = |currency: &str, region: bool| {
+            let var = |name: &str, default: Option<&str>, locked: bool| SharedVar {
+                name: name.into(),
+                description: String::new(),
+                required: true,
+                secret: false,
+                default: default.map(String::from),
+                locked,
+            };
+            let mut out = vec![
+                var("BASE_URL", Some(&srv.base_url), false),
+                var("CURRENCY", Some(currency), true),
+            ];
+            if region {
+                out.push(var("API_REGION", None, false));
+            }
+            out
+        };
+        let share = |vars: Vec<SharedVar>| {
+            let update = ShareUpdate {
+                variables: Some(vars),
+                ..ShareUpdate::default()
+            };
+            block_on(inner.update_share(&owner, update)).unwrap()
+        };
+        let link = share(vars("eur", false)).link.unwrap();
+        let s = added(cx, inner.clone(), &link, &[], "shared/acme-payments-api");
+        let run = |cx: &mut TestAppContext| {
+            open_file(cx, &s, "rates.yaml");
+            dispatch(cx, &s, &RunActive);
+            wait_for_run(cx, &s.ws);
+            seen.lock().unwrap().pop().unwrap()
+        };
+        assert_eq!(run(cx), "eur");
+        // The owner locks a new value: the next sync brings it.
+        share(vars("usd", false));
+        let ws = s.ws.clone();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.sync_now(window, cx));
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(run(cx), "usd");
+        assert!(toasts(cx, &s).is_empty(), "{:?}", toasts(cx, &s));
+        // Then another, and a new required variable its request uses:
+        // Check for updates brings both.
+        share(vars("gbp", true));
+        let v2 = format!("{v1}    X-Region: ${{API_REGION}}\n");
+        let v2 = SyncFile::new("rates.yaml", v2).with_base(Some(SyncFile::hash_of(v1)));
+        assert_eq!(block_on(inner.sync(&owner, &[v2], &[])).unwrap().pushed, 1);
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.check_for_updates(window, cx));
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(
+            toasts(cx, &s),
+            [
+                "Acme added API_REGION — set it in Environments",
+                "Update 1 file from Acme?"
+            ]
+        );
+        click(cx, s.window, "ok");
+        cx.run_until_parked();
+        s.ws.read_with(cx, |ws, cx| {
+            assert_eq!(ws.meta(cx).received_vars, vars("gbp", true));
+            assert_eq!(ws.missing, ["API_REGION"], "the status bar says so");
+        });
+        assert_eq!(run(cx), "gbp");
     }
 
     /// A second window on the same studio state with nothing open.
