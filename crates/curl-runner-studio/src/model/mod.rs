@@ -7,6 +7,8 @@ pub mod document;
 #[allow(dead_code)]
 pub mod environments;
 #[allow(dead_code)]
+pub mod result_view;
+#[allow(dead_code)]
 pub mod run;
 #[allow(dead_code)]
 pub mod secrets;

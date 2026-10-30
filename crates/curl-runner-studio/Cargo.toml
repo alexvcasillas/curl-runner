@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 curl-runner-core.workspace = true
+indexmap = "2.14.2"
 serde_json = "1.0.154"
 unicode-normalization = "0.1.26"
 

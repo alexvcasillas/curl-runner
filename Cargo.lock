@@ -1405,6 +1405,7 @@ dependencies = [
  "futures",
  "gpui-kit",
  "gpui-pre",
+ "indexmap",
  "log",
  "lsp-types",
  "notify",
