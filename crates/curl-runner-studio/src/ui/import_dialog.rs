@@ -1706,7 +1706,10 @@ mod tests {
         assert_eq!(store.recent()[0].path, target.path());
     }
 
-    const KEYED: &str = concat!("curl -X POST https://api.example.com/v1/customers -H 'Authorization: Bearer sk_test", "_51HxAbCdEfGhIjKlMnOpQrSt'");
+    const KEYED: &str = concat!(
+        "curl -X POST https://api.example.com/v1/customers -H 'Authorization: Bearer sk_test",
+        "_51HxAbCdEfGhIjKlMnOpQrSt'"
+    );
 
     /// Imports `KEYED` with the Keychain box `save`; returns the file and
     /// what the Keychain holds for API_TOKEN.
@@ -1750,7 +1753,10 @@ mod tests {
             text.contains("Authorization: Bearer ${API_TOKEN}"),
             "{text}"
         );
-        assert_eq!(stored.as_deref(), Some(concat!("sk_test", "_51HxAbCdEfGhIjKlMnOpQrSt")));
+        assert_eq!(
+            stored.as_deref(),
+            Some(concat!("sk_test", "_51HxAbCdEfGhIjKlMnOpQrSt"))
+        );
         assert_eq!(marked, ["API_TOKEN"]);
     }
 
