@@ -137,6 +137,7 @@ pub fn source_label(source: &RowSource, root: &Path) -> String {
         RowSource::Process => "Shell environment".into(),
         RowSource::Captured { .. } => "Captured at run".into(),
         RowSource::Shared(org) => format!("Shared by {org}"),
+        RowSource::Suggested(org) => format!("Suggested by {org}"),
         RowSource::NotSet => "Not set".into(),
     }
 }
@@ -449,25 +450,36 @@ impl CollectionSettings {
             &*self.process_env,
         );
         // A received copy: the owner's defaults are listed (and count as
-        // set) in every environment, as `Shared by {org}`, locked over any
-        // local value, as a run reads them.
-        let shared: Vec<EnvRow> = meta
+        // set) in every environment, as a run reads them. A locked one is
+        // `Shared by {org}` over any local value; a suggested one is
+        // `Suggested by {org}` only where nothing local sets the name.
+        let shared: Vec<(EnvRow, bool)> = meta
             .received_vars
             .iter()
             .filter_map(|v| {
-                let (org, value) = meta.shared_by(&v.name)?;
-                Some(EnvRow {
+                let (locked, (org, value)) = match meta.shared_by(&v.name) {
+                    Some(l) => (true, l),
+                    None => (false, meta.suggested_by(&v.name)?),
+                };
+                let source = if locked {
+                    RowSource::Shared(org.to_string())
+                } else {
+                    RowSource::Suggested(org.to_string())
+                };
+                let row = EnvRow {
                     name: v.name.clone(),
                     value: Some(value.to_string()),
-                    source: RowSource::Shared(org.to_string()),
+                    source,
                     secret: false,
                     plain_copy: None,
-                })
+                };
+                Some((row, locked))
             })
             .collect();
-        for row in shared {
+        for (row, locked) in shared {
             match self.rows.iter_mut().find(|r| r.name == row.name) {
-                Some(r) => *r = row,
+                Some(r) if locked || r.source == RowSource::NotSet => *r = row,
+                Some(_) => {}
                 None => self.rows.push(row),
             }
         }
@@ -2234,6 +2246,7 @@ mod tests {
             required: false,
             secret,
             default: default.map(String::from),
+            locked: default.is_some(),
         };
         ws.update(cx, |ws, cx| {
             super::super::workspace::edit_notes(&ws.notes, cx, |meta| {
@@ -2298,6 +2311,62 @@ mod tests {
         let view = ws.read_with(cx, |ws, _| ws.settings_view.clone().unwrap());
         assert!(!view.read_with(cx, |v, _| v.drawer_open_on("CURRENCY")));
         assert!(view.read_with(cx, |v, _| v.status().summary.ends_with("1 missing")));
+    }
+
+    #[gpui_kit::test]
+    fn suggested_rows_show_the_local_value_else_the_owners(cx: &mut TestAppContext) {
+        use crate::model::backend::SharedVar;
+        let state = tempfile::tempdir().unwrap();
+        let (_dir, window, ws, _) = open(cx, state.path());
+        // Suggested (unlocked): BASE_URL is set locally, REGION is not.
+        let var = |name: &str, default: &str| SharedVar {
+            name: name.into(),
+            description: String::new(),
+            required: false,
+            secret: false,
+            default: Some(default.into()),
+            locked: false,
+        };
+        ws.update(cx, |ws, cx| {
+            super::super::workspace::edit_notes(&ws.notes, cx, |meta| {
+                meta.read_only_from = Some("Acme".into());
+                meta.received_vars = vec![
+                    var("BASE_URL", "https://api.example.com/shipping"),
+                    var("REGION", "eu"),
+                ];
+            })
+        });
+        open_environments(cx, window);
+        let rows = ws.read_with(cx, |ws, cx| {
+            ws.settings_view.as_ref().unwrap().read(cx).rows().to_vec()
+        });
+        let at = |name: &str| rows.iter().position(|r| r.name == name).unwrap();
+        let label = |cx: &mut TestAppContext, id: &'static str, ix: usize| {
+            cx.update_window(window, |_, window, cx| {
+                window.render_frame(cx);
+                window.find((id, ix)).label().map(String::from)
+            })
+            .unwrap()
+        };
+        let (base_url, region) = (at("BASE_URL"), at("REGION"));
+        assert_eq!(
+            label(cx, "env-source", base_url).as_deref(),
+            Some(".env.staging"),
+            "the local value wins"
+        );
+        assert_eq!(
+            label(cx, "env-source", region).as_deref(),
+            Some("Suggested by Acme")
+        );
+        assert_eq!(label(cx, "env-value", region).as_deref(), Some("eu"));
+        assert!(!shows(cx, window, "Shared by Acme"), "nothing locked");
+        // Not locked: a click opens the drawer to set their own.
+        cx.update_window(window, |_, window, cx| {
+            window.click(("env-row", region), cx)
+        })
+        .unwrap();
+        let view = ws.read_with(cx, |ws, _| ws.settings_view.clone().unwrap());
+        assert!(view.read_with(cx, |v, _| v.drawer_open_on("REGION")));
     }
 
     #[gpui_kit::test]

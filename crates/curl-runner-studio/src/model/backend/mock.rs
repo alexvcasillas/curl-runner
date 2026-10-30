@@ -250,13 +250,15 @@ fn expiry_date(e: Expiry) -> Option<NaiveDate> {
     }
 }
 
-/// A secret never carries a default, whatever the caller sent.
+/// A secret never carries a default (nor a lock), whatever the caller
+/// sent; a lock needs a default.
 fn scrub(vars: Vec<SharedVar>) -> Vec<SharedVar> {
     vars.into_iter()
         .map(|mut v| {
             if v.secret {
                 v.default = None;
             }
+            v.locked &= v.default.is_some();
             v
         })
         .collect()

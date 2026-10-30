@@ -125,6 +125,11 @@ impl Field {
     fn secret(&self) -> bool {
         self.var.secret || is_secret(&self.var.name, &[])
     }
+
+    /// The owner locked its default: shown, not asked for.
+    fn locked(&self) -> bool {
+        self.var.locked && !self.secret() && self.var.default.is_some()
+    }
 }
 
 pub struct OpenSharedView {
@@ -337,8 +342,9 @@ impl OpenSharedView {
         let first = self
             .fields
             .iter()
+            .filter(|f| !f.locked())
             .find(|f| f.var.required && f.input.read(cx).value().trim().is_empty())
-            .or(self.fields.first());
+            .or(self.fields.iter().find(|f| !f.locked()));
         if let Some(f) = first {
             f.input.read(cx).focus_handle(cx).focus(window, cx);
         }
@@ -379,7 +385,7 @@ impl OpenSharedView {
     pub fn ready(&self, cx: &App) -> bool {
         self.fields
             .iter()
-            .all(|f| !f.var.required || !f.input.read(cx).value().trim().is_empty())
+            .all(|f| !f.var.required || f.locked() || !f.input.read(cx).value().trim().is_empty())
     }
 
     /// An Add is in flight: the dialog stays until it is done.
@@ -411,9 +417,11 @@ impl OpenSharedView {
             cx.notify();
             return;
         };
+        // A locked default is the owner's: nothing goes to `.env` for it.
         let values: Vec<(String, String)> = self
             .fields
             .iter()
+            .filter(|f| !f.locked())
             .map(|f| {
                 let v = f.input.read(cx).value();
                 (f.var.name.clone(), v.trim().to_string())
@@ -988,22 +996,64 @@ impl OpenSharedView {
                     cx.listener(move |this, _, window, cx| this.toggle_reveal(ix, window, cx)),
                 )
         });
-        let field = field_box(focus, window)
-            // The Kit's input pads its own text: 10px in all, as the board.
-            .pl(px(2.))
-            .pr(px(if secret || from_owner { 6. } else { 10. }))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .font_family(mono_font())
-                    .text_size(px(12.))
-                    .child(Input::new(&f.input).appearance(false).h(px(34.))),
-            )
-            .when(from_owner, |d| {
-                d.child(chip(format!("from {org}"), "text-tertiary"))
-            })
-            .children(reveal);
+        let field = if f.locked() {
+            // Read only: the owner's value and who set it.
+            let set_by = format!("Set by {org}");
+            div()
+                .id(("open-shared-locked", ix))
+                .role(Role::Label)
+                .test_support()
+                .aria_label(set_by.clone())
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .h(px(36.))
+                .px(px(10.))
+                .rounded(px(6.))
+                .border_1()
+                .border_color(color("border-100"))
+                .bg(color("surface-100"))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_ellipsis()
+                        .font_family(mono_font())
+                        .text_size(px(12.))
+                        .text_color(color("text-secondary"))
+                        .child(f.var.default.clone().unwrap_or_default()),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .gap(px(4.))
+                        .text_size(px(11.))
+                        .text_color(color("text-tertiary"))
+                        .child(glyph(icons::LOCK).size(px(12.)))
+                        .child(set_by),
+                )
+                .into_any_element()
+        } else {
+            field_box(focus, window)
+                // The Kit's input pads its own text: 10px in all, as the board.
+                .pl(px(2.))
+                .pr(px(if secret || from_owner { 6. } else { 10. }))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .font_family(mono_font())
+                        .text_size(px(12.))
+                        .child(Input::new(&f.input).appearance(false).h(px(34.))),
+                )
+                .when(from_owner, |d| {
+                    d.child(chip(format!("from {org}"), "text-tertiary"))
+                })
+                .children(reveal)
+                .into_any_element()
+        };
         div()
             .id(("open-shared-var", ix))
             .test_support()
@@ -1571,10 +1621,25 @@ mod gpui_tests {
                 .map(|f| f.var.name.clone())
                 .collect::<Vec<_>>()
         });
-        assert_eq!(names, ["BASE_URL", "API_TOKEN", "ACCOUNT_ID"]);
+        assert_eq!(names, ["BASE_URL", "API_TOKEN", "ACCOUNT_ID", "CURRENCY"]);
         assert_eq!(
             view.read_with(cx, |v, cx| v.fields[0].input.read(cx).value().to_string()),
             "https://api.example.com/shipping"
+        );
+        // CURRENCY is locked: shown read only, set by Acme.
+        let set_by = cx
+            .update_window(s.window, |_, window, cx| {
+                window.render_frame(cx);
+                window
+                    .try_find(("open-shared-locked", 3usize))
+                    .and_then(|e| e.label().map(String::from))
+            })
+            .unwrap();
+        assert_eq!(set_by.as_deref(), Some("Set by Acme"));
+        assert!(view.read_with(cx, |v, _| v.fields[3].locked()));
+        assert!(
+            !view.read_with(cx, |v, _| v.fields[0].locked()),
+            "suggested"
         );
         // API_TOKEN is required: Add waits for it.
         assert!(!view.read_with(cx, |v, cx| v.ready(cx)));
@@ -1594,7 +1659,7 @@ mod gpui_tests {
         s.ws.read_with(cx, |ws, cx| {
             assert_eq!(ws.state.collection.as_ref().unwrap().root, root);
             assert_eq!(ws.meta(cx).read_only_from.as_deref(), Some("Acme"));
-            assert_eq!(ws.meta(cx).received_vars.len(), 3);
+            assert_eq!(ws.meta(cx).received_vars.len(), 4);
             assert_eq!(received[0].collection_id, ws.meta(cx).id);
             assert!(ws.open_shared_view().is_none());
         });
@@ -1631,6 +1696,8 @@ mod gpui_tests {
         assert!(view.read_with(cx, |v, _| v.fields[1].revealed));
         fill(cx, &s, &view, "API_TOKEN", TOKEN);
         fill(cx, &s, &view, "ACCOUNT_ID", "acct_4242");
+        // A locked field takes nothing, even if something got typed in.
+        fill(cx, &s, &view, "CURRENCY", "eur");
         click(cx, &s, "open-shared-add");
 
         let root = s.shared_dir().join("acme-shipping-api");
@@ -1644,6 +1711,7 @@ mod gpui_tests {
             "{env}"
         );
         assert!(env.contains("ACCOUNT_ID=acct_4242"), "{env}");
+        assert!(!env.contains("CURRENCY"), "locked: the owner's: {env}");
         s.ws.read_with(cx, |ws, cx| {
             assert_eq!(ws.meta(cx).secret_names, ["API_TOKEN"]);
         });
@@ -1929,22 +1997,6 @@ mod gpui_tests {
 
     /// End to end: the copy runs with the token typed in, read back from
     /// the Keychain under the service the workspace resolves.
-    /// The owner's locked `BASE_URL` default pointed at `url` (a test
-    /// server): a received copy's runs send it over any local value.
-    fn owner_base_url(cx: &mut TestAppContext, ws: &Entity<Workspace>, url: &str) {
-        let url = url.to_string();
-        ws.update(cx, |ws, cx| {
-            super::super::workspace::edit_notes(&ws.notes, cx, |m| {
-                for v in &mut m.received_vars {
-                    if v.name == "BASE_URL" {
-                        v.default = Some(url.clone());
-                    }
-                }
-            });
-        });
-        cx.run_until_parked();
-    }
-
     #[gpui_kit::test]
     fn added_copy_runs_with_the_keychain_token(cx: &mut TestAppContext) {
         use gpui_kit::Action as _;
@@ -1969,7 +2021,6 @@ mod gpui_tests {
         fill(cx, &s, &view, "BASE_URL", &srv.base_url);
         fill(cx, &s, &view, "API_TOKEN", TOKEN);
         click(cx, &s, "open-shared-add");
-        owner_base_url(cx, &s.ws, &srv.base_url);
         let ws = s.ws.clone();
         cx.update_window(s.window, |_, window, cx| {
             ws.update(cx, |ws, cx| {

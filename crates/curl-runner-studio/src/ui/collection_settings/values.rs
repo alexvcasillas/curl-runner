@@ -129,6 +129,7 @@ impl CollectionSettings {
                 description,
                 required_for_shared: required,
                 share_default: !secret && meta.vars.get(&name).is_some_and(|v| v.share_default),
+                share_locked: false,
             };
             if notes == VarMeta::default() {
                 meta.vars.remove(&name);

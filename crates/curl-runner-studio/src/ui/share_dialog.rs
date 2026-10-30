@@ -74,6 +74,8 @@ struct Shown {
     expiry_text: String,
     /// Names whose `Share default` switch is on (ticks in flight too).
     defaults: Vec<String>,
+    /// Of those, the ones locked for the people it is shared with.
+    locked: Vec<String>,
 }
 
 /// A view onto the collection's [`ShareSync`]: the dialog or the page.
@@ -234,6 +236,12 @@ impl ShareView {
                 .filter(|v| s.shares_default(&v.name, cx))
                 .map(|v| v.name.clone())
                 .collect(),
+            locked: s
+                .vars
+                .iter()
+                .filter(|v| s.locks_default(&v.name, cx))
+                .map(|v| v.name.clone())
+                .collect(),
             vars: s.vars.clone(),
             error: s.error.clone(),
             invite_error: s.invite_error.clone(),
@@ -266,6 +274,11 @@ impl ShareView {
     pub fn toggle_share_default(&mut self, name: &str, cx: &mut Context<Self>) {
         self.sync
             .update(cx, |s, cx| s.toggle_share_default(name, cx));
+    }
+
+    /// `Lock for them` on `name`'s shared default.
+    pub fn toggle_lock(&mut self, name: &str, cx: &mut Context<Self>) {
+        self.sync.update(cx, |s, cx| s.toggle_lock(name, cx));
     }
 
     pub fn copy_link(&mut self, cx: &mut Context<Self>) {
@@ -976,6 +989,30 @@ impl ShareView {
                     .text_color(color(if on { "text-secondary" } else { "text-gutter" }))
                     .child(format!("= {d}"))
             });
+            let locked = on && self.shown.locked.contains(&v.name);
+            let lock_name = name.clone();
+            // A shared default can also be locked for them.
+            let lock = on.then(|| {
+                div()
+                    .id(SharedString::from(format!("share-lock-{lock_name}")))
+                    .role(Role::CheckBox)
+                    .test_support()
+                    .aria_label(format!("Lock for them: {lock_name}"))
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(px(4.))
+                    .text_size(px(11.))
+                    .text_color(color(if locked {
+                        "text-primary"
+                    } else {
+                        "text-tertiary"
+                    }))
+                    .cursor_pointer()
+                    .child(glyph(icons::LOCK).size(px(12.)))
+                    .child("Lock for them")
+                    .on_click(cx.listener(move |this, _, _, cx| this.toggle_lock(&lock_name, cx)))
+            });
             let toggle = offers.then(|| {
                 div()
                     .id(SharedString::from(format!("share-default-{name}")))
@@ -1030,6 +1067,7 @@ impl ShareView {
                         }),
                 )
                 .children(value)
+                .children(lock)
                 .child(div().w(px(28.)).flex_none().children(toggle))
         });
         let secret = self
@@ -1503,6 +1541,46 @@ mod gpui_tests {
         cx.run_until_parked();
         assert_eq!(update_shares(&backend).len(), before);
         assert!(!view.read_with(cx, |v, cx| v.shares_default("API_TOKEN", cx)));
+    }
+
+    #[gpui_kit::test]
+    fn lock_for_them_needs_a_shared_default_and_goes_in_the_payload(cx: &mut TestAppContext) {
+        let dir = collection();
+        let backend = signed_in();
+        let (window, ws) = open(cx, dir.path(), backend.clone());
+        let view = open_share(cx, window, &ws);
+        assert!(
+            !found(cx, window, "share-lock-BASE_URL"),
+            "not shared: no lock"
+        );
+        // A secret never offers one, even shared behind the dialog's back.
+        view.update(cx, |v, cx| v.toggle_lock("API_TOKEN", cx));
+        cx.update_window(window, |_, window, cx| {
+            window.click("share-default-BASE_URL", cx)
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(found(cx, window, "share-lock-BASE_URL"));
+        assert!(!found(cx, window, "share-lock-API_TOKEN"));
+        let last = update_shares(&backend).pop().unwrap();
+        assert!(!last.contains("locked: true"), "{last}");
+        cx.update_window(window, |_, window, cx| {
+            window.click("share-lock-BASE_URL", cx)
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(ws.read_with(cx, |ws, cx| ws.meta(cx).vars["BASE_URL"].share_locked));
+        let last = update_shares(&backend).pop().unwrap();
+        assert_eq!(last.matches("locked: true").count(), 1, "{last}");
+        let base = last.find("\"BASE_URL\"").unwrap();
+        let locked = last.find("locked: true").unwrap();
+        assert!(locked > base, "BASE_URL's: {last}");
+        assert!(!ws.read_with(cx, |ws, cx| {
+            ws.meta(cx)
+                .vars
+                .get("API_TOKEN")
+                .is_some_and(|v| v.share_locked)
+        }));
     }
 
     #[gpui_kit::test]

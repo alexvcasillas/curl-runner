@@ -466,6 +466,7 @@ fn shared_var_default_never_set_for_secret() {
             required: true,
             secret: true,
             default: Some("leaked".into()),
+            locked: false,
         },
         SharedVar {
             name: "BASE_URL".into(),
@@ -473,6 +474,7 @@ fn shared_var_default_never_set_for_secret() {
             required: true,
             secret: false,
             default: Some("https://api.example.com".into()),
+            locked: false,
         },
     ];
     let update = ShareUpdate {
@@ -567,8 +569,15 @@ fn no_secret_reaches_backend() {
             description: "Your own token.".into(),
             required_for_shared: true,
             share_default: true,
+            // Even locked: a secret never carries a lock (nor a default).
+            share_locked: true,
         },
     );
+    // A non-secret locked without a shared default carries no lock.
+    meta.vars
+        .entry("ACCOUNT_ID".into())
+        .or_default()
+        .share_locked = true;
     let keychain = MemorySecrets::default();
     let service = service_name("payments", "Default", &meta.id);
     keychain.set(&service, "API_TOKEN", SECRET).unwrap();
@@ -582,6 +591,37 @@ fn no_secret_reaches_backend() {
     // The owner even ticks "Share default" on the secret.
     let ticked = ["BASE_URL".to_string(), "API_TOKEN".to_string()];
     let vars = shared_vars(&root, &meta, &ticked);
+    for v in &vars {
+        assert!(
+            !v.locked,
+            "{}: no lock without a shared non-secret default",
+            v.name
+        );
+    }
+    // A forged payload: the mock drops a lock with no default too.
+    let mut forged = vars.clone();
+    forged.push(SharedVar {
+        name: "FORGED".into(),
+        description: String::new(),
+        required: false,
+        secret: true,
+        default: Some("forged-default".into()),
+        locked: true,
+    });
+    let stored = block_on(b.update_share(
+        &k,
+        ShareUpdate {
+            variables: Some(forged),
+            ..Default::default()
+        },
+    ))
+    .unwrap();
+    let f = stored
+        .variables
+        .iter()
+        .find(|v| v.name == "FORGED")
+        .unwrap();
+    assert!(f.default.is_none() && !f.locked, "{f:?}");
     let update = ShareUpdate {
         variables: Some(vars),
         ..Default::default()

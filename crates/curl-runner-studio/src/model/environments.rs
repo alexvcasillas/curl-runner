@@ -53,8 +53,10 @@ pub enum VarSource {
     Process,
     /// The `.env` file that sets it (the last one loaded wins).
     EnvFile(PathBuf),
-    /// A received copy's default, set by the owner `org`.
+    /// A received copy's locked default, set by the owner `org`.
     Shared(String),
+    /// A received copy's suggested default, when nothing local sets it.
+    Suggested(String),
 }
 
 /// Its `Debug` hides the value (it may be a Keychain secret).
@@ -90,26 +92,35 @@ pub struct EnvCtx {
     pub environment: String,
     /// The collection's `secret_names`.
     pub marked_secret: Vec<String>,
-    /// A received copy's owner defaults: locked, over every local source
-    /// (secret names excepted).
+    /// A received copy's owner defaults: locked ones over every local
+    /// source, suggested ones under them (secret names excepted).
     pub shared: SharedDefaults,
 }
 
-/// A received copy's non-secret defaults, as its owner shared them
-/// (`Shared by {org}`), locked: a run reads one before the process env and
-/// the `.env` files. Never for a secret name (the Keychain's).
+/// A received copy's non-secret defaults, as its owner shared them. A
+/// locked one (`Shared by {org}`) is read before the process env and the
+/// `.env` files; a suggested one only when none of them sets the name.
+/// Never for a secret name (the Keychain's).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SharedDefaults {
     pub org: String,
-    pub values: Vec<(String, String)>,
+    pub locked: Vec<(String, String)>,
+    pub suggested: Vec<(String, String)>,
+}
+
+fn find<'a>(list: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    list.iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.as_str())
 }
 
 impl SharedDefaults {
-    pub fn get(&self, name: &str) -> Option<&str> {
-        self.values
-            .iter()
-            .find(|(n, _)| n == name)
-            .map(|(_, v)| v.as_str())
+    pub fn locked(&self, name: &str) -> Option<&str> {
+        find(&self.locked, name)
+    }
+
+    pub fn suggested(&self, name: &str) -> Option<&str> {
+        find(&self.suggested, name)
     }
 }
 
@@ -164,8 +175,8 @@ pub fn effective_environment(
 /// run of `files` does. `store.NAME` reads the captured store
 /// only. A plain `NAME` never does: Keychain (secret names only), then the
 /// process env, then the environment's `.env` files (core's fallback, as in
-/// the CLI); a received copy's shared default (never a secret's) comes
-/// before all of them.
+/// the CLI). A received copy's locked default (never a secret's) comes
+/// before all of them, a suggested one after them.
 pub fn resolve_vars(
     names: &[String],
     captured: &Store,
@@ -216,11 +227,12 @@ fn resolve_vars_with(
                 };
             }
             let secret = is_secret(name, &ctx.marked_secret);
+            let org = || ctx.shared.org.clone();
             let locked = ctx
                 .shared
-                .get(name)
+                .locked(name)
                 .filter(|_| !secret)
-                .map(|v| (v.to_string(), VarSource::Shared(ctx.shared.org.clone())));
+                .map(|v| (v.to_string(), VarSource::Shared(org())));
             let found = locked
                 .or_else(|| {
                     secret
@@ -234,6 +246,10 @@ fn resolve_vars_with(
                         vars.get(name)
                             .map(|v| (v.clone(), VarSource::EnvFile(p.clone())))
                     })
+                })
+                .or_else(|| {
+                    let v = ctx.shared.suggested(name).filter(|_| !secret)?;
+                    Some((v.to_string(), VarSource::Suggested(org())))
                 });
             let (value, source) = found.unzip();
             ResolvedVar {
@@ -868,8 +884,11 @@ pub enum RowSource {
         request: Option<String>,
         path: Option<String>,
     },
-    /// A received copy's default, set by the owner `org`: read only.
+    /// A received copy's locked default, set by the owner `org`: read only.
     Shared(String),
+    /// A received copy's suggested default from the owner `org`, while
+    /// nothing local sets the name: the user may set their own.
+    Suggested(String),
     NotSet,
 }
 
@@ -1105,23 +1124,37 @@ mod tests {
         let ctx = EnvCtx {
             shared: SharedDefaults {
                 org: "Acme".into(),
-                values: vec![
+                locked: vec![
                     ("SHIP_CURRENCY_T".into(), "eur".into()),
                     ("SHIP_REGION_T".into(), "us".into()),
                     ("SECRET_SHIP_T".into(), "leak".into()),
                 ],
+                suggested: vec![
+                    ("SHIP_SUG_T".into(), "owner".into()),
+                    ("SHIP_SUGGESTED_T".into(), "owner".into()),
+                ],
             },
             ..ctx(d.path(), DEFAULT_ENVIRONMENT)
         };
-        let names: Vec<String> = ["SHIP_CURRENCY_T", "SHIP_REGION_T", "SECRET_SHIP_T"]
-            .map(String::from)
-            .into();
+        fs::write(d.path().join(".env"), "SHIP_REGION_T=eu\nSHIP_SUG_T=mine\n").unwrap();
+        let names: Vec<String> = [
+            "SHIP_CURRENCY_T",
+            "SHIP_REGION_T",
+            "SECRET_SHIP_T",
+            "SHIP_SUG_T",
+            "SHIP_SUGGESTED_T",
+        ]
+        .map(String::from)
+        .into();
         let v = resolve_vars(&names, &Store::new(), &MemorySecrets::default(), &ctx, &[]);
         assert_eq!(v[0].value.as_deref(), Some("eur"));
         assert_eq!(v[0].source, Some(VarSource::Shared("Acme".into())));
-        assert_eq!(v[1].value.as_deref(), Some("us"), "over .env");
+        assert_eq!(v[1].value.as_deref(), Some("us"), "locked: over .env");
         assert_eq!(v[1].source, Some(VarSource::Shared("Acme".into())));
         assert_eq!(v[2].value, None, "a secret never takes one");
+        assert_eq!(v[3].value.as_deref(), Some("mine"), "suggested: .env wins");
+        assert_eq!(v[4].value.as_deref(), Some("owner"));
+        assert_eq!(v[4].source, Some(VarSource::Suggested("Acme".into())));
     }
 
     #[test]

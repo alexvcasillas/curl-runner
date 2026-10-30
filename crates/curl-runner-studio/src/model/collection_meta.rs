@@ -21,6 +21,9 @@ pub struct VarMeta {
     /// Share the Default environment's (`.env`) value with the collection
     /// (non-secret names only; a secret never shares one).
     pub share_default: bool,
+    /// The shared default is locked for the people it is shared with
+    /// (`Lock for them`); else only suggested. Only with `share_default`.
+    pub share_locked: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,30 +105,50 @@ impl CollectionMeta {
             .collect()
     }
 
-    /// A received copy's locked default for `name`: `(org, value)`.
-    pub fn shared_by(&self, name: &str) -> Option<(&str, &str)> {
+    /// A received copy's default for `name`: `(org, value, locked)`.
+    /// Never a secret's.
+    fn received_default(&self, name: &str) -> Option<(&str, &str, bool)> {
         let org = self.read_only_from.as_deref()?;
-        self.received_vars
+        let v = self
+            .received_vars
             .iter()
-            .find(|v| v.name == name && !v.secret && !is_secret(name, &self.secret_names))
-            .and_then(|v| v.default.as_deref())
-            .map(|value| (org, value))
+            .find(|v| v.name == name && !v.secret && !is_secret(name, &self.secret_names))?;
+        Some((org, v.default.as_deref()?, v.locked))
     }
 
-    /// A received copy's locked defaults, for runs: every
-    /// [`Self::shared_by`] value.
+    /// A received copy's locked default for `name` (`Shared by {org}`):
+    /// `(org, value)`.
+    pub fn shared_by(&self, name: &str) -> Option<(&str, &str)> {
+        self.received_default(name)
+            .filter(|(_, _, locked)| *locked)
+            .map(|(org, value, _)| (org, value))
+    }
+
+    /// A received copy's suggested (unlocked) default for `name`
+    /// (`Suggested by {org}`): `(org, value)`.
+    pub fn suggested_by(&self, name: &str) -> Option<(&str, &str)> {
+        self.received_default(name)
+            .filter(|(_, _, locked)| !*locked)
+            .map(|(org, value, _)| (org, value))
+    }
+
+    /// A received copy's defaults, for runs: locked and suggested.
     pub fn shared_defaults(&self) -> SharedDefaults {
-        SharedDefaults {
+        let mut out = SharedDefaults {
             org: self.read_only_from.clone().unwrap_or_default(),
-            values: self
-                .received_vars
-                .iter()
-                .filter_map(|v| {
-                    let (_, value) = self.shared_by(&v.name)?;
-                    Some((v.name.clone(), value.to_string()))
-                })
-                .collect(),
+            ..SharedDefaults::default()
+        };
+        for v in &self.received_vars {
+            if let Some((_, value, locked)) = self.received_default(&v.name) {
+                let list = if locked {
+                    &mut out.locked
+                } else {
+                    &mut out.suggested
+                };
+                list.push((v.name.clone(), value.to_string()));
+            }
         }
+        out
     }
 
     /// Marks or unmarks `name` as secret (a `SECRET_` name always is). A
@@ -138,6 +161,7 @@ impl CollectionMeta {
         }
         if secret && let Some(v) = self.vars.get_mut(name) {
             v.share_default = false;
+            v.share_locked = false;
         }
     }
 }
@@ -187,6 +211,7 @@ mod tests {
                 description: "Your API key.".into(),
                 required_for_shared: true,
                 share_default: false,
+                share_locked: false,
             },
         );
         meta.save(base.path(), a.path()).unwrap();
@@ -271,6 +296,15 @@ mod tests {
                 required: false,
                 secret: false,
                 default: Some("eur".into()),
+                locked: true,
+            },
+            SharedVar {
+                name: "BASE_URL".into(),
+                description: String::new(),
+                required: true,
+                secret: false,
+                default: Some("https://api.example.com".into()),
+                locked: false,
             },
             SharedVar {
                 name: "API_TOKEN".into(),
@@ -278,6 +312,7 @@ mod tests {
                 required: true,
                 secret: true,
                 default: Some("leak".into()),
+                locked: true,
             },
         ];
         assert_eq!(meta.shared_by("CURRENCY"), Some(("Acme", "eur")));
@@ -285,12 +320,18 @@ mod tests {
             meta.shared_defaults(),
             SharedDefaults {
                 org: "Acme".into(),
-                values: vec![("CURRENCY".into(), "eur".into())],
+                locked: vec![("CURRENCY".into(), "eur".into())],
+                suggested: vec![("BASE_URL".into(), "https://api.example.com".into())],
             },
             "what runs read: never a secret"
         );
         assert_eq!(meta.shared_by("API_TOKEN"), None, "a secret is never shown");
-        assert_eq!(meta.shared_by("BASE_URL"), None);
+        assert_eq!(meta.shared_by("BASE_URL"), None, "suggested, not locked");
+        assert_eq!(
+            meta.suggested_by("BASE_URL"),
+            Some(("Acme", "https://api.example.com"))
+        );
+        assert_eq!(meta.suggested_by("CURRENCY"), None);
         meta.received_vars[0].name = "SECRET_CURRENCY".into();
         assert_eq!(meta.shared_by("SECRET_CURRENCY"), None, "secret here");
         meta.received_vars[0].name = "CURRENCY".into();

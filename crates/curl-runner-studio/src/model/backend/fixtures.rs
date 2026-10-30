@@ -60,6 +60,7 @@ pub fn shipping_variables() -> Vec<SharedVar> {
             required: true,
             secret: false,
             default: Some("https://api.example.com/shipping".into()),
+            locked: false,
         },
         SharedVar {
             name: "API_TOKEN".into(),
@@ -67,6 +68,7 @@ pub fn shipping_variables() -> Vec<SharedVar> {
             required: true,
             secret: true,
             default: None,
+            locked: false,
         },
         SharedVar {
             name: "ACCOUNT_ID".into(),
@@ -74,6 +76,15 @@ pub fn shipping_variables() -> Vec<SharedVar> {
             required: false,
             secret: false,
             default: None,
+            locked: false,
+        },
+        SharedVar {
+            name: "CURRENCY".into(),
+            description: "The currency rates are quoted in.".into(),
+            required: false,
+            secret: false,
+            default: Some("usd".into()),
+            locked: true,
         },
     ]
 }
@@ -114,7 +125,7 @@ request:
         r"# The carriers that can quote this account
 request:
   name: List carriers
-  url: ${BASE_URL}/v2/carriers
+  url: ${BASE_URL}/v2/carriers?currency=${CURRENCY}
   method: GET
   headers:
     Authorization: Bearer ${API_TOKEN}
@@ -297,10 +308,18 @@ mod tests {
     fn variables_match_the_board() {
         let vars = shipping_variables();
         let names: Vec<_> = vars.iter().map(|v| v.name.as_str()).collect();
-        assert_eq!(names, ["BASE_URL", "API_TOKEN", "ACCOUNT_ID"]);
+        assert_eq!(names, ["BASE_URL", "API_TOKEN", "ACCOUNT_ID", "CURRENCY"]);
         assert_eq!(
             vars[0].default.as_deref(),
             Some("https://api.example.com/shipping")
+        );
+        // BASE_URL is suggested (OpenShared: "You can change it"); CURRENCY
+        // is locked (Environments: `Shared by Acme`).
+        assert!(!vars[0].locked);
+        assert!(vars[3].locked && vars[3].default.as_deref() == Some("usd"));
+        assert!(
+            vars.iter()
+                .all(|v| !v.locked || (!v.secret && v.default.is_some()))
         );
         assert!(vars[0].required && vars[1].required && !vars[2].required);
         assert!(vars[1].secret && vars[1].default.is_none());

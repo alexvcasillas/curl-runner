@@ -277,6 +277,11 @@ pub struct SharedVar {
     pub secret: bool,
     /// The owner's non-secret default; always `None` when `secret`.
     pub default: Option<String>,
+    /// The default is locked: the people it is shared with can't change it
+    /// (`Shared by Acme`); else it is only suggested. Only with a default;
+    /// never for a secret.
+    #[serde(default)]
+    pub locked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -505,6 +510,7 @@ fn shared_vars_with(
                 description: notes.description,
                 required: notes.required_for_shared,
                 secret,
+                locked: default.is_some() && notes.share_locked,
                 default,
                 name,
             }

@@ -234,6 +234,7 @@ impl ShareSync {
             if is_secret(&v.name, marked) {
                 v.secret = true;
                 v.default = None;
+                v.locked = false;
             }
         }
     }
@@ -490,6 +491,32 @@ impl ShareSync {
             },
             cx,
         );
+    }
+
+    /// Whether `name`'s shared default is locked for the people it is
+    /// shared with (`Lock for them`).
+    pub fn locks_default(&self, name: &str, cx: &App) -> bool {
+        self.shares_default(name, cx)
+            && self
+                .notes
+                .read(cx)
+                .vars
+                .get(name)
+                .is_some_and(|v| v.share_locked)
+    }
+
+    /// `Lock for them`: only while the default is shared. The notes take
+    /// it at once (the workspace saves them) and the variables go again.
+    pub fn toggle_lock(&mut self, name: &str, cx: &mut Context<Self>) {
+        if !self.offers_share_default(name, cx) || !self.shares_default(name, cx) {
+            return;
+        }
+        let on = !self.locks_default(name, cx);
+        edit_notes(&self.notes, cx, |meta| {
+            meta.vars.entry(name.to_string()).or_default().share_locked = on;
+        });
+        self.push(Op::Variables { tick: None }, cx);
+        cx.notify();
     }
 
     pub fn invite(&mut self, email: String, cx: &mut Context<Self>) {

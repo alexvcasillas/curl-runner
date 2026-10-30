@@ -274,6 +274,7 @@ fn settle(
                 description: v.description.clone(),
                 required_for_shared: v.required,
                 share_default: false,
+                share_locked: false,
             },
         );
     }
@@ -285,6 +286,10 @@ fn settle(
         let Some(var) = shared.variables.iter().find(|v| &v.name == name) else {
             continue;
         };
+        // A locked default is the owner's: nothing local stands in for it.
+        if var.locked && !secret(var) {
+            continue;
+        }
         if secret(var) {
             done.secrets.push(name.clone());
             secrets
@@ -466,6 +471,7 @@ pub fn duplicate(
             description: v.description.clone(),
             required_for_shared: v.required_for_shared,
             share_default: false,
+            share_locked: false,
         });
     }
     if let Some(base) = base {
@@ -509,6 +515,7 @@ mod tests {
             required,
             secret,
             default: default.map(String::from),
+            locked: false,
         };
         vec![
             var(

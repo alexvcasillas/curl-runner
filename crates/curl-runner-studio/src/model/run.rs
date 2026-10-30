@@ -387,12 +387,19 @@ fn execute(
         }
     }
     // Keychain (secret names only), then the process env; core adds the
-    // `.env` files after both. A received copy's shared default is locked:
-    // it comes before all of them.
-    let shared = Arc::new(shared_lock(&req.ctx));
+    // `.env` files after both. A received copy's locked default comes
+    // before all of them; a suggested one after them (for its names the
+    // lookup reads the `.env` files itself, so core's fallback never sees
+    // the suggestion win over them).
+    let (locked, suggested) = (shared_lock(&req.ctx), shared_fallback(&req.ctx, &files));
+    let shared = Arc::new((locked, suggested));
     let lookup = {
         let source = source.clone();
-        move |k: &str| shared(k).or_else(|| source.lookup(k))
+        move |k: &str| {
+            (shared.0)(k)
+                .or_else(|| source.lookup(k))
+                .or_else(|| (shared.1)(k))
+        }
     };
     let cli = req.ctx.cli_options();
     let project = config::load_config_file(root).config;
@@ -570,10 +577,10 @@ impl EnvSource {
     }
 }
 
-/// A received copy's defaults as the first lookup: the owner locked them,
-/// so they win over the process env and the `.env` files. Secret names
-/// never take one (the Keychain's), nor the `CURL_RUNNER_*` overrides the
-/// lookup also answers for the config.
+/// A received copy's locked defaults as the first lookup: they win over
+/// the process env and the `.env` files. Secret names never take one (the
+/// Keychain's), nor the `CURL_RUNNER_*` overrides the lookup also answers
+/// for the config.
 fn shared_lock(ctx: &EnvCtx) -> impl Fn(&str) -> Option<String> + use<> {
     let shared = ctx.shared.clone();
     let marked = ctx.marked_secret.clone();
@@ -581,7 +588,27 @@ fn shared_lock(ctx: &EnvCtx) -> impl Fn(&str) -> Option<String> + use<> {
         if k.starts_with("CURL_RUNNER_") || is_secret(k, &marked) {
             return None;
         }
-        shared.get(k).map(str::to_string)
+        shared.locked(k).map(str::to_string)
+    }
+}
+
+/// A received copy's suggested defaults as the last lookup: for such a
+/// name, the run's `.env` value when one sets it, else the owner's
+/// suggestion. The same exclusions as [`shared_lock`].
+fn shared_fallback(ctx: &EnvCtx, files: &[PathBuf]) -> impl Fn(&str) -> Option<String> + use<> {
+    let shared = ctx.shared.clone();
+    let marked = ctx.marked_secret.clone();
+    let dotenv = (!shared.suggested.is_empty()).then(|| {
+        let environment = effective_environment(ctx, files, &interpolate::process_env);
+        env::load_env_files(&ctx.root, environment.as_deref())
+    });
+    move |k: &str| {
+        if k.starts_with("CURL_RUNNER_") || is_secret(k, &marked) {
+            return None;
+        }
+        let default = shared.suggested(k)?;
+        let local = dotenv.as_ref().and_then(|d| d.get(k).cloned());
+        Some(local.unwrap_or_else(|| default.to_string()))
     }
 }
 
@@ -967,22 +994,21 @@ mod tests {
     }
 
     #[test]
-    fn a_received_copy_sends_the_owners_locked_defaults_over_local_values() {
+    fn a_received_copy_runs_locked_defaults_over_local_values_and_suggested_under() {
         let (srv, seen) = recording_server();
         let d = tempfile::tempdir().unwrap();
         let yaml = format!(
-            "request:\n  url: {}/rates?c=${{SHIP_CURRENCY_R}}&r=${{SHIP_REGION_R}}\n",
+            "request:\n  url: {}/rates?la=${{SHIP_LOCK_A}}&lb=${{SHIP_LOCK_B}}&sa=${{SHIP_SUG_A}}&sb=${{SHIP_SUG_B}}\n",
             srv.base_url
         );
         fs::write(d.path().join("a.yaml"), yaml).unwrap();
-        fs::write(d.path().join(".env"), "SHIP_REGION_R=eu\n").unwrap();
+        fs::write(d.path().join(".env"), "SHIP_LOCK_A=mine\nSHIP_SUG_A=mine\n").unwrap();
+        let pair = |n: &str, v: &str| (n.to_string(), v.to_string());
         let ctx = EnvCtx {
             shared: crate::model::environments::SharedDefaults {
                 org: "Acme".into(),
-                values: vec![
-                    ("SHIP_CURRENCY_R".into(), "eur".into()),
-                    ("SHIP_REGION_R".into(), "us".into()),
-                ],
+                locked: vec![pair("SHIP_LOCK_A", "owner"), pair("SHIP_LOCK_B", "owner")],
+                suggested: vec![pair("SHIP_SUG_A", "owner"), pair("SHIP_SUG_B", "owner")],
             },
             ..ctx(d.path())
         };
@@ -996,8 +1022,12 @@ mod tests {
         );
         let events: Vec<RunEvent> = h.events.iter().collect();
         assert!(results(&events)[0].success);
-        // `.env` says `eu`; the owner's `us` is locked.
-        assert_eq!(*seen.lock().unwrap(), ["/rates?c=eur&r=us"]);
+        // Locked: the owner's, `.env` or not. Suggested: `.env` wins, else
+        // the owner's.
+        assert_eq!(
+            *seen.lock().unwrap(),
+            ["/rates?la=owner&lb=owner&sa=mine&sb=owner"]
+        );
     }
 
     #[test]

@@ -98,6 +98,7 @@ pub fn source_groups(
                 }
             }
             VarSource::Shared(org) => format!("shared by {org}"),
+            VarSource::Suggested(org) => format!("suggested by {org}"),
             VarSource::EnvFile(p) => format!(
                 "from {}",
                 p.file_name()

@@ -123,7 +123,7 @@ impl CollectionSettings {
                     .unwrap_or_default();
                 (value, None)
             }
-            RowSource::Process | RowSource::Shared(_) => {
+            RowSource::Process | RowSource::Shared(_) | RowSource::Suggested(_) => {
                 (row.value.clone().unwrap_or_default(), None)
             }
             RowSource::Captured { .. } | RowSource::NotSet => (String::new(), None),
