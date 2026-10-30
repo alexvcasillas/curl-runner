@@ -16,6 +16,7 @@ pub mod result_view;
 pub mod run;
 #[allow(dead_code)]
 pub mod secrets;
+pub mod settings;
 pub mod templates;
 
 /// Writes `text` to `path` through a temp file in the same folder and a

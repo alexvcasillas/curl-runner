@@ -199,10 +199,14 @@ impl Render for StatusBar {
                 .border_color(color("border-100"))
                 .text_size(px(12.))
                 .text_color(color("text-secondary"))
-                .child(env.environment.clone())
+                .when(!env.environment.is_empty(), |bar| {
+                    bar.child(env.environment.clone())
+                })
                 .child(env.summary.clone())
                 .child(div().flex_1())
-                .child(env.keychain.clone())
+                .when(!env.keychain.is_empty(), |bar| {
+                    bar.child(env.keychain.clone())
+                })
                 .child(format!("curl-runner {}", curl_runner_core::VERSION));
         }
         // The history footer reads as the board's: its two strings only.

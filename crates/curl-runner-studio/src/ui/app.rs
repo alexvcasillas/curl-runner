@@ -1,10 +1,12 @@
 //! App setup: theme and fonts, the action and keymap table, the window.
 
 use super::palette;
+use super::settings_view::AppPage;
 use super::state;
 use super::workspace::{Workspace, quit_app};
 use crate::model::run::RunTarget;
 use crate::model::secrets::{KeychainSecrets, SecretStore};
+use crate::model::settings::Settings;
 use crate::theme;
 use gpui_kit::base::actions::{Cancel, Confirm, SelectDown, SelectUp};
 use gpui_kit::component::{Theme, ThemeConfig};
@@ -61,8 +63,10 @@ actions!(
         /// Show the collection's environments and variables.
         OpenEnvironments,
         /// Close the variable drawer, else leave the collection settings
-        /// for the editor (esc).
+        /// or the app's Settings for the editor (esc).
         CloseSettings,
+        /// Show the app's Settings (⌘,).
+        OpenSettings,
     ]
 );
 
@@ -70,7 +74,11 @@ actions!(
 /// check (see `init`).
 pub fn menus() -> Vec<Menu> {
     vec![
-        Menu::new("curl-runner studio").items([MenuItem::action("Quit curl-runner studio", Quit)]),
+        Menu::new("curl-runner studio").items([
+            MenuItem::action("Settings…", OpenSettings),
+            MenuItem::separator(),
+            MenuItem::action("Quit curl-runner studio", Quit),
+        ]),
         Menu::new("File").items([
             MenuItem::action("New Request…", NewRequest),
             MenuItem::action("New Collection…", NewCollection),
@@ -94,52 +102,121 @@ pub fn menus() -> Vec<Menu> {
     ]
 }
 
-/// Every studio shortcut. They apply anywhere in the window, the editor
+/// One studio shortcut: its binding and what the Keyboard shortcuts page
+/// calls it. Bindings that differ only by context share a label.
+pub struct Shortcut {
+    pub binding: KeyBinding,
+    pub label: &'static str,
+}
+
+fn shortcut<A: Action>(
+    keys: &'static str,
+    action: A,
+    context: Option<&str>,
+    label: &'static str,
+) -> Shortcut {
+    Shortcut {
+        binding: KeyBinding::new(keys, action, context),
+        label,
+    }
+}
+
+/// Every studio shortcut, the one list both [`keymap`] and the Keyboard
+/// shortcuts page read. They apply anywhere in the window, the editor
 /// included.
-pub fn keymap() -> Vec<KeyBinding> {
+pub fn bindings() -> Vec<Shortcut> {
     vec![
-        KeyBinding::new("cmd-q", Quit, None),
-        KeyBinding::new("cmd-o", OpenFolder, None),
-        KeyBinding::new("cmd-s", SaveFile, None),
-        KeyBinding::new("cmd-w", CloseTab, None),
-        KeyBinding::new("cmd-n", NewRequest, None),
-        KeyBinding::new("cmd-shift-n", NewCollection, None),
-        KeyBinding::new("cmd-i", Import, None),
-        KeyBinding::new("cmd-enter", CreateNew, Some("NewDialog")),
+        shortcut("cmd-q", Quit, None, "Quit"),
+        shortcut("cmd-,", OpenSettings, None, "Settings"),
+        shortcut("cmd-o", OpenFolder, None, "Open folder"),
+        shortcut("cmd-s", SaveFile, None, "Save file"),
+        shortcut("cmd-w", CloseTab, None, "Close tab"),
+        shortcut("cmd-n", NewRequest, None, "New request"),
+        shortcut("cmd-shift-n", NewCollection, None, "New collection"),
+        shortcut("cmd-i", Import, None, "Import curl"),
+        shortcut(
+            "cmd-enter",
+            CreateNew,
+            Some("NewDialog"),
+            "Create, in the New dialog",
+        ),
         // Bound after the Kit's `cmd-enter` in `Input` (a newline in a
         // textarea), so ⌘↵ in the dialog's fields creates instead.
-        KeyBinding::new("cmd-enter", CreateNew, Some("NewDialog > Input")),
-        KeyBinding::new("cmd-k", OpenPalette, None),
+        shortcut(
+            "cmd-enter",
+            CreateNew,
+            Some("NewDialog > Input"),
+            "Create, in the New dialog",
+        ),
+        shortcut("cmd-k", OpenPalette, None, "Command palette"),
         // Bound after the Kit's `cmd-.` (code actions menu), so it wins in
         // the editor; the menu stays on `ctrl-.` and the context menu.
-        KeyBinding::new("cmd-.", QuickFix, Some("Input && mode == editor")),
+        shortcut(
+            "cmd-.",
+            QuickFix,
+            Some("Input && mode == editor"),
+            "Quick fix",
+        ),
         // ⌘. is Quick Fix in the editor; on the run screen (focused while
         // it is shown, never inside an editor) it stops the run.
-        KeyBinding::new("cmd-.", Stop, Some("RunView")),
-        KeyBinding::new("escape", CloseRun, Some("RunView")),
-        KeyBinding::new("cmd-y", OpenHistory, None),
-        KeyBinding::new("escape", CloseHistory, Some("HistoryView")),
-        KeyBinding::new("escape", CloseSettings, Some("CollectionSettings")),
-        KeyBinding::new("cmd-shift-m", ToggleProblems, None),
-        KeyBinding::new("cmd-enter", RunActive, None),
-        KeyBinding::new("alt-cmd-enter", RunRequestUnderCursor, None),
+        shortcut("cmd-.", Stop, Some("RunView"), "Stop the run"),
+        shortcut("escape", CloseRun, Some("RunView"), "Leave the run screen"),
+        shortcut("cmd-y", OpenHistory, None, "Run history"),
+        shortcut(
+            "escape",
+            CloseHistory,
+            Some("HistoryView"),
+            "Leave run history",
+        ),
+        shortcut(
+            "escape",
+            CloseSettings,
+            Some("CollectionSettings"),
+            "Leave settings",
+        ),
+        shortcut(
+            "escape",
+            CloseSettings,
+            Some("AppSettings"),
+            "Leave settings",
+        ),
+        shortcut("cmd-shift-m", ToggleProblems, None, "Problems panel"),
+        shortcut("cmd-enter", RunActive, None, "Run file"),
+        shortcut(
+            "alt-cmd-enter",
+            RunRequestUnderCursor,
+            None,
+            "Run request under cursor",
+        ),
         // Bound after the Kit's editor keys, so they win in the YAML editor.
-        KeyBinding::new("cmd-enter", RunActive, Some("Input && mode == editor")),
-        KeyBinding::new(
+        shortcut(
+            "cmd-enter",
+            RunActive,
+            Some("Input && mode == editor"),
+            "Run file",
+        ),
+        shortcut(
             "alt-cmd-enter",
             RunRequestUnderCursor,
             Some("Input && mode == editor"),
+            "Run request under cursor",
         ),
         // The palette's list keys, as the Kit binds them for its `Command`.
-        KeyBinding::new("up", SelectUp, Some(palette::CONTEXT)),
-        KeyBinding::new("down", SelectDown, Some(palette::CONTEXT)),
-        KeyBinding::new(
+        shortcut("up", SelectUp, Some(palette::CONTEXT), "Palette: previous"),
+        shortcut("down", SelectDown, Some(palette::CONTEXT), "Palette: next"),
+        shortcut(
             "enter",
             Confirm { secondary: false },
             Some(palette::CONTEXT),
+            "Palette: run command",
         ),
-        KeyBinding::new("escape", Cancel, Some(palette::CONTEXT)),
+        shortcut("escape", Cancel, Some(palette::CONTEXT), "Palette: close"),
     ]
+}
+
+/// The bindings [`init`] registers.
+pub fn keymap() -> Vec<KeyBinding> {
+    bindings().into_iter().map(|s| s.binding).collect()
 }
 
 pub const WINDOW_MIN_WIDTH: f32 = 960.;
@@ -179,8 +256,11 @@ pub fn run() {
                 ..Default::default()
             };
             let store = state::StateStore::app_support();
+            let reopen = store
+                .base()
+                .is_none_or(|b| Settings::load(b).general.reopen_last_collection);
             let folder = dev_env("CURL_RUNNER_STUDIO_FOLDER")
-                .or_else(|| store.last_folder())
+                .or_else(|| store.last_folder().filter(|_| reopen))
                 .filter(|p| p.is_dir());
             let file = dev_env("CURL_RUNNER_STUDIO_OPEN");
             let show = dev_string("CURL_RUNNER_STUDIO_SHOW");
@@ -247,6 +327,12 @@ pub fn run() {
                             }
                             "problem" => ws.dev_show_first_problem(window, cx),
                             "history" => ws.open_history(window, cx),
+                            "settings" => {
+                                let page = dev_string("CURL_RUNNER_STUDIO_PAGE")
+                                    .and_then(|p| AppPage::parse(&p))
+                                    .unwrap_or(AppPage::General);
+                                ws.open_app_settings(page, window, cx);
+                            }
                             "environments" => {
                                 let env = dev_string("CURL_RUNNER_STUDIO_ENV");
                                 let var = dev_string("CURL_RUNNER_STUDIO_VAR");
@@ -266,7 +352,7 @@ pub fn run() {
                                     }
                                     ws.update_in(cx, |ws, window, cx| {
                                         ws.open_settings(window, cx);
-                                        ws.dev_settings(env.as_deref(), var.as_deref(), window, cx);
+                                        ws.settings_on(env.as_deref(), var.as_deref(), window, cx);
                                     })
                                     .ok();
                                 })
@@ -307,7 +393,9 @@ pub fn run() {
 /// `CURL_RUNNER_STUDIO_RUN=collection`), `history` the History screen and
 /// `environments` the collection's Environments (on the tab
 /// `CURL_RUNNER_STUDIO_ENV` names, with `CURL_RUNNER_STUDIO_VAR` naming the
-/// variable whose drawer opens); hover and click states can't be
+/// variable whose drawer opens) and `settings` the app's Settings (on the
+/// page `CURL_RUNNER_STUDIO_PAGE` names: `general`, `editor`,
+/// `appearance`, `accounts`, `shortcuts` or `updates`); hover and click states can't be
 /// reached without a pointer. `CURL_RUNNER_STUDIO_LINE`
 /// puts the cursor on a zero-based line, `CURL_RUNNER_STUDIO_TAB` picks the
 /// inspector tab, `CURL_RUNNER_STUDIO_BODY=raw` shows the Checks tab's body
@@ -635,6 +723,7 @@ mod tests {
             keys,
             [
                 "cmd-q",
+                "cmd-,",
                 "cmd-o",
                 "cmd-s",
                 "cmd-w",
@@ -648,6 +737,7 @@ mod tests {
                 "cmd-.",
                 "escape",
                 "cmd-y",
+                "escape",
                 "escape",
                 "escape",
                 "cmd-shift-m",

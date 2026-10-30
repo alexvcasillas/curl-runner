@@ -86,8 +86,6 @@ impl Marks {
 const NUMBER_MARGIN: f32 = 6.;
 const FOLD_COLUMN: f32 = 18.;
 const GUTTER_ICON: f32 = 11.;
-/// The editor's text size (`Editor::text_size` in `editor_pane.rs`).
-pub(super) const EDITOR_TEXT: f32 = 13.;
 /// Space between a line's end and its inline hint.
 const GHOST_GAP: f32 = 16.;
 const GHOST_TEXT: f32 = 12.;
@@ -142,13 +140,14 @@ struct Placed {
 /// and `input_bounds` read the layout the editor just painted. Lines
 /// scrolled out or folded away have no bounds and are skipped. The line
 /// `hide_ghost` (its popover is open) gets no inline hint. `checks` are the
-/// last run's failed-check lines (`result_marks`), for a text of
-/// `total_lines`; a line with a diagnostic shows the diagnostic.
+/// last run's failed-check lines (`result_marks`), with the line count of
+/// the text they were made for; a line with a diagnostic shows the diagnostic. `text_size`
+/// is the editor's (the Editor settings' font size).
 pub(super) fn paint_marks(
     editor: &Entity<EditorState>,
+    text_size: Pixels,
     marks: &Marks,
-    checks: &[LineMark],
-    total_lines: usize,
+    (checks, total_lines): (&[LineMark], usize),
     hide_ghost: Option<u32>,
     window: &mut Window,
     cx: &mut App,
@@ -196,7 +195,7 @@ pub(super) fn paint_marks(
         .text_system()
         .shape_line(
             "0".repeat(digits).into(),
-            px(EDITOR_TEXT),
+            text_size,
             &[run(mono.clone(), digits, color("text-gutter"))],
             None,
         )
@@ -229,7 +228,7 @@ pub(super) fn paint_marks(
             let len = number.len();
             let number = window.text_system().shape_line(
                 number.into(),
-                px(EDITOR_TEXT),
+                text_size,
                 &[run(mono.clone(), len, fg)],
                 None,
             );

@@ -2,7 +2,7 @@
 //! disk-conflict callout, the YAML editor and the Problems panel.
 
 use super::color;
-use super::diagnostic_marks::{EDITOR_TEXT, paint_marks};
+use super::diagnostic_marks::paint_marks;
 use super::diagnostic_popover::severity_icon;
 use super::icons::{self, glyph};
 use super::sidebar::method_badge;
@@ -75,11 +75,13 @@ impl Workspace {
         };
         let doc = &self.state.open[active];
         let state = self.tabs[active].editor.clone();
+        // The Editor settings' size, read every frame so a change shows at once.
+        let text_size = px(f32::from(self.settings.editor.font_size));
         let editor = Editor::new(&state)
             .bordered(false)
             .h_full()
-            .text_size(px(EDITOR_TEXT))
-            .line_height(px(18.));
+            .text_size(text_size)
+            .line_height(px(self.settings.editor.line_height()));
         // Painted after the editor, from the layout it just painted.
         let marks = self.tabs[active].diagnostics.marks.clone();
         let results = &self.tabs[active].results;
@@ -90,9 +92,9 @@ impl Workspace {
             move |_, _, window, cx| {
                 paint_marks(
                     &state,
+                    text_size,
                     &marks.borrow(),
-                    &checks,
-                    total_lines,
+                    (&checks, total_lines),
                     hide_ghost,
                     window,
                     cx,

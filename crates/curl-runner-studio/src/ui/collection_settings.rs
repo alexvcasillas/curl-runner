@@ -12,6 +12,11 @@ use super::color;
 use super::icons::{self, glyph};
 use super::inspector::env_label;
 use super::run_view::pill;
+use super::settings_kit::{
+    MASK, back_link, label_text, nav_item, neutral_pill, primary_button, small_button, soon_chip,
+    switch, tinted_pill,
+};
+use super::settings_view::AppPage;
 use super::workspace::notify_error;
 use crate::model::collection_meta::{CollectionMeta, VarMeta};
 use crate::model::environments::{
@@ -40,8 +45,7 @@ const ROW_HEIGHT: f32 = 40.;
 const NAME_COL: f32 = 180.;
 const SOURCE_COL: f32 = 150.;
 const SCOPE_COL: f32 = 110.;
-/// What a masked value reads as: never its length.
-const MASK: &str = "••••••••••••";
+
 /// The board's callout, verbatim.
 const CALLOUT_HEAD: &str = "How customers bring their own values.";
 const CALLOUT_BODY: &str = " When you share this collection, people get the variable names, descriptions and non-secret defaults. Secrets are never shared or synced: each person enters their own, and it stays in their device keychain. Values marked ";
@@ -64,6 +68,8 @@ pub enum SettingsEvent {
     /// Only the counts changed (the usage scan finished): re-read the
     /// status bar.
     Status,
+    /// One of the `App` rows: the app's Settings on that page.
+    OpenApp(AppPage),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -409,6 +415,11 @@ impl CollectionSettings {
     pub fn set_process_env(&mut self, env: impl Fn(&str) -> Option<String> + 'static) {
         self.process_env = std::rc::Rc::new(env);
         self.reload_rows();
+    }
+
+    #[cfg(test)]
+    pub fn drawer_open_on(&self, name: &str) -> bool {
+        self.drawer.as_ref().and_then(|d| d.name.as_deref()) == Some(name)
     }
 
     #[cfg(test)]
@@ -1084,94 +1095,9 @@ impl Render for CollectionSettings {
     }
 }
 
-/// An element the smoke tests can find.
-type Observed = gpui_kit::base::ObservedElement<Stateful<Div>>;
-
-/// The board's `.btn` shape at 28px, without colors.
-fn button_base(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Observed {
-    let label = label.into();
-    div()
-        .id(id)
-        .role(Role::Button)
-        .test_support()
-        .aria_label(label)
-        .flex()
-        .flex_none()
-        .items_center()
-        .gap(px(8.))
-        .h(px(28.))
-        .px(px(10.))
-        .border_1()
-        .rounded(px(6.))
-        .text_size(px(12.))
-        .whitespace_nowrap()
-        .cursor_pointer()
-}
-
-/// The board's `.btn.sm`: a 28px outlined button.
-fn small_button(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Observed {
-    button_base(id, label)
-        .border_color(color("border-200"))
-        .bg(color("bg-100"))
-        .text_color(color("text-primary"))
-        .hover(|s| s.bg(color("surface-100")))
-}
-
-/// The board's `.btn.sm.pri`.
-fn primary_button(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Observed {
-    button_base(id, label)
-        .border_color(color("primary"))
-        .bg(color("primary"))
-        .text_color(color("on-primary"))
-        .font_weight(FontWeight::MEDIUM)
-        .hover(|s| s.bg(color("primary-hover")))
-}
-
-/// A tinted pill: `tone` text, a 30% border and an 8% fill.
-fn tinted_pill(tone: &str) -> Div {
-    pill(("text-secondary", "", "border-200"))
-        .font_weight(FontWeight::NORMAL)
-        .text_color(color(tone))
-        .border_color(color(tone).opacity(0.3))
-        .bg(color(tone).opacity(0.08))
-}
-
-fn neutral_pill() -> Div {
-    pill(("text-secondary", "", "border-200")).font_weight(FontWeight::NORMAL)
-}
-
 /// The secret key glyph in `size`.
 fn key_icon(size: f32) -> impl IntoElement {
     glyph(icons::KEY).size(px(size))
-}
-
-/// The board's 28×16 switch.
-fn switch(on: bool, enabled: bool) -> Div {
-    let knob = div()
-        .absolute()
-        .top(px(2.))
-        .size(px(12.))
-        .rounded_full()
-        .map(|k| if on { k.right(px(2.)) } else { k.left(px(2.)) })
-        .bg(color(if on { "bg-100" } else { "text-secondary" }));
-    div()
-        .relative()
-        .flex_none()
-        .w(px(28.))
-        .h(px(16.))
-        .mt(px(2.))
-        .rounded_full()
-        .bg(color(if on { "primary" } else { "surface-300" }))
-        .when(!enabled, |d| d.opacity(0.5))
-        .child(knob)
-}
-
-fn label_text(text: impl Into<SharedString>) -> Div {
-    div()
-        .text_size(px(12.))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(color("text-secondary"))
-        .child(text.into())
 }
 
 impl CollectionSettings {
@@ -1183,54 +1109,25 @@ impl CollectionSettings {
                 .pb(px(6.))
                 .when(!enabled, |d| d.text_color(color("text-disabled")))
         };
-        let soon = || {
-            div()
-                .flex_none()
-                .px(px(6.))
-                .rounded_full()
-                .border_1()
-                .border_color(color("border-200"))
-                .text_size(px(11.))
-                .text_color(color("text-disabled"))
-                .child("Soon")
-        };
-        let item = |id: &'static str, label: &'static str| {
-            div()
-                .id(id)
-                .role(Role::Button)
-                .test_support()
-                .aria_label(label)
-                .flex()
-                .flex_none()
-                .items_center()
+        let item = |id: &'static str, label: &'static str, on: Option<bool>| {
+            nav_item(id, label, 28., on)
                 .gap(px(8.))
-                .h(px(28.))
                 .px(px(8.))
-                .rounded(px(6.))
-                .text_size(px(13.))
-                .whitespace_nowrap()
                 .child(div().flex_1().child(label))
         };
         let page_item =
             |id: &'static str, label: &'static str, page: Page, cx: &mut Context<Self>| {
-                let on = self.page == page;
-                item(id, label)
-                    .cursor_pointer()
-                    .map(|d| {
-                        if on {
-                            d.bg(color("surface-300")).text_color(color("text-primary"))
-                        } else {
-                            d.text_color(color("text-secondary"))
-                                .hover(|s| s.bg(color("surface-100")))
-                        }
-                    })
+                item(id, label, Some(self.page == page))
                     .on_click(cx.listener(move |this, _, _, cx| this.set_page(page, cx)))
             };
-        let disabled = |id: &'static str, label: &'static str| {
-            item(id, label)
-                .text_color(color("text-disabled"))
-                .child(soon())
-        };
+        // The app's own settings, on the Settings screen.
+        let app_item =
+            |id: &'static str, label: &'static str, page: AppPage, cx: &mut Context<Self>| {
+                item(id, label, Some(false))
+                    .on_click(cx.listener(move |_, _, _, cx| cx.emit(SettingsEvent::OpenApp(page))))
+            };
+        let disabled =
+            |id: &'static str, label: &'static str| item(id, label, None).child(soon_chip());
         div()
             .id("settings-nav")
             .role(Role::Navigation)
@@ -1248,23 +1145,10 @@ impl CollectionSettings {
             .border_color(color("border-100"))
             .bg(color("bg-100"))
             .child(
-                div()
-                    .id("settings-back")
-                    .role(Role::Button)
-                    .test_support()
-                    .aria_label("Back to workspace")
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
+                back_link("settings-back", 12.)
                     .px(px(8.))
                     .pt(px(4.))
                     .pb(px(12.))
-                    .text_size(px(12.))
-                    .text_color(color("text-secondary"))
-                    .cursor_pointer()
-                    .hover(|s| s.text_color(color("text-primary")))
-                    .child(glyph(icons::CHEVRON_LEFT).size(px(12.)))
-                    .child("Back to workspace")
                     .on_click(cx.listener(|_, _, _, cx| cx.emit(SettingsEvent::Close))),
             )
             .child(
@@ -1295,10 +1179,25 @@ impl CollectionSettings {
             .child(disabled("settings-sync", "Sync & hosting"))
             .child(disabled("settings-billing", "Billing"))
             .child(section("App", true, false))
-            .child(disabled("settings-appearance", "Appearance"))
-            .child(disabled("settings-editor", "Editor"))
-            .child(disabled("settings-shortcuts", "Keyboard shortcuts"))
-            .child(disabled("settings-updates", "Updates"))
+            .child(app_item(
+                "settings-appearance",
+                "Appearance",
+                AppPage::Appearance,
+                cx,
+            ))
+            .child(app_item("settings-editor", "Editor", AppPage::Editor, cx))
+            .child(app_item(
+                "settings-shortcuts",
+                "Keyboard shortcuts",
+                AppPage::Shortcuts,
+                cx,
+            ))
+            .child(app_item(
+                "settings-updates",
+                "Updates",
+                AppPage::Updates,
+                cx,
+            ))
     }
 
     fn render_header(&self, title: &'static str, subtitle: impl IntoElement) -> Div {
@@ -2308,7 +2207,7 @@ mod tests {
         cx.update_window(window, |_, window, cx| {
             ws.update(cx, |ws, cx| {
                 ws.open_settings(window, cx);
-                ws.dev_settings(None, Some("ACCOUNT_ID"), window, cx);
+                ws.settings_on(None, Some("ACCOUNT_ID"), window, cx);
             });
             window.render_frame(cx);
             // Mark it secret, type a value, save.
@@ -2361,7 +2260,7 @@ mod tests {
         cx.update_window(window, |_, window, cx| {
             ws.update(cx, |ws, cx| {
                 ws.open_settings(window, cx);
-                ws.dev_settings(None, Some("API_TOKEN"), window, cx);
+                ws.settings_on(None, Some("API_TOKEN"), window, cx);
             });
             window.render_frame(cx);
             let view = ws.read(cx).settings_view.clone().unwrap();
@@ -2505,7 +2404,7 @@ mod tests {
         cx.update_window(window, |_, window, cx| {
             ws.update(cx, |ws, cx| {
                 ws.open_settings(window, cx);
-                ws.dev_settings(None, Some(var), window, cx);
+                ws.settings_on(None, Some(var), window, cx);
             });
             window.render_frame(cx);
         })

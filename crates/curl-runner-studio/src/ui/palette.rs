@@ -6,10 +6,11 @@
 //! scrollbar covered the shortcut chips).
 
 use super::app::{
-    Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder, OpenHistory, ToggleProblems,
-    mono_font,
+    Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder, OpenHistory, OpenSettings,
+    ToggleProblems, mono_font,
 };
 use super::icons::{self, glyph};
+use super::settings_view::AppPage;
 use super::sidebar::{request_count, request_label};
 use super::workspace::Workspace;
 use super::{color, method_color};
@@ -162,10 +163,11 @@ pub enum PaletteAction {
     ToggleProblems,
     OpenHistory,
     Environments,
+    Settings,
 }
 
 impl PaletteAction {
-    pub const ALL: [PaletteAction; 7] = [
+    pub const ALL: [PaletteAction; 8] = [
         PaletteAction::OpenFolder,
         PaletteAction::NewRequest,
         PaletteAction::NewCollection,
@@ -173,6 +175,7 @@ impl PaletteAction {
         PaletteAction::ToggleProblems,
         PaletteAction::OpenHistory,
         PaletteAction::Environments,
+        PaletteAction::Settings,
     ];
 
     fn label(self) -> &'static str {
@@ -184,6 +187,7 @@ impl PaletteAction {
             PaletteAction::ToggleProblems => "Toggle Problems",
             PaletteAction::OpenHistory => "Open history",
             PaletteAction::Environments => "Environments…",
+            PaletteAction::Settings => "Settings…",
         }
     }
 
@@ -197,6 +201,7 @@ impl PaletteAction {
             PaletteAction::ToggleProblems => icons::PANEL_BOTTOM,
             PaletteAction::OpenHistory => icons::HISTORY,
             PaletteAction::Environments => icons::KEY,
+            PaletteAction::Settings => icons::GENERAL,
         }
     }
 
@@ -210,6 +215,7 @@ impl PaletteAction {
             PaletteAction::ToggleProblems => Box::new(ToggleProblems),
             PaletteAction::OpenHistory => Box::new(OpenHistory),
             PaletteAction::Environments => Box::new(OpenEnvironments),
+            PaletteAction::Settings => Box::new(OpenSettings),
         }
     }
 }
@@ -449,6 +455,9 @@ impl Palette {
                 Target::Action(PaletteAction::ToggleProblems) => ws.toggle_problems(cx),
                 Target::Action(PaletteAction::OpenHistory) => ws.open_history(window, cx),
                 Target::Action(PaletteAction::Environments) => ws.open_settings(window, cx),
+                Target::Action(PaletteAction::Settings) => {
+                    ws.open_app_settings(AppPage::General, window, cx)
+                }
             })
             .ok();
     }

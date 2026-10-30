@@ -3,10 +3,10 @@
 
 use super::app::{
     CloseTab, CopyAsCurl, Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder,
-    OpenHistory, OpenPalette, QuickFix, Rerun, RunActive, RunCollection, RunRequestUnderCursor,
-    SaveFile, Stop, ToggleProblems, ui_font,
+    OpenHistory, OpenPalette, OpenSettings, QuickFix, Rerun, RunActive, RunCollection,
+    RunRequestUnderCursor, SaveFile, Stop, ToggleProblems, ui_font,
 };
-use super::collection_settings::{CollectionSettings, SettingsEvent};
+use super::collection_settings::{CollectionSettings, EnvStatus, SettingsEvent};
 use super::diagnostic_popover::DiagnosticHover;
 use super::diagnostics_view::DiagnosticsView;
 use super::history_view::{HistoryView, HistoryViewEvent, usage_text};
@@ -15,6 +15,7 @@ use super::problems_panel::PanelTab;
 use super::result_marks::ResultMarks;
 use super::run_view::{Labels, RunView, RunViewEvent};
 use super::runs::Runs;
+use super::settings_view::{AppPage, AppSettingsEvent, CollectionInfo, SettingsView};
 use super::state::{AppState, StateStore};
 use super::status_bar::{RunLine, StatusBar, StatusBarEvent, source_groups};
 use super::watch;
@@ -30,11 +31,12 @@ use crate::model::history::{History, HistoryEntry, entry_from_outcome, target_ke
 use crate::model::run::RunEvent;
 use crate::model::run::{RunOutcome, RunTarget};
 use crate::model::secrets::{CachedSecrets, SecretStore};
+use crate::model::settings::Settings;
 use futures::StreamExt as _;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::dialog::DialogFooter;
-use gpui_kit::component::input::{EditorState, Input, InputEvent, InputState};
+use gpui_kit::component::input::{EditorState, Input, InputEvent, InputState, TabSize};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::select::{SelectEvent, SelectState};
 use gpui_kit::prelude::*;
@@ -120,6 +122,11 @@ pub struct Workspace {
     /// The collection settings page (Environments), while it is open.
     pub(super) settings_view: Option<Entity<CollectionSettings>>,
     _settings_events: Option<Subscription>,
+    /// The app's settings, as saved.
+    pub(super) settings: Settings,
+    /// The app's Settings screen (⌘,), while it is open.
+    pub(super) app_settings: Option<Entity<SettingsView>>,
+    _app_settings_events: Option<Subscription>,
     /// The collection run screen, once a collection run started.
     pub(super) run_view: Option<Entity<RunView>>,
     /// The run screen takes the editor's and the inspector's place.
@@ -176,6 +183,7 @@ impl Workspace {
             ws.update(cx, |this, cx| this.should_close(window, cx))
                 .unwrap_or(true)
         });
+        let settings = store.base().map(Settings::load).unwrap_or_default();
         let mut this = Workspace {
             state: AppState::default(),
             tabs: Vec::new(),
@@ -204,6 +212,9 @@ impl Workspace {
             meta: CollectionMeta::default(),
             settings_view: None,
             _settings_events: None,
+            settings,
+            app_settings: None,
+            _app_settings_events: None,
             secrets,
             run_view: None,
             show_run: false,
@@ -285,18 +296,35 @@ impl Workspace {
             Some(name) => format!("curl-runner studio — {name}"),
             None => "curl-runner studio".to_string(),
         });
-        // The run and history screens have no cursor to show.
+        // The run, history and settings screens have no cursor to show.
         let editor = self
             .state
             .active
-            .filter(|_| !self.run_shown() && !self.history_shown() && !self.settings_shown())
+            .filter(|_| {
+                !self.run_shown()
+                    && !self.history_shown()
+                    && !self.settings_shown()
+                    && !self.app_settings_shown()
+            })
             .map(|i| self.tabs[i].editor.clone());
         let usage = self
             .history_view
             .as_ref()
             .filter(|_| self.history_shown())
             .map(|v| usage_text(v.read(cx).usage()).into());
-        let settings = self.settings_view.as_ref().map(|v| v.read(cx).status());
+        let settings = match &self.app_settings {
+            // The Settings board's footer: the environment and `Settings`.
+            Some(_) => Some(EnvStatus {
+                environment: name
+                    .as_ref()
+                    .map(|_| env_label(&self.environment))
+                    .unwrap_or_default()
+                    .into(),
+                summary: "Settings".into(),
+                keychain: SharedString::default(),
+            }),
+            None => self.settings_view.as_ref().map(|v| v.read(cx).status()),
+        };
         self.status.update(cx, |s, cx| {
             s.set(name.map(Into::into), editor, cx);
             s.set_history(usage, cx);
@@ -374,6 +402,7 @@ impl Workspace {
         self.show_run = true;
         self.show_history = false;
         self.settings_view = None;
+        self.close_app_settings();
         self.close_hover(cx);
         view.read(cx).focus_handle(cx).focus(window, cx);
         self.sync_chrome(window, cx);
@@ -549,6 +578,7 @@ impl Workspace {
         self.show_history = true;
         self.show_run = false;
         self.settings_view = None;
+        self.close_app_settings();
         self.close_hover(cx);
         view.read(cx).focus_handle(cx).focus(window, cx);
         self.reload_history(cx);
@@ -800,6 +830,7 @@ impl Workspace {
         self._settings_events = Some(cx.subscribe_in(&view, window, Self::on_settings_event));
         view.read(cx).focus_handle(cx).focus(window, cx);
         self.settings_view = Some(view);
+        self.close_app_settings();
         self.show_run = false;
         self.show_history = false;
         self.close_hover(cx);
@@ -827,6 +858,7 @@ impl Workspace {
         match event {
             SettingsEvent::Close => self.hide_settings(window, cx),
             SettingsEvent::Status => self.sync_chrome(window, cx),
+            SettingsEvent::OpenApp(page) => self.open_app_settings(*page, window, cx),
             SettingsEvent::Changed => {
                 self.meta = view.read(cx).meta().clone();
                 self.invalidate_secrets();
@@ -842,6 +874,100 @@ impl Workspace {
                 self.sync_chrome(window, cx);
             }
         }
+    }
+
+    // The app's Settings.
+
+    pub(super) fn app_settings_shown(&self) -> bool {
+        self.app_settings.is_some()
+    }
+
+    fn close_app_settings(&mut self) {
+        self.app_settings = None;
+        self._app_settings_events = None;
+    }
+
+    /// Opens the app's Settings on `page` (⌘,), in place of whatever the
+    /// window shows.
+    pub(super) fn open_app_settings(
+        &mut self,
+        page: AppPage,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(view) = &self.app_settings {
+            view.update(cx, |v, cx| v.set_page(page, cx));
+            return;
+        }
+        let collection = self.state.collection.as_ref().map(|c| CollectionInfo {
+            root: c.root.clone(),
+            name: c.name.clone(),
+            marked: self.meta.secret_names.clone(),
+        });
+        let (settings, base) = (
+            self.settings.clone(),
+            self.store.base().map(Path::to_path_buf),
+        );
+        let secrets = self.secret_cache.clone();
+        let view = cx.new(|cx| SettingsView::new(page, settings, base, collection, &*secrets, cx));
+        self._app_settings_events =
+            Some(cx.subscribe_in(&view, window, Self::on_app_settings_event));
+        view.read(cx).focus_handle(cx).focus(window, cx);
+        self.app_settings = Some(view);
+        self.settings_view = None;
+        self._settings_events = None;
+        self.close_hover(cx);
+        self.sync_chrome(window, cx);
+    }
+
+    pub(super) fn hide_app_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_app_settings();
+        if self.state.active.is_some() && !self.run_shown() && !self.history_shown() {
+            self.focus_active_editor(window, cx);
+        } else {
+            self.focus.focus(window, cx);
+        }
+        self.sync_chrome(window, cx);
+    }
+
+    fn on_app_settings_event(
+        &mut self,
+        view: &Entity<SettingsView>,
+        event: &AppSettingsEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            AppSettingsEvent::Close => self.hide_app_settings(window, cx),
+            AppSettingsEvent::Changed => {
+                self.settings = view.read(cx).settings().clone();
+                self.apply_editor_settings(window, cx);
+            }
+            AppSettingsEvent::EditVariable { environment, name } => {
+                let (environment, name) = (environment.clone(), name.clone());
+                self.open_settings(window, cx);
+                self.settings_on(Some(&environment), Some(&name), window, cx);
+            }
+            AppSettingsEvent::AddVariable => {
+                self.open_settings(window, cx);
+                if let Some(view) = self.settings_view.clone() {
+                    view.update(cx, |v, cx| v.open_variable(None, window, cx));
+                }
+            }
+        }
+    }
+
+    /// The editor settings on every open editor; the font size is read
+    /// when the editor renders.
+    fn apply_editor_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let e = self.settings.editor.clone();
+        for tab in &self.tabs {
+            tab.editor.update(cx, |state, cx| {
+                state.set_tab_size(tab_size(e.tab_size), cx);
+                state.set_soft_wrap(e.word_wrap, window, cx);
+            });
+        }
+        cx.notify();
     }
 
     /// The values the last run of each file saved: names and origins only.
@@ -871,9 +997,9 @@ impl Workspace {
         out
     }
 
-    /// The settings page on tab `env` (`CURL_RUNNER_STUDIO_ENV`), with the
-    /// drawer on `var` (`CURL_RUNNER_STUDIO_VAR`).
-    pub(super) fn dev_settings(
+    /// The open settings page on tab `env`, with the drawer on `var` (also
+    /// the `CURL_RUNNER_STUDIO_ENV` and `_VAR` dev hooks).
+    pub(super) fn settings_on(
         &mut self,
         env: Option<&str>,
         var: Option<&str>,
@@ -982,6 +1108,8 @@ impl Workspace {
                 .language("yaml")
                 .line_number(true)
                 .folding(true)
+                .tab_size(tab_size(self.settings.editor.tab_size))
+                .soft_wrap(self.settings.editor.word_wrap)
                 .default_value(text.clone())
         });
         let changes = cx.subscribe(&editor, |this, editor, event: &InputEvent, cx| {
@@ -1503,6 +1631,7 @@ impl Workspace {
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let open = self.state.collection.is_some();
+        let app_settings = self.app_settings.clone();
         let settings = self.settings_view.clone().filter(|_| open);
         let run_shown = open && self.run_shown();
         let history_shown = open && self.history_shown();
@@ -1560,6 +1689,9 @@ impl Render for Workspace {
                     this.open_settings(window, cx)
                 }),
             )
+            .on_action(cx.listener(|this, _: &OpenSettings, window, cx| {
+                this.open_app_settings(AppPage::General, window, cx)
+            }))
             .size_full()
             .flex()
             .flex_col()
@@ -1568,10 +1700,11 @@ impl Render for Workspace {
             .font_family(ui_font())
             .text_size(px(13.))
             .child(self.render_title_bar(window, cx))
-            .child(match settings {
+            .child(match (app_settings, settings) {
+                (Some(view), _) => div().flex().flex_1().min_h_0().child(view),
                 // The page brings its own nav and drawer.
-                Some(view) => div().flex().flex_1().min_h_0().child(view),
-                None => div()
+                (None, Some(view)) => div().flex().flex_1().min_h_0().child(view),
+                (None, None) => div()
                     .flex()
                     .flex_1()
                     .min_h_0()
@@ -1582,6 +1715,14 @@ impl Render for Workspace {
                     }),
             })
             .child(self.status.clone())
+    }
+}
+
+/// The editor's indent: spaces, never tabs (YAML has none).
+fn tab_size(n: u8) -> TabSize {
+    TabSize {
+        tab_size: usize::from(n),
+        hard_tabs: false,
     }
 }
 

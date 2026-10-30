@@ -103,6 +103,43 @@ pub const EYE_OFF: &str = glyph!(
     "1.4",
     r#"<path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/><path d="M2.5 13.5l11-11"/>"#
 );
+/// The Settings nav's glyphs, from the board.
+pub const GENERAL: &str = glyph!(
+    "1.5",
+    r#"<rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 10h4"/>"#
+);
+pub const CODE: &str = glyph!("1.5", r#"<path d="M5 4L1.5 8 5 12M11 4l3.5 4-3.5 4"/>"#);
+/// Half filled: the filled half carries its own fill.
+pub const APPEARANCE: &str = glyph!(
+    "1.5",
+    r##"<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v11"/><path d="M8 2.5a5.5 5.5 0 010 11z" fill="#000"/>"##
+);
+pub const USER: &str = glyph!(
+    "1.5",
+    r#"<circle cx="8" cy="5.5" r="2.75"/><path d="M2.75 14a5.25 5.25 0 0110.5 0"/>"#
+);
+pub const KEYBOARD: &str = glyph!(
+    "1.5",
+    r#"<rect x="1.5" y="4" width="13" height="8" rx="1.5"/><path d="M4 7h1M7 7h1M10 7h2M5 9.5h6"/>"#
+);
+pub const UPDATES: &str = glyph!("1.5", r#"<path d="M13 8a5 5 0 11-1.5-3.5M13 2.5v3h-3"/>"#);
+pub const CLOUD: &str = glyph!(
+    "1.4",
+    r#"<path d="M4.5 12.5a3 3 0 01-.3-6 4 4 0 017.6-.9 3.2 3.2 0 01.2 6.9z"/>"#
+);
+pub const SERVER: &str = glyph!(
+    "1.4",
+    r#"<rect x="2.5" y="2.5" width="11" height="4.5" rx="1"/><rect x="2.5" y="9" width="11" height="4.5" rx="1"/><path d="M5 4.75h.5M5 11.25h.5"/>"#
+);
+pub const SYNC: &str = glyph!(
+    "1.5",
+    r#"<path d="M2.5 7a5.5 5.5 0 019.7-2.5M13.5 9a5.5 5.5 0 01-9.7 2.5"/><path d="M12.5 2v3h-3M3.5 14v-3h3"/>"#
+);
+/// Where a credential lives.
+pub const LOCK: &str = glyph!(
+    "1.5",
+    r#"<rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/>"#
+);
 /// Filled, unlike the stroke glyphs.
 pub const PLAY: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="#000"><path d="M4 2.5v11l9-5.5z"/></svg>"##;
 
@@ -146,6 +183,16 @@ mod tests {
             KEY,
             EYE,
             EYE_OFF,
+            GENERAL,
+            CODE,
+            APPEARANCE,
+            USER,
+            KEYBOARD,
+            UPDATES,
+            CLOUD,
+            SERVER,
+            SYNC,
+            LOCK,
         ] {
             assert!(svg.starts_with("<svg ") && svg.ends_with("</svg>"), "{svg}");
             assert!(svg.contains(r#"viewBox="0 0 16 16""#));

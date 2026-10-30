@@ -19,6 +19,8 @@ mod result_marks;
 mod run_button;
 mod run_view;
 mod runs;
+mod settings_kit;
+mod settings_view;
 mod sidebar;
 mod state;
 mod status_bar;
