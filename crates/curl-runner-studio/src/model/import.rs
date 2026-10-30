@@ -4,7 +4,8 @@
 
 use super::templates::{FromCurl, curl_to_ir, file_from_ir, file_name_for, request_name_for};
 use curl_runner_core::convert::{CurlRunnerIr, JsMap};
-use curl_runner_core::security::redact::is_sensitive_header;
+use curl_runner_core::security::redact::{REDACTED, is_sensitive_header};
+use curl_runner_core::yaml_text::scalar_text;
 use std::collections::HashSet;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
@@ -91,14 +92,10 @@ pub fn convert_commands(text: &str, env: &ImportEnv) -> Vec<CurlImport> {
             };
             let name = request_name_for(method, &ir.url);
             let mut converted = file_from_ir(ir, &name);
-            // Belt and braces: a warning comment may quote the command.
-            for e in extracted.iter().filter(|e| e.value.len() >= 6) {
-                let var = format!("${{{}}}", e.var);
-                converted.yaml = converted.yaml.replace(&e.value, &var);
-                for w in &mut converted.warnings {
-                    *w = w.replace(&e.value, &var);
-                }
-            }
+            // Belt and braces: `scrub_secrets` already cleaned the warnings
+            // the `# Warning:` comments come from; comments only, so a URL
+            // or body that happens to contain the value is never touched.
+            converted.yaml = scrub_comments(&converted.yaml, &extracted);
             converted.yaml = unquote_references(&converted.yaml);
             converted.yaml.insert_str(0, IMPORTED_HEADER);
             for e in &extracted {
@@ -115,6 +112,54 @@ pub fn convert_commands(text: &str, env: &ImportEnv) -> Vec<CurlImport> {
             }
         })
         .collect()
+}
+
+/// The comment lines of `yaml` with each extracted value as its `${VAR}`.
+fn scrub_comments(yaml: &str, extracted: &[Extracted]) -> String {
+    yaml.split_inclusive('\n')
+        .map(|line| {
+            if line.trim_start().starts_with('#') {
+                scrub_text(line, extracted)
+            } else {
+                line.to_string()
+            }
+        })
+        .collect()
+}
+
+/// `text` with every extracted value as its `${VAR}`, longest first.
+fn scrub_text(text: &str, extracted: &[Extracted]) -> String {
+    let mut by_len: Vec<&Extracted> = extracted.iter().filter(|e| !e.value.is_empty()).collect();
+    by_len.sort_by_key(|e| std::cmp::Reverse(e.value.len()));
+    by_len.iter().fold(text.to_string(), |t, e| {
+        t.replace(&e.value, &format!("${{{}}}", e.var))
+    })
+}
+
+/// curl flags the converter doesn't carry over whose value is a credential:
+/// their `Unsupported curl flag` warning shows `[REDACTED]` instead.
+const CREDENTIAL_FLAGS: [&str; 16] = [
+    "--oauth2-bearer",
+    "--proxy-user",
+    "-U",
+    "-E",
+    "--pass",
+    "--proxy-pass",
+    "--aws-sigv4",
+    "--proxy-cert",
+    "--proxy-key",
+    "--tlsuser",
+    "--tlspassword",
+    "--proxy-tlsuser",
+    "--proxy-tlspassword",
+    "--login-options",
+    "--sasl-authzid",
+    "--delegation",
+];
+
+/// The `Unsupported curl flag` warning the converter writes for `flag`.
+fn unsupported_warning(flag: &str, value: &str) -> String {
+    format!("Unsupported curl flag: {flag} {value}")
 }
 
 /// Query parameters whose values are secrets.
@@ -152,7 +197,65 @@ pub fn scrub_secrets(
         }
         format!("${{{var}}}")
     };
+    // `--oauth2-bearer`: a bearer token the converter leaves out; carried
+    // over as the `Authorization` header unless the command has one.
+    let oauth = ir
+        .unsupported_flags
+        .iter()
+        .find(|f| f.flag == "--oauth2-bearer")
+        .and_then(|f| f.value.clone())
+        .filter(|v| !v.is_empty());
+    let has_auth = ir.auth.is_some()
+        || ir
+            .headers
+            .entries()
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("authorization"));
+    let mut warnings = std::mem::take(&mut ir.warnings);
+    for f in &mut ir.unsupported_flags {
+        let Some(value) = f.value.take().filter(|v| !v.is_empty()) else {
+            continue;
+        };
+        if !CREDENTIAL_FLAGS.contains(&f.flag.as_str()) {
+            f.value = Some(value);
+            continue;
+        }
+        let raw = unsupported_warning(&f.flag, &value);
+        let carried = f.flag == "--oauth2-bearer" && !has_auth;
+        warnings.retain_mut(|w| {
+            if *w != raw {
+                return true;
+            }
+            *w = unsupported_warning(&f.flag, REDACTED);
+            !carried
+        });
+    }
+    // `--cert file:password`: the file stays, the password doesn't (YAML
+    // has no field for it).
+    if let Some(cert) = ir.ssl.as_mut().and_then(|s| s.cert.as_mut())
+        && let Some(at) = cert
+            .char_indices()
+            .find(|&(i, c)| c == ':' && i != 1)
+            .map(|(i, _)| i)
+    {
+        let password = cert[at + 1..].to_string();
+        cert.truncate(at);
+        for w in &mut warnings {
+            *w = w.replace(&password, REDACTED);
+        }
+        warnings.push(
+            "The --cert password was left out of the file; set it up outside the request.".into(),
+        );
+    }
     let mut headers = JsMap::new();
+    if let Some(token) = oauth.filter(|_| !has_auth) {
+        let value = if is_reference(&token) {
+            token
+        } else {
+            take("API_TOKEN", &token, "--oauth2-bearer".into())
+        };
+        headers.insert("Authorization", format!("Bearer {value}"));
+    }
     if let Some(auth) = ir.auth.take() {
         match auth.kind.as_str() {
             "bearer" => {
@@ -209,6 +312,8 @@ pub fn scrub_secrets(
         }
         ir.params = Some(kept);
     }
+    // A warning may quote a value (`Cookie flag (-b …)`).
+    ir.warnings = warnings.iter().map(|w| scrub_text(w, &out)).collect();
     (ir, out)
 }
 
@@ -260,17 +365,10 @@ pub fn replaced_note(vars: &[&str], base_url: bool) -> Option<String> {
 
 /// `key: "${BASE_URL}/v1/x"` written plain (`key: ${BASE_URL}/v1/x`), as
 /// the board shows it: only double-quoted values with a `${…}` reference
-/// and nothing a plain YAML scalar would read differently.
+/// whose plain form reads back as the same string (core's `scalar_text`).
 fn unquote_references(yaml: &str) -> String {
-    let plain = |v: &str| {
-        v.contains("${")
-            && !v.starts_with(' ')
-            && !v.ends_with(' ')
-            && !v.contains(": ")
-            && !v.contains(" #")
-            && v.chars()
-                .all(|c| c.is_ascii_alphanumeric() || " ${}_-./:?&=+,;@~%".contains(c))
-    };
+    let plain =
+        |v: &str| v.contains("${") && !v.contains(['\\', '"']) && scalar_text(v, false, false) == v;
     let mut out = String::with_capacity(yaml.len());
     for line in yaml.split_inclusive('\n') {
         let body = line.trim_end_matches('\n');
@@ -474,19 +572,24 @@ fn collect_yaml(dir: &Path, rel: &Path, out: &mut Vec<PathBuf>) -> io::Result<()
     Ok(())
 }
 
-/// Copies the planned files into `root`, never over an existing file.
-/// Returns how many were copied; stops at the first failure.
-pub fn copy_planned(root: &Path, plan: &[CopyPlan]) -> io::Result<usize> {
+/// Whether `yaml` parses as the runner reads it; an import never writes
+/// a file that doesn't.
+pub fn reads_as_yaml(yaml: &str) -> bool {
+    curl_runner_core::parser::parse_raw_stream(yaml).is_ok()
+}
+
+/// Copies the planned files into `root`, never over an existing file, in
+/// order: how many were copied, and the failure that stopped the rest.
+pub fn copy_planned(root: &Path, plan: &[CopyPlan]) -> (usize, Option<io::Error>) {
     for (n, file) in plan.iter().enumerate() {
-        let text = std::fs::read(&file.from)?;
-        write_new(&root.join(&file.to), &text).map_err(|e| {
-            io::Error::new(
-                e.kind(),
-                format!("{} (after {n} copied): {e}", file.to.display()),
-            )
-        })?;
+        let copied =
+            std::fs::read(&file.from).and_then(|text| write_new(&root.join(&file.to), &text));
+        if let Err(e) = copied {
+            let e = io::Error::new(e.kind(), format!("{}: {e}", file.to.display()));
+            return (n, Some(e));
+        }
     }
-    Ok(plan.len())
+    (plan.len(), None)
 }
 
 /// Writes a new file, creating its folders; an existing one fails with
@@ -556,7 +659,8 @@ mod tests {
         assert!(plan[0].renamed(Path::new("imported")));
         assert!(!plan[1].renamed(Path::new("imported")));
 
-        assert_eq!(copy_planned(d, &plan).unwrap(), 4);
+        let (copied, error) = copy_planned(d, &plan);
+        assert_eq!((copied, error.map(|e| e.kind())), (4, None));
         assert_eq!(
             std::fs::read_to_string(d.join("imported/a.yaml")).unwrap(),
             "kept\n"
@@ -564,8 +668,9 @@ mod tests {
         assert!(d.join("imported/a-2.yaml").is_file());
         assert!(d.join("imported/nested/c.yaml").is_file());
         // Copying the same plan again never overwrites.
-        let again = copy_planned(d, &plan).unwrap_err();
-        assert_eq!(again.kind(), io::ErrorKind::AlreadyExists);
+        let (copied, again) = copy_planned(d, &plan);
+        assert_eq!(copied, 0);
+        assert_eq!(again.unwrap().kind(), io::ErrorKind::AlreadyExists);
     }
 
     #[test]
@@ -777,5 +882,94 @@ mod tests {
             convert_commands(text, &env)[0].extracted[0].var,
             "API_TOKEN"
         );
+    }
+
+    #[test]
+    fn a_username_in_the_host_stays_in_the_url() {
+        let (yaml, extracted, _) = one(
+            "curl -u github:tok_123456789 https://github.example.com/repos/github/x",
+            &NO_ENV,
+        );
+        assert_eq!(extracted[0].value, "github");
+        assert!(
+            yaml.contains("url: https://github.example.com/repos/github/x"),
+            "{yaml}"
+        );
+        assert!(!yaml.contains("tok_123456789"), "{yaml}");
+    }
+
+    #[test]
+    fn credential_flags_never_reach_the_file() {
+        let cases = [
+            ("--oauth2-bearer tok_oauth_9f8e7d", "tok_oauth_9f8e7d"),
+            ("--proxy-user proxyuser:pw_proxy_42", "pw_proxy_42"),
+            ("-U proxyuser:pw_proxy_43", "pw_proxy_43"),
+            ("-E client.pem:pw_cert_44", "pw_cert_44"),
+            ("--cert client.pem:pw_cert_45", "pw_cert_45"),
+            ("-b session=sess_cookie_46", "sess_cookie_46"),
+            ("--cookie session=sess_cookie_47", "sess_cookie_47"),
+            ("--aws-sigv4 aws:amz:us-east-1:s3", "aws:amz:us-east-1:s3"),
+        ];
+        for (flag, secret) in cases {
+            let command = format!("curl {flag} https://api.example.com/v1/x");
+            let imports = convert_commands(&command, &NO_ENV);
+            let i = &imports[0];
+            let c = i.converted.as_ref().unwrap();
+            assert!(!c.yaml.contains(secret), "{flag}:\n{}", c.yaml);
+            assert!(
+                c.warnings.iter().all(|w| !w.contains(secret)),
+                "{flag}: {:?}",
+                c.warnings
+            );
+            let vars: Vec<&str> = i.extracted.iter().map(|e| e.var.as_str()).collect();
+            let note = replaced_note(&vars, false).unwrap_or_default();
+            assert!(!note.contains(secret), "{flag}: {note}");
+            assert_parses(&c.yaml);
+        }
+        // `--oauth2-bearer` becomes the Authorization header.
+        let (yaml, extracted, _) = one(
+            "curl --oauth2-bearer tok_oauth_9f8e7d https://api.example.com",
+            &NO_ENV,
+        );
+        assert!(
+            yaml.contains("Authorization: Bearer ${API_TOKEN}"),
+            "{yaml}"
+        );
+        assert!(!yaml.contains("--oauth2-bearer"), "{yaml}");
+        assert_eq!(extracted[0].value, "tok_oauth_9f8e7d");
+        // The redacted flags still say what was left out.
+        let (yaml, _, _) = one(
+            "curl -U proxyuser:pw_proxy_43 https://api.example.com",
+            &NO_ENV,
+        );
+        assert!(
+            yaml.contains("Unsupported curl flag: -U [REDACTED]"),
+            "{yaml}"
+        );
+        let (yaml, _, _) = one(
+            "curl --cert client.pem:pw_cert_45 https://api.example.com",
+            &NO_ENV,
+        );
+        assert!(yaml.contains("cert: client.pem"), "{yaml}");
+    }
+
+    #[test]
+    fn only_values_that_read_back_are_unquoted() {
+        for kept in [
+            r#"k: "{${A}}""#,
+            r#"k: "&${A}""#,
+            r#"k: "@${F}""#,
+            r#"k: "- ${A}""#,
+            r#"k: "${A}:""#,
+            r#"k: "${A} # x""#,
+        ] {
+            assert_eq!(unquote_references(kept), kept);
+        }
+        assert_eq!(
+            unquote_references(r#"  url: "${BASE_URL}/v1""#),
+            "  url: ${BASE_URL}/v1"
+        );
+        assert!(reads_as_yaml("request:\n  url: ${BASE_URL}/v1\n"));
+        assert!(!reads_as_yaml("request: [\n"));
     }
 }

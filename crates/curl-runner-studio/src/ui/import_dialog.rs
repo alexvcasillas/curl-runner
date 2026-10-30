@@ -10,12 +10,13 @@ use super::settings_kit::label_text;
 use super::workspace::{Workspace, notify_error};
 use super::{color, method_color};
 use crate::model::collection::Collection;
-use crate::model::environments::resolve_vars;
+use crate::model::collection_meta::CollectionMeta;
+use crate::model::environments::{DEFAULT_ENVIRONMENT, EnvCtx, resolve_vars};
 use crate::model::import::{
     CopyPlan, CurlImport, Extracted, ImportEnv, convert_commands, copy_planned, curl_targets,
-    plan_yaml_copy, replaced_note, write_new,
+    plan_yaml_copy, reads_as_yaml, replaced_note, write_new,
 };
-use crate::model::secrets::{SecretStore as _, service_name};
+use crate::model::secrets::{SecretStore, service_name};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::dialog::DialogEntrance;
@@ -24,7 +25,8 @@ use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::{Disableable as _, IndexPath, WindowExt as _};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -85,21 +87,59 @@ pub struct ImportDialog {
     pub(super) error: Option<String>,
     /// The environment the import resolves `BASE_URL` and variables in.
     env: ImportContext,
+    /// Names whose Keychain item holds another value: the commands skip
+    /// them (`API_TOKEN` → `API_TOKEN_2`).
+    held: HashMap<String, String>,
     /// Save the extracted secret values to the Keychain on Import.
     pub(super) save_secrets: bool,
+    /// Tests: writing fails from this file on.
+    #[cfg(test)]
+    pub(super) fail_after: Option<usize>,
     _subscriptions: Vec<Subscription>,
 }
 
 /// A variable's current value, by name.
 pub(super) type VarLookup = Rc<dyn Fn(&str) -> Option<String>>;
+/// The import context for a folder picked on Welcome.
+pub(super) type ContextFor = Rc<dyn Fn(&Path) -> ImportContext>;
 
-/// What the workspace hands the dialog about the picked environment.
+/// What the workspace hands the dialog about the target's environment.
 pub(super) struct ImportContext {
     /// `Default` or a `.env.{name}` name.
     pub environment: String,
     pub base_url: Option<String>,
-    /// A variable's current value (Keychain, process env, `.env`).
+    /// A variable's current value (Keychain, process env, `.env`),
+    /// remembered per name while the dialog is open.
     pub known: VarLookup,
+    /// The Keychain's value right now, uncached: the last check before an
+    /// import names a variable.
+    pub keychain: VarLookup,
+    /// With no collection open: the context of the folder picked as the
+    /// target.
+    pub for_folder: Option<ContextFor>,
+}
+
+/// `lookup`, asked at most once per name.
+pub(super) fn remembered(lookup: impl Fn(&str) -> Option<String> + 'static) -> VarLookup {
+    let seen = std::cell::RefCell::new(HashMap::<String, Option<String>>::new());
+    Rc::new(move |name: &str| {
+        if let Some(v) = seen.borrow().get(name) {
+            return v.clone();
+        }
+        let v = lookup(name);
+        seen.borrow_mut().insert(name.to_string(), v.clone());
+        v
+    })
+}
+
+/// What [`ImportDialog::write`] got on disk.
+struct Written {
+    root: PathBuf,
+    first: Option<PathBuf>,
+    /// The secrets of the files written.
+    secrets: Vec<Extracted>,
+    /// Why the rest wasn't written.
+    error: Option<String>,
 }
 
 impl ImportDialog {
@@ -147,7 +187,10 @@ impl ImportDialog {
                 });
                 subscriptions.push(cx.subscribe(
                     &select,
-                    |this, _, _: &SelectEvent<Vec<SharedString>>, cx| this.retarget(cx),
+                    |this, _, _: &SelectEvent<Vec<SharedString>>, cx| {
+                        this.retarget(cx);
+                        this.replan(cx);
+                    },
                 ));
                 (folders, Some(select))
             }
@@ -169,7 +212,10 @@ impl ImportDialog {
             plan: Ok(Vec::new()),
             error: None,
             env,
+            held: HashMap::new(),
             save_secrets: true,
+            #[cfg(test)]
+            fail_after: None,
             _subscriptions: subscriptions,
         }
     }
@@ -177,6 +223,7 @@ impl ImportDialog {
     pub(super) fn set_tab(&mut self, tab: ImportTab, cx: &mut Context<Self>) {
         self.tab = tab;
         self.error = None;
+        self.replan(cx);
         cx.notify();
     }
 
@@ -194,15 +241,35 @@ impl ImportDialog {
         self.folders.get(row).cloned().unwrap_or_default()
     }
 
+    /// With no collection open, `dir` becomes the target: its own
+    /// environment decides `BASE_URL` and which names are taken.
+    pub(super) fn set_target(
+        &mut self,
+        dir: Option<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.picked_target = dir;
+        if let (Some(dir), Some(for_folder)) = (&self.picked_target, &self.env.for_folder) {
+            let mut env = for_folder(dir);
+            env.for_folder = self.env.for_folder.clone();
+            self.env = env;
+            self.held.clear();
+        }
+        self.convert(window, cx);
+        self.replan(cx);
+    }
+
     /// Re-converts the pasted text and refreshes the previews.
     fn convert(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let text = self.curl.read(cx).value();
-        let known = self.env.known.clone();
+        let (lookup, held) = (self.env.known.clone(), &self.held);
+        let known = |name: &str| held.get(name).cloned().or_else(|| lookup(name));
         let imports = convert_commands(
             &text,
             &ImportEnv {
                 base_url: self.env.base_url.as_deref(),
-                known: &*known,
+                known: &known,
             },
         );
         // Several commands: the first opens, the others fold, so every
@@ -241,12 +308,22 @@ impl ImportDialog {
         self.retarget(cx);
     }
 
-    /// Recomputes where each file goes after the commands, the source or
-    /// the target changed.
+    /// Recomputes where each command's file goes.
     fn retarget(&mut self, cx: &mut Context<Self>) {
         let folder = self.target_folder(cx);
         let root = self.target_root().map(Path::to_path_buf);
         self.targets = curl_targets(root.as_deref(), &folder, &self.imports);
+        cx.notify();
+    }
+
+    /// Recomputes what Folder of YAML would copy; only on that tab, when
+    /// its source or target changes.
+    fn replan(&mut self, cx: &mut Context<Self>) {
+        if self.tab != ImportTab::Folder {
+            return;
+        }
+        let folder = self.target_folder(cx);
+        let root = self.target_root().map(Path::to_path_buf);
         self.plan = match &self.source {
             Some(source) => {
                 plan_yaml_copy(source, root.as_deref(), &folder).map_err(|e| e.to_string())
@@ -279,29 +356,45 @@ impl ImportDialog {
     }
 
     /// Writes the files and opens what was imported, or shows why not.
+    /// When only some were written, those are followed up on (tree,
+    /// secrets) and the dialog stays open on the error.
     pub(super) fn import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let result = self.write(cx);
-        match result {
-            Ok((root, first)) => {
-                window.close_dialog(cx);
-                let imported = Imported {
-                    root,
-                    opened: self.root.is_none(),
-                    first,
-                    secrets: match self.tab {
-                        ImportTab::Curl => self.extracted(),
-                        _ => Vec::new(),
-                    },
-                    save_secrets: self.save_secrets,
-                };
-                self.ws
-                    .update(cx, |ws, cx| ws.imported(imported, window, cx))
-                    .ok();
-            }
+        let written = match self.write(window, cx) {
+            Ok(w) => w,
             Err(e) => {
                 self.error = Some(e);
                 cx.notify();
+                return;
             }
+        };
+        let opened = self.root.is_none();
+        let wrote_any = written.first.is_some();
+        match &written.error {
+            None => window.close_dialog(cx),
+            Some(e) => {
+                self.error = Some(e.clone());
+                if opened && wrote_any {
+                    // The folder is the collection now.
+                    self.root = Some(written.root.clone());
+                }
+                cx.notify();
+            }
+        }
+        if wrote_any || written.error.is_none() {
+            let imported = Imported {
+                root: written.root,
+                opened: opened && wrote_any,
+                first: written.first,
+                secrets: written.secrets,
+                save_secrets: self.save_secrets,
+            };
+            self.ws
+                .update(cx, |ws, cx| ws.imported(imported, window, cx))
+                .ok();
+        }
+        if written.error.is_some() {
+            self.retarget(cx);
+            self.replan(cx);
         }
     }
 
@@ -322,8 +415,31 @@ impl ImportDialog {
         out
     }
 
-    /// The files on disk: the root they went into and the first one.
-    fn write(&mut self, cx: &mut Context<Self>) -> Result<(PathBuf, Option<PathBuf>), String> {
+    /// A variable an extracted value would take whose Keychain item holds
+    /// something else now; such names are held back and the commands
+    /// converted again, so a stored value is never overwritten.
+    fn hold_taken_names(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for _ in 0..8 {
+            let clashes: Vec<(String, String)> = self
+                .extracted()
+                .into_iter()
+                .filter_map(|e| {
+                    let held = (self.env.keychain)(&e.var)?;
+                    (held != e.value).then_some((e.var, held))
+                })
+                .collect();
+            if clashes.is_empty() {
+                return;
+            }
+            self.held.extend(clashes);
+            self.convert(window, cx);
+        }
+    }
+
+    /// Writes what the tab imports. Nothing is written when a file wouldn't
+    /// read back; a failure part way returns what got written and why the
+    /// rest didn't.
+    fn write(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Result<Written, String> {
         if self.count() == 0 {
             return Err(match self.tab {
                 ImportTab::Curl => "Paste a curl command to import.".into(),
@@ -335,25 +451,67 @@ impl ImportDialog {
             .target_root()
             .map(Path::to_path_buf)
             .ok_or("Choose a folder for the requests.")?;
-        // Names may have been taken since the preview was drawn.
-        self.retarget(cx);
         match self.tab {
             ImportTab::Curl => {
-                let mut first = None;
-                for (import, target) in self.imports.iter().zip(&self.targets) {
-                    let (Ok(converted), Some(rel)) = (&import.converted, target) else {
-                        continue;
-                    };
-                    write_new(&root.join(rel), converted.yaml.as_bytes())
-                        .map_err(|e| format!("Couldn't create {}: {e}", rel.display()))?;
-                    first.get_or_insert_with(|| rel.clone());
+                self.hold_taken_names(window, cx);
+                // Names may have been taken since the preview was drawn.
+                self.retarget(cx);
+                let files: Vec<(&CurlImport, &PathBuf, &str)> = self
+                    .imports
+                    .iter()
+                    .zip(&self.targets)
+                    .filter_map(|(i, t)| {
+                        Some((i, t.as_ref()?, i.converted.as_ref().ok()?.yaml.as_str()))
+                    })
+                    .collect();
+                if let Some((_, rel, _)) = files.iter().find(|(_, _, yaml)| !reads_as_yaml(yaml)) {
+                    return Err(format!(
+                        "{} wouldn't read back as YAML; nothing was imported.",
+                        rel.display()
+                    ));
                 }
-                Ok((root, first))
+                let mut written = Written {
+                    root: root.clone(),
+                    first: None,
+                    secrets: Vec::new(),
+                    error: None,
+                };
+                for (n, (import, rel, yaml)) in files.into_iter().enumerate() {
+                    #[cfg(test)]
+                    let failed = self.fail_after.is_some_and(|k| n >= k);
+                    #[cfg(not(test))]
+                    let failed = false;
+                    let result = if failed {
+                        Err(io::Error::other("test failure"))
+                    } else {
+                        write_new(&root.join(rel), yaml.as_bytes())
+                    };
+                    if let Err(e) = result {
+                        written.error = Some(format!(
+                            "Couldn't create {}: {e}. {n} imported before it.",
+                            rel.display()
+                        ));
+                        break;
+                    }
+                    written.first.get_or_insert_with(|| rel.clone());
+                    for e in &import.extracted {
+                        if !written.secrets.iter().any(|w| w.var == e.var) {
+                            written.secrets.push(e.clone());
+                        }
+                    }
+                }
+                Ok(written)
             }
             ImportTab::Folder => {
+                self.replan(cx);
                 let plan = self.plan.clone()?;
-                copy_planned(&root, &plan).map_err(|e| format!("Couldn't copy {e}"))?;
-                Ok((root, plan.first().map(|p| p.to.clone())))
+                let (copied, error) = copy_planned(&root, &plan);
+                Ok(Written {
+                    root,
+                    first: (copied > 0).then(|| plan[0].to.clone()),
+                    secrets: Vec::new(),
+                    error: error.map(|e| format!("Couldn't copy {e}")),
+                })
             }
             ImportTab::Postman | ImportTab::OpenApi => unreachable!("count is 0"),
         }
@@ -370,15 +528,15 @@ impl ImportDialog {
             let Ok(Ok(Some(paths))) = picked.await else {
                 return;
             };
-            this.update(cx, |this, cx| {
+            this.update_in(cx, |this, window, cx| {
                 let dir = paths.into_iter().next();
+                this.error = None;
                 if source {
                     this.source = dir;
+                    this.replan(cx);
                 } else {
-                    this.picked_target = dir;
+                    this.set_target(dir, window, cx);
                 }
-                this.error = None;
-                this.retarget(cx);
             })
             .ok();
         })
@@ -397,7 +555,6 @@ impl ImportDialog {
         if let Some(folder) = folder {
             self.source = Some(folder);
             self.set_tab(ImportTab::Folder, cx);
-            self.retarget(cx);
         } else {
             let text = text.replace("\\n", "\n");
             self.curl.update(cx, |s, cx| s.set_value(text, window, cx));
@@ -1170,35 +1327,42 @@ impl Workspace {
         dialog
     }
 
-    /// The picked environment's `BASE_URL` and a lookup of the values its
-    /// variables hold, for the Import dialog.
+    /// The picked environment's `BASE_URL` and lookups of the values its
+    /// variables hold, for the Import dialog. With no collection open, the
+    /// context comes once a target folder is picked.
     fn import_context(&self) -> ImportContext {
-        let environment = self.environment.clone();
-        let Some(c) = &self.state.collection else {
-            return ImportContext {
-                environment,
-                base_url: None,
-                known: Rc::new(|_| None),
-            };
-        };
-        let ctx = self.env_ctx(c);
-        let secrets = self.secret_cache.clone();
-        let known = Rc::new(move |name: &str| {
-            resolve_vars(
-                &[name.to_string()],
-                &Default::default(),
-                &*secrets,
-                &ctx,
-                &[],
-            )
-            .into_iter()
-            .next()
-            .and_then(|v| v.value)
-        });
-        ImportContext {
-            environment,
-            base_url: known("BASE_URL"),
-            known,
+        let (cached, raw) = (self.secret_cache.clone(), self.secrets.clone());
+        match &self.state.collection {
+            Some(c) => context_for(self.env_ctx(c), cached, raw, None),
+            None => {
+                let (store, for_cached, for_raw) =
+                    (self.store.clone(), cached.clone(), raw.clone());
+                let for_folder: ContextFor = Rc::new(move |dir: &Path| {
+                    // As `open_collection` will see it.
+                    let ctx = EnvCtx {
+                        root: dir.to_path_buf(),
+                        collection: dir.file_name().map_or_else(
+                            || dir.display().to_string(),
+                            |n| n.to_string_lossy().into_owned(),
+                        ),
+                        environment: store
+                            .environment(dir)
+                            .unwrap_or_else(|| DEFAULT_ENVIRONMENT.to_string()),
+                        marked_secret: store
+                            .base()
+                            .map(|b| CollectionMeta::load(b, dir).secret_names)
+                            .unwrap_or_default(),
+                    };
+                    context_for(ctx, for_cached.clone(), for_raw.clone(), None)
+                });
+                ImportContext {
+                    environment: DEFAULT_ENVIRONMENT.to_string(),
+                    base_url: None,
+                    known: Rc::new(|_| None),
+                    keychain: Rc::new(|_| None),
+                    for_folder: Some(for_folder),
+                }
+            }
         }
     }
 
@@ -1242,6 +1406,23 @@ impl Workspace {
             if save_secrets {
                 let service = service_name(&collection, &self.environment);
                 for e in &secrets {
+                    // Never over another value: the dialog already moved
+                    // to a free name, this is the last line.
+                    if self
+                        .secrets
+                        .get(&service, &e.var)
+                        .is_some_and(|held| held != e.value)
+                    {
+                        notify_error(
+                            format!(
+                                "{} already holds another value in the Keychain; left unchanged.",
+                                e.var
+                            ),
+                            window,
+                            cx,
+                        );
+                        continue;
+                    }
                     if let Err(err) = self.secret_cache.set(&service, &e.var, &e.value) {
                         notify_error(
                             format!("Couldn't save {} to the Keychain: {err}", e.var),
@@ -1259,6 +1440,37 @@ impl Workspace {
         }
         self.refresh_vars(cx);
         cx.notify();
+    }
+}
+
+/// The import context of `ctx`'s environment: `BASE_URL`, and each
+/// name's value, remembered for the dialog's life.
+fn context_for(
+    ctx: EnvCtx,
+    cached: std::sync::Arc<dyn SecretStore>,
+    raw: std::sync::Arc<dyn SecretStore>,
+    for_folder: Option<ContextFor>,
+) -> ImportContext {
+    let service = service_name(&ctx.collection, &ctx.environment);
+    let environment = ctx.environment.clone();
+    let known = remembered(move |name: &str| {
+        resolve_vars(
+            &[name.to_string()],
+            &Default::default(),
+            &*cached,
+            &ctx,
+            &[],
+        )
+        .into_iter()
+        .next()
+        .and_then(|v| v.value)
+    });
+    ImportContext {
+        environment,
+        base_url: known("BASE_URL"),
+        known,
+        keychain: Rc::new(move |name: &str| raw.get(&service, name)),
+        for_folder,
     }
 }
 
@@ -1506,5 +1718,116 @@ mod tests {
         assert_eq!(stored, None);
         // Still a secret: it shows as Not set, never as a plain value.
         assert_eq!(marked, ["API_TOKEN"]);
+    }
+
+    #[gpui_kit::test]
+    fn welcome_import_checks_the_target_folders_keychain(cx: &mut TestAppContext) {
+        let state = tempfile::tempdir().unwrap();
+        let (window, ws) = open(cx, None, StateStore::at(state.path()));
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let target = tempfile::tempdir().unwrap();
+        let name = target
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let service = crate::model::secrets::service_name(&name, "Default");
+        let secrets = ws.read_with(cx, |ws, _| ws.secrets.clone());
+        secrets
+            .set(&service, "API_TOKEN", "tok_already_there")
+            .unwrap();
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        cx.update(|window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.dev_fill(KEYED, None, window, cx);
+                d.set_target(Some(target.path().to_path_buf()), window, cx);
+                d.import(window, cx);
+            })
+        });
+        cx.run_until_parked();
+        let text = std::fs::read_to_string(target.path().join("create-customer.yaml")).unwrap();
+        assert!(text.contains("Bearer ${API_TOKEN_2}"), "{text}");
+        assert_eq!(
+            secrets.get(&service, "API_TOKEN").as_deref(),
+            Some("tok_already_there")
+        );
+        assert_eq!(
+            secrets.get(&service, "API_TOKEN_2").as_deref(),
+            Some(concat!("sk_test", "_51HxAbCdEfGhIjKlMnOpQrSt"))
+        );
+    }
+
+    #[gpui_kit::test]
+    fn a_keychain_value_set_meanwhile_is_never_overwritten(cx: &mut TestAppContext) {
+        let dir = collection();
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.dev_fill(KEYED, None, window, cx)));
+        // Stored after the preview was drawn (the dialog's lookup is stale).
+        let (secrets, service) = ws.read_with(cx, |ws, _| {
+            let c = ws.state.collection.as_ref().unwrap();
+            (
+                ws.secrets.clone(),
+                crate::model::secrets::service_name(&c.name, &ws.environment),
+            )
+        });
+        secrets
+            .set(&service, "API_TOKEN", "tok_set_meanwhile")
+            .unwrap();
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        cx.run_until_parked();
+        let text = std::fs::read_to_string(dir.path().join("create-customer.yaml")).unwrap();
+        assert!(text.contains("Bearer ${API_TOKEN_2}"), "{text}");
+        assert_eq!(
+            secrets.get(&service, "API_TOKEN").as_deref(),
+            Some("tok_set_meanwhile")
+        );
+    }
+
+    #[gpui_kit::test]
+    fn a_partial_import_follows_up_on_what_was_written(cx: &mut TestAppContext) {
+        let dir = collection();
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        let two = "curl https://api.example.com/v1/charges -H 'X-Auth-Token: tok_first_1111'\n\n\
+                   curl https://api.example.com/v1/refunds -H 'X-Api-Key: key_second_2222'";
+        cx.update(|window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.dev_fill(two, None, window, cx);
+                d.fail_after = Some(1);
+                d.import(window, cx);
+            })
+        });
+        cx.run_until_parked();
+        assert!(dir.path().join("get-charges.yaml").is_file());
+        assert!(!dir.path().join("get-refunds.yaml").exists());
+        dialog.read_with(cx, |d, _| {
+            let e = d.error.as_deref().unwrap();
+            assert!(
+                e.contains("get-refunds.yaml") && e.contains("1 imported"),
+                "{e}"
+            );
+        });
+        cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
+        ws.read_with(cx, |ws, _| {
+            assert_eq!(ws.meta.secret_names, ["AUTH_TOKEN"]);
+            let c = ws.state.collection.as_ref().unwrap();
+            let service = crate::model::secrets::service_name(&c.name, &ws.environment);
+            assert_eq!(
+                ws.secrets.get(&service, "AUTH_TOKEN").as_deref(),
+                Some("tok_first_1111")
+            );
+            assert_eq!(ws.secrets.get(&service, "API_KEY"), None);
+            let names: Vec<String> = c
+                .tree
+                .iter()
+                .map(|n| format!("{n:?}"))
+                .filter(|n| n.contains("get-charges"))
+                .collect();
+            assert_eq!(names.len(), 1);
+        });
     }
 }
