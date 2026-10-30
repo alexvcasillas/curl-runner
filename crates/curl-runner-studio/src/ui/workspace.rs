@@ -717,8 +717,12 @@ impl Workspace {
             }
         }
         if let Some(h) = &self.history_view {
-            let marked = self.notes.read(cx).secret_names.clone();
-            h.update(cx, |h, _| h.set_marked(marked));
+            let meta = self.notes.read(cx);
+            let (marked, shared) = (meta.secret_names.clone(), meta.shared_defaults());
+            h.update(cx, |h, _| {
+                h.set_marked(marked);
+                h.set_shared(shared);
+            });
         }
         let seen = SharedNotes::of(self.notes.read(cx));
         if self.shared_notes.as_ref() != Some(&seen) {

@@ -264,6 +264,49 @@ fn resolve_vars_with(
         .collect()
 }
 
+/// What a `curl-runner` run of a received copy needs set to match the
+/// studio's: each locked default (`NAME=value` before the command wins
+/// over `.env`, as the lock does) and each suggested one that neither the
+/// process env nor the environment's `.env` files set. Never a secret name
+/// nor a `CURL_RUNNER_*` override. Empty for a collection of one's own.
+pub fn cli_shared_env(ctx: &EnvCtx) -> Vec<(String, String)> {
+    cli_shared_env_with(ctx, &interpolate::process_env)
+}
+
+fn cli_shared_env_with(
+    ctx: &EnvCtx,
+    process_env: &dyn Fn(&str) -> Option<String>,
+) -> Vec<(String, String)> {
+    let shareable =
+        |name: &str| !is_secret(name, &ctx.marked_secret) && !name.starts_with("CURL_RUNNER_");
+    let mut out: Vec<(String, String)> = ctx
+        .shared
+        .locked
+        .iter()
+        .filter(|(name, _)| shareable(name))
+        .cloned()
+        .collect();
+    if ctx.shared.suggested.is_empty() {
+        return out;
+    }
+    let environment = effective_environment(ctx, &[], process_env);
+    let files: Vec<_> = env::env_file_paths(&ctx.root, environment.as_deref())
+        .into_iter()
+        .filter_map(|p| Some(env::parse_env_content(&std::fs::read_to_string(p).ok()?)))
+        .collect();
+    let set_here = |name: &str| {
+        process_env(name).is_some() || files.iter().any(|vars| vars.contains_key(name))
+    };
+    out.extend(
+        ctx.shared
+            .suggested
+            .iter()
+            .filter(|(name, _)| shareable(name) && !set_here(name))
+            .cloned(),
+    );
+    out
+}
+
 /// The `${NAME}` and `${store.NAME}` references of `yaml`, deduplicated in
 /// order: no dynamic variables, and no reference with a `:default`.
 pub fn referenced_vars(yaml: &str) -> Vec<String> {
@@ -1117,6 +1160,48 @@ mod tests {
         let v = resolve_vars(&["BASE_URL".into()], &Store::new(), &secrets, &ctx, &[]);
         assert_eq!(v[0].source, None);
         assert_eq!(v[0].value, None);
+    }
+
+    #[test]
+    fn cli_env_carries_locked_and_unset_suggested_defaults() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(
+            d.path().join(".env"),
+            "BASE_URL=https://mine\nCURRENCY=eur\n",
+        )
+        .unwrap();
+        let ctx = EnvCtx {
+            root: d.path().to_path_buf(),
+            collection: "acme-shipping-api".into(),
+            collection_id: "0a1b2c3d".into(),
+            environment: DEFAULT_ENVIRONMENT.into(),
+            marked_secret: vec!["SIGNING_KEY".into()],
+            shared: SharedDefaults {
+                org: "Acme".into(),
+                locked: vec![
+                    ("CURRENCY".into(), "usd".into()),
+                    ("SIGNING_KEY".into(), "never".into()),
+                ],
+                suggested: vec![
+                    ("BASE_URL".into(), "https://api.example.com".into()),
+                    ("REGION".into(), "eu".into()),
+                    ("TIMEOUT".into(), "30".into()),
+                ],
+            },
+        };
+        let env = |name: &str| (name == "TIMEOUT").then(|| "10".to_string());
+        assert_eq!(
+            cli_shared_env_with(&ctx, &env),
+            [
+                ("CURRENCY".to_string(), "usd".to_string()),
+                ("REGION".to_string(), "eu".to_string()),
+            ]
+        );
+        let own = EnvCtx {
+            shared: SharedDefaults::default(),
+            ..ctx
+        };
+        assert!(cli_shared_env_with(&own, &env).is_empty());
     }
 
     #[test]

@@ -177,10 +177,12 @@ impl Workspace {
                 let (root, name) = (c.root.clone(), c.name.clone());
                 let meta = self.notes.read(cx);
                 let (id, marked) = (meta.id.clone(), meta.secret_names.clone());
+                let shared = meta.shared_defaults();
                 let export_dir = self.export_dir();
                 let view = cx.new(|cx| {
                     let mut view = HistoryView::new(root, name, id, marked, cx);
                     view.set_export_dir(export_dir);
+                    view.set_shared(shared);
                     view
                 });
                 self._history_events = Some(cx.subscribe_in(&view, window, Self::on_history_event));

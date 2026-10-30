@@ -504,9 +504,7 @@ mod gpui_tests {
     use super::super::workspace::{Workspace, test_backend, wait_for_run};
     use super::{DUPLICATED, STATE_FOLDER_TEXT};
     use crate::model::backend::{
-        Account, Backend, BoxFut, CollectionKey, ConnectionInfo, DevControls, Person,
-        ReceivedShare, Server, ShareLink, ShareSettings, ShareUpdate, SharedCollection,
-        SharedSnapshot, SignInMethod, SyncDeletion, SyncFile, SyncReport, SyncStatus, sync_files,
+        Backend, CollectionKey, ShareUpdate, SignInMethod, SyncFile, sync_files,
     };
     use crate::model::collection_meta::CollectionMeta;
     use crate::model::secrets::{MemorySecrets, SecretStore, service_name};
@@ -523,84 +521,7 @@ mod gpui_tests {
     const TOKEN: &str = "sk-live-customer-4242";
     const RATES: &str = "rates/get-rates.yaml";
 
-    /// The backend, recording every file a sync sends (text included).
-    struct Spy {
-        inner: Arc<dyn Backend>,
-        sent: Mutex<Vec<SyncFile>>,
-    }
-
-    impl Backend for Spy {
-        fn server(&self) -> Server {
-            self.inner.server()
-        }
-        fn set_server(&self, server: Server) -> BoxFut<'_, ()> {
-            self.inner.set_server(server)
-        }
-        fn test_connection(&self, server: &Server) -> BoxFut<'_, ConnectionInfo> {
-            self.inner.test_connection(server)
-        }
-        fn sign_in(&self, method: SignInMethod) -> BoxFut<'_, Account> {
-            self.inner.sign_in(method)
-        }
-        fn sign_out(&self) -> BoxFut<'_, ()> {
-            self.inner.sign_out()
-        }
-        fn account(&self) -> Option<Account> {
-            self.inner.account()
-        }
-        fn sync_status(&self, collection: &CollectionKey) -> SyncStatus {
-            self.inner.sync_status(collection)
-        }
-        fn sync(
-            &self,
-            collection: &CollectionKey,
-            local: &[SyncFile],
-            deleted: &[SyncDeletion],
-        ) -> BoxFut<'_, SyncReport> {
-            self.sent.lock().unwrap().extend(local.iter().cloned());
-            self.inner.sync(collection, local, deleted)
-        }
-        fn sync_shared(
-            &self,
-            collection: &CollectionKey,
-            share_id: &str,
-            local: &[SyncFile],
-        ) -> BoxFut<'_, SyncReport> {
-            self.sent.lock().unwrap().extend(local.iter().cloned());
-            self.inner.sync_shared(collection, share_id, local)
-        }
-        fn share_settings(&self, collection: &CollectionKey) -> BoxFut<'_, ShareSettings> {
-            self.inner.share_settings(collection)
-        }
-        fn update_share(
-            &self,
-            collection: &CollectionKey,
-            update: ShareUpdate,
-        ) -> BoxFut<'_, ShareSettings> {
-            self.inner.update_share(collection, update)
-        }
-        fn invite(&self, collection: &CollectionKey, email: &str) -> BoxFut<'_, Person> {
-            self.inner.invite(collection, email)
-        }
-        fn remove_person(&self, collection: &CollectionKey, email: &str) -> BoxFut<'_, ()> {
-            self.inner.remove_person(collection, email)
-        }
-        fn resolve_link(&self, link: &ShareLink) -> BoxFut<'_, SharedCollection> {
-            self.inner.resolve_link(link)
-        }
-        fn fetch_shared(&self, id: &str) -> BoxFut<'_, SharedSnapshot> {
-            self.inner.fetch_shared(id)
-        }
-        fn received(&self) -> Vec<ReceivedShare> {
-            self.inner.received()
-        }
-        fn add_received(&self, share: ReceivedShare) -> BoxFut<'_, ()> {
-            self.inner.add_received(share)
-        }
-        fn dev(&self) -> Option<&dyn DevControls> {
-            self.inner.dev()
-        }
-    }
+    use crate::model::backend::testing::Spy;
 
     struct Studio {
         state: tempfile::TempDir,
@@ -648,10 +569,7 @@ mod gpui_tests {
         let state = tempfile::tempdir().unwrap();
         let store = StateStore::at(state.path());
         let secrets = Arc::new(MemorySecrets::default());
-        let spy = Arc::new(Spy {
-            inner,
-            sent: Mutex::default(),
-        });
+        let spy = Arc::new(Spy::new(inner));
         let (s, b) = (
             secrets.clone() as Arc<dyn SecretStore>,
             spy.clone() as Arc<dyn Backend>,
@@ -1017,6 +935,25 @@ mod gpui_tests {
         // The run saved nothing and asked nothing.
         assert_eq!(s.read(RATES), rates);
         assert!(toasts(cx, &s).is_empty(), "{:?}", toasts(cx, &s));
+        // Copy as CLI: the locked CURRENCY leads (BASE_URL is set in the
+        // copy's .env, so the CLI reads it there); never the token.
+        let entries = crate::model::history::History::open(s.state.path(), &s.root()).list();
+        let ws = s.ws.clone();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.open_history(window, cx));
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(entries.len(), 1);
+        let view = s.ws.read_with(cx, |ws, _| ws.history_view.clone()).unwrap();
+        view.update(cx, |v, cx| {
+            v.select(&entries[0].id, cx);
+            v.copy_cli(cx);
+        });
+        let copied = cx.read_from_clipboard().and_then(|c| c.text()).unwrap();
+        assert!(copied.contains("CURRENCY=usd curl-runner "), "{copied}");
+        assert!(!copied.contains("BASE_URL="), "{copied}");
+        assert!(!copied.contains(TOKEN), "{copied}");
     }
 
     #[gpui_kit::test]

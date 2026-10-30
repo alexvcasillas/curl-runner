@@ -14,7 +14,7 @@ use super::inspector::env_label;
 use super::run_view::{ExportFormat, pill, report_file_name, write_atomic};
 use super::workspace::notify_error;
 use crate::model::duration_text;
-use crate::model::environments::EnvCtx;
+use crate::model::environments::{EnvCtx, SharedDefaults};
 use crate::model::export::{cli_command, to_markdown};
 use crate::model::history::{
     EntryKind, Filter, HistoryEntry, KindFilter, StoredResult, day_bucket, filter_entries,
@@ -243,6 +243,8 @@ pub struct HistoryView {
     collection_id: String,
     /// The collection's secret names, for the CLI command it copies.
     marked: Vec<String>,
+    /// A received copy's shared defaults, for the CLI command it copies.
+    shared: SharedDefaults,
     /// Newest first.
     entries: Vec<HistoryEntry>,
     loaded: bool,
@@ -285,6 +287,7 @@ impl HistoryView {
             export_dir: None,
             collection_id,
             marked,
+            shared: SharedDefaults::default(),
             entries: Vec::new(),
             loaded: false,
             usage: (0, 0),
@@ -330,6 +333,10 @@ impl HistoryView {
 
     pub fn set_marked(&mut self, marked: Vec<String>) {
         self.marked = marked;
+    }
+
+    pub fn set_shared(&mut self, shared: SharedDefaults) {
+        self.shared = shared;
     }
 
     pub fn usage(&self) -> (usize, u64) {
@@ -442,7 +449,7 @@ impl HistoryView {
     }
 
     /// Copies the `curl-runner` command that repeats the picked run.
-    fn copy_cli(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn copy_cli(&mut self, cx: &mut Context<Self>) {
         let Some(e) = self.selected_entry() else {
             return;
         };
@@ -452,7 +459,7 @@ impl HistoryView {
             collection_id: self.collection_id.clone(),
             environment: e.environment.clone(),
             marked_secret: self.marked.clone(),
-            shared: Default::default(),
+            shared: self.shared.clone(),
         };
         let command = cli_command(&target_of(e), &ctx, &e.keychain_names);
         cx.write_to_clipboard(ClipboardItem::new_string(command));

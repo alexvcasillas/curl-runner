@@ -1606,6 +1606,56 @@ mod gpui_tests {
     }
 
     #[gpui_kit::test]
+    fn an_invite_that_landed_says_so_when_the_list_cant_refresh(cx: &mut TestAppContext) {
+        use crate::model::backend::testing::Spy;
+        use std::sync::atomic::Ordering;
+        let dir = collection();
+        let spy = Arc::new(Spy::new(signed_in()));
+        let backend = spy.clone() as Arc<dyn Backend>;
+        let (window, ws) = open(cx, dir.path(), backend.clone());
+        let view = open_share(cx, window, &ws);
+        let error = |cx: &mut TestAppContext| {
+            ws.read_with(cx, |ws, cx| {
+                ws.share_sync.as_ref().unwrap().read(cx).error.clone()
+            })
+        };
+        spy.fail_share_settings.store(true, Ordering::SeqCst);
+        cx.update_window(window, |_, window, cx| {
+            view.update(cx, |v, cx| {
+                v.type_invite("maria@globex.example", window, cx);
+                v.invite(window, cx);
+            })
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(
+            error(cx).as_deref(),
+            Some("Invited — couldn't refresh the list")
+        );
+        let key = ws.read_with(cx, |ws, cx| ws.collection_key(cx).unwrap());
+        let people = |spy: &Spy| {
+            futures::executor::block_on(spy.inner.share_settings(&key))
+                .unwrap()
+                .people
+                .len()
+        };
+        assert_eq!(people(&spy), 2, "the invite went through");
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                let sync = ws.share_sync(window, cx).unwrap();
+                sync.update(cx, |s, cx| s.remove("maria@globex.example".into(), cx));
+            })
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(
+            error(cx).as_deref(),
+            Some("Removed — couldn't refresh the list")
+        );
+        assert_eq!(people(&spy), 1);
+    }
+
+    #[gpui_kit::test]
     fn secret_vars_never_offer_share_default(cx: &mut TestAppContext) {
         let dir = collection();
         let backend = signed_in();

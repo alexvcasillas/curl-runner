@@ -606,6 +606,110 @@ pub fn test_backend() -> std::sync::Arc<dyn Backend> {
     std::sync::Arc::new(MockBackend::open(None, std::time::Duration::ZERO))
 }
 
+/// Test doubles around the mock.
+#[cfg(test)]
+pub mod testing {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    /// The backend, recording every file a sync sends (text included).
+    pub struct Spy {
+        pub inner: Arc<dyn Backend>,
+        pub sent: Mutex<Vec<SyncFile>>,
+        /// `share_settings` fails as offline while set.
+        pub fail_share_settings: std::sync::atomic::AtomicBool,
+    }
+
+    impl Spy {
+        pub fn new(inner: Arc<dyn Backend>) -> Spy {
+            Spy {
+                inner,
+                sent: Mutex::default(),
+                fail_share_settings: Default::default(),
+            }
+        }
+    }
+
+    impl Backend for Spy {
+        fn server(&self) -> Server {
+            self.inner.server()
+        }
+        fn set_server(&self, server: Server) -> BoxFut<'_, ()> {
+            self.inner.set_server(server)
+        }
+        fn test_connection(&self, server: &Server) -> BoxFut<'_, ConnectionInfo> {
+            self.inner.test_connection(server)
+        }
+        fn sign_in(&self, method: SignInMethod) -> BoxFut<'_, Account> {
+            self.inner.sign_in(method)
+        }
+        fn sign_out(&self) -> BoxFut<'_, ()> {
+            self.inner.sign_out()
+        }
+        fn account(&self) -> Option<Account> {
+            self.inner.account()
+        }
+        fn sync_status(&self, collection: &CollectionKey) -> SyncStatus {
+            self.inner.sync_status(collection)
+        }
+        fn sync(
+            &self,
+            collection: &CollectionKey,
+            local: &[SyncFile],
+            deleted: &[SyncDeletion],
+        ) -> BoxFut<'_, SyncReport> {
+            self.sent.lock().unwrap().extend(local.iter().cloned());
+            self.inner.sync(collection, local, deleted)
+        }
+        fn sync_shared(
+            &self,
+            collection: &CollectionKey,
+            share_id: &str,
+            local: &[SyncFile],
+        ) -> BoxFut<'_, SyncReport> {
+            self.sent.lock().unwrap().extend(local.iter().cloned());
+            self.inner.sync_shared(collection, share_id, local)
+        }
+        fn share_settings(&self, collection: &CollectionKey) -> BoxFut<'_, ShareSettings> {
+            if self
+                .fail_share_settings
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                return Box::pin(async { Err(BackendError::Offline) });
+            }
+            self.inner.share_settings(collection)
+        }
+        fn update_share(
+            &self,
+            collection: &CollectionKey,
+            update: ShareUpdate,
+        ) -> BoxFut<'_, ShareSettings> {
+            self.inner.update_share(collection, update)
+        }
+        fn invite(&self, collection: &CollectionKey, email: &str) -> BoxFut<'_, Person> {
+            self.inner.invite(collection, email)
+        }
+        fn remove_person(&self, collection: &CollectionKey, email: &str) -> BoxFut<'_, ()> {
+            self.inner.remove_person(collection, email)
+        }
+        fn resolve_link(&self, link: &ShareLink) -> BoxFut<'_, SharedCollection> {
+            self.inner.resolve_link(link)
+        }
+        fn fetch_shared(&self, id: &str) -> BoxFut<'_, SharedSnapshot> {
+            self.inner.fetch_shared(id)
+        }
+        fn received(&self) -> Vec<ReceivedShare> {
+            self.inner.received()
+        }
+        fn add_received(&self, share: ReceivedShare) -> BoxFut<'_, ()> {
+            self.inner.add_received(share)
+        }
+        fn dev(&self) -> Option<&dyn DevControls> {
+            self.inner.dev()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

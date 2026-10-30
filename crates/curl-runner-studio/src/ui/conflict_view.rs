@@ -1364,8 +1364,8 @@ mod tests {
         assert_eq!(s.server_text(cx, "a.yaml").as_deref(), Some(MINE));
         assert_eq!(s.read("a.yaml"), MINE);
         assert!(s.syncs() >= before + 2, "the push, then a sync");
-        let key = s.ws.read_with(cx, |ws, cx| ws.collection_key(cx).unwrap());
-        let base = crate::model::sync_base::load(Some(s._state.path()), &key.id);
+        let id = s.ws.read_with(cx, |ws, cx| ws.sync_base_id(cx).unwrap());
+        let base = crate::model::sync_base::load(Some(s._state.path()), &id);
         assert_eq!(base.files[Path::new("a.yaml")], SyncFile::hash_of(MINE));
         assert!(base.conflicts.is_empty() && base.held.is_empty());
         settled(&s, cx);

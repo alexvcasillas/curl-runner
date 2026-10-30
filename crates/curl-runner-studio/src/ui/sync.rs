@@ -456,7 +456,8 @@ impl Workspace {
             .collection_key(cx)
             .filter(|_| self.sync_on() && !self.unlinked());
         if let Some(key) = key {
-            self.sync.base = sync_base::load(self.store.base(), &key.id);
+            let id = self.sync_base_id(cx).unwrap_or_else(|| key.id.clone());
+            self.sync.base = sync_base::load(self.store.base(), &id);
             self.sync.conflicts = self.sync.base.conflicts.clone();
             if let SyncStatus::Synced { at, .. } = self.backend.sync_status(&key) {
                 self.sync.at = Some(at);
@@ -812,13 +813,13 @@ impl Workspace {
     /// Queues the base for writing: one write at a time, the latest per
     /// collection wins.
     pub(super) fn save_base(&mut self, cx: &mut Context<Self>) {
-        let Some(key) = self.collection_key(cx) else {
+        let Some(id) = self.sync_base_id(cx) else {
             return;
         };
         let dir = self.store.base().map(Path::to_path_buf);
         let saver = &mut self.sync.saver;
-        saver.queue.retain(|(id, _, _)| *id != key.id);
-        saver.queue.push((key.id, dir, self.sync.base.clone()));
+        saver.queue.retain(|(queued, _, _)| *queued != id);
+        saver.queue.push((id, dir, self.sync.base.clone()));
         if saver.busy {
             return;
         }
@@ -846,6 +847,19 @@ impl Workspace {
                 }
             }
         }));
+    }
+
+    /// Where the open collection's base is kept: per server and account for
+    /// one's own ([`sync_base::scoped_id`]), the plain id for a received
+    /// copy. `None`: no collection, or one's own while signed out.
+    pub(super) fn sync_base_id(&self, cx: &App) -> Option<String> {
+        let key = self.collection_key(cx)?;
+        if self.pull_only() {
+            return Some(key.id);
+        }
+        let account = self.backend.account()?;
+        let server = self.backend.server();
+        Some(sync_base::scoped_id(&key.id, server.url(), &account.email))
     }
 
     /// Offline: a sync every [`OFFLINE_POLL`] until one gets through.
@@ -1440,6 +1454,41 @@ mod gpui_tests {
     }
 
     #[gpui_kit::test]
+    fn the_sync_base_belongs_to_the_server_and_account(cx: &mut TestAppContext) {
+        let dir = collection(&[("a.yaml", REQUEST), ("b.yaml", REQUEST)]);
+        let state = tempfile::tempdir().unwrap();
+        let backend = signed_in();
+        let store = StateStore::at(state.path());
+        let (window, ws) = open_in(cx, dir.path(), backend.clone(), store);
+        let files = |cx: &mut TestAppContext| ws.read_with(cx, |ws, _| ws.sync.base.files.len());
+        assert_eq!(files(cx), 2, "synced as Jamie");
+        let jamie = ws.read_with(cx, |ws, cx| ws.sync_base_id(cx).unwrap());
+        let switch = |cx: &mut TestAppContext, method: SignInMethod| {
+            futures::executor::block_on(backend.sign_out()).unwrap();
+            futures::executor::block_on(backend.sign_in(method)).unwrap();
+            cx.update_window(window, |_, window, cx| {
+                ws.update(cx, |ws, cx| ws.start_sync(window, cx));
+            })
+            .unwrap();
+            cx.run_until_parked();
+        };
+        // Another account: its own base, not Jamie's.
+        switch(cx, SignInMethod::Email);
+        let maria = ws.read_with(cx, |ws, cx| ws.sync_base_id(cx).unwrap());
+        assert_ne!(maria, jamie);
+        let stored = |id: &str| crate::model::sync_base::load(Some(state.path()), id);
+        assert_eq!(stored(&jamie).files.len(), 2, "Jamie's base is kept");
+        // Back as Jamie: the old base again, nothing to send.
+        switch(cx, SignInMethod::GitHub);
+        assert_eq!(
+            ws.read_with(cx, |ws, cx| ws.sync_base_id(cx).unwrap()),
+            jamie
+        );
+        assert_eq!(files(cx), 2);
+        assert_eq!(ws.read_with(cx, |ws, _| ws.sync.pending), 0);
+    }
+
+    #[gpui_kit::test]
     fn settings_sync_card_reads_the_workspace_not_the_server(cx: &mut TestAppContext) {
         use super::super::settings_view::AppPage;
         let dir = collection(&[("a.yaml", REQUEST), ("b.yaml", REQUEST)]);
@@ -1954,7 +2003,6 @@ mod gpui_tests {
             backend.clone(),
             StateStore::at(state.path()),
         );
-        let key = key(&ws, cx);
         let conflict = crate::model::backend::Conflict {
             rel: "a.yaml".into(),
             local: "a: mine\n".into(),
@@ -1973,7 +2021,8 @@ mod gpui_tests {
         })
         .unwrap();
         cx.run_until_parked();
-        let stored = crate::model::sync_base::load(Some(state.path()), &key.id);
+        let id = ws.read_with(cx, |ws, cx| ws.sync_base_id(cx).unwrap());
+        let stored = crate::model::sync_base::load(Some(state.path()), &id);
         assert_eq!(stored.held, [std::path::PathBuf::from("a.yaml")]);
         std::fs::write(
             state.path().join("settings.json"),
@@ -2001,7 +2050,6 @@ mod gpui_tests {
             backend.clone(),
             StateStore::at(state.path()),
         );
-        let key = key(&ws, cx);
         cx.update_window(window, |_, _, cx| {
             ws.update(cx, |ws, cx| {
                 for n in 1..=5u64 {
@@ -2016,7 +2064,8 @@ mod gpui_tests {
         })
         .unwrap();
         cx.run_until_parked();
-        let stored = crate::model::sync_base::load(Some(state.path()), &key.id);
+        let id = ws.read_with(cx, |ws, cx| ws.sync_base_id(cx).unwrap());
+        let stored = crate::model::sync_base::load(Some(state.path()), &id);
         assert_eq!(stored.files[std::path::Path::new("a.yaml")], 5);
         ws.read_with(cx, |ws, _| assert!(!ws.sync.saver.busy));
     }

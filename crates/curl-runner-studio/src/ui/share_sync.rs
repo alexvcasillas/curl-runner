@@ -80,6 +80,8 @@ struct Done {
     sent: CollectionMeta,
     candidates: Option<Vec<SharedVar>>,
     result: Result<ShareSettings, BackendError>,
+    /// An invite or a removal went through, whatever its re-read did.
+    landed: bool,
 }
 
 /// What a failed call says at the top: offline and signed out in the
@@ -320,6 +322,7 @@ impl ShareSync {
             let candidates = matches!(op, Op::Open | Op::Variables { .. })
                 .then(|| share_candidates(&root, &sent));
             let update = |u: ShareUpdate| backend.update_share(&key, u);
+            let mut landed = false;
             let result = match &op {
                 Op::Open | Op::Variables { .. } => {
                     update(ShareUpdate {
@@ -350,11 +353,17 @@ impl ShareSync {
                     .await
                 }
                 Op::Invite(email) => match backend.invite(&key, email).await {
-                    Ok(_) => backend.share_settings(&key).await,
+                    Ok(_) => {
+                        landed = true;
+                        backend.share_settings(&key).await
+                    }
                     Err(e) => Err(e),
                 },
                 Op::Remove(email) => match backend.remove_person(&key, email).await {
-                    Ok(()) => backend.share_settings(&key).await,
+                    Ok(()) => {
+                        landed = true;
+                        backend.share_settings(&key).await
+                    }
                     Err(e) => Err(e),
                 },
             };
@@ -363,6 +372,7 @@ impl ShareSync {
                 sent,
                 candidates,
                 result,
+                landed,
             }
         });
         cx.spawn(async move |this, cx| {
@@ -396,6 +406,17 @@ impl ShareSync {
                 if let Op::Invite(email) = &done.op {
                     cx.emit(ShareSyncEvent::Invited(email.clone()));
                 }
+                cx.emit(ShareSyncEvent::Changed);
+            }
+            // The change went through; only the list is stale.
+            Err(_) if done.landed => {
+                self.error = Some(match &done.op {
+                    Op::Invite(email) => {
+                        cx.emit(ShareSyncEvent::Invited(email.clone()));
+                        "Invited — couldn't refresh the list".into()
+                    }
+                    _ => "Removed — couldn't refresh the list".into(),
+                });
                 cx.emit(ShareSyncEvent::Changed);
             }
             Err(BackendError::Invalid(why)) if matches!(done.op, Op::Invite(_)) => {

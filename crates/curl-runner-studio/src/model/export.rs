@@ -2,7 +2,7 @@
 //! a Markdown summary and the equivalent CLI command. Pure text, no GPUI.
 //! Every string that reaches a report goes through the run's [`Redactor`].
 
-use crate::model::environments::EnvCtx;
+use crate::model::environments::{EnvCtx, cli_shared_env};
 use crate::model::run::RunTarget;
 use curl_runner_core::model::{ExecutionResult, ExecutionSummary};
 use curl_runner_core::security::redact::Redactor;
@@ -220,14 +220,28 @@ fn quote(p: &str) -> String {
 /// included). `Collection` gives `--all`: the studio's collection run is
 /// recursive, and bare `curl-runner` only runs top-level files. `Request` can only name its file (the CLI has no
 /// per-request flag). `needed_secrets` are names only, never values, in a
-/// leading comment.
+/// leading comment. A received copy's shared defaults the run needs
+/// ([`cli_shared_env`]: non-secret, the owner's) lead as `NAME=value`.
 pub fn cli_command(target: &RunTarget, ctx: &EnvCtx, needed_secrets: &[String]) -> String {
+    cli_command_with(target, ctx, needed_secrets, &cli_shared_env(ctx))
+}
+
+fn cli_command_with(
+    target: &RunTarget,
+    ctx: &EnvCtx,
+    needed_secrets: &[String],
+    shared: &[(String, String)],
+) -> String {
     let paths: Vec<&Path> = match target {
         RunTarget::File(f) | RunTarget::Request { file: f, .. } => vec![f.as_path()],
         RunTarget::Collection => Vec::new(), // `--all` below
         RunTarget::Files(fs) => fs.iter().map(PathBuf::as_path).collect(),
     };
-    let mut parts = vec!["curl-runner".to_string()];
+    let mut parts: Vec<String> = shared
+        .iter()
+        .map(|(name, value)| format!("{name}={}", quote(value)))
+        .collect();
+    parts.push("curl-runner".to_string());
     parts.extend(paths.iter().map(|p| quote(&p.to_string_lossy())));
     if matches!(target, RunTarget::Collection) {
         parts.push("--all".to_string());
@@ -404,6 +418,26 @@ mod tests {
         assert_eq!(
             cli_command(&req, &ctx("Default"), &[]),
             "curl-runner payments/charges.yaml"
+        );
+    }
+
+    #[test]
+    fn cli_command_leads_with_a_copys_shared_defaults() {
+        let shared = [
+            ("CURRENCY".to_string(), "usd".to_string()),
+            (
+                "BASE_URL".to_string(),
+                "https://api.example.com/v1?a=1&b=2".to_string(),
+            ),
+        ];
+        assert_eq!(
+            cli_command_with(
+                &RunTarget::Collection,
+                &ctx("staging"),
+                &["API_TOKEN".into()],
+                &shared
+            ),
+            "# set API_TOKEN (keychain) before running\nCURRENCY=usd BASE_URL='https://api.example.com/v1?a=1&b=2' curl-runner --all --env staging"
         );
     }
 }

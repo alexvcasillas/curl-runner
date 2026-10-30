@@ -4,6 +4,12 @@
 //! locally) and lets the server spot conflicts (its copy is not the base).
 //! The last sync's conflicts are kept with it, so a reopen shows them and
 //! the ones found here (`held`) are never overwritten by the next pull.
+//!
+//! A collection of one's own is synced per server and account: its base is
+//! kept under [`scoped_id`], so signing in elsewhere starts from nothing
+//! (no stale base to fake conflicts or deletions with) and coming back
+//! finds the old one. A received copy's base is the owner's snapshot as
+//! written here, whoever is signed in: it stays under the plain id.
 
 use super::backend::Conflict;
 use serde::{Deserialize, Serialize};
@@ -41,6 +47,13 @@ fn key(rel: &Path) -> String {
         .map(|c| c.as_os_str().to_string_lossy())
         .collect::<Vec<_>>()
         .join("/")
+}
+
+/// The id collection `id`'s base is kept under for one server and account:
+/// `{id}-{16 hex digits}` (safe as a file name).
+pub fn scoped_id(id: &str, server_url: &str, account_email: &str) -> String {
+    let scope = super::history::fnv1a(format!("{server_url}\n{account_email}").as_bytes());
+    format!("{id}-{scope:016x}")
 }
 
 /// The base of collection `id`; missing or unreadable is empty (never
@@ -122,5 +135,46 @@ mod tests {
         remove(Some(d.path()), "2230f875").unwrap();
         assert_eq!(load(Some(d.path()), "2230f875"), SyncBase::default());
         remove(Some(d.path()), "2230f875").unwrap();
+    }
+
+    #[test]
+    fn scoped_ids_differ_per_server_and_account_and_are_safe() {
+        let cloud = scoped_id(
+            "2230f875",
+            "https://cloud.curl-runner.com",
+            "jamie@acme.dev",
+        );
+        assert_eq!(
+            cloud,
+            scoped_id(
+                "2230f875",
+                "https://cloud.curl-runner.com",
+                "jamie@acme.dev"
+            )
+        );
+        assert_ne!(
+            cloud,
+            scoped_id(
+                "2230f875",
+                "https://cloud.curl-runner.com",
+                "maria@example.com"
+            )
+        );
+        assert_ne!(
+            cloud,
+            scoped_id(
+                "2230f875",
+                "https://curl-runner.example.com",
+                "jamie@acme.dev"
+            )
+        );
+        assert!(cloud.starts_with("2230f875-"));
+        let d = tempfile::tempdir().unwrap();
+        let sync = SyncBase {
+            files: HashMap::from([(PathBuf::from("a.yaml"), 1u64)]),
+            ..SyncBase::default()
+        };
+        save(Some(d.path()), &cloud, &sync).unwrap();
+        assert_eq!(load(Some(d.path()), &cloud), sync);
     }
 }
