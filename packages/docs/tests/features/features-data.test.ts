@@ -21,6 +21,7 @@ const SIDEBAR_ORDER = [
   'validate',
   'convert',
   'env-files',
+  'studio',
 ];
 
 const BANNED_CLAIMS = /\d+x faster|up to \d+x|blazing|dramatically faster/i;
@@ -28,7 +29,7 @@ const BANNED_CLAIMS = /\d+x faster|up to \d+x|blazing|dramatically faster/i;
 describe('features data', () => {
   const features = getAllFeatures();
 
-  it('has all 19 features in sidebar order', () => {
+  it('has all 20 features in sidebar order', () => {
     expect(features.map((f) => f.slug)).toEqual(SIDEBAR_ORDER);
   });
 
@@ -66,8 +67,9 @@ describe('features data', () => {
     const retry = getAdjacentFeatures('retry-mechanism');
     expect(retry.prev?.slug).toBe('response-validation');
     expect(retry.next?.slug).toBe('watch-mode');
-    expect(getAdjacentFeatures('env-files').next).toBeNull();
+    expect(getAdjacentFeatures('env-files').next?.slug).toBe('studio');
     expect(getAdjacentFeatures('env-files').prev?.slug).toBe('convert');
+    expect(getAdjacentFeatures('studio').next).toBeNull();
   });
 
   it('sharpens search titles and descriptions for the pages Search Console ranks', () => {

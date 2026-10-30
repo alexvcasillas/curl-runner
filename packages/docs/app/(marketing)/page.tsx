@@ -10,6 +10,12 @@ import { Yaml } from '@/components/site/Yaml';
 import { SoftwareApplicationSchema } from '@/components/structured-data';
 import { HOME_FEATURES } from '@/lib/home-features';
 import { SITE_DESCRIPTION } from '@/lib/site';
+import {
+  STUDIO_BUILD_COMMAND,
+  STUDIO_CHANGELOG_HREF,
+  STUDIO_HERO,
+  STUDIO_PAGE_HREF,
+} from '@/lib/studio';
 
 const TITLE = 'curl-runner — API tests as YAML, run anywhere';
 
@@ -237,6 +243,64 @@ export default function Home() {
                 JSON report for every file in the run. Drop it into any pipeline.
               </p>
             </div>
+          </div>
+        </section>
+
+        <section aria-labelledby="studio-heading" className="border-t border-hairline">
+          <div className="mx-auto max-w-[1200px] px-6 py-28">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,420px),1fr))] items-end gap-x-12 gap-y-6">
+              <div className="flex flex-col gap-5">
+                <Eyebrow>Studio · Preview</Eyebrow>
+                <h2 id="studio-heading" className={H2}>
+                  The same YAML,
+                  <br />
+                  in a native app.
+                </h2>
+              </div>
+              <div className="flex flex-col gap-6">
+                <p className="m-0 max-w-136 text-[17px] leading-[1.65] text-fg-secondary">
+                  curl-runner studio opens a folder of request files as a collection. Edit with live
+                  validation, run one request or all of them, and read every check, retry and
+                  timing. A macOS preview for now: no download yet, you build it from source.
+                </p>
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+                  <ButtonLink href={STUDIO_PAGE_HREF} variant="secondary" size="lg">
+                    Explore the studio
+                  </ButtonLink>
+                  <Link
+                    href={STUDIO_CHANGELOG_HREF}
+                    className="inline-flex items-center gap-1.5 text-[15px] text-fg-secondary transition-colors hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                  >
+                    What’s new in 2.2.0
+                    <ArrowRight aria-hidden="true" className="size-3.5" />
+                  </Link>
+                </div>
+              </div>
+            </div>
+            <div className="mt-14 overflow-hidden rounded-[14px] border border-line bg-ground">
+              {/* Plain <picture>, not next/image: optimisation would freeze the animation. Readers
+                  who ask for reduced motion get the finished run as a still. */}
+              <picture>
+                <source
+                  media="(prefers-reduced-motion: reduce)"
+                  srcSet={STUDIO_HERO.still}
+                  type="image/webp"
+                />
+                <img
+                  src={STUDIO_HERO.src}
+                  width={STUDIO_HERO.width}
+                  height={STUDIO_HERO.height}
+                  alt={STUDIO_HERO.alt}
+                  loading="lazy"
+                  decoding="async"
+                  className="block h-auto w-full"
+                />
+              </picture>
+            </div>
+            <p className="mt-3.5 mb-0 text-center text-[13px] text-fg-tertiary">
+              macOS only and not distributed yet. Build it from source with{' '}
+              <code className="font-mono text-fg-secondary">{STUDIO_BUILD_COMMAND}</code>.
+            </p>
           </div>
         </section>
 

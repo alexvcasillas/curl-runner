@@ -9,6 +9,8 @@ const nextConfig: NextConfig = {
     '/rss.xml': ['../cli/CHANGELOG.md'],
   },
   images: {
+    // 90 for app screenshots (components/site/Screenshot.tsx), which are mostly text.
+    qualities: [75, 90],
     remotePatterns: [
       {
         protocol: 'https',
