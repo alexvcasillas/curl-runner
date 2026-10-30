@@ -43,6 +43,9 @@ pub struct FileRun {
     pub store: Store,
     /// The parser's message when the file did not load.
     pub load_error: Option<String>,
+    /// The Keychain secrets the run read, names only (a received copy's
+    /// `ran with your API_TOKEN`).
+    pub keychain_names: Vec<String>,
     pub env: String,
     pub at: DateTime<Local>,
 }
@@ -60,6 +63,7 @@ impl FileRun {
             captured_by: HashMap::new(),
             store: Store::default(),
             load_error: None,
+            keychain_names: Vec::new(),
             env: env.to_string(),
             at: Local::now(),
         }
@@ -199,7 +203,11 @@ impl Runs {
     /// Applies one event; `true` once the run is over.
     pub fn apply(&mut self, event: RunEvent) -> bool {
         match event {
-            RunEvent::Started { groups, .. } => {
+            RunEvent::Started {
+                groups,
+                keychain_names,
+                ..
+            } => {
                 self.groups = groups.into_iter().map(|(f, _)| f).collect();
                 // The run reads disk once it starts; so does this.
                 self.group_hashes = self
@@ -224,6 +232,7 @@ impl Runs {
                             run.commands.remove(index);
                             run.ran.remove(index);
                             run.load_error = None;
+                            run.keychain_names = keychain_names.clone();
                             run.env = self.env.clone();
                             run.at = Local::now();
                         }
@@ -239,6 +248,7 @@ impl Runs {
                                 FileRun {
                                     store,
                                     captured_by,
+                                    keychain_names: keychain_names.clone(),
                                     ..fresh
                                 },
                             );

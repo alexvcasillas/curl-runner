@@ -56,6 +56,20 @@ pub struct Collection {
     pub root: PathBuf,
     pub name: String,
     pub tree: Vec<TreeNode>,
+    /// A received copy: the org that shared it. Its files are never
+    /// created, renamed or deleted here (see [`read_only_error`]).
+    pub read_only: Option<String>,
+}
+
+/// `Read only · shared by Acme`: what a refused write of a received copy
+/// says.
+pub fn read_only_text(org: &str) -> String {
+    format!("Read only · shared by {org}")
+}
+
+/// The error a write to a received copy fails with.
+pub fn read_only_error(org: &str) -> io::Error {
+    io::Error::new(io::ErrorKind::PermissionDenied, read_only_text(org))
 }
 
 impl Collection {
@@ -74,6 +88,7 @@ impl Collection {
             root: root.to_path_buf(),
             name,
             tree: Vec::new(),
+            read_only: None,
         };
         c.refresh();
         Ok(c)
@@ -102,6 +117,7 @@ impl Collection {
 
     /// Writes a new file; an existing `rel` fails with `AlreadyExists`.
     pub fn create_file(&mut self, rel: &Path, contents: &str) -> io::Result<()> {
+        self.writable()?;
         let path = self.root.join(rel);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -119,6 +135,7 @@ impl Collection {
     /// unless it is `from` itself under another letter case (a case-only
     /// rename on a case-insensitive disk).
     pub fn rename(&mut self, from: &Path, to: &Path) -> io::Result<()> {
+        self.writable()?;
         let src = self.root.join(from);
         let dest = self.root.join(to);
         if dest.symlink_metadata().is_ok() && !is_same_file(&src, &dest) {
@@ -136,6 +153,7 @@ impl Collection {
     }
 
     pub fn delete(&mut self, rel: &Path) -> io::Result<()> {
+        self.writable()?;
         let path = self.root.join(rel);
         if path.is_dir() {
             std::fs::remove_dir_all(path)?;
@@ -144,6 +162,14 @@ impl Collection {
         }
         self.refresh();
         Ok(())
+    }
+
+    /// Fails for a received copy.
+    fn writable(&self) -> io::Result<()> {
+        match &self.read_only {
+            Some(org) => Err(read_only_error(org)),
+            None => Ok(()),
+        }
     }
 }
 
@@ -609,5 +635,27 @@ mod tests {
     fn flow_list_has_entries_without_lines() {
         let meta = file_meta("requests: [{url: a}, {url: b, name: B}]\n");
         assert_eq!(entries(&meta), [("GET", "a", None), ("GET", "B", None)]);
+    }
+
+    #[test]
+    fn a_read_only_collection_refuses_every_write() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.yaml"), "request:\n  url: a\n").unwrap();
+        let mut c = Collection::open(dir.path()).unwrap();
+        c.read_only = Some("Acme".into());
+        for e in [
+            c.create_file(Path::new("b.yaml"), "x").unwrap_err(),
+            c.rename(Path::new("a.yaml"), Path::new("c.yaml"))
+                .unwrap_err(),
+            c.delete(Path::new("a.yaml")).unwrap_err(),
+        ] {
+            assert_eq!(e.kind(), io::ErrorKind::PermissionDenied);
+            assert_eq!(e.to_string(), "Read only · shared by Acme");
+        }
+        let names: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["a.yaml"]);
     }
 }

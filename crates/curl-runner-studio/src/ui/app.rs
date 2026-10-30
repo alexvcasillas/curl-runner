@@ -374,17 +374,19 @@ pub fn run() {
                     // this builder returns.
                     cx.defer_in(window, move |ws, window, cx| match show.as_str() {
                         "new" | "duplicate" => {
-                            let dialog = ws.new_request(None, window, cx);
                             let fill = dev_string("CURL_RUNNER_STUDIO_FILL").unwrap_or_default();
                             let duplicate = show == "duplicate";
-                            dialog.update(cx, |d, cx| d.dev_fill(&fill, duplicate, window, cx));
+                            if let Some(dialog) = ws.new_request(None, window, cx) {
+                                dialog.update(cx, |d, cx| d.dev_fill(&fill, duplicate, window, cx));
+                            }
                         }
                         "new-collection" => drop(ws.new_collection(window, cx)),
                         "import" | "import-folder" => {
-                            let dialog = ws.import(window, cx);
                             let fill = dev_string("CURL_RUNNER_STUDIO_FILL").unwrap_or_default();
                             let folder = (show == "import-folder").then(|| PathBuf::from(&fill));
-                            dialog.update(cx, |d, cx| d.dev_fill(&fill, folder, window, cx));
+                            if let Some(dialog) = ws.import(window, cx) {
+                                dialog.update(cx, |d, cx| d.dev_fill(&fill, folder, window, cx));
+                            }
                         }
                         "palette" => {
                             let palette = ws.open_palette(window, cx);

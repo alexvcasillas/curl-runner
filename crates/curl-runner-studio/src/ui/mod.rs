@@ -17,6 +17,7 @@ mod new_dialog;
 mod open_shared;
 mod palette;
 mod problems_panel;
+mod read_only;
 mod result_marks;
 mod run_button;
 mod run_view;

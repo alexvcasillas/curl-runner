@@ -233,6 +233,27 @@ fn really_gone(root: &Path, deleted: Vec<SyncDeletion>) -> Vec<SyncDeletion> {
         .collect()
 }
 
+/// The files a sync sends, each with its base. A received copy pulls
+/// only: it sends paths and hashes, never its text, so nothing local can
+/// reach the owner's copy.
+fn outgoing(files: Vec<SyncFile>, base: &SyncBase, pull_only: bool) -> Vec<SyncFile> {
+    files
+        .into_iter()
+        .map(|f| {
+            let b = base.files.get(&f.rel).copied();
+            let f = f.with_base(b);
+            if pull_only {
+                SyncFile {
+                    text: String::new(),
+                    ..f
+                }
+            } else {
+                f
+            }
+        })
+        .collect()
+}
+
 /// What [`apply_pulled`] did on disk.
 #[derive(Debug, Default, PartialEq)]
 struct Applied {
@@ -532,6 +553,7 @@ impl Workspace {
         self.sync.running = true;
         self.sync.debounce = None;
         let received = self.received_from(cx);
+        let pull_only = received.is_some();
         let author = received
             .clone()
             .or_else(|| self.backend.account().map(|a| a.name))
@@ -568,14 +590,7 @@ impl Workspace {
             for rel in &scan.too_big {
                 log::info!("sync: {} stays local (over 1 MB)", rel.display());
             }
-            let files: Vec<SyncFile> = scan
-                .files
-                .into_iter()
-                .map(|f| {
-                    let b = base.files.get(&f.rel).copied();
-                    f.with_base(b)
-                })
-                .collect();
+            let files = outgoing(scan.files, &base, pull_only);
             let sent: HashMap<PathBuf, u64> =
                 files.iter().map(|f| (f.rel.clone(), f.hash)).collect();
             let gone = deleted.clone();
@@ -684,6 +699,21 @@ impl Workspace {
         if std::mem::take(&mut self.sync.again) {
             self.run_sync(window, cx);
         }
+        self.sync_changed(cx);
+    }
+
+    /// The open collection's files are now as `base` says (a received
+    /// copy took its owner's update): saved, and the waiting count redone.
+    pub(super) fn synced_as(
+        &mut self,
+        base: SyncBase,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.sync.base = base;
+        self.sync.conflicts.clear();
+        self.save_base(cx);
+        self.refresh_pending(false, window, cx);
         self.sync_changed(cx);
     }
 

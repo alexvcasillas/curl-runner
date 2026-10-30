@@ -255,6 +255,7 @@ impl Workspace {
             &self.filter.read(cx).value(),
         );
         let active = self.state.active_document().map(|d| d.rel_path.clone());
+        let read_only = collection.read_only.is_some();
         let tree = div()
             .id("collection-tree")
             .role(Role::Tree)
@@ -270,8 +271,57 @@ impl Workspace {
             .children(
                 rows.into_iter()
                     .enumerate()
-                    .map(|(ix, row)| self.render_row(ix, row, active.as_deref(), cx)),
-            );
+                    .map(|(ix, row)| self.render_row(ix, row, active.as_deref(), read_only, cx)),
+            )
+            .children(self.render_other_collections(cx));
+
+        if read_only {
+            // The ReadOnly board: the shared name and a lock, no New or
+            // filter; the foot says when the owner last changed it.
+            let title = self.collection_title().unwrap_or_default();
+            return column
+                .child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .justify_between()
+                        .h(px(48.))
+                        .pt(px(12.))
+                        .pr(px(12.))
+                        .pb(px(8.))
+                        .pl(px(16.))
+                        .child(
+                            div()
+                                .id("sidebar-title")
+                                .role(Role::Label)
+                                .test_support()
+                                .aria_label(title.clone())
+                                .min_w_0()
+                                .text_ellipsis()
+                                .text_size(px(12.))
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(color("text-secondary"))
+                                .child(title),
+                        )
+                        .child(
+                            div()
+                                .id("sidebar-lock")
+                                .flex_none()
+                                .child(
+                                    glyph(icons::LOCK)
+                                        .size(px(13.))
+                                        .text_color(color("text-gutter")),
+                                )
+                                .tooltip(|window, cx| {
+                                    gpui_kit::component::tooltip::Tooltip::new("Read only")
+                                        .build(window, cx)
+                                }),
+                        ),
+                )
+                .child(tree)
+                .child(self.render_updates_footer(cx));
+        }
 
         column
             .child(
@@ -325,6 +375,7 @@ impl Workspace {
         ix: usize,
         row: Row,
         active: Option<&Path>,
+        read_only: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let depth = row.depth;
@@ -373,10 +424,16 @@ impl Workspace {
                         }
                         cx.notify();
                     }))
-                    .context_menu(move |menu, _, _| {
-                        tree_menu(menu, &ws, &menu_path, Some(&menu_path))
+                    .map(|row| {
+                        if read_only {
+                            row.into_any_element()
+                        } else {
+                            row.context_menu(move |menu, _, _| {
+                                tree_menu(menu, &ws, &menu_path, Some(&menu_path))
+                            })
+                            .into_any_element()
+                        }
                     })
-                    .into_any_element()
             }
             RowKind::File {
                 rel_path,
@@ -455,8 +512,16 @@ impl Workspace {
                     this.expanded.insert(open_path.clone());
                     this.open_file(&open_path, window, cx);
                 }))
-                .context_menu(move |menu, _, _| tree_menu(menu, &ws, &rel_path, folder.as_deref()))
-                .into_any_element()
+                .map(|row| {
+                    if read_only {
+                        row.into_any_element()
+                    } else {
+                        row.context_menu(move |menu, _, _| {
+                            tree_menu(menu, &ws, &rel_path, folder.as_deref())
+                        })
+                        .into_any_element()
+                    }
+                })
             }
             RowKind::Request {
                 rel_path,
@@ -480,10 +545,16 @@ impl Workspace {
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.open_request(&open_path, index, line, window, cx);
                     }))
-                    .context_menu(move |menu, _, _| {
-                        tree_menu(menu, &ws, &rel_path, folder.as_deref())
+                    .map(|row| {
+                        if read_only {
+                            row.into_any_element()
+                        } else {
+                            row.context_menu(move |menu, _, _| {
+                                tree_menu(menu, &ws, &rel_path, folder.as_deref())
+                            })
+                            .into_any_element()
+                        }
                     })
-                    .into_any_element()
             }
         }
     }
@@ -695,6 +766,184 @@ impl Workspace {
                     .when_some(resolve, |d, resolve| d.child("·").child(resolve)),
             )
             .child(share)
+    }
+}
+
+impl Workspace {
+    /// Below the tree: `Shared with me` (each received copy, `Read only`;
+    /// the Main board), or, in a received copy, `My collections` (the
+    /// recent folders that are not received copies; the ReadOnly board).
+    fn render_other_collections(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        let root = self.state.collection.as_ref()?.root.clone();
+        let received = self.backend.received();
+        let (heading, rows): (&'static str, Vec<(PathBuf, String, bool)>) =
+            if self.read_only_org().is_some() {
+                let rows = self
+                    .recent
+                    .iter()
+                    .filter(|(r, exists)| {
+                        *exists && r.path != root && !received.iter().any(|s| s.root == r.path)
+                    })
+                    .map(|(r, _)| {
+                        let name = r.path.file_name().map_or_else(
+                            || r.path.display().to_string(),
+                            |n| n.to_string_lossy().into_owned(),
+                        );
+                        (r.path.clone(), name, false)
+                    })
+                    .collect();
+                ("My collections", rows)
+            } else {
+                let rows = received
+                    .into_iter()
+                    .filter(|r| r.root != root && r.root.is_dir())
+                    .map(|r| (r.root, r.name, true))
+                    .collect();
+                ("Shared with me", rows)
+            };
+        if rows.is_empty() {
+            return None;
+        }
+        let id = SharedString::from(heading.to_lowercase().replace(' ', "-"));
+        Some(
+            div()
+                .id(id)
+                .role(Role::Group)
+                .test_support()
+                .aria_label(heading)
+                .flex()
+                .flex_col()
+                .flex_none()
+                .gap(px(1.))
+                .child(
+                    div()
+                        .h(px(1.))
+                        .mx(px(8.))
+                        .my(px(10.))
+                        .bg(color("border-100")),
+                )
+                .child(
+                    div()
+                        .px(px(8.))
+                        .pb(px(6.))
+                        .text_size(px(12.))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(color("text-secondary"))
+                        .child(heading),
+                )
+                .children(
+                    rows.into_iter()
+                        .enumerate()
+                        .map(|(ix, (path, name, pill))| {
+                            div()
+                                .id(SharedString::from(format!("other-collection-{ix}")))
+                                .role(Role::Button)
+                                .test_support()
+                                .aria_label(name.clone())
+                                .flex()
+                                .flex_none()
+                                .items_center()
+                                .gap(px(8.))
+                                .h(px(ROW_HEIGHT))
+                                .px(px(8.))
+                                .rounded(px(6.))
+                                .text_size(px(13.))
+                                .text_color(color(if pill {
+                                    "text-primary"
+                                } else {
+                                    "text-secondary"
+                                }))
+                                .whitespace_nowrap()
+                                .cursor_pointer()
+                                .hover(hover)
+                                .child(chevron(false))
+                                .child(name_cell(name))
+                                .when(pill, |row| {
+                                    row.child(
+                                        div()
+                                            .flex_none()
+                                            .px(px(6.))
+                                            .border_1()
+                                            .border_color(color("border-200"))
+                                            .rounded(px(4.))
+                                            .text_size(px(11.))
+                                            .text_color(color("text-secondary"))
+                                            .child("Read only"),
+                                    )
+                                })
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.switch_to(path.clone(), window, cx)
+                                }))
+                        }),
+                ),
+        )
+    }
+
+    /// The ReadOnly board's foot: `Updated 3 days ago` and `Check for
+    /// updates`.
+    fn render_updates_footer(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let text = self.received_updated(cx).map_or_else(
+            || "Shared with you".to_string(),
+            |ago| {
+                let mut c = ago.chars();
+                c.next()
+                    .map(|f| format!("Updated {}{}", f.to_uppercase(), c.as_str()))
+                    .unwrap_or_default()
+            },
+        );
+        let checking = self.update_check.is_some();
+        div()
+            .id("sidebar-updates")
+            .role(Role::Group)
+            .test_support()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(8.))
+            .px(px(16.))
+            .py(px(12.))
+            .border_t_1()
+            .border_color(color("border-100"))
+            .text_size(px(12.))
+            .text_color(color("text-secondary"))
+            .child(
+                div()
+                    .id("sidebar-updated")
+                    .role(Role::Status)
+                    .test_support()
+                    .aria_label(text.clone())
+                    .flex_1()
+                    .min_w_0()
+                    .line_height(relative(1.4))
+                    .child(text),
+            )
+            .child(
+                div()
+                    .id("sidebar-check-updates")
+                    .role(Role::Button)
+                    .test_support()
+                    .aria_label("Check for updates")
+                    .flex_none()
+                    .px(px(10.))
+                    .py(px(4.))
+                    .border_1()
+                    .border_color(color("border-200"))
+                    .rounded(px(6.))
+                    .line_height(relative(1.4))
+                    .map(|b| {
+                        if checking {
+                            b.text_color(color("text-disabled"))
+                        } else {
+                            b.text_color(color("text-primary"))
+                                .cursor_pointer()
+                                .hover(|s| s.bg(color("surface-100")))
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.check_for_updates(window, cx)
+                                }))
+                        }
+                    })
+                    .child("Check for updates"),
+            )
     }
 }
 

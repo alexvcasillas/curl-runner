@@ -177,6 +177,13 @@ pub struct Workspace {
     /// A `curl-runner://` link that came in while the sign-in screen was
     /// up: opened once it is answered.
     pub(super) pending_link: Option<String>,
+    /// The open collection's share record, when it is a received copy.
+    pub(super) received: Option<crate::model::backend::ReceivedShare>,
+    /// `Check for updates` in flight (the fetch, then the confirm).
+    pub(super) update_check: Option<Task<()>>,
+    /// Every read-only toast and update prompt shown (tests read them).
+    #[cfg(test)]
+    pub(super) toasts: Vec<String>,
     pub(super) status: Entity<StatusBar>,
     focus: FocusHandle,
     /// Set once the user agreed to close the window with unsaved changes.
@@ -283,6 +290,10 @@ impl Workspace {
             open_shared: None,
             _open_shared_events: None,
             pending_link: None,
+            received: None,
+            update_check: None,
+            #[cfg(test)]
+            toasts: Vec::new(),
             status,
             focus,
             closing: false,
@@ -328,13 +339,24 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let collection = match Collection::open(root) {
+        let mut collection = match Collection::open(root) {
             Ok(c) => c,
             Err(e) => {
                 notify_error(format!("Couldn't open {}: {e}", root.display()), window, cx);
                 return false;
             }
         };
+        let meta = CollectionMeta::load_or_init(self.store.base(), root);
+        // A received copy is locked where it is written: the collection
+        // and each document refuse changes.
+        collection.read_only = meta.read_only_from.clone();
+        self.received = meta.read_only_from.as_ref().and_then(|_| {
+            self.backend
+                .received()
+                .into_iter()
+                .find(|r| r.collection_id == meta.id)
+        });
+        self.update_check = None;
         self.state = AppState {
             collection: Some(collection),
             ..AppState::default()
@@ -356,7 +378,7 @@ impl Workspace {
         // Settings would still list the previous collection's credentials.
         self.close_app_settings();
         self.settings_origin = None;
-        self.notes = cx.new(|_| CollectionMeta::load_or_init(self.store.base(), root));
+        self.notes = cx.new(|_| meta);
         self._notes_saved = Some(cx.observe_in(&self.notes, window, |this, _, window, cx| {
             this.notes_changed(window, cx)
         }));
@@ -374,7 +396,7 @@ impl Workspace {
 
     /// Window title and status bar, after the collection or tab changed.
     fn sync_chrome(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let name = self.state.collection.as_ref().map(|c| c.name.clone());
+        let name = self.collection_title();
         window.set_window_title(&match &name {
             Some(name) => format!("curl-runner studio — {name}"),
             None => "curl-runner studio".to_string(),
@@ -418,7 +440,9 @@ impl Workspace {
             }),
             None => self.settings_view.as_ref().map(|v| v.read(cx).status()),
         };
+        let read_only = self.read_only_org().is_some();
         self.status.update(cx, |s, cx| {
+            s.set_read_only(read_only, cx);
             s.set(name.map(Into::into), editor, cx);
             s.set_history(usage, cx);
             s.set_environments(settings, cx);
@@ -1312,7 +1336,15 @@ impl Workspace {
             .and_then(|doc| self.runs.last.get(&doc.rel_path))
             .map(|r| r.captured_by.clone())
             .unwrap_or_default();
-        let groups = source_groups(&vars, &missing, &captured_by);
+        let mut groups = source_groups(&vars, &missing, &captured_by);
+        // The ReadOnly board: a customer's keychain is theirs.
+        if self.read_only_org().is_some() {
+            for g in &mut groups {
+                if let Some(names) = g.strip_suffix(" from local keychain") {
+                    *g = format!("{names} from your keychain").into();
+                }
+            }
+        }
         let missing_count = missing.len();
         self.missing = missing;
         self.status
@@ -1368,11 +1400,15 @@ impl Workspace {
                 .soft_wrap(self.settings.editor.word_wrap)
                 .default_value(text.clone())
         });
-        let changes = cx.subscribe(&editor, |this, editor, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Change) {
-                this.editor_changed(&editor, cx);
-            }
-        });
+        let changes = cx.subscribe_in(
+            &editor,
+            window,
+            |this, editor, event: &InputEvent, window, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.editor_changed(editor, window, cx);
+                }
+            },
+        );
         let cursor = cx.observe(&editor, |this, editor, cx| {
             if let Some(ix) = this.tab_of(&editor) {
                 this.cursor_moved(ix, cx);
@@ -1395,11 +1431,25 @@ impl Workspace {
     /// typing pauses. The editor dropped its diagnostics on the change, so
     /// an edit that leaves the document current (a quick fix) gets them back
     /// right away.
-    fn editor_changed(&mut self, editor: &Entity<EditorState>, cx: &mut Context<Self>) {
+    fn editor_changed(
+        &mut self,
+        editor: &Entity<EditorState>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(ix) = self.tab_of(editor) else {
             return;
         };
         let text = editor.read(cx).value().to_string();
+        // A received copy's editor is read only; should a change get
+        // through anyway, the document refuses it and the editor goes back.
+        if self.state.open[ix].is_read_only() {
+            if text != self.state.open[ix].text {
+                set_editor_text(editor, &self.state.open[ix].text, window, cx);
+                self.refuse_read_only(window, cx);
+            }
+            return;
+        }
         // The marks and popover point into the old text.
         self.tabs[ix].diagnostics.clear();
         self.close_hover(cx);
@@ -1512,6 +1562,9 @@ impl Workspace {
 
     /// Saves tab `ix`; reports and returns `false` on failure.
     pub(super) fn save(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.refuse_read_only(window, cx) {
+            return false;
+        }
         let Some(collection) = &mut self.state.collection else {
             return false;
         };
@@ -1695,6 +1748,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if keep_mine && self.refuse_read_only(window, cx) {
+            return;
+        }
         let Some(ix) = self.state.active else { return };
         let doc = &mut self.state.open[ix];
         doc.resolve_conflict(keep_mine);
@@ -1748,6 +1804,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.refuse_read_only(window, cx) {
+            return;
+        }
         let name = rel
             .file_name()
             .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
@@ -1786,7 +1845,7 @@ impl Workspace {
     /// Renames `from` to `new_name` in the same folder. A file keeps its
     /// YAML extension when the new name has none.
     fn rename(&mut self, from: &Path, new_name: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if new_name.is_empty() || new_name.contains('/') {
+        if self.refuse_read_only(window, cx) || new_name.is_empty() || new_name.contains('/') {
             return;
         }
         let Some(collection) = &mut self.state.collection else {
@@ -1834,6 +1893,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.refuse_read_only(window, cx) {
+            return;
+        }
         let name = rel
             .file_name()
             .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
@@ -1854,6 +1916,9 @@ impl Workspace {
     }
 
     fn delete(&mut self, rel: &Path, window: &mut Window, cx: &mut Context<Self>) {
+        if self.refuse_read_only(window, cx) {
+            return;
+        }
         let Some(collection) = &mut self.state.collection else {
             return;
         };

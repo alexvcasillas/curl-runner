@@ -243,6 +243,10 @@ impl Workspace {
         let Some(ix) = self.tab_of(editor) else {
             return Vec::new();
         };
+        // A received copy offers no fixes.
+        if self.state.open[ix].is_read_only() {
+            return Vec::new();
+        }
         self.flush_diagnostics(ix, cx);
         self.state.open[ix]
             .diagnostics
@@ -263,6 +267,9 @@ impl Workspace {
     /// ⌘.: applies the first quick fix at the active editor's cursor.
     pub(super) fn quick_fix(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(ix) = self.state.active else { return };
+        if self.refuse_read_only(window, cx) {
+            return;
+        }
         self.flush_diagnostics(ix, cx);
         let cursor = self.tabs[ix].editor.read(cx).cursor();
         let found = self.state.open[ix]
@@ -284,6 +291,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.refuse_read_only(window, cx) {
+            return;
+        }
         self.flush_diagnostics(ix, cx);
         let found = self.state.open[ix]
             .diagnostics
@@ -313,6 +323,9 @@ impl Workspace {
             }
             Err(FixError::NotApplicable) => cant_apply(window, cx),
             Err(FixError::NoFix) => {}
+            Err(FixError::ReadOnly) => {
+                self.refuse_read_only(window, cx);
+            }
         }
     }
 

@@ -542,6 +542,12 @@ impl CollectionSettings {
     }
 
     /// The collection's notes (the workspace's).
+    /// A received copy: its variables are the owner's (no new, deleted or
+    /// re-described ones); only their values are the customer's.
+    fn received(&self, cx: &App) -> bool {
+        self.meta(cx).read_only_from.is_some()
+    }
+
     pub fn meta<'a>(&self, cx: &'a App) -> &'a CollectionMeta {
         self.notes.read(cx)
     }
@@ -601,6 +607,10 @@ impl CollectionSettings {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A received copy's list is the owner's: no new names.
+        if name.is_none() && self.received(cx) {
+            return;
+        }
         let row = name
             .and_then(|n| self.rows.iter().find(|r| r.name == n))
             .cloned();
@@ -732,6 +742,9 @@ impl CollectionSettings {
     }
 
     fn toggle_secret(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.received(cx) {
+            return;
+        }
         let name = self.drawer_name(cx).unwrap_or_default();
         let Some(d) = &mut self.drawer else { return };
         // A `SECRET_` name always is one.
@@ -746,6 +759,9 @@ impl CollectionSettings {
     }
 
     fn toggle_required(&mut self, cx: &mut Context<Self>) {
+        if self.received(cx) {
+            return;
+        }
         if let Some(d) = &mut self.drawer {
             d.required = !d.required;
             cx.notify();
@@ -793,6 +809,10 @@ impl CollectionSettings {
             return;
         }
         let new = d.name.is_none();
+        let received = self.received(cx);
+        if new && received {
+            return;
+        }
         if new
             && self
                 .rows
@@ -881,10 +901,15 @@ impl CollectionSettings {
         }
         let description = d.description.read(cx).value().trim().to_string();
         let required = d.required;
+        // A received copy's notes are the owner's: only the value changed.
+        let edit_meta = !received;
         // Into the shared notes, read as they are now (the share may have
         // ticked a flag, an import marked a secret, since the drawer
         // opened); the workspace saves them, once.
         edit_notes(&self.notes, cx, |meta| {
+            if !edit_meta {
+                return;
+            }
             // Unmarked here, a name other environments keep in the Keychain
             // stays secret collection-wide.
             if secret || elsewhere.is_empty() {
@@ -1018,6 +1043,9 @@ impl CollectionSettings {
     }
 
     fn confirm_delete(&self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.received(cx) {
+            return;
+        }
         let Some(name) = self.drawer.as_ref().and_then(|d| d.name.clone()) else {
             // A new variable has nothing to delete.
             return;
@@ -1044,6 +1072,9 @@ impl CollectionSettings {
     }
 
     fn delete(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.received(cx) {
+            return;
+        }
         let service = self.service(cx);
         let removed = remove_env_var(&self.root, &self.environment, name)
             .map_err(|e| e.to_string())
@@ -1132,6 +1163,9 @@ impl CollectionSettings {
     }
 
     fn import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.received(cx) {
+            return;
+        }
         let picked = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -1592,20 +1626,22 @@ impl CollectionSettings {
                     ),
             )
             .child(div().flex_1())
-            .child(
-                small_button("import-env", "Import .env")
-                    .child("Import .env")
-                    .on_click(cx.listener(|this, _, window, cx| this.import(window, cx))),
-            )
-            .child(
-                primary_button("add-variable", "Add variable")
-                    .ml(px(4.))
-                    .child(glyph(icons::PLUS).size(px(13.)))
-                    .child("Add variable")
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.open_variable(None, window, cx)),
-                    ),
-            )
+            .when(!self.received(cx), |bar| {
+                bar.child(
+                    small_button("import-env", "Import .env")
+                        .child("Import .env")
+                        .on_click(cx.listener(|this, _, window, cx| this.import(window, cx))),
+                )
+                .child(
+                    primary_button("add-variable", "Add variable")
+                        .ml(px(4.))
+                        .child(glyph(icons::PLUS).size(px(13.)))
+                        .child("Add variable")
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.open_variable(None, window, cx)),
+                        ),
+                )
+            })
     }
 
     fn render_table(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -1664,27 +1700,29 @@ impl CollectionSettings {
             .child(head)
             .children(rows)
             .children(empty)
-            .child(
-                div()
-                    .id("add-variable-row")
-                    .role(Role::Button)
-                    .test_support()
-                    .aria_label("Add variable")
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .h(px(ROW_HEIGHT))
-                    .px(px(16.))
-                    .text_size(px(13.))
-                    .text_color(color("text-secondary"))
-                    .cursor_pointer()
-                    .hover(|s| s.text_color(color("text-primary")))
-                    .child(glyph(icons::PLUS).size(px(13.)))
-                    .child("Add variable")
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.open_variable(None, window, cx)),
-                    ),
-            )
+            .when(!self.received(cx), |table| {
+                table.child(
+                    div()
+                        .id("add-variable-row")
+                        .role(Role::Button)
+                        .test_support()
+                        .aria_label("Add variable")
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .h(px(ROW_HEIGHT))
+                        .px(px(16.))
+                        .text_size(px(13.))
+                        .text_color(color("text-secondary"))
+                        .cursor_pointer()
+                        .hover(|s| s.text_color(color("text-primary")))
+                        .child(glyph(icons::PLUS).size(px(13.)))
+                        .child("Add variable")
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.open_variable(None, window, cx)),
+                        ),
+                )
+            })
     }
 
     fn render_row(
@@ -1895,6 +1933,8 @@ impl CollectionSettings {
         let name = self.drawer_name(cx).unwrap_or_default();
         let secret = d.secret || name.starts_with("SECRET_");
         let prefix_secret = name.starts_with("SECRET_");
+        // A received copy's notes are the owner's: shown, not changed.
+        let received = self.received(cx);
         let header = div()
             .flex()
             .flex_none()
@@ -2036,7 +2076,7 @@ impl CollectionSettings {
             .child(
                 div()
                     .line_height(relative(1.45))
-                    .child(Textarea::new(&d.description)),
+                    .child(Textarea::new(&d.description).disabled(received)),
             );
         let toggle =
             |id: &'static str, on: bool, enabled: bool, title: &'static str, note: &'static str| {
@@ -2085,7 +2125,7 @@ impl CollectionSettings {
             .flex()
             .flex_none()
             .gap(px(8.))
-            .when(d.name.is_some(), |f| {
+            .when(d.name.is_some() && !received, |f| {
                 f.child(
                     small_button("delete-variable", "Delete variable")
                         .text_color(color("danger"))
@@ -2135,7 +2175,7 @@ impl CollectionSettings {
                     toggle(
                         "secret-toggle",
                         secret,
-                        !prefix_secret,
+                        !prefix_secret && !received,
                         "Secret",
                         "Masked in the UI, logs and exported reports. Never leaves this device.",
                     )
@@ -2145,7 +2185,7 @@ impl CollectionSettings {
                     toggle(
                         "required-toggle",
                         d.required,
-                        true,
+                        !received,
                         "Required for shared users",
                         "People opening a shared link are asked for it before their first run.",
                     )
@@ -3151,7 +3191,7 @@ mod tests {
         let saved = saves(cx, &ws);
         let dialog = cx
             .update_window(window, |_, window, cx| {
-                ws.update(cx, |ws, cx| ws.import(window, cx))
+                ws.update(cx, |ws, cx| ws.import(window, cx).unwrap())
             })
             .unwrap();
         cx.update_window(window, |_, window, cx| {

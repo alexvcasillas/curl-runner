@@ -1025,14 +1025,18 @@ pub(super) fn display_path(dir: &Path) -> String {
 
 impl Workspace {
     /// The New dialog on the request side; `folder` (relative to the root)
-    /// is preselected, else the active file's folder.
+    /// is preselected, else the active file's folder. A received copy takes
+    /// no new request: `None`, with the read-only toast.
     pub(super) fn new_request(
         &mut self,
         folder: Option<PathBuf>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Entity<NewDialog> {
-        self.open_new_dialog(Kind::Request, Template::Blank, folder, window, cx)
+    ) -> Option<Entity<NewDialog>> {
+        if self.refuse_read_only(window, cx) {
+            return None;
+        }
+        Some(self.open_new_dialog(Kind::Request, Template::Blank, folder, window, cx))
     }
 
     pub(super) fn new_collection(
@@ -1208,7 +1212,7 @@ mod tests {
         let cx = &mut VisualTestContext::from_window(window, cx);
         let dialog = cx.update(|window, cx| {
             ws.update(cx, |ws, cx| {
-                ws.new_request(Some("charges".into()), window, cx)
+                ws.new_request(Some("charges".into()), window, cx).unwrap()
             })
         });
         let (name, url) = dialog.read_with(cx, |d, _| (d.name.clone(), d.url.clone()));
@@ -1244,8 +1248,8 @@ mod tests {
         let dir = collection();
         let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
         let cx = &mut VisualTestContext::from_window(window, cx);
-        let dialog =
-            cx.update(|window, cx| ws.update(cx, |ws, cx| ws.new_request(None, window, cx)));
+        let dialog = cx
+            .update(|window, cx| ws.update(cx, |ws, cx| ws.new_request(None, window, cx).unwrap()));
         cx.update(|window, cx| {
             dialog.update(cx, |d, cx| {
                 d.dev_fill(
@@ -1278,7 +1282,7 @@ mod tests {
         let dialog = cx.update(|window, cx| {
             ws.update(cx, |ws, cx| {
                 ws.open_file(std::path::Path::new("charges/get-charge.yaml"), window, cx);
-                ws.new_request(None, window, cx)
+                ws.new_request(None, window, cx).unwrap()
             })
         });
         let name = dialog.read_with(cx, |d, _| d.name.clone());
@@ -1321,8 +1325,8 @@ mod tests {
         .unwrap();
         let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
         let cx = &mut VisualTestContext::from_window(window, cx);
-        let dialog =
-            cx.update(|window, cx| ws.update(cx, |ws, cx| ws.new_request(None, window, cx)));
+        let dialog = cx
+            .update(|window, cx| ws.update(cx, |ws, cx| ws.new_request(None, window, cx).unwrap()));
         let sources = dialog.read_with(cx, |d, cx| {
             let mut out = Vec::new();
             let root = ws.read(cx).state.collection.as_ref().unwrap();
@@ -1355,7 +1359,7 @@ mod tests {
         let cx = &mut VisualTestContext::from_window(window, cx);
         let dialog = cx.update(|window, cx| {
             ws.update(cx, |ws, cx| {
-                ws.new_request(Some("charges".into()), window, cx)
+                ws.new_request(Some("charges".into()), window, cx).unwrap()
             })
         });
         let (name, url) = dialog.read_with(cx, |d, _| (d.name.clone(), d.url.clone()));

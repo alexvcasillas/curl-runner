@@ -221,6 +221,7 @@ fn settle(
     done.id = meta.id.clone();
     meta.read_only_from = Some(shared.owner_org.clone());
     meta.received_vars = shared.variables.clone();
+    meta.received_updated = Some(shared.updated);
     let secret = |v: &SharedVar| v.secret || is_secret(&v.name, &[]);
     for v in &shared.variables {
         if secret(v) {
@@ -277,6 +278,161 @@ pub fn rollback(base: &Path, done: &Materialized, secrets: &dyn SecretStore) {
         let _ = sync_base::remove(Some(base), &done.id);
     }
     let _ = std::fs::remove_dir_all(&done.root);
+}
+
+/// What `Check for updates` would change in a received copy: the owner's
+/// snapshot against the YAML on disk.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct UpdatePlan {
+    pub added: Vec<PathBuf>,
+    pub changed: Vec<PathBuf>,
+    pub removed: Vec<PathBuf>,
+    /// The snapshot: what the copy holds once updated.
+    pub files: Vec<SyncFile>,
+}
+
+impl UpdatePlan {
+    /// Files the update touches.
+    pub fn count(&self) -> usize {
+        self.added.len() + self.changed.len() + self.removed.len()
+    }
+}
+
+/// Compares the owner's `files` with the copy at `root`. A snapshot with a
+/// path the studio won't write is refused whole.
+pub fn plan_update(root: &Path, files: Vec<SyncFile>) -> Result<UpdatePlan, String> {
+    if let Some(bad) = files.iter().find(|f| !writable(&f.rel)) {
+        return Err(format!(
+            "The update has a file the studio won't write ({}). Nothing was changed.",
+            bad.rel.display()
+        ));
+    }
+    let scan = crate::model::backend::scan_sync_files(root);
+    if !scan.root_ok {
+        return Err("Couldn't read the collection folder. Nothing was changed.".into());
+    }
+    let local: std::collections::HashMap<&Path, u64> = scan
+        .files
+        .iter()
+        .map(|f| (f.rel.as_path(), f.hash))
+        .collect();
+    let mut plan = UpdatePlan::default();
+    for f in &files {
+        match local.get(f.rel.as_path()) {
+            None if scan.too_big.contains(&f.rel) || scan.unreadable.contains(&f.rel) => {
+                plan.changed.push(f.rel.clone())
+            }
+            None => plan.added.push(f.rel.clone()),
+            Some(hash) if *hash != f.hash => plan.changed.push(f.rel.clone()),
+            Some(_) => {}
+        }
+    }
+    let theirs: std::collections::HashSet<&Path> = files.iter().map(|f| f.rel.as_path()).collect();
+    plan.removed = scan
+        .files
+        .iter()
+        .map(|f| f.rel.clone())
+        .filter(|rel| !theirs.contains(rel.as_path()) && writable(rel))
+        .collect();
+    plan.files = files;
+    Ok(plan)
+}
+
+/// Writes `plan` into the copy at `root`: YAML only, never its `.env`,
+/// never the Keychain, each path checked to stay inside. The caller makes
+/// the snapshot the copy's sync base. The error never carries a value.
+pub fn apply_update(root: &Path, plan: &UpdatePlan) -> Result<(), String> {
+    let real_root = root
+        .canonicalize()
+        .map_err(|e| format!("Couldn't update: {e}"))?;
+    let touched: std::collections::HashSet<&Path> = plan
+        .added
+        .iter()
+        .chain(&plan.changed)
+        .map(PathBuf::as_path)
+        .collect();
+    for f in plan
+        .files
+        .iter()
+        .filter(|f| touched.contains(f.rel.as_path()))
+    {
+        let path = root.join(&f.rel);
+        let dir = path.parent().unwrap_or(root);
+        let inside = writable(&f.rel)
+            && std::fs::create_dir_all(dir).is_ok()
+            && resolves_inside(dir, &real_root);
+        if !inside {
+            return Err(format!(
+                "Couldn't update {}: it leads outside the collection.",
+                f.rel.display()
+            ));
+        }
+        crate::model::write_atomic(&path, &f.text)
+            .map_err(|e| format!("Couldn't update {}: {e}", f.rel.display()))?;
+    }
+    for rel in plan.removed.iter().filter(|r| writable(r)) {
+        let path = root.join(rel);
+        if !path
+            .parent()
+            .is_some_and(|d| resolves_inside(d, &real_root))
+        {
+            continue;
+        }
+        match std::fs::remove_file(&path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                return Err(format!("Couldn't remove {}: {e}", rel.display()));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// `Duplicate to my workspace`: the copy's YAML files into `dest` (hidden
+/// entries skipped, nothing overwritten: a taken name gets `-2`), then
+/// `dest`'s own notes, editable, with the copy's secret names and
+/// variable descriptions. Never its `.env` or a Keychain value: the user
+/// enters their own. How many files were copied.
+pub fn duplicate(
+    base: Option<&Path>,
+    from: &Path,
+    meta: &CollectionMeta,
+    dest: &Path,
+) -> Result<usize, String> {
+    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let (real_from, real_dest) = (real(from), real(dest));
+    if real_dest.starts_with(&real_from) || real_from.starts_with(&real_dest) {
+        return Err("Pick a folder outside the shared collection.".into());
+    }
+    if base.is_some_and(|b| real_dest.starts_with(real(&b.join("shared")))) {
+        return Err("Pick a folder outside the studio's shared collections.".into());
+    }
+    let mut notes = CollectionMeta::load_or_init(base, dest);
+    if notes.read_only_from.is_some() {
+        return Err("That folder is a shared collection. Pick another one.".into());
+    }
+    let plan = crate::model::import::plan_yaml_copy(from, Some(dest), Path::new(""))
+        .map_err(|e| format!("Couldn't read {}: {e}", from.display()))?;
+    let (copied, failed) = crate::model::import::copy_planned(dest, &plan);
+    for name in &meta.secret_names {
+        notes.set_secret(name, true);
+    }
+    for (name, v) in &meta.vars {
+        notes.vars.entry(name.clone()).or_insert_with(|| VarMeta {
+            description: v.description.clone(),
+            required_for_shared: v.required_for_shared,
+            share_default: false,
+        });
+    }
+    if let Some(base) = base {
+        notes
+            .save(base, dest)
+            .map_err(|e| format!("Copied {copied} files, but their notes weren't saved ({e})"))?;
+    }
+    match failed {
+        Some(e) => Err(format!("Copied {copied} of {} files: {e}", plan.len())),
+        None => Ok(copied),
+    }
 }
 
 #[cfg(test)]
@@ -480,6 +636,31 @@ mod tests {
             entries(base.path()).is_empty(),
             "{:?}",
             entries(base.path())
+        );
+    }
+
+    #[test]
+    fn an_update_with_an_unsafe_path_changes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.yaml"), "request:\n  url: a\n").unwrap();
+        for bad in ["../x.yaml", ".env", "a/.git/x.yaml", "notes.txt"] {
+            let files = vec![SyncFile::new("a.yaml", "x"), SyncFile::new(bad, "x")];
+            assert!(super::plan_update(dir.path(), files).is_err(), "{bad}");
+        }
+        let plan = super::plan_update(dir.path(), vec![SyncFile::new("b.yaml", "y")]).unwrap();
+        assert_eq!(plan.added, [std::path::PathBuf::from("b.yaml")]);
+        assert_eq!(plan.removed, [std::path::PathBuf::from("a.yaml")]);
+        assert_eq!(plan.count(), 2);
+        std::fs::write(dir.path().join(".env"), "API=1\n").unwrap();
+        super::apply_update(dir.path(), &plan).unwrap();
+        assert!(!dir.path().join("a.yaml").exists());
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("b.yaml")).unwrap(),
+            "y"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(".env")).unwrap(),
+            "API=1\n"
         );
     }
 }

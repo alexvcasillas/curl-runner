@@ -40,6 +40,9 @@ pub struct CollectionMeta {
     /// A received copy's variables as the owner shared them: their
     /// non-secret defaults are `Shared by {org}` and locked.
     pub received_vars: Vec<SharedVar>,
+    /// A received copy: when its owner last changed it, as this studio
+    /// last heard (the add, or a `Check for updates` that took changes).
+    pub received_updated: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl CollectionMeta {

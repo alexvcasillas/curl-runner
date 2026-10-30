@@ -77,7 +77,10 @@ impl Workspace {
         let state = self.tabs[active].editor.clone();
         // The Editor settings' size, read every frame so a change shows at once.
         let text_size = px(f32::from(self.settings.editor.font_size));
+        // A received copy's editor reads, selects and copies, but takes no
+        // edit (the document refuses them too).
         let editor = Editor::new(&state)
+            .readonly(doc.is_read_only())
             .bordered(false)
             .h_full()
             .text_size(text_size)
@@ -120,8 +123,12 @@ impl Workspace {
                     this.release_hover(cx);
                 }
             }));
+        let header = match self.read_only_org() {
+            Some(org) => self.render_read_only_note(org, cx).into_any_element(),
+            None => self.render_breadcrumb(doc).into_any_element(),
+        };
         pane.child(self.render_tabs(cx))
-            .child(self.render_breadcrumb(doc))
+            .child(header)
             .when(doc.disk_conflict, |pane| pane.child(render_conflict(cx)))
             .child(editor)
             .when(self.problems_open, |pane| {
@@ -195,6 +202,14 @@ impl Workspace {
                 })
                 .child(method_badge(self.method_of(&doc.rel_path).as_deref()).w_auto())
                 .child(name)
+                .when(doc.is_read_only(), |tab| {
+                    tab.child(
+                        glyph(icons::LOCK)
+                            .size(px(11.))
+                            .flex_none()
+                            .text_color(color("text-tertiary")),
+                    )
+                })
                 .child(close)
                 .on_click(cx.listener(move |this, _, window, cx| this.activate_tab(ix, window, cx)))
         });
@@ -270,6 +285,119 @@ impl Workspace {
             }))
             .child(save_label(doc.is_dirty()))
     }
+}
+
+/// The ReadOnly board's note bar.
+const NOTE_HEIGHT: f32 = 40.;
+
+impl Workspace {
+    /// The ReadOnly board's bar in the breadcrumb's place: `Read only ·
+    /// shared by Acme · updated 3 days ago`, `Check for updates` and
+    /// `Duplicate to my workspace to edit`.
+    fn render_read_only_note(&self, org: &str, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let mut tail = format!("· shared by {org}");
+        if let Some(ago) = self.received_updated(cx) {
+            tail.push_str(&format!(" · updated {ago}"));
+        }
+        let checking = self.update_check.is_some();
+        div()
+            .id("read-only-note")
+            .role(Role::Note)
+            .test_support()
+            .aria_label(format!("Read only {tail}"))
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(10.))
+            .h(px(NOTE_HEIGHT))
+            .pl(px(16.))
+            .pr(px(12.))
+            .border_b_1()
+            .border_color(color("border-100"))
+            .bg(color("surface-raised"))
+            .text_size(px(12.))
+            .text_color(color("text-secondary"))
+            .child(
+                glyph(icons::LOCK)
+                    .size(px(13.))
+                    .flex_none()
+                    .text_color(color("text-primary")),
+            )
+            .child(
+                div()
+                    .flex()
+                    .min_w_0()
+                    .gap(px(4.))
+                    .whitespace_nowrap()
+                    .overflow_hidden()
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_color(color("text-primary"))
+                            .child("Read only"),
+                    )
+                    .child(div().min_w_0().text_ellipsis().child(tail)),
+            )
+            .child(div().flex_1())
+            .child(
+                note_button("read-only-check", "Check for updates", false)
+                    .when(checking, |b| b.text_color(color("text-disabled")))
+                    .when(!checking, |b| {
+                        b.cursor_pointer()
+                            .hover(|s| s.bg(color("surface-100")))
+                            .on_click(
+                                cx.listener(|this, _, window, cx| {
+                                    this.check_for_updates(window, cx)
+                                }),
+                            )
+                    })
+                    .child("Check for updates")
+                    .test_support(),
+            )
+            .child(
+                note_button(
+                    "read-only-duplicate",
+                    "Duplicate to my workspace to edit",
+                    true,
+                )
+                .cursor_pointer()
+                .hover(|s| s.bg(color("surface-100")))
+                .on_click(
+                    cx.listener(|this, _, window, cx| this.duplicate_to_workspace(window, cx)),
+                )
+                .child(glyph(icons::COPY).size(px(13.)).flex_none())
+                .child("Duplicate to my workspace to edit")
+                .test_support(),
+            )
+    }
+}
+
+/// The note bar's 28px buttons (the board's `.btn`): ghost (`.btn.g`), or
+/// `outlined` as its Duplicate.
+fn note_button(id: &'static str, label: &'static str, outlined: bool) -> Stateful<Div> {
+    div()
+        .id(id)
+        .role(Role::Button)
+        .aria_label(label)
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(px(8.))
+        .h(px(28.))
+        .px(px(12.))
+        .rounded(px(6.))
+        .text_size(px(12.))
+        .whitespace_nowrap()
+        .map(|b| {
+            if outlined {
+                b.border_1()
+                    .border_color(color("border-200"))
+                    .bg(color("bg-100"))
+                    .text_color(color("text-primary"))
+            } else {
+                b.text_color(color("text-secondary"))
+            }
+        })
 }
 
 /// The `Callout` (warning) shown while the buffer conflicts with the disk.

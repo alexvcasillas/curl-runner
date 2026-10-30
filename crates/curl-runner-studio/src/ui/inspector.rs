@@ -168,15 +168,25 @@ pub enum SummaryPart {
 
 /// `2 of 4 checks failed · 3 attempts` as one text and its parts' ranges.
 pub fn summary_text(checks: &str, attempts: usize) -> (String, Vec<(Range<usize>, SummaryPart)>) {
-    let attempts = plural(attempts, "attempt", "attempts");
+    summary_with(checks, &plural(attempts, "attempt", "attempts"))
+}
+
+/// [`summary_text`] with `rest` after the dot (`ran with your API_TOKEN`).
+pub fn summary_with(checks: &str, rest: &str) -> (String, Vec<(Range<usize>, SummaryPart)>) {
     let dot = checks.len()..checks.len() + " · ".len();
-    let text = format!("{checks} · {attempts}");
+    let text = format!("{checks} · {rest}");
     let runs = vec![
         (0..dot.start, SummaryPart::Checks),
         (dot.clone(), SummaryPart::Dot),
         (dot.end..text.len(), SummaryPart::Attempts),
     ];
     (text, runs)
+}
+
+/// The ReadOnly board's `ran with your API_TOKEN`: the Keychain secrets a
+/// received copy's run used, the customer's own.
+pub fn ran_with(names: &[String]) -> Option<String> {
+    (!names.is_empty()).then(|| format!("ran with your {}", names.join(", ")))
 }
 
 fn plural(n: usize, one: &str, many: &str) -> String {
@@ -793,7 +803,14 @@ impl Workspace {
                                 )
                             })
                             .child({
-                                let (text, runs) = summary_text(&summary, attempts);
+                                // A received copy says whose credentials ran
+                                // it, unless retries need telling.
+                                let ran = ran_with(&run.keychain_names)
+                                    .filter(|_| attempts == 1 && self.read_only_org().is_some());
+                                let (text, runs) = match &ran {
+                                    Some(ran) => summary_with(&summary, ran),
+                                    None => summary_text(&summary, attempts),
+                                };
                                 let tone = |part: SummaryPart| match part {
                                     SummaryPart::Checks => checks_color,
                                     SummaryPart::Dot => color("text-disabled"),

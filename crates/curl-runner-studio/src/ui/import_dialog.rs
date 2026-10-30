@@ -1343,12 +1343,16 @@ fn method_of(yaml: &str) -> SharedString {
 }
 
 impl Workspace {
-    /// The Import dialog (⌘I), adding to the active file's folder.
+    /// The Import dialog (⌘I), adding to the active file's folder. A
+    /// received copy takes no import: `None`, with the read-only toast.
     pub(super) fn import(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Entity<ImportDialog> {
+    ) -> Option<Entity<ImportDialog>> {
+        if self.refuse_read_only(window, cx) {
+            return None;
+        }
         let folder = self.default_folder();
         let ws = cx.entity().downgrade();
         let env = self.import_context(cx);
@@ -1369,7 +1373,7 @@ impl Workspace {
                 .on_ok(|_, _, _| false)
                 .child(content.clone())
         });
-        dialog
+        Some(dialog)
     }
 
     /// The picked environment's `BASE_URL` and lookups of the values its
@@ -1588,7 +1592,7 @@ mod tests {
             ws.update(cx, |ws, cx| {
                 // The active file's folder is the target.
                 ws.open_file(Path::new("customers/get-customer.yaml"), window, cx);
-                ws.import(window, cx)
+                ws.import(window, cx).unwrap()
             })
         });
         cx.update(|window, cx| dialog.update(cx, |d, cx| d.dev_fill(TWO, None, window, cx)));
@@ -1637,7 +1641,7 @@ mod tests {
         std::fs::write(src.path().join("readme.md"), "x").unwrap();
         let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
         let cx = &mut VisualTestContext::from_window(window, cx);
-        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
         cx.update(|window, cx| {
             dialog.update(cx, |d, cx| {
                 d.dev_fill("", Some(src.path().to_path_buf()), window, cx);
@@ -1664,7 +1668,7 @@ mod tests {
         let dir = collection();
         let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
         let cx = &mut VisualTestContext::from_window(window, cx);
-        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
         cx.update(|window, cx| dialog.update(cx, |d, cx| d.dev_fill(TWO, None, window, cx)));
         dialog.update(cx, |d, cx| d.set_tab(ImportTab::Postman, cx));
         cx.update(|window, cx| window.render_frame(cx));
@@ -1683,7 +1687,7 @@ mod tests {
         let store = StateStore::at(state.path());
         let (window, ws) = open(cx, None, store.clone());
         let cx = &mut VisualTestContext::from_window(window, cx);
-        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
         let target = tempfile::tempdir().unwrap();
         cx.update(|window, cx| {
             dialog.update(cx, |d, cx| {
@@ -1717,7 +1721,7 @@ mod tests {
         .unwrap();
         let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
         let cx = &mut VisualTestContext::from_window(window, cx);
-        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
         cx.update(|window, cx| {
             dialog.update(cx, |d, cx| {
                 d.dev_fill(KEYED, None, window, cx);
@@ -1775,7 +1779,7 @@ mod tests {
         secrets
             .set(&service, "API_TOKEN", "tok_already_there")
             .unwrap();
-        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
         cx.update(|window, cx| {
             dialog.update(cx, |d, cx| {
                 d.dev_fill(KEYED, None, window, cx);
@@ -1801,7 +1805,7 @@ mod tests {
         let dir = collection();
         let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
         let cx = &mut VisualTestContext::from_window(window, cx);
-        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
         cx.update(|window, cx| dialog.update(cx, |d, cx| d.dev_fill(KEYED, None, window, cx)));
         // Stored after the preview was drawn (the dialog's lookup is stale).
         let (secrets, service) = ws.read_with(cx, |ws, cx| {
@@ -1826,7 +1830,7 @@ mod tests {
         let dir = collection();
         let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
         let cx = &mut VisualTestContext::from_window(window, cx);
-        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
         let two = "curl https://api.example.com/v1/charges -H 'X-Auth-Token: tok_first_1111'\n\n\
                    curl https://api.example.com/v1/refunds -H 'X-Api-Key: key_second_2222'";
         cx.update(|window, cx| {
@@ -1871,7 +1875,7 @@ mod tests {
         let dir = collection();
         let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
         let cx = &mut VisualTestContext::from_window(window, cx);
-        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
         let two =
             "curl https://api.example.com/v1/charges\n\ncurl https://api.example.com/v1/refunds";
         cx.update(|window, cx| {
@@ -1904,7 +1908,7 @@ mod tests {
         let dir = collection();
         let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
         let cx = &mut VisualTestContext::from_window(window, cx);
-        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
         cx.update(|window, cx| {
             dialog.update(cx, |d, cx| {
                 d.dev_fill(KEYED, None, window, cx);

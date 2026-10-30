@@ -38,12 +38,12 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let compact = is_compact(window.viewport_size().width.into());
-        let collection = match &self.state.collection {
-            Some(c) => div()
+        let collection = match self.collection_title() {
+            Some(name) => div()
                 .min_w_0()
                 .text_ellipsis()
                 .font_weight(FontWeight::MEDIUM)
-                .child(c.name.clone()),
+                .child(name),
             None => div()
                 .text_color(color("text-secondary"))
                 .child("No collection"),
@@ -85,6 +85,7 @@ impl Workspace {
                             .gap(px(8.))
                             .px(px(8.))
                             .child(collection)
+                            .children(self.render_read_only_pill())
                             .children(self.render_shared_pill(cx))
                             .children(self.render_offline_pill()),
                     ),
@@ -120,6 +121,26 @@ impl Workspace {
                 .hover(|s| s.bg(color("surface-100")))
                 .on_click(cx.listener(|this, _, window, cx| this.open_share(window, cx)))
                 .test_support(),
+        )
+    }
+
+    /// The ReadOnly board's `Read only · Acme`, with its lock.
+    fn render_read_only_pill(&self) -> Option<impl IntoElement + use<>> {
+        let org = self.read_only_org()?;
+        let text = format!("Read only · {org}");
+        Some(
+            pill_frame(
+                "title-read-only",
+                text.clone(),
+                "text-secondary",
+                "border-200",
+            )
+            .flex()
+            .items_center()
+            .gap(px(4.))
+            .test_support()
+            .child(glyph(icons::LOCK).size(px(11.)).flex_none())
+            .child(text),
         )
     }
 
@@ -244,6 +265,11 @@ impl Workspace {
 
 /// A title-bar pill: 11px, fully rounded, `1px 8px`.
 fn pill(id: &'static str, text: String, fg: &str, border: &str) -> Stateful<Div> {
+    pill_frame(id, text.clone(), fg, border).child(text)
+}
+
+/// [`pill`] without its text, labelled `text`.
+fn pill_frame(id: &'static str, text: String, fg: &str, border: &str) -> Stateful<Div> {
     div()
         .id(id)
         .role(Role::Button)
@@ -257,7 +283,6 @@ fn pill(id: &'static str, text: String, fg: &str, border: &str) -> Stateful<Div>
         .text_size(px(11.))
         .font_weight(FontWeight::NORMAL)
         .text_color(color(fg))
-        .child(text)
 }
 
 const SEARCH_WIDTH: f32 = 280.;
