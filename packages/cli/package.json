@@ -1,6 +1,6 @@
 {
   "name": "@curl-runner/cli",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "A powerful CLI tool for HTTP request management using YAML configuration (native binary)",
   "type": "module",
   "repository": {
