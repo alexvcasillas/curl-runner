@@ -402,9 +402,11 @@ impl Workspace {
         self.close_app_settings();
         self.settings_origin = None;
         self.notes = cx.new(|_| meta);
-        self._notes_saved = Some(cx.observe_in(&self.notes, window, |this, _, window, cx| {
-            this.notes_changed(window, cx)
-        }));
+        self._notes_saved = Some(
+            cx.observe_in(&self.notes, window, |this, notes, window, cx| {
+                this.notes_changed(&notes, window, cx)
+            }),
+        );
         self.secret_cache.invalidate();
         self.environment = self
             .store
@@ -986,20 +988,30 @@ impl Workspace {
 
     /// The notes changed (the page, the drawer, an import or the share
     /// wrote them): saved whole, here only, on this thread, so writes land
-    /// in order; what shows secret marks follows.
-    fn notes_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let (Some(base), Some(c)) = (self.store.base(), &self.state.collection)
-            && let Err(e) = self.notes.read(cx).save(base, &c.root)
-        {
-            notify_error(
-                format!("Couldn't save the collection's notes: {e}"),
-                window,
-                cx,
-            );
+    /// in order; what shows secret marks follows. Only the open
+    /// collection's notes are saved, and only to its own file: a change to
+    /// an entity the workspace has since replaced is dropped.
+    fn notes_changed(
+        &mut self,
+        notes: &Entity<CollectionMeta>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if *notes != self.notes {
+            return;
         }
-        #[cfg(test)]
-        {
-            self.notes_saves += 1;
+        if let (Some(base), Some(c)) = (self.store.base(), &self.state.collection) {
+            if let Err(e) = notes.read(cx).save(base, &c.root) {
+                notify_error(
+                    format!("Couldn't save the collection's notes: {e}"),
+                    window,
+                    cx,
+                );
+            }
+            #[cfg(test)]
+            {
+                self.notes_saves += 1;
+            }
         }
         if let Some(h) = &self.history_view {
             let marked = self.notes.read(cx).secret_names.clone();
@@ -2426,6 +2438,36 @@ mod tests {
             .unwrap()
         });
         (dir, window, ws)
+    }
+
+    #[gpui_kit::test]
+    fn notes_without_a_state_folder_are_not_saved_and_old_ones_never(cx: &mut TestAppContext) {
+        let (dir, window, ws) = open(cx);
+        let edit = |cx: &mut TestAppContext,
+                    notes: &Entity<crate::model::collection_meta::CollectionMeta>,
+                    name: &str| {
+            let (notes, name) = (notes.clone(), name.to_string());
+            cx.update(|cx| super::edit_notes(&notes, cx, |m| m.set_secret(&name, true)));
+            cx.run_until_parked();
+        };
+        let notes = ws.read_with(cx, |ws, _| ws.notes.clone());
+        edit(cx, &notes, "API_TOKEN");
+        ws.read_with(cx, |ws, cx| {
+            assert_eq!(ws.notes_saves, 0, "nowhere to save them");
+            assert_eq!(ws.meta(cx).secret_names, ["API_TOKEN"]);
+        });
+        // Reopened: the old entity is no longer the collection's.
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                assert!(ws.open_collection(dir.path(), window, cx))
+            })
+        })
+        .unwrap();
+        edit(cx, &notes, "OTHER");
+        ws.read_with(cx, |ws, cx| {
+            assert!(ws.meta(cx).secret_names.is_empty());
+            assert_eq!(ws.notes_saves, 0);
+        });
     }
 
     #[gpui_kit::test]
