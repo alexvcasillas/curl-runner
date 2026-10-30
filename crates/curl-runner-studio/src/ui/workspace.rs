@@ -71,7 +71,7 @@ pub(super) struct EditorTab {
 const DIAGNOSE_DELAY: Duration = Duration::from_millis(150);
 
 /// What to do once unsaved changes are settled.
-type Then = Rc<dyn Fn(&mut Workspace, &mut Window, &mut Context<Workspace>)>;
+pub(super) type Then = Rc<dyn Fn(&mut Workspace, &mut Window, &mut Context<Workspace>)>;
 
 pub struct Workspace {
     pub(super) state: AppState,
@@ -149,8 +149,13 @@ pub struct Workspace {
     /// The History screen, once opened for this collection.
     pub(super) history_view: Option<Entity<HistoryView>>,
     /// The History screen takes the editor's and the inspector's place.
-    show_history: bool,
+    pub(super) show_history: bool,
     _history_events: Option<Subscription>,
+    /// The sync conflict screen, once opened for this collection.
+    pub(super) conflict_view: Option<Entity<super::conflict_view::ConflictView>>,
+    /// The conflict screen takes the editor's and the inspector's place.
+    pub(super) show_conflicts: bool,
+    pub(super) _conflict_events: Option<Subscription>,
     /// The server: sign-in, sync and sharing.
     pub(super) backend: Arc<dyn Backend>,
     /// The sign-in screen, while it is shown (it takes the whole window).
@@ -188,7 +193,7 @@ pub struct Workspace {
     #[cfg(test)]
     pub(super) toasts: Vec<String>,
     pub(super) status: Entity<StatusBar>,
-    focus: FocusHandle,
+    pub(super) focus: FocusHandle,
     /// Set once the user agreed to close the window with unsaved changes.
     closing: bool,
     /// Alive while the unsaved-changes dialog is open, so a repeated ⌘Q or
@@ -280,6 +285,9 @@ impl Workspace {
             history_view: None,
             show_history: false,
             _history_events: None,
+            conflict_view: None,
+            show_conflicts: false,
+            _conflict_events: None,
             backend,
             sign_in: None,
             sign_in_origin: None,
@@ -385,6 +393,9 @@ impl Workspace {
         self.history_view = None;
         self.show_history = false;
         self._history_events = None;
+        self.conflict_view = None;
+        self.show_conflicts = false;
+        self._conflict_events = None;
         self.settings_view = None;
         self._settings_events = None;
         // Settings would still list the previous collection's credentials.
@@ -407,7 +418,7 @@ impl Workspace {
     }
 
     /// Window title and status bar, after the collection or tab changed.
-    fn sync_chrome(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn sync_chrome(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let name = self.collection_title();
         window.set_window_title(&match &name {
             Some(name) => format!("curl-runner studio — {name}"),
@@ -421,6 +432,7 @@ impl Workspace {
                 self.sign_in.is_none()
                     && !self.run_shown()
                     && !self.history_shown()
+                    && !self.conflicts_shown()
                     && !self.settings_shown()
                     && !self.app_settings_shown()
             })
@@ -538,6 +550,7 @@ impl Workspace {
         };
         self.show_run = true;
         self.show_history = false;
+        self.show_conflicts = false;
         self.settings_view = None;
         self.close_app_settings();
         self.close_hover(cx);
@@ -721,6 +734,7 @@ impl Workspace {
         };
         self.show_history = true;
         self.show_run = false;
+        self.show_conflicts = false;
         self.settings_view = None;
         self.close_app_settings();
         self.close_hover(cx);
@@ -1068,7 +1082,7 @@ impl Workspace {
         self.app_settings.is_some()
     }
 
-    fn close_app_settings(&mut self) {
+    pub(super) fn close_app_settings(&mut self) {
         self.app_settings = None;
         self._app_settings_events = None;
     }
@@ -1506,7 +1520,7 @@ impl Workspace {
         }
     }
 
-    fn focus_active_editor(&self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn focus_active_editor(&self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(i) = self.state.active {
             self.tabs[i]
                 .editor
@@ -1577,6 +1591,83 @@ impl Workspace {
                     },
                 ))
         });
+    }
+
+    /// Runs `then` once tab `ix`'s unsaved changes are saved or dropped
+    /// (Save / Don't save / Cancel, as closing it asks).
+    pub(super) fn settle_file(
+        &mut self,
+        ix: usize,
+        then: Then,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(doc) = self.state.open.get(ix) else {
+            return;
+        };
+        if !doc.is_dirty() {
+            return then(self, window, cx);
+        }
+        if self.asking.upgrade().is_some() && window.has_active_dialog(cx) {
+            return;
+        }
+        let token = Rc::new(());
+        self.asking = Rc::downgrade(&token);
+        let rel = doc.rel_path.clone();
+        let name = rel
+            .file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        let ws = cx.entity().downgrade();
+        window.open_dialog(cx, move |dialog, _, _| {
+            let _asking = &token;
+            let (save_ws, discard_ws) = (ws.clone(), ws.clone());
+            let (save_rel, discard_rel) = (rel.clone(), rel.clone());
+            let (save_then, discard_then) = (then.clone(), then.clone());
+            dialog
+                .w(px(480.))
+                .title(format!("Save changes to {name}?"))
+                .child(secondary("Your changes are lost if you don't save them."))
+                .footer(three_buttons(
+                    "Save",
+                    move |window, cx| {
+                        save_ws
+                            .update(cx, |this, cx| {
+                                if let Some(ix) = this.state.position(&save_rel)
+                                    && this.save(ix, window, cx)
+                                {
+                                    save_then(this, window, cx);
+                                }
+                            })
+                            .ok();
+                    },
+                    move |window, cx| {
+                        discard_ws
+                            .update(cx, |this, cx| {
+                                if let Some(ix) = this.state.position(&discard_rel) {
+                                    this.revert(ix, window, cx);
+                                }
+                                discard_then(this, window, cx);
+                            })
+                            .ok();
+                    },
+                ))
+        });
+    }
+
+    /// Drops tab `ix`'s unsaved changes: back to the disk text.
+    fn revert(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.state.collection.as_ref().map(|c| c.root.clone()) else {
+            return;
+        };
+        let doc = &mut self.state.open[ix];
+        doc.resolve_conflict(false);
+        let text = std::fs::read_to_string(root.join(&doc.rel_path))
+            .unwrap_or_else(|_| doc.saved_text.clone());
+        doc.saved_text = text.clone();
+        doc.set_text(text);
+        set_editor_text(&self.tabs[ix].editor, &doc.text, window, cx);
+        self.text_replaced(ix, cx);
+        cx.notify();
     }
 
     /// Saves tab `ix`; reports and returns `false` on failure.
@@ -1977,8 +2068,14 @@ impl Render for Workspace {
         let settings = self.settings_view.clone().filter(|_| open);
         let run_shown = open && self.run_shown();
         let history_shown = open && self.history_shown();
+        let conflicts = self
+            .conflict_view
+            .clone()
+            .filter(|_| open && self.conflicts_shown());
+        let full = run_shown || history_shown || conflicts.is_some();
         let main = match (&self.history_view, &self.run_view) {
             _ if settings.is_some() => div().into_any_element(),
+            _ if let Some(view) = &conflicts => view.clone().into_any_element(),
             (Some(view), _) if history_shown => view.clone().into_any_element(),
             (_, Some(view)) if run_shown => view.clone().into_any_element(),
             _ if open => self.render_editor_pane(cx).into_any_element(),
@@ -2074,9 +2171,7 @@ impl Render for Workspace {
                             .min_h_0()
                             .child(self.render_sidebar(cx))
                             .child(main)
-                            .when(open && !run_shown && !history_shown, |row| {
-                                row.child(self.render_inspector(cx))
-                            }),
+                            .when(open && !full, |row| row.child(self.render_inspector(cx))),
                     },
                 ),
             })

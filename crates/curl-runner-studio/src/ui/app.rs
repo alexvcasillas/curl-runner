@@ -65,6 +65,8 @@ actions!(
         OpenHistory,
         /// Leave the run history for the editor (esc).
         CloseHistory,
+        /// Leave the sync conflict screen; the conflicts stay (esc).
+        CloseConflicts,
         /// Show the collection's environments and variables.
         OpenEnvironments,
         /// Close the variable drawer, else leave the collection settings
@@ -208,6 +210,12 @@ pub fn bindings() -> Vec<Shortcut> {
             CloseHistory,
             Some("HistoryView"),
             "Leave run history",
+        ),
+        shortcut(
+            "escape",
+            CloseConflicts,
+            Some("ConflictView"),
+            "Leave the sync conflict",
         ),
         shortcut(
             "escape",
@@ -419,6 +427,7 @@ pub fn run() {
                             });
                         }
                         "history" => ws.open_history(window, cx),
+                        "conflict" => ws.dev_show_conflict(window, cx),
                         "settings" => {
                             let page = dev_string("CURL_RUNNER_STUDIO_PAGE")
                                 .and_then(|p| AppPage::parse(&p))
@@ -947,6 +956,7 @@ mod tests {
                 "cmd-.",
                 "escape",
                 "cmd-y",
+                "escape",
                 "escape",
                 "escape",
                 "escape",

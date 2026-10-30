@@ -7,6 +7,7 @@
 pub mod backend;
 pub mod collection;
 pub mod collection_meta;
+pub mod conflict;
 pub mod diagnostics;
 pub mod document;
 pub mod environments;

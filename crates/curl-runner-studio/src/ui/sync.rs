@@ -43,13 +43,13 @@ const RELATIVE_TICK: Duration = Duration::from_secs(30);
 pub(super) struct SyncState {
     /// Each file's hash as this client last synced it, and the last
     /// sync's conflicts (persisted).
-    base: SyncBase,
+    pub(super) base: SyncBase,
     /// Changed, new or deleted files the server does not have yet.
     pub(super) pending: usize,
     /// A sync is in flight.
-    running: bool,
+    pub(super) running: bool,
     /// A sync was asked for while one was in flight.
-    again: bool,
+    pub(super) again: bool,
     /// The last call failed as offline.
     pub(super) offline: bool,
     /// The collection folder could not be read: nothing is sent.
@@ -482,14 +482,9 @@ impl Workspace {
         }
     }
 
-    /// Opens the conflict dialog (Task 7).
-    pub(super) fn open_conflicts(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        cx.notify();
-    }
-
     /// The open collection is a received copy: it pulls, never pushes or
     /// deletes. Its owner, for conflicts on pull.
-    fn received_from(&self, cx: &App) -> Option<String> {
+    pub(super) fn received_from(&self, cx: &App) -> Option<String> {
         let id = &self.meta(cx).id;
         self.backend
             .received()
@@ -540,7 +535,7 @@ impl Workspace {
     /// One sync: every tracked file with its base up, real deletions too,
     /// the server's newer files and deletions down. While one is in flight,
     /// queues one more. A folder that can't be read sends nothing.
-    fn run_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn run_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(key) = self.collection_key(cx).filter(|_| self.sync_on()) else {
             return;
         };
@@ -696,6 +691,10 @@ impl Workspace {
             Err(e) => super::workspace::notify_error(format!("Couldn't sync: {e}"), window, cx),
         }
         self.refresh_pending(false, window, cx);
+        // Settled by the sync itself (edited to match, say): nothing to show.
+        if self.sync.conflicts.is_empty() {
+            self.hide_conflicts(window, cx);
+        }
         if std::mem::take(&mut self.sync.again) {
             self.run_sync(window, cx);
         }
@@ -719,7 +718,7 @@ impl Workspace {
 
     /// Queues the base for writing: one write at a time, the latest per
     /// collection wins.
-    fn save_base(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn save_base(&mut self, cx: &mut Context<Self>) {
         let Some(key) = self.collection_key(cx) else {
             return;
         };
@@ -779,9 +778,10 @@ impl Workspace {
     }
 
     /// The status bar follows the footer.
-    fn sync_changed(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn sync_changed(&mut self, cx: &mut Context<Self>) {
         let line = Some(self.sync_line()).filter(SyncLine::in_status_bar);
         self.status.update(cx, |s, cx| s.set_sync(line, cx));
+        self.conflicts_changed(cx);
         cx.notify();
     }
 }

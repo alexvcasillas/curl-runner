@@ -1009,6 +1009,57 @@ mod gpui_tests {
     }
 
     #[gpui_kit::test]
+    fn a_received_copy_resolves_only_by_taking_theirs(cx: &mut TestAppContext) {
+        let s = received(cx, true, None);
+        let owners = s.read(RATES);
+        let mine = "request:\n  url: https://mine\n";
+        std::fs::write(s.root().join(RATES), mine).unwrap();
+        let conflict = crate::model::backend::Conflict {
+            rel: RATES.into(),
+            local: mine.into(),
+            server: owners.clone(),
+            server_author: "Acme".into(),
+            server_at: chrono::Utc::now(),
+            local_deleted: false,
+            server_deleted: false,
+        };
+        let ws = s.ws.clone();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.sync.conflicts = vec![conflict];
+                ws.open_conflicts(window, cx);
+            });
+            window.render_frame(cx);
+            assert!(window.try_find("conflict-take-theirs").is_some());
+            assert!(
+                window.try_find("conflict-keep-mine").is_none(),
+                "the owner wins"
+            );
+            assert!(window.try_find("conflict-keep-both").is_none());
+        })
+        .unwrap();
+        // Nor by hand.
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.resolve_shown(crate::model::conflict::Choice::KeepMine, false, window, cx)
+            })
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(s.read(RATES), mine);
+        assert_eq!(s.ws.read_with(cx, |ws, _| ws.sync.conflicts.len()), 1);
+        s.spy.sent.lock().unwrap().clear();
+        click(cx, s.window, "conflict-take-theirs");
+        assert_eq!(s.read(RATES), owners);
+        assert!(s.ws.read_with(cx, |ws, _| ws.sync.conflicts.is_empty()));
+        let sent = s.spy.sent.lock().unwrap().clone();
+        assert!(
+            sent.iter().all(|f| f.text.is_empty()),
+            "no text left the studio"
+        );
+    }
+
+    #[gpui_kit::test]
     fn a_received_copy_never_pushes(cx: &mut TestAppContext) {
         let s = received(cx, true, None);
         let owners = s.read(RATES);
