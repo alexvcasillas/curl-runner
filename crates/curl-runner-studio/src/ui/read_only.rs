@@ -147,7 +147,7 @@ impl Workspace {
     pub(super) fn collection_title(&self) -> Option<String> {
         let c = self.state.collection.as_ref()?;
         Some(match &self.received {
-            Some(r) if c.read_only.is_some() => r.name.clone(),
+            Some(r) if c.read_only.is_some() => r.share.name.clone(),
             _ => c.name.clone(),
         })
     }
@@ -178,7 +178,7 @@ impl Workspace {
         else {
             return;
         };
-        let Some(share) = self.received.clone() else {
+        let Some(share) = self.received.as_ref().map(|r| r.share.clone()) else {
             // A copy with no share record (removed on the server, or a
             // folder under shared/ added by hand) has nowhere to ask.
             let text = "Couldn't check for updates: this copy has no share to ask.".to_string();
@@ -472,6 +472,15 @@ mod gpui_tests {
         ) -> BoxFut<'_, SyncReport> {
             self.sent.lock().unwrap().extend(local.iter().cloned());
             self.inner.sync(collection, local, deleted)
+        }
+        fn sync_shared(
+            &self,
+            collection: &CollectionKey,
+            share_id: &str,
+            local: &[SyncFile],
+        ) -> BoxFut<'_, SyncReport> {
+            self.sent.lock().unwrap().extend(local.iter().cloned());
+            self.inner.sync_shared(collection, share_id, local)
         }
         fn share_settings(&self, collection: &CollectionKey) -> BoxFut<'_, ShareSettings> {
             self.inner.share_settings(collection)
@@ -1117,6 +1126,92 @@ mod gpui_tests {
                 .any(|c| c.starts_with("sync(") && c.contains("SyncDeletion")),
             "no deletions"
         );
+    }
+
+    #[gpui_kit::test]
+    fn a_copy_the_server_forgot_never_pushes_and_only_takes_theirs(cx: &mut TestAppContext) {
+        use crate::model::conflict::{Choice, ResolveError, resolve_on_disk};
+        use crate::ui::sync::SyncLine;
+        let s = received(cx, true, None);
+        let owners = s.read(RATES);
+        let mine = "request:\n  url: https://mine\n";
+        // Reset mock: the server forgets the share (and the sign-in); the
+        // folder stays. Signed in again, the copy is opened as before.
+        let dev = s.spy.dev().unwrap();
+        dev.reset();
+        futures::executor::block_on(s.spy.sign_in(SignInMethod::GitHub)).unwrap();
+        std::fs::write(s.root().join(RATES), mine).unwrap();
+        std::fs::remove_file(s.root().join("rates/validate-address.yaml")).unwrap();
+        s.spy.sent.lock().unwrap().clear();
+        let calls = dev.recorded().len();
+        let ws = s.ws.clone();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.start_sync(window, cx);
+                ws.mark_changed(window, cx);
+                ws.sync_now(window, cx);
+            });
+        })
+        .unwrap();
+        cx.run_until_parked();
+        s.ws.read_with(cx, |ws, _| {
+            assert!(ws.received.is_none() && ws.received_all.is_empty());
+            assert!(ws.pull_only(), "the copy's own lock decides");
+            assert_eq!(ws.sync_line(), SyncLine::NotLinked);
+        });
+        assert_eq!(
+            SyncLine::NotLinked.text(chrono::Utc::now()),
+            "Not linked to a share"
+        );
+        assert!(s.spy.sent.lock().unwrap().is_empty(), "no text, no call");
+        let since = &dev.recorded()[calls..];
+        assert!(
+            !since.iter().any(|c| c.starts_with("sync")),
+            "nothing synced, nothing deleted: {since:?}"
+        );
+        // A conflict kept from before: only Take theirs, by click or hand.
+        let conflict = crate::model::backend::Conflict {
+            rel: RATES.into(),
+            local: mine.into(),
+            server: owners.clone(),
+            server_author: "Acme".into(),
+            server_at: chrono::Utc::now(),
+            local_deleted: false,
+            server_deleted: false,
+        };
+        let c = conflict.clone();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.sync.conflicts = vec![c];
+                ws.open_conflicts(window, cx);
+            });
+            window.render_frame(cx);
+            assert!(window.try_find("conflict-take-theirs").is_some());
+            assert!(window.try_find("conflict-keep-mine").is_none());
+            assert!(window.try_find("conflict-keep-both").is_none());
+            ws.update(cx, |ws, cx| {
+                ws.resolve_shown(Choice::KeepBoth, false, window, cx)
+            });
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(!s.root().join("rates/get-rates.server.yaml").exists());
+        assert_eq!(s.ws.read_with(cx, |ws, _| ws.sync.conflicts.len()), 1);
+        // The model refuses on its own: the folder is a received copy.
+        assert_eq!(
+            resolve_on_disk(
+                &s.root(),
+                &conflict,
+                Choice::KeepBoth,
+                false,
+                Some(s.state.path())
+            ),
+            Err(ResolveError::Refused)
+        );
+        assert!(!s.root().join("rates/get-rates.server.yaml").exists());
+        click(cx, s.window, "conflict-take-theirs");
+        assert_eq!(s.read(RATES), owners);
+        assert!(s.spy.sent.lock().unwrap().is_empty());
     }
 
     /// A second window on the same studio state with nothing open.

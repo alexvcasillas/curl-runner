@@ -189,11 +189,12 @@ pub struct Workspace {
     /// up, or while an Add was in flight: opened once the screen is
     /// answered or the Add finishes.
     pub(super) pending_link: Option<String>,
-    /// The open collection's share record, when it is a received copy.
-    pub(super) received: Option<crate::model::backend::ReceivedShare>,
-    /// Every received copy whose folder is still there (the sidebar's
-    /// Shared with me), read on open rather than each frame.
-    pub(super) received_all: Vec<crate::model::backend::ReceivedShare>,
+    /// The open collection's share record joined with its copy here, when
+    /// it is a received copy the server still records.
+    pub(super) received: Option<crate::model::received::ReceivedCopy>,
+    /// Every received copy with a server record and a folder still here
+    /// (the sidebar's Shared with me), read on open rather than each frame.
+    pub(super) received_all: Vec<crate::model::received::ReceivedCopy>,
     /// `Check for updates` in flight (the fetch, then the confirm).
     pub(super) update_check: Option<Task<()>>,
     /// Every read-only toast and update prompt shown (tests read them).
@@ -373,12 +374,11 @@ impl Workspace {
             collection.read_only = Some(org.clone());
         }
         self.refresh_received_all();
-        self.received = meta.read_only_from.as_ref().and_then(|_| {
-            self.received_all
-                .iter()
-                .find(|r| r.collection_id == meta.id)
-                .cloned()
-        });
+        self.received = self
+            .received_all
+            .iter()
+            .find(|r| r.collection_id == meta.id && r.root == root)
+            .cloned();
         self.update_check = None;
         self.state = AppState {
             collection: Some(collection),
@@ -660,15 +660,19 @@ impl Workspace {
         }
     }
 
-    /// Re-reads the received copies whose folder is still there (the
-    /// sidebar's Shared with me): on open, after an Add, after a reset.
+    /// Re-reads the received copies: the server's records joined with the
+    /// copies on this Mac (the sidebar's Shared with me): on open, after an
+    /// Add, after a reset. Records with no copy here are left out.
     pub(super) fn refresh_received_all(&mut self) {
-        self.received_all = self
-            .backend
-            .received()
-            .into_iter()
-            .filter(|r| r.root.is_dir())
-            .collect();
+        let local = crate::model::received::load(self.store.base());
+        self.received_all = crate::model::received::join(self.backend.received(), &local);
+        // The open copy keeps its record only while the server has it.
+        self.received = self.received.take().and_then(|open| {
+            self.received_all
+                .iter()
+                .find(|r| r.share.id == open.share.id && r.root == open.root)
+                .cloned()
+        });
     }
 
     /// The open collection's notes.

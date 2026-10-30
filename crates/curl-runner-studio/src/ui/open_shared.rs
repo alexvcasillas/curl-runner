@@ -280,7 +280,7 @@ impl OpenSharedView {
     }
 
     fn resolved(&mut self, shared: SharedCollection, window: &mut Window, cx: &mut Context<Self>) {
-        self.existing = already_added(&*self.backend, &shared.id);
+        self.existing = already_added(&*self.backend, self.base.as_deref(), &shared.id);
         let mut vars = shared.variables.clone();
         vars.sort_by_key(|v| !v.required);
         self._subscriptions.truncate(1);
@@ -1654,13 +1654,24 @@ mod gpui_tests {
         assert_eq!(yaml.len(), 12);
         let received = s.backend.received();
         assert_eq!(received.len(), 1);
-        assert_eq!(received[0].root, root);
         assert_eq!(received[0].owner_org, "Acme");
+        // Where the copy lives stays on this Mac: never in a call.
+        let local = crate::model::received::load(Some(s.state.path()));
+        assert_eq!(local.len(), 1);
+        assert_eq!(
+            (local[0].share_id.as_str(), &local[0].root),
+            (received[0].id.as_str(), &root)
+        );
+        let state_dir = s.state.path().to_string_lossy().into_owned();
+        for call in s.backend.dev().unwrap().recorded() {
+            assert!(!call.contains(&state_dir), "a local path left: {call}");
+            assert!(!call.contains("/shared/"), "a local path left: {call}");
+        }
         s.ws.read_with(cx, |ws, cx| {
             assert_eq!(ws.state.collection.as_ref().unwrap().root, root);
             assert_eq!(ws.meta(cx).read_only_from.as_deref(), Some("Acme"));
             assert_eq!(ws.meta(cx).received_vars.len(), 4);
-            assert_eq!(received[0].collection_id, ws.meta(cx).id);
+            assert_eq!(local[0].collection_id, ws.meta(cx).id);
             assert!(ws.open_shared_view().is_none());
         });
         assert!(!dialog_open(cx, &s));
@@ -1877,7 +1888,8 @@ mod gpui_tests {
         cx.run_until_parked();
         let root = s.shared_dir().join("acme-shipping-api");
         assert_eq!(s.backend.received().len(), 1);
-        assert_eq!(s.backend.received()[0].root, root);
+        let local = crate::model::received::load(Some(s.state.path()));
+        assert_eq!(local[0].root, root);
         s.ws.read_with(cx, |ws, _| {
             assert_eq!(ws.state.collection.as_ref().unwrap().root, root);
         });
@@ -1965,6 +1977,7 @@ mod gpui_tests {
         dev.hold_updates(false);
         cx.run_until_parked();
         assert!(s.backend.received().is_empty());
+        assert!(crate::model::received::load(Some(s.state.path())).is_empty());
         for dir in ["shared", "meta", "sync"] {
             let left = entries(&s.state.path().join(dir));
             assert!(left.is_empty(), "{dir}: {left:?}");

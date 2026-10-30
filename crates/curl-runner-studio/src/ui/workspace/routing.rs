@@ -437,6 +437,7 @@ impl Workspace {
             backend: self.backend.clone(),
             key: self.collection_key(cx),
             offline: self.connection() == Some(Connection::Offline),
+            sync: self.sync_line(),
         };
         let view =
             cx.new(|cx| SettingsView::new(page, settings, base, collection, accounts, window, cx));

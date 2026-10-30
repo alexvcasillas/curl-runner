@@ -7,6 +7,7 @@
 use crate::model::backend::{Backend, ReceivedShare, SharedCollection, SharedVar, SyncFile};
 use crate::model::collection_meta::{CollectionMeta, VarMeta};
 use crate::model::environments::{DEFAULT_ENVIRONMENT, is_secret, write_env_var};
+use crate::model::received;
 use crate::model::secrets::{SecretStore, service_name};
 use crate::model::sync_base::{self, SyncBase};
 use std::path::{Component, Path, PathBuf};
@@ -109,20 +110,20 @@ pub fn destination(shared_dir: &Path, org: &str, name: &str) -> PathBuf {
         .expect("a free name")
 }
 
-/// The local copy of share `id` this studio already has, if its folder is
-/// still there.
-pub fn already_added(backend: &dyn Backend, id: &str) -> Option<PathBuf> {
-    backend
-        .received()
+/// The local copy of share `id` this studio already has: the server
+/// records it, and this Mac has its folder.
+pub fn already_added(backend: &dyn Backend, base: Option<&Path>, id: &str) -> Option<PathBuf> {
+    received::join(backend.received(), &received::load(base))
         .into_iter()
-        .find(|r| r.id == id && r.root.is_dir())
+        .find(|r| r.share.id == id)
         .map(|r| r.root)
 }
 
 /// `Add to my studio`, start to end, off the UI thread: fetch the snapshot,
-/// [`materialize`] it, record the [`ReceivedShare`]; a refused record rolls
-/// the copy back. The root of the new copy, or the error to show (never a
-/// value).
+/// [`materialize`] it, note the copy here ([`received::record`]: share id →
+/// folder), then record the [`ReceivedShare`] on the server (its id, owner
+/// and name: never the folder). A refused record rolls the copy back. The
+/// root of the new copy, or the error to show (never a value).
 pub async fn add_shared(
     backend: &dyn Backend,
     secrets: &dyn SecretStore,
@@ -136,15 +137,27 @@ pub async fn add_shared(
         .await
         .map_err(|e| e.link_text(org))?;
     let done = materialize(base, shared, &snapshot.files, values, secrets)?;
+    let local = received::LocalCopy {
+        share_id: shared.id.clone(),
+        root: done.root.clone(),
+        collection_id: done.id.clone(),
+    };
+    if let Err(e) = received::record(base, local) {
+        rollback(base, &done, secrets);
+        let _ = std::fs::remove_dir(base.join("shared"));
+        return Err(format!(
+            "Couldn't add {}: {e}. The folder was removed again.",
+            shared.name
+        ));
+    }
     let record = ReceivedShare {
         id: shared.id.clone(),
-        collection_id: done.id.clone(),
         owner_org: org.clone(),
         name: shared.name.clone(),
-        root: done.root.clone(),
         added: chrono::Utc::now(),
     };
     if let Err(e) = backend.add_received(record).await {
+        let _ = received::forget(base, &shared.id);
         rollback(base, &done, secrets);
         let shared_dir = base.join("shared");
         let _ = std::fs::remove_dir(&shared_dir);

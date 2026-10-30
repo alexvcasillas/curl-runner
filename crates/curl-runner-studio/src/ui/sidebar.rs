@@ -801,7 +801,7 @@ impl Workspace {
                 let rows = received
                     .iter()
                     .filter(|r| r.root != root)
-                    .map(|r| (r.root.clone(), r.name.clone(), true))
+                    .map(|r| (r.root.clone(), r.share.name.clone(), true))
                     .collect();
                 ("Shared with me", rows)
             };

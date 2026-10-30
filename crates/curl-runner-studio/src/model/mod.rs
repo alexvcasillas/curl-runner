@@ -1,9 +1,5 @@
 //! The studio's pure state model: no GPUI, so it compiles on every target.
 
-// Sign-in, accounts, sync and the Share dialog use it now; what is left
-// unused is the receiving half (link parsing, resolving, received shares,
-// the shipping fixture), for plan 3's Tasks 5–7.
-#[cfg_attr(not(test), allow(dead_code))]
 pub mod backend;
 pub mod collection;
 pub mod collection_meta;
@@ -14,6 +10,7 @@ pub mod environments;
 pub mod export;
 pub mod history;
 pub mod import;
+pub mod received;
 pub mod result_view;
 pub mod run;
 pub mod secrets;

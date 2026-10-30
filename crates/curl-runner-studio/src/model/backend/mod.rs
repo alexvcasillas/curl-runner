@@ -33,7 +33,6 @@ pub enum BackendError {
     SignedOut,
     NotFound,
     Expired,
-    Conflict(Box<Conflict>),
     /// The input was refused; the text says why.
     Invalid(String),
 }
@@ -57,20 +56,12 @@ impl fmt::Display for BackendError {
             BackendError::SignedOut => f.write_str("Sign in to sync and share."),
             BackendError::NotFound => f.write_str("This link doesn't work."),
             BackendError::Expired => f.write_str("This link has expired."),
-            BackendError::Conflict(c) => {
-                write!(f, "{} changed on both sides", file_name(&c.rel))
-            }
             BackendError::Invalid(why) => f.write_str(why),
         }
     }
 }
 
 impl std::error::Error for BackendError {}
-
-fn file_name(rel: &Path) -> String {
-    rel.file_name()
-        .map_or_else(|| rel.display().to_string(), |n| n.to_string_lossy().into())
-}
 
 /// Where collections live.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -186,6 +177,9 @@ pub struct SyncReport {
     /// Files the server no longer has that the client synced before
     /// (received copies): remove them locally.
     pub deleted: Vec<PathBuf>,
+    /// A received copy's variables as its owner shares them now
+    /// ([`Backend::sync_shared`] only).
+    pub variables: Option<Vec<SharedVar>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -214,10 +208,12 @@ pub struct SyncDeletion {
     pub base: u64,
 }
 
-/// The sidebar footer's state for one collection.
+/// What the server knows of one collection's sync. Anything about this
+/// client's unsent work (changes waiting, offline, conflicts) is the
+/// client's own state, never the server's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SyncStatus {
-    /// Signed out, or the collection was never synced: `Local only`.
+    /// Signed out, or the server never got the collection.
     Off,
     Synced {
         at: DateTime<Utc>,
@@ -225,12 +221,6 @@ pub enum SyncStatus {
         collections: usize,
         requests: usize,
     },
-    /// Changes the server does not have yet.
-    Pending(usize),
-    /// Offline, with changes waiting.
-    Offline(usize),
-    /// The last sync left this many conflicts.
-    Conflict(usize),
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -371,19 +361,20 @@ pub struct SharedCollection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SharedSnapshot {
     pub files: Vec<SyncFile>,
+    /// The variables as the owner shares them now.
+    pub variables: Vec<SharedVar>,
 }
 
-/// A shared collection added to this studio.
+/// A shared collection this account added, as the server records it:
+/// nothing about where the copy lives on this Mac (that mapping is local,
+/// [`crate::model::received`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReceivedShare {
     /// [`SharedCollection::id`].
     pub id: String,
-    /// The local copy's [`CollectionMeta::id`]: its syncs pull.
-    pub collection_id: String,
     pub owner_org: String,
     pub name: String,
-    pub root: PathBuf,
     pub added: DateTime<Utc>,
 }
 
@@ -405,9 +396,11 @@ pub trait DevControls: Send + Sync {
     /// While `held`, `update_share` makes its change but its answer waits
     /// until released, and `add_received` waits before it makes its change
     /// (tests: a call that stays in flight).
+    #[cfg(test)]
     fn hold_updates(&self, held: bool);
     /// `Debug` text of every argument the backend received, oldest first
-    /// (debug builds and tests; empty in release).
+    /// (tests).
+    #[cfg(test)]
     fn recorded(&self) -> Vec<String>;
 }
 
@@ -437,15 +430,28 @@ pub trait Backend: Send + Sync {
     ///   a deletion applied;
     /// - local is the base: the server's newer copy is `pulled`;
     /// - server, base and local all differ: a [`Conflict`], the server copy
-    ///   kept (a deletion of a file the server changed is one too).
+    ///   kept (a deletion of a file the server changed is one too);
+    /// - server and local already agree (whatever the base): nothing at
+    ///   all, not a push, a pull nor a conflict.
     ///
-    /// Shared (received) collections never push or delete: they pull, and
-    /// report in `deleted` the files the owner removed.
+    /// Only for collections this account owns: a received copy calls
+    /// [`Backend::sync_shared`], which can't push.
     fn sync(
         &self,
         collection: &CollectionKey,
         local: &[SyncFile],
         deleted: &[SyncDeletion],
+    ) -> BoxFut<'_, SyncReport>;
+    /// A received copy's pull from share `share_id` (one this account
+    /// added): `local` carries paths, hashes and bases only (no text).
+    /// The owner's newer files come back in `pulled`, the files the owner
+    /// removed (that this copy synced before) in `deleted`, the variables
+    /// as shared now in `variables`. Nothing is ever pushed or deleted.
+    fn sync_shared(
+        &self,
+        collection: &CollectionKey,
+        share_id: &str,
+        local: &[SyncFile],
     ) -> BoxFut<'_, SyncReport>;
     fn share_settings(&self, collection: &CollectionKey) -> BoxFut<'_, ShareSettings>;
     fn update_share(
@@ -588,6 +594,7 @@ pub fn scan_sync_files(root: &Path) -> SyncScan {
 }
 
 /// [`scan_sync_files`]' files.
+#[cfg(test)]
 pub fn sync_files(root: &Path) -> Vec<SyncFile> {
     scan_sync_files(root).files
 }
@@ -763,19 +770,6 @@ mod tests {
         assert_eq!(
             BackendError::Offline.link_text("Acme"),
             "You're offline. Connect to open shared links."
-        );
-        let c = Conflict {
-            rel: "charges/create-charge.yaml".into(),
-            local: String::new(),
-            server: String::new(),
-            server_author: "Sam".into(),
-            server_at: Utc::now(),
-            local_deleted: false,
-            server_deleted: false,
-        };
-        assert_eq!(
-            BackendError::Conflict(Box::new(c)).to_string(),
-            "create-charge.yaml changed on both sides"
         );
     }
 }

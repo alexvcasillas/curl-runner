@@ -24,6 +24,7 @@ use crate::model::environments::{env_file, is_secret, list_environments};
 use crate::model::history::relative_time;
 use crate::model::secrets::{SecretStore, service_name};
 use crate::model::settings::{FONT_SIZES, Settings, TAB_SIZES};
+use crate::ui::sync::SyncLine;
 use chrono::{DateTime, Local, Utc};
 use curl_runner_core::env::parse_env_content;
 use gpui_kit::component::input::{Input, InputState};
@@ -147,6 +148,9 @@ pub struct Accounts {
     pub backend: Arc<dyn Backend>,
     pub key: Option<CollectionKey>,
     pub offline: bool,
+    /// The open collection's sync, as the workspace (and its footer) has
+    /// it; kept current with [`SettingsView::set_sync`].
+    pub sync: SyncLine,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -379,6 +383,14 @@ impl SettingsView {
     #[cfg(test)]
     pub fn credentials(&self) -> &[Credential] {
         &self.credentials
+    }
+
+    /// The workspace's sync changed: the Sync card follows.
+    pub fn set_sync(&mut self, line: SyncLine, cx: &mut Context<Self>) {
+        if self.accounts.sync != line {
+            self.accounts.sync = line;
+            cx.notify();
+        }
     }
 
     pub fn set_page(&mut self, page: AppPage, cx: &mut Context<Self>) {
@@ -1072,8 +1084,15 @@ fn account_line(a: &Account) -> Div {
     }
 }
 
-/// The Sync card's status line: its dot's token and text.
-pub fn sync_line(status: &SyncStatus, now: DateTime<Utc>) -> (&'static str, String) {
+/// The Sync card's status line: its dot's token and text. What waits,
+/// whether this client is offline and its conflicts come from `line`, the
+/// workspace's own state (the footer's); the server adds only what it knows
+/// once synced: how many collections and requests it has.
+pub fn sync_line(
+    line: &SyncLine,
+    server: &SyncStatus,
+    now: DateTime<Utc>,
+) -> (&'static str, String) {
     let changes = |n: usize| {
         if n == 1 {
             "1 change".to_string()
@@ -1081,45 +1100,59 @@ pub fn sync_line(status: &SyncStatus, now: DateTime<Utc>) -> (&'static str, Stri
             format!("{n} changes")
         }
     };
-    match status {
-        SyncStatus::Off => (
+    let when =
+        |at: &DateTime<Utc>| relative_time(at.with_timezone(&Local), now.with_timezone(&Local));
+    match line {
+        SyncLine::LocalOnly => (
             "text-tertiary",
             "Not synced · collections stay on this Mac".into(),
         ),
-        SyncStatus::Synced {
-            at,
-            collections,
-            requests,
-        } => {
-            let when = relative_time(at.with_timezone(&Local), now.with_timezone(&Local));
-            let plural = |n: usize, one: &str| {
-                if n == 1 {
-                    format!("1 {one}")
-                } else {
-                    format!("{n} {one}s")
-                }
-            };
-            (
-                "success",
-                format!(
-                    "Synced {when} · {} · {}",
-                    plural(*collections, "collection"),
-                    plural(*requests, "request")
-                ),
-            )
-        }
-        SyncStatus::Pending(n) => ("warning", format!("{} waiting to sync", changes(*n))),
-        SyncStatus::Offline(n) => (
+        SyncLine::NotSynced => ("text-tertiary", "Not synced yet".into()),
+        SyncLine::NotLinked => ("text-tertiary", "Not linked to a share".into()),
+        SyncLine::Syncing => ("text-tertiary", "Syncing…".into()),
+        SyncLine::Synced(at) => match server {
+            SyncStatus::Synced {
+                collections,
+                requests,
+                ..
+            } => {
+                let plural = |n: usize, one: &str| {
+                    if n == 1 {
+                        format!("1 {one}")
+                    } else {
+                        format!("{n} {one}s")
+                    }
+                };
+                (
+                    "success",
+                    format!(
+                        "Synced {} · {} · {}",
+                        when(at),
+                        plural(*collections, "collection"),
+                        plural(*requests, "request")
+                    ),
+                )
+            }
+            SyncStatus::Off => ("success", format!("Synced {}", when(at))),
+        },
+        SyncLine::Waiting(n) => ("warning", format!("{} waiting to sync", changes(*n))),
+        SyncLine::Offline(0) => ("text-tertiary", "Offline".into()),
+        SyncLine::Offline(n) => (
             "text-tertiary",
             format!("Offline · {} waiting to sync", changes(*n)),
         ),
-        SyncStatus::Conflict(n) => (
+        SyncLine::Conflicts(n) => (
             "danger",
             if *n == 1 {
                 "1 conflict to resolve".into()
             } else {
                 format!("{n} conflicts to resolve")
             },
+        ),
+        SyncLine::CantRead => ("danger", "Can't read the collection folder".into()),
+        SyncLine::AllRemoved => (
+            "warning",
+            "All files removed · Sync now to delete them".into(),
         ),
     }
 }
@@ -1383,12 +1416,12 @@ impl SettingsView {
     /// the two switches.
     fn render_sync(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let backend = &self.accounts.backend;
-        let status = self
+        let server = self
             .accounts
             .key
             .as_ref()
             .map_or(SyncStatus::Off, |k| backend.sync_status(k));
-        let (dot, text) = sync_line(&status, Utc::now());
+        let (dot, text) = sync_line(&self.accounts.sync, &server, Utc::now());
         let can_sync =
             backend.account().is_some() && self.accounts.key.is_some() && !self.accounts.offline;
         let sync = self.settings.sync.clone();

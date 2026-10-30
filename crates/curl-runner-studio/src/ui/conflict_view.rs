@@ -731,7 +731,7 @@ impl Workspace {
             return;
         };
         let conflicts = self.sync.conflicts.clone();
-        let read_only = self.received_from(cx).is_some();
+        let read_only = self.pull_only();
         let busy = self.sync.running;
         view.update(cx, |v, cx| v.set_conflicts(conflicts, read_only, busy, cx));
     }
@@ -778,7 +778,8 @@ impl Workspace {
         ) else {
             return;
         };
-        if self.sync.running || !choice.offered(&c, self.received_from(cx).is_some()) {
+        let read_only = self.pull_only();
+        if self.sync.running || !choice.offered(&c, read_only) {
             return;
         }
         let again: Then =
@@ -797,6 +798,7 @@ impl Workspace {
         view.update(cx, |v, cx| v.set_busy(true, cx));
         self.sync_changed(cx);
         let backend = self.backend.clone();
+        let base = self.store.base().map(Path::to_path_buf);
         let id = key.id.clone();
         // Another collection opened meanwhile: its sync state is not ours.
         let same =
@@ -804,7 +806,10 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let (disk_root, disk_c) = (root.clone(), c.clone());
             let disk = cx
-                .background_spawn(async move { resolve_on_disk(&disk_root, &disk_c, choice) })
+                .background_spawn(async move {
+                    let base = base.as_deref();
+                    resolve_on_disk(&disk_root, &disk_c, choice, read_only, base)
+                })
                 .await;
             let resolved = match disk {
                 Ok(r) => r,

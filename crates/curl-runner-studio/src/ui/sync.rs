@@ -108,6 +108,9 @@ pub enum SyncLine {
     /// The folder lists no files although some were synced: `Sync now`
     /// deletes them on the server.
     AllRemoved,
+    /// A read-only (received) copy the server has no share record for:
+    /// nothing to pull from, and it never pushes.
+    NotLinked,
 }
 
 fn changes(n: usize) -> String {
@@ -136,6 +139,7 @@ impl SyncLine {
             SyncLine::Conflicts(n) => format!("{n} conflicts"),
             SyncLine::CantRead => "Can't read the collection folder".into(),
             SyncLine::AllRemoved => "All files removed · Sync now to delete them".into(),
+            SyncLine::NotLinked => "Not linked to a share".into(),
         }
     }
 
@@ -144,7 +148,9 @@ impl SyncLine {
     pub fn dot(&self) -> Option<(&'static str, bool)> {
         match self {
             SyncLine::LocalOnly => None,
-            SyncLine::NotSynced | SyncLine::Syncing => Some(("text-tertiary", false)),
+            SyncLine::NotSynced | SyncLine::Syncing | SyncLine::NotLinked => {
+                Some(("text-tertiary", false))
+            }
             SyncLine::Synced(_) => Some(("success", false)),
             SyncLine::Waiting(_) | SyncLine::AllRemoved => Some(("warning", false)),
             SyncLine::Offline(_) => Some(("warning", true)),
@@ -412,6 +418,8 @@ impl Workspace {
         let s = &self.sync;
         if !self.sync_on() {
             SyncLine::LocalOnly
+        } else if self.unlinked() {
+            SyncLine::NotLinked
         } else if s.unreadable {
             SyncLine::CantRead
         } else if s.emptied {
@@ -436,12 +444,16 @@ impl Workspace {
     pub(super) fn start_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // The share belongs to the collection and account it was made for.
         self.drop_share(window, cx);
+        // Which received copies the server (still) records.
+        self.refresh_received_all();
         let saver = std::mem::take(&mut self.sync.saver);
         self.sync = SyncState {
             saver,
             ..SyncState::default()
         };
-        let key = self.collection_key(cx).filter(|_| self.sync_on());
+        let key = self
+            .collection_key(cx)
+            .filter(|_| self.sync_on() && !self.unlinked());
         if let Some(key) = key {
             self.sync.base = sync_base::load(self.store.base(), &key.id);
             self.sync.conflicts = self.sync.base.conflicts.clone();
@@ -469,7 +481,7 @@ impl Workspace {
     /// A tracked file changed (saved here, or on disk): recount what is
     /// waiting and, with "Sync automatically", sync after a pause.
     pub(super) fn mark_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.sync_on() {
+        if self.sync_on() && !self.unlinked() {
             self.refresh_pending(self.settings.sync.automatic, window, cx);
         }
     }
@@ -520,14 +532,17 @@ impl Workspace {
     }
 
     /// The open collection is a received copy: it pulls, never pushes or
-    /// deletes. Its owner, for conflicts on pull.
-    pub(super) fn received_from(&self, cx: &App) -> Option<String> {
-        let id = &self.meta(cx).id;
-        self.backend
-            .received()
-            .into_iter()
-            .find(|r| &r.collection_id == id)
-            .map(|r| r.owner_org)
+    /// deletes. Decided by the copy's own lock (its notes name an owner, or
+    /// it sits under `shared/`), else by a share record for it: never by
+    /// the server's list alone, which a copy can outlive.
+    pub(super) fn pull_only(&self) -> bool {
+        self.read_only_org().is_some() || self.received.is_some()
+    }
+
+    /// A received copy with no share record: nothing to pull from, so it
+    /// does not sync at all (`Not linked to a share`).
+    pub(super) fn unlinked(&self) -> bool {
+        self.pull_only() && self.received.is_none()
     }
 
     /// Counts the waiting changes in the background; `schedule` syncs
@@ -536,7 +551,7 @@ impl Workspace {
         let Some(root) = self.state.collection.as_ref().map(|c| c.root.clone()) else {
             return;
         };
-        let deletions = self.received_from(cx).is_none();
+        let deletions = !self.pull_only();
         let scan = cx.background_spawn(async move { scan_sync_files(&root) });
         self.sync.scan = Some(cx.spawn_in(window, async move |this, cx| {
             let scan = scan.await;
@@ -583,7 +598,10 @@ impl Workspace {
     /// queues one more. A folder that can't be read sends nothing; an
     /// emptied one only after `Sync now` confirmed it.
     pub(super) fn run_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(key) = self.collection_key(cx).filter(|_| self.sync_on()) else {
+        let Some(key) = self
+            .collection_key(cx)
+            .filter(|_| self.sync_on() && !self.unlinked())
+        else {
             // No sync to take a confirm: it doesn't wait for a later one.
             self.sync.confirmed = false;
             return;
@@ -596,10 +614,12 @@ impl Workspace {
         let Some(root) = root else { return };
         self.sync.running = true;
         self.sync.debounce = None;
-        let received = self.received_from(cx);
-        let pull_only = received.is_some();
-        let author = received
-            .clone()
+        let pull_only = self.pull_only();
+        // A received copy pulls from its share (never unlinked here).
+        let share = self.received.as_ref().map(|r| r.share.clone());
+        let author = share
+            .as_ref()
+            .map(|r| r.owner_org.clone())
             .or_else(|| self.backend.account().map(|a| a.name))
             .unwrap_or_default();
         let base = self.sync.base.clone();
@@ -615,7 +635,7 @@ impl Workspace {
                         Verdict::Emptied if confirmed => {}
                         refused => return Err(refused),
                     }
-                    let deleted = if received.is_some() {
+                    let deleted = if pull_only {
                         // Read-only copies never delete (Task 6).
                         Vec::new()
                     } else {
@@ -647,8 +667,14 @@ impl Workspace {
             let sent: HashMap<PathBuf, u64> =
                 files.iter().map(|f| (f.rel.clone(), f.hash)).collect();
             let gone = deleted.clone();
-            let Ok(call) = this.update(cx, |_, cx| {
-                backend_call(cx, &backend, move |b| b.sync(&key, &files, &gone))
+            let Ok(call) = this.update(cx, |_, cx| match share {
+                Some(share) if pull_only => backend_call(cx, &backend, move |b| {
+                    b.sync_shared(&key, &share.id, &files)
+                }),
+                // Read only with no share: unreachable (unlinked), and
+                // never a push.
+                None if pull_only => cx.background_spawn(async { Err(BackendError::NotFound) }),
+                _ => backend_call(cx, &backend, move |b| b.sync(&key, &files, &gone)),
             }) else {
                 return;
             };
@@ -836,9 +862,14 @@ impl Workspace {
         }));
     }
 
-    /// The status bar follows the footer.
+    /// The status bar and the app's Settings follow the footer.
     pub(super) fn sync_changed(&mut self, cx: &mut Context<Self>) {
-        let line = Some(self.sync_line()).filter(SyncLine::in_status_bar);
+        let now = self.sync_line();
+        if let Some(view) = &self.app_settings {
+            let line = now.clone();
+            view.update(cx, |v, cx| v.set_sync(line, cx));
+        }
+        let line = Some(now).filter(SyncLine::in_status_bar);
         self.status.update(cx, |s, cx| s.set_sync(line, cx));
         self.conflicts_changed(cx);
         cx.notify();
@@ -852,6 +883,51 @@ mod tests {
         SyncScan, Utc, Verdict, apply_pulled, deleted_of, pending_of, really_gone, verdict,
         writable,
     };
+
+    #[test]
+    fn settings_card_takes_unsent_work_from_the_client() {
+        use crate::model::backend::SyncStatus;
+        use crate::ui::settings_view::sync_line;
+        let now = Utc::now();
+        let server = SyncStatus::Synced {
+            at: now,
+            collections: 2,
+            requests: 5,
+        };
+        let card = |line: SyncLine, server: &SyncStatus| sync_line(&line, server, now);
+        assert_eq!(
+            card(SyncLine::Synced(now), &server),
+            (
+                "success",
+                "Synced just now · 2 collections · 5 requests".into()
+            )
+        );
+        assert_eq!(
+            card(SyncLine::Synced(now), &SyncStatus::Off),
+            ("success", "Synced just now".into())
+        );
+        // Whatever the server says, waiting, offline and conflicts are ours.
+        assert_eq!(
+            card(SyncLine::Waiting(2), &server),
+            ("warning", "2 changes waiting to sync".into())
+        );
+        assert_eq!(
+            card(SyncLine::Offline(1), &server).1,
+            "Offline · 1 change waiting to sync"
+        );
+        assert_eq!(
+            card(SyncLine::Conflicts(1), &server),
+            ("danger", "1 conflict to resolve".into())
+        );
+        assert_eq!(
+            card(SyncLine::LocalOnly, &server).1,
+            "Not synced · collections stay on this Mac"
+        );
+        assert_eq!(
+            card(SyncLine::NotLinked, &server).1,
+            "Not linked to a share"
+        );
+    }
 
     #[test]
     fn lines_read_like_the_boards() {
@@ -1353,6 +1429,50 @@ mod gpui_tests {
         .unwrap();
         cx.run_until_parked();
         assert_eq!(syncs(&backend).len(), 4);
+    }
+
+    #[gpui_kit::test]
+    fn settings_sync_card_reads_the_workspace_not_the_server(cx: &mut TestAppContext) {
+        use super::super::settings_view::AppPage;
+        let dir = collection(&[("a.yaml", REQUEST), ("b.yaml", REQUEST)]);
+        let backend = signed_in();
+        let (window, ws) = open(cx, dir.path(), backend.clone());
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.open_app_settings(AppPage::Accounts, window, cx)
+            });
+        })
+        .unwrap();
+        // Synced: the server adds its counts.
+        assert!(shows(
+            cx,
+            window,
+            "app-settings",
+            "Synced just now · 1 collection · 2 requests"
+        ));
+        // Offline with a change waiting: only this client knows.
+        backend.dev().unwrap().set_offline(true);
+        save(cx, window, &ws, "a.yaml", "request:\n  url: https://x\n");
+        assert!(shows(
+            cx,
+            window,
+            "app-settings",
+            "1 change waiting to sync"
+        ));
+        cx.executor().advance_clock(SYNC_DELAY);
+        cx.run_until_parked();
+        assert_eq!(line(cx, &ws), SyncLine::Offline(1));
+        assert!(shows(
+            cx,
+            window,
+            "app-settings",
+            "Offline · 1 change waiting to sync"
+        ));
+        // The server never says anything about this client's work.
+        assert!(matches!(
+            backend.sync_status(&key(&ws, cx)),
+            SyncStatus::Synced { .. }
+        ));
     }
 
     #[gpui_kit::test]

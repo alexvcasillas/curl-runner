@@ -51,6 +51,7 @@ struct Gate {
 }
 
 impl Gate {
+    #[cfg(test)]
     fn set(&self, held: bool) {
         let wakers = {
             let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -116,10 +117,6 @@ struct ServerCollection {
     /// By `/`-joined relative path.
     files: BTreeMap<String, ServerFile>,
     synced_at: Option<DateTime<Utc>>,
-    /// Local changes the last (offline) attempt could not push.
-    pending: usize,
-    /// Conflicts the last sync returned.
-    conflicts: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -135,10 +132,11 @@ impl MockBackend {
     /// The mock whose state lives in `{base}/mock-backend.json`; missing or
     /// corrupt is the first-launch state. `base` `None` keeps it in memory.
     pub fn open(base: Option<&Path>, latency: Duration) -> MockBackend {
-        let state = base
+        let state: State = base
             .and_then(|b| std::fs::read(b.join(STATE_FILE)).ok())
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or_default();
+        let state = keep_toggles(state, cfg!(debug_assertions));
         MockBackend {
             base: base.map(Path::to_path_buf),
             latency,
@@ -163,7 +161,7 @@ impl MockBackend {
     }
 
     fn record(&self, call: String) {
-        if !cfg!(any(test, debug_assertions)) {
+        if !cfg!(test) {
             return;
         }
         let mut log = self.log.lock().unwrap_or_else(|e| e.into_inner());
@@ -197,6 +195,15 @@ impl MockBackend {
         f(&mut state.toggles);
         self.save(&state);
     }
+}
+
+/// The dev toggles survive a relaunch only in debug builds (the menu that
+/// sets them is debug only): a release build starts with them all off.
+fn keep_toggles(mut state: State, debug: bool) -> State {
+    if !debug {
+        state.toggles = DevToggles::default();
+    }
+    state
 }
 
 fn online(s: &State) -> Result<(), BackendError> {
@@ -356,6 +363,18 @@ pub(super) fn server_side(local: &str) -> String {
     out
 }
 
+/// The variables share `id` holds now: the fixture's, else the owner's
+/// last sent.
+fn shared_variables(s: &State, id: &str) -> Vec<SharedVar> {
+    if id == fixtures::SHIPPING_ID {
+        return fixtures::shipping_variables();
+    }
+    s.shares
+        .get(id)
+        .map(|sh| sh.variables.clone())
+        .unwrap_or_default()
+}
+
 /// What the share `id` holds: the fixture for [`fixtures::SHIPPING_ID`],
 /// else the owner's synced files. No expiry check: a copy already added
 /// keeps getting updates.
@@ -467,10 +486,11 @@ impl Backend for MockBackend {
         })
     }
 
+    /// Local first: forgetting the account needs no network, so it works
+    /// offline too.
     fn sign_out(&self) -> BoxFut<'_, ()> {
         self.record("sign_out()".into());
         self.call(true, |s| {
-            online(s)?;
             s.account = None;
             Ok(())
         })
@@ -488,15 +508,6 @@ impl Backend for MockBackend {
         let Some(col) = s.synced.get(&collection.id) else {
             return SyncStatus::Off;
         };
-        if s.toggles.offline {
-            return SyncStatus::Offline(col.pending);
-        }
-        if col.conflicts > 0 {
-            return SyncStatus::Conflict(col.conflicts);
-        }
-        if col.pending > 0 {
-            return SyncStatus::Pending(col.pending);
-        }
         match col.synced_at {
             Some(at) => {
                 let done = s.synced.values().filter(|c| c.synced_at.is_some());
@@ -522,69 +533,19 @@ impl Backend for MockBackend {
         self.record(format!("sync({collection:?}, {files:?}, {deleted:?})"));
         let (key, local, deleted) = (collection.clone(), local.to_vec(), deleted.to_vec());
         self.call(true, move |s| {
-            // A received copy pulls from the share it came from.
-            let received = s
-                .received
-                .iter()
-                .find(|r| r.collection_id == key.id)
-                .map(|r| (r.id.clone(), r.owner_org.clone()));
+            let author = signed_in(s)?.name;
             let col = s.synced.get(&key.id);
-            let changed: Vec<&SyncFile> = if received.is_some() {
-                Vec::new()
-            } else {
-                local
-                    .iter()
-                    .filter(|f| {
-                        col.and_then(|c| c.files.get(&rel_key(&f.rel)))
-                            .is_none_or(|sf| sf.hash != f.hash)
-                    })
-                    .collect()
-            };
-            if s.toggles.offline {
-                if s.account.is_some() {
-                    s.synced.entry(key.id.clone()).or_default().pending = changed.len();
-                }
-                return Err(BackendError::Offline);
-            }
-            signed_in(s)?;
+            // Already the same on the server (whatever the base): nothing
+            // to push, pull or report.
+            let changed: Vec<&SyncFile> = local
+                .iter()
+                .filter(|f| {
+                    col.and_then(|c| c.files.get(&rel_key(&f.rel)))
+                        .is_none_or(|sf| sf.hash != f.hash)
+                })
+                .collect();
             let now = Utc::now();
             let mut report = SyncReport::default();
-            if let Some((share_id, owner_org)) = received {
-                // Read only: the owner's copy wins; nothing is pushed or
-                // deleted.
-                let by_rel: BTreeMap<String, &SyncFile> =
-                    local.iter().map(|f| (rel_key(&f.rel), f)).collect();
-                let snapshot = shared_files(s, &share_id)?;
-                report.pulled = snapshot
-                    .iter()
-                    .filter(|f| by_rel.get(&rel_key(&f.rel)).map(|l| l.hash) != Some(f.hash))
-                    .cloned()
-                    .collect();
-                let on_server: Vec<String> = snapshot.iter().map(|f| rel_key(&f.rel)).collect();
-                report.deleted = local
-                    .iter()
-                    .filter(|f| f.base.is_some() && !on_server.contains(&rel_key(&f.rel)))
-                    .map(|f| f.rel.clone())
-                    .collect();
-                let col = s.synced.entry(key.id.clone()).or_default();
-                col.files = snapshot
-                    .into_iter()
-                    .map(|f| {
-                        let file = ServerFile {
-                            hash: f.hash,
-                            text: f.text,
-                            author: owner_org.clone(),
-                            at: now,
-                        };
-                        (rel_key(&f.rel), file)
-                    })
-                    .collect();
-                col.synced_at = Some(now);
-                col.pending = 0;
-                col.conflicts = 0;
-                return Ok(report);
-            }
-            let author = signed_in(s)?.name;
             // With nothing changed, a forced conflict takes the first file.
             let forced = s
                 .toggles
@@ -676,9 +637,65 @@ impl Backend for MockBackend {
                 });
             }
             col.synced_at = Some(now);
-            col.pending = 0;
-            col.conflicts = report.conflicts.len();
             s.toggles.conflict_next_sync = false;
+            Ok(report)
+        })
+    }
+
+    fn sync_shared(
+        &self,
+        collection: &CollectionKey,
+        share_id: &str,
+        local: &[SyncFile],
+    ) -> BoxFut<'_, SyncReport> {
+        let files: Vec<_> = local.iter().map(|f| (&f.rel, f.hash, f.base)).collect();
+        self.record(format!(
+            "sync_shared({collection:?}, {share_id:?}, {files:?})"
+        ));
+        let (key, share_id, local) = (collection.clone(), share_id.to_string(), local.to_vec());
+        self.call(true, move |s| {
+            signed_in(s)?;
+            let owner_org = s
+                .received
+                .iter()
+                .find(|r| r.id == share_id)
+                .map(|r| r.owner_org.clone())
+                .ok_or(BackendError::NotFound)?;
+            let now = Utc::now();
+            // Read only: the owner's copy wins; nothing is pushed or
+            // deleted.
+            let by_rel: BTreeMap<String, &SyncFile> =
+                local.iter().map(|f| (rel_key(&f.rel), f)).collect();
+            let snapshot = shared_files(s, &share_id)?;
+            let mut report = SyncReport {
+                variables: Some(shared_variables(s, &share_id)),
+                ..SyncReport::default()
+            };
+            report.pulled = snapshot
+                .iter()
+                .filter(|f| by_rel.get(&rel_key(&f.rel)).map(|l| l.hash) != Some(f.hash))
+                .cloned()
+                .collect();
+            let on_server: Vec<String> = snapshot.iter().map(|f| rel_key(&f.rel)).collect();
+            report.deleted = local
+                .iter()
+                .filter(|f| f.base.is_some() && !on_server.contains(&rel_key(&f.rel)))
+                .map(|f| f.rel.clone())
+                .collect();
+            let col = s.synced.entry(key.id.clone()).or_default();
+            col.files = snapshot
+                .into_iter()
+                .map(|f| {
+                    let file = ServerFile {
+                        hash: f.hash,
+                        text: f.text,
+                        author: owner_org.clone(),
+                        at: now,
+                    };
+                    (rel_key(&f.rel), file)
+                })
+                .collect();
+            col.synced_at = Some(now);
             Ok(report)
         })
     }
@@ -846,7 +863,10 @@ impl Backend for MockBackend {
             if s.toggles.expire_links || expired {
                 return Err(BackendError::Expired);
             }
-            Ok(SharedSnapshot { files })
+            Ok(SharedSnapshot {
+                files,
+                variables: shared_variables(s, &id),
+            })
         })
     }
 
@@ -907,10 +927,12 @@ impl DevControls for MockBackend {
         self.state().toggles
     }
 
+    #[cfg(test)]
     fn hold_updates(&self, held: bool) {
         self.gate.set(held);
     }
 
+    #[cfg(test)]
     fn recorded(&self) -> Vec<String> {
         let log = self.log.lock().unwrap_or_else(|e| e.into_inner());
         log.iter().cloned().collect()
