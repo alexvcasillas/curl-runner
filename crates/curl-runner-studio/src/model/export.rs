@@ -45,6 +45,30 @@ fn failure_text(res: &ExecutionResult) -> String {
         .unwrap_or_else(|| "request failed".to_string())
 }
 
+/// Drop the control characters XML 1.0 cannot carry.
+fn xml_safe(s: &str) -> String {
+    s.chars()
+        .filter(|c| !matches!(c, '\u{0}'..='\u{8}' | '\u{b}' | '\u{c}' | '\u{e}'..='\u{1f}'))
+        .collect()
+}
+
+/// Redact, then make XML-safe.
+fn clean(r: &Redactor, s: &str) -> String {
+    xml_safe(&r.redact(s))
+}
+
+/// Escape Markdown emphasis and code characters.
+fn md_escape(s: &str) -> String {
+    let mut o = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '*' | '_' | '`') {
+            o.push('\\');
+        }
+        o.push(c);
+    }
+    o
+}
+
 fn seconds(ms: f64) -> String {
     format!("{:.3}", ms / 1000.0)
 }
@@ -82,7 +106,7 @@ pub fn to_junit(s: &ExecutionSummary, groups: &[(PathBuf, usize)], r: &Redactor)
     root.push_attribute(("time", seconds(s.duration).as_str()));
     let _ = w.write_event(Event::Start(root));
     for (file, results) in &suites {
-        let file = r.redact(file);
+        let file = clean(r, file);
         let failures = results
             .iter()
             .filter(|x| !x.success && !is_skipped(x))
@@ -97,7 +121,7 @@ pub fn to_junit(s: &ExecutionSummary, groups: &[(PathBuf, usize)], r: &Redactor)
         suite.push_attribute(("time", seconds(time).as_str()));
         let _ = w.write_event(Event::Start(suite));
         for res in *results {
-            let name = r.redact(&title(res));
+            let name = clean(r, &title(res));
             let mut case = BytesStart::new("testcase");
             case.push_attribute(("name", name.as_str()));
             case.push_attribute(("classname", file.as_str()));
@@ -107,7 +131,7 @@ pub fn to_junit(s: &ExecutionSummary, groups: &[(PathBuf, usize)], r: &Redactor)
                 let _ = w.write_event(Event::Empty(BytesStart::new("skipped")));
                 let _ = w.write_event(Event::End(BytesEnd::new("testcase")));
             } else if !res.success {
-                let msg = r.redact(&failure_text(res));
+                let msg = clean(r, &failure_text(res));
                 let _ = w.write_event(Event::Start(case));
                 let mut f = BytesStart::new("failure");
                 f.push_attribute(("message", msg.as_str()));
@@ -178,7 +202,11 @@ pub fn to_markdown(s: &ExecutionSummary, title_text: &str, env: &str, r: &Redact
         out.push_str("\n### Failures\n\n");
         for res in failed {
             let msg = r.redact(&failure_text(res)).replace('\n', " ");
-            out.push_str(&format!("- **{}**: {}\n", r.redact(&title(res)), msg));
+            out.push_str(&format!(
+                "- **{}**: {}\n",
+                md_escape(&r.redact(&title(res))),
+                msg
+            ));
         }
     }
     r.redact(&out)
@@ -198,18 +226,21 @@ fn quote(p: &str) -> String {
 
 /// The `curl-runner` command that repeats the run, for the CLI's working
 /// directory = the collection root (paths are relative, no `cd` is
-/// included). `Collection` gives no paths: the CLI discovers YAML files in
-/// the working directory. `Request` can only name its file (the CLI has no
+/// included). `Collection` gives `--all`: the studio's collection run is
+/// recursive, and bare `curl-runner` only runs top-level files. `Request` can only name its file (the CLI has no
 /// per-request flag). `needed_secrets` are names only, never values, in a
 /// leading comment.
 pub fn cli_command(target: &RunTarget, ctx: &EnvCtx, needed_secrets: &[String]) -> String {
     let paths: Vec<&Path> = match target {
         RunTarget::File(f) | RunTarget::Request { file: f, .. } => vec![f.as_path()],
-        RunTarget::Collection => Vec::new(),
+        RunTarget::Collection => Vec::new(), // `--all` below
         RunTarget::Files(fs) => fs.iter().map(PathBuf::as_path).collect(),
     };
     let mut parts = vec!["curl-runner".to_string()];
     parts.extend(paths.iter().map(|p| quote(&p.to_string_lossy())));
+    if matches!(target, RunTarget::Collection) {
+        parts.push("--all".to_string());
+    }
     if let Some(env) = ctx.env_name() {
         parts.push("--env".to_string());
         parts.push(quote(env));
@@ -309,6 +340,24 @@ mod tests {
     }
 
     #[test]
+    fn junit_strips_control_chars() {
+        let mut s = summary();
+        s.results[1].error = Some("bad\u{1}\u{8}char\u{b}s ok\tnl\n".into());
+        let xml = to_junit(&s, &groups(), &redactor());
+        assert!(xml.contains("badchars ok"));
+        let mut reader = Reader::from_str(&xml);
+        while !matches!(reader.read_event().unwrap(), Event::Eof) {}
+    }
+
+    #[test]
+    fn markdown_escapes_failure_names() {
+        let mut s = summary();
+        s.results[1].request.name = Some("a_b*c`d".into());
+        let md = to_markdown(&s, "T", "staging", &redactor());
+        assert!(md.contains("- **a\\_b\\*c\\`d**"));
+    }
+
+    #[test]
     fn exports_redact_secrets() {
         let s = summary();
         let r = redactor();
@@ -327,7 +376,7 @@ mod tests {
         assert!(md.starts_with("# Charges\n"));
         assert!(md.contains("Passed 1 · Failed 1 · Duration 4.8 s"));
         assert!(md.contains("| GET | List charges | 200 | 0 ms | ✓ |"));
-        assert!(md.contains("| — | skipped") || md.contains("| — | 0 ms | skipped |"));
+        assert!(md.contains("| GET | Refund | — | 0 ms | skipped |\n"));
         assert!(md.contains("### Failures"));
     }
 
@@ -349,7 +398,19 @@ mod tests {
         );
         assert_eq!(
             cli_command(&RunTarget::Collection, &ctx("Default"), &[]),
-            "curl-runner"
+            "curl-runner --all"
+        );
+        assert_eq!(
+            cli_command(&RunTarget::Collection, &ctx("staging"), &[]),
+            "curl-runner --all --env staging"
+        );
+        let req = RunTarget::Request {
+            file: "payments/charges.yaml".into(),
+            index: 2,
+        };
+        assert_eq!(
+            cli_command(&req, &ctx("Default"), &[]),
+            "curl-runner payments/charges.yaml"
         );
     }
 }
