@@ -411,7 +411,7 @@ impl Workspace {
             saver,
             ..SyncState::default()
         };
-        let key = self.collection_key().filter(|_| self.sync_on());
+        let key = self.collection_key(cx).filter(|_| self.sync_on());
         if let Some(key) = key {
             self.sync.base = sync_base::load(self.store.base(), &key.id);
             self.sync.conflicts = self.sync.base.conflicts.clone();
@@ -453,7 +453,7 @@ impl Workspace {
     /// Re-reads the share's people (the title bar's `Shared · N`): on open
     /// and after the Share dialog changes it.
     pub(super) fn refresh_share(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(key) = self.collection_key().filter(|_| self.sync_on()) else {
+        let Some(key) = self.collection_key(cx).filter(|_| self.sync_on()) else {
             return;
         };
         let call = backend_call(cx, &self.backend, move |b| b.share_settings(&key));
@@ -473,10 +473,10 @@ impl Workspace {
     /// Why Share is disabled, as its tooltip: signed out, sign in first;
     /// signed in but offline (chosen, or the server can't be reached), go
     /// online first.
-    pub(super) fn share_blocked(&self) -> Option<&'static str> {
+    pub(super) fn share_blocked(&self, cx: &App) -> Option<&'static str> {
         if self.backend.account().is_none() {
             Some("Sign in to share")
-        } else if self.meta.read_only_from.is_some() {
+        } else if self.meta(cx).read_only_from.is_some() {
             Some("Shared with you: only the owner shares it")
         } else if !self.sync_on() || self.sync.offline {
             Some("Go online to share")
@@ -492,8 +492,8 @@ impl Workspace {
 
     /// The open collection is a received copy: it pulls, never pushes or
     /// deletes. Its owner, for conflicts on pull.
-    fn received_from(&self) -> Option<String> {
-        let id = &self.meta.id;
+    fn received_from(&self, cx: &App) -> Option<String> {
+        let id = &self.meta(cx).id;
         self.backend
             .received()
             .into_iter()
@@ -507,7 +507,7 @@ impl Workspace {
         let Some(root) = self.state.collection.as_ref().map(|c| c.root.clone()) else {
             return;
         };
-        let deletions = self.received_from().is_none();
+        let deletions = self.received_from(cx).is_none();
         let scan = cx.background_spawn(async move { scan_sync_files(&root) });
         self.sync.scan = Some(cx.spawn_in(window, async move |this, cx| {
             let scan = scan.await;
@@ -544,7 +544,7 @@ impl Workspace {
     /// the server's newer files and deletions down. While one is in flight,
     /// queues one more. A folder that can't be read sends nothing.
     fn run_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(key) = self.collection_key().filter(|_| self.sync_on()) else {
+        let Some(key) = self.collection_key(cx).filter(|_| self.sync_on()) else {
             return;
         };
         if self.sync.running {
@@ -555,7 +555,7 @@ impl Workspace {
         let Some(root) = root else { return };
         self.sync.running = true;
         self.sync.debounce = None;
-        let received = self.received_from();
+        let received = self.received_from(cx);
         let author = received
             .clone()
             .or_else(|| self.backend.account().map(|a| a.name))
@@ -714,7 +714,7 @@ impl Workspace {
     /// Queues the base for writing: one write at a time, the latest per
     /// collection wins.
     fn save_base(&mut self, cx: &mut Context<Self>) {
-        let Some(key) = self.collection_key() else {
+        let Some(key) = self.collection_key(cx) else {
             return;
         };
         let dir = self.store.base().map(Path::to_path_buf);
@@ -1184,7 +1184,7 @@ mod gpui_tests {
     }
 
     fn key(ws: &Entity<Workspace>, cx: &mut TestAppContext) -> CollectionKey {
-        ws.read_with(cx, |ws, _| ws.collection_key().unwrap())
+        ws.read_with(cx, |ws, cx| ws.collection_key(cx).unwrap())
     }
 
     /// The sync calls the backend got, as recorded.
@@ -1685,12 +1685,12 @@ mod gpui_tests {
         let backend = test_backend();
         let (_, ws) = open(cx, dir.path(), backend.clone());
         assert_eq!(
-            ws.read_with(cx, |ws, _| ws.share_blocked()),
+            ws.read_with(cx, |ws, cx| ws.share_blocked(cx)),
             Some("Sign in to share")
         );
         let backend = signed_in();
         let (window, ws) = open(cx, dir.path(), backend.clone());
-        assert_eq!(ws.read_with(cx, |ws, _| ws.share_blocked()), None);
+        assert_eq!(ws.read_with(cx, |ws, cx| ws.share_blocked(cx)), None);
         backend.dev().unwrap().set_offline(true);
         cx.update_window(window, |_, window, cx| {
             ws.update(cx, |ws, cx| ws.sync_now(window, cx))
@@ -1698,7 +1698,7 @@ mod gpui_tests {
         .unwrap();
         cx.run_until_parked();
         assert_eq!(
-            ws.read_with(cx, |ws, _| ws.share_blocked()),
+            ws.read_with(cx, |ws, cx| ws.share_blocked(cx)),
             Some("Go online to share")
         );
     }

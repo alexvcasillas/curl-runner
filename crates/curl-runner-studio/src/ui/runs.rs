@@ -464,7 +464,7 @@ impl Workspace {
         let Some(collection) = &self.state.collection else {
             return;
         };
-        let ctx = self.env_ctx(collection);
+        let ctx = self.env_ctx(collection, cx);
         let handle = start_run(
             RunRequest {
                 target: target.clone(),

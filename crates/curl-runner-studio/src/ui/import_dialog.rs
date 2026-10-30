@@ -7,7 +7,7 @@ use super::icons::{self, glyph};
 use super::inspector::env_label;
 use super::new_dialog::{collect_folders, display_path, folder_label};
 use super::settings_kit::label_text;
-use super::workspace::{Workspace, notify_error};
+use super::workspace::{Workspace, edit_notes, notify_error};
 use super::{color, method_color};
 use crate::model::collection::Collection;
 use crate::model::collection_meta::CollectionMeta;
@@ -1351,7 +1351,7 @@ impl Workspace {
     ) -> Entity<ImportDialog> {
         let folder = self.default_folder();
         let ws = cx.entity().downgrade();
-        let env = self.import_context();
+        let env = self.import_context(cx);
         let collection = self.state.collection.as_ref().map(|c| (c, folder));
         let dialog = cx.new(|cx| ImportDialog::new(ws, collection, env, window, cx));
         let content = dialog.clone();
@@ -1375,10 +1375,10 @@ impl Workspace {
     /// The picked environment's `BASE_URL` and lookups of the values its
     /// variables hold, for the Import dialog. With no collection open, the
     /// context comes once a target folder is picked.
-    fn import_context(&self) -> ImportContext {
+    fn import_context(&self, cx: &App) -> ImportContext {
         let (cached, raw) = (self.secret_cache.clone(), self.secrets.clone());
         match &self.state.collection {
-            Some(c) => context_for(self.env_ctx(c), cached, raw, None),
+            Some(c) => context_for(self.env_ctx(c, cx), cached, raw, None),
             None => {
                 let (store, for_cached, for_raw) =
                     (self.store.clone(), cached.clone(), raw.clone());
@@ -1434,11 +1434,13 @@ impl Workspace {
         if !secrets.is_empty()
             && let Some(c) = &self.state.collection
         {
-            let service = self.env_ctx(c).service();
-            for e in &secrets {
-                self.meta.set_secret(&e.var, true);
-            }
-            self.save_meta(window, cx);
+            let service = self.env_ctx(c, cx).service();
+            // The shared notes; the workspace saves them once.
+            edit_notes(&self.notes, cx, |meta| {
+                for e in &secrets {
+                    meta.set_secret(&e.var, true);
+                }
+            });
             if save_secrets {
                 for e in &secrets {
                     // Never over another value: the dialog already moved
@@ -1726,12 +1728,12 @@ mod tests {
         cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
         cx.run_until_parked();
         let text = std::fs::read_to_string(dir.path().join("create-customer.yaml")).unwrap();
-        let (stored, marked) = ws.read_with(cx, |ws, _| {
+        let (stored, marked) = ws.read_with(cx, |ws, cx| {
             let c = ws.state.collection.as_ref().unwrap();
-            let service = ws.env_ctx(c).service();
+            let service = ws.env_ctx(c, cx).service();
             (
                 ws.secrets.get(&service, "API_TOKEN"),
-                ws.meta.secret_names.clone(),
+                ws.meta(cx).secret_names.clone(),
             )
         });
         (text, stored, marked)
@@ -1802,9 +1804,9 @@ mod tests {
         let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
         cx.update(|window, cx| dialog.update(cx, |d, cx| d.dev_fill(KEYED, None, window, cx)));
         // Stored after the preview was drawn (the dialog's lookup is stale).
-        let (secrets, service) = ws.read_with(cx, |ws, _| {
+        let (secrets, service) = ws.read_with(cx, |ws, cx| {
             let c = ws.state.collection.as_ref().unwrap();
-            (ws.secrets.clone(), ws.env_ctx(c).service())
+            (ws.secrets.clone(), ws.env_ctx(c, cx).service())
         });
         secrets
             .set(&service, "API_TOKEN", "tok_set_meanwhile")
@@ -1845,10 +1847,10 @@ mod tests {
             );
         });
         cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
-        ws.read_with(cx, |ws, _| {
-            assert_eq!(ws.meta.secret_names, ["AUTH_TOKEN"]);
+        ws.read_with(cx, |ws, cx| {
+            assert_eq!(ws.meta(cx).secret_names, ["AUTH_TOKEN"]);
             let c = ws.state.collection.as_ref().unwrap();
-            let service = ws.env_ctx(c).service();
+            let service = ws.env_ctx(c, cx).service();
             assert_eq!(
                 ws.secrets.get(&service, "AUTH_TOKEN").as_deref(),
                 Some("tok_first_1111")

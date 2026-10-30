@@ -631,7 +631,7 @@ impl Workspace {
             .rounded(px(6.))
             .line_height(relative(1.4))
             .child("Share");
-        let blocked = self.share_blocked();
+        let blocked = self.share_blocked(cx);
         let share = if let Some(why) = blocked {
             share
                 .text_color(color("text-disabled"))

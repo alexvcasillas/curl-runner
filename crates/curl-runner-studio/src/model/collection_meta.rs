@@ -100,12 +100,16 @@ impl CollectionMeta {
             .map(|value| (org, value))
     }
 
-    /// Marks or unmarks `name` as secret (a `SECRET_` name always is).
+    /// Marks or unmarks `name` as secret (a `SECRET_` name always is). A
+    /// secret never shares its default: marking drops `share_default`.
     pub fn set_secret(&mut self, name: &str, secret: bool) {
         self.secret_names.retain(|n| n != name);
         if secret && !name.starts_with("SECRET_") {
             self.secret_names.push(name.to_string());
             self.secret_names.sort();
+        }
+        if secret && let Some(v) = self.vars.get_mut(name) {
+            v.share_default = false;
         }
     }
 }
@@ -270,5 +274,23 @@ mod tests {
             CollectionMeta::load(base.path(), root.path()),
             CollectionMeta::default()
         );
+    }
+
+    #[test]
+    fn marking_secret_drops_share_default() {
+        let mut meta = CollectionMeta::default();
+        meta.vars.insert(
+            "ACCOUNT_ID".into(),
+            VarMeta {
+                description: "Yours".into(),
+                share_default: true,
+                ..VarMeta::default()
+            },
+        );
+        meta.set_secret("ACCOUNT_ID", true);
+        assert!(!meta.vars["ACCOUNT_ID"].share_default);
+        assert_eq!(meta.vars["ACCOUNT_ID"].description, "Yours");
+        meta.set_secret("ACCOUNT_ID", false);
+        assert!(!meta.vars["ACCOUNT_ID"].share_default, "not re-ticked");
     }
 }

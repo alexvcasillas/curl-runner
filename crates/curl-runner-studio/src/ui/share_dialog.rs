@@ -208,12 +208,12 @@ impl ShareView {
 
     #[cfg(test)]
     pub fn offers_share_default(&self, name: &str, cx: &App) -> bool {
-        self.sync.read(cx).offers_share_default(name)
+        self.sync.read(cx).offers_share_default(name, cx)
     }
 
     #[cfg(test)]
     pub fn shares_default(&self, name: &str, cx: &App) -> bool {
-        self.sync.read(cx).shares_default(name)
+        self.sync.read(cx).shares_default(name, cx)
     }
 
     /// Reads the share for this frame.
@@ -231,7 +231,7 @@ impl ShareView {
             defaults: s
                 .vars
                 .iter()
-                .filter(|v| s.shares_default(&v.name))
+                .filter(|v| s.shares_default(&v.name, cx))
                 .map(|v| v.name.clone())
                 .collect(),
             vars: s.vars.clone(),
@@ -1157,7 +1157,7 @@ impl Workspace {
     /// Opens the Share dialog (the footer's Share, the title bar's
     /// `Shared · N`), unless sharing is blocked.
     pub(super) fn open_share(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.share_blocked().is_some() {
+        if self.share_blocked(cx).is_some() {
             return;
         }
         let Some(sync) = self.share_sync(window, cx) else {
@@ -1247,7 +1247,7 @@ mod tests {
 #[cfg(test)]
 mod gpui_tests {
     use super::super::state::StateStore;
-    use super::super::workspace::{Workspace, test_backend, test_secrets};
+    use super::super::workspace::{Workspace, edit_notes, test_backend, test_secrets};
     use super::{Access, Expiry, ShareMode, ShareView};
     use crate::model::backend::{Backend, SignInMethod};
     use crate::model::secrets::service_name;
@@ -1312,10 +1312,10 @@ mod gpui_tests {
             .unwrap()
         });
         cx.run_until_parked();
-        ws.update(cx, |ws, _| {
-            ws.meta.set_secret("API_TOKEN", true);
+        ws.update(cx, |ws, cx| {
+            edit_notes(&ws.notes, cx, |meta| meta.set_secret("API_TOKEN", true));
             let name = ws.state.collection.as_ref().unwrap().name.clone();
-            let service = service_name(&name, "Default", &ws.meta.id);
+            let service = service_name(&name, "Default", &ws.meta(cx).id);
             secrets.set(&service, "API_TOKEN", KEYCHAIN_VALUE).unwrap();
         });
         (window, ws)
@@ -1464,7 +1464,7 @@ mod gpui_tests {
             "share-dialog",
             "maria@globex.example"
         ));
-        let key = ws.read_with(cx, |ws, _| ws.collection_key().unwrap());
+        let key = ws.read_with(cx, |ws, cx| ws.collection_key(cx).unwrap());
         let on_server = futures::executor::block_on(backend.share_settings(&key)).unwrap();
         let emails: Vec<_> = on_server.people.iter().map(|p| p.email.as_str()).collect();
         assert_eq!(emails.len(), 2);
@@ -1511,17 +1511,12 @@ mod gpui_tests {
         let backend = signed_in();
         let (window, ws) = open(cx, dir.path(), backend.clone());
         // Even a secret ticked behind the dialog's back stays out.
-        ws.update(cx, |ws, _| {
-            ws.meta
-                .vars
-                .entry("API_TOKEN".into())
-                .or_default()
-                .share_default = true;
-            ws.meta
-                .vars
-                .entry("SECRET_SIGNING".into())
-                .or_default()
-                .share_default = true;
+        ws.update(cx, |ws, cx| {
+            edit_notes(&ws.notes, cx, |meta| {
+                for name in ["API_TOKEN", "SECRET_SIGNING"] {
+                    meta.vars.entry(name.into()).or_default().share_default = true;
+                }
+            });
         });
         let view = open_share(cx, window, &ws);
         let calls = update_shares(&backend);
@@ -1543,7 +1538,7 @@ mod gpui_tests {
         .unwrap();
         cx.run_until_parked();
         assert!(view.read_with(cx, |v, cx| v.shares_default("BASE_URL", cx)));
-        assert!(ws.read_with(cx, |ws, _| ws.meta.vars["BASE_URL"].share_default));
+        assert!(ws.read_with(cx, |ws, cx| ws.meta(cx).vars["BASE_URL"].share_default));
         let calls = update_shares(&backend);
         assert_eq!(calls.len(), 2);
         let last = calls.last().unwrap();
@@ -1602,8 +1597,8 @@ mod gpui_tests {
         );
         cx.run_until_parked();
         assert!(!view.read_with(cx, |v, cx| v.shares_default("BASE_URL", cx)));
-        assert!(!ws.read_with(cx, |ws, _| {
-            ws.meta
+        assert!(!ws.read_with(cx, |ws, cx| {
+            ws.meta(cx)
                 .vars
                 .get("BASE_URL")
                 .is_some_and(|v| v.share_default)
@@ -1651,7 +1646,7 @@ mod gpui_tests {
             assert_eq!(v.settings(cx), None);
         });
         backend.dev().unwrap().set_offline(false);
-        let key = ws.read_with(cx, |ws, _| ws.collection_key().unwrap());
+        let key = ws.read_with(cx, |ws, cx| ws.collection_key(cx).unwrap());
         let s = futures::executor::block_on(backend.share_settings(&key)).unwrap();
         assert_eq!(s.link, None);
     }
@@ -1662,7 +1657,7 @@ mod gpui_tests {
         ws: &Entity<Workspace>,
         backend: &Arc<dyn Backend>,
     ) -> crate::model::backend::ShareSettings {
-        let key = ws.read_with(cx, |ws, _| ws.collection_key().unwrap());
+        let key = ws.read_with(cx, |ws, cx| ws.collection_key(cx).unwrap());
         futures::executor::block_on(backend.share_settings(&key)).unwrap()
     }
 
@@ -1687,9 +1682,9 @@ mod gpui_tests {
         view.read_with(cx, |v, cx| {
             assert!(v.shares_default("BASE_URL", cx) && v.shares_default("ACCOUNT_ID", cx));
         });
-        ws.read_with(cx, |ws, _| {
-            assert!(ws.meta.vars["BASE_URL"].share_default);
-            assert!(ws.meta.vars["ACCOUNT_ID"].share_default);
+        ws.read_with(cx, |ws, cx| {
+            assert!(ws.meta(cx).vars["BASE_URL"].share_default);
+            assert!(ws.meta(cx).vars["ACCOUNT_ID"].share_default);
         });
         let s = on_server(cx, &ws, &backend);
         assert_eq!(
@@ -1715,8 +1710,8 @@ mod gpui_tests {
         assert!(!view.read_with(cx, |v, cx| v.shares_default("BASE_URL", cx)));
         cx.run_until_parked();
         assert!(!view.read_with(cx, |v, cx| v.shares_default("BASE_URL", cx)));
-        assert!(!ws.read_with(cx, |ws, _| {
-            ws.meta
+        assert!(!ws.read_with(cx, |ws, cx| {
+            ws.meta(cx)
                 .vars
                 .get("BASE_URL")
                 .is_some_and(|v| v.share_default)
@@ -1833,7 +1828,7 @@ mod gpui_tests {
                 "{name} on the server"
             );
             assert!(
-                ws.read_with(cx, |ws, _| ws.meta.vars[name].share_default),
+                ws.read_with(cx, |ws, cx| ws.meta(cx).vars[name].share_default),
                 "{name} in the notes"
             );
         }
@@ -1928,8 +1923,10 @@ mod gpui_tests {
         cx.run_until_parked();
         dev.hold_updates(false);
         cx.run_until_parked();
-        let key_b = ws.read_with(cx, |ws, _| ws.collection_key().unwrap());
-        assert!(ws.read_with(cx, |ws, _| ws.meta.vars.values().all(|v| !v.share_default)));
+        let key_b = ws.read_with(cx, |ws, cx| ws.collection_key(cx).unwrap());
+        assert!(ws.read_with(cx, |ws, cx| {
+            ws.meta(cx).vars.values().all(|v| !v.share_default)
+        }));
         let b_calls: Vec<String> = update_shares(&backend)
             .into_iter()
             .filter(|c| c.contains(&format!("{:?}", key_b.id)))
@@ -1951,7 +1948,7 @@ mod gpui_tests {
         view.update(cx, |v, cx| v.set_access(Access::InvitedOnly, cx));
         cx.run_until_parked();
         // The server changes on its own; the next answer shows it.
-        let key = ws.read_with(cx, |ws, _| ws.collection_key().unwrap());
+        let key = ws.read_with(cx, |ws, cx| ws.collection_key(cx).unwrap());
         futures::executor::block_on(backend.update_share(
             &key,
             crate::model::backend::ShareUpdate {

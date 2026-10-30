@@ -21,7 +21,7 @@ use super::settings_kit::{
 use super::settings_view::AppPage;
 use super::share_dialog::{SUBTITLE as SHARE_SUBTITLE, ShareMode, ShareView};
 use super::share_sync::ShareSync;
-use super::workspace::notify_error;
+use super::workspace::{edit_notes, notify_error};
 use crate::model::backend::Backend;
 use crate::model::collection_meta::{CollectionMeta, VarMeta};
 use crate::model::environments::{
@@ -317,12 +317,13 @@ struct Drawer {
 pub struct CollectionSettings {
     root: PathBuf,
     collection: String,
-    /// Where the collection's notes live (`None` in tests that keep nothing).
-    base: Option<PathBuf>,
     secrets: Arc<CachedSecrets>,
     environments: Vec<String>,
     environment: String,
-    meta: CollectionMeta,
+    /// The collection's notes, shared with the workspace (which saves
+    /// them); the page reads and writes them there, never a copy.
+    notes: Entity<CollectionMeta>,
+    _notes: Subscription,
     /// This environment's Keychain item names (no values).
     keychain: Vec<String>,
     keychain_locked: bool,
@@ -357,13 +358,17 @@ impl CollectionSettings {
     pub fn new(
         root: PathBuf,
         collection: String,
-        base: Option<PathBuf>,
+        notes: Entity<CollectionMeta>,
         secrets: Arc<CachedSecrets>,
         environment: String,
         captured: Vec<CapturedVar>,
         cx: &mut Context<Self>,
     ) -> Self {
-        let meta = CollectionMeta::load_or_init(base.as_deref(), &root);
+        // An import (or the share) changing the notes shows at once.
+        let notes_changed = cx.observe(&notes, |this, _, cx| {
+            this.reload_rows(cx);
+            cx.notify();
+        });
         // Reading every request file is the slow part: off the main thread.
         let scan_root = root.clone();
         let scan = cx.background_spawn(async move { UsageIndex::scan(&scan_root) });
@@ -371,7 +376,7 @@ impl CollectionSettings {
             let usage = scan.await;
             this.update(cx, |this, cx| {
                 this.usage = Arc::new(usage);
-                this.reload_rows();
+                this.reload_rows(cx);
                 cx.emit(SettingsEvent::Status);
                 cx.notify();
             })
@@ -381,10 +386,10 @@ impl CollectionSettings {
             environments: list_environments(&root),
             root,
             collection,
-            base,
             secrets,
             environment,
-            meta,
+            notes,
+            _notes: notes_changed,
             keychain: Vec::new(),
             keychain_locked: false,
             usage: Arc::default(),
@@ -403,22 +408,22 @@ impl CollectionSettings {
         if !this.environments.contains(&this.environment) {
             this.environment = DEFAULT_ENVIRONMENT.to_string();
         }
-        this.reload();
+        this.reload(cx);
         this
     }
 
-    fn service(&self) -> String {
-        self.service_of(&self.environment)
+    fn service(&self, cx: &App) -> String {
+        self.service_of(&self.environment, cx)
     }
 
     /// The Keychain service of environment `env` of this collection.
-    fn service_of(&self, env: &str) -> String {
-        service_name(&self.collection, env, &self.meta.id)
+    fn service_of(&self, env: &str, cx: &App) -> String {
+        service_name(&self.collection, env, &self.notes.read(cx).id)
     }
 
     /// Re-reads the Keychain's item names and the rows.
-    fn reload(&mut self) {
-        match self.secrets.try_names(&self.service()) {
+    fn reload(&mut self, cx: &App) {
+        match self.secrets.try_names(&self.service(cx)) {
             Ok(names) => self.keychain = names,
             Err(e) => {
                 log::warn!("Couldn't list Keychain items: {e}");
@@ -426,14 +431,15 @@ impl CollectionSettings {
                 self.keychain_locked = true;
             }
         }
-        self.reload_rows();
+        self.reload_rows(cx);
     }
 
-    fn reload_rows(&mut self) {
+    fn reload_rows(&mut self, cx: &App) {
+        let meta = self.notes.read(cx);
         self.rows = environment_rows(
             &self.root,
             &self.environment,
-            &self.meta.secret_names,
+            &meta.secret_names,
             &self.keychain,
             &self.usage.referenced(),
             &self.captured,
@@ -442,12 +448,11 @@ impl CollectionSettings {
         // A received copy: the owner's defaults are listed (and count as
         // set) in every environment, as `Shared by {org}`, over any local
         // value.
-        let shared: Vec<EnvRow> = self
-            .meta
+        let shared: Vec<EnvRow> = meta
             .received_vars
             .iter()
             .filter_map(|v| {
-                let (org, value) = self.meta.shared_by(&v.name)?;
+                let (org, value) = meta.shared_by(&v.name)?;
                 Some(EnvRow {
                     name: v.name.clone(),
                     value: Some(value.to_string()),
@@ -502,9 +507,9 @@ impl CollectionSettings {
     }
 
     #[cfg(test)]
-    pub fn set_process_env(&mut self, env: impl Fn(&str) -> Option<String> + 'static) {
+    pub fn set_process_env(&mut self, env: impl Fn(&str) -> Option<String> + 'static, cx: &App) {
         self.process_env = std::rc::Rc::new(env);
-        self.reload_rows();
+        self.reload_rows(cx);
     }
 
     #[cfg(test)]
@@ -536,9 +541,9 @@ impl CollectionSettings {
         }
     }
 
-    /// The collection's notes as the page last saved them.
-    pub fn meta(&self) -> &CollectionMeta {
-        &self.meta
+    /// The collection's notes (the workspace's).
+    pub fn meta<'a>(&self, cx: &'a App) -> &'a CollectionMeta {
+        self.notes.read(cx)
     }
 
     pub fn select_environment(&mut self, name: &str, cx: &mut Context<Self>) {
@@ -547,7 +552,7 @@ impl CollectionSettings {
         }
         self.environment = name.to_string();
         self.drawer = None;
-        self.reload();
+        self.reload(cx);
         cx.emit(SettingsEvent::Changed);
         cx.notify();
     }
@@ -567,29 +572,14 @@ impl CollectionSettings {
     /// now; only for an owner who is signed in.
     fn open_sharing(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(s) = &self.sharing else { return };
-        if s.backend.account().is_none() || self.meta.read_only_from.is_some() {
+        if s.backend.account().is_none() || self.meta(cx).read_only_from.is_some() {
             return;
         }
         let sync = s.sync.clone();
-        let meta = self.meta.clone();
-        sync.update(cx, |s, _| s.set_notes(meta));
         let view = cx.new(|cx| ShareView::new(sync.clone(), ShareMode::Page, window, cx));
         // The nav's count follows the share.
         self._share_events = Some(cx.observe(&sync, |_, _, cx| cx.notify()));
         self.share_view = Some(view);
-    }
-
-    /// The share accepted `Share default` changes (the workspace passes
-    /// them on): the page's notes follow, so a drawer save keeps them.
-    pub fn merge_share_defaults(&mut self, flags: &[(String, bool)], cx: &mut Context<Self>) {
-        for (name, on) in flags {
-            self.meta
-                .vars
-                .entry(name.clone())
-                .or_default()
-                .share_default = *on;
-        }
-        cx.notify();
     }
 
     /// Esc: the drawer first, then the page.
@@ -622,15 +612,15 @@ impl CollectionSettings {
             return;
         }
         let (value, read_error) = match &row {
-            Some(r) => self.read_value(r),
+            Some(r) => self.read_value(r, cx),
             None => (String::new(), None),
         };
         let secret = match &row {
             Some(r) => r.secret,
-            None => name.is_some_and(|n| is_secret(n, &self.meta.secret_names)),
+            None => name.is_some_and(|n| is_secret(n, &self.meta(cx).secret_names)),
         };
         let notes = name
-            .and_then(|n| self.meta.vars.get(n))
+            .and_then(|n| self.meta(cx).vars.get(n))
             .cloned()
             .unwrap_or_default();
         let name_input = cx.new(|cx| InputState::new(window, cx).placeholder("API_TOKEN"));
@@ -696,9 +686,9 @@ impl CollectionSettings {
 
     /// The value the drawer starts with: the Keychain's for a Keychain row
     /// (read now), the file's for a file row, nothing for the others.
-    fn read_value(&mut self, row: &EnvRow) -> (String, Option<String>) {
+    fn read_value(&mut self, row: &EnvRow, cx: &App) -> (String, Option<String>) {
         match &row.source {
-            RowSource::Keychain => match self.secrets.try_get(&self.service(), &row.name) {
+            RowSource::Keychain => match self.secrets.try_get(&self.service(cx), &row.name) {
                 Ok(v) => (v.unwrap_or_default(), None),
                 Err(e) => {
                     log::warn!("Couldn't read {} from the Keychain: {e}", row.name);
@@ -775,12 +765,12 @@ impl CollectionSettings {
     }
 
     /// The other environments with a Keychain item for `name` (names only).
-    fn keychain_elsewhere(&self, name: &str) -> Vec<String> {
+    fn keychain_elsewhere(&self, name: &str, cx: &App) -> Vec<String> {
         self.environments
             .iter()
             .filter(|e| **e != self.environment)
             .filter(|e| {
-                let service = self.service_of(e);
+                let service = self.service_of(e, cx);
                 // Unreadable counts as holding it: the mark stays.
                 self.secrets
                     .try_names(&service)
@@ -826,9 +816,9 @@ impl CollectionSettings {
             _ => Vec::new(),
         };
         let asks_copies = copies.iter().any(|p| *p != own_file);
-        let unmarking = !secret && self.meta.secret_names.contains(&name);
+        let unmarking = !secret && self.meta(cx).secret_names.contains(&name);
         let elsewhere = if unmarking {
-            self.keychain_elsewhere(&name)
+            self.keychain_elsewhere(&name, cx)
         } else {
             Vec::new()
         };
@@ -850,7 +840,11 @@ impl CollectionSettings {
             }
         }
         let value = d.value.read(cx).value().to_string();
-        let (root, env, service) = (self.root.clone(), self.environment.clone(), self.service());
+        let (root, env, service) = (
+            self.root.clone(),
+            self.environment.clone(),
+            self.service(cx),
+        );
         let secrets: &dyn SecretStore = &*self.secrets;
         // A copy that could not be removed once the Keychain has the value:
         // the name is still marked secret, then the error is shown.
@@ -887,25 +881,29 @@ impl CollectionSettings {
         }
         let description = d.description.read(cx).value().trim().to_string();
         let required = d.required;
-        // Unmarked here, a name other environments keep in the Keychain
-        // stays secret collection-wide.
-        if secret || elsewhere.is_empty() {
-            self.meta.set_secret(&name, secret);
-        }
-        // Share default is the Share dialog's; a secret drops it.
-        let notes = VarMeta {
-            description,
-            required_for_shared: required,
-            share_default: !secret && self.meta.vars.get(&name).is_some_and(|v| v.share_default),
-        };
-        if notes == VarMeta::default() {
-            self.meta.vars.remove(&name);
-        } else {
-            self.meta.vars.insert(name.clone(), notes);
-        }
-        self.save_meta(window, cx);
+        // Into the shared notes, read as they are now (the share may have
+        // ticked a flag, an import marked a secret, since the drawer
+        // opened); the workspace saves them, once.
+        edit_notes(&self.notes, cx, |meta| {
+            // Unmarked here, a name other environments keep in the Keychain
+            // stays secret collection-wide.
+            if secret || elsewhere.is_empty() {
+                meta.set_secret(&name, secret);
+            }
+            // Share default is the Share dialog's; a secret drops it.
+            let notes = VarMeta {
+                description,
+                required_for_shared: required,
+                share_default: !secret && meta.vars.get(&name).is_some_and(|v| v.share_default),
+            };
+            if notes == VarMeta::default() {
+                meta.vars.remove(&name);
+            } else {
+                meta.vars.insert(name.clone(), notes);
+            }
+        });
         self.drawer = None;
-        self.reload();
+        self.reload(cx);
         cx.emit(SettingsEvent::Changed);
         match leftover {
             Some(e) => notify_error(
@@ -917,14 +915,6 @@ impl CollectionSettings {
         }
         self.focus.focus(window, cx);
         cx.notify();
-    }
-
-    fn save_meta(&self, window: &mut Window, cx: &mut App) {
-        if let Some(base) = &self.base
-            && let Err(e) = self.meta.save(base, &self.root)
-        {
-            notify_error(format!("Couldn't save the variable notes: {e}"), window, cx);
-        }
     }
 
     /// Before a Keychain value goes into a file, or a name other
@@ -1054,7 +1044,7 @@ impl CollectionSettings {
     }
 
     fn delete(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let service = self.service();
+        let service = self.service(cx);
         let removed = remove_env_var(&self.root, &self.environment, name)
             .map_err(|e| e.to_string())
             .and_then(|()| self.secrets.delete(&service, name));
@@ -1067,15 +1057,14 @@ impl CollectionSettings {
             name_in_env_files(&self.root, e, name)
                 || self
                     .secrets
-                    .try_names(&self.service_of(e))
+                    .try_names(&self.service_of(e, cx))
                     .map_or(true, |n| n.iter().any(|n| n == name))
         });
-        if !left && self.meta.secret_names.iter().any(|n| n == name) {
-            self.meta.set_secret(name, false);
-            self.save_meta(window, cx);
+        if !left {
+            edit_notes(&self.notes, cx, |meta| meta.set_secret(name, false));
         }
         self.drawer = None;
-        self.reload();
+        self.reload(cx);
         cx.emit(SettingsEvent::Changed);
         cx.notify();
     }
@@ -1179,8 +1168,8 @@ impl CollectionSettings {
                 return;
             }
         };
-        let service = self.service();
-        let marked = self.meta.secret_names.clone();
+        let service = self.service(cx);
+        let marked = self.meta(cx).secret_names.clone();
         match import_dotenv(
             &self.root,
             &self.environment,
@@ -1205,7 +1194,7 @@ impl CollectionSettings {
                 cx,
             ),
         }
-        self.reload();
+        self.reload(cx);
         cx.emit(SettingsEvent::Changed);
         cx.notify();
     }
@@ -1231,7 +1220,7 @@ impl Render for CollectionSettings {
             .child(match self.page {
                 Page::General => self.render_general().into_any_element(),
                 Page::Environments => self.render_environments(cx).into_any_element(),
-                Page::Sharing => self.render_sharing().into_any_element(),
+                Page::Sharing => self.render_sharing(cx).into_any_element(),
             })
             .children(drawer)
     }
@@ -1444,14 +1433,14 @@ impl CollectionSettings {
             .any(|r| matches!(r.source, RowSource::Shared(_)))
     }
 
-    fn render_sharing(&self) -> impl IntoElement + use<> {
+    fn render_sharing(&self, cx: &App) -> impl IntoElement + use<> {
         let subtitle = div()
             .text_size(px(13.))
             .line_height(relative(1.5))
             .text_color(color("text-secondary"))
             .child(SHARE_SUBTITLE);
         // Why there is nothing to change: received, or not signed in.
-        let note = match (&self.meta.read_only_from, &self.sharing) {
+        let note = match (&self.meta(cx).read_only_from, &self.sharing) {
             (Some(org), _) => Some(format!(
                 "Shared with you by {org}. Only the owner can change who has access."
             )),
@@ -1994,7 +1983,7 @@ impl CollectionSettings {
                     }
                 }))
         });
-        let where_stored = where_stored(&d.source, secret, &self.own_file(), &self.service());
+        let where_stored = where_stored(&d.source, secret, &self.own_file(), &self.service(cx));
         let value = div()
             .flex()
             .flex_col()
@@ -2260,7 +2249,7 @@ fn render_legend(shared: bool) -> impl IntoElement {
 mod tests {
     use super::{
         CollectionMeta, CollectionSettings, Confirmed, EnvRow, Path, RowSource, SecretStore,
-        ValueWrite, captured_text, copies_text, plan_value, source_label, summary_text,
+        ValueWrite, captured_text, copies_text, is_secret, plan_value, source_label, summary_text,
         used_by_text, where_stored,
     };
     use crate::model::secrets::service_for;
@@ -2474,7 +2463,7 @@ mod tests {
             let view = ws.settings_view.clone().unwrap();
             let v = view.read(cx);
             let d = v.drawer.as_ref().expect("the drawer is open");
-            where_stored(&d.source, true, &v.own_file(), &v.service())
+            where_stored(&d.source, true, &v.own_file(), &v.service(cx))
         });
         assert_eq!(note, format!("Stored in macOS Keychain under “{service}”."));
     }
@@ -2521,8 +2510,8 @@ mod tests {
         assert!(!staging.contains("acct_123"), "{staging}");
         let meta = CollectionMeta::load(state.path(), dir.path());
         assert!(meta.secret_names.contains(&"ACCOUNT_ID".to_string()));
-        ws.read_with(cx, |ws, _| {
-            assert!(ws.meta.secret_names.contains(&"ACCOUNT_ID".to_string()));
+        ws.read_with(cx, |ws, cx| {
+            assert!(ws.meta(cx).secret_names.contains(&"ACCOUNT_ID".to_string()));
         });
     }
 
@@ -2702,12 +2691,16 @@ mod tests {
         .unwrap()
     }
 
-    fn mark(state: &Path, root: &Path, names: &[&str]) {
-        let mut meta = CollectionMeta::load(state, root);
-        for n in names {
-            meta.set_secret(n, true);
-        }
-        meta.save(state, root).unwrap();
+    /// Marks `names` secret in the open collection's notes.
+    fn mark(cx: &mut TestAppContext, ws: &Entity<Workspace>, names: &[&str]) {
+        ws.update(cx, |ws, cx| {
+            super::super::workspace::edit_notes(&ws.notes, cx, |meta| {
+                for n in names {
+                    meta.set_secret(n, true);
+                }
+            })
+        });
+        cx.run_until_parked();
     }
 
     #[gpui_kit::test]
@@ -2721,7 +2714,7 @@ mod tests {
             "BASE_URL=https://api.example.com\nPLAIN_KEY=k1\nOTHER_KEY=k2\n",
         )
         .unwrap();
-        mark(state.path(), dir.path(), &["PLAIN_KEY", "OTHER_KEY"]);
+        mark(cx, &ws, &["PLAIN_KEY", "OTHER_KEY"]);
         // Remove: the Keychain gets it, `.env` loses it.
         let view = drawer_on(cx, window, &ws, "PLAIN_KEY");
         assert!(
@@ -2764,12 +2757,12 @@ mod tests {
         let state = tempfile::tempdir().unwrap();
         let (dir, window, ws, secrets) = open(cx, state.path());
         let service = service_for(state.path(), dir.path(), "staging");
-        mark(state.path(), dir.path(), &["SHELL_TOKEN"]);
+        mark(cx, &ws, &["SHELL_TOKEN"]);
         // A shell-sourced secret: Save leaves the Keychain alone.
         let view = drawer_on(cx, window, &ws, "SHELL_TOKEN");
         cx.update_window(window, |_, window, cx| {
             view.update(cx, |v, cx| {
-                v.set_process_env(|k| (k == "SHELL_TOKEN").then(|| "from-shell".into()));
+                v.set_process_env(|k| (k == "SHELL_TOKEN").then(|| "from-shell".into()), cx);
                 v.open_variable(Some("SHELL_TOKEN"), window, cx);
             });
         })
@@ -2852,7 +2845,7 @@ mod tests {
             "BASE_URL=https://staging.api.example.com\nAPP_KEY=new\n",
         )
         .unwrap();
-        mark(state.path(), dir.path(), &["APP_KEY"]);
+        mark(cx, &ws, &["APP_KEY"]);
         // Its source is `.env.staging`, but `.env` holds a copy too.
         let view = drawer_on(cx, window, &ws, "APP_KEY");
         assert!(
@@ -2883,12 +2876,12 @@ mod tests {
             "BASE_URL=https://api.example.com\nSHELL_TOKEN=plain\n",
         )
         .unwrap();
-        mark(state.path(), dir.path(), &["SHELL_TOKEN"]);
+        mark(cx, &ws, &["SHELL_TOKEN"]);
         let view = drawer_on(cx, window, &ws, "SHELL_TOKEN");
         let open_edited = |cx: &mut TestAppContext| {
             cx.update_window(window, |_, window, cx| {
                 view.update(cx, |v, cx| {
-                    v.set_process_env(|k| (k == "SHELL_TOKEN").then(|| "from-shell".into()));
+                    v.set_process_env(|k| (k == "SHELL_TOKEN").then(|| "from-shell".into()), cx);
                     v.open_variable(Some("SHELL_TOKEN"), window, cx);
                     let d = v.drawer.as_mut().unwrap();
                     assert_eq!(d.source, RowSource::Process);
@@ -2964,8 +2957,6 @@ mod tests {
         cx.update_window(window, |_, window, cx| window.press("escape", cx))
             .unwrap();
         // A received copy, as adding a shared link leaves it.
-        let mut meta = CollectionMeta::load(state.path(), dir.path());
-        meta.read_only_from = Some("Acme".into());
         let var = |name: &str, secret: bool, default: Option<&str>| SharedVar {
             name: name.into(),
             description: String::new(),
@@ -2973,12 +2964,18 @@ mod tests {
             secret,
             default: default.map(String::from),
         };
-        meta.received_vars = vec![
-            var("CURRENCY", false, Some("eur")),
-            var("BASE_URL", false, Some("https://api.example.com/shipping")),
-            var("API_TOKEN", true, None),
-        ];
-        meta.save(state.path(), dir.path()).unwrap();
+        ws.update(cx, |ws, cx| {
+            super::super::workspace::edit_notes(&ws.notes, cx, |meta| {
+                meta.read_only_from = Some("Acme".into());
+                meta.received_vars = vec![
+                    var("CURRENCY", false, Some("eur")),
+                    var("BASE_URL", false, Some("https://api.example.com/shipping")),
+                    var("API_TOKEN", true, None),
+                ];
+            })
+        });
+        let saved = CollectionMeta::load(state.path(), dir.path());
+        assert_eq!(saved.read_only_from.as_deref(), Some("Acme"), "saved");
         open_environments(cx, window);
         let rows = ws.read_with(cx, |ws, cx| {
             ws.settings_view.as_ref().unwrap().read(cx).rows().to_vec()
@@ -3059,8 +3056,8 @@ mod tests {
         cx.run_until_parked();
         assert!(share.read_with(cx, |s, cx| s.shares_default("BASE_URL", cx)));
         // The page's notes, the workspace's and the saved ones agree.
-        assert!(view.read_with(cx, |v, _| v.meta().vars["BASE_URL"].share_default));
-        assert!(ws.read_with(cx, |ws, _| ws.meta.vars["BASE_URL"].share_default));
+        assert!(view.read_with(cx, |v, cx| v.meta(cx).vars["BASE_URL"].share_default));
+        assert!(ws.read_with(cx, |ws, cx| ws.meta(cx).vars["BASE_URL"].share_default));
         assert_eq!(ws.read_with(cx, |ws, _| ws.sync.people), Some(1));
         let saved = CollectionMeta::load(state.path(), _dir.path());
         assert!(saved.vars["BASE_URL"].share_default, "saved");
@@ -3106,5 +3103,218 @@ mod tests {
         assert_eq!(view.read_with(cx, |v, cx| v.sharing_count(cx)), None);
         assert!(view.read_with(cx, |v, _| v.share_view().is_none()));
         assert!(shows(cx, window, "Sign in to share this collection."));
+    }
+
+    /// How many times the workspace wrote the notes.
+    fn saves(cx: &mut TestAppContext, ws: &Entity<Workspace>) -> usize {
+        ws.read_with(cx, |ws, _| ws.notes_saves)
+    }
+
+    /// The shown page's drawer on `name` (the page is not reopened), its
+    /// description set to `text`, saved.
+    fn describe(
+        cx: &mut TestAppContext,
+        window: AnyWindowHandle,
+        ws: &Entity<Workspace>,
+        name: &str,
+        text: &str,
+    ) {
+        if !ws.read_with(cx, |ws, _| ws.settings_shown()) {
+            open_environments(cx, window);
+        }
+        let view = ws.read_with(cx, |ws, _| ws.settings_view.clone().unwrap());
+        cx.update_window(window, |_, window, cx| {
+            view.update(cx, |v, cx| {
+                v.set_page(super::Page::Environments, window, cx);
+                v.open_variable(Some(name), window, cx);
+                let d = v.drawer.as_ref().unwrap();
+                d.description
+                    .update(cx, |s, cx| s.set_value(text, window, cx));
+            })
+        })
+        .unwrap();
+        assert!(!save(cx, window, &view, Confirmed::No), "nothing to ask");
+        cx.run_until_parked();
+    }
+
+    #[gpui_kit::test]
+    fn an_import_on_the_settings_page_keeps_its_secret_marks(cx: &mut TestAppContext) {
+        let state = tempfile::tempdir().unwrap();
+        let (dir, window, ws, _) = open(cx, state.path());
+        open_environments(cx, window);
+        let before = ws.read_with(cx, |ws, cx| ws.meta(cx).secret_names.clone());
+        // ⌘I with the settings page shown: a curl with a token.
+        let curl = concat!(
+            "curl -X POST https://api.example.com/v1/refunds -H 'X-Api-Key: rk_test",
+            "_51HxAbCdEfGhIjKlMnOpQrSt'"
+        );
+        let saved = saves(cx, &ws);
+        let dialog = cx
+            .update_window(window, |_, window, cx| {
+                ws.update(cx, |ws, cx| ws.import(window, cx))
+            })
+            .unwrap();
+        cx.update_window(window, |_, window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.dev_fill(curl, None, window, cx);
+                d.save_secrets = false;
+            });
+            window.render_frame(cx);
+        })
+        .unwrap();
+        cx.update_window(window, |_, window, cx| {
+            dialog.update(cx, |d, cx| d.import(window, cx))
+        })
+        .unwrap();
+        cx.run_until_parked();
+        let marked = ws.read_with(cx, |ws, cx| ws.meta(cx).secret_names.clone());
+        let extracted: Vec<String> = marked
+            .iter()
+            .filter(|n| !before.contains(n))
+            .cloned()
+            .collect();
+        assert_eq!(extracted.len(), 1, "the token's name is marked: {marked:?}");
+        assert_eq!(saves(cx, &ws), saved + 1, "one write for the import");
+        let token = extracted[0].clone();
+        assert!(
+            ws.read_with(cx, |ws, _| ws.settings_shown()),
+            "still on the page"
+        );
+        // The page shows it at once (it reads the same notes).
+        assert!(ws.read_with(cx, |ws, cx| {
+            let view = ws.settings_view.as_ref().unwrap().read(cx);
+            is_secret(&token, &view.meta(cx).secret_names)
+        }));
+        // Switching the page's environment, then a drawer save: the mark
+        // stays, in memory and on disk.
+        let view = ws.read_with(cx, |ws, _| ws.settings_view.clone().unwrap());
+        let saved = saves(cx, &ws);
+        view.update(cx, |v, cx| v.select_environment("Default", cx));
+        cx.run_until_parked();
+        assert_eq!(
+            saves(cx, &ws),
+            saved,
+            "an environment switch writes nothing"
+        );
+        assert!(
+            ws.read_with(cx, |ws, cx| ws.meta(cx).secret_names.contains(&token)),
+            "kept through the switch"
+        );
+        describe(cx, window, &ws, "BASE_URL", "Where the API lives");
+        assert_eq!(saves(cx, &ws), saved + 1, "one write for the drawer");
+        let meta = ws.read_with(cx, |ws, cx| ws.meta(cx).clone());
+        assert!(meta.secret_names.contains(&token), "{meta:?}");
+        assert!(meta.secret_names.contains(&"API_TOKEN".to_string()));
+        assert_eq!(meta.vars["BASE_URL"].description, "Where the API lives");
+        assert_eq!(
+            CollectionMeta::load(state.path(), dir.path()),
+            meta,
+            "saved"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn marked_secret_while_its_tick_is_in_flight_shares_nothing(cx: &mut TestAppContext) {
+        use crate::model::backend::SignInMethod;
+        let state = tempfile::tempdir().unwrap();
+        let backend = super::super::workspace::test_backend();
+        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        let (dir, window, ws, _) = open_with(cx, state.path(), backend.clone());
+        open_environments(cx, window);
+        cx.update_window(window, |_, window, cx| window.click("settings-sharing", cx))
+            .unwrap();
+        cx.run_until_parked();
+        let sync = ws.read_with(cx, |ws, _| ws.share_sync.clone().unwrap());
+        let dev = backend.dev().unwrap();
+        // Tick BASE_URL; its call is held in flight.
+        dev.hold_updates(true);
+        cx.update_window(window, |_, window, cx| {
+            window.click("share-default-BASE_URL", cx)
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(sync.read_with(cx, |s, cx| s.shares_default("BASE_URL", cx)));
+        // Meanwhile the drawer marks it secret (its plain copies kept).
+        let saved = saves(cx, &ws);
+        let view = drawer_on(cx, window, &ws, "BASE_URL");
+        cx.update_window(window, |_, window, cx| {
+            view.update(cx, |v, cx| v.toggle_secret(window, cx))
+        })
+        .unwrap();
+        save(cx, window, &view, Confirmed::KeepCopy);
+        cx.run_until_parked();
+        assert!(
+            !sync.read_with(cx, |s, cx| s.shares_default("BASE_URL", cx)),
+            "the tick went with the mark"
+        );
+        dev.hold_updates(false);
+        cx.run_until_parked();
+        // Nowhere: the notes, the saved notes, the share, the server.
+        let meta = ws.read_with(cx, |ws, cx| ws.meta(cx).clone());
+        assert!(is_secret("BASE_URL", &meta.secret_names));
+        assert!(
+            meta.vars.get("BASE_URL").is_none_or(|v| !v.share_default),
+            "{meta:?}"
+        );
+        assert_eq!(
+            CollectionMeta::load(state.path(), dir.path()),
+            meta,
+            "saved"
+        );
+        assert_eq!(saves(cx, &ws), saved + 1, "the drawer's write only");
+        sync.read_with(cx, |s, cx| {
+            assert!(!s.shares_default("BASE_URL", cx));
+            assert!(!s.offers_share_default("BASE_URL", cx));
+        });
+        let key = ws.read_with(cx, |ws, cx| ws.collection_key(cx).unwrap());
+        let server = futures::executor::block_on(backend.share_settings(&key)).unwrap();
+        let base_url = server
+            .variables
+            .iter()
+            .find(|v| v.name == "BASE_URL")
+            .unwrap();
+        assert!(
+            base_url.secret && base_url.default.is_none(),
+            "{base_url:?}"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn each_change_writes_the_notes_once(cx: &mut TestAppContext) {
+        use crate::model::backend::SignInMethod;
+        let state = tempfile::tempdir().unwrap();
+        let backend = super::super::workspace::test_backend();
+        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        let (dir, window, ws, _) = open_with(cx, state.path(), backend.clone());
+        let on_disk = || CollectionMeta::load(state.path(), dir.path());
+        let start = saves(cx, &ws);
+        describe(cx, window, &ws, "BASE_URL", "Where the API lives");
+        assert_eq!(saves(cx, &ws), start + 1);
+        assert_eq!(
+            on_disk().vars["BASE_URL"].description,
+            "Where the API lives"
+        );
+        // The same again changes nothing: nothing is written.
+        describe(cx, window, &ws, "BASE_URL", "Where the API lives");
+        assert_eq!(saves(cx, &ws), start + 1);
+        // A tick on the Sharing page: one write once it is accepted.
+        cx.update_window(window, |_, window, cx| window.click("settings-sharing", cx))
+            .unwrap();
+        cx.run_until_parked();
+        assert_eq!(
+            saves(cx, &ws),
+            start + 1,
+            "opening the share writes nothing"
+        );
+        cx.update_window(window, |_, window, cx| {
+            window.click("share-default-BASE_URL", cx)
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(saves(cx, &ws), start + 2);
+        let saved = on_disk();
+        assert!(saved.vars["BASE_URL"].share_default);
+        assert_eq!(saved.vars["BASE_URL"].description, "Where the API lives");
+        assert_eq!(ws.read_with(cx, |ws, cx| ws.meta(cx).clone()), saved);
     }
 }

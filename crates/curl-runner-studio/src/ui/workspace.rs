@@ -117,8 +117,15 @@ pub struct Workspace {
     /// `secrets` read once per item, for resolving variables while typing
     /// (and for the Environments page).
     pub(super) secret_cache: Arc<CachedSecrets>,
-    /// The open collection's notes: secret names, descriptions.
-    pub(super) meta: CollectionMeta,
+    /// The open collection's notes (secret names, descriptions, Share
+    /// default flags): the one copy. The settings page, the drawer, the
+    /// import and the share read and change it here; `_notes_saved` writes
+    /// it to disk on each change.
+    pub(super) notes: Entity<CollectionMeta>,
+    _notes_saved: Option<Subscription>,
+    /// How many times the notes were written (tests count them).
+    #[cfg(test)]
+    pub(super) notes_saves: usize,
     /// The collection settings page (Environments), while it is open.
     pub(super) settings_view: Option<Entity<CollectionSettings>>,
     _settings_events: Option<Subscription>,
@@ -238,7 +245,10 @@ impl Workspace {
             copied: None,
             missing: Vec::new(),
             secret_cache: Arc::new(CachedSecrets::new(secrets.clone())),
-            meta: CollectionMeta::default(),
+            notes: cx.new(|_| CollectionMeta::default()),
+            _notes_saved: None,
+            #[cfg(test)]
+            notes_saves: 0,
             settings_view: None,
             _settings_events: None,
             settings,
@@ -337,7 +347,10 @@ impl Workspace {
         // Settings would still list the previous collection's credentials.
         self.close_app_settings();
         self.settings_origin = None;
-        self.meta = CollectionMeta::load_or_init(self.store.base(), root);
+        self.notes = cx.new(|_| CollectionMeta::load_or_init(self.store.base(), root));
+        self._notes_saved = Some(cx.observe_in(&self.notes, window, |this, _, window, cx| {
+            this.notes_changed(window, cx)
+        }));
         self.secret_cache.invalidate();
         self.environment = self
             .store
@@ -639,7 +652,8 @@ impl Workspace {
             Some(v) => v.clone(),
             None => {
                 let (root, name) = (c.root.clone(), c.name.clone());
-                let (id, marked) = (self.meta.id.clone(), self.meta.secret_names.clone());
+                let meta = self.notes.read(cx);
+                let (id, marked) = (meta.id.clone(), meta.secret_names.clone());
                 let view = cx.new(|cx| HistoryView::new(root, name, id, marked, cx));
                 self._history_events = Some(cx.subscribe_in(&view, window, Self::on_history_event));
                 self.history_view = Some(view.clone());
@@ -867,22 +881,30 @@ impl Workspace {
         self.secret_cache.invalidate();
     }
 
-    /// The picked environment of `c`, with the collection's secret names.
-    pub(super) fn env_ctx(&self, c: &Collection) -> EnvCtx {
+    /// The picked environment of `c`, with the collection's secret names
+    /// as the notes have them now.
+    pub(super) fn env_ctx(&self, c: &Collection, cx: &App) -> EnvCtx {
+        let meta = self.notes.read(cx);
         EnvCtx {
             root: c.root.clone(),
             collection: c.name.clone(),
-            collection_id: self.meta.id.clone(),
+            collection_id: meta.id.clone(),
             environment: self.environment.clone(),
-            marked_secret: self.meta.secret_names.clone(),
+            marked_secret: meta.secret_names.clone(),
         }
     }
 
-    /// Saves the open collection's notes (the one copy every change goes
-    /// through, on this thread, so writes land in order).
-    pub(super) fn save_meta(&self, window: &mut Window, cx: &mut App) {
+    /// The open collection's notes.
+    pub(super) fn meta<'a>(&self, cx: &'a App) -> &'a CollectionMeta {
+        self.notes.read(cx)
+    }
+
+    /// The notes changed (the page, the drawer, an import or the share
+    /// wrote them): saved whole, here only, on this thread, so writes land
+    /// in order; what shows secret marks follows.
+    fn notes_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let (Some(base), Some(c)) = (self.store.base(), &self.state.collection)
-            && let Err(e) = self.meta.save(base, &c.root)
+            && let Err(e) = self.notes.read(cx).save(base, &c.root)
         {
             notify_error(
                 format!("Couldn't save the collection's notes: {e}"),
@@ -890,6 +912,15 @@ impl Workspace {
                 cx,
             );
         }
+        #[cfg(test)]
+        {
+            self.notes_saves += 1;
+        }
+        if let Some(h) = &self.history_view {
+            let marked = self.notes.read(cx).secret_names.clone();
+            h.update(cx, |h, _| h.set_marked(marked));
+        }
+        self.refresh_vars(cx);
     }
 
     // The collection settings page.
@@ -904,8 +935,7 @@ impl Workspace {
         let Some(c) = &self.state.collection else {
             return;
         };
-        let (root, name) = (c.root.clone(), c.name.clone());
-        let base = self.store.base().map(Path::to_path_buf);
+        let (root, name, notes) = (c.root.clone(), c.name.clone(), self.notes.clone());
         let (secrets, env, captured) = (
             self.secret_cache.clone(),
             self.environment.clone(),
@@ -917,7 +947,7 @@ impl Workspace {
             people: self.sync.people,
         });
         let view = cx.new(|cx| {
-            let mut view = CollectionSettings::new(root, name, base, secrets, env, captured, cx);
+            let mut view = CollectionSettings::new(root, name, notes, secrets, env, captured, cx);
             if let Some(sharing) = sharing {
                 view.set_sharing(sharing, cx);
             }
@@ -947,7 +977,7 @@ impl Workspace {
 
     fn on_settings_event(
         &mut self,
-        view: &Entity<CollectionSettings>,
+        _: &Entity<CollectionSettings>,
         event: &SettingsEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -959,21 +989,14 @@ impl Workspace {
             },
             SettingsEvent::Status => self.sync_chrome(window, cx),
             SettingsEvent::OpenApp(page) => self.open_app_settings(*page, window, cx),
+            // The notes are shared: what the page wrote there is saved and
+            // passed on by `notes_changed`.
             SettingsEvent::Changed => {
-                self.meta = view.read(cx).meta().clone();
-                if let Some(sync) = &self.share_sync {
-                    let meta = self.meta.clone();
-                    sync.update(cx, |s, _| s.set_notes(meta));
-                }
                 self.invalidate_secrets();
                 if let Some(c) = &self.state.collection
                     && list_environments(&c.root) != self.environments
                 {
                     self.load_environments(window, cx);
-                }
-                if let Some(h) = &self.history_view {
-                    let marked = self.meta.secret_names.clone();
-                    h.update(cx, |h, _| h.set_marked(marked));
                 }
                 self.sync_chrome(window, cx);
             }
@@ -1003,11 +1026,12 @@ impl Workspace {
             view.update(cx, |v, cx| v.set_page(page, cx));
             return;
         }
+        let meta = self.notes.read(cx);
         let collection = self.state.collection.as_ref().map(|c| CollectionInfo {
             root: c.root.clone(),
             name: c.name.clone(),
-            id: self.meta.id.clone(),
-            marked: self.meta.secret_names.clone(),
+            id: meta.id.clone(),
+            marked: meta.secret_names.clone(),
             secrets: self.secret_cache.clone(),
         });
         let (settings, base) = (
@@ -1016,7 +1040,7 @@ impl Workspace {
         );
         let accounts = Accounts {
             backend: self.backend.clone(),
-            key: self.collection_key(),
+            key: self.collection_key(cx),
             offline: self.connection() == Some(Connection::Offline),
         };
         let view =
@@ -1082,10 +1106,10 @@ impl Workspace {
     // Sign-in and the server.
 
     /// The open collection as the server knows it.
-    pub(super) fn collection_key(&self) -> Option<CollectionKey> {
+    pub(super) fn collection_key(&self, cx: &App) -> Option<CollectionKey> {
         let c = self.state.collection.as_ref()?;
         Some(CollectionKey {
-            id: self.meta.id.clone(),
+            id: self.notes.read(cx).id.clone(),
             name: c.name.clone(),
         })
     }
@@ -1245,7 +1269,7 @@ impl Workspace {
     pub(super) fn refresh_vars(&mut self, cx: &mut Context<Self>) {
         let (vars, missing) = match (&self.state.collection, self.state.active_document()) {
             (Some(c), Some(doc)) => {
-                let ctx = self.env_ctx(c);
+                let ctx = self.env_ctx(c, cx);
                 let captured = self
                     .runs
                     .last
@@ -2060,6 +2084,25 @@ pub(super) fn test_secrets() -> Arc<dyn SecretStore> {
 #[cfg(test)]
 pub(super) fn test_backend() -> Arc<dyn Backend> {
     crate::model::backend::test_backend()
+}
+
+/// Changes the collection's notes in place. Their observers (the workspace
+/// saves them; the page and the share redraw) hear of it only when
+/// something changed. Returns whether it did.
+pub(super) fn edit_notes(
+    notes: &Entity<CollectionMeta>,
+    cx: &mut App,
+    edit: impl FnOnce(&mut CollectionMeta),
+) -> bool {
+    notes.update(cx, |meta, cx| {
+        let before = meta.clone();
+        edit(meta);
+        let changed = *meta != before;
+        if changed {
+            cx.notify();
+        }
+        changed
+    })
 }
 
 pub(super) fn notify_error(message: String, window: &mut Window, cx: &mut App) {
