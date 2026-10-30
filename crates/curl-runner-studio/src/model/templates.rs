@@ -1,7 +1,7 @@
 //! Starter text for new request files and the file names they get.
 
 use curl_runner_core::convert::{
-    CurlRunnerIr, YamlOptions, normalize, parse_curl, serialize_to_yaml,
+    CurlRunnerIr, YamlOptions, normalize, parse_tokens, serialize_to_yaml, tokenize,
 };
 use curl_runner_core::lint::spans::locate;
 use curl_runner_core::yaml_text::yaml_str;
@@ -88,16 +88,53 @@ pub fn request_from_curl(name: &str, curl: &str) -> Result<FromCurl, String> {
     Ok(file_from_ir(curl_to_ir(curl)?, name))
 }
 
+/// Credential flags the converter doesn't know, whose value curl takes
+/// even when it starts with `-` (`--oauth2-bearer --tok…`). The converter
+/// would read such a value as a flag of its own, named after the secret.
+const CREDENTIAL_FLAGS: [&str; 10] = [
+    "--oauth2-bearer",
+    "--pass",
+    "--proxy-pass",
+    "--proxy-user",
+    "-U",
+    "--proxy-header",
+    "--tlspassword",
+    "--tlsuser",
+    "--proxy-tlspassword",
+    "--proxy-tlsuser",
+];
+
 /// `curl` parsed and normalized as `convert curl` does, before it is
-/// written out.
+/// written out; a [`CREDENTIAL_FLAGS`] value starting with `-` stays that
+/// flag's value, as in curl.
 pub fn curl_to_ir(curl: &str) -> Result<CurlRunnerIr, String> {
     let curl = curl.trim();
     if curl.split_whitespace().next() != Some("curl") {
         return Err("Paste a command that starts with curl.".into());
     }
-    let ir = normalize(&parse_curl(curl)).map_err(|e| e.to_string())?;
+    let mut tokens = tokenize(curl);
+    // Swapped for a placeholder the parser takes as a value, then back.
+    let placeholder = |n: usize| format!("\u{1}{n}\u{1}");
+    let mut held = Vec::new();
+    for i in 1..tokens.len() {
+        if CREDENTIAL_FLAGS.contains(&tokens[i - 1].as_str()) && tokens[i].starts_with('-') {
+            held.push(std::mem::replace(&mut tokens[i], placeholder(held.len())));
+        }
+    }
+    let mut ir = normalize(&parse_tokens(&tokens)).map_err(|e| e.to_string())?;
     if ir.url.is_empty() {
         return Err("The command has no URL.".into());
+    }
+    for (n, value) in held.iter().enumerate() {
+        let p = placeholder(n);
+        for f in &mut ir.unsupported_flags {
+            if f.value.as_deref() == Some(p.as_str()) {
+                f.value = Some(value.clone());
+            }
+        }
+        for w in &mut ir.warnings {
+            *w = w.replace(&p, value);
+        }
     }
     Ok(ir)
 }

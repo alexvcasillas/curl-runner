@@ -93,8 +93,9 @@ pub fn convert_commands(text: &str, env: &ImportEnv) -> Vec<CurlImport> {
             let name = request_name_for(method, &ir.url);
             let mut converted = file_from_ir(ir, &name);
             // Belt and braces: `scrub_secrets` already cleaned the warnings
-            // the `# Warning:` comments come from; comments only, so a URL
-            // or body that happens to contain the value is never touched.
+            // the `# Warning:` comments come from; only the file-body note's
+            // comment, so a URL, a body or another note that happens to
+            // contain the value is never touched.
             converted.yaml = scrub_comments(&converted.yaml, &extracted);
             converted.yaml = unquote_references(&converted.yaml);
             converted.yaml.insert_str(0, IMPORTED_HEADER);
@@ -114,11 +115,13 @@ pub fn convert_commands(text: &str, env: &ImportEnv) -> Vec<CurlImport> {
         .collect()
 }
 
-/// The comment lines of `yaml` with each extracted value as its `${VAR}`.
+/// The file-body note's comment line in `yaml` with each extracted value
+/// as its `${VAR}`.
 fn scrub_comments(yaml: &str, extracted: &[Extracted]) -> String {
     yaml.split_inclusive('\n')
         .map(|line| {
-            if line.trim_start().starts_with('#') {
+            let comment = line.trim_start();
+            if comment.starts_with('#') && comment.contains(BODY_FILE_NOTE) {
                 scrub_text(line, extracted)
             } else {
                 line.to_string()
@@ -129,8 +132,9 @@ fn scrub_comments(yaml: &str, extracted: &[Extracted]) -> String {
 
 /// `text` with every extracted value as its `${VAR}`, longest first; only
 /// whole tokens (between the start or end, whitespace, quotes, `=`, `:`,
-/// `@` or `/`), never inside a `${…}` already there. A backstop: warnings
-/// carry no values (see [`safe_warning`]).
+/// `@` or `/`), never inside a `${…}` already there. A backstop for the one
+/// warning that quotes the command (the body file's name, see
+/// [`safe_warning`]): elsewhere it would turn words into references.
 fn scrub_text(text: &str, extracted: &[Extracted]) -> String {
     let boundary = |c: char| c.is_whitespace() || "\"'=:@/".contains(c);
     let mut by_len: Vec<&Extracted> = extracted.iter().filter(|e| !e.value.is_empty()).collect();
@@ -162,6 +166,9 @@ fn scrub_text(text: &str, extracted: &[Extracted]) -> String {
 }
 
 const UNSUPPORTED: &str = "Unsupported curl flag: ";
+
+/// The only warning that quotes the command: the body file it names.
+const BODY_FILE_NOTE: &str = "Body references a file (";
 
 /// The converter's warnings that quote nothing from the command, kept as
 /// they are.
@@ -219,7 +226,7 @@ fn safe_warning(w: &str, oauth_carried: bool) -> Option<String> {
     if w.starts_with("Cookie jar flag (-c ") {
         return Some("Cookie jar flag (-c) has no YAML equivalent".into());
     }
-    if w.starts_with("Body references a file (") || STATIC_WARNINGS.contains(&w) {
+    if w.starts_with(BODY_FILE_NOTE) || STATIC_WARNINGS.contains(&w) {
         return Some(w.to_string());
     }
     Some("Part of the command was not converted (details omitted).".into())
@@ -245,7 +252,10 @@ fn split_userinfo(url: &str) -> Option<(&str, &str, Option<&str>, &str)> {
 /// Where `--cert file[:password]` splits: the last `:` that isn't escaped
 /// (`\:`), not a drive letter's, and never in a `pkcs11:` URI.
 fn cert_password_at(cert: &str) -> Option<usize> {
-    if cert.starts_with("pkcs11:") {
+    if cert
+        .get(..7)
+        .is_some_and(|p| p.eq_ignore_ascii_case("pkcs11:"))
+    {
         return None;
     }
     cert.char_indices()
@@ -334,26 +344,10 @@ pub fn scrub_secrets(
         cert.truncate(at);
         warnings.push(CERT_PASSWORD_WARNING.into());
     }
-    // `-x http://user:pass@proxy`: the credentials become variables.
-    if let Some(proxy) = ir.proxy.clone()
-        && let Some((before, user, pass, rest)) = split_userinfo(&proxy)
-    {
-        let user = if user.is_empty() || is_reference(user) {
-            user.to_string()
-        } else {
-            take("PROXY_USER", user, "proxy user".into())
-        };
-        let pass = pass.map(|p| {
-            if p.is_empty() || is_reference(p) {
-                p.to_string()
-            } else {
-                take("PROXY_PASSWORD", p, "proxy password".into())
-            }
-        });
-        ir.proxy = Some(match pass {
-            Some(p) => format!("{before}{user}:{p}@{rest}"),
-            None => format!("{before}{user}@{rest}"),
-        });
+    // `-x http://user:pass@proxy/?token=…`: the credentials and secret
+    // query values become variables.
+    if let Some(proxy) = ir.proxy.take() {
+        ir.proxy = Some(scrub_url(&proxy, "PROXY", true, &mut take));
     }
     let mut headers = JsMap::new();
     if let Some(token) = oauth.filter(|_| oauth_carried) {
@@ -390,7 +384,10 @@ pub fn scrub_secrets(
         }
     }
     for (name, value) in ir.headers.entries() {
-        let value = if value.is_empty() || is_reference(value) || !secret_header(name) {
+        let value = if name.eq_ignore_ascii_case("referer") {
+            // A page address: its userinfo and secret query values.
+            scrub_url(value, "REFERER", false, &mut take)
+        } else if value.is_empty() || is_reference(value) || !secret_header(name) {
             value.clone()
         } else if name.eq_ignore_ascii_case("authorization") {
             // Keep the scheme: `Token abc` → `Token ${API_TOKEN}`.
@@ -420,9 +417,71 @@ pub fn scrub_secrets(
         }
         ir.params = Some(kept);
     }
-    // Backstop: warnings no longer quote the command.
-    ir.warnings = warnings.iter().map(|w| scrub_text(w, &out)).collect();
+    // Backstop for the one warning that still quotes the command.
+    ir.warnings = warnings
+        .into_iter()
+        .map(|w| {
+            if w.starts_with(BODY_FILE_NOTE) {
+                scrub_text(&w, &out)
+            } else {
+                w
+            }
+        })
+        .collect();
     (ir, out)
+}
+
+/// `url` with its userinfo (`{what}_USER`, `{what}_PASSWORD`) and secret
+/// query values ([`SECRET_PARAMS`]) as variables through `take`; parts
+/// that already reference one stay. `bare_userinfo`: `user:pass@host`
+/// without a scheme counts (a proxy); else only after `scheme://`.
+fn scrub_url(
+    url: &str,
+    what: &str,
+    bare_userinfo: bool,
+    take: &mut dyn FnMut(&str, &str, String) -> String,
+) -> String {
+    let label = what.to_lowercase();
+    let mut url = url.to_string();
+    if (bare_userinfo || url.contains("://"))
+        && let Some((before, user, pass, rest)) = split_userinfo(&url)
+    {
+        let user = if user.is_empty() || is_reference(user) {
+            user.to_string()
+        } else {
+            take(&format!("{what}_USER"), user, format!("{label} user"))
+        };
+        let pass = pass.map(|p| {
+            if p.is_empty() || is_reference(p) {
+                p.to_string()
+            } else {
+                take(&format!("{what}_PASSWORD"), p, format!("{label} password"))
+            }
+        });
+        url = match pass {
+            Some(p) => format!("{before}{user}:{p}@{rest}"),
+            None => format!("{before}{user}@{rest}"),
+        };
+    }
+    let Some(q) = url.find('?') else { return url };
+    let end = url[q..].find('#').map_or(url.len(), |i| q + i);
+    let query: Vec<String> = url[q + 1..end]
+        .split('&')
+        .map(|pair| match pair.split_once('=') {
+            Some((k, v))
+                if SECRET_PARAMS.iter().any(|p| p.eq_ignore_ascii_case(k))
+                    && !v.is_empty()
+                    && !is_reference(v) =>
+            {
+                format!(
+                    "{k}={}",
+                    take(&param_var(k), v, format!("{label} query {k}"))
+                )
+            }
+            _ => pair.to_string(),
+        })
+        .collect();
+    format!("{}?{}{}", &url[..q], query.join("&"), &url[end..])
 }
 
 /// `${BASE_URL}` in place of the URL's start when `base_url` (the
@@ -1154,6 +1213,82 @@ mod tests {
         );
     }
 
+    fn import(cmd: &str) -> (String, Vec<Extracted>) {
+        let env = ImportEnv {
+            base_url: None,
+            known: &|_| None,
+        };
+        let i = convert_commands(cmd, &env).remove(0);
+        (i.converted.unwrap().yaml, i.extracted)
+    }
+
+    fn vars(extracted: &[Extracted]) -> Vec<&str> {
+        extracted.iter().map(|e| e.var.as_str()).collect()
+    }
+
+    #[test]
+    fn a_dash_value_after_a_credential_flag_stays_its_value() {
+        let (yaml, extracted) =
+            import("curl https://api.example.com/x --oauth2-bearer --tok_s3cr3t1");
+        assert!(!yaml.contains("tok_s3cr3t1"), "{yaml}");
+        assert!(
+            yaml.contains("Authorization: Bearer ${API_TOKEN}"),
+            "{yaml}"
+        );
+        assert_eq!(extracted[0].value, "--tok_s3cr3t1");
+        let (yaml, _) = import("curl --proxy-user --pw_s3cr3t2 https://api.example.com/x");
+        assert!(!yaml.contains("s3cr3t2"), "{yaml}");
+        assert!(yaml.contains("url: https://api.example.com/x"), "{yaml}");
+        assert!(
+            yaml.contains("Unsupported curl flag: --proxy-user (value omitted)"),
+            "{yaml}"
+        );
+    }
+
+    #[test]
+    fn referer_and_proxy_urls_lose_their_credentials() {
+        let (yaml, extracted) = import(
+            "curl -H 'Referer: https://u:pw_ref_1@site.example.com/a?token=tok_ref_2&page=3' \
+             -x 'http://proxy.example.com:8080/?key=k_px_3' https://api.example.com/x",
+        );
+        for secret in ["pw_ref_1", "tok_ref_2", "k_px_3"] {
+            assert!(!yaml.contains(secret), "{secret}: {yaml}");
+        }
+        assert!(
+            yaml.contains(
+                "https://${REFERER_USER}:${REFERER_PASSWORD}@site.example.com/a?token=${TOKEN}&page=3"
+            ),
+            "{yaml}"
+        );
+        assert!(
+            yaml.contains("http://proxy.example.com:8080/?key=${API_KEY}"),
+            "{yaml}"
+        );
+        assert_eq!(
+            vars(&extracted),
+            ["API_KEY", "REFERER_USER", "REFERER_PASSWORD", "TOKEN"]
+        );
+        // A plain page address stays as it is.
+        let (yaml, extracted) =
+            import("curl -e 'https://site.example.com/a@b?page=2' https://api.example.com/x");
+        assert!(extracted.is_empty(), "{yaml}");
+    }
+
+    #[test]
+    fn values_that_are_words_leave_the_notes_alone() {
+        let (yaml, _) =
+            import("curl -u curl:flag https://api.example.com/x --compressed --foo bar");
+        assert!(
+            yaml.contains("# Warning: Unsupported curl flag: --foo (value omitted)"),
+            "{yaml}"
+        );
+        assert!(
+            yaml.contains("curl handles decompression natively"),
+            "{yaml}"
+        );
+        assert!(yaml.contains("password: ${API_PASSWORD}"), "{yaml}");
+    }
+
     #[test]
     fn proxy_and_url_userinfo_move_into_variables() {
         let (yaml, extracted, _) = one(
@@ -1237,6 +1372,7 @@ mod tests {
         assert_eq!(cert_password_at("my\\:cert.pem"), None);
         assert_eq!(cert_password_at("my\\:cert.pem:pw"), Some(12));
         assert_eq!(cert_password_at("pkcs11:token=x;object=y"), None);
+        assert_eq!(cert_password_at("PKCS11:token=x;object=y"), None);
         let (yaml, _, _) = one(
             "curl --cert 'pkcs11:token=x;object=y' https://api.example.com",
             &NO_ENV,

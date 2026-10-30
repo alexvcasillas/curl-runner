@@ -455,6 +455,7 @@ impl ImportDialog {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
+        let before = self.held.clone();
         for _ in 0..8 {
             let clashes: Vec<(String, String)> = self
                 .extracted()
@@ -475,10 +476,17 @@ impl ImportDialog {
             .into_iter()
             .find(|e| (self.env.keychain)(&e.var).is_some_and(|held| held != e.value))
         {
-            Some(e) => Err(format!(
-                "Couldn't find a free variable name for {}; nothing was imported.",
-                e.var
-            )),
+            Some(e) => {
+                let why = format!(
+                    "Couldn't find a free variable name for {}; nothing was imported.",
+                    e.var
+                );
+                // Nothing was imported: the preview goes back to the names
+                // it showed.
+                self.held = before;
+                self.convert(window, cx);
+                Err(why)
+            }
             None => Ok(()),
         }
     }
@@ -1942,5 +1950,16 @@ mod tests {
         });
         assert!(!dir.path().join("create-customer.yaml").exists());
         cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
+        // The names held back for the attempt are let go: the preview
+        // reads as before.
+        dialog.read_with(cx, |d, _| {
+            assert!(d.held.is_empty(), "{:?}", d.held.keys());
+            assert!(
+                d.imports[0]
+                    .extracted
+                    .iter()
+                    .all(|e| !e.var.ends_with("_9"))
+            );
+        });
     }
 }
