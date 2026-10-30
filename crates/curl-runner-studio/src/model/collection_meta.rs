@@ -1,6 +1,6 @@
-//! What the studio knows about a collection beyond its files: which names
-//! are secret and each variable's description. Kept on this device under
-//! `{base}/meta/{root hash}.json`, never in the collection.
+//! What the studio knows about a collection beyond its files: its id, which
+//! names are secret and each variable's description. Kept on this device
+//! under `{base}/meta/{root hash}.json`, never in the collection.
 
 use crate::model::history::root_hash;
 use serde::{Deserialize, Serialize};
@@ -21,6 +21,10 @@ pub struct VarMeta {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct CollectionMeta {
+    /// Stable id (8 hex chars) in the collection's Keychain services, so two
+    /// collections with the same name never share secrets; empty until
+    /// [`CollectionMeta::load_or_init`] picks it.
+    pub id: String,
     /// Names marked secret beyond the `SECRET_` prefix, sorted.
     pub secret_names: Vec<String>,
     pub vars: BTreeMap<String, VarMeta>,
@@ -35,6 +39,26 @@ impl CollectionMeta {
             .ok()
             .and_then(|b| serde_json::from_slice(&b).ok())
             .unwrap_or_default()
+    }
+
+    /// [`CollectionMeta::load`], with an id: a new one is picked and saved
+    /// on first use. With no state dir (`base` is `None`) the id is derived
+    /// from the root, so it is still stable on this device.
+    pub fn load_or_init(base: Option<&Path>, root: &Path) -> CollectionMeta {
+        let Some(base) = base else {
+            return CollectionMeta {
+                id: root_hash(root)[..8].to_string(),
+                ..Default::default()
+            };
+        };
+        let mut meta = CollectionMeta::load(base, root);
+        if meta.id.is_empty() {
+            meta.id = new_id(root);
+            if let Err(e) = meta.save(base, root) {
+                log::warn!("Couldn't save the collection's id: {e}");
+            }
+        }
+        meta
     }
 
     /// Writes atomically: a temp file, then a rename.
@@ -55,6 +79,26 @@ impl CollectionMeta {
             self.secret_names.sort();
         }
     }
+}
+
+/// 8 hex chars from the clock, the process and `root` (FNV-1a): random
+/// enough to tell this device's collections apart.
+fn new_id(root: &Path) -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static N: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let seed = format!(
+        "{nanos}:{}:{}:{}",
+        std::process::id(),
+        N.fetch_add(1, Ordering::Relaxed),
+        root.display()
+    );
+    let h = seed.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    format!("{:08x}", (h ^ (h >> 32)) as u32)
 }
 
 fn meta_path(base: &Path, root: &Path) -> PathBuf {
@@ -99,6 +143,38 @@ mod tests {
         let mut m = loaded;
         m.set_secret("API_TOKEN", false);
         assert!(m.secret_names.is_empty());
+    }
+
+    #[test]
+    fn id_is_picked_once_and_differs_per_collection() {
+        let base = tempfile::tempdir().unwrap();
+        let parent = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        // Same basename, two folders.
+        let (a, b) = (parent.0.path().join("api"), parent.1.path().join("api"));
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        let first = CollectionMeta::load_or_init(Some(base.path()), &a);
+        assert_eq!(first.id.len(), 8);
+        assert!(first.id.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(CollectionMeta::load(base.path(), &a).id, first.id, "saved");
+        assert_eq!(
+            CollectionMeta::load_or_init(Some(base.path()), &a).id,
+            first.id,
+            "stable"
+        );
+        assert_ne!(
+            CollectionMeta::load_or_init(Some(base.path()), &b).id,
+            first.id
+        );
+        // No state dir: still stable per root.
+        assert_eq!(
+            CollectionMeta::load_or_init(None, &a).id,
+            CollectionMeta::load_or_init(None, &a).id
+        );
+        assert_ne!(
+            CollectionMeta::load_or_init(None, &a).id,
+            CollectionMeta::load_or_init(None, &b).id
+        );
     }
 
     #[test]

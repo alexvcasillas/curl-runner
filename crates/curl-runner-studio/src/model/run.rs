@@ -890,6 +890,7 @@ mod tests {
         EnvCtx {
             root: root.to_path_buf(),
             collection: "Payments API".into(),
+            collection_id: "0a1b2c3d".into(),
             environment: DEFAULT_ENVIRONMENT.into(),
             marked_secret: vec![],
         }

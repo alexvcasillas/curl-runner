@@ -384,6 +384,7 @@ mod tests {
         EnvCtx {
             root: PathBuf::from("/work/acme"),
             collection: "acme".into(),
+            collection_id: "0a1b2c3d".into(),
             environment: env.into(),
             marked_secret: vec![],
         }

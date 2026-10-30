@@ -341,10 +341,7 @@ impl CollectionSettings {
         captured: Vec<CapturedVar>,
         cx: &mut Context<Self>,
     ) -> Self {
-        let meta = base
-            .as_deref()
-            .map(|b| CollectionMeta::load(b, &root))
-            .unwrap_or_default();
+        let meta = CollectionMeta::load_or_init(base.as_deref(), &root);
         // Reading every request file is the slow part: off the main thread.
         let scan_root = root.clone();
         let scan = cx.background_spawn(async move { UsageIndex::scan(&scan_root) });
@@ -386,7 +383,12 @@ impl CollectionSettings {
     }
 
     fn service(&self) -> String {
-        service_name(&self.collection, &self.environment)
+        self.service_of(&self.environment)
+    }
+
+    /// The Keychain service of environment `env` of this collection.
+    fn service_of(&self, env: &str) -> String {
+        service_name(&self.collection, env, &self.meta.id)
     }
 
     /// Re-reads the Keychain's item names and the rows.
@@ -650,7 +652,7 @@ impl CollectionSettings {
             .iter()
             .filter(|e| **e != self.environment)
             .filter(|e| {
-                let service = service_name(&self.collection, e);
+                let service = self.service_of(e);
                 // Unreadable counts as holding it: the mark stays.
                 self.secrets
                     .try_names(&service)
@@ -935,7 +937,7 @@ impl CollectionSettings {
             name_in_env_files(&self.root, e, name)
                 || self
                     .secrets
-                    .try_names(&service_name(&self.collection, e))
+                    .try_names(&self.service_of(e))
                     .map_or(true, |n| n.iter().any(|n| n == name))
         });
         if !left && self.meta.secret_names.iter().any(|n| n == name) {
@@ -2031,9 +2033,10 @@ fn render_legend() -> impl IntoElement {
 mod tests {
     use super::{
         CollectionMeta, CollectionSettings, Confirmed, EnvRow, Path, RowSource, SecretStore,
-        ValueWrite, captured_text, copies_text, plan_value, service_name, source_label,
-        summary_text, used_by_text, where_stored,
+        ValueWrite, captured_text, copies_text, plan_value, source_label, summary_text,
+        used_by_text, where_stored,
     };
+    use crate::model::secrets::service_for;
     use gpui_kit::{AppContext as _, Entity, Focusable as _, px, size};
     use std::sync::Arc;
 
@@ -2125,14 +2128,12 @@ mod tests {
         meta.set_secret("API_TOKEN", true);
         meta.save(base, dir.path()).unwrap();
         let secrets = Arc::new(MemorySecrets::default());
-        let name = dir
-            .path()
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
         secrets
-            .set(&service_name(&name, "staging"), "API_TOKEN", "tok_live_1")
+            .set(
+                &service_for(base, dir.path(), "staging"),
+                "API_TOKEN",
+                "tok_live_1",
+            )
             .unwrap();
         let store = StateStore::at(base);
         store.remember_environment(dir.path(), "staging");
@@ -2211,16 +2212,37 @@ mod tests {
     }
 
     #[gpui_kit::test]
+    fn drawer_names_the_full_keychain_service(cx: &mut TestAppContext) {
+        let state = tempfile::tempdir().unwrap();
+        let (dir, window, ws, _) = open(cx, state.path());
+        let service = service_for(state.path(), dir.path(), "staging");
+        let id = CollectionMeta::load(state.path(), dir.path()).id;
+        assert!(
+            service.ends_with(&format!(" · staging · {id}")),
+            "{service}"
+        );
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.open_settings(window, cx);
+                ws.settings_on(None, Some("API_TOKEN"), window, cx);
+            });
+        })
+        .unwrap();
+        cx.run_until_parked();
+        let note = ws.read_with(cx, |ws, cx| {
+            let view = ws.settings_view.clone().unwrap();
+            let v = view.read(cx);
+            let d = v.drawer.as_ref().expect("the drawer is open");
+            where_stored(&d.source, true, &v.own_file(), &v.service())
+        });
+        assert_eq!(note, format!("Stored in macOS Keychain under “{service}”."));
+    }
+
+    #[gpui_kit::test]
     fn drawer_saves_a_secret_to_the_keychain_only(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();
         let (dir, window, ws, secrets) = open(cx, state.path());
-        let name = dir
-            .path()
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-        let service = service_name(&name, "staging");
+        let service = service_for(state.path(), dir.path(), "staging");
         cx.update_window(window, |_, window, cx| {
             ws.update(cx, |ws, cx| {
                 ws.open_settings(window, cx);
@@ -2267,13 +2289,7 @@ mod tests {
     fn keychain_to_file_asks_first(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();
         let (dir, window, ws, secrets) = open(cx, state.path());
-        let name = dir
-            .path()
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-        let service = service_name(&name, "staging");
+        let service = service_for(state.path(), dir.path(), "staging");
         cx.update_window(window, |_, window, cx| {
             ws.update(cx, |ws, cx| {
                 ws.open_settings(window, cx);
@@ -2374,7 +2390,7 @@ mod tests {
     #[test]
     fn where_stored_follows_the_source() {
         let own = Path::new("/c/.env.staging");
-        let svc = "curl-runner studio · Payments API · staging";
+        let svc = "curl-runner studio · Payments API · staging · 0a1b2c3d";
         assert_eq!(
             where_stored(
                 &RowSource::File("/c/.env.staging.local".into()),
@@ -2387,7 +2403,7 @@ mod tests {
         let text = |s: &RowSource, secret| where_stored(s, secret, own, svc);
         assert_eq!(
             text(&RowSource::Keychain, true),
-            "Stored in macOS Keychain under “curl-runner studio · Payments API · staging”."
+            "Stored in macOS Keychain under “curl-runner studio · Payments API · staging · 0a1b2c3d”."
         );
         assert_eq!(
             text(&RowSource::Process, false),
@@ -2399,7 +2415,7 @@ mod tests {
         );
         assert_eq!(
             text(&RowSource::NotSet, true),
-            "Saved to the macOS Keychain under “curl-runner studio · Payments API · staging”."
+            "Saved to the macOS Keychain under “curl-runner studio · Payments API · staging · 0a1b2c3d”."
         );
         assert_eq!(
             text(&RowSource::NotSet, false),
@@ -2457,13 +2473,7 @@ mod tests {
     fn secret_from_the_default_file_asks_about_the_copy(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();
         let (dir, window, ws, secrets) = open(cx, state.path());
-        let name = dir
-            .path()
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-        let service = service_name(&name, "staging");
+        let service = service_for(state.path(), dir.path(), "staging");
         let env = dir.path().join(".env");
         std::fs::write(
             &env,
@@ -2512,13 +2522,7 @@ mod tests {
     fn unedited_saves_write_no_value(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();
         let (dir, window, ws, secrets) = open(cx, state.path());
-        let name = dir
-            .path()
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-        let service = service_name(&name, "staging");
+        let service = service_for(state.path(), dir.path(), "staging");
         mark(state.path(), dir.path(), &["SHELL_TOKEN"]);
         // A shell-sourced secret: Save leaves the Keychain alone.
         let view = drawer_on(cx, window, &ws, "SHELL_TOKEN");
@@ -2557,15 +2561,13 @@ mod tests {
     fn secret_marks_follow_other_environments(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();
         let (dir, window, ws, secrets) = open(cx, state.path());
-        let name = dir
-            .path()
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
         std::fs::write(dir.path().join(".env.production"), "").unwrap();
         secrets
-            .set(&service_name(&name, "production"), "API_TOKEN", "prod")
+            .set(
+                &service_for(state.path(), dir.path(), "production"),
+                "API_TOKEN",
+                "prod",
+            )
             .unwrap();
         // Unmarked on Staging, it stays secret: Production keeps an item.
         let view = drawer_on(cx, window, &ws, "API_TOKEN");
@@ -2601,13 +2603,7 @@ mod tests {
     fn moving_to_the_keychain_removes_every_plain_copy(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();
         let (dir, window, ws, secrets) = open(cx, state.path());
-        let name = dir
-            .path()
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-        let service = service_name(&name, "staging");
+        let service = service_for(state.path(), dir.path(), "staging");
         let (env, staging) = (dir.path().join(".env"), dir.path().join(".env.staging"));
         std::fs::write(&env, "BASE_URL=https://api.example.com\nAPP_KEY=old\n").unwrap();
         std::fs::write(
@@ -2639,13 +2635,7 @@ mod tests {
     fn an_edited_shell_secret_asks_about_the_file_copy(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();
         let (dir, window, ws, secrets) = open(cx, state.path());
-        let name = dir
-            .path()
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-        let service = service_name(&name, "staging");
+        let service = service_for(state.path(), dir.path(), "staging");
         let env = dir.path().join(".env");
         std::fs::write(
             &env,
@@ -2689,13 +2679,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt as _;
         let state = tempfile::tempdir().unwrap();
         let (dir, window, ws, secrets) = open(cx, state.path());
-        let name = dir
-            .path()
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-        let service = service_name(&name, "staging");
+        let service = service_for(state.path(), dir.path(), "staging");
         std::fs::write(dir.path().join(".env"), "BASE_URL=x\nNEW_KEY=plain\n").unwrap();
         let view = drawer_on(cx, window, &ws, "NEW_KEY");
         cx.update_window(window, |_, window, cx| {

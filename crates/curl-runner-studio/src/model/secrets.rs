@@ -32,9 +32,22 @@ pub trait SecretStore: Send + Sync {
 #[cfg(target_os = "macos")]
 const NOT_FOUND: i32 = -25300;
 
-/// The Keychain service of a collection's environment.
-pub fn service_name(collection: &str, environment: &str) -> String {
-    format!("curl-runner studio · {collection} · {environment}")
+/// The Keychain service of a collection's environment. `id` is the
+/// collection's [`CollectionMeta::id`](crate::model::collection_meta::CollectionMeta::id):
+/// two collections with the same name keep apart.
+pub fn service_name(collection: &str, environment: &str, id: &str) -> String {
+    format!("curl-runner studio · {collection} · {environment} · {id}")
+}
+
+/// The service of the collection at `root` (named after its folder, as the
+/// workspace names it) and `environment`, its id picked on first use.
+#[cfg(test)]
+pub fn service_for(base: &std::path::Path, root: &std::path::Path, environment: &str) -> String {
+    let name = root
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    let meta = crate::model::collection_meta::CollectionMeta::load_or_init(Some(base), root);
+    service_name(&name, environment, &meta.id)
 }
 
 /// An in-process [`SecretStore`] (tests, and other OSes).
@@ -288,10 +301,29 @@ mod tests {
     }
 
     #[test]
+    fn same_folder_name_gets_its_own_service() {
+        let base = tempfile::tempdir().unwrap();
+        let (p, q) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (a, b) = (p.path().join("api"), q.path().join("api"));
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        let (sa, sb) = (
+            service_for(base.path(), &a, "staging"),
+            service_for(base.path(), &b, "staging"),
+        );
+        assert!(
+            sa.starts_with("curl-runner studio · api · staging · "),
+            "{sa}"
+        );
+        assert_ne!(sa, sb);
+        assert_eq!(sa, service_for(base.path(), &a, "staging"));
+    }
+
+    #[test]
     fn service_name_names_collection_and_environment() {
         assert_eq!(
-            service_name("Payments API", "staging"),
-            "curl-runner studio · Payments API · staging"
+            service_name("Payments API", "staging", "0a1b2c3d"),
+            "curl-runner studio · Payments API · staging · 0a1b2c3d"
         );
     }
 

@@ -82,6 +82,8 @@ pub struct EnvCtx {
     pub root: PathBuf,
     /// Collection name, for the Keychain service.
     pub collection: String,
+    /// The collection's `CollectionMeta::id`, for the Keychain service.
+    pub collection_id: String,
     /// [`DEFAULT_ENVIRONMENT`] or a `.env.{name}` name.
     pub environment: String,
     /// The collection's `secret_names`.
@@ -105,7 +107,7 @@ impl EnvCtx {
 
     /// The Keychain service of this collection and environment.
     pub fn service(&self) -> String {
-        service_name(&self.collection, &self.environment)
+        service_name(&self.collection, &self.environment, &self.collection_id)
     }
 }
 
@@ -948,6 +950,7 @@ mod tests {
         EnvCtx {
             root: root.to_path_buf(),
             collection: "Payments API".into(),
+            collection_id: "0a1b2c3d".into(),
             environment: environment.into(),
             marked_secret: vec![],
         }
@@ -1243,7 +1246,7 @@ mod tests {
         let file = d.path().join(".env.staging");
         fs::write(&file, "# keep\nSECRET_X=old-plain\nBASE_URL=old\n").unwrap();
         let secrets = MemorySecrets::default();
-        let service = service_name("Payments API", "staging");
+        let service = service_name("Payments API", "staging", "0a1b2c3d");
         let marked = vec!["API_TOKEN".to_string()];
         let content = "BASE_URL=https://staging.api.example.com\nSECRET_X=s3cr3t\nAPI_TOKEN=\"tok en\"\nexport BAD=1\n";
         let n = import_dotenv(d.path(), "staging", content, &secrets, &service, &marked).unwrap();
@@ -1264,7 +1267,7 @@ mod tests {
         let file = d.path().join(".env.staging");
         fs::write(&file, "BASE_URL=x\nAPI_TOKEN=abc\n# end\n").unwrap();
         let secrets = MemorySecrets::default();
-        let service = service_name("Payments API", "staging");
+        let service = service_name("Payments API", "staging", "0a1b2c3d");
         move_to_keychain(d.path(), "staging", "API_TOKEN", "abc", &secrets, &service).unwrap();
         assert_eq!(fs::read_to_string(&file).unwrap(), "BASE_URL=x\n# end\n");
         assert_eq!(secrets.get(&service, "API_TOKEN").as_deref(), Some("abc"));

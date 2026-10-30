@@ -235,6 +235,8 @@ enum Menu {
 pub struct HistoryView {
     root: PathBuf,
     collection: String,
+    /// The collection's `CollectionMeta::id`, for the CLI command it copies.
+    collection_id: String,
     /// The collection's secret names, for the CLI command it copies.
     marked: Vec<String>,
     /// Newest first.
@@ -269,12 +271,14 @@ impl HistoryView {
     pub fn new(
         root: PathBuf,
         collection: String,
+        collection_id: String,
         marked: Vec<String>,
         cx: &mut Context<Self>,
     ) -> Self {
         HistoryView {
             root,
             collection,
+            collection_id,
             marked,
             entries: Vec::new(),
             loaded: false,
@@ -434,6 +438,7 @@ impl HistoryView {
         let ctx = EnvCtx {
             root: self.root.clone(),
             collection: self.collection.clone(),
+            collection_id: self.collection_id.clone(),
             environment: e.environment.clone(),
             marked_secret: self.marked.clone(),
         };

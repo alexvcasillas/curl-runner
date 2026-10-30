@@ -300,11 +300,7 @@ impl Workspace {
         // Settings would still list the previous collection's credentials.
         self.close_app_settings();
         self.settings_origin = None;
-        self.meta = self
-            .store
-            .base()
-            .map(|b| CollectionMeta::load(b, root))
-            .unwrap_or_default();
+        self.meta = CollectionMeta::load_or_init(self.store.base(), root);
         self.secret_cache.invalidate();
         self.environment = self
             .store
@@ -595,8 +591,8 @@ impl Workspace {
             Some(v) => v.clone(),
             None => {
                 let (root, name) = (c.root.clone(), c.name.clone());
-                let marked = self.meta.secret_names.clone();
-                let view = cx.new(|cx| HistoryView::new(root, name, marked, cx));
+                let (id, marked) = (self.meta.id.clone(), self.meta.secret_names.clone());
+                let view = cx.new(|cx| HistoryView::new(root, name, id, marked, cx));
                 self._history_events = Some(cx.subscribe_in(&view, window, Self::on_history_event));
                 self.history_view = Some(view.clone());
                 view
@@ -828,6 +824,7 @@ impl Workspace {
         EnvCtx {
             root: c.root.clone(),
             collection: c.name.clone(),
+            collection_id: self.meta.id.clone(),
             environment: self.environment.clone(),
             marked_secret: self.meta.secret_names.clone(),
         }
@@ -933,6 +930,7 @@ impl Workspace {
         let collection = self.state.collection.as_ref().map(|c| CollectionInfo {
             root: c.root.clone(),
             name: c.name.clone(),
+            id: self.meta.id.clone(),
             marked: self.meta.secret_names.clone(),
         });
         let (settings, base) = (

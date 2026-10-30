@@ -154,13 +154,14 @@ pub struct Credential {
 pub fn credential_rows(
     root: &Path,
     collection: &str,
+    id: &str,
     secrets: &dyn SecretStore,
     marked: &[String],
 ) -> (Vec<Credential>, bool) {
     let mut rows = Vec::new();
     let mut locked = false;
     for env in list_environments(root) {
-        match secrets.try_names(&service_name(collection, &env)) {
+        match secrets.try_names(&service_name(collection, &env, id)) {
             Ok(names) => rows.extend(names.into_iter().map(|name| Credential {
                 name,
                 environment: env.clone(),
@@ -251,6 +252,8 @@ pub fn shortcut_rows() -> Vec<(String, String)> {
 pub struct CollectionInfo {
     pub root: PathBuf,
     pub name: String,
+    /// Its `CollectionMeta::id`, for the Keychain services.
+    pub id: String,
     /// Names the collection marks secret.
     pub marked: Vec<String>,
 }
@@ -287,7 +290,7 @@ impl SettingsView {
     ) -> Self {
         let (credentials, keychain_locked) = collection
             .as_ref()
-            .map(|c| credential_rows(&c.root, &c.name, secrets, &c.marked))
+            .map(|c| credential_rows(&c.root, &c.name, &c.id, secrets, &c.marked))
             .unwrap_or_default();
         SettingsView {
             page,
@@ -1205,7 +1208,7 @@ fn render_updates() -> impl IntoElement {
 #[cfg(test)]
 mod tests {
     use super::{AppPage, Credential, Stored, credential_rows, keys_text, rows_of, shortcut_rows};
-    use crate::model::secrets::{MemorySecrets, SecretStore, service_name};
+    use crate::model::secrets::{MemorySecrets, SecretStore, service_for, service_name};
     use gpui_kit::KeyBinding;
 
     #[test]
@@ -1283,11 +1286,20 @@ mod tests {
         let secrets = NamesOnly(MemorySecrets::default());
         for env in ["staging", "production"] {
             secrets
-                .set(&service_name("Payments API", env), "API_TOKEN", "tok_1234")
+                .set(
+                    &service_name("Payments API", env, "0a1b2c3d"),
+                    "API_TOKEN",
+                    "tok_1234",
+                )
                 .unwrap();
         }
-        let (rows, locked) =
-            credential_rows(d.path(), "Payments API", &secrets, &["TOKEN".to_string()]);
+        let (rows, locked) = credential_rows(
+            d.path(),
+            "Payments API",
+            "0a1b2c3d",
+            &secrets,
+            &["TOKEN".to_string()],
+        );
         assert!(!locked);
         let row = |name: &str, env: &str, stored, value: Option<&str>| Credential {
             name: name.into(),
@@ -1351,16 +1363,10 @@ mod tests {
         let mut meta = CollectionMeta::default();
         meta.set_secret("API_TOKEN", true);
         meta.save(base, dir.path()).unwrap();
-        let name = dir
-            .path()
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
         let secrets = Arc::new(MemorySecrets::default());
         secrets
             .set(
-                &service_name(&name, "staging"),
+                &service_for(base, dir.path(), "staging"),
                 "API_TOKEN",
                 "tok_live_9f3a",
             )

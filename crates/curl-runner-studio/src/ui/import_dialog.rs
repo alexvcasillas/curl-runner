@@ -16,7 +16,7 @@ use crate::model::import::{
     CopyPlan, CurlImport, Extracted, ImportEnv, convert_commands, copy_planned, curl_targets,
     plan_yaml_copy, reads_as_yaml, replaced_note, write_new,
 };
-use crate::model::secrets::{SecretStore, service_name};
+use crate::model::secrets::SecretStore;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::dialog::DialogEntrance;
@@ -1384,6 +1384,7 @@ impl Workspace {
                     (self.store.clone(), cached.clone(), raw.clone());
                 let for_folder: ContextFor = Rc::new(move |dir: &Path| {
                     // As `open_collection` will see it.
+                    let meta = CollectionMeta::load_or_init(store.base(), dir);
                     let ctx = EnvCtx {
                         root: dir.to_path_buf(),
                         collection: dir.file_name().map_or_else(
@@ -1393,10 +1394,8 @@ impl Workspace {
                         environment: store
                             .environment(dir)
                             .unwrap_or_else(|| DEFAULT_ENVIRONMENT.to_string()),
-                        marked_secret: store
-                            .base()
-                            .map(|b| CollectionMeta::load(b, dir).secret_names)
-                            .unwrap_or_default(),
+                        collection_id: meta.id,
+                        marked_secret: meta.secret_names,
                     };
                     context_for(ctx, for_cached.clone(), for_raw.clone(), None)
                 });
@@ -1435,7 +1434,7 @@ impl Workspace {
         if !secrets.is_empty()
             && let Some(c) = &self.state.collection
         {
-            let (collection, root) = (c.name.clone(), c.root.clone());
+            let (service, root) = (self.env_ctx(c).service(), c.root.clone());
             for e in &secrets {
                 self.meta.set_secret(&e.var, true);
             }
@@ -1449,7 +1448,6 @@ impl Workspace {
                 );
             }
             if save_secrets {
-                let service = service_name(&collection, &self.environment);
                 for e in &secrets {
                     // Never over another value: the dialog already moved
                     // to a free name, this is the last line.
@@ -1496,7 +1494,7 @@ fn context_for(
     raw: std::sync::Arc<dyn SecretStore>,
     for_folder: Option<ContextFor>,
 ) -> ImportContext {
-    let service = service_name(&ctx.collection, &ctx.environment);
+    let service = ctx.service();
     let environment = ctx.environment.clone();
     let known = remembered(move |name: &str| {
         resolve_vars(
@@ -1734,7 +1732,7 @@ mod tests {
         let text = std::fs::read_to_string(dir.path().join("create-customer.yaml")).unwrap();
         let (stored, marked) = ws.read_with(cx, |ws, _| {
             let c = ws.state.collection.as_ref().unwrap();
-            let service = crate::model::secrets::service_name(&c.name, &ws.environment);
+            let service = ws.env_ctx(c).service();
             (
                 ws.secrets.get(&service, "API_TOKEN"),
                 ws.meta.secret_names.clone(),
@@ -1771,13 +1769,7 @@ mod tests {
         let (window, ws) = open(cx, None, StateStore::at(state.path()));
         let cx = &mut VisualTestContext::from_window(window, cx);
         let target = tempfile::tempdir().unwrap();
-        let name = target
-            .path()
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-        let service = crate::model::secrets::service_name(&name, "Default");
+        let service = crate::model::secrets::service_for(state.path(), target.path(), "Default");
         let secrets = ws.read_with(cx, |ws, _| ws.secrets.clone());
         secrets
             .set(&service, "API_TOKEN", "tok_already_there")
@@ -1813,10 +1805,7 @@ mod tests {
         // Stored after the preview was drawn (the dialog's lookup is stale).
         let (secrets, service) = ws.read_with(cx, |ws, _| {
             let c = ws.state.collection.as_ref().unwrap();
-            (
-                ws.secrets.clone(),
-                crate::model::secrets::service_name(&c.name, &ws.environment),
-            )
+            (ws.secrets.clone(), ws.env_ctx(c).service())
         });
         secrets
             .set(&service, "API_TOKEN", "tok_set_meanwhile")
@@ -1860,7 +1849,7 @@ mod tests {
         ws.read_with(cx, |ws, _| {
             assert_eq!(ws.meta.secret_names, ["AUTH_TOKEN"]);
             let c = ws.state.collection.as_ref().unwrap();
-            let service = crate::model::secrets::service_name(&c.name, &ws.environment);
+            let service = ws.env_ctx(c).service();
             assert_eq!(
                 ws.secrets.get(&service, "AUTH_TOKEN").as_deref(),
                 Some("tok_first_1111")
