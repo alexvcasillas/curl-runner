@@ -15,7 +15,7 @@ use super::{
 };
 use chrono::{DateTime, Days, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -38,7 +38,7 @@ pub struct MockBackend {
     base: Option<PathBuf>,
     latency: Duration,
     state: Mutex<State>,
-    log: Mutex<Vec<String>>,
+    log: Mutex<VecDeque<String>>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -126,9 +126,9 @@ impl MockBackend {
         }
         let mut log = self.log.lock().unwrap_or_else(|e| e.into_inner());
         if log.len() >= RECORD_CAP {
-            log.remove(0);
+            log.pop_front();
         }
-        log.push(call);
+        log.push_back(call);
     }
 
     /// A call that resolves after the latency: `f` runs then, on the state,
@@ -167,7 +167,7 @@ fn online(s: &State) -> Result<(), BackendError> {
 
 fn signed_in(s: &State) -> Result<Account, BackendError> {
     online(s)?;
-    s.account.clone().ok_or(BackendError::Unauthorized)
+    s.account.clone().ok_or(BackendError::SignedOut)
 }
 
 /// `rates/get-rates.yaml` on every OS.
@@ -312,6 +312,28 @@ pub(super) fn server_side(local: &str) -> String {
     out
 }
 
+/// What the share `id` holds: the fixture for [`fixtures::SHIPPING_ID`],
+/// else the owner's synced files. No expiry check: a copy already added
+/// keeps getting updates.
+fn shared_files(s: &State, id: &str) -> Result<Vec<SyncFile>, BackendError> {
+    if id == fixtures::SHIPPING_ID {
+        return Ok(fixtures::shipping_snapshot());
+    }
+    if !s.shares.contains_key(id) {
+        return Err(BackendError::NotFound);
+    }
+    let files = s.synced.get(id).map(|c| &c.files);
+    Ok(files
+        .into_iter()
+        .flatten()
+        .map(|(rel, f)| SyncFile {
+            rel: rel.into(),
+            hash: f.hash,
+            text: f.text.clone(),
+        })
+        .collect())
+}
+
 fn fixture_collection() -> SharedCollection {
     let files = fixtures::shipping_snapshot();
     SharedCollection {
@@ -444,12 +466,20 @@ impl Backend for MockBackend {
     }
 
     fn sync(&self, collection: &CollectionKey, local: &[SyncFile]) -> BoxFut<'_, SyncReport> {
-        self.record(format!("sync({collection:?}, {local:?})"));
+        // Paths and hashes only: the log stays small, and request text is
+        // the caller's to check.
+        let files: Vec<_> = local.iter().map(|f| (&f.rel, f.hash)).collect();
+        self.record(format!("sync({collection:?}, {files:?})"));
         let (key, local) = (collection.clone(), local.to_vec());
         self.call(true, move |s| {
-            let received = s.received.iter().any(|r| r.collection_id == key.id);
+            // A received copy pulls from the share it came from.
+            let received = s
+                .received
+                .iter()
+                .find(|r| r.collection_id == key.id)
+                .map(|r| (r.id.clone(), r.owner_org.clone()));
             let col = s.synced.get(&key.id);
-            let changed: Vec<&SyncFile> = if received {
+            let changed: Vec<&SyncFile> = if received.is_some() {
                 Vec::new()
             } else {
                 local
@@ -469,11 +499,11 @@ impl Backend for MockBackend {
             signed_in(s)?;
             let now = Utc::now();
             let mut report = SyncReport::default();
-            if received {
+            if let Some((share_id, owner_org)) = received {
                 // Read only: the owner's copy wins; nothing is pushed.
                 let by_rel: BTreeMap<String, u64> =
                     local.iter().map(|f| (rel_key(&f.rel), f.hash)).collect();
-                let snapshot = fixtures::shipping_snapshot();
+                let snapshot = shared_files(s, &share_id)?;
                 report.pulled = snapshot
                     .iter()
                     .filter(|f| by_rel.get(&rel_key(&f.rel)) != Some(&f.hash))
@@ -486,7 +516,7 @@ impl Backend for MockBackend {
                         let file = ServerFile {
                             hash: f.hash,
                             text: f.text,
-                            author: fixtures::SHIPPING_ORG.into(),
+                            author: owner_org.clone(),
                             at: now,
                         };
                         (rel_key(&f.rel), file)
@@ -595,6 +625,7 @@ impl Backend for MockBackend {
         })
     }
 
+    /// Inviting to a collection that has no share yet creates its link.
     fn invite(&self, collection: &CollectionKey, email: &str) -> BoxFut<'_, Person> {
         self.record(format!("invite({collection:?}, {email:?})"));
         let (key, email) = (collection.clone(), email.trim().to_string());
@@ -696,26 +727,15 @@ impl Backend for MockBackend {
         let id = id.to_string();
         self.call(false, move |s| {
             online(s)?;
-            if id == fixtures::SHIPPING_ID {
-                return Ok(SharedSnapshot {
-                    files: fixtures::shipping_snapshot(),
-                });
+            let files = shared_files(s, &id)?;
+            let expired = id != fixtures::SHIPPING_ID
+                && s.shares[&id]
+                    .expires
+                    .is_some_and(|d| d < Utc::now().date_naive());
+            if s.toggles.expire_links || expired {
+                return Err(BackendError::Expired);
             }
-            if !s.shares.contains_key(&id) {
-                return Err(BackendError::NotFound);
-            }
-            let files = s.synced.get(&id).map(|c| &c.files);
-            Ok(SharedSnapshot {
-                files: files
-                    .into_iter()
-                    .flatten()
-                    .map(|(rel, f)| SyncFile {
-                        rel: rel.into(),
-                        hash: f.hash,
-                        text: f.text.clone(),
-                    })
-                    .collect(),
-            })
+            Ok(SharedSnapshot { files })
         })
     }
 
@@ -770,7 +790,8 @@ impl DevControls for MockBackend {
     }
 
     fn recorded(&self) -> Vec<String> {
-        self.log.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        let log = self.log.lock().unwrap_or_else(|e| e.into_inner());
+        log.iter().cloned().collect()
     }
 }
 

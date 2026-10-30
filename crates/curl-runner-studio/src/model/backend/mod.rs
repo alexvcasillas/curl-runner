@@ -27,7 +27,10 @@ pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = Result<T, BackendError>> + 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackendError {
     Offline,
+    /// A sign-in that failed.
     Unauthorized,
+    /// A call that needs an account, made while signed out.
+    SignedOut,
     NotFound,
     Expired,
     Conflict(Box<Conflict>),
@@ -51,6 +54,7 @@ impl fmt::Display for BackendError {
         match self {
             BackendError::Offline => f.write_str("You're offline."),
             BackendError::Unauthorized => f.write_str("Sign-in failed. Try again."),
+            BackendError::SignedOut => f.write_str("Sign in to sync and share."),
             BackendError::NotFound => f.write_str("This link doesn't work."),
             BackendError::Expired => f.write_str("This link has expired."),
             BackendError::Conflict(c) => {
@@ -396,6 +400,7 @@ pub trait Backend: Send + Sync {
         collection: &CollectionKey,
         update: ShareUpdate,
     ) -> BoxFut<'_, ShareSettings>;
+    /// Gives the collection a link first if it has none.
     fn invite(&self, collection: &CollectionKey, email: &str) -> BoxFut<'_, Person>;
     fn remove_person(&self, collection: &CollectionKey, email: &str) -> BoxFut<'_, ()>;
     fn resolve_link(&self, link: &ShareLink) -> BoxFut<'_, SharedCollection>;

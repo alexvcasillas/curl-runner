@@ -216,16 +216,16 @@ fn share_link_round_trip_and_invite() {
 }
 
 #[test]
-fn signed_out_share_and_sync_are_unauthorized() {
+fn signed_out_share_and_sync_say_signed_out() {
     let b = MockBackend::open(None, Duration::ZERO);
     let k = key();
     assert_eq!(
         block_on(b.share_settings(&k)).map(|_| ()),
-        Err(BackendError::Unauthorized)
+        Err(BackendError::SignedOut)
     );
     assert_eq!(
         block_on(b.sync(&k, &[])).map(|_| ()),
-        Err(BackendError::Unauthorized)
+        Err(BackendError::SignedOut)
     );
     assert_eq!(b.sync_status(&k), SyncStatus::Off);
 }
@@ -530,7 +530,12 @@ fn no_secret_reaches_backend() {
         "request:\n  url: ${BASE_URL}/v1/charges\n  method: POST\n  headers:\n    Authorization: Bearer ${API_TOKEN}\n",
     )
     .unwrap();
-    std::fs::write(root.join(".env"), "BASE_URL=https://api.example.com\n").unwrap();
+    // A stray plain copy of the secret, too.
+    std::fs::write(
+        root.join(".env"),
+        format!("BASE_URL=https://api.example.com\nAPI_TOKEN={SECRET}\n"),
+    )
+    .unwrap();
 
     let mut meta = CollectionMeta::load_or_init(Some(data.path()), &root);
     meta.set_secret("API_TOKEN", true);
@@ -572,6 +577,12 @@ fn no_secret_reaches_backend() {
 
     let recorded = dev(&b).recorded();
     assert!(recorded.len() >= 7, "{recorded:?}");
+    let sync = recorded.iter().find(|r| r.starts_with("sync(")).unwrap();
+    assert!(sync.contains("charges/create.yaml"), "{sync}");
+    assert!(
+        !sync.contains("Bearer"),
+        "no request text in the log: {sync}"
+    );
     assert!(
         recorded
             .iter()
@@ -583,4 +594,76 @@ fn no_secret_reaches_backend() {
     }
     let state = serde_json::to_string(&*b.state()).unwrap();
     assert!(!state.contains(SECRET));
+}
+
+#[test]
+fn received_copy_of_an_owned_share_pulls_the_owners_files() {
+    let b = MockBackend::open(None, Duration::ZERO);
+    block_on(b.sign_in(SignInMethod::Sso)).unwrap();
+    let owner = key();
+    let v1 = files(&[("charges/create.yaml", "request:\n  url: a\n")]);
+    block_on(b.sync(&owner, &v1)).unwrap();
+    let link = block_on(b.update_share(&owner, ShareUpdate::default()))
+        .unwrap()
+        .link
+        .unwrap();
+    let shared = block_on(b.resolve_link(&ShareLink::parse(&link).unwrap())).unwrap();
+    assert_eq!(block_on(b.fetch_shared(&shared.id)).unwrap().files, v1);
+    let copy = CollectionKey {
+        id: "c0ffee00".into(),
+        name: "Payments API".into(),
+    };
+    block_on(b.add_received(ReceivedShare {
+        id: shared.id.clone(),
+        collection_id: copy.id.clone(),
+        owner_org: shared.owner_org.clone(),
+        name: shared.name.clone(),
+        root: "/tmp/shared/acme-payments-api".into(),
+        added: Utc::now(),
+    }))
+    .unwrap();
+    // The owner pushes a change; the copy pulls it, not the fixture.
+    let v2 = files(&[("charges/create.yaml", "request:\n  url: a2\n")]);
+    block_on(b.sync(&owner, &v2)).unwrap();
+    let report = block_on(b.sync(&copy, &v1)).unwrap();
+    assert_eq!((report.pushed, report.pulled.clone()), (0, v2.clone()));
+    assert!(block_on(b.sync(&copy, &v2)).unwrap().pulled.is_empty());
+
+    // Signed out, a received copy does not sync.
+    block_on(b.sign_out()).unwrap();
+    assert_eq!(
+        block_on(b.sync(&copy, &v2)).map(|_| ()),
+        Err(BackendError::SignedOut)
+    );
+}
+
+#[test]
+fn fetch_shared_honours_expiry() {
+    let b = MockBackend::open(None, Duration::ZERO);
+    block_on(b.sign_in(SignInMethod::Sso)).unwrap();
+    let k = key();
+    block_on(b.update_share(&k, ShareUpdate::default())).unwrap();
+    assert!(block_on(b.fetch_shared(&k.id)).is_ok());
+    dev(&b).expire_links(true);
+    for id in [k.id.as_str(), fixtures::SHIPPING_ID] {
+        assert_eq!(
+            block_on(b.fetch_shared(id)).map(|_| ()),
+            Err(BackendError::Expired),
+            "{id}"
+        );
+    }
+    assert_eq!(
+        block_on(b.fetch_shared("acme/nope")).map(|_| ()),
+        Err(BackendError::NotFound)
+    );
+    dev(&b).expire_links(false);
+    b.state().shares.get_mut(&k.id).unwrap().expires =
+        Some(Utc::now().date_naive() - chrono::Duration::days(1));
+    assert_eq!(
+        block_on(b.fetch_shared(&k.id)).map(|_| ()),
+        Err(BackendError::Expired)
+    );
+    // Resolving and fetching need no account.
+    block_on(b.sign_out()).unwrap();
+    assert!(block_on(b.fetch_shared(fixtures::SHIPPING_ID)).is_ok());
 }
