@@ -443,7 +443,7 @@ impl HistoryView {
             environment: e.environment.clone(),
             marked_secret: self.marked.clone(),
         };
-        let command = cli_command(&target_of(e), &ctx, &[]);
+        let command = cli_command(&target_of(e), &ctx, &e.keychain_names);
         cx.write_to_clipboard(ClipboardItem::new_string(command));
         self.menu = None;
         self.copied = Some(cx.spawn(async move |this, cx| {
@@ -1004,6 +1004,7 @@ mod tests {
             retries: 0,
             results: vec![stored("get-charge", true), stored("refund", false)],
             version: "2.1.1".into(),
+            keychain_names: Vec::new(),
         }
     }
 
@@ -1184,6 +1185,7 @@ mod ui_tests {
             retries: 0,
             results,
             version: String::new(),
+            keychain_names: Vec::new(),
         }
     }
 
@@ -1294,6 +1296,42 @@ mod ui_tests {
             assert!(Instant::now() < deadline, "the run did not finish");
             std::thread::sleep(Duration::from_millis(5));
         }
+    }
+
+    #[gpui_kit::test]
+    fn copied_cli_command_names_the_keychain_secrets(cx: &mut TestAppContext) {
+        let srv = TestServer::start();
+        let state = tempfile::tempdir().unwrap();
+        let yaml = format!(
+            "request:\n  url: {}/status/200\n  headers:\n    X-Key: ${{SECRET_TOKEN}}\n",
+            srv.base_url
+        );
+        let (dir, window, ws) = open(cx, &[("a.yaml", yaml)], state.path());
+        let service = crate::model::secrets::service_for(state.path(), dir.path(), "Default");
+        ws.read_with(cx, |ws, _| {
+            ws.secrets.set(&service, "SECRET_TOKEN", "kc-tok-55")
+        })
+        .unwrap();
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.invalidate_secrets();
+                ws.run(RunTarget::File("a.yaml".into()), window, cx)
+            });
+        })
+        .unwrap();
+        wait_for_run(cx, &ws);
+        let entries = History::open(state.path(), dir.path()).list();
+        assert_eq!(entries[0].keychain_names, ["SECRET_TOKEN"]);
+        open_history(cx, window);
+        let view = ws.read_with(cx, |ws, _| ws.history_view.clone().unwrap());
+        view.update(cx, |v, cx| {
+            v.select(&entries[0].id, cx);
+            v.copy_cli(cx);
+        });
+        let copied = cx.read_from_clipboard().and_then(|c| c.text()).unwrap();
+        assert!(copied.contains("SECRET_TOKEN"), "{copied}");
+        assert!(copied.contains("(keychain)"), "{copied}");
+        assert!(!copied.contains("kc-tok-55"), "{copied}");
     }
 
     #[gpui_kit::test]

@@ -44,6 +44,10 @@ pub struct HistoryEntry {
     /// it was stored.
     #[serde(default)]
     pub version: String,
+    /// Names (never values) of the secrets the run read from the Keychain,
+    /// for the CLI command that repeats it; empty in older entries.
+    #[serde(default)]
+    pub keychain_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -221,6 +225,7 @@ pub fn entry_from_outcome(
         retries,
         results,
         version: curl_runner_core::VERSION.to_string(),
+        keychain_names: o.keychain_names.clone(),
     }
 }
 
@@ -454,6 +459,7 @@ mod tests {
             retries: 0,
             results,
             version: "2.1.1".into(),
+            keychain_names: Vec::new(),
         }
     }
 
@@ -559,7 +565,8 @@ mod tests {
 
     #[test]
     fn entry_fields_from_outcome() {
-        let o = outcome_with_body(serde_json::json!({"ok": true}));
+        let mut o = outcome_with_body(serde_json::json!({"ok": true}));
+        o.keychain_names = vec!["SECRET_TOKEN".into()];
         let e = entry_from_outcome(
             &o,
             "pay/charge.yaml",
@@ -570,6 +577,7 @@ mod tests {
         assert_eq!(e.id.len(), 8);
         assert_eq!((e.passed, e.total, e.retries), (1, 1, 2));
         assert_eq!(e.duration_ms, 42.0);
+        assert_eq!(e.keychain_names, ["SECRET_TOKEN"], "names only");
         let r = &e.results[0];
         assert_eq!(r.file, PathBuf::from("pay/charge.yaml"));
         assert_eq!((r.name.as_str(), r.method.as_str()), ("Charge", "POST"));
@@ -689,9 +697,11 @@ mod tests {
         let (_d, h) = history();
         let mut v = serde_json::to_value(entry("aaaa0001", at(1, 9), vec![])).unwrap();
         v.as_object_mut().unwrap().remove("version");
+        v.as_object_mut().unwrap().remove("keychain_names");
         std::fs::create_dir_all(&h.dir).unwrap();
         std::fs::write(h.dir.join("20261001T090000-aaaa0001.json"), v.to_string()).unwrap();
         assert_eq!(h.list()[0].version, "");
+        assert!(h.list()[0].keychain_names.is_empty());
     }
 
     #[test]

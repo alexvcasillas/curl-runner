@@ -2190,6 +2190,7 @@ mod tests {
                 retries: 0,
                 results: vec![],
                 version: String::new(),
+                keychain_names: Vec::new(),
             }
         };
         let files = entry(RunTarget::Files(vec!["a.yaml".into(), "gone.yaml".into()]));
