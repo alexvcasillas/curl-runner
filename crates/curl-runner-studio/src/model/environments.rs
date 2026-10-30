@@ -228,10 +228,12 @@ fn resolve_vars_with(
             }
             let secret = is_secret(name, &ctx.marked_secret);
             let org = || ctx.shared.org.clone();
+            // As a run: never for a secret, nor a `CURL_RUNNER_*` override.
+            let shareable = !secret && !name.starts_with("CURL_RUNNER_");
             let locked = ctx
                 .shared
                 .locked(name)
-                .filter(|_| !secret)
+                .filter(|_| shareable)
                 .map(|v| (v.to_string(), VarSource::Shared(org())));
             let found = locked
                 .or_else(|| {
@@ -248,7 +250,7 @@ fn resolve_vars_with(
                     })
                 })
                 .or_else(|| {
-                    let v = ctx.shared.suggested(name).filter(|_| !secret)?;
+                    let v = ctx.shared.suggested(name).filter(|_| shareable)?;
                     Some((v.to_string(), VarSource::Suggested(org())))
                 });
             let (value, source) = found.unzip();
@@ -1120,7 +1122,6 @@ mod tests {
     #[test]
     fn shared_defaults_are_locked_over_local_sources() {
         let d = tempfile::tempdir().unwrap();
-        fs::write(d.path().join(".env"), "SHIP_REGION_T=eu\n").unwrap();
         let ctx = EnvCtx {
             shared: SharedDefaults {
                 org: "Acme".into(),
@@ -1128,10 +1129,12 @@ mod tests {
                     ("SHIP_CURRENCY_T".into(), "eur".into()),
                     ("SHIP_REGION_T".into(), "us".into()),
                     ("SECRET_SHIP_T".into(), "leak".into()),
+                    ("CURL_RUNNER_SHIP_T".into(), "owner".into()),
                 ],
                 suggested: vec![
                     ("SHIP_SUG_T".into(), "owner".into()),
                     ("SHIP_SUGGESTED_T".into(), "owner".into()),
+                    ("CURL_RUNNER_SHIP_SUG_T".into(), "owner".into()),
                 ],
             },
             ..ctx(d.path(), DEFAULT_ENVIRONMENT)
@@ -1143,6 +1146,8 @@ mod tests {
             "SECRET_SHIP_T",
             "SHIP_SUG_T",
             "SHIP_SUGGESTED_T",
+            "CURL_RUNNER_SHIP_T",
+            "CURL_RUNNER_SHIP_SUG_T",
         ]
         .map(String::from)
         .into();
@@ -1155,6 +1160,8 @@ mod tests {
         assert_eq!(v[3].value.as_deref(), Some("mine"), "suggested: .env wins");
         assert_eq!(v[4].value.as_deref(), Some("owner"));
         assert_eq!(v[4].source, Some(VarSource::Suggested("Acme".into())));
+        assert_eq!(v[5].value, None, "never a config override");
+        assert_eq!(v[6].value, None);
     }
 
     #[test]

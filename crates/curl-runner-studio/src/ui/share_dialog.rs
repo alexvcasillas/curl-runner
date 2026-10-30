@@ -998,6 +998,11 @@ impl ShareView {
                     .role(Role::CheckBox)
                     .test_support()
                     .aria_label(format!("Lock for them: {lock_name}"))
+                    .aria_toggled(if locked {
+                        gpui_kit::accesskit::Toggled::True
+                    } else {
+                        gpui_kit::accesskit::Toggled::False
+                    })
                     .flex()
                     .flex_none()
                     .items_center()
@@ -1562,6 +1567,14 @@ mod gpui_tests {
         cx.run_until_parked();
         assert!(found(cx, window, "share-lock-BASE_URL"));
         assert!(!found(cx, window, "share-lock-API_TOKEN"));
+        let checked = |cx: &mut TestAppContext| {
+            cx.update_window(window, |_, window, cx| {
+                window.render_frame(cx);
+                window.find("share-lock-BASE_URL").checked()
+            })
+            .unwrap()
+        };
+        assert_eq!(checked(cx), Some(false));
         let last = update_shares(&backend).pop().unwrap();
         assert!(!last.contains("locked: true"), "{last}");
         cx.update_window(window, |_, window, cx| {
@@ -1570,6 +1583,7 @@ mod gpui_tests {
         .unwrap();
         cx.run_until_parked();
         assert!(ws.read_with(cx, |ws, cx| ws.meta(cx).vars["BASE_URL"].share_locked));
+        assert_eq!(checked(cx), Some(true), "its state is exposed");
         let last = update_shares(&backend).pop().unwrap();
         assert_eq!(last.matches("locked: true").count(), 1, "{last}");
         let base = last.find("\"BASE_URL\"").unwrap();
@@ -1581,6 +1595,14 @@ mod gpui_tests {
                 .get("API_TOKEN")
                 .is_some_and(|v| v.share_locked)
         }));
+        // Unsharing the default drops its lock: a later share starts open.
+        cx.update_window(window, |_, window, cx| {
+            window.click("share-default-BASE_URL", cx)
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(!ws.read_with(cx, |ws, cx| ws.meta(cx).vars["BASE_URL"].share_locked));
+        assert!(!found(cx, window, "share-lock-BASE_URL"));
     }
 
     #[gpui_kit::test]

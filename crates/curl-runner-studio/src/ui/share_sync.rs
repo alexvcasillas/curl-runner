@@ -449,7 +449,11 @@ impl ShareSync {
         }
         edit_notes(&self.notes, cx, |meta| {
             for (name, on) in flags {
-                meta.vars.entry(name).or_default().share_default = on;
+                let v = meta.vars.entry(name).or_default();
+                v.share_default = on;
+                // No shared default, nothing to lock: a later tick starts
+                // unlocked.
+                v.share_locked &= on;
             }
         });
     }

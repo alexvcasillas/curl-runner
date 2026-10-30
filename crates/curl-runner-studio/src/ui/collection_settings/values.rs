@@ -124,12 +124,14 @@ impl CollectionSettings {
             if secret || elsewhere.is_empty() {
                 meta.set_secret(&name, secret);
             }
-            // Share default is the Share dialog's; a secret drops it.
+            // Share default and its lock are the Share dialog's; a secret
+            // drops both.
+            let kept = |f: fn(&VarMeta) -> bool| !secret && meta.vars.get(&name).is_some_and(f);
             let notes = VarMeta {
                 description,
                 required_for_shared: required,
-                share_default: !secret && meta.vars.get(&name).is_some_and(|v| v.share_default),
-                share_locked: false,
+                share_default: kept(|v| v.share_default),
+                share_locked: kept(|v| v.share_locked),
             };
             if notes == VarMeta::default() {
                 meta.vars.remove(&name);

@@ -59,17 +59,21 @@ pub fn received_from(base: Option<&Path>, dir: &Path) -> Option<String> {
 /// What a write into the studio's own folder is refused with.
 pub const STATE_FOLDER_TEXT: &str = "That folder holds the studio's data. Pick another one.";
 
-/// `dir` is the studio's data folder `{base}` or holds it (any ancestor of
-/// `{base}/shared`, canonicalized): as a collection it would take in the
-/// received copies and the studio's own files. A folder not made yet holds
-/// nothing.
+/// `dir` is the studio's data folder `{base}`, sits inside it, or holds it
+/// (any ancestor of `{base}/shared`), canonicalized: as a collection it
+/// would take in the studio's own files. A folder not made yet is judged
+/// by its deepest existing ancestor for "inside"; it holds nothing.
 pub fn holds_studio_state(base: Option<&Path>, dir: &Path) -> bool {
     let Some(base) = base else { return false };
-    let Ok(real) = dir.canonicalize() else {
-        return false;
-    };
     let base = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
-    base.join("shared").starts_with(&real)
+    let inside = dir
+        .ancestors()
+        .find_map(|d| d.canonicalize().ok())
+        .is_some_and(|real| real.starts_with(&base));
+    let holds = dir
+        .canonicalize()
+        .is_ok_and(|real| base.join("shared").starts_with(&real));
+    inside || holds
 }
 
 /// [`received_from`] as a yes or no.
@@ -553,10 +557,8 @@ mod tests {
         assert!(holds(d.path()));
         assert!(holds(&base.join("shared")));
         assert!(holds(&d.path().join("a/other/..")), "canonicalized");
-        assert!(
-            !holds(&base.join("shared/acme-x")),
-            "a copy: received_from's"
-        );
+        assert!(holds(&base.join("shared/acme-x")), "inside");
+        assert!(holds(&base.join("history")), "inside, not made yet");
         assert!(!holds(&d.path().join("a/other")));
         assert!(!holds(&d.path().join("a/new")), "not made yet");
         assert!(!super::holds_studio_state(None, d.path()));

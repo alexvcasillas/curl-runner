@@ -1621,6 +1621,14 @@ mod tests {
 
     /// A window on a collection of 2 folders and 3 files.
     fn open(cx: &mut TestAppContext) -> (tempfile::TempDir, AnyWindowHandle, Entity<Workspace>) {
+        open_with(cx, StateStore::none())
+    }
+
+    /// [`open`] with `store`.
+    fn open_with(
+        cx: &mut TestAppContext,
+        store: StateStore,
+    ) -> (tempfile::TempDir, AnyWindowHandle, Entity<Workspace>) {
         let dir = tempfile::tempdir().unwrap();
         for rel in [
             "auth/login.yaml",
@@ -1646,7 +1654,7 @@ mod tests {
                 cx.new(|cx| {
                     Workspace::new(
                         Some(root),
-                        StateStore::none(),
+                        store,
                         super::super::workspace::test_secrets(),
                         super::super::workspace::test_backend(),
                         window,
@@ -1660,32 +1668,50 @@ mod tests {
     }
 
     #[gpui_kit::test]
-    fn notes_without_a_state_folder_are_not_saved_and_old_ones_never(cx: &mut TestAppContext) {
-        let (dir, window, ws) = open(cx);
-        let edit = |cx: &mut TestAppContext,
-                    notes: &Entity<crate::model::collection_meta::CollectionMeta>,
-                    name: &str| {
-            let (notes, name) = (notes.clone(), name.to_string());
-            cx.update(|cx| super::edit_notes(&notes, cx, |m| m.set_secret(&name, true)));
-            cx.run_until_parked();
-        };
+    fn notes_without_a_state_folder_are_not_saved(cx: &mut TestAppContext) {
+        let (_dir, _window, ws) = open(cx);
         let notes = ws.read_with(cx, |ws, _| ws.notes.clone());
-        edit(cx, &notes, "API_TOKEN");
+        cx.update(|cx| super::edit_notes(&notes, cx, |m| m.set_secret("API_TOKEN", true)));
+        cx.run_until_parked();
         ws.read_with(cx, |ws, cx| {
             assert_eq!(ws.notes_saves, 0, "nowhere to save them");
-            assert_eq!(ws.meta(cx).secret_names, ["API_TOKEN"]);
+            assert_eq!(ws.meta(cx).secret_names, ["API_TOKEN"], "still taken");
         });
-        // Reopened: the old entity is no longer the collection's.
+    }
+
+    #[gpui_kit::test]
+    fn a_replaced_notes_entity_is_never_saved(cx: &mut TestAppContext) {
+        use crate::model::collection_meta::CollectionMeta;
+        let state = tempfile::tempdir().unwrap();
+        let (dir, window, ws) = open_with(cx, StateStore::at(state.path()));
+        let notes = ws.read_with(cx, |ws, _| ws.notes.clone());
+        cx.update(|cx| super::edit_notes(&notes, cx, |m| m.set_secret("API_TOKEN", true)));
+        cx.run_until_parked();
+        assert_eq!(ws.read_with(cx, |ws, _| ws.notes_saves), 1);
+        let on_disk = || CollectionMeta::load(state.path(), dir.path());
+        assert_eq!(on_disk().secret_names, ["API_TOKEN"]);
+        // Reopened: a fresh entity; the old one is no longer the
+        // collection's.
         cx.update_window(window, |_, window, cx| {
             ws.update(cx, |ws, cx| {
                 assert!(ws.open_collection(dir.path(), window, cx))
             })
         })
         .unwrap();
-        edit(cx, &notes, "OTHER");
+        let saves = ws.read_with(cx, |ws, _| ws.notes_saves);
+        cx.update(|cx| {
+            notes.update(cx, |m, _| m.set_secret("OTHER", true));
+        });
+        // Even handed to the observer, the stale entity is dropped.
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.notes_changed(&notes, window, cx))
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(ws.read_with(cx, |ws, _| ws.notes_saves), saves);
+        assert_eq!(on_disk().secret_names, ["API_TOKEN"], "file untouched");
         ws.read_with(cx, |ws, cx| {
-            assert!(ws.meta(cx).secret_names.is_empty());
-            assert_eq!(ws.notes_saves, 0);
+            assert_eq!(ws.meta(cx).secret_names, ["API_TOKEN"]);
         });
     }
 

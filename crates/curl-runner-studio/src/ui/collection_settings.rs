@@ -2370,6 +2370,40 @@ mod tests {
     }
 
     #[gpui_kit::test]
+    fn a_drawer_save_keeps_the_owners_lock(cx: &mut TestAppContext) {
+        use crate::model::backend::{SignInMethod, share_payload};
+        let state = tempfile::tempdir().unwrap();
+        let backend = super::super::workspace::test_backend();
+        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        let (dir, window, ws, _) = open_with(cx, state.path(), backend.clone());
+        open_environments(cx, window);
+        cx.update_window(window, |_, window, cx| window.click("settings-sharing", cx))
+            .unwrap();
+        cx.run_until_parked();
+        for id in ["share-default-BASE_URL", "share-lock-BASE_URL"] {
+            cx.update_window(window, |_, window, cx| {
+                window.render_frame(cx);
+                window.click(id, cx)
+            })
+            .unwrap();
+            cx.run_until_parked();
+        }
+        let locked = |cx: &mut TestAppContext| {
+            ws.read_with(cx, |ws, cx| ws.meta(cx).vars["BASE_URL"].share_locked)
+        };
+        assert!(locked(cx));
+        describe(cx, window, &ws, "BASE_URL", "Where Acme's API lives");
+        let meta = ws.read_with(cx, |ws, cx| ws.meta(cx).clone());
+        assert_eq!(meta.vars["BASE_URL"].description, "Where Acme's API lives");
+        assert!(locked(cx), "the drawer keeps the lock");
+        assert!(CollectionMeta::load(state.path(), dir.path()).vars["BASE_URL"].share_locked);
+        // What the next variables call sends.
+        let payload = share_payload(dir.path(), &meta);
+        let base = payload.iter().find(|v| v.name == "BASE_URL").unwrap();
+        assert!(base.locked && base.default.is_some(), "{base:?}");
+    }
+
+    #[gpui_kit::test]
     fn sharing_page_shares_like_the_dialog(cx: &mut TestAppContext) {
         use crate::model::backend::SignInMethod;
         let state = tempfile::tempdir().unwrap();

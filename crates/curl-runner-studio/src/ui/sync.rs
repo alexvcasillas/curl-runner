@@ -546,6 +546,11 @@ impl Workspace {
                 this.sync.unreadable =
                     verdict == Verdict::CantRead || (verdict == Verdict::Emptied && !deletions);
                 this.sync.emptied = verdict == Verdict::Emptied && deletions;
+                // A confirm is for the emptied folder the footer showed:
+                // anything else (files back, folder gone) drops it.
+                if !this.sync.emptied {
+                    this.sync.confirmed = false;
+                }
                 if verdict == Verdict::Ok {
                     let held = this.held_back();
                     this.sync.pending = pending_of(&scan, &this.sync.base, &held, deletions);
@@ -579,6 +584,8 @@ impl Workspace {
     /// emptied one only after `Sync now` confirmed it.
     pub(super) fn run_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(key) = self.collection_key(cx).filter(|_| self.sync_on()) else {
+            // No sync to take a confirm: it doesn't wait for a later one.
+            self.sync.confirmed = false;
             return;
         };
         if self.sync.running {
@@ -623,6 +630,7 @@ impl Workspace {
                     this.update(cx, |this, cx| {
                         this.sync.running = false;
                         this.sync.again = false;
+                        this.sync.confirmed = false;
                         let emptied = refused == Verdict::Emptied && !pull_only;
                         this.sync.unreadable = !emptied;
                         this.sync.emptied = emptied;
@@ -1657,6 +1665,69 @@ mod gpui_tests {
             .unwrap()
             .files;
         assert_eq!(files.len(), 2, "the server copy is intact");
+    }
+
+    #[gpui_kit::test]
+    fn a_confirm_never_outlives_the_emptied_folder_it_was_for(cx: &mut TestAppContext) {
+        let dir = collection(&[("a.yaml", REQUEST), ("b.yaml", REQUEST)]);
+        let state = tempfile::tempdir().unwrap();
+        let backend = signed_in();
+        let (window, ws) = open_in(
+            cx,
+            dir.path(),
+            backend.clone(),
+            StateStore::at(state.path()),
+        );
+        let before = syncs(&backend).len();
+        let notice = |cx: &mut TestAppContext| {
+            cx.update_window(window, |_, window, cx| {
+                ws.update(cx, |ws, cx| ws.disk_changed(&[], window, cx))
+            })
+            .unwrap();
+            cx.run_until_parked();
+        };
+        let empty = || {
+            for rel in ["a.yaml", "b.yaml"] {
+                let _ = std::fs::remove_file(dir.path().join(rel));
+            }
+        };
+        empty();
+        notice(cx);
+        assert_eq!(line(cx, &ws), SyncLine::AllRemoved);
+        // `Sync now` while a sync is in flight: the confirm waits for it…
+        ws.update(cx, |ws, _| ws.sync.running = true);
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.sync_now(window, cx))
+        })
+        .unwrap();
+        assert!(ws.read_with(cx, |ws, _| ws.sync.confirmed));
+        // …but the files come back first: it is dropped.
+        std::fs::write(dir.path().join("a.yaml"), REQUEST).unwrap();
+        notice(cx);
+        assert!(!ws.read_with(cx, |ws, _| ws.sync.confirmed));
+        ws.update(cx, |ws, _| {
+            ws.sync.running = false;
+            ws.sync.again = false;
+        });
+        // Emptied again later: nothing goes without a new `Sync now`.
+        empty();
+        notice(cx);
+        cx.executor().advance_clock(SYNC_DELAY * 2);
+        cx.run_until_parked();
+        assert_eq!(line(cx, &ws), SyncLine::AllRemoved);
+        assert_eq!(syncs(&backend).len(), before, "no stale confirm");
+        // A `Sync now` queued behind a run that is refused goes with it.
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.run_sync(window, cx);
+                ws.sync_now(window, cx);
+            })
+        })
+        .unwrap();
+        assert!(ws.read_with(cx, |ws, _| ws.sync.confirmed && ws.sync.again));
+        cx.run_until_parked();
+        assert!(!ws.read_with(cx, |ws, _| ws.sync.confirmed));
+        assert_eq!(syncs(&backend).len(), before);
     }
 
     #[gpui_kit::test]
