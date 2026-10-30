@@ -586,10 +586,18 @@ impl Workspace {
         }
     }
 
-    /// Runs a stored run's target again. A request is found by its file
-    /// and name (its position may have changed); one that is gone, or a
-    /// file that is, gets a notice instead.
-    fn rerun_history(&mut self, e: &HistoryEntry, window: &mut Window, cx: &mut Context<Self>) {
+    /// Runs a stored run's target again, in the environment it ran in:
+    /// the picker switches to it (a normal pick), and a gone environment
+    /// gets a notice instead of a run. A request is found by its file and
+    /// name, else by its stored position; a file whose requests can't be
+    /// told apart runs whole. Only a gone file (or every file of a re-run)
+    /// gets a notice; a re-run with some files gone says how many it skips.
+    pub(super) fn rerun_history(
+        &mut self,
+        e: &HistoryEntry,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.runs.active.is_some() {
             window.push_notification(
                 Notification::warning("A run is in flight. Stop it first."),
@@ -601,22 +609,22 @@ impl Workspace {
             return;
         };
         c.refresh();
-        let exists = |f: &Path| find_file(&c.tree, f).is_some();
-        let target = match target_of(e) {
-            RunTarget::Collection => Some(RunTarget::Collection),
-            RunTarget::Files(fs) => {
-                let fs: Vec<PathBuf> = fs.into_iter().filter(|f| exists(f)).collect();
-                (!fs.is_empty()).then_some(RunTarget::Files(fs))
-            }
-            RunTarget::File(f) => exists(&f).then_some(RunTarget::File(f)),
-            RunTarget::Request { file, .. } => {
-                let name = e.results.first().map(|r| r.name.as_str()).unwrap_or("");
-                find_file(&c.tree, &file)
-                    .and_then(|requests| requests.iter().position(|r| r.name == name))
-                    .map(|index| RunTarget::Request { file, index })
-            }
-        };
-        let Some(target) = target else {
+        let root = c.root.clone();
+        let resolved = rerun_target(e, &c.tree);
+        if list_environments(&root) != self.environments {
+            self.load_environments(window, cx);
+        }
+        if !self.environments.contains(&e.environment) {
+            window.push_notification(
+                Notification::warning(format!(
+                    "Environment \"{}\" no longer exists",
+                    env_label(&e.environment)
+                )),
+                cx,
+            );
+            return;
+        }
+        let Some((target, skipped)) = resolved else {
             let (title, _) = super::history_view::entry_title(e);
             window.push_notification(
                 Notification::warning(format!("{title} is no longer in the collection.")),
@@ -624,12 +632,34 @@ impl Workspace {
             );
             return;
         };
+        self.pick_environment(&e.environment.clone(), window, cx);
         self.show_history = false;
         if let RunTarget::File(f) | RunTarget::Request { file: f, .. } = &target {
             self.open_file(f, window, cx);
         }
         self.run(target, window, cx);
+        if skipped > 0 {
+            let files = if skipped == 1 { "file" } else { "files" };
+            window.push_notification(
+                Notification::warning(format!(
+                    "Skipped {skipped} {files} no longer in the collection."
+                )),
+                cx,
+            );
+        }
         self.sync_chrome(window, cx);
+    }
+
+    /// Picks `name` as the user would: the picker shows it and it is
+    /// remembered.
+    fn pick_environment(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.set_environment(name, cx);
+        let at = self.environments.iter().position(|e| e == name);
+        if let (Some(select), Some(at)) = (&self.env_select, at) {
+            select.update(cx, |s, cx| {
+                s.set_selected_index(Some(gpui_kit::component::IndexPath::new(at)), window, cx)
+            });
+        }
     }
 
     // Environments and variables.
@@ -1402,6 +1432,35 @@ pub(super) fn quit_app(cx: &mut App) {
     }
 }
 
+/// What re-running `e` runs now, with how many of its files are gone;
+/// `None` when nothing of it is left. See [`Workspace::rerun_history`].
+fn rerun_target(e: &HistoryEntry, tree: &[TreeNode]) -> Option<(RunTarget, usize)> {
+    let exists = |f: &Path| find_file(tree, f).is_some();
+    match target_of(e) {
+        RunTarget::Collection => Some((RunTarget::Collection, 0)),
+        RunTarget::Files(fs) => {
+            let all = fs.len();
+            let fs: Vec<PathBuf> = fs.into_iter().filter(|f| exists(f)).collect();
+            let skipped = all - fs.len();
+            (!fs.is_empty()).then_some((RunTarget::Files(fs), skipped))
+        }
+        RunTarget::File(f) => exists(&f).then_some((RunTarget::File(f), 0)),
+        RunTarget::Request { file, index } => {
+            let requests = find_file(tree, &file)?;
+            let name = e.results.first().map_or("", |r| r.name.as_str());
+            let by_name = (!name.is_empty())
+                .then(|| requests.iter().position(|r| r.name == name))
+                .flatten();
+            let target = match by_name.or((index < requests.len()).then_some(index)) {
+                // A one-request file lists no requests: it runs whole.
+                Some(index) if !requests.is_empty() => RunTarget::Request { file, index },
+                _ => RunTarget::File(file),
+            };
+            Some((target, 0))
+        }
+    }
+}
+
 /// The requests of the file at `rel` in `tree` (empty for a one-request
 /// file), or `None` when there is no such file.
 fn find_file<'a>(
@@ -1732,6 +1791,65 @@ mod tests {
             let doc = &ws.state.open[0];
             assert!(doc.text.contains("  timeout: 5000"), "{}", doc.text);
         });
+    }
+
+    #[test]
+    fn rerun_target_skips_gone_files_and_keeps_a_gone_request_file_whole() {
+        use super::{TreeNode, rerun_target};
+        use crate::model::collection::RequestEntry;
+        use crate::model::history::{HistoryEntry, target_key};
+        use crate::model::run::RunTarget;
+        let file = |p: &str, requests: Vec<RequestEntry>| TreeNode::File {
+            name: p.into(),
+            rel_path: p.into(),
+            method: None,
+            requests,
+            parse_ok: true,
+        };
+        let req = |n: &str| RequestEntry {
+            method: "GET".into(),
+            name: n.into(),
+            line: None,
+        };
+        let tree = [file("a.yaml", vec![]), file("m.yaml", vec![req("x")])];
+        let entry = |t: RunTarget| {
+            let (target, kind) = target_key(&t);
+            HistoryEntry {
+                id: "a".into(),
+                at: chrono::Local::now(),
+                collection: String::new(),
+                target,
+                kind,
+                environment: "Default".into(),
+                passed: 0,
+                total: 0,
+                duration_ms: 0.,
+                retries: 0,
+                results: vec![],
+                version: String::new(),
+            }
+        };
+        let files = entry(RunTarget::Files(vec!["a.yaml".into(), "gone.yaml".into()]));
+        assert_eq!(
+            rerun_target(&files, &tree),
+            Some((RunTarget::Files(vec!["a.yaml".into()]), 1))
+        );
+        let gone = entry(RunTarget::Files(vec!["gone.yaml".into()]));
+        assert_eq!(rerun_target(&gone, &tree), None);
+        // Out of range with no name: the file runs whole.
+        let moved = entry(RunTarget::Request {
+            file: "m.yaml".into(),
+            index: 4,
+        });
+        assert_eq!(
+            rerun_target(&moved, &tree),
+            Some((RunTarget::File("m.yaml".into()), 0))
+        );
+        let missing = entry(RunTarget::Request {
+            file: "gone.yaml".into(),
+            index: 0,
+        });
+        assert_eq!(rerun_target(&missing, &tree), None);
     }
 
     #[gpui_kit::test]

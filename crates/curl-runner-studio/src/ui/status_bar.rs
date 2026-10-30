@@ -170,7 +170,8 @@ fn cursor_label(p: Position) -> String {
 
 impl Render for StatusBar {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let run = self.run.clone();
+        // The history footer reads as the board's: its two strings only.
+        let run = self.run.clone().filter(|_| self.history.is_none());
         let config = run.as_ref().and_then(|r| r.config.clone());
         div()
             .id("status-bar")

@@ -297,16 +297,17 @@ pub fn duration_series(entries: &[HistoryEntry], e: &HistoryEntry, n: usize) -> 
     runs[skip..].iter().map(|e| e.duration_ms).collect()
 }
 
-/// How a run target is stored: `collection`, the files of a re-run joined
-/// by `, `, a file path, or `file#index` for one request of a file.
+/// How a run target is stored: `collection`, the files of a re-run each
+/// ended by a newline (a path may hold `, `), a file path, or `file#index`
+/// for one request of a file. Entries written before the newline form
+/// joined the files by `, `; [`target_of`] still reads those.
 pub fn target_key(t: &RunTarget) -> (String, EntryKind) {
     match t {
         RunTarget::Collection => ("collection".into(), EntryKind::CollectionRun),
         RunTarget::Files(fs) => (
             fs.iter()
-                .map(|f| f.to_string_lossy())
-                .collect::<Vec<_>>()
-                .join(", "),
+                .map(|f| format!("{}\n", f.to_string_lossy()))
+                .collect(),
             EntryKind::CollectionRun,
         ),
         RunTarget::File(f) => (f.to_string_lossy().into_owned(), EntryKind::Request),
@@ -321,6 +322,9 @@ pub fn target_key(t: &RunTarget) -> (String, EntryKind) {
 pub fn target_of(e: &HistoryEntry) -> RunTarget {
     match e.kind {
         EntryKind::CollectionRun if e.target == "collection" => RunTarget::Collection,
+        EntryKind::CollectionRun if e.target.contains('\n') => {
+            RunTarget::Files(e.target.lines().map(PathBuf::from).collect())
+        }
         EntryKind::CollectionRun => {
             RunTarget::Files(e.target.split(", ").map(PathBuf::from).collect())
         }
@@ -669,6 +673,7 @@ mod tests {
         for t in [
             RunTarget::Collection,
             RunTarget::Files(vec!["a.yaml".into(), "b/c.yaml".into()]),
+            RunTarget::Files(vec!["x, y.yaml".into()]),
             RunTarget::File("charges/get-charge.yaml".into()),
             RunTarget::Request {
                 file: "charges/list.yaml".into(),
@@ -680,6 +685,13 @@ mod tests {
             (e.target, e.kind) = (key, kind);
             assert_eq!(target_of(&e), t);
         }
+        // Entries from before the newline form.
+        let mut old = entry("a", at(1, 9), vec![]);
+        old.target = "a.yaml, b.yaml".into();
+        assert_eq!(
+            target_of(&old),
+            RunTarget::Files(vec!["a.yaml".into(), "b.yaml".into()])
+        );
         assert_eq!(
             target_key(&RunTarget::Request {
                 file: "a.yaml".into(),
