@@ -36,15 +36,16 @@ pub fn is_secret(name: &str, marked: &[String]) -> bool {
     name.starts_with("SECRET_") || marked.iter().any(|m| m == name)
 }
 
-/// Where a variable's value comes from, highest precedence first.
+/// Where a variable's value comes from. A plain name resolves Keychain,
+/// then process env, then `.env` files; `store.NAME` only from Captured.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VarSource {
-    /// The response store of the file's last run.
+    /// The response store of the file's last run (`store.NAME` only).
     Captured,
     Keychain,
+    Process,
     /// The `.env` file that sets it (the last one loaded wins).
     EnvFile(PathBuf),
-    Process,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,13 +81,26 @@ impl EnvCtx {
     }
 }
 
-/// Resolve `names`: captured store, then Keychain (secrets only), then the
-/// environment's `.env` files, then the process env.
+/// Resolve `names` the way a run does. `store.NAME` reads the captured store
+/// only. A plain `NAME` never does: Keychain (secret names only), then the
+/// process env, then the environment's `.env` files (core's fallback, as in
+/// the CLI).
 pub fn resolve_vars(
     names: &[String],
     captured: &Store,
     secrets: &dyn SecretStore,
     ctx: &EnvCtx,
+) -> Vec<ResolvedVar> {
+    resolve_vars_with(names, captured, secrets, ctx, &interpolate::process_env)
+}
+
+/// [`resolve_vars`] with an injectable process env (tests).
+fn resolve_vars_with(
+    names: &[String],
+    captured: &Store,
+    secrets: &dyn SecretStore,
+    ctx: &EnvCtx,
+    process_env: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<ResolvedVar> {
     // Later files win, as in `env::load_env_files`.
     let files: Vec<_> = env::env_file_paths(&ctx.root, ctx.env_name())
@@ -101,23 +115,27 @@ pub fn resolve_vars(
     names
         .iter()
         .map(|name| {
+            if let Some(key) = name.strip_prefix("store.") {
+                let value = captured.get(key).cloned();
+                return ResolvedVar {
+                    name: name.clone(),
+                    source: value.as_ref().map(|_| VarSource::Captured),
+                    value,
+                    secret: false,
+                };
+            }
             let secret = is_secret(name, &ctx.marked_secret);
-            let found = captured
-                .get(name)
-                .map(|v| (v.clone(), VarSource::Captured))
-                .or_else(|| {
-                    secret
-                        .then(|| secrets.get(&service, name))
-                        .flatten()
-                        .map(|v| (v, VarSource::Keychain))
-                })
+            let found = secret
+                .then(|| secrets.get(&service, name))
+                .flatten()
+                .map(|v| (v, VarSource::Keychain))
+                .or_else(|| process_env(name).map(|v| (v, VarSource::Process)))
                 .or_else(|| {
                     files.iter().find_map(|(p, vars)| {
                         vars.get(name)
                             .map(|v| (v.clone(), VarSource::EnvFile(p.clone())))
                     })
-                })
-                .or_else(|| interpolate::process_env(name).map(|v| (v, VarSource::Process)));
+                });
             let (value, source) = found.unzip();
             ResolvedVar {
                 name: name.clone(),
@@ -129,8 +147,8 @@ pub fn resolve_vars(
         .collect()
 }
 
-/// The plain `${NAME}` references of `yaml`, deduplicated in order: no
-/// `store.*` or dynamic variables, and no reference with a `:default`.
+/// The `${NAME}` and `${store.NAME}` references of `yaml`, deduplicated in
+/// order: no dynamic variables, and no reference with a `:default`.
 pub fn referenced_vars(yaml: &str) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
     for r in extract_variables(yaml) {
@@ -142,7 +160,6 @@ pub fn referenced_vars(yaml: &str) -> Vec<String> {
             None => r.name.as_str(),
         };
         if name.is_empty()
-            || name.starts_with("store.")
             || resolve_dynamic_variable(name).is_some()
             || names.iter().any(|n| n == name)
         {
@@ -153,14 +170,16 @@ pub fn referenced_vars(yaml: &str) -> Vec<String> {
     names
 }
 
-/// The references of `yaml` with no value in `resolved` nor in the file's
-/// own `variables`. The run still goes: the CLI sends them literally.
+/// The plain references of `yaml` with no value in `resolved` nor in the
+/// file's own `variables`. The run still goes: the CLI sends them literally.
+/// `store.*` references are never missing: the run fills them.
 pub fn missing_vars(yaml: &str, resolved: &[ResolvedVar]) -> Vec<String> {
     let own = file_variables(yaml);
     referenced_vars(yaml)
         .into_iter()
         .filter(|name| {
-            !own.contains(name)
+            !name.starts_with("store.")
+                && !own.contains(name)
                 && !resolved
                     .iter()
                     .any(|r| &r.name == name && r.value.is_some())
@@ -235,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn precedence_captured_over_keychain_over_env_file() {
+    fn precedence_keychain_over_process_over_env_file() {
         let d = tempfile::tempdir().unwrap();
         let env_file = d.path().join(".env.staging");
         fs::write(&env_file, "SECRET_TOKEN=from-file\n").unwrap();
@@ -244,25 +263,51 @@ mod tests {
         secrets
             .set(&ctx.service(), "SECRET_TOKEN", "from-keychain")
             .unwrap();
+        // A captured value never fills a plain `${NAME}`.
         let mut store = Store::new();
         store.insert("SECRET_TOKEN".into(), "captured".into());
         let names = vec!["SECRET_TOKEN".to_string()];
-        let one = |store: &Store| resolve_vars(&names, store, &secrets, &ctx).remove(0);
+        let process = |k: &str| (k == "SECRET_TOKEN").then(|| "from-process".to_string());
+        let none = |_: &str| None;
+        let one = |env: &dyn Fn(&str) -> Option<String>| {
+            resolve_vars_with(&names, &store, &secrets, &ctx, env).remove(0)
+        };
 
-        let v = one(&store);
-        assert_eq!(v.value.as_deref(), Some("captured"));
-        assert_eq!(v.source, Some(VarSource::Captured));
-        assert!(v.secret);
-
-        store.clear();
-        let v = one(&store);
+        let v = one(&process);
         assert_eq!(v.value.as_deref(), Some("from-keychain"));
         assert_eq!(v.source, Some(VarSource::Keychain));
+        assert!(v.secret);
 
         secrets.delete(&ctx.service(), "SECRET_TOKEN").unwrap();
-        let v = one(&store);
+        let v = one(&process);
+        assert_eq!(v.value.as_deref(), Some("from-process"));
+        assert_eq!(v.source, Some(VarSource::Process));
+
+        let v = one(&none);
         assert_eq!(v.value.as_deref(), Some("from-file"));
         assert_eq!(v.source, Some(VarSource::EnvFile(env_file)));
+    }
+
+    #[test]
+    fn store_refs_resolve_from_captured_only() {
+        let d = tempfile::tempdir().unwrap();
+        let ctx = ctx(d.path(), DEFAULT_ENVIRONMENT);
+        let secrets = MemorySecrets::default();
+        secrets.set(&ctx.service(), "SECRET_ID", "kc").unwrap();
+        let mut store = Store::new();
+        store.insert("ID".into(), "abc".into());
+        let yaml = "${store.ID} ${store.SECRET_ID} ${ID}";
+        let names = referenced_vars(yaml);
+        assert_eq!(names, ["store.ID", "store.SECRET_ID", "ID"]);
+        let none = |_: &str| None;
+        let v = resolve_vars_with(&names, &store, &secrets, &ctx, &none);
+        assert_eq!(v[0].value.as_deref(), Some("abc"));
+        assert_eq!(v[0].source, Some(VarSource::Captured));
+        assert_eq!(v[1].value, None);
+        assert_eq!(v[1].source, None);
+        assert_eq!(v[2].value, None);
+        // Unfilled store refs are filled at run time, never missing.
+        assert_eq!(missing_vars(yaml, &v), ["ID"]);
     }
 
     #[test]
@@ -282,7 +327,7 @@ mod tests {
         fs::write(d.path().join(".env"), "BASE_URL=https://api.example.com\n").unwrap();
         let yaml = "${BASE_URL}/x ${API_TOKEN} ${store.ID} ${DATE:YYYY}";
         let names = referenced_vars(yaml);
-        assert_eq!(names, ["BASE_URL", "API_TOKEN"]);
+        assert_eq!(names, ["BASE_URL", "API_TOKEN", "store.ID"]);
         let resolved = resolve_vars(
             &names,
             &Store::new(),

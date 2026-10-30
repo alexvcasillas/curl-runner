@@ -79,7 +79,9 @@ pub enum RunEvent {
         index: usize,
         result: Box<ExecutionResult>,
     },
-    /// Values a request saved to its group's store.
+    /// Values a request saved to its group's store. Unredacted (they seed
+    /// the next run): never persist or display them without
+    /// `Redactor::redact`.
     Stored {
         group: usize,
         values: Store,
@@ -97,9 +99,12 @@ pub enum RunEvent {
 pub struct RunOutcome {
     /// Redacted, like every event.
     pub summary: ExecutionSummary,
-    /// Stopped by [`RunHandle::stop`].
+    /// The run ended early: [`RunHandle::stop`] was called and at least one
+    /// request did not run.
     pub stopped: bool,
-    /// Each group's response store at the end (seed included).
+    /// Each group's response store at the end (seed included). Unredacted
+    /// (they seed the next run): never persist or display them without
+    /// `Redactor::redact`.
     pub stores: Vec<(PathBuf, Store)>,
     pub started_at: chrono::DateTime<chrono::Local>,
 }
@@ -150,7 +155,6 @@ pub fn start_run(req: RunRequest, secrets: Arc<dyn SecretStore>) -> RunHandle {
                 message: "The run stopped unexpectedly".into(),
             });
         }
-        outcome.stopped = flags.stopped.load(Ordering::SeqCst);
         if let Ok(mut slot) = flags.current.lock() {
             *slot = None;
         }
@@ -249,8 +253,9 @@ fn execute(
         groups[0].1.push(one);
         offset = *index;
     }
+    let total: usize = groups.iter().map(|(_, r)| r.len()).sum();
     let _ = tx.send(RunEvent::Started {
-        total: groups.iter().map(|(_, r)| r.len()).sum(),
+        total,
         groups: files
             .iter()
             .zip(&groups)
@@ -305,6 +310,8 @@ fn execute(
         }
     }
     let mut summary = single.unwrap_or_else(|| create_summary(all, duration));
+    // Skipped groups and cancelled requests leave no result.
+    out.stopped = cancel.stopped.load(Ordering::SeqCst) && summary.results.len() < total;
     let r = lock(&redactor);
     for result in &mut summary.results {
         redact_result(result, &r);
@@ -723,6 +730,36 @@ mod tests {
         };
         assert!(at.elapsed() < Duration::from_secs(1), "{:?}", at.elapsed());
         assert!(finished.stopped);
+    }
+
+    #[test]
+    fn stop_after_last_request_is_not_stopped() {
+        let srv = TestServer::start();
+        let d = tempfile::tempdir().unwrap();
+        fs::write(
+            d.path().join("one.yaml"),
+            format!("request:\n  url: {}/echo\n", srv.base_url),
+        )
+        .unwrap();
+        let h = start_run(
+            RunRequest {
+                target: RunTarget::File("one.yaml".into()),
+                ctx: ctx(d.path()),
+                seed: None,
+            },
+            Arc::new(MemorySecrets::default()),
+        );
+        let mut finished = None;
+        for e in h.events.iter() {
+            match e {
+                RunEvent::Result { .. } => h.stop(),
+                RunEvent::Finished(o) => finished = Some(o),
+                _ => {}
+            }
+        }
+        let o = finished.expect("Finished");
+        assert_eq!(o.summary.results.len(), 1);
+        assert!(!o.stopped);
     }
 
     #[test]
