@@ -81,14 +81,59 @@ fn compact(v: &Json) -> String {
     serde_json::to_string(v).unwrap_or_default()
 }
 
+/// [`compact`] cut at `limit` bytes like [`cap_text`]; serializing stops
+/// just past the cap, so a huge value costs no more than the cap. Whether
+/// it was cut.
+fn compact_capped(v: &Json, limit: usize) -> (String, bool) {
+    /// Takes bytes until it holds one past `limit`, then refuses.
+    struct Bounded {
+        buf: Vec<u8>,
+        limit: usize,
+    }
+    impl std::io::Write for Bounded {
+        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+            let room = self.limit + 1 - self.buf.len();
+            if b.len() > room {
+                self.buf.extend_from_slice(&b[..room]);
+                return Err(std::io::Error::other("full"));
+            }
+            self.buf.extend_from_slice(b);
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut w = Bounded {
+        buf: Vec::new(),
+        limit,
+    };
+    let cut = serde_json::to_writer(&mut w, v).is_err() || w.buf.len() > limit;
+    // The cut may split a character: keep the whole ones.
+    let valid = match std::str::from_utf8(&w.buf) {
+        Ok(_) => w.buf.len(),
+        Err(e) => e.valid_up_to(),
+    };
+    w.buf.truncate(valid);
+    let mut text = String::from_utf8(w.buf).unwrap_or_default();
+    if cut {
+        let mut end = text.len().min(limit);
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+        text.push('…');
+    }
+    (text, cut)
+}
+
 fn expected_text(v: &Json) -> String {
-    cap_text(
-        match v {
-            Json::String(s) if is_regex_pattern(s) => format!("matches {s}"),
-            other => compact(other),
-        },
-        CHECK_TEXT_LIMIT,
-    )
+    match v {
+        Json::String(s) if is_regex_pattern(s) => {
+            cap_text(format!("matches {s}"), CHECK_TEXT_LIMIT)
+        }
+        other => compact_capped(other, CHECK_TEXT_LIMIT).0,
+    }
 }
 
 /// `actual?.[key]` as `validate_body_properties` resolves it, plus whether the
@@ -146,7 +191,7 @@ fn body_label(path: &str) -> String {
 fn actual_text(v: Option<&Json>) -> Option<String> {
     v.map(|v| match v {
         Json::Array(a) => format!("[{} items]", a.len()),
-        other => cap_text(compact(other), CHECK_TEXT_LIMIT),
+        other => compact_capped(other, CHECK_TEXT_LIMIT).0,
     })
 }
 
@@ -406,10 +451,12 @@ impl Pretty {
             Json::Object(m) => ("{", "}", m.is_empty()),
             Json::Array(a) => ("[", "]", a.is_empty()),
             scalar => {
+                let (value, cut) = compact_capped(scalar, CHECK_TEXT_LIMIT);
+                self.truncated |= cut;
                 self.push(PrettyLine {
                     indent,
                     key,
-                    value: compact(scalar),
+                    value,
                     comma,
                 });
                 self.span.insert(at.clone(), (start, start));
@@ -471,6 +518,7 @@ pub fn body_diff(expected: &Json, actual: &Json) -> BodyDiff {
     let mut p = Pretty::default();
     p.walk(actual, String::new(), 0, false, &mut Vec::new());
     let lines = &p.lines;
+    let mut truncated = p.truncated;
 
     let mut found = Vec::new();
     leaves(Some(actual), expected, "", &[], true, &mut found);
@@ -482,7 +530,8 @@ pub fn body_diff(expected: &Json, actual: &Json) -> BodyDiff {
         let Some(&(start, end)) = p.span.get(&leaf.locs) else {
             continue;
         };
-        let want = compact(&leaf.expected);
+        let (want, cut) = compact_capped(&leaf.expected, CHECK_TEXT_LIMIT);
+        truncated |= cut;
         if leaf.exact {
             replace.entry(start).or_insert_with(|| {
                 let l = &lines[start];
@@ -535,10 +584,13 @@ pub fn body_diff(expected: &Json, actual: &Json) -> BodyDiff {
             });
         }
     }
-    out.truncate(DIFF_MAX_LINES * 2);
+    if out.len() > DIFF_MAX_LINES * 2 {
+        out.truncate(DIFF_MAX_LINES * 2);
+        truncated = true;
+    }
     BodyDiff {
         lines: out,
-        truncated: p.truncated,
+        truncated,
     }
 }
 
@@ -1047,6 +1099,36 @@ request:
         let small = display_body(&json!({"a": 1}));
         assert!(!small.truncated);
         assert!(small.text.contains("\n"));
+    }
+
+    #[test]
+    fn body_diff_caps_long_expectations_and_flags_every_cut() {
+        // A long wanted value: its Added line is capped, and the diff says so.
+        let d = body_diff(&json!({"a": "é".repeat(10_000)}), &json!({"a": "x"}));
+        let added: Vec<_> = d
+            .lines
+            .iter()
+            .filter(|l| l.kind == DiffKind::Added)
+            .collect();
+        assert_eq!(added.len(), 1);
+        assert!(
+            added[0].text.len() <= CHECK_TEXT_LIMIT + 16,
+            "{}",
+            added[0].text.len()
+        );
+        assert!(added[0].text.ends_with('…'));
+        assert!(d.truncated);
+        // More missing keys than the diff shows: cut, and flagged.
+        let wanted: serde_json::Map<String, Json> = (0..DIFF_MAX_LINES * 2 + 5)
+            .map(|i| (format!("k{i}"), json!(1)))
+            .collect();
+        let d = body_diff(&Json::Object(wanted), &json!({}));
+        assert_eq!(d.lines.len(), DIFF_MAX_LINES * 2);
+        assert!(d.truncated);
+        // Short values: nothing cut.
+        assert!(!body_diff(&json!({"a": 1}), &json!({"a": 2})).truncated);
+        assert_eq!(compact_capped(&json!("ab"), 4), ("\"ab\"".into(), false));
+        assert_eq!(compact_capped(&json!("abcdé"), 6), ("\"abcd…".into(), true));
     }
 
     #[test]
