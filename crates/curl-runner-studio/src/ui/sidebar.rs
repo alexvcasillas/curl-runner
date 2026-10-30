@@ -510,6 +510,9 @@ impl Workspace {
                 row.on_click(cx.listener(move |this, _, window, cx| {
                     this.selected_request = None;
                     this.expanded.insert(open_path.clone());
+                    // The file is what the click asks for, not the
+                    // conflicts over it (they stay pending).
+                    this.hide_conflicts(window, cx);
                     this.open_file(&open_path, window, cx);
                 }))
                 .map(|row| {
@@ -543,6 +546,7 @@ impl Workspace {
                         self.runs.status(&rel_path, Some(index)),
                     ))
                     .on_click(cx.listener(move |this, _, window, cx| {
+                        this.hide_conflicts(window, cx);
                         this.open_request(&open_path, index, line, window, cx);
                     }))
                     .map(|row| {

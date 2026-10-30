@@ -256,8 +256,8 @@ pub struct DiffRow {
 }
 
 /// Above this many line pairs, the changed middle is shown as removed then
-/// added rather than diffed (keeps big files cheap).
-const LCS_LIMIT: usize = 4_000_000;
+/// added rather than diffed (keeps big files cheap: the table is 4 MB).
+const LCS_LIMIT: usize = 1_000_000;
 
 /// The line diff of `old` (left) against `new` (right), as aligned rows:
 /// unchanged lines side by side; a run of removals beside the run of
@@ -423,6 +423,26 @@ mod tests {
         let rows = line_diff(&old, &new);
         assert_eq!(rows.len(), 3000);
         assert!(rows.iter().all(|r| r.left.as_ref().unwrap().changed));
+        // Just over a million pairs: no LCS either. One shared line in the
+        // middle would pair up under an LCS; here it shows removed, then
+        // added.
+        let side = |p: &str| -> String {
+            (0..1001)
+                .map(|i| {
+                    if i == 500 {
+                        "same\n".into()
+                    } else {
+                        format!("{p}{i}\n")
+                    }
+                })
+                .collect()
+        };
+        let rows = line_diff(&side("a"), &side("b"));
+        assert!(!rows.iter().any(|r| {
+            r.left
+                .as_ref()
+                .is_some_and(|c| !c.changed && c.text == "same")
+        }));
     }
 
     #[test]
@@ -583,12 +603,15 @@ mod tests {
                 local_deleted: true,
                 ..conflict(rel, "", "x: 1\n")
             };
-            assert_eq!(
-                resolve_on_disk(d.path(), &c, Choice::TakeTheirs),
-                Err(ResolveError::Refused),
-                "{rel}"
-            );
+            for choice in [Choice::TakeTheirs, Choice::KeepBoth] {
+                assert_eq!(
+                    resolve_on_disk(d.path(), &c, choice),
+                    Err(ResolveError::Refused),
+                    "{rel} {choice:?}"
+                );
+            }
         }
         assert!(!d.path().join(".env").exists());
+        assert!(!d.path().join(".env.server.yaml").exists());
     }
 }

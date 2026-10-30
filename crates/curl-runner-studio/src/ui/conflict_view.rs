@@ -44,9 +44,11 @@ pub(super) struct ConflictView {
     busy: bool,
     /// Why the last resolution did not happen.
     pub(super) error: Option<String>,
-    /// The shown conflict's rows, and what they were made from.
+    /// The shown conflict's rows, and what they were made from (or are
+    /// being made from: the diff runs off the UI thread).
     rows: Rc<Vec<DiffRow>>,
     rows_of: Option<(PathBuf, u64, u64)>,
+    diff: Option<Task<()>>,
     /// When the local file was last written (`edited … ago`).
     local_at: Option<DateTime<Utc>>,
     scroll: UniformListScrollHandle,
@@ -69,6 +71,27 @@ fn file_name(rel: &Path) -> String {
     )
 }
 
+/// The line under the diff: what Keep both leaves behind (a file that
+/// runs with the collection like any other), or why there is one choice.
+fn note_text(c: &Conflict, read_only: bool) -> String {
+    if read_only {
+        format!(
+            "Shared with you: {}'s version is the one kept.",
+            c.server_author
+        )
+    } else if c.server_deleted {
+        String::new()
+    } else {
+        let copy = server_copy_name(&c.rel, 1);
+        format!(
+            "Keep both saves {}'s version as {} next to it. It runs with the \
+             collection until you remove it.",
+            c.server_author,
+            file_name(&copy)
+        )
+    }
+}
+
 fn ago(at: DateTime<Utc>) -> String {
     relative_time(at.with_timezone(&Local), Local::now())
 }
@@ -84,6 +107,7 @@ impl ConflictView {
             error: None,
             rows: Rc::default(),
             rows_of: None,
+            diff: None,
             local_at: None,
             scroll: UniformListScrollHandle::new(),
             focus: cx.focus_handle(),
@@ -107,7 +131,7 @@ impl ConflictView {
         self.conflicts = conflicts;
         self.read_only = read_only;
         self.busy = busy;
-        self.refresh_rows();
+        self.refresh_rows(cx);
         cx.notify();
     }
 
@@ -139,16 +163,18 @@ impl ConflictView {
         if n > 1 {
             self.ix = (self.ix as isize + by).rem_euclid(n as isize) as usize;
             self.error = None;
-            self.refresh_rows();
+            self.refresh_rows(cx);
             cx.notify();
         }
     }
 
-    /// Re-diffs only when the shown texts changed.
-    fn refresh_rows(&mut self) {
+    /// Re-diffs only when the shown texts changed, in the background:
+    /// the rows show once the diff is done.
+    fn refresh_rows(&mut self, cx: &mut Context<Self>) {
         let Some(c) = self.conflicts.get(self.ix) else {
             self.rows = Rc::default();
             self.rows_of = None;
+            self.diff = None;
             return;
         };
         let key = (
@@ -159,13 +185,30 @@ impl ConflictView {
         if self.rows_of.as_ref() == Some(&key) {
             return;
         }
-        self.rows = Rc::new(line_diff(&c.local, &c.server));
-        self.local_at = std::fs::metadata(self.root.join(&c.rel))
-            .and_then(|m| m.modified())
-            .ok()
-            .map(DateTime::<Utc>::from);
-        self.rows_of = Some(key);
+        self.rows = Rc::default();
+        self.local_at = None;
+        self.rows_of = Some(key.clone());
         self.scroll = UniformListScrollHandle::new();
+        let (local, server, path) = (c.local.clone(), c.server.clone(), self.root.join(&c.rel));
+        let work = cx.background_spawn(async move {
+            let at = std::fs::metadata(path)
+                .and_then(|m| m.modified())
+                .ok()
+                .map(DateTime::<Utc>::from);
+            (line_diff(&local, &server), at)
+        });
+        self.diff = Some(cx.spawn(async move |this, cx| {
+            let (rows, at) = work.await;
+            this.update(cx, |this, cx| {
+                // Another conflict (or text) may be shown by now.
+                if this.rows_of.as_ref() == Some(&key) {
+                    this.rows = Rc::new(rows);
+                    this.local_at = at;
+                    cx.notify();
+                }
+            })
+            .ok();
+        }));
     }
 
     fn offered(&self, choice: Choice) -> bool {
@@ -447,21 +490,7 @@ impl Render for ConflictView {
         } else {
             theirs.outline()
         };
-        let note = if self.read_only {
-            format!(
-                "Shared with you: {}'s version is the one kept.",
-                c.server_author
-            )
-        } else if c.server_deleted {
-            String::new()
-        } else {
-            let copy = server_copy_name(&c.rel, 1);
-            format!(
-                "Keep both saves {}'s version as {} next to it.",
-                c.server_author,
-                file_name(&copy)
-            )
-        };
+        let note = note_text(&c, self.read_only);
         let nav = |id: &'static str, svg: &'static str, by: isize| {
             div()
                 .id(id)
@@ -835,6 +864,9 @@ impl Workspace {
                     }
                     this.settle(&c, resolved.base, resolved.touched, window, cx);
                 }
+                // Keep both's copy stays on disk: it holds the server's text,
+                // so a retry finds it and reuses it rather than adding a
+                // `.server-2.yaml`; left alone, it syncs like any new file.
                 Err(e) => {
                     let text = match e {
                         BackendError::Offline => {
@@ -985,6 +1017,33 @@ impl Workspace {
             }
         })
         .detach();
+    }
+}
+
+#[cfg(test)]
+mod note_tests {
+    use super::{Conflict, note_text};
+
+    #[test]
+    fn keep_both_says_the_copy_runs_with_the_collection() {
+        let c = Conflict {
+            rel: "rates/get.yaml".into(),
+            local: "a: 1\n".into(),
+            server: "a: 2\n".into(),
+            server_author: "Sam".into(),
+            server_at: chrono::Utc::now(),
+            local_deleted: false,
+            server_deleted: false,
+        };
+        assert_eq!(
+            note_text(&c, false),
+            "Keep both saves Sam's version as get.server.yaml next to it. It runs with the \
+             collection until you remove it."
+        );
+        assert_eq!(
+            note_text(&c, true),
+            "Shared with you: Sam's version is the one kept."
+        );
     }
 }
 
@@ -1252,6 +1311,46 @@ mod tests {
     }
 
     #[gpui_kit::test]
+    fn a_tree_click_leaves_the_conflicts_for_the_file(cx: &mut TestAppContext) {
+        let (s, _) = conflicted(cx);
+        s.open_conflicts(cx);
+        assert!(s.ws.read_with(cx, |ws, _| ws.conflicts_shown()));
+        // The rows: a.yaml, b.yaml.
+        cx.update_window(s.window, |_, window, cx| {
+            window.render_frame(cx);
+            window
+                .within("collection-tree")
+                .click(("tree-row", 1usize), cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+        s.ws.read_with(cx, |ws, _| {
+            assert!(!ws.conflicts_shown());
+            let active = ws.state.active_document().unwrap();
+            assert_eq!(active.rel_path, Path::new("b.yaml"));
+        });
+        assert_eq!(s.line(cx), SyncLine::Conflicts(1), "still pending");
+    }
+
+    #[gpui_kit::test]
+    fn keep_both_offline_keeps_its_copy_and_a_retry_reuses_it(cx: &mut TestAppContext) {
+        let (s, theirs) = conflicted(cx);
+        s.open_conflicts(cx);
+        s.backend.dev().unwrap().set_offline(true);
+        s.click(cx, "conflict-keep-both");
+        assert!(s.shows(cx, "You're offline. The conflict stays until you're back."));
+        assert_eq!(s.read("a.server.yaml"), theirs, "written before the push");
+        assert_eq!(s.line(cx), SyncLine::Conflicts(1));
+        s.backend.dev().unwrap().set_offline(false);
+        s.click(cx, "conflict-keep-both");
+        assert_eq!(s.read("a.server.yaml"), theirs);
+        assert!(!s.dir.path().join("a.server-2.yaml").exists(), "reused");
+        assert_eq!(s.server_text(cx, "a.yaml").as_deref(), Some(MINE));
+        settled(&s, cx);
+        assert_eq!(s.server_text(cx, "a.server.yaml"), Some(theirs));
+    }
+
+    #[gpui_kit::test]
     fn keep_mine_pushes_local(cx: &mut TestAppContext) {
         let (s, _) = conflicted(cx);
         s.open_conflicts(cx);
@@ -1384,6 +1483,7 @@ mod tests {
         }
         assert_eq!(s.read(".env"), "API_TOKEN=sk_live_dotenv\n");
         assert!(!s.dir.path().join(".env.server").exists());
+        assert!(!s.dir.path().join(".env.server.yaml").exists());
         assert!(s.shows(cx, "This file can't be written here"));
         for call in s.backend.dev().unwrap().recorded() {
             assert!(!call.contains(".env"), "{call}");
