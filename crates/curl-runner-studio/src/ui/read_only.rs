@@ -15,7 +15,7 @@ use super::workspace::{Workspace, edit_notes, notify_error};
 use crate::model::backend::SyncFile;
 use crate::model::collection::read_only_text;
 use crate::model::history::relative_time;
-use crate::model::shared_copy::{UpdatePlan, apply_update, duplicate, plan_update};
+use crate::model::shared_copy::{UpdatePlan, apply_update, duplicate, plan_update, received_from};
 use crate::model::sync_base::SyncBase;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::notification::Notification;
@@ -71,14 +71,53 @@ impl Workspace {
     /// For a received copy, shows `Read only · shared by {org}` and returns
     /// `true`: the caller does nothing.
     pub(super) fn refuse_read_only(&mut self, window: &mut Window, cx: &mut App) -> bool {
-        let Some(org) = self.read_only_org() else {
+        let Some(org) = self.read_only_org().map(str::to_string) else {
             return false;
         };
+        self.toast_read_only(&org, window, cx);
+        true
+    }
+
+    /// For a folder picked to write into (an import target, a new
+    /// collection) that is a received copy, shows `Read only · shared by
+    /// {org}` and returns `true`: nothing is written.
+    pub(super) fn refuse_received(
+        &mut self,
+        dir: &Path,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> bool {
+        let Some(org) = received_from(self.store.base(), dir) else {
+            return false;
+        };
+        self.toast_read_only(&org, window, cx);
+        true
+    }
+
+    /// [`refuse_read_only`] or [`refuse_received`] for writing into
+    /// `dir`: the refusal's text, toasted, or `None` to go ahead.
+    ///
+    /// [`refuse_read_only`]: Workspace::refuse_read_only
+    /// [`refuse_received`]: Workspace::refuse_received
+    pub(super) fn refuse_write_into(
+        &mut self,
+        dir: &Path,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Option<String> {
+        let org = self
+            .read_only_org()
+            .map(str::to_string)
+            .or_else(|| received_from(self.store.base(), dir))?;
+        self.toast_read_only(&org, window, cx);
+        Some(read_only_text(&org))
+    }
+
+    fn toast_read_only(&mut self, org: &str, window: &mut Window, cx: &mut App) {
         let text = read_only_text(org);
         #[cfg(test)]
         self.toasts.push(text.clone());
         window.push_notification(Notification::warning(text), cx);
-        true
     }
 
     /// The open collection as the boards name it: a received copy by its
@@ -91,6 +130,15 @@ impl Workspace {
         })
     }
 
+    /// Where a received copy's exports start: the user's Documents (else
+    /// home), never the copy's own folder. `None`: the collection root.
+    pub(super) fn export_dir(&self) -> Option<PathBuf> {
+        self.read_only_org()?;
+        let home = std::env::home_dir()?;
+        let documents = home.join("Documents");
+        Some(if documents.is_dir() { documents } else { home })
+    }
+
     /// `updated 3 days ago`: when the owner last changed the open copy.
     pub(super) fn received_updated(&self, cx: &App) -> Option<String> {
         let at = self.meta(cx).received_updated?;
@@ -100,7 +148,21 @@ impl Workspace {
     /// `Check for updates`: fetches the owner's copy, counts what differs
     /// and asks `Update 3 files from Acme?` before writing anything.
     pub(super) fn check_for_updates(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let (Some(share), Some(c)) = (self.received.clone(), &self.state.collection) else {
+        let Some(c) = self
+            .state
+            .collection
+            .as_ref()
+            .filter(|c| c.read_only.is_some())
+        else {
+            return;
+        };
+        let Some(share) = self.received.clone() else {
+            // A copy with no share record (removed on the server, or a
+            // folder under shared/ added by hand) has nowhere to ask.
+            let text = "Couldn't check for updates: this copy has no share to ask.".to_string();
+            #[cfg(test)]
+            self.toasts.push(text.clone());
+            window.push_notification(Notification::warning(text), cx);
             return;
         };
         if self.update_check.is_some() {
@@ -330,7 +392,7 @@ mod gpui_tests {
     use super::super::app::{Import, NewRequest, QuickFix, RunActive, SaveFile};
     use super::super::palette::PaletteAction;
     use super::super::state::StateStore;
-    use super::super::workspace::{Workspace, test_backend};
+    use super::super::workspace::{Workspace, test_backend, wait_for_run};
     use super::DUPLICATED;
     use crate::model::backend::{
         Account, Backend, BoxFut, CollectionKey, ConnectionInfo, DevControls, Person,
@@ -794,33 +856,28 @@ mod gpui_tests {
         open_file(cx, &s, RATES);
         let rates = s.read(RATES);
         dispatch(cx, &s, &RunActive);
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        loop {
-            cx.executor()
-                .advance_clock(std::time::Duration::from_millis(20));
-            cx.run_until_parked();
-            let done = !seen.lock().unwrap().is_empty()
-                && s.ws.read_with(cx, |ws, _| ws.runs.active.is_none());
-            if done {
-                break;
-            }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the run did not finish"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
+        wait_for_run(cx, &s.ws);
         // The customer's own token, from their keychain.
         assert_eq!(*seen.lock().unwrap(), [format!("Bearer {TOKEN}")]);
         s.ws.read_with(cx, |ws, _| {
             let run = &ws.runs.last[Path::new(RATES)];
-            assert_eq!(run.results[&0].status, Some(200));
+            // The fixture passes core's checks (status, body.rates.length).
+            assert!(run.results[&0].success, "{:?}", run.results[&0].error);
             assert_eq!(run.keychain_names, ["API_TOKEN"]);
-            assert_eq!(
-                super::super::inspector::ran_with(&run.keychain_names).as_deref(),
-                Some("ran with your API_TOKEN")
-            );
         });
+        // The board's summary line, as drawn.
+        let summary = cx
+            .update_window(s.window, |_, window, cx| {
+                window.render_frame(cx);
+                window
+                    .try_find("inspector-summary")
+                    .and_then(|e| e.label().map(str::to_string))
+            })
+            .unwrap();
+        assert_eq!(
+            summary.as_deref(),
+            Some("2 of 2 checks passed · ran with your API_TOKEN")
+        );
         // The run saved nothing and asked nothing.
         assert_eq!(s.read(RATES), rates);
         assert!(toasts(cx, &s).is_empty(), "{:?}", toasts(cx, &s));
@@ -987,5 +1044,165 @@ mod gpui_tests {
                 .any(|c| c.starts_with("sync(") && c.contains("SyncDeletion")),
             "no deletions"
         );
+    }
+
+    /// A second window on the same studio state with nothing open.
+    fn nothing_open(cx: &mut TestAppContext, s: &Studio) -> (AnyWindowHandle, Entity<Workspace>) {
+        let store = StateStore::at(s.state.path());
+        let (secrets, backend) = (
+            s.secrets.clone() as Arc<dyn SecretStore>,
+            s.spy.clone() as Arc<dyn Backend>,
+        );
+        let out = cx.update(|cx| {
+            gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
+                cx.new(|cx| Workspace::new(None, store, secrets, backend, window, cx))
+            })
+            .unwrap()
+        });
+        cx.run_until_parked();
+        out
+    }
+
+    #[gpui_kit::test]
+    fn a_received_copy_picked_by_hand_takes_nothing(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        let before = snapshot(&s);
+        let (window, ws) = nothing_open(cx, &s);
+        let refused = "Read only · shared by Acme";
+        let told = |cx: &mut TestAppContext| ws.read_with(cx, |ws, _| ws.toasts.clone());
+        // Import: the copy can't be picked as the target…
+        let dialog = cx
+            .update_window(window, |_, window, cx| {
+                ws.update(cx, |ws, cx| ws.import(window, cx).unwrap())
+            })
+            .unwrap();
+        let root = s.root();
+        cx.update_window(window, |_, window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.dev_fill("curl https://api.example.com/v1/x", None, window, cx);
+                d.set_target(Some(root.join("rates")), window, cx);
+                assert_eq!(d.picked_target, None);
+            });
+        })
+        .unwrap();
+        assert_eq!(told(cx), [refused]);
+        // …and should it get there anyway, nothing is written.
+        cx.update_window(window, |_, window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.picked_target = Some(root.clone());
+                d.import(window, cx);
+                assert_eq!(d.error.as_deref(), Some(refused));
+            });
+        })
+        .unwrap();
+        assert_eq!(told(cx), [refused, refused]);
+        cx.update_window(window, |_, window, cx| window.close_dialog(cx))
+            .unwrap();
+        // New request or collection with no collection open.
+        let text = "request:\n  url: https://api.example.com\n".to_string();
+        for dir in [s.root(), s.root().join("new-folder")] {
+            let text = text.clone();
+            cx.update_window(window, |_, window, cx| {
+                ws.update(cx, |ws, cx| {
+                    ws.create_collection(dir, "first.yaml".into(), text, window, cx)
+                });
+            })
+            .unwrap();
+            cx.run_until_parked();
+        }
+        assert_eq!(told(cx).len(), 4);
+        assert!(told(cx).iter().all(|t| t == refused));
+        ws.read_with(cx, |ws, _| assert!(ws.state.collection.is_none()));
+        // The model refuses on its own too.
+        let base = Some(s.state.path());
+        let mut c = crate::model::collection::Collection::open_in(&s.root(), base).unwrap();
+        assert!(c.create_file(Path::new("x.yaml"), "x").is_err());
+        assert_eq!(snapshot(&s), before, "nothing was written");
+        assert!(!s.root().join("new-folder").exists());
+        // An ordinary folder still takes a new collection.
+        let mine = tempfile::tempdir().unwrap();
+        let dir = mine.path().to_path_buf();
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.create_collection(dir, "first.yaml".into(), text, window, cx)
+            });
+        })
+        .unwrap();
+        assert!(mine.path().join("first.yaml").exists());
+    }
+
+    #[gpui_kit::test]
+    fn duplicate_never_lands_in_shared_folders(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        let ws = s.ws.clone();
+        let other = s.state.path().join("shared/someone-else");
+        std::fs::create_dir_all(&other).unwrap();
+        // A folder holding the copy, the shared folder itself, one beside it.
+        for dest in [
+            s.state.path().to_path_buf(),
+            s.state.path().join("shared"),
+            other.clone(),
+        ] {
+            cx.update_window(s.window, |_, window, cx| {
+                ws.update(cx, |ws, cx| ws.duplicate_to(&dest, window, cx));
+            })
+            .unwrap();
+            s.ws.read_with(cx, |ws, _| {
+                assert_eq!(
+                    ws.state.collection.as_ref().unwrap().root,
+                    s.root(),
+                    "{dest:?}"
+                );
+            });
+        }
+        assert!(std::fs::read_dir(&other).unwrap().next().is_none());
+        assert!(!s.state.path().join("rates").exists());
+        assert!(!s.state.path().join("shared/rates").exists());
+        assert!(!toasts(cx, &s).iter().any(|t| t == DUPLICATED));
+    }
+
+    #[gpui_kit::test]
+    fn check_for_updates_without_a_share_says_so(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        // A folder under shared/ with no share record, opened by hand.
+        let orphan = s.state.path().join("shared/orphan");
+        std::fs::create_dir_all(&orphan).unwrap();
+        std::fs::write(orphan.join("a.yaml"), "request:\n  url: https://a\n").unwrap();
+        let ws = s.ws.clone();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                assert!(ws.open_collection(&orphan, window, cx));
+                assert_eq!(ws.read_only_org(), Some("its owner"));
+                ws.check_for_updates(window, cx);
+            });
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(!dialog_open(cx, &s));
+        assert_eq!(
+            toasts(cx, &s).last().map(String::as_str),
+            Some("Couldn't check for updates: this copy has no share to ask.")
+        );
+    }
+
+    #[gpui_kit::test]
+    fn exports_from_a_copy_start_outside_it(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        let dir = s.ws.read_with(cx, |ws, _| ws.export_dir()).unwrap();
+        assert!(!dir.starts_with(s.state.path()), "{dir:?}");
+        let mine = tempfile::tempdir().unwrap();
+        let path = mine.path().to_path_buf();
+        let ws = s.ws.clone();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                assert!(ws.open_collection(&path, window, cx));
+                assert_eq!(
+                    ws.export_dir(),
+                    None,
+                    "an own collection exports beside itself"
+                );
+            });
+        })
+        .unwrap();
     }
 }

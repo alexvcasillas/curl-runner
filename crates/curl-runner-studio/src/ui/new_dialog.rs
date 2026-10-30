@@ -1110,7 +1110,7 @@ impl Workspace {
 
     /// Once unsaved changes are settled, writes `file` into `dir` and opens
     /// `dir` as the collection with `file` in a tab.
-    fn create_collection(
+    pub(super) fn create_collection(
         &mut self,
         dir: PathBuf,
         file: PathBuf,
@@ -1118,9 +1118,15 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A received copy picked by hand takes nothing.
+        if self.refuse_received(&dir, window, cx) {
+            return;
+        }
         self.settle_unsaved(
             Rc::new(move |this, window, cx| {
-                let written = Collection::open(&dir).and_then(|mut c| c.create_file(&file, &text));
+                let base = this.store.base().map(Path::to_path_buf);
+                let written = Collection::open_in(&dir, base.as_deref())
+                    .and_then(|mut c| c.create_file(&file, &text));
                 if let Err(e) = written {
                     let path = dir.join(&file);
                     notify_error(

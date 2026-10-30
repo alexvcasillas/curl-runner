@@ -32,9 +32,9 @@ pub struct Document {
     disk_text: Option<String>,
     /// `text` changed since `diagnostics` were computed (see `set_buffer`).
     stale: bool,
-    /// A received copy's file: the buffer takes no edits, nothing is
-    /// saved, and the disk always wins.
-    read_only: bool,
+    /// A received copy's file (the org that shared it): the buffer takes
+    /// no edits, nothing is saved, and the disk always wins.
+    read_only: Option<String>,
 }
 
 impl Document {
@@ -49,20 +49,21 @@ impl Document {
             diagnostics,
             disk_text: None,
             stale: false,
-            read_only: false,
+            read_only: None,
         })
     }
 
-    /// Locks (or unlocks) the document: see [`Document::is_read_only`].
-    pub fn set_read_only(&mut self, read_only: bool) {
-        self.read_only = read_only;
+    /// Locks the document for the org that shared it (`None` unlocks):
+    /// see [`Document::is_read_only`].
+    pub fn set_read_only(&mut self, org: Option<String>) {
+        self.read_only = org;
     }
 
     /// A received copy's file: [`set_buffer`](Self::set_buffer) ignores
     /// edits, [`save`](Self::save) and [`apply_fix`](Self::apply_fix) fail,
     /// and a disk change always reloads.
     pub fn is_read_only(&self) -> bool {
-        self.read_only
+        self.read_only.is_some()
     }
 
     pub fn set_text(&mut self, text: String) {
@@ -74,7 +75,7 @@ impl Document {
     /// Takes the editor's text without diagnosing it, so typing stays cheap;
     /// `rediagnose` catches up (debounced by the editor).
     pub fn set_buffer(&mut self, text: String) {
-        if !self.read_only && text != self.text {
+        if self.read_only.is_none() && text != self.text {
             self.text = text;
             self.stale = true;
         }
@@ -98,11 +99,8 @@ impl Document {
     }
 
     pub fn save(&mut self, root: &Path) -> io::Result<()> {
-        if self.read_only {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "read only: a shared collection's file",
-            ));
+        if let Some(org) = &self.read_only {
+            return Err(super::collection::read_only_error(org));
         }
         std::fs::write(root.join(&self.rel_path), &self.text)?;
         self.saved_text = self.text.clone();
@@ -117,7 +115,7 @@ impl Document {
         if disk == self.saved_text {
             return;
         }
-        if self.is_dirty() && !self.read_only {
+        if self.is_dirty() && self.read_only.is_none() {
             self.disk_conflict = true;
             self.disk_text = Some(disk);
         } else {
@@ -130,7 +128,7 @@ impl Document {
     /// disk text) or take the disk text.
     /// A read-only document always takes the disk text.
     pub fn resolve_conflict(&mut self, keep_mine: bool) {
-        let keep_mine = keep_mine && !self.read_only;
+        let keep_mine = keep_mine && self.read_only.is_none();
         if let Some(disk) = self.disk_text.take() {
             self.saved_text = disk.clone();
             if !keep_mine {
@@ -143,7 +141,7 @@ impl Document {
     /// Apply diagnostic `idx`'s quick fix to the current text. The edit is
     /// computed now, so it always matches the buffer.
     pub fn apply_fix(&mut self, idx: usize) -> Result<(), FixError> {
-        if self.read_only {
+        if self.read_only.is_some() {
             return Err(FixError::ReadOnly);
         }
         let issue = self
@@ -267,7 +265,7 @@ mod tests {
     #[test]
     fn read_only_document_takes_no_edit_and_saves_nothing() {
         let (d, mut doc) = doc_with(TYPO);
-        doc.set_read_only(true);
+        doc.set_read_only(Some("Acme".into()));
         doc.set_buffer("hacked\n".into());
         assert_eq!(doc.text, TYPO);
         let fix = doc
@@ -277,7 +275,8 @@ mod tests {
             .unwrap();
         assert_eq!(doc.apply_fix(fix), Err(FixError::ReadOnly));
         assert_eq!(doc.text, TYPO);
-        assert!(doc.save(d.path()).is_err());
+        let e = doc.save(d.path()).unwrap_err();
+        assert_eq!(e.to_string(), "Read only · shared by Acme");
         assert_eq!(
             std::fs::read_to_string(d.path().join("a.yaml")).unwrap(),
             TYPO

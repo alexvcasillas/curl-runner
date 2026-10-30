@@ -236,6 +236,9 @@ enum Menu {
 pub struct HistoryView {
     root: PathBuf,
     collection: String,
+    /// Where Export's save panel starts: the collection root unless set
+    /// (a received copy's exports go to the user's own folders).
+    export_dir: Option<PathBuf>,
     /// The collection's `CollectionMeta::id`, for the CLI command it copies.
     collection_id: String,
     /// The collection's secret names, for the CLI command it copies.
@@ -279,6 +282,7 @@ impl HistoryView {
         HistoryView {
             root,
             collection,
+            export_dir: None,
             collection_id,
             marked,
             entries: Vec::new(),
@@ -407,6 +411,11 @@ impl HistoryView {
         cx.notify();
     }
 
+    /// Starts Export's save panel in `dir` instead of the collection root.
+    pub fn set_export_dir(&mut self, dir: Option<PathBuf>) {
+        self.export_dir = dir;
+    }
+
     /// Saves the picked run's Markdown summary through the save panel.
     fn export_markdown(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.menu = None;
@@ -416,7 +425,8 @@ impl HistoryView {
         };
         let text = history_markdown(e);
         let name = report_file_name(&self.collection, e.at, ExportFormat::Markdown);
-        let picked = cx.prompt_for_new_path(&self.root, Some(&name));
+        let dir = self.export_dir.as_deref().unwrap_or(&self.root);
+        let picked = cx.prompt_for_new_path(dir, Some(&name));
         cx.spawn_in(window, async move |this, cx| {
             let Ok(Ok(Some(path))) = picked.await else {
                 return;
@@ -1120,7 +1130,6 @@ mod ui_tests {
         WindowBounds, WindowOptions, px, size,
     };
     use std::path::Path;
-    use std::time::{Duration, Instant};
     use testkit::TestServer;
 
     fn open(
@@ -1294,18 +1303,7 @@ mod ui_tests {
         ws.read_with(cx, |ws, _| assert!(!ws.history_shown()));
     }
 
-    fn wait_for_run(cx: &mut TestAppContext, ws: &Entity<Workspace>) {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        loop {
-            cx.executor().advance_clock(Duration::from_millis(20));
-            cx.run_until_parked();
-            if ws.read_with(cx, |ws, _| ws.runs.active.is_none()) {
-                return;
-            }
-            assert!(Instant::now() < deadline, "the run did not finish");
-            std::thread::sleep(Duration::from_millis(5));
-        }
-    }
+    use super::super::workspace::wait_for_run;
 
     #[gpui_kit::test]
     fn copied_cli_command_names_the_keychain_secrets(cx: &mut TestAppContext) {

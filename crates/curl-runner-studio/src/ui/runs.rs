@@ -972,20 +972,7 @@ mod ui_tests {
         wait_for_run(cx, ws);
     }
 
-    /// Lets the drain apply events until the run is over (real network, so
-    /// real time passes too).
-    fn wait_for_run(cx: &mut TestAppContext, ws: &Entity<Workspace>) {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        loop {
-            cx.executor().advance_clock(Duration::from_millis(20));
-            cx.run_until_parked();
-            if ws.read_with(cx, |ws, _| ws.runs.active.is_none()) {
-                return;
-            }
-            assert!(Instant::now() < deadline, "the run did not finish");
-            std::thread::sleep(Duration::from_millis(5));
-        }
-    }
+    use super::super::workspace::wait_for_run;
 
     fn inspector_has(cx: &mut TestAppContext, window: AnyWindowHandle, label: &str) -> bool {
         cx.update_window(window, |_, window, cx| {

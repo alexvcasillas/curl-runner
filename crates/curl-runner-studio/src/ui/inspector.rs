@@ -828,9 +828,13 @@ impl Workspace {
                                     })
                                     .collect::<Vec<_>>();
                                 div()
+                                    .id("inspector-summary")
+                                    .role(Role::Label)
+                                    .aria_label(text.clone())
                                     .flex_1()
                                     .min_w_0()
                                     .child(StyledText::new(text).with_highlights(styles))
+                                    .test_support()
                             }),
                     )
                     .children(actions),

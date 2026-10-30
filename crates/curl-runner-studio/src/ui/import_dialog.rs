@@ -251,6 +251,15 @@ impl ImportDialog {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A received copy is never a target: the pick is refused.
+        if let Some(d) = &dir
+            && self
+                .ws
+                .update(cx, |ws, cx| ws.refuse_received(d, window, cx))
+                .unwrap_or(true)
+        {
+            return;
+        }
         self.picked_target = dir;
         if let (Some(dir), Some(for_folder)) = (&self.picked_target, &self.env.for_folder) {
             let mut env = for_folder(dir);
@@ -490,6 +499,15 @@ impl ImportDialog {
             .target_root()
             .map(Path::to_path_buf)
             .ok_or("Choose a folder for the requests.")?;
+        // Again right before writing: the open collection or the pick may
+        // be a received copy by now.
+        let refused = self
+            .ws
+            .update(cx, |ws, cx| ws.refuse_write_into(&root, window, cx))
+            .unwrap_or_else(|_| Some("The window is gone.".into()));
+        if let Some(why) = refused {
+            return Err(why);
+        }
         match self.tab {
             ImportTab::Curl => {
                 self.hold_taken_names(window, cx)?;

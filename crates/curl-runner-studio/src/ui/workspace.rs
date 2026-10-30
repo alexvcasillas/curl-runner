@@ -179,6 +179,9 @@ pub struct Workspace {
     pub(super) pending_link: Option<String>,
     /// The open collection's share record, when it is a received copy.
     pub(super) received: Option<crate::model::backend::ReceivedShare>,
+    /// Every received copy whose folder is still there (the sidebar's
+    /// Shared with me), read on open rather than each frame.
+    pub(super) received_all: Vec<crate::model::backend::ReceivedShare>,
     /// `Check for updates` in flight (the fetch, then the confirm).
     pub(super) update_check: Option<Task<()>>,
     /// Every read-only toast and update prompt shown (tests read them).
@@ -291,6 +294,7 @@ impl Workspace {
             _open_shared_events: None,
             pending_link: None,
             received: None,
+            received_all: Vec::new(),
             update_check: None,
             #[cfg(test)]
             toasts: Vec::new(),
@@ -339,7 +343,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let mut collection = match Collection::open(root) {
+        let mut collection = match Collection::open_in(root, self.store.base()) {
             Ok(c) => c,
             Err(e) => {
                 notify_error(format!("Couldn't open {}: {e}", root.display()), window, cx);
@@ -349,12 +353,20 @@ impl Workspace {
         let meta = CollectionMeta::load_or_init(self.store.base(), root);
         // A received copy is locked where it is written: the collection
         // and each document refuse changes.
-        collection.read_only = meta.read_only_from.clone();
+        if let Some(org) = &meta.read_only_from {
+            collection.read_only = Some(org.clone());
+        }
+        self.received_all = self
+            .backend
+            .received()
+            .into_iter()
+            .filter(|r| r.root.is_dir())
+            .collect();
         self.received = meta.read_only_from.as_ref().and_then(|_| {
-            self.backend
-                .received()
-                .into_iter()
+            self.received_all
+                .iter()
                 .find(|r| r.collection_id == meta.id)
+                .cloned()
         });
         self.update_check = None;
         self.state = AppState {
@@ -468,8 +480,16 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let labels = self.run_labels();
-        let name = ctx.collection.clone();
-        let view = cx.new(|cx| RunView::new(name, ctx, target, labels, cx));
+        // Display only: the Keychain service keeps `ctx.collection`.
+        let name = self
+            .collection_title()
+            .unwrap_or_else(|| ctx.collection.clone());
+        let export_dir = self.export_dir();
+        let view = cx.new(|cx| {
+            let mut view = RunView::new(name, ctx, target, labels, cx);
+            view.set_export_dir(export_dir);
+            view
+        });
         self._run_view_events = Some(cx.subscribe_in(&view, window, Self::on_run_view_event));
         self.run_view = Some(view);
         self.run_view_live = true;
@@ -656,7 +676,8 @@ impl Workspace {
         let history = History::open(base, &c.root);
         let (target, kind) = target_key(target);
         let mut entry = entry_from_outcome(o, &target, kind, env, &o.redactor.lock());
-        entry.collection = c.name.clone();
+        // Display only (History's titles): a received copy's shared name.
+        entry.collection = self.collection_title().unwrap_or_else(|| c.name.clone());
         let write = cx.background_spawn(async move {
             if let Err(e) = history.record(&entry) {
                 log::warn!("Couldn't record the run in the history: {e}");
@@ -687,7 +708,12 @@ impl Workspace {
                 let (root, name) = (c.root.clone(), c.name.clone());
                 let meta = self.notes.read(cx);
                 let (id, marked) = (meta.id.clone(), meta.secret_names.clone());
-                let view = cx.new(|cx| HistoryView::new(root, name, id, marked, cx));
+                let export_dir = self.export_dir();
+                let view = cx.new(|cx| {
+                    let mut view = HistoryView::new(root, name, id, marked, cx);
+                    view.set_export_dir(export_dir);
+                    view
+                });
                 self._history_events = Some(cx.subscribe_in(&view, window, Self::on_history_event));
                 self.history_view = Some(view.clone());
                 view
@@ -1336,15 +1362,8 @@ impl Workspace {
             .and_then(|doc| self.runs.last.get(&doc.rel_path))
             .map(|r| r.captured_by.clone())
             .unwrap_or_default();
-        let mut groups = source_groups(&vars, &missing, &captured_by);
-        // The ReadOnly board: a customer's keychain is theirs.
-        if self.read_only_org().is_some() {
-            for g in &mut groups {
-                if let Some(names) = g.strip_suffix(" from local keychain") {
-                    *g = format!("{names} from your keychain").into();
-                }
-            }
-        }
+        let yours = self.read_only_org().is_some();
+        let groups = source_groups(&vars, &missing, &captured_by, yours);
         let missing_count = missing.len();
         self.missing = missing;
         self.status
@@ -2164,6 +2183,26 @@ pub(super) fn test_secrets() -> Arc<dyn SecretStore> {
 #[cfg(test)]
 pub(super) fn test_backend() -> Arc<dyn Backend> {
     crate::model::backend::test_backend()
+}
+
+/// Lets the drain apply a run's events until it is over: the GPUI clock
+/// moves the drain, the run itself talks to a real local server, so the
+/// deadline only guards against a hang (the helper every run test uses).
+#[cfg(test)]
+pub(super) fn wait_for_run(cx: &mut gpui_kit::TestAppContext, ws: &Entity<Workspace>) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        cx.executor().advance_clock(Duration::from_millis(20));
+        cx.run_until_parked();
+        if ws.read_with(cx, |ws, _| ws.runs.active.is_none()) {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the run did not finish"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
 }
 
 /// Changes the collection's notes in place. Their observers (the workspace

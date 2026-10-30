@@ -94,6 +94,15 @@ impl Collection {
         Ok(c)
     }
 
+    /// [`Collection::open`], locked when `root` is a received copy (see
+    /// [`received_from`](crate::model::shared_copy::received_from)), so
+    /// the model refuses writes into a folder picked by hand.
+    pub fn open_in(root: &Path, base: Option<&Path>) -> io::Result<Collection> {
+        let mut c = Collection::open(root)?;
+        c.read_only = crate::model::shared_copy::received_from(base, root);
+        Ok(c)
+    }
+
     pub fn refresh(&mut self) {
         let files: Vec<PathBuf> = find_yaml_files(&[], true, &self.root)
             .into_iter()

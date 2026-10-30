@@ -67,11 +67,13 @@ impl EventEmitter<StatusBarEvent> for StatusBar {}
 /// request is known reads `CHARGE_ID captured from create-charge`
 /// (`captured_by`: value name to request name). Names without a value are
 /// left out (they are `missing`, counted apart); so is everything when
-/// nothing is referenced.
+/// nothing is referenced. In a received copy (`yours`) the Keychain is the
+/// customer's: `from your keychain` (the ReadOnly board).
 pub fn source_groups(
     vars: &[ResolvedVar],
     missing: &[String],
     captured_by: &HashMap<String, String>,
+    yours: bool,
 ) -> Vec<SharedString> {
     // (the text after the names, the names)
     let mut groups: Vec<(String, Vec<&str>)> = Vec::new();
@@ -82,6 +84,7 @@ pub fn source_groups(
         let Some(source) = &v.source else { continue };
         let mut name = v.name.as_str();
         let tail = match source {
+            VarSource::Keychain if yours => "from your keychain".to_string(),
             VarSource::Keychain => "from local keychain".to_string(),
             VarSource::Process => "from shell environment".to_string(),
             VarSource::Captured => {
@@ -389,7 +392,7 @@ mod tests {
             var("store.id", Some(VarSource::Captured)),
             var("ACCOUNT_ID", None),
         ];
-        let groups = source_groups(&vars, &["ACCOUNT_ID".into()], &HashMap::new());
+        let groups = source_groups(&vars, &["ACCOUNT_ID".into()], &HashMap::new(), false);
         assert_eq!(
             groups,
             [
@@ -398,7 +401,7 @@ mod tests {
                 "store.id from last run",
             ]
         );
-        assert!(source_groups(&[], &[], &HashMap::new()).is_empty());
+        assert!(source_groups(&[], &[], &HashMap::new(), false).is_empty());
         let by = HashMap::from([("CHARGE_ID".to_string(), "create-charge".to_string())]);
         let vars = [
             var("BASE_URL", Some(VarSource::Keychain)),
@@ -406,12 +409,16 @@ mod tests {
             var("store.other", Some(VarSource::Captured)),
         ];
         assert_eq!(
-            source_groups(&vars, &[], &by),
+            source_groups(&vars, &[], &by, false),
             [
                 "BASE_URL from local keychain",
                 "CHARGE_ID captured from create-charge",
                 "store.other from last run",
             ]
+        ); // A received copy's keychain is the customer's own.
+        assert_eq!(
+            source_groups(&vars[..1], &[], &by, true),
+            ["BASE_URL from your keychain"]
         );
     }
 

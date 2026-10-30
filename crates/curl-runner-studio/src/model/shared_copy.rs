@@ -36,6 +36,31 @@ pub fn resolves_inside(dir: &Path, real_root: &Path) -> bool {
     false
 }
 
+/// Whether `dir` is (or is inside) a received copy: its notes name the
+/// org that shared it, or it sits under `{base}/shared/` (canonicalized,
+/// so a symlink or `..` can't hide it). The org, or `its owner` when only
+/// the location says so. Every write into a folder the user picked asks
+/// this first.
+pub fn received_from(base: Option<&Path>, dir: &Path) -> Option<String> {
+    let base = base?;
+    // The copy's own notes, or those of a copy it sits in.
+    if let Some(org) = dir
+        .ancestors()
+        .find_map(|d| CollectionMeta::load(base, d).read_only_from)
+    {
+        return Some(org);
+    }
+    let shared = base.join("shared").canonicalize().ok()?;
+    // A folder not made yet is judged by its deepest existing ancestor.
+    let real = dir.ancestors().find_map(|d| d.canonicalize().ok())?;
+    real.starts_with(&shared).then(|| "its owner".to_string())
+}
+
+/// [`received_from`] as a yes or no.
+pub fn is_received(base: Option<&Path>, dir: &Path) -> bool {
+    received_from(base, dir).is_some()
+}
+
 /// `Shipping API` → `shipping-api`: lowercase ASCII letters and digits,
 /// anything else one `-`.
 pub fn slug(text: &str) -> String {
@@ -358,7 +383,10 @@ pub fn apply_update(root: &Path, plan: &UpdatePlan) -> Result<(), String> {
     {
         let path = root.join(&f.rel);
         let dir = path.parent().unwrap_or(root);
+        // Checked before a folder is made and again once it exists, so
+        // nothing (a symlinked folder) leads the write outside.
         let inside = writable(&f.rel)
+            && resolves_inside(dir, &real_root)
             && std::fs::create_dir_all(dir).is_ok()
             && resolves_inside(dir, &real_root);
         if !inside {
@@ -404,13 +432,10 @@ pub fn duplicate(
     if real_dest.starts_with(&real_from) || real_from.starts_with(&real_dest) {
         return Err("Pick a folder outside the shared collection.".into());
     }
-    if base.is_some_and(|b| real_dest.starts_with(real(&b.join("shared")))) {
-        return Err("Pick a folder outside the studio's shared collections.".into());
-    }
-    let mut notes = CollectionMeta::load_or_init(base, dest);
-    if notes.read_only_from.is_some() {
+    if is_received(base, dest) {
         return Err("That folder is a shared collection. Pick another one.".into());
     }
+    let mut notes = CollectionMeta::load_or_init(base, dest);
     let plan = crate::model::import::plan_yaml_copy(from, Some(dest), Path::new(""))
         .map_err(|e| format!("Couldn't read {}: {e}", from.display()))?;
     let (copied, failed) = crate::model::import::copy_planned(dest, &plan);

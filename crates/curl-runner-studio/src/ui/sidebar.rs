@@ -775,7 +775,7 @@ impl Workspace {
     /// recent folders that are not received copies; the ReadOnly board).
     fn render_other_collections(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
         let root = self.state.collection.as_ref()?.root.clone();
-        let received = self.backend.received();
+        let received = &self.received_all;
         let (heading, rows): (&'static str, Vec<(PathBuf, String, bool)>) =
             if self.read_only_org().is_some() {
                 let rows = self
@@ -795,9 +795,9 @@ impl Workspace {
                 ("My collections", rows)
             } else {
                 let rows = received
-                    .into_iter()
-                    .filter(|r| r.root != root && r.root.is_dir())
-                    .map(|r| (r.root, r.name, true))
+                    .iter()
+                    .filter(|r| r.root != root)
+                    .map(|r| (r.root.clone(), r.name.clone(), true))
                     .collect();
                 ("Shared with me", rows)
             };
