@@ -878,6 +878,20 @@ impl Workspace {
         }
     }
 
+    /// Saves the open collection's notes (the one copy every change goes
+    /// through, on this thread, so writes land in order).
+    pub(super) fn save_meta(&self, window: &mut Window, cx: &mut App) {
+        if let (Some(base), Some(c)) = (self.store.base(), &self.state.collection)
+            && let Err(e) = self.meta.save(base, &c.root)
+        {
+            notify_error(
+                format!("Couldn't save the collection's notes: {e}"),
+                window,
+                cx,
+            );
+        }
+    }
+
     // The collection settings page.
 
     pub(super) fn settings_shown(&self) -> bool {

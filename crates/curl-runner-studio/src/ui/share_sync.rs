@@ -9,6 +9,7 @@
 //! optimistic: shown at once, rolled back one by one if their call fails.
 //! The variables sent are [`share_payload`]'s; no Keychain value is read.
 
+use super::collection_settings::Sharing;
 use super::workspace::Workspace;
 use crate::model::backend::{
     Access, Account, Backend, BackendError, CollectionKey, Expiry, ShareSettings, ShareUpdate,
@@ -16,7 +17,9 @@ use crate::model::backend::{
 };
 use crate::model::collection::TreeNode;
 use crate::model::collection_meta::CollectionMeta;
+use crate::model::environments::is_secret;
 use chrono::{Local, NaiveDate};
+use gpui_kit::component::WindowExt as _;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::collections::{BTreeMap, VecDeque};
@@ -27,8 +30,9 @@ use std::sync::Arc;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ShareSyncEvent {
     /// The server accepted a change (link, people, variables): re-read
-    /// `Shared · N` and merge [`ShareSync::share_defaults`] into the notes.
-    Changed,
+    /// `Shared · N` and merge these `share_default` flags (the ones that
+    /// changed) into the notes, which their owner saves.
+    Changed(Vec<(String, bool)>),
     /// The address was invited: its field can be cleared.
     Invited(String),
 }
@@ -38,8 +42,6 @@ pub struct ShareSource {
     pub backend: Arc<dyn Backend>,
     pub key: CollectionKey,
     pub root: PathBuf,
-    /// Where the notes are saved (`None`: kept in memory).
-    pub base: Option<PathBuf>,
     pub meta: CollectionMeta,
     /// `18 requests in 4 folders`.
     pub requests: usize,
@@ -119,7 +121,6 @@ pub struct ShareSync {
     backend: Arc<dyn Backend>,
     key: CollectionKey,
     root: PathBuf,
-    base: Option<PathBuf>,
     pub(super) requests: usize,
     pub(super) folders: usize,
     /// The notes, with `share_default` as the server last accepted it.
@@ -142,7 +143,6 @@ pub struct ShareSync {
     busy: bool,
     /// Bumped per call started: only the newest call's settings show.
     generation: u64,
-    save: Option<Task<()>>,
 }
 
 impl EventEmitter<ShareSyncEvent> for ShareSync {}
@@ -153,7 +153,6 @@ impl ShareSync {
             backend: src.backend,
             key: src.key,
             root: src.root,
-            base: src.base,
             requests: src.requests,
             folders: src.folders,
             notes: src.meta,
@@ -167,7 +166,6 @@ impl ShareSync {
             queue: VecDeque::new(),
             busy: false,
             generation: 0,
-            save: None,
         }
     }
 
@@ -181,20 +179,11 @@ impl ShareSync {
 
     /// The owner's notes changed elsewhere (a description, a secret mark):
     /// later calls send them. Accepted ticks stay as accepted.
-    pub fn set_notes(&mut self, mut meta: CollectionMeta) {
-        for (name, v) in &self.notes.vars {
-            meta.vars.entry(name.clone()).or_default().share_default = v.share_default;
-        }
+    /// The owner's notes: the workspace keeps (and saves) them, accepted
+    /// flags merged in as each `Changed` arrives, so they replace these
+    /// whole. Ticks in flight stay on top.
+    pub fn set_notes(&mut self, meta: CollectionMeta) {
         self.notes = meta;
-    }
-
-    /// Accepted `share_default` per name: what the notes' owners merge.
-    pub fn share_defaults(&self) -> Vec<(String, bool)> {
-        self.notes
-            .vars
-            .iter()
-            .map(|(n, v)| (n.clone(), v.share_default))
-            .collect()
     }
 
     /// The notes with the ticks in flight: what the next call sends.
@@ -335,82 +324,62 @@ impl ShareSync {
                     self.settings = Some(settings);
                 }
                 self.error = None;
-                if matches!(done.op, Op::Open | Op::Variables { .. }) {
-                    self.accept(&done.sent, cx);
-                }
+                let accepted = if matches!(done.op, Op::Open | Op::Variables { .. }) {
+                    self.accept(&done.sent)
+                } else {
+                    Vec::new()
+                };
                 if let Op::Invite(email) = &done.op {
                     cx.emit(ShareSyncEvent::Invited(email.clone()));
                 }
-                cx.emit(ShareSyncEvent::Changed);
+                cx.emit(ShareSyncEvent::Changed(accepted));
             }
             Err(BackendError::Invalid(why)) if matches!(done.op, Op::Invite(_)) => {
                 self.invite_error = Some(why);
             }
             Err(e) => {
                 self.error = Some(share_error(&e));
-                match &done.op {
-                    Op::Variables { tick: Some(name) } => {
-                        self.ticks.remove(name);
-                    }
-                    Op::Access(_) => self.access_intent = None,
-                    Op::Expiry(_) => self.expiry_intent = None,
-                    _ => {}
+                if let Op::Variables { tick: Some(name) } = &done.op {
+                    self.ticks.remove(name);
                 }
             }
+        }
+        // A menu choice settles once its call is back (the server's
+        // settings show it, or show why not), unless a newer one waits.
+        match &done.op {
+            Op::Access(_) if !self.queue.iter().any(|o| matches!(o, Op::Access(_))) => {
+                self.access_intent = None;
+            }
+            Op::Expiry(_) if !self.queue.iter().any(|o| matches!(o, Op::Expiry(_))) => {
+                self.expiry_intent = None;
+            }
+            _ => {}
         }
         cx.notify();
         self.run_next(cx);
     }
 
-    /// The server took `sent`'s ticks: they are the notes now, saved, and
-    /// ticks that say the same are settled.
-    fn accept(&mut self, sent: &CollectionMeta, cx: &mut Context<Self>) {
-        let flags: Vec<(String, bool)> = sent
-            .vars
-            .iter()
-            .map(|(n, v)| (n.clone(), v.share_default))
-            .collect();
-        let mut changed = false;
-        for (name, on) in &flags {
-            let notes = self.notes.vars.entry(name.clone()).or_default();
-            changed |= notes.share_default != *on;
-            notes.share_default = *on;
-            if self.ticks.get(name) == Some(on) {
+    /// The server took `sent`'s ticks: they are the notes now, and ticks
+    /// that say the same are settled. Returns the flags that changed (never
+    /// a secret's), for the notes' owner.
+    fn accept(&mut self, sent: &CollectionMeta) -> Vec<(String, bool)> {
+        let mut changed = Vec::new();
+        for (name, v) in &sent.vars {
+            let on = v.share_default && !is_secret(name, &sent.secret_names);
+            if self.ticks.get(name) == Some(&on) {
                 self.ticks.remove(name);
             }
+            let was = self.notes.vars.get(name).is_some_and(|n| n.share_default);
+            if was != on {
+                self.notes
+                    .vars
+                    .entry(name.clone())
+                    .or_default()
+                    .share_default = on;
+                changed.push((name.clone(), on));
+            }
         }
-        if changed {
-            self.save_flags(flags, cx);
-        }
-    }
-
-    /// Writes the accepted ticks into the saved notes, leaving everything
-    /// else there as it is (the Environments page saves the rest).
-    fn save_flags(&mut self, flags: Vec<(String, bool)>, cx: &mut Context<Self>) {
-        let Some(base) = self.base.clone() else {
-            return;
-        };
-        let (root, fallback) = (self.root.clone(), self.notes.clone());
-        let write = cx.background_spawn(async move {
-            let mut meta = CollectionMeta::load(&base, &root);
-            if meta.id.is_empty() {
-                meta = fallback;
-            }
-            for (name, on) in flags {
-                meta.vars.entry(name).or_default().share_default = on;
-            }
-            meta.save(&base, &root)
-        });
-        // Saves run in order: each waits for the one before.
-        let before = self.save.take();
-        self.save = Some(cx.spawn(async move |_, _| {
-            if let Some(before) = before {
-                before.await;
-            }
-            if let Err(e) = write.await {
-                log::warn!("Couldn't save the collection's notes: {e}");
-            }
-        }));
+        changed
     }
 
     pub fn set_access(&mut self, access: Access, cx: &mut Context<Self>) {
@@ -476,7 +445,6 @@ impl Workspace {
             backend: self.backend.clone(),
             key: self.collection_key()?,
             root: c.root.clone(),
-            base: self.store.base().map(std::path::Path::to_path_buf),
             meta: self.meta.clone(),
             requests,
             folders,
@@ -503,18 +471,12 @@ impl Workspace {
             &sync,
             window,
             |this, sync, event: &ShareSyncEvent, window, cx| {
-                if *event == ShareSyncEvent::Changed {
-                    let flags = sync.read(cx).share_defaults();
-                    for (name, on) in &flags {
-                        this.meta
-                            .vars
-                            .entry(name.clone())
-                            .or_default()
-                            .share_default = *on;
-                    }
-                    if let Some(view) = &this.settings_view {
-                        view.update(cx, |v, cx| v.merge_share_defaults(&flags, cx));
-                    }
+                // A share of a collection no longer open says nothing here.
+                if this.collection_key().as_ref() != Some(sync.read(cx).key()) {
+                    return;
+                }
+                if let ShareSyncEvent::Changed(flags) = event {
+                    this.merge_share_defaults(flags, window, cx);
                     this.refresh_share(window, cx);
                 }
             },
@@ -522,12 +484,89 @@ impl Workspace {
         self.share_sync = Some(sync.clone());
         Some(sync)
     }
+
+    /// Accepted `Share default` flags join the notes, which are saved from
+    /// here (the one owner), and the open settings page's copy.
+    fn merge_share_defaults(
+        &mut self,
+        flags: &[(String, bool)],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if flags.is_empty() {
+            return;
+        }
+        for (name, on) in flags {
+            self.meta
+                .vars
+                .entry(name.clone())
+                .or_default()
+                .share_default = *on;
+        }
+        self.save_meta(window, cx);
+        if let Some(view) = &self.settings_view {
+            view.update(cx, |v, cx| v.merge_share_defaults(flags, cx));
+        }
+    }
+
+    /// Forgets the share (another collection, another account): its calls'
+    /// answers go nowhere, an open Share dialog closes and the settings
+    /// page moves to a fresh one.
+    pub(super) fn drop_share(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.share_view().is_some() {
+            window.close_dialog(cx);
+        }
+        self.share_view = None;
+        self._share_events = None;
+        self.share_sync = None;
+        self._share_sync_events = None;
+        if self.settings_view.is_some() {
+            let sharing = self.share_sync(window, cx).map(|sync| Sharing {
+                backend: self.backend.clone(),
+                sync,
+                people: None,
+            });
+            if let Some(view) = &self.settings_view {
+                view.update(cx, |v, cx| v.replace_sharing(sharing, window, cx));
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{BackendError, Expiry, current_expiry, share_error};
     use chrono::NaiveDate;
+
+    #[test]
+    fn new_notes_replace_the_old_and_deleted_vars_stay_gone() {
+        use super::{ShareSource, ShareSync};
+        use crate::model::backend::CollectionKey;
+        use crate::model::collection_meta::{CollectionMeta, VarMeta};
+        let mut meta = CollectionMeta::default();
+        meta.vars.insert(
+            "OLD_URL".into(),
+            VarMeta {
+                share_default: true,
+                ..VarMeta::default()
+            },
+        );
+        let mut sync = ShareSync::new(ShareSource {
+            backend: crate::model::backend::test_backend(),
+            key: CollectionKey {
+                id: "0a1b2c3d".into(),
+                name: "Payments API".into(),
+            },
+            root: std::path::PathBuf::from("/nowhere"),
+            meta,
+            requests: 0,
+            folders: 0,
+        });
+        assert!(sync.shares_default("OLD_URL"));
+        sync.set_notes(CollectionMeta::default());
+        assert!(!sync.shares_default("OLD_URL"), "deleted, not re-created");
+        assert!(sync.effective().vars.is_empty());
+    }
 
     #[test]
     fn expiry_and_errors_read_like_the_board() {

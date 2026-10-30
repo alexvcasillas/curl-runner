@@ -471,6 +471,30 @@ impl CollectionSettings {
         cx.notify();
     }
 
+    /// A new share (or none: signed out, or nothing open) for the Sharing
+    /// page: the old one's controls go, and a shown page reopens on it.
+    pub fn replace_sharing(
+        &mut self,
+        sharing: Option<Sharing>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.sharing = sharing;
+        self.share_view = None;
+        self._share_events = None;
+        if self.page == Page::Sharing {
+            self.open_sharing(window, cx);
+        }
+        cx.notify();
+    }
+
+    /// People with access, for the nav's count: the share's own once it
+    /// answered, else the title bar's.
+    pub fn sharing_count(&self, cx: &App) -> Option<usize> {
+        let s = self.sharing.as_ref()?;
+        s.sync.read(cx).people().or(s.people)
+    }
+
     /// The Sharing page's controls, when it is shown.
     #[cfg(test)]
     pub fn share_view(&self) -> Option<&Entity<ShareView>> {
@@ -1302,15 +1326,12 @@ impl CollectionSettings {
             )
             .child(
                 page_item("settings-sharing", "Sharing", Page::Sharing, cx).children(
-                    self.sharing
-                        .as_ref()
-                        .and_then(|s| s.sync.read(cx).people().or(s.people))
-                        .map(|n| {
-                            div()
-                                .text_size(px(11.))
-                                .text_color(color("text-tertiary"))
-                                .child(n.to_string())
-                        }),
+                    self.sharing_count(cx).map(|n| {
+                        div()
+                            .text_size(px(11.))
+                            .text_color(color("text-tertiary"))
+                            .child(n.to_string())
+                    }),
                 ),
             )
             .child(section("Workspace", false, false))
@@ -3060,5 +3081,30 @@ mod tests {
         assert!(shows(cx, window, "Sign in to share this collection."));
         let view = ws.read_with(cx, |ws, _| ws.settings_view.clone().unwrap());
         assert!(view.read_with(cx, |v, _| v.share_view().is_none()));
+    }
+
+    #[gpui_kit::test]
+    fn signing_out_drops_the_old_sessions_share(cx: &mut TestAppContext) {
+        use crate::model::backend::SignInMethod;
+        let state = tempfile::tempdir().unwrap();
+        let backend = super::super::workspace::test_backend();
+        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        let (_dir, window, ws, _) = open_with(cx, state.path(), backend.clone());
+        open_environments(cx, window);
+        cx.update_window(window, |_, window, cx| window.click("settings-sharing", cx))
+            .unwrap();
+        cx.run_until_parked();
+        let view = ws.read_with(cx, |ws, _| ws.settings_view.clone().unwrap());
+        assert_eq!(view.read_with(cx, |v, cx| v.sharing_count(cx)), Some(1));
+        // Signed out from Settings: the workspace starts over.
+        futures::executor::block_on(backend.sign_out()).unwrap();
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.start_sync(window, cx))
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(view.read_with(cx, |v, cx| v.sharing_count(cx)), None);
+        assert!(view.read_with(cx, |v, _| v.share_view().is_none()));
+        assert!(shows(cx, window, "Sign in to share this collection."));
     }
 }

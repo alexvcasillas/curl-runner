@@ -1434,19 +1434,11 @@ impl Workspace {
         if !secrets.is_empty()
             && let Some(c) = &self.state.collection
         {
-            let (service, root) = (self.env_ctx(c).service(), c.root.clone());
+            let service = self.env_ctx(c).service();
             for e in &secrets {
                 self.meta.set_secret(&e.var, true);
             }
-            if let Some(base) = self.store.base()
-                && let Err(e) = self.meta.save(base, &root)
-            {
-                notify_error(
-                    format!("Couldn't save the collection's notes: {e}"),
-                    window,
-                    cx,
-                );
-            }
+            self.save_meta(window, cx);
             if save_secrets {
                 for e in &secrets {
                     // Never over another value: the dialog already moved

@@ -1890,4 +1890,96 @@ mod gpui_tests {
         cx.run_until_parked();
         assert!(ws.read_with(cx, |ws, _| ws.share_view().is_none()));
     }
+
+    #[gpui_kit::test]
+    fn a_finishing_tick_never_reaches_the_next_collection(cx: &mut TestAppContext) {
+        let a = collection();
+        let b = tempfile::tempdir().unwrap();
+        std::fs::write(
+            b.path().join("get.yaml"),
+            "request:\n  url: ${BASE_URL}/b\n",
+        )
+        .unwrap();
+        std::fs::write(
+            b.path().join(".env"),
+            "BASE_URL=https://b.example.com/api\n",
+        )
+        .unwrap();
+        let backend = signed_in();
+        let (window, ws) = open(cx, a.path(), backend.clone());
+        let view = open_share(cx, window, &ws);
+        let dev = backend.dev().unwrap();
+        dev.hold_updates(true);
+        view.update(cx, |v, cx| v.toggle_share_default("BASE_URL", cx));
+        cx.run_until_parked();
+        drop(view);
+        // B opens while A's tick is in flight; A's dialog goes.
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                assert!(ws.open_collection(b.path(), window, cx))
+            });
+            assert!(!window.has_active_dialog(cx));
+        })
+        .unwrap();
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.open_share(window, cx))
+        })
+        .unwrap();
+        cx.run_until_parked();
+        dev.hold_updates(false);
+        cx.run_until_parked();
+        let key_b = ws.read_with(cx, |ws, _| ws.collection_key().unwrap());
+        assert!(ws.read_with(cx, |ws, _| ws.meta.vars.values().all(|v| !v.share_default)));
+        let b_calls: Vec<String> = update_shares(&backend)
+            .into_iter()
+            .filter(|c| c.contains(&format!("{:?}", key_b.id)))
+            .collect();
+        assert!(!b_calls.is_empty(), "B's dialog opened its share");
+        for call in &b_calls {
+            assert!(!call.contains("https://b.example.com/api"), "{call}");
+        }
+        let b_view = ws.read_with(cx, |ws, _| ws.share_view()).unwrap();
+        assert!(!b_view.read_with(cx, |v, cx| v.shares_default("BASE_URL", cx)));
+    }
+
+    #[gpui_kit::test]
+    fn a_menu_choice_settles_once_its_call_is_back(cx: &mut TestAppContext) {
+        let dir = collection();
+        let backend = signed_in();
+        let (window, ws) = open(cx, dir.path(), backend.clone());
+        let view = open_share(cx, window, &ws);
+        view.update(cx, |v, cx| v.set_access(Access::InvitedOnly, cx));
+        cx.run_until_parked();
+        // The server changes on its own; the next answer shows it.
+        let key = ws.read_with(cx, |ws, _| ws.collection_key().unwrap());
+        futures::executor::block_on(backend.update_share(
+            &key,
+            crate::model::backend::ShareUpdate {
+                access: Some(Access::AnyoneWithLink),
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+        view.update(cx, |v, cx| v.reset_link(cx));
+        cx.run_until_parked();
+        let sync = view.read_with(cx, |v, _| v.sync.clone());
+        assert_eq!(
+            sync.read_with(cx, |s, _| s.access()),
+            Access::AnyoneWithLink
+        );
+        // A choice with a newer one queued keeps the newer until it lands.
+        backend.dev().unwrap().hold_updates(true);
+        view.update(cx, |v, cx| {
+            v.set_access(Access::InvitedOnly, cx);
+            v.set_access(Access::AnyoneWithLink, cx);
+            v.set_access(Access::InvitedOnly, cx);
+        });
+        cx.run_until_parked();
+        assert_eq!(sync.read_with(cx, |s, _| s.access()), Access::InvitedOnly);
+        backend.dev().unwrap().hold_updates(false);
+        cx.run_until_parked();
+        assert_eq!(sync.read_with(cx, |s, _| s.access()), Access::InvitedOnly);
+        let on_server = futures::executor::block_on(backend.share_settings(&key)).unwrap();
+        assert_eq!(on_server.access, Access::InvitedOnly);
+    }
 }

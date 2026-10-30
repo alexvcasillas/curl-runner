@@ -404,6 +404,8 @@ impl Workspace {
     /// sync time, the share's people, the waiting count and, with "Sync
     /// automatically", a sync (which also rebuilds conflicts).
     pub(super) fn start_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // The share belongs to the collection and account it was made for.
+        self.drop_share(window, cx);
         let saver = std::mem::take(&mut self.sync.saver);
         self.sync = SyncState {
             saver,
