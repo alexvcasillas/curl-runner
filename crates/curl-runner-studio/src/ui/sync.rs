@@ -9,7 +9,9 @@
 //! the files whose hash is not their base, plus files in the base that are
 //! really gone (deletions; an unreadable file is not gone). Each file goes
 //! with its base, so the server pulls, pushes or reports a conflict file by
-//! file. A folder that can't be read sends nothing. Offline, the count
+//! file. A folder that can't be read sends nothing; one that lists no
+//! files although some were synced sends its deletions only on `Sync now`
+//! after the footer said so. Offline, the count
 //! keeps growing and a probe runs every [`OFFLINE_POLL`] (or on the next
 //! save); once back, the waiting changes go.
 
@@ -54,6 +56,12 @@ pub(super) struct SyncState {
     pub(super) offline: bool,
     /// The collection folder could not be read: nothing is sent.
     pub(super) unreadable: bool,
+    /// The folder lists no files although some were synced: the footer
+    /// asks for `Sync now` before the deletions go.
+    pub(super) emptied: bool,
+    /// `Sync now` while [`Self::emptied`] was shown: the next sync sends
+    /// the deletions.
+    confirmed: bool,
     /// When the last sync finished (or the server's, on open).
     at: Option<DateTime<Utc>>,
     /// Files the last sync found changed on both sides (Task 7 resolves).
@@ -97,6 +105,9 @@ pub enum SyncLine {
     Conflicts(usize),
     /// The collection folder can't be read: nothing is synced.
     CantRead,
+    /// The folder lists no files although some were synced: `Sync now`
+    /// deletes them on the server.
+    AllRemoved,
 }
 
 fn changes(n: usize) -> String {
@@ -124,6 +135,7 @@ impl SyncLine {
             SyncLine::Conflicts(1) => "1 conflict".into(),
             SyncLine::Conflicts(n) => format!("{n} conflicts"),
             SyncLine::CantRead => "Can't read the collection folder".into(),
+            SyncLine::AllRemoved => "All files removed · Sync now to delete them".into(),
         }
     }
 
@@ -134,7 +146,7 @@ impl SyncLine {
             SyncLine::LocalOnly => None,
             SyncLine::NotSynced | SyncLine::Syncing => Some(("text-tertiary", false)),
             SyncLine::Synced(_) => Some(("success", false)),
-            SyncLine::Waiting(_) => Some(("warning", false)),
+            SyncLine::Waiting(_) | SyncLine::AllRemoved => Some(("warning", false)),
             SyncLine::Offline(_) => Some(("warning", true)),
             SyncLine::Conflicts(_) | SyncLine::CantRead => Some(("danger", false)),
         }
@@ -143,7 +155,7 @@ impl SyncLine {
     /// The text's token: amber offline, as on the board.
     pub fn text_color(&self) -> &'static str {
         match self {
-            SyncLine::Offline(_) => "warning",
+            SyncLine::Offline(_) | SyncLine::AllRemoved => "warning",
             SyncLine::CantRead => "danger",
             _ => "text-secondary",
         }
@@ -159,6 +171,7 @@ impl SyncLine {
                 | SyncLine::Offline(_)
                 | SyncLine::Conflicts(_)
                 | SyncLine::CantRead
+                | SyncLine::AllRemoved
         )
     }
 }
@@ -173,12 +186,27 @@ pub(super) fn sync_dot(token: &'static str, ring: bool) -> Div {
     }
 }
 
-/// The scan can't be trusted: the root can't be listed, or it lists
-/// nothing although files were synced before (an unmounted or emptied
-/// folder). Nothing is sent then, deletions least of all.
-fn untrusted(scan: &SyncScan, base: &SyncBase) -> bool {
+/// What a scan allows a sync to send.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Verdict {
+    /// The root can't be listed (unmounted, no permission): nothing.
+    CantRead,
+    /// The root lists nothing although files were synced before: every
+    /// file deleted, or a folder swapped for an empty one. Its deletions
+    /// wait for `Sync now`.
+    Emptied,
+    Ok,
+}
+
+fn verdict(scan: &SyncScan, base: &SyncBase) -> Verdict {
     let nothing = scan.files.is_empty() && scan.too_big.is_empty() && scan.unreadable.is_empty();
-    !scan.root_ok || (nothing && !base.files.is_empty())
+    if !scan.root_ok {
+        Verdict::CantRead
+    } else if nothing && !base.files.is_empty() {
+        Verdict::Emptied
+    } else {
+        Verdict::Ok
+    }
 }
 
 /// Changes waiting: files whose hash is not their base (less `held`
@@ -190,7 +218,10 @@ fn pending_of(scan: &SyncScan, base: &SyncBase, held: &HashSet<PathBuf>, deletio
         .filter(|f| !held.contains(&f.rel) && base.files.get(&f.rel) != Some(&f.hash))
         .count();
     let deleted = if deletions {
-        deleted_of(scan, base).len()
+        deleted_of(scan, base)
+            .iter()
+            .filter(|d| !held.contains(&d.rel))
+            .count()
     } else {
         0
     };
@@ -383,6 +414,8 @@ impl Workspace {
             SyncLine::LocalOnly
         } else if s.unreadable {
             SyncLine::CantRead
+        } else if s.emptied {
+            SyncLine::AllRemoved
         } else if !s.conflicts.is_empty() {
             SyncLine::Conflicts(s.conflicts.len())
         } else if s.offline {
@@ -441,9 +474,13 @@ impl Workspace {
         }
     }
 
-    /// `Sync now` (Settings, the dev menu's Offline): at once.
+    /// `Sync now` (Settings, the status bar): at once. After the footer
+    /// said every file was removed, it sends those deletions.
     pub(super) fn sync_now(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.sync.debounce = None;
+        if self.sync.emptied {
+            self.sync.confirmed = true;
+        }
         self.run_sync(window, cx);
     }
 
@@ -504,8 +541,12 @@ impl Workspace {
         self.sync.scan = Some(cx.spawn_in(window, async move |this, cx| {
             let scan = scan.await;
             this.update_in(cx, |this, window, cx| {
-                this.sync.unreadable = untrusted(&scan, &this.sync.base);
-                if !this.sync.unreadable {
+                let verdict = verdict(&scan, &this.sync.base);
+                // A received copy never deletes: an empty one is unreadable.
+                this.sync.unreadable =
+                    verdict == Verdict::CantRead || (verdict == Verdict::Emptied && !deletions);
+                this.sync.emptied = verdict == Verdict::Emptied && deletions;
+                if verdict == Verdict::Ok {
                     let held = this.held_back();
                     this.sync.pending = pending_of(&scan, &this.sync.base, &held, deletions);
                     if schedule && this.sync.pending > 0 {
@@ -534,7 +575,8 @@ impl Workspace {
 
     /// One sync: every tracked file with its base up, real deletions too,
     /// the server's newer files and deletions down. While one is in flight,
-    /// queues one more. A folder that can't be read sends nothing.
+    /// queues one more. A folder that can't be read sends nothing; an
+    /// emptied one only after `Sync now` confirmed it.
     pub(super) fn run_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(key) = self.collection_key(cx).filter(|_| self.sync_on()) else {
             return;
@@ -555,13 +597,16 @@ impl Workspace {
             .unwrap_or_default();
         let base = self.sync.base.clone();
         let backend = self.backend.clone();
+        let confirmed = std::mem::take(&mut self.sync.confirmed) && !pull_only;
         self.sync.task = Some(cx.spawn_in(window, async move |this, cx| {
             let (scan_root, scan_base) = (root.clone(), base.clone());
             let scanned = cx
                 .background_spawn(async move {
                     let scan = scan_sync_files(&scan_root);
-                    if untrusted(&scan, &scan_base) {
-                        return None;
+                    match verdict(&scan, &scan_base) {
+                        Verdict::Ok => {}
+                        Verdict::Emptied if confirmed => {}
+                        refused => return Err(refused),
                     }
                     let deleted = if received.is_some() {
                         // Read-only copies never delete (Task 6).
@@ -569,18 +614,23 @@ impl Workspace {
                     } else {
                         really_gone(&scan_root, deleted_of(&scan, &scan_base))
                     };
-                    Some((scan, deleted))
+                    Ok((scan, deleted))
                 })
                 .await;
-            let Some((scan, deleted)) = scanned else {
-                this.update(cx, |this, cx| {
-                    this.sync.running = false;
-                    this.sync.again = false;
-                    this.sync.unreadable = true;
-                    this.sync_changed(cx);
-                })
-                .ok();
-                return;
+            let (scan, deleted) = match scanned {
+                Ok(scanned) => scanned,
+                Err(refused) => {
+                    this.update(cx, |this, cx| {
+                        this.sync.running = false;
+                        this.sync.again = false;
+                        let emptied = refused == Verdict::Emptied && !pull_only;
+                        this.sync.unreadable = !emptied;
+                        this.sync.emptied = emptied;
+                        this.sync_changed(cx);
+                    })
+                    .ok();
+                    return;
+                }
             };
             for rel in &scan.too_big {
                 log::info!("sync: {} stays local (over 1 MB)", rel.display());
@@ -625,6 +675,7 @@ impl Workspace {
     ) {
         self.sync.running = false;
         self.sync.unreadable = false;
+        self.sync.emptied = false;
         match result {
             Ok(report) => {
                 // The server's conflicts first; ours for other paths.
@@ -790,7 +841,8 @@ impl Workspace {
 mod tests {
     use super::{
         HashMap, HashSet, Path, PathBuf, SyncBase, SyncDeletion, SyncFile, SyncLine, SyncReport,
-        SyncScan, Utc, apply_pulled, deleted_of, pending_of, really_gone, untrusted, writable,
+        SyncScan, Utc, Verdict, apply_pulled, deleted_of, pending_of, really_gone, verdict,
+        writable,
     };
 
     #[test]
@@ -870,24 +922,51 @@ mod tests {
     }
 
     #[test]
-    fn an_unreadable_or_emptied_folder_is_not_trusted() {
+    fn an_unreadable_folder_is_not_an_emptied_one() {
         let base = base_of(&[("a.yaml", 1)]);
         let ok = SyncScan {
             root_ok: true,
             ..SyncScan::default()
         };
-        assert!(untrusted(&ok, &base), "nothing seen, something synced");
-        assert!(!untrusted(&ok, &SyncBase::default()), "a new, empty folder");
-        assert!(
-            untrusted(&SyncScan::default(), &SyncBase::default()),
+        assert_eq!(
+            verdict(&ok, &base),
+            Verdict::Emptied,
+            "nothing seen, something synced"
+        );
+        assert_eq!(
+            verdict(&ok, &SyncBase::default()),
+            Verdict::Ok,
+            "a new, empty folder"
+        );
+        assert_eq!(
+            verdict(&SyncScan::default(), &base),
+            Verdict::CantRead,
             "no root"
+        );
+        assert_eq!(
+            verdict(&SyncScan::default(), &SyncBase::default()),
+            Verdict::CantRead,
+            "no root, nothing synced"
         );
         let locked = SyncScan {
             unreadable: vec!["a.yaml".into()],
             root_ok: true,
             ..SyncScan::default()
         };
-        assert!(!untrusted(&locked, &base));
+        assert_eq!(verdict(&locked, &base), Verdict::Ok);
+    }
+
+    #[test]
+    fn held_deletions_are_not_counted_waiting() {
+        let scan = SyncScan {
+            root_ok: true,
+            files: vec![SyncFile::new("a.yaml", "a")],
+            ..SyncScan::default()
+        };
+        let base = base_of(&[("a.yaml", SyncFile::hash_of("a")), ("gone.yaml", 1)]);
+        let held = HashSet::from([PathBuf::from("gone.yaml")]);
+        assert_eq!(pending_of(&scan, &base, &HashSet::new(), true), 1);
+        assert_eq!(pending_of(&scan, &base, &held, true), 0);
     }
 
     #[test]
@@ -899,6 +978,25 @@ mod tests {
             base: 1,
         };
         let gone = really_gone(d.path(), vec![del("here.yaml"), del("gone.yaml")]);
+        assert_eq!(gone, [del("gone.yaml")]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_in_a_folder_that_cant_be_searched_is_not_gone() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let d = tempfile::tempdir().unwrap();
+        let locked = d.path().join("locked");
+        std::fs::create_dir(&locked).unwrap();
+        std::fs::write(locked.join("a.yaml"), "a: 1\n").unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let del = |rel: &str| SyncDeletion {
+            rel: rel.into(),
+            base: 1,
+        };
+        let gone = really_gone(d.path(), vec![del("locked/a.yaml"), del("gone.yaml")]);
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // EACCES, not ENOENT: the file may well be there.
         assert_eq!(gone, [del("gone.yaml")]);
     }
 
@@ -1529,28 +1627,18 @@ mod gpui_tests {
             StateStore::at(state.path()),
         );
         let before = syncs(&backend).len();
-        // Emptied, then gone: neither sends a thing.
-        for rel in ["a.yaml", "b.yaml"] {
-            std::fs::remove_file(dir.path().join(rel)).unwrap();
-        }
-        cx.update_window(window, |_, window, cx| {
-            ws.update(cx, |ws, cx| ws.sync_now(window, cx))
-        })
-        .unwrap();
-        cx.run_until_parked();
-        assert_eq!(
-            syncs(&backend).len(),
-            before,
-            "an emptied folder is suspicious"
-        );
-        assert_eq!(line(cx, &ws), SyncLine::CantRead);
         std::fs::remove_dir_all(dir.path()).unwrap();
-        cx.update_window(window, |_, window, cx| {
-            ws.update(cx, |ws, cx| ws.sync_now(window, cx))
-        })
-        .unwrap();
-        cx.run_until_parked();
+        // Twice: a second `Sync now` confirms nothing for a folder that
+        // can't be read.
+        for _ in 0..2 {
+            cx.update_window(window, |_, window, cx| {
+                ws.update(cx, |ws, cx| ws.sync_now(window, cx))
+            })
+            .unwrap();
+            cx.run_until_parked();
+        }
         assert_eq!(syncs(&backend).len(), before);
+        assert_eq!(line(cx, &ws), SyncLine::CantRead);
         assert!(shows(
             cx,
             window,
@@ -1569,6 +1657,55 @@ mod gpui_tests {
             .unwrap()
             .files;
         assert_eq!(files.len(), 2, "the server copy is intact");
+    }
+
+    #[gpui_kit::test]
+    fn emptied_folder_deletes_only_after_sync_now(cx: &mut TestAppContext) {
+        let dir = collection(&[("a.yaml", REQUEST), ("b.yaml", REQUEST)]);
+        let state = tempfile::tempdir().unwrap();
+        let backend = signed_in();
+        let (window, ws) = open_in(
+            cx,
+            dir.path(),
+            backend.clone(),
+            StateStore::at(state.path()),
+        );
+        let before = syncs(&backend).len();
+        for rel in ["a.yaml", "b.yaml"] {
+            std::fs::remove_file(dir.path().join(rel)).unwrap();
+        }
+        // Noticed on disk (or by a first `Sync now`): nothing goes yet.
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.disk_changed(&[], window, cx))
+        })
+        .unwrap();
+        cx.executor().advance_clock(SYNC_DELAY * 2);
+        cx.run_until_parked();
+        assert_eq!(syncs(&backend).len(), before, "not without a confirm");
+        assert_eq!(line(cx, &ws), SyncLine::AllRemoved);
+        let text = "All files removed · Sync now to delete them";
+        assert!(shows(cx, window, "sidebar-sync", text));
+        assert!(shows(cx, window, "status-bar", text));
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.sync_now(window, cx))
+        })
+        .unwrap();
+        cx.run_until_parked();
+        let calls = syncs(&backend);
+        assert_eq!(calls.len(), before + 1);
+        let hash = crate::model::backend::SyncFile::hash_of(REQUEST);
+        let last = calls.last().unwrap();
+        for rel in ["a.yaml", "b.yaml"] {
+            let sent = format!("SyncDeletion {{ rel: {rel:?}, base: {hash} }}");
+            assert!(last.contains(&sent), "{rel} with its base: {last}");
+        }
+        assert!(matches!(line(cx, &ws), SyncLine::Synced(_)));
+        let key = key(&ws, cx);
+        futures::executor::block_on(backend.update_share(&key, ShareUpdate::default())).unwrap();
+        let files = futures::executor::block_on(backend.fetch_shared(&key.id))
+            .unwrap()
+            .files;
+        assert!(files.is_empty(), "deleted on the server");
     }
 
     #[gpui_kit::test]

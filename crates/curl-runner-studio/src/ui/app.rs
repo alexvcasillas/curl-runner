@@ -522,7 +522,8 @@ fn install_dev_menu(
         cx.defer(move |cx| {
             window
                 .update(cx, |_, window, cx| {
-                    ws.update(cx, |ws, cx| ws.sync_now(window, cx)).ok();
+                    // Not `sync_now`: a toggle confirms no deletions.
+                    ws.update(cx, |ws, cx| ws.run_sync(window, cx)).ok();
                 })
                 .ok();
         });
