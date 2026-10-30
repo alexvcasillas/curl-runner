@@ -2,6 +2,7 @@
 
 use super::icons::{self, glyph};
 use super::method_stack::{Stack, method_stack};
+use super::runs::RunStatus;
 use super::workspace::Workspace;
 use super::{color, method_color};
 use crate::model::collection::TreeNode;
@@ -437,11 +438,12 @@ impl Workspace {
                             ))
                             .child(name_cell(label))
                             .child(count_cell(group.count))
+                            .child(status_dot(ix, parse_ok, self.runs.status(&rel_path, None)))
                     }
                     None => row
                         .child(method_badge(method.as_deref()))
                         .child(name_cell(label))
-                        .child(status_dot(ix, parse_ok)),
+                        .child(status_dot(ix, parse_ok, self.runs.status(&rel_path, None))),
                 };
                 row.on_click(cx.listener(move |this, _, window, cx| {
                     this.selected_request = None;
@@ -465,7 +467,11 @@ impl Workspace {
                 select(base, selected, selected_bg)
                     .child(method_badge(Some(&method)))
                     .child(name_cell(name))
-                    .child(status_dot(ix, true))
+                    .child(status_dot(
+                        ix,
+                        true,
+                        self.runs.status(&rel_path, Some(index)),
+                    ))
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.open_request(&open_path, index, line, window, cx);
                     }))
@@ -593,18 +599,30 @@ fn count_cell(count: usize) -> Div {
         .child(count.to_string())
 }
 
-/// The status column: a hollow ring until the request has run (runs come
-/// later), a red dot for a file that does not parse.
-fn status_dot(ix: usize, parse_ok: bool) -> AnyElement {
+/// The status column: the last run's result (green passed, red failed), a
+/// hollow ring until it has run, a red dot for a file that does not parse.
+fn status_dot(ix: usize, parse_ok: bool, status: RunStatus) -> AnyElement {
+    let label = match (parse_ok, status) {
+        (false, _) => "Can't parse",
+        (true, RunStatus::NotRun) => "Not run",
+        (true, RunStatus::Passed) => "Passed",
+        (true, RunStatus::Failed) => "Failed",
+    };
     let dot = div()
         .id(("status-dot", ix))
+        .role(Role::Label)
+        .aria_label(label)
+        .test_support()
         .flex_none()
         .size(px(6.))
         .rounded_full();
     if parse_ok {
-        dot.border_1()
-            .border_color(color("text-disabled"))
-            .into_any_element()
+        match status {
+            RunStatus::NotRun => dot.border_1().border_color(color("text-disabled")),
+            RunStatus::Passed => dot.bg(color("success")),
+            RunStatus::Failed => dot.bg(color("danger")),
+        }
+        .into_any_element()
     } else {
         dot.bg(color("danger"))
             .tooltip(|window, cx| {

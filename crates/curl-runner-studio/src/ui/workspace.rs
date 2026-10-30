@@ -864,7 +864,7 @@ impl Workspace {
 }
 
 impl Render for Workspace {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let open = self.state.collection.is_some();
         let main = if open {
             self.render_editor_pane(cx).into_any_element()
@@ -914,7 +914,7 @@ impl Render for Workspace {
             .text_color(color("text-primary"))
             .font_family(ui_font())
             .text_size(px(13.))
-            .child(self.render_title_bar(cx))
+            .child(self.render_title_bar(window, cx))
             .child(
                 div()
                     .flex()

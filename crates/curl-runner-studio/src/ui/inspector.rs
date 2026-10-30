@@ -181,11 +181,66 @@ pub fn missing_line(missing: &[String]) -> Option<String> {
     })
 }
 
+/// The body card's height cap: about the top half of the column at the
+/// 900px default window, so Checks and Timing stay in view below a long
+/// body (which scrolls inside the card).
+pub const BODY_MAX_HEIGHT: f32 = 420.;
+/// Bodies up to this many lines wrap with a hanging indent, one element per
+/// line; longer ones wrap as one text, so huge bodies stay cheap.
+pub const HANGING_INDENT_MAX_LINES: usize = 1000;
+
 /// The response body as shown.
 pub struct BodyView {
     pub text: SharedString,
     pub tokens: Vec<(Range<usize>, JsonTok)>,
+    /// One entry per line when the body is short enough to wrap each line
+    /// under its own indentation.
+    pub lines: Option<Vec<BodyLine>>,
     pub truncated: bool,
+}
+
+/// One body line: its leading spaces apart, so wrapped text hangs under the
+/// line's own indentation.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BodyLine {
+    pub indent: SharedString,
+    pub text: SharedString,
+    /// Token ranges relative to `text`.
+    pub tokens: Vec<(Range<usize>, JsonTok)>,
+}
+
+/// `text` split into [`BodyLine`]s, `tokens` clipped and re-based to each.
+pub fn body_lines(text: &str, tokens: &[(Range<usize>, JsonTok)]) -> Vec<BodyLine> {
+    let mut out = Vec::new();
+    let mut toks = tokens.iter().peekable();
+    let mut start = 0;
+    for line in text.split('\n') {
+        let end = start + line.len();
+        let indent = line.len() - line.trim_start_matches(' ').len();
+        let from = start + indent;
+        let mut line_tokens = Vec::new();
+        while let Some((r, t)) = toks.peek() {
+            if r.start >= end {
+                break;
+            }
+            let (a, b) = (r.start.max(from), r.end.min(end));
+            if a < b {
+                line_tokens.push((a - from..b - from, *t));
+            }
+            if r.end <= end {
+                toks.next();
+            } else {
+                break;
+            }
+        }
+        out.push(BodyLine {
+            indent: line[..indent].to_string().into(),
+            text: line[indent..].to_string().into(),
+            tokens: line_tokens,
+        });
+        start = end + 1;
+    }
+    out
 }
 
 /// The request as it was sent (already redacted by the run).
@@ -245,9 +300,12 @@ impl ResultView {
             } else {
                 json_tokens(&shown.text)
             };
+            let lines = (shown.text.lines().count() <= HANGING_INDENT_MAX_LINES)
+                .then(|| body_lines(&shown.text, &tokens));
             BodyView {
                 text: shown.text.into(),
                 tokens,
+                lines,
                 truncated: shown.truncated,
             }
         });
@@ -773,24 +831,54 @@ fn render_body_card(v: &ResultView, cx: &mut Context<Workspace>) -> impl IntoEle
                 (JsonTok::Number, color("syntax-number")),
                 (JsonTok::Punct, color("syntax-punctuation")),
             ];
-            let tok_color = |t: JsonTok| colors.iter().find(|(k, _)| *k == t).map(|(_, c)| *c);
-            let styles = body.tokens.iter().map(move |(r, t)| {
-                (
-                    r.clone(),
-                    HighlightStyle {
-                        color: tok_color(*t),
-                        ..Default::default()
-                    },
-                )
-            });
+            let styled = |text: &SharedString, tokens: &[(Range<usize>, JsonTok)]| {
+                let styles = tokens
+                    .iter()
+                    .map(|(r, t)| {
+                        let color = colors.iter().find(|(k, _)| k == t).map(|(_, c)| *c);
+                        let style = HighlightStyle {
+                            color,
+                            ..Default::default()
+                        };
+                        (r.clone(), style)
+                    })
+                    .collect::<Vec<_>>();
+                StyledText::new(text.clone()).with_highlights(styles)
+            };
             let default = if body.tokens.is_empty() {
                 color("text-primary")
             } else {
                 color("syntax-punctuation")
             };
+            let content = match &body.lines {
+                Some(lines) => div()
+                    .flex()
+                    .flex_col()
+                    .children(lines.iter().map(|line| {
+                        div()
+                            .flex()
+                            .min_h(px(20.))
+                            .when(!line.indent.is_empty(), |row| {
+                                row.child(
+                                    div()
+                                        .flex_none()
+                                        .whitespace_nowrap()
+                                        .child(line.indent.clone()),
+                                )
+                            })
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(styled(&line.text, &line.tokens)),
+                            )
+                    }))
+                    .into_any_element(),
+                None => styled(&body.text, &body.tokens).into_any_element(),
+            };
             div()
                 .text_color(default)
-                .child(StyledText::new(body.text.clone()).with_highlights(styles))
+                .child(content)
                 .when(body.truncated, |d| {
                     d.child(
                         div()
@@ -819,8 +907,8 @@ fn render_body_card(v: &ResultView, cx: &mut Context<Workspace>) -> impl IntoEle
                 .font_family(mono_font())
                 .text_size(px(12.))
                 .line_height(px(20.))
-                .whitespace_nowrap()
-                .overflow_x_scroll()
+                .max_h(px(BODY_MAX_HEIGHT))
+                .overflow_y_scroll()
                 .child(text),
         )
 }
@@ -888,6 +976,7 @@ fn render_timing(v: &ResultView) -> impl IntoElement + use<> {
         })
     };
     let total: f64 = v.timing.iter().map(|(_, ms)| ms).sum();
+    let segments = v.timing.len();
     div()
         .flex()
         .flex_col()
@@ -900,8 +989,14 @@ fn render_timing(v: &ResultView) -> impl IntoElement + use<> {
                 .gap(px(2.))
                 .rounded(px(3.))
                 .overflow_hidden()
-                .children(v.timing.iter().map(|(name, ms)| {
-                    let mut seg = div().h_full().flex_basis(px(0.)).bg(segment_color(name));
+                .children(v.timing.iter().enumerate().map(|(i, (name, ms))| {
+                    let mut seg = div()
+                        .h_full()
+                        .flex_basis(px(0.))
+                        .bg(segment_color(name))
+                        // GPUI clips to a square box, so the ends round here.
+                        .when(i == 0, |s| s.rounded_l(px(3.)))
+                        .when(i + 1 == segments, |s| s.rounded_r(px(3.)));
                     // Share of the total, at least a sliver so each shows.
                     seg.style().flex_grow = Some((*ms / total.max(1.)).max(0.01) as f32);
                     seg
@@ -1065,8 +1160,8 @@ fn render_request(r: &SentRequest) -> impl IntoElement + use<> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ExecutionResult, InspectorTab, JsonTok, Local, ResultView, ago, checks_summary, env_label,
-        format_bytes, format_ms, json_tokens, missing_line, visible_tabs,
+        ExecutionResult, InspectorTab, JsonTok, Local, ResultView, ago, body_lines, checks_summary,
+        env_label, format_bytes, format_ms, json_tokens, missing_line, visible_tabs,
     };
     use chrono::TimeZone as _;
 
@@ -1106,6 +1201,32 @@ mod tests {
             .map(|(r, _)| &text[r])
             .collect();
         assert_eq!(toks, ["[", r#""a\"b""#, ",", "\"c"]);
+    }
+
+    #[test]
+    fn body_lines_hang_tokens_under_their_indent() {
+        let text = "{\n  \"id\": 1\n}";
+        let lines = body_lines(text, &json_tokens(text));
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[1].indent.as_ref(), "  ");
+        assert_eq!(lines[1].text.as_ref(), "\"id\": 1");
+        let toks: Vec<(&str, JsonTok)> = lines[1]
+            .tokens
+            .iter()
+            .map(|(r, t)| (&lines[1].text[r.clone()], *t))
+            .collect();
+        assert_eq!(
+            toks,
+            [
+                ("\"id\"", JsonTok::Key),
+                (":", JsonTok::Punct),
+                ("1", JsonTok::Number)
+            ]
+        );
+        assert_eq!(lines[2].tokens, [(0..1, JsonTok::Punct)]);
+        let plain = body_lines("a\n\n  b", &[]);
+        assert_eq!(plain[1].text.as_ref(), "");
+        assert_eq!(plain[2].indent.as_ref(), "  ");
     }
 
     #[test]

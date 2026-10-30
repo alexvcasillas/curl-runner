@@ -13,9 +13,18 @@ use gpui_kit::prelude::*;
 use gpui_kit::*;
 
 impl Workspace {
-    pub(super) fn render_title_bar(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    pub(super) fn render_title_bar(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let compact = is_compact(window.viewport_size().width.into());
         let collection = match &self.state.collection {
-            Some(c) => div().font_weight(FontWeight::MEDIUM).child(c.name.clone()),
+            Some(c) => div()
+                .min_w_0()
+                .text_ellipsis()
+                .font_weight(FontWeight::MEDIUM)
+                .child(c.name.clone()),
             None => div()
                 .text_color(color("text-secondary"))
                 .child("No collection"),
@@ -34,14 +43,17 @@ impl Workspace {
                     .items_center()
                     .gap(px(12.))
                     .text_size(px(13.))
+                    .overflow_hidden()
                     .child(
                         div()
+                            .flex_none()
                             .px(px(8.))
                             .font_weight(FontWeight::SEMIBOLD)
                             .child("curl-runner studio"),
                     )
                     .child(
                         div()
+                            .flex_none()
                             .text_size(px(18.))
                             .text_color(color("border-200"))
                             .child("/"),
@@ -50,25 +62,26 @@ impl Workspace {
             )
             .child(self.render_search_button(cx))
             .child(
+                // No `min_w_0`: this side never shrinks below its buttons,
+                // the collection name gives way instead.
                 div()
                     .flex_1()
                     .flex_basis(px(0.))
-                    .min_w_0()
                     .flex()
                     .items_center()
                     .justify_end()
                     .gap(px(12.))
                     // Mirrors the Kit's traffic-light inset on the left.
-                    .pl(px(TRAFFIC_LIGHTS_INSET))
+                    .pl(px(if compact { 12. } else { TRAFFIC_LIGHTS_INSET }))
                     .pr(px(12.))
-                    .children(self.render_environment_picker())
+                    .children(self.render_environment_picker(!compact))
                     .children(self.render_run_collection(cx))
                     .child(self.render_run_button(cx)),
             )
     }
 
     /// "Environment" and the picker, once a collection is open.
-    fn render_environment_picker(&self) -> Option<impl IntoElement + use<>> {
+    fn render_environment_picker(&self, labelled: bool) -> Option<impl IntoElement + use<>> {
         let select = self.env_select.clone()?;
         // As wide as the longest name, like the board's native select.
         let longest = self
@@ -86,7 +99,7 @@ impl Workspace {
                 .gap(px(8.))
                 .text_size(px(13.))
                 .text_color(color("text-secondary"))
-                .child("Environment")
+                .when(labelled, |d| d.child("Environment"))
                 .child(
                     div().w(px(width)).text_color(color("text-primary")).child(
                         Select::new(&select)
@@ -172,9 +185,26 @@ impl Workspace {
 }
 
 const SEARCH_WIDTH: f32 = 280.;
+/// Below this window width the title bar drops the "Environment" label and
+/// the mirrored inset, so Run collection and Run stay on screen.
+const COMPACT_BELOW: f32 = 1200.;
+
+fn is_compact(width: f32) -> bool {
+    width < COMPACT_BELOW
+}
+
 /// Geist at 13px averages about 7px a character.
 const ENV_CHAR_WIDTH: f32 = 7.;
 /// The board's select padding (10 + 28) and border.
 const ENV_PICKER_CHROME: f32 = 40.;
 /// The Kit title bar's left padding for the traffic lights on macOS.
 const TRAFFIC_LIGHTS_INSET: f32 = 80.;
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn title_bar_is_compact_in_small_windows() {
+        assert!(super::is_compact(960.));
+        assert!(!super::is_compact(1440.));
+    }
+}

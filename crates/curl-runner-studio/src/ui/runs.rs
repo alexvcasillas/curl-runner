@@ -58,6 +58,14 @@ impl FileRun {
     }
 }
 
+/// A tree row's last-run state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunStatus {
+    NotRun,
+    Passed,
+    Failed,
+}
+
 /// The request being sent right now.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Progress {
@@ -108,6 +116,28 @@ impl Runs {
         self.max_attempts.clear();
         self.env = env.to_string();
         self.root = root.to_path_buf();
+    }
+
+    /// Request `index` of `file`, or with `None` the whole file: failed if
+    /// any result failed (or the file did not load), passed once every
+    /// result so far passed, else not run.
+    pub fn status(&self, file: &Path, index: Option<usize>) -> RunStatus {
+        let Some(run) = self.last.get(file) else {
+            return RunStatus::NotRun;
+        };
+        let passed = |r: &ExecutionResult| r.success || r.skipped == Some(true);
+        match index {
+            Some(i) => match run.results.get(&i) {
+                Some(r) if passed(r) => RunStatus::Passed,
+                Some(_) => RunStatus::Failed,
+                None => RunStatus::NotRun,
+            },
+            None if run.load_error.is_some() || run.results.values().any(|r| !passed(r)) => {
+                RunStatus::Failed
+            }
+            None if run.results.is_empty() => RunStatus::NotRun,
+            None => RunStatus::Passed,
+        }
     }
 
     /// Whether `file` is part of the active run and has not finished yet.
@@ -410,8 +440,8 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::{
-        AttemptOutcome, ExecutionResult, Local, Path, PathBuf, Progress, RunEvent, RunTarget, Runs,
-        Store, max_attempts,
+        AttemptOutcome, ExecutionResult, Local, Path, PathBuf, Progress, RunEvent, RunStatus,
+        RunTarget, Runs, Store, max_attempts,
     };
     use crate::model::run::RunOutcome;
     use curl_runner_core::executor::create_summary;
@@ -546,6 +576,37 @@ mod tests {
         let run = &r.last[Path::new("a.yaml")];
         assert!(run.results.is_empty());
         assert_eq!(run.store, store);
+    }
+
+    #[test]
+    fn status_aggregates_a_file_and_reads_each_request() {
+        let mut r = runs(RunTarget::File("a.yaml".into()));
+        let file = Path::new("a.yaml");
+        assert_eq!(r.status(file, None), RunStatus::NotRun);
+        r.apply(started("a.yaml", 2));
+        assert_eq!(r.status(file, None), RunStatus::NotRun);
+        r.apply(RunEvent::Result {
+            group: 0,
+            index: 0,
+            result: result(200),
+        });
+        assert_eq!(r.status(file, None), RunStatus::Passed);
+        let mut failed = result(500);
+        failed.success = false;
+        r.apply(RunEvent::Result {
+            group: 0,
+            index: 1,
+            result: failed,
+        });
+        assert_eq!(r.status(file, None), RunStatus::Failed);
+        assert_eq!(r.status(file, Some(0)), RunStatus::Passed);
+        assert_eq!(r.status(file, Some(1)), RunStatus::Failed);
+        assert_eq!(r.status(file, Some(2)), RunStatus::NotRun);
+        r.apply(RunEvent::LoadFailed {
+            file: "b.yaml".into(),
+            message: "bad".into(),
+        });
+        assert_eq!(r.status(Path::new("b.yaml"), None), RunStatus::Failed);
     }
 
     #[test]
@@ -695,6 +756,38 @@ mod ui_tests {
         run_file(cx, window, &ws, "ok.yaml");
         assert!(inspector_has(cx, window, "200 OK"), "status pill");
         assert!(inspector_has(cx, window, "1 of 1 checks passed"));
+    }
+
+    fn tree_labels(cx: &mut TestAppContext, window: AnyWindowHandle, label: &str) -> usize {
+        cx.update_window(window, |_, window, cx| {
+            window.render_frame(cx);
+            window
+                .within("collection-tree")
+                .find_all_by_label(label)
+                .len()
+        })
+        .unwrap()
+    }
+
+    #[gpui_kit::test]
+    fn tree_dots_show_the_last_run(cx: &mut TestAppContext) {
+        let srv = TestServer::start();
+        let ok = format!(
+            "request:\n  url: {}/status/200\n  expect:\n    status: 200\n",
+            srv.base_url
+        );
+        let bad = format!(
+            "request:\n  url: {}/status/500\n  expect:\n    status: 200\n",
+            srv.base_url
+        );
+        let (_dir, window, ws) = open(cx, &[("bad.yaml", bad), ("ok.yaml", ok)]);
+        assert_eq!(tree_labels(cx, window, "Not run"), 2);
+        run_file(cx, window, &ws, "ok.yaml");
+        assert_eq!(tree_labels(cx, window, "Passed"), 1);
+        assert_eq!(tree_labels(cx, window, "Not run"), 1);
+        run_file(cx, window, &ws, "bad.yaml");
+        assert_eq!(tree_labels(cx, window, "Failed"), 1);
+        assert_eq!(tree_labels(cx, window, "Passed"), 1);
     }
 
     #[gpui_kit::test]

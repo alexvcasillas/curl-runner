@@ -111,6 +111,17 @@ pub fn keymap() -> Vec<KeyBinding> {
     ]
 }
 
+pub const WINDOW_MIN_WIDTH: f32 = 960.;
+const WINDOW_MIN_HEIGHT: f32 = 600.;
+
+/// `960x600` (the `CURL_RUNNER_STUDIO_SIZE` dev hook), never below the
+/// window's minimum.
+fn parse_size(s: &str) -> Option<(f32, f32)> {
+    let (w, h) = s.split_once('x')?;
+    let (w, h): (f32, f32) = (w.trim().parse().ok()?, h.trim().parse().ok()?);
+    Some((w.max(WINDOW_MIN_WIDTH), h.max(WINDOW_MIN_HEIGHT)))
+}
+
 /// Main.png: 44px.
 pub const TITLE_BAR_HEIGHT: f32 = 44.;
 
@@ -120,7 +131,10 @@ pub fn run() {
         .run(|cx| {
             gpui_kit::init(cx);
             init(cx);
-            let bounds = Bounds::centered(None, size(px(1440.), px(900.)), cx);
+            let (w, h) = dev_string("CURL_RUNNER_STUDIO_SIZE")
+                .and_then(|s| parse_size(&s))
+                .unwrap_or((1440., 900.));
+            let bounds = Bounds::centered(None, size(px(w), px(h)), cx);
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 titlebar: Some(TitlebarOptions {
@@ -130,7 +144,7 @@ pub fn run() {
                     traffic_light_position: Some(point(px(16.), px(15.))),
                 }),
                 app_owns_titlebar_drag: true,
-                window_min_size: Some(size(px(960.), px(600.))),
+                window_min_size: Some(size(px(WINDOW_MIN_WIDTH), px(WINDOW_MIN_HEIGHT))),
                 ..Default::default()
             };
             let store = state::StateStore::app_support();
@@ -148,6 +162,8 @@ pub fn run() {
                     let mut ws = Workspace::new(folder, store, secrets, window, cx);
                     if let Some(file) = file {
                         ws.open_file(&file, window, cx);
+                        // As a click on its row does.
+                        ws.expanded.insert(file);
                     }
                     if let Some(line) = line {
                         ws.dev_move_cursor(line, window, cx);
@@ -218,7 +234,8 @@ pub fn run() {
 /// selects the open file's first problem and opens its popover (hover
 /// states can't be reached without a pointer). `CURL_RUNNER_STUDIO_LINE`
 /// puts the cursor on a zero-based line, `CURL_RUNNER_STUDIO_TAB` picks the
-/// inspector tab and `CURL_RUNNER_STUDIO_RUN` runs the open file once.
+/// inspector tab, `CURL_RUNNER_STUDIO_RUN` runs the open file once and
+/// `CURL_RUNNER_STUDIO_SIZE` (`960x600`) sizes the window.
 ///
 /// Debug builds only: a release build ignores them all.
 fn dev_env(name: &str) -> Option<PathBuf> {
@@ -451,6 +468,21 @@ mod tests {
             dev_value(Some("a.yaml".into()), true),
             Some("a.yaml".into())
         );
+    }
+
+    #[test]
+    fn dev_size_parses_and_respects_the_minimum() {
+        assert_eq!(super::parse_size("960x600"), Some((960., 600.)));
+        assert_eq!(super::parse_size("800x400"), Some((960., 600.)));
+        assert_eq!(super::parse_size("wide"), None);
+    }
+
+    #[test]
+    fn three_columns_fit_the_smallest_window() {
+        let columns = super::super::sidebar::SIDEBAR_WIDTH
+            + super::super::editor_pane::EDITOR_MIN_WIDTH
+            + super::super::inspector::INSPECTOR_WIDTH;
+        assert!(columns <= super::WINDOW_MIN_WIDTH, "{columns}");
     }
 
     #[test]

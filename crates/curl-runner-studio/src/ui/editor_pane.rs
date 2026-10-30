@@ -17,6 +17,9 @@ use gpui_kit::*;
 use std::path::{Component, Path};
 
 const TAB_STRIP_HEIGHT: f32 = 40.;
+/// What is left beside the 264px sidebar and the 400px inspector in the
+/// 960px minimum window, so the inspector is never pushed off the edge.
+pub const EDITOR_MIN_WIDTH: f32 = 296.;
 const BREADCRUMB_HEIGHT: f32 = 36.;
 
 /// `2 errors`, `1 warning`.
@@ -62,7 +65,7 @@ impl Workspace {
             .flex()
             .flex_col()
             .flex_1()
-            .min_w(px(560.))
+            .min_w(px(EDITOR_MIN_WIDTH))
             .h_full();
         let Some(active) = self.state.active else {
             return pane
