@@ -1246,6 +1246,8 @@ impl Workspace {
                 .on_ok(|_, _, _| false)
                 .child(content.clone())
         });
+        // Opening a dialog focuses it.
+        self.open_shared_focus = window.focused(cx);
         self.open_shared = Some(view.downgrade());
         view
     }
@@ -1267,12 +1269,21 @@ impl Workspace {
     ) {
         match outcome {
             Ok(root) => {
-                // Closed mid-Add, its view can outlive the dialog a while.
-                if self.open_shared_view().is_some() && window.has_active_dialog(cx) {
+                // Closed mid-Add, its view can outlive the dialog a while;
+                // and a dialog opened over it is not this one to close.
+                let on_top = self
+                    .open_shared_focus
+                    .take()
+                    .is_some_and(|f| f.contains_focused(window, cx));
+                if self.open_shared_view().is_some() && on_top {
                     window.close_dialog(cx);
                 }
                 self.open_shared = None;
                 self._open_shared_events = None;
+                // Listed now, whether or not the copy opens (unsaved
+                // changes may keep the current one).
+                self.refresh_received_all();
+                cx.notify();
                 self.open_received(root, window, cx);
             }
             Err(e) if !shown => notify_error(e, window, cx),
@@ -1809,6 +1820,68 @@ mod gpui_tests {
             "open-shared-existing",
             "Already in your studio — open it?"
         ));
+    }
+
+    #[gpui_kit::test]
+    fn a_dialog_opened_over_the_flow_stays_when_the_add_lands(cx: &mut TestAppContext) {
+        use gpui_kit::TestSupportExt as _;
+        use gpui_kit::prelude::*;
+        let s = studio(cx);
+        let _view = add_held(cx, &s);
+        cx.update_window(s.window, |_, window, cx| {
+            window.open_dialog(cx, |d, _, _| {
+                d.child(
+                    gpui_kit::div()
+                        .id("another-dialog")
+                        .role(gpui_kit::Role::Group)
+                        .test_support()
+                        .aria_label("Another dialog"),
+                )
+            });
+            window.render_frame(cx);
+        })
+        .unwrap();
+        s.backend.dev().unwrap().hold_updates(false);
+        cx.run_until_parked();
+        let root = s.shared_dir().join("acme-shipping-api");
+        s.ws.read_with(cx, |ws, _| {
+            assert_eq!(ws.state.collection.as_ref().unwrap().root, root);
+        });
+        assert!(
+            labelled(cx, &s, "another-dialog", "Another dialog"),
+            "not the flow's to close"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn an_added_copy_is_listed_while_unsaved_changes_wait(cx: &mut TestAppContext) {
+        let s = studio(cx);
+        let mine = tempfile::tempdir().unwrap();
+        std::fs::write(
+            mine.path().join("a.yaml"),
+            "request:\n  url: https://api.example.com\n",
+        )
+        .unwrap();
+        let ws = s.ws.clone();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                assert!(ws.open_collection(mine.path(), window, cx));
+                ws.open_file(Path::new("a.yaml"), window, cx);
+                let editor = ws.tabs[0].editor.clone();
+                editor.update(cx, |e, cx| e.set_value("request: {}\n", window, cx));
+                ws.state.open[0].set_buffer("request: {}\n".into());
+            });
+        })
+        .unwrap();
+        let _view = add_held(cx, &s);
+        s.backend.dev().unwrap().hold_updates(false);
+        cx.run_until_parked();
+        s.ws.read_with(cx, |ws, _| {
+            assert_eq!(ws.state.collection.as_ref().unwrap().root, mine.path());
+            let listed: Vec<_> = ws.received_all.iter().map(|r| r.root.clone()).collect();
+            assert_eq!(listed, [s.shared_dir().join("acme-shipping-api")]);
+        });
+        assert!(dialog_open(cx, &s), "asking about the unsaved file");
     }
 
     #[gpui_kit::test]

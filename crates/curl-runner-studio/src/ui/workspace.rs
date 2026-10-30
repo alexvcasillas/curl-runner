@@ -178,9 +178,13 @@ pub struct Workspace {
     pub(super) _share_sync_events: Option<Subscription>,
     /// The Open a shared link flow, while it is open (held by its dialog).
     pub(super) open_shared: Option<WeakEntity<super::open_shared::OpenSharedView>>,
+    /// The open flow's dialog focus: holding the focus, it is the dialog on
+    /// top (the one `close_dialog` closes).
+    pub(super) open_shared_focus: Option<FocusHandle>,
     pub(super) _open_shared_events: Option<Subscription>,
     /// A `curl-runner://` link that came in while the sign-in screen was
-    /// up: opened once it is answered.
+    /// up, or while an Add was in flight: opened once the screen is
+    /// answered or the Add finishes.
     pub(super) pending_link: Option<String>,
     /// The open collection's share record, when it is a received copy.
     pub(super) received: Option<crate::model::backend::ReceivedShare>,
@@ -299,6 +303,7 @@ impl Workspace {
             share_sync: None,
             _share_sync_events: None,
             open_shared: None,
+            open_shared_focus: None,
             _open_shared_events: None,
             pending_link: None,
             received: None,
@@ -364,12 +369,7 @@ impl Workspace {
         if let Some(org) = &meta.read_only_from {
             collection.read_only = Some(org.clone());
         }
-        self.received_all = self
-            .backend
-            .received()
-            .into_iter()
-            .filter(|r| r.root.is_dir())
-            .collect();
+        self.refresh_received_all();
         self.received = meta.read_only_from.as_ref().and_then(|_| {
             self.received_all
                 .iter()
@@ -966,6 +966,17 @@ impl Workspace {
             marked_secret: meta.secret_names.clone(),
             shared: meta.shared_defaults(),
         }
+    }
+
+    /// Re-reads the received copies whose folder is still there (the
+    /// sidebar's Shared with me): on open, after an Add, after a reset.
+    pub(super) fn refresh_received_all(&mut self) {
+        self.received_all = self
+            .backend
+            .received()
+            .into_iter()
+            .filter(|r| r.root.is_dir())
+            .collect();
     }
 
     /// The open collection's notes.

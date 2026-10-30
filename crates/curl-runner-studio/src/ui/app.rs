@@ -561,7 +561,10 @@ fn install_dev_menu(
             window
                 .update(cx, |_, window, cx| {
                     workspace
-                        .update(cx, |ws, cx| drop(ws.open_sign_in(None, window, cx)))
+                        .update(cx, |ws, cx| {
+                            ws.refresh_received_all();
+                            drop(ws.open_sign_in(None, window, cx));
+                        })
                         .ok();
                 })
                 .ok();

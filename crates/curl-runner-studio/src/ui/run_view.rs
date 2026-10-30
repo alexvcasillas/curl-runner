@@ -636,12 +636,12 @@ impl RunView {
         env_label(&self.ctx.environment)
     }
 
-    /// Saves the finished run's report through the save panel.
     /// Starts Export's save panel in `dir` instead of the collection root.
     pub fn set_export_dir(&mut self, dir: Option<PathBuf>) {
         self.export_dir = dir;
     }
 
+    /// Saves the finished run's report through the save panel.
     pub fn export(&mut self, f: ExportFormat, window: &mut Window, cx: &mut Context<Self>) {
         self.export_open = false;
         cx.notify();
