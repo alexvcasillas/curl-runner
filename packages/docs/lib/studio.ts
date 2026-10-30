@@ -81,7 +81,7 @@ const SCREENSHOTS = {
     src: '/studio/history.png',
     width: 2400,
     height: 1500,
-    alt: 'Run history of the Payments API: two collection runs, 14 of 15 and 15 of 15 passed. The latest is compared with the previous run: Capture charge is listed as fixed and six requests as slower, each with its duration before and after.',
+    alt: 'Run history of the Payments API: two collection runs, 14 of 15 and 15 of 15 passed. The latest is compared with the previous run: Capture charge is listed as fixed and the other 14 requests are unchanged.',
     title: 'Compare with the last run',
     description:
       'Run history stays on your machine. Pick a run to see what it fixed, what it broke and what got slower than the run before it.',
