@@ -19,7 +19,7 @@ use super::settings_kit::{
 };
 use super::sign_in::SETUP_GUIDE_URL;
 use super::workspace::notify_error;
-use crate::model::backend::{Account, Backend, CollectionKey, Server, SyncStatus, fixtures};
+use crate::model::backend::{Account, Backend, CollectionKey, Server, SyncStatus};
 use crate::model::environments::{env_file, is_secret, list_environments};
 use crate::model::history::relative_time;
 use crate::model::secrets::{SecretStore, service_name};
@@ -302,6 +302,8 @@ pub struct SettingsView {
     server_url: Entity<InputState>,
     /// A backend call in flight (Save, Sign out).
     busy: bool,
+    /// Why the last Save failed, under the server row.
+    server_error: Option<String>,
     task: Option<Task<()>>,
     focus: FocusHandle,
 }
@@ -333,10 +335,15 @@ impl SettingsView {
                 .placeholder("https://curl-runner.example.com")
                 .default_value(url)
         });
-        // Save's enabled state follows the draft.
+        // Save's enabled state follows the draft; an edit clears the error.
         cx.subscribe(
             &server_url,
-            |_, _, _: &gpui_kit::component::input::InputEvent, cx| cx.notify(),
+            |this: &mut Self, _, e: &gpui_kit::component::input::InputEvent, cx| {
+                if matches!(e, gpui_kit::component::input::InputEvent::Change) {
+                    this.server_error = None;
+                }
+                cx.notify()
+            },
         )
         .detach();
         let (credentials, keychain_locked) = collection
@@ -355,6 +362,7 @@ impl SettingsView {
             server_pick,
             server_url,
             busy: false,
+            server_error: None,
             task: None,
             focus: cx.focus_handle(),
         }
@@ -1129,29 +1137,49 @@ impl SettingsView {
 
     fn pick_server(&mut self, pick: ServerPick, cx: &mut Context<Self>) {
         self.server_pick = pick;
+        self.server_error = None;
         cx.notify();
     }
 
-    /// Save on the Server card: switches servers (which signs out).
-    pub fn save_server(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// Save on the Server card: tests a self-hosted address, then switches
+    /// servers (which signs out). A failure shows under the row, as on the
+    /// sign-in screen.
+    pub fn save_server(&mut self, cx: &mut Context<Self>) {
         let server = self.server_draft(cx);
         if self.busy || server == self.accounts.backend.server() {
             return;
         }
         self.busy = true;
-        let call = backend_call(cx, &self.accounts.backend, move |b| b.set_server(server));
-        self.task = Some(cx.spawn_in(window, async move |this, cx| {
+        self.server_error = None;
+        let call = backend_call(cx, &self.accounts.backend, move |b| {
+            Box::pin(async move {
+                if matches!(server, Server::SelfHosted { .. }) {
+                    b.test_connection(&server).await?;
+                }
+                b.set_server(server).await
+            })
+        });
+        self.task = Some(cx.spawn(async move |this, cx| {
             let result = call.await;
-            this.update_in(cx, |this, window, cx| {
+            this.update(cx, |this, cx| {
                 this.busy = false;
                 match result {
                     Ok(()) => cx.emit(AppSettingsEvent::AccountChanged),
-                    Err(e) => notify_error(format!("Couldn't switch servers: {e}"), window, cx),
+                    Err(e) => this.server_error = Some(e.to_string()),
                 }
                 cx.notify();
             })
             .ok();
         }));
+        cx.notify();
+    }
+
+    #[cfg(test)]
+    pub fn set_self_hosted(&mut self, url: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.server_pick = ServerPick::SelfHosted;
+        let url = url.to_string();
+        self.server_url
+            .update(cx, |s, cx| s.set_value(url, window, cx));
         cx.notify();
     }
 
@@ -1208,7 +1236,7 @@ impl SettingsView {
                 .font_family(mono_font())
                 .text_size(px(12.))
                 .text_color(color("text-tertiary"))
-                .child(fixtures::CLOUD_URL)
+                .child(Server::Cloud.url().to_string())
                 .into_any_element()
         } else {
             div()
@@ -1230,7 +1258,7 @@ impl SettingsView {
         let save = primary_button("server-save", "Save")
             .when(!changed, |b| b.opacity(0.4).cursor_default())
             .when(changed, |b| {
-                b.on_click(cx.listener(|this, _, window, cx| this.save_server(window, cx)))
+                b.on_click(cx.listener(|this, _, _, cx| this.save_server(cx)))
             })
             .child("Save");
         card("server-card")
@@ -1241,7 +1269,21 @@ impl SettingsView {
                     .child(card_text(
                         "Collections and sharing links live on this server. Switching servers signs you out.",
                     ))
-                    .child(div().flex().items_center().gap(px(8.)).child(kind).child(url)),
+                    .child(div().flex().items_center().gap(px(8.)).child(kind).child(url))
+                    .children(self.server_error.clone().map(|e| {
+                        div()
+                            .id("server-error")
+                            .role(Role::Alert)
+                            .test_support()
+                            .aria_label(e.clone())
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .text_size(px(12.))
+                            .text_color(color("danger"))
+                            .child(glyph(icons::CROSS).size(px(13.)))
+                            .child(e)
+                    })),
             )
             .child(
                 card_footer()

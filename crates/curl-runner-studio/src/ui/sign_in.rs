@@ -179,6 +179,33 @@ impl SignInView {
         cx.notify();
     }
 
+    /// `Continue offline`: no account either, so a signed-in studio signs
+    /// out first. A failed sign-out (the mock's Offline toggle) is logged
+    /// and does not keep you here.
+    pub fn continue_offline(&mut self, cx: &mut Context<Self>) {
+        if self.busy.is_some() {
+            return;
+        }
+        if self.backend.account().is_none() {
+            cx.emit(SignInEvent::Done(Connection::Offline));
+            return;
+        }
+        let call = backend_call(cx, &self.backend, |b| b.sign_out());
+        self.task = Some(cx.spawn(async move |this, cx| {
+            if let Err(e) = call.await {
+                log::warn!("sign-out before going offline failed: {e}");
+            }
+            this.update(cx, |_, cx| cx.emit(SignInEvent::Done(Connection::Offline)))
+                .ok();
+        }));
+    }
+
+    /// `CURL_RUNNER_STUDIO_SUBMIT`: presses the primary button.
+    pub fn dev_submit(&mut self, cx: &mut Context<Self>) {
+        let method = self.primary_method();
+        self.continue_with(method, cx);
+    }
+
     /// The primary button's method: what the tested server signs in with,
     /// SSO for an untested self-hosted one, GitHub on Cloud.
     fn primary_method(&self) -> SignInMethod {
@@ -659,9 +686,7 @@ impl SignInView {
             )
             .child(
                 small_button("continue-offline", "Continue offline")
-                    .on_click(
-                        cx.listener(|_, _, _, cx| cx.emit(SignInEvent::Done(Connection::Offline))),
-                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.continue_offline(cx)))
                     .child("Continue offline"),
             )
     }
@@ -918,24 +943,157 @@ mod tests {
         assert!(shows(cx, window, "Jamie Rivera"));
     }
 
+    #[gpui_kit::test]
+    fn shortcuts_do_nothing_behind_the_sign_in_screen(cx: &mut TestAppContext) {
+        use gpui_kit::component::WindowExt as _;
+        let state = tempfile::tempdir().unwrap();
+        let (window, ws) = open(cx, StateStore::at(state.path()), test_backend());
+        assert!(sign_in_shown(cx, &ws));
+        cx.update_window(window, |_, window, cx| {
+            window.render_frame(cx);
+            window.press("cmd-,", cx);
+            window.press("cmd-n", cx);
+            window.press("cmd-k", cx);
+            window.render_frame(cx);
+            assert!(!window.has_active_dialog(cx), "no New dialog");
+        })
+        .unwrap();
+        cx.run_until_parked();
+        ws.read_with(cx, |ws, _| {
+            assert!(ws.sign_in_shown());
+            assert!(!ws.app_settings_shown());
+        });
+        click(cx, window, "continue-offline");
+        ws.read_with(cx, |ws, _| {
+            assert!(!ws.sign_in_shown());
+            assert!(!ws.app_settings_shown(), "no Settings resurfaces");
+            assert!(ws.state.collection.is_none());
+        });
+        assert!(shows(cx, window, "Offline"), "Welcome");
+        // Now the shortcuts work again.
+        cx.update_window(window, |_, window, cx| {
+            window.render_frame(cx);
+            window.press("cmd-,", cx);
+        })
+        .unwrap();
+        ws.read_with(cx, |ws, _| assert!(ws.app_settings_shown()));
+    }
+
+    #[gpui_kit::test]
+    fn continue_offline_signs_out(cx: &mut TestAppContext) {
+        let state = tempfile::tempdir().unwrap();
+        let store = StateStore::at(state.path());
+        store.set_connection(Some(Connection::Online));
+        let backend = test_backend();
+        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        let (window, ws) = open(cx, store.clone(), backend.clone());
+        assert!(shows(cx, window, "Connected to curl-runner Cloud"));
+        click(cx, window, "sidebar-cloud-change");
+        assert!(
+            shows(cx, window, "Signed in as jamie@acme.dev"),
+            "the status bar"
+        );
+        click(cx, window, "continue-offline");
+        assert!(!sign_in_shown(cx, &ws));
+        assert!(backend.account().is_none(), "offline is no account");
+        assert_eq!(store.connection(), Some(Connection::Offline));
+        assert!(shows(cx, window, "Offline"));
+    }
+
+    #[gpui_kit::test]
+    fn without_a_store_the_answer_holds_for_the_session(cx: &mut TestAppContext) {
+        let (window, ws) = open(cx, StateStore::none(), test_backend());
+        assert!(sign_in_shown(cx, &ws));
+        click(cx, window, "continue-offline");
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.first_launch(window, cx);
+                assert!(!ws.sign_in_shown(), "not asked again this session");
+            });
+        })
+        .unwrap();
+        assert!(shows(cx, window, "Offline"));
+    }
+
+    #[gpui_kit::test]
+    fn settings_server_save_tests_first_and_shows_the_error(cx: &mut TestAppContext) {
+        let state = tempfile::tempdir().unwrap();
+        let store = StateStore::at(state.path());
+        store.set_connection(Some(Connection::Online));
+        let backend = test_backend();
+        let (window, ws) = open(cx, store, backend.clone());
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.open_app_settings(AppPage::Accounts, window, cx)
+            });
+        })
+        .unwrap();
+        let view = ws.read_with(cx, |ws, _| ws.app_settings.clone().unwrap());
+        cx.update_window(window, |_, window, cx| {
+            view.update(cx, |v, cx| v.set_self_hosted("studio", window, cx));
+        })
+        .unwrap();
+        click(cx, window, "server-save");
+        assert_eq!(backend.server(), crate::model::backend::Server::Cloud);
+        assert!(shows(
+            cx,
+            window,
+            "Enter the server's address, like https://curl-runner.example.com."
+        ));
+        cx.update_window(window, |_, window, cx| {
+            view.update(cx, |v, cx| {
+                v.set_self_hosted("https://studio.api.example.com", window, cx)
+            });
+        })
+        .unwrap();
+        click(cx, window, "server-save");
+        assert_eq!(
+            backend.server(),
+            crate::model::backend::Server::SelfHosted {
+                url: "https://studio.api.example.com".into()
+            }
+        );
+        assert!(!shows(
+            cx,
+            window,
+            "Enter the server's address, like https://curl-runner.example.com."
+        ));
+    }
+
     /// Views reach the server through `Backend` only; `app.rs` alone builds
-    /// the mock.
+    /// the mock. No other ui file names the mock or its fixtures.
     #[test]
     fn ui_never_imports_mock_backend() {
-        let needle = concat!("Mock", "Backend");
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui");
-        let mut offenders = Vec::new();
-        for entry in std::fs::read_dir(&dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.extension().is_none_or(|e| e != "rs") || path.ends_with("app.rs") {
-                continue;
+        fn rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    rust_files(&path, out);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    out.push(path);
+                }
             }
-            if std::fs::read_to_string(&path).unwrap().contains(needle) {
-                offenders.push(path);
+        }
+        let needles = [
+            concat!("Mock", "Backend"),
+            concat!("backend::", "fixtures"),
+            concat!("backend::", "mock"),
+        ];
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui");
+        let mut files = Vec::new();
+        rust_files(&dir, &mut files);
+        let app = dir.join("app.rs");
+        let mut offenders = Vec::new();
+        for path in files.iter().filter(|p| **p != app) {
+            let text = std::fs::read_to_string(path).unwrap();
+            for needle in needles {
+                if text.contains(needle) {
+                    offenders.push(format!("{}: {needle}", path.display()));
+                }
             }
         }
         assert!(offenders.is_empty(), "{offenders:?}");
-        let app = std::fs::read_to_string(dir.join("app.rs")).unwrap();
-        assert!(app.contains(needle), "app.rs builds it");
+        let app = std::fs::read_to_string(app).unwrap();
+        assert!(app.contains(needles[0]), "app.rs builds it");
     }
 }

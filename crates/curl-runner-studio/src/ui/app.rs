@@ -387,7 +387,13 @@ pub fn run() {
                             "signin" => {
                                 let view = ws.open_sign_in(None, window, cx);
                                 let url = dev_string("CURL_RUNNER_STUDIO_FILL");
-                                view.update(cx, |v, cx| v.dev_fill(url.as_deref(), window, cx));
+                                let submit = dev_string("CURL_RUNNER_STUDIO_SUBMIT").is_some();
+                                view.update(cx, |v, cx| {
+                                    v.dev_fill(url.as_deref(), window, cx);
+                                    if submit {
+                                        v.dev_submit(cx);
+                                    }
+                                });
                             }
                             "history" => ws.open_history(window, cx),
                             "settings" => {
@@ -537,7 +543,8 @@ fn toggle_dev(backend: &Arc<dyn Backend>, flip: fn(&dyn DevControls), cx: &mut A
 /// page `CURL_RUNNER_STUDIO_PAGE` names: `general`, `editor`,
 /// `appearance`, `accounts`, `shortcuts` or `updates`) and `signin` the
 /// sign-in screen (with a server URL in `CURL_RUNNER_STUDIO_FILL`: the
-/// Self-hosted card on it, tested); hover and click states can't be
+/// Self-hosted card on it, tested; `CURL_RUNNER_STUDIO_SUBMIT=1` then
+/// presses its primary button); hover and click states can't be
 /// reached without a pointer. `CURL_RUNNER_STUDIO_LINE`
 /// puts the cursor on a zero-based line, `CURL_RUNNER_STUDIO_TAB` picks the
 /// inspector tab, `CURL_RUNNER_STUDIO_BODY=raw` shows the Checks tab's body

@@ -152,6 +152,9 @@ pub struct Workspace {
     /// there.
     sign_in_origin: Option<AppPage>,
     _sign_in_events: Option<Subscription>,
+    /// The sign-in screen's answer this session, for a store that keeps
+    /// nothing (no base): it is not asked again until the next launch.
+    session_connection: Option<Connection>,
     status: Entity<StatusBar>,
     focus: FocusHandle,
     /// Set once the user agreed to close the window with unsaved changes.
@@ -242,6 +245,7 @@ impl Workspace {
             sign_in: None,
             sign_in_origin: None,
             _sign_in_events: None,
+            session_connection: None,
             status,
             focus,
             closing: false,
@@ -355,7 +359,10 @@ impl Workspace {
             // The SignIn board's footer: `Not signed in` and the version.
             _ if self.sign_in_shown() => Some(EnvStatus {
                 environment: SharedString::default(),
-                summary: "Not signed in".into(),
+                summary: match self.backend.account() {
+                    Some(a) => format!("Signed in as {}", a.email).into(),
+                    None => "Not signed in".into(),
+                },
                 keychain: SharedString::default(),
             }),
             // The Settings board's footer: the environment and `Settings`.
@@ -963,7 +970,7 @@ impl Workspace {
         let accounts = Accounts {
             backend: self.backend.clone(),
             key: self.collection_key(),
-            offline: self.store.connection() == Some(Connection::Offline),
+            offline: self.connection() == Some(Connection::Offline),
         };
         let view =
             cx.new(|cx| SettingsView::new(page, settings, base, collection, accounts, window, cx));
@@ -1036,10 +1043,15 @@ impl Workspace {
         })
     }
 
+    /// The sign-in screen's answer: stored, else this session's.
+    pub(super) fn connection(&self) -> Option<Connection> {
+        self.store.connection().or(self.session_connection)
+    }
+
     /// Shows the sign-in screen on first launch: when it was never
     /// answered (no stored [`Connection`]).
     pub(super) fn first_launch(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.store.connection().is_none() {
+        if self.connection().is_none() {
             self.open_sign_in(None, window, cx);
         }
     }
@@ -1053,7 +1065,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Entity<SignInView> {
-        let can_go_back = self.store.connection().is_some();
+        let can_go_back = self.connection().is_some();
         let backend = self.backend.clone();
         let view = cx.new(|cx| SignInView::new(backend, can_go_back, window, cx));
         self._sign_in_events = Some(cx.subscribe_in(&view, window, Self::on_sign_in_event));
@@ -1091,13 +1103,14 @@ impl Workspace {
     ) {
         if let SignInEvent::Done(connection) = event {
             self.store.set_connection(Some(*connection));
+            self.session_connection = Some(*connection);
         }
         self.close_sign_in(window, cx);
     }
 
     /// Welcome's cloud chip: its dot's token and its text.
     pub(super) fn connection_text(&self) -> (&'static str, String) {
-        if self.store.connection() == Some(Connection::Offline) {
+        if self.connection() == Some(Connection::Offline) {
             return ("text-tertiary", "Offline".into());
         }
         if self.backend.account().is_none() {
@@ -1807,61 +1820,70 @@ impl Render for Workspace {
             _ if open => self.render_editor_pane(cx).into_any_element(),
             _ => self.render_welcome(cx).into_any_element(),
         };
+        // The sign-in screen answers first: nothing opens behind it (the
+        // global Quit still works).
+        let actions = self.sign_in.is_none();
         div()
             .id("workspace")
             .key_context("Workspace")
             .track_focus(&self.focus)
-            .on_action(cx.listener(|this, _: &OpenFolder, window, cx| this.open_folder(window, cx)))
-            .on_action(cx.listener(|this, _: &SaveFile, window, cx| {
-                if let Some(ix) = this.state.active {
-                    this.save(ix, window, cx);
-                }
-            }))
-            .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
-                if let Some(ix) = this.state.active {
-                    this.request_close_tab(ix, window, cx);
-                }
-            }))
-            .on_action(cx.listener(|this, _: &NewRequest, window, cx| {
-                // On Welcome ⌘N starts a collection, as its card says.
-                if this.state.collection.is_some() {
-                    this.new_request(None, window, cx);
-                } else {
+            .when(actions, |root| {
+                root.on_action(
+                    cx.listener(|this, _: &OpenFolder, window, cx| this.open_folder(window, cx)),
+                )
+                .on_action(cx.listener(|this, _: &SaveFile, window, cx| {
+                    if let Some(ix) = this.state.active {
+                        this.save(ix, window, cx);
+                    }
+                }))
+                .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
+                    if let Some(ix) = this.state.active {
+                        this.request_close_tab(ix, window, cx);
+                    }
+                }))
+                .on_action(cx.listener(|this, _: &NewRequest, window, cx| {
+                    // On Welcome ⌘N starts a collection, as its card says.
+                    if this.state.collection.is_some() {
+                        this.new_request(None, window, cx);
+                    } else {
+                        this.new_collection(window, cx);
+                    }
+                }))
+                .on_action(cx.listener(|this, _: &NewCollection, window, cx| {
                     this.new_collection(window, cx);
-                }
-            }))
-            .on_action(cx.listener(|this, _: &NewCollection, window, cx| {
-                this.new_collection(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &Import, window, cx| {
-                this.import(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &OpenPalette, window, cx| {
-                this.open_palette(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &QuickFix, window, cx| this.quick_fix(window, cx)))
-            .on_action(cx.listener(|this, _: &ToggleProblems, _, cx| this.toggle_problems(cx)))
-            .on_action(cx.listener(|this, _: &RunActive, window, cx| this.run_active(window, cx)))
-            .on_action(cx.listener(|this, _: &RunRequestUnderCursor, window, cx| {
-                this.run_request_under_cursor(window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &RunCollection, window, cx| {
-                this.run(RunTarget::Collection, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &Stop, _, _| this.stop_run()))
-            .on_action(cx.listener(|this, _: &CopyAsCurl, _, cx| this.copy_as_curl(cx)))
-            .on_action(cx.listener(|this, _: &Rerun, window, cx| this.rerun(window, cx)))
-            .on_action(
-                cx.listener(|this, _: &OpenHistory, window, cx| this.toggle_history(window, cx)),
-            )
-            .on_action(
-                cx.listener(|this, _: &OpenEnvironments, window, cx| {
+                }))
+                .on_action(cx.listener(|this, _: &Import, window, cx| {
+                    this.import(window, cx);
+                }))
+                .on_action(cx.listener(|this, _: &OpenPalette, window, cx| {
+                    this.open_palette(window, cx);
+                }))
+                .on_action(cx.listener(|this, _: &QuickFix, window, cx| this.quick_fix(window, cx)))
+                .on_action(cx.listener(|this, _: &ToggleProblems, _, cx| this.toggle_problems(cx)))
+                .on_action(
+                    cx.listener(|this, _: &RunActive, window, cx| this.run_active(window, cx)),
+                )
+                .on_action(cx.listener(|this, _: &RunRequestUnderCursor, window, cx| {
+                    this.run_request_under_cursor(window, cx)
+                }))
+                .on_action(cx.listener(|this, _: &RunCollection, window, cx| {
+                    this.run(RunTarget::Collection, window, cx)
+                }))
+                .on_action(cx.listener(|this, _: &Stop, _, _| this.stop_run()))
+                .on_action(cx.listener(|this, _: &CopyAsCurl, _, cx| this.copy_as_curl(cx)))
+                .on_action(cx.listener(|this, _: &Rerun, window, cx| this.rerun(window, cx)))
+                .on_action(
+                    cx.listener(|this, _: &OpenHistory, window, cx| {
+                        this.toggle_history(window, cx)
+                    }),
+                )
+                .on_action(cx.listener(|this, _: &OpenEnvironments, window, cx| {
                     this.open_settings(window, cx)
-                }),
-            )
-            .on_action(cx.listener(|this, _: &OpenSettings, window, cx| {
-                this.open_app_settings(AppPage::General, window, cx)
-            }))
+                }))
+                .on_action(cx.listener(|this, _: &OpenSettings, window, cx| {
+                    this.open_app_settings(AppPage::General, window, cx)
+                }))
+            })
             .size_full()
             .flex()
             .flex_col()
@@ -1895,13 +1917,13 @@ impl Render for Workspace {
     }
 }
 
-/// The editor's indent: spaces, never tabs (YAML has none).
 /// `https://curl-runner.example.com/x` → `curl-runner.example.com`.
 pub(super) fn host_of(url: &str) -> &str {
     let rest = url.split_once("://").map_or(url, |(_, r)| r);
     rest.split(['/', '?', '#']).next().unwrap_or(rest)
 }
 
+/// The editor's indent: spaces, never tabs (YAML has none).
 fn tab_size(n: u8) -> TabSize {
     TabSize {
         tab_size: usize::from(n),
