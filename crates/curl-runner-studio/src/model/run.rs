@@ -1,0 +1,783 @@
+//! Runs on a background thread, streamed as [`RunEvent`]s.
+//!
+//! Mirrors the CLI's multi-file run (`RunCtx::execute` in the `curl-runner`
+//! crate): one `Executor` per file group with its own response store, the
+//! same env lookup, a shared redactor and the snapshot hook; a failure stops
+//! only its own group (unless `continueOnError`), the next group still runs.
+//! Every result is redacted before it leaves the run thread.
+
+use crate::model::environments::{EnvCtx, is_secret};
+use crate::model::secrets::SecretStore;
+use curl_runner_core::config::{self, CliOptions};
+use curl_runner_core::discover::find_yaml_files;
+use curl_runner_core::executor::{
+    self, AttemptOutcome, EventSink, Executor, PreparedRequest, create_summary,
+};
+use curl_runner_core::interpolate::{self, Store};
+use curl_runner_core::model::{
+    ExecutionResult, ExecutionSummary, HeaderValue, Headers, Json, RequestConfig,
+};
+use curl_runner_core::security::redact::Redactor;
+use curl_runner_core::snapshot::ManagerHook;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
+
+/// What to run. Paths are relative to the collection root.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RunTarget {
+    File(PathBuf),
+    /// One request (zero-based) of a file, alone.
+    Request {
+        file: PathBuf,
+        index: usize,
+    },
+    /// Every request file of the collection.
+    Collection,
+    /// These files, in order (Re-run failed).
+    Files(Vec<PathBuf>),
+}
+
+#[derive(Debug, Clone)]
+pub struct RunRequest {
+    pub target: RunTarget,
+    pub ctx: EnvCtx,
+    /// The file's response store from its last run; seeds single-file
+    /// targets (`File`, `Request`).
+    pub seed: Option<Store>,
+}
+
+/// `group` is the position in `Started::groups`; `index` the zero-based
+/// position of the request in its file.
+#[derive(Debug, Clone)]
+pub enum RunEvent {
+    Started {
+        total: usize,
+        /// Each file and its request count, in run order.
+        groups: Vec<(PathBuf, usize)>,
+    },
+    RequestStarted {
+        group: usize,
+        index: usize,
+        name: String,
+    },
+    Attempt {
+        group: usize,
+        index: usize,
+        attempt: u32,
+        outcome: AttemptOutcome,
+    },
+    RetryWait {
+        group: usize,
+        index: usize,
+        delay_ms: u64,
+    },
+    Result {
+        group: usize,
+        index: usize,
+        result: Box<ExecutionResult>,
+    },
+    /// Values a request saved to its group's store.
+    Stored {
+        group: usize,
+        values: Store,
+    },
+    /// The run could not load (`file` relative to the root); `Finished`
+    /// follows.
+    LoadFailed {
+        file: PathBuf,
+        message: String,
+    },
+    Finished(RunOutcome),
+}
+
+#[derive(Debug, Clone)]
+pub struct RunOutcome {
+    /// Redacted, like every event.
+    pub summary: ExecutionSummary,
+    /// Stopped by [`RunHandle::stop`].
+    pub stopped: bool,
+    /// Each group's response store at the end (seed included).
+    pub stores: Vec<(PathBuf, Store)>,
+    pub started_at: chrono::DateTime<chrono::Local>,
+}
+
+/// A run in progress. Dropping it does not stop the run.
+pub struct RunHandle {
+    pub events: Receiver<RunEvent>,
+    cancel: Arc<Cancel>,
+}
+
+impl RunHandle {
+    /// Stop the run: the in-flight request or retry wait ends, no further
+    /// request or group starts.
+    pub fn stop(&self) {
+        self.cancel.stopped.store(true, Ordering::SeqCst);
+        if let Some(flag) = lock(&self.cancel.current).clone() {
+            flag.store(true, Ordering::SeqCst);
+        }
+    }
+}
+
+#[derive(Default)]
+struct Cancel {
+    stopped: AtomicBool,
+    /// The running group's executor flag.
+    current: Mutex<Option<Arc<AtomicBool>>>,
+}
+
+/// Start `req` on its own thread. The last event is always `Finished`.
+pub fn start_run(req: RunRequest, secrets: Arc<dyn SecretStore>) -> RunHandle {
+    let (tx, events) = mpsc::channel();
+    let cancel = Arc::new(Cancel::default());
+    let flags = cancel.clone();
+    std::thread::spawn(move || {
+        let started_at = chrono::Local::now();
+        let mut outcome = RunOutcome {
+            summary: create_summary(Vec::new(), 0.0),
+            stopped: false,
+            stores: Vec::new(),
+            started_at,
+        };
+        let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            execute(&req, &*secrets, &flags, &tx, &mut outcome)
+        }));
+        if run.is_err() {
+            let _ = tx.send(RunEvent::LoadFailed {
+                file: PathBuf::new(),
+                message: "The run stopped unexpectedly".into(),
+            });
+        }
+        outcome.stopped = flags.stopped.load(Ordering::SeqCst);
+        if let Ok(mut slot) = flags.current.lock() {
+            *slot = None;
+        }
+        let _ = tx.send(RunEvent::Finished(outcome));
+    });
+    RunHandle { events, cancel }
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// The run itself; fills `out` as groups finish.
+fn execute(
+    req: &RunRequest,
+    secrets: &dyn SecretStore,
+    cancel: &Cancel,
+    tx: &Sender<RunEvent>,
+    out: &mut RunOutcome,
+) {
+    let root = req.ctx.root.as_path();
+    let marked = &req.ctx.marked_secret;
+    let files = target_files(&req.target, root);
+    let paths: Vec<PathBuf> = files.iter().map(|f| root.join(f)).collect();
+
+    // Secret values come from the Keychain only, read once per run.
+    let service = req.ctx.service();
+    let keychain: Arc<HashMap<String, String>> = Arc::new(
+        secrets
+            .names(&service)
+            .into_iter()
+            .filter(|n| is_secret(n, marked))
+            .filter_map(|n| Some((n.clone(), secrets.get(&service, &n)?)))
+            .collect(),
+    );
+    // Keychain, then the process env; core adds the `.env` files after both.
+    let lookup = {
+        let keychain = keychain.clone();
+        move |k: &str| {
+            keychain
+                .get(k)
+                .cloned()
+                .or_else(|| interpolate::process_env(k))
+        }
+    };
+    let cli = CliOptions {
+        env: req.ctx.env_name().map(String::from),
+        ..Default::default()
+    };
+    let project = config::load_config_file(root).config;
+    let run = match executor::load_run(&paths, Some(&project), &cli, &lookup, root) {
+        Ok(r) => r,
+        Err(e) => {
+            let file = e.file.strip_prefix(root).unwrap_or(&e.file).to_path_buf();
+            let _ = tx.send(RunEvent::LoadFailed {
+                file,
+                message: e.source.to_string(),
+            });
+            return;
+        }
+    };
+
+    let redactor = {
+        let mut r = Redactor::default();
+        r.add_secrets(keychain.values().cloned());
+        let vars = run.global.variables.clone().unwrap_or_default();
+        r.add_secrets(
+            run.dotenv
+                .iter()
+                .chain(&vars)
+                .filter(|(k, _)| is_secret(k, marked))
+                .map(|(_, v)| v.clone()),
+        );
+        // As the CLI does: every request's inline secrets up front, so a
+        // later request's token echoed by an earlier response is masked.
+        let typed: Vec<RequestConfig> = run
+            .requests
+            .iter()
+            .filter_map(|p| serde_json::from_value(p.raw.clone()).ok())
+            .collect();
+        r.register_request_secrets(&typed);
+        Arc::new(Mutex::new(r))
+    };
+
+    let mut groups = group_by_file(&paths, run.requests);
+    let mut offset = 0;
+    if let RunTarget::Request { file, index } = &req.target {
+        let reqs = std::mem::take(&mut groups[0].1);
+        let Some(one) = reqs.into_iter().nth(*index) else {
+            let _ = tx.send(RunEvent::LoadFailed {
+                file: file.clone(),
+                message: format!("{} has no request {}", file.display(), index + 1),
+            });
+            return;
+        };
+        groups[0].1.push(one);
+        offset = *index;
+    }
+    let _ = tx.send(RunEvent::Started {
+        total: groups.iter().map(|(_, r)| r.len()).sum(),
+        groups: files
+            .iter()
+            .zip(&groups)
+            .map(|(f, (_, r))| (f.clone(), r.len()))
+            .collect(),
+    });
+
+    let seed = match req.target {
+        RunTarget::File(_) | RunTarget::Request { .. } => req.seed.clone(),
+        RunTarget::Collection | RunTarget::Files(_) => None,
+    };
+    let global = &run.global;
+    let multi = groups.len() > 1;
+    let mut all = Vec::new();
+    let mut duration = 0.0;
+    let mut single = None;
+    for (group, ((_, reqs), rel)) in groups.into_iter().zip(files).enumerate() {
+        if cancel.stopped.load(Ordering::SeqCst) {
+            break;
+        }
+        let (lookup, dotenv) = (lookup.clone(), run.dotenv.clone());
+        let mut ex = Executor::new(global.clone())
+            .with_cwd(root)
+            .with_env(move |k| lookup(k).or_else(|| dotenv.get(k).cloned()))
+            .with_redactor(redactor.clone())
+            .with_snapshot_hook(Box::new(ManagerHook::from_global(
+                global.snapshot.as_ref(),
+                root,
+            )));
+        if let Some(s) = &seed {
+            ex = ex.with_store(s.clone());
+        }
+        let flag = ex.cancel_handle();
+        *lock(&cancel.current) = Some(flag.clone());
+        if cancel.stopped.load(Ordering::SeqCst) {
+            flag.store(true, Ordering::SeqCst);
+        }
+        let mut sink = Sink {
+            tx: tx.clone(),
+            group,
+            offset,
+            redactor: redactor.clone(),
+            store: seed.clone().unwrap_or_default(),
+        };
+        let s = ex.run(reqs, &mut sink);
+        out.stores.push((rel, sink.store));
+        duration += s.duration;
+        if multi {
+            all.extend(s.results);
+        } else {
+            single = Some(s);
+        }
+    }
+    let mut summary = single.unwrap_or_else(|| create_summary(all, duration));
+    let r = lock(&redactor);
+    for result in &mut summary.results {
+        redact_result(result, &r);
+    }
+    out.summary = summary;
+}
+
+/// The files of `target`, relative to `root`, in run order.
+fn target_files(target: &RunTarget, root: &Path) -> Vec<PathBuf> {
+    match target {
+        RunTarget::File(f) | RunTarget::Request { file: f, .. } => vec![f.clone()],
+        RunTarget::Files(files) => files.clone(),
+        // The tree's files: every YAML file but the project config.
+        RunTarget::Collection => find_yaml_files(&[], true, root)
+            .into_iter()
+            .map(|f| PathBuf::from(f.strip_prefix("./").unwrap_or(&f)))
+            .filter(|p| !config::CONFIG_FILE_PATHS.iter().any(|c| p == Path::new(c)))
+            .collect(),
+    }
+}
+
+/// Requests per file, in file order (files with no requests keep an empty
+/// group); the CLI's `group_by_file`.
+fn group_by_file(
+    files: &[PathBuf],
+    requests: Vec<PreparedRequest>,
+) -> Vec<(PathBuf, Vec<PreparedRequest>)> {
+    let mut groups: Vec<(PathBuf, Vec<PreparedRequest>)> =
+        files.iter().map(|f| (f.clone(), Vec::new())).collect();
+    for r in requests {
+        let src = r.raw.get("sourceFile").and_then(Json::as_str).unwrap_or("");
+        let at = groups
+            .iter()
+            .position(|(f, _)| f == Path::new(src))
+            .unwrap_or(0);
+        groups[at].1.push(r);
+    }
+    groups
+}
+
+/// Forwards one group's executor events, redacted.
+struct Sink {
+    tx: Sender<RunEvent>,
+    group: usize,
+    /// Position in the file of the group's first request.
+    offset: usize,
+    redactor: Arc<Mutex<Redactor>>,
+    store: Store,
+}
+
+impl Sink {
+    /// The executor's 1-based run index as a zero-based file index.
+    fn at(&self, index: usize) -> usize {
+        self.offset + index.saturating_sub(1)
+    }
+
+    fn send(&self, e: RunEvent) {
+        let _ = self.tx.send(e);
+    }
+}
+
+impl EventSink for Sink {
+    fn on_start(&mut self, index: usize, req: &RequestConfig) {
+        let name = req
+            .name
+            .clone()
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| req.url.clone());
+        let name = lock(&self.redactor).redact(&name);
+        self.send(RunEvent::RequestStarted {
+            group: self.group,
+            index: self.at(index),
+            name,
+        });
+    }
+
+    fn on_attempt(
+        &mut self,
+        index: usize,
+        _req: &RequestConfig,
+        attempt: u32,
+        outcome: &AttemptOutcome,
+    ) {
+        let mut outcome = outcome.clone();
+        if let Some(e) = &mut outcome.error {
+            *e = lock(&self.redactor).redact(e);
+        }
+        self.send(RunEvent::Attempt {
+            group: self.group,
+            index: self.at(index),
+            attempt,
+            outcome,
+        });
+    }
+
+    fn on_retry(&mut self, index: usize, _req: &RequestConfig, _attempt: u32, delay_ms: u64) {
+        self.send(RunEvent::RetryWait {
+            group: self.group,
+            index: self.at(index),
+            delay_ms,
+        });
+    }
+
+    fn on_result(&mut self, index: usize, result: &ExecutionResult) {
+        let mut result = result.clone();
+        redact_result(&mut result, &lock(&self.redactor));
+        self.send(RunEvent::Result {
+            group: self.group,
+            index: self.at(index),
+            result: Box::new(result),
+        });
+    }
+
+    fn on_stored(&mut self, values: &Store) {
+        self.store.extend(values.clone());
+        self.send(RunEvent::Stored {
+            group: self.group,
+            values: values.clone(),
+        });
+    }
+}
+
+/// Mask every string of `result` that could carry a secret: the request
+/// (URL, headers, body, auth...), response headers and body, the error and
+/// snapshot or diff details.
+fn redact_result(result: &mut ExecutionResult, r: &Redactor) {
+    /// A JSON round trip of a serde type with every string redacted.
+    macro_rules! via_json {
+        ($v:expr) => {
+            serde_json::to_value(&$v).ok().and_then(|mut j| {
+                redact_json(&mut j, r);
+                serde_json::from_value(j).ok()
+            })
+        };
+    }
+    result.request = via_json!(result.request).unwrap_or_else(|| RequestConfig {
+        name: result.request.name.as_deref().map(|n| r.redact(n)),
+        url: r.redact(&result.request.url),
+        method: result.request.method.clone(),
+        source_file: result.request.source_file.clone(),
+        ..Default::default()
+    });
+    if let Some(h) = &mut result.headers {
+        redact_headers(h, r);
+    }
+    for block in result.header_history.iter_mut().flatten() {
+        redact_headers(&mut block.headers, r);
+    }
+    if let Some(body) = &mut result.body {
+        redact_json(body, r);
+    }
+    if let Some(e) = &mut result.error {
+        *e = r.redact(e);
+    }
+    if let Some(s) = result.snapshot_result.take() {
+        result.snapshot_result = via_json!(s);
+    }
+    if let Some(d) = result.diff_result.take() {
+        result.diff_result = via_json!(d);
+    }
+}
+
+fn redact_headers(headers: &mut Headers, r: &Redactor) {
+    for v in headers.values_mut() {
+        match v {
+            HeaderValue::One(s) => *s = r.redact(s),
+            HeaderValue::Many(all) => all.iter_mut().for_each(|s| *s = r.redact(s)),
+        }
+    }
+}
+
+fn redact_json(v: &mut Json, r: &Redactor) {
+    match v {
+        Json::String(s) => *s = r.redact(s),
+        Json::Array(items) => items.iter_mut().for_each(|v| redact_json(v, r)),
+        Json::Object(map) => map.values_mut().for_each(|v| redact_json(v, r)),
+        _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::environments::DEFAULT_ENVIRONMENT;
+    use crate::model::secrets::MemorySecrets;
+    use std::fs;
+    use std::time::{Duration, Instant};
+    use testkit::{Response, TestServer};
+
+    fn ctx(root: &Path) -> EnvCtx {
+        EnvCtx {
+            root: root.to_path_buf(),
+            collection: "Payments API".into(),
+            environment: DEFAULT_ENVIRONMENT.into(),
+            marked_secret: vec![],
+        }
+    }
+
+    fn run(root: &Path, target: RunTarget, seed: Option<Store>) -> Vec<RunEvent> {
+        run_with(root, target, seed, Arc::new(MemorySecrets::default()))
+    }
+
+    fn run_with(
+        root: &Path,
+        target: RunTarget,
+        seed: Option<Store>,
+        secrets: Arc<dyn SecretStore>,
+    ) -> Vec<RunEvent> {
+        let h = start_run(
+            RunRequest {
+                target,
+                ctx: ctx(root),
+                seed,
+            },
+            secrets,
+        );
+        let events: Vec<RunEvent> = h.events.iter().collect();
+        assert!(matches!(events.last(), Some(RunEvent::Finished(_))));
+        events
+    }
+
+    fn outcome(events: &[RunEvent]) -> &RunOutcome {
+        match events.last() {
+            Some(RunEvent::Finished(o)) => o,
+            _ => panic!("no Finished"),
+        }
+    }
+
+    fn results(events: &[RunEvent]) -> Vec<&ExecutionResult> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                RunEvent::Result { result, .. } => Some(&**result),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A server answering `/a` with `{"id":"abc"}` and recording every path.
+    fn recording_server() -> (TestServer, Arc<Mutex<Vec<String>>>) {
+        let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+        let log = seen.clone();
+        let srv = TestServer::with_handler(move |req| {
+            log.lock().unwrap().push(req.url.clone());
+            Response::from_data(br#"{"id":"abc"}"#.to_vec())
+                .with_header("Content-Type", "application/json")
+        });
+        (srv, seen)
+    }
+
+    #[test]
+    fn run_file_streams_events_and_finishes() {
+        let srv = TestServer::start();
+        let d = tempfile::tempdir().unwrap();
+        let yaml = format!(
+            "requests:\n  - name: one\n    url: {0}/echo\n  - name: two\n    url: {0}/status/200\n",
+            srv.base_url
+        );
+        fs::write(d.path().join("two.yaml"), yaml).unwrap();
+        let events = run(d.path(), RunTarget::File("two.yaml".into()), None);
+        let kinds: Vec<&str> = events
+            .iter()
+            .map(|e| match e {
+                RunEvent::Started { total, groups } => {
+                    assert_eq!(*total, 2);
+                    assert_eq!(groups, &[(PathBuf::from("two.yaml"), 2)]);
+                    "started"
+                }
+                RunEvent::RequestStarted { .. } => "request",
+                RunEvent::Attempt { .. } => "attempt",
+                RunEvent::Result { .. } => "result",
+                RunEvent::Finished(_) => "finished",
+                other => panic!("unexpected {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                "started", "request", "attempt", "result", "request", "attempt", "result",
+                "finished"
+            ]
+        );
+        let indexes: Vec<usize> = events
+            .iter()
+            .filter_map(|e| match e {
+                RunEvent::Result {
+                    group: 0, index, ..
+                } => Some(*index),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(indexes, [0, 1]);
+        let o = outcome(&events);
+        assert_eq!(o.summary.successful, 2);
+        assert!(!o.stopped);
+    }
+
+    #[test]
+    fn collection_groups_have_own_stores() {
+        let (srv, seen) = recording_server();
+        let d = tempfile::tempdir().unwrap();
+        fs::write(
+            d.path().join("a.yaml"),
+            format!(
+                "request:\n  url: {}/a\n  store:\n    ID: body.id\n",
+                srv.base_url
+            ),
+        )
+        .unwrap();
+        fs::write(
+            d.path().join("b.yaml"),
+            format!("request:\n  url: {}/${{store.ID}}\n", srv.base_url),
+        )
+        .unwrap();
+
+        // Reference: the CLI's run (`load_run`, then one Executor per file).
+        let files = [d.path().join("a.yaml"), d.path().join("b.yaml")];
+        let env = |k: &str| interpolate::process_env(k);
+        let loaded =
+            executor::load_run(&files, None, &CliOptions::default(), &env, d.path()).unwrap();
+        for (_, reqs) in group_by_file(&files, loaded.requests) {
+            Executor::new(loaded.global.clone())
+                .with_cwd(d.path())
+                .run(reqs, &mut executor::NoopSink);
+        }
+        let cli_paths = std::mem::take(&mut *seen.lock().unwrap());
+        assert_eq!(cli_paths.first().map(String::as_str), Some("/a"));
+
+        let events = run(d.path(), RunTarget::Collection, None);
+        let studio_paths = seen.lock().unwrap().clone();
+        assert_eq!(studio_paths, cli_paths);
+        assert!(!studio_paths.iter().any(|p| p == "/abc"));
+        let o = outcome(&events);
+        assert_eq!(o.stores.len(), 2);
+        assert_eq!(o.stores[0].1.get("ID").map(String::as_str), Some("abc"));
+        assert!(o.stores[1].1.is_empty());
+        assert!(events.iter().any(
+            |e| matches!(e, RunEvent::Stored { group: 0, values } if values.get("ID").is_some())
+        ));
+    }
+
+    #[test]
+    fn request_target_runs_one_with_seed() {
+        let (srv, seen) = recording_server();
+        let d = tempfile::tempdir().unwrap();
+        let yaml = format!(
+            "requests:\n  - url: {0}/one\n  - url: {0}/two\n  - url: {0}/item/${{store.ID}}\n",
+            srv.base_url
+        );
+        fs::write(d.path().join("three.yaml"), yaml).unwrap();
+        let mut seed = Store::new();
+        seed.insert("ID".into(), "x".into());
+        let events = run(
+            d.path(),
+            RunTarget::Request {
+                file: "three.yaml".into(),
+                index: 2,
+            },
+            Some(seed),
+        );
+        let r = results(&events);
+        assert_eq!(r.len(), 1);
+        assert!(
+            r[0].request.url.ends_with("/item/x"),
+            "{}",
+            r[0].request.url
+        );
+        assert_eq!(*seen.lock().unwrap(), ["/item/x"]);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, RunEvent::Started { total: 1, .. }))
+        );
+        assert!(events.iter().any(|e| matches!(
+            e,
+            RunEvent::Result {
+                group: 0,
+                index: 2,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn stop_ends_run_quickly() {
+        let srv = TestServer::start();
+        let d = tempfile::tempdir().unwrap();
+        let yaml = format!(
+            "requests:\n  - url: {0}/delay/5000\n  - url: {0}/echo\n",
+            srv.base_url
+        );
+        fs::write(d.path().join("slow.yaml"), yaml).unwrap();
+        let h = start_run(
+            RunRequest {
+                target: RunTarget::File("slow.yaml".into()),
+                ctx: ctx(d.path()),
+                seed: None,
+            },
+            Arc::new(MemorySecrets::default()),
+        );
+        loop {
+            match h.events.recv_timeout(Duration::from_secs(5)).unwrap() {
+                RunEvent::RequestStarted { .. } => break,
+                RunEvent::Finished(_) => panic!("finished early"),
+                _ => {}
+            }
+        }
+        let at = Instant::now();
+        h.stop();
+        let finished = loop {
+            match h.events.recv_timeout(Duration::from_secs(5)).unwrap() {
+                RunEvent::Finished(o) => break o,
+                RunEvent::Result { .. } => panic!("a cancelled request is not reported"),
+                _ => {}
+            }
+        };
+        assert!(at.elapsed() < Duration::from_secs(1), "{:?}", at.elapsed());
+        assert!(finished.stopped);
+    }
+
+    #[test]
+    fn load_failure_is_an_event_not_a_panic() {
+        let d = tempfile::tempdir().unwrap();
+        fs::write(d.path().join("bad.yaml"), "request: [\n").unwrap();
+        let events = run(d.path(), RunTarget::File("bad.yaml".into()), None);
+        assert_eq!(events.len(), 2, "{events:?}");
+        match &events[0] {
+            RunEvent::LoadFailed { file, message } => {
+                assert_eq!(file, Path::new("bad.yaml"));
+                assert!(!message.is_empty());
+            }
+            other => panic!("expected LoadFailed, got {other:?}"),
+        }
+        assert!(!outcome(&events).stopped);
+    }
+
+    #[test]
+    fn secret_never_in_events() {
+        let srv = TestServer::start();
+        let d = tempfile::tempdir().unwrap();
+        let yaml = format!(
+            "request:\n  url: {}/echo?k=${{SECRET_PLAIN}}\n  method: POST\n  headers:\n    Authorization: Bearer ${{API_TOKEN}}\n  body:\n    note: ${{SECRET_PLAIN}}\n",
+            srv.base_url
+        );
+        fs::write(d.path().join("auth.yaml"), yaml).unwrap();
+        let mut c = ctx(d.path());
+        c.marked_secret = vec!["API_TOKEN".into()];
+        let secrets = MemorySecrets::default();
+        secrets
+            .set(&c.service(), "API_TOKEN", "sk_live_abc")
+            .unwrap();
+        // No built-in token pattern matches this one.
+        secrets
+            .set(&c.service(), "SECRET_PLAIN", "opensesame42")
+            .unwrap();
+        let h = start_run(
+            RunRequest {
+                target: RunTarget::File("auth.yaml".into()),
+                ctx: c,
+                seed: None,
+            },
+            Arc::new(secrets),
+        );
+        let events: Vec<RunEvent> = h.events.iter().collect();
+        let r = results(&events);
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].status, Some(200));
+        // The secrets reached the server (the echo shows the redacted value).
+        assert!(format!("{:?}", r[0].body).contains("[REDACTED]"));
+        for e in &events {
+            let dbg = format!("{e:?}");
+            assert!(!dbg.contains("sk_live_abc"), "{dbg}");
+            assert!(!dbg.contains("opensesame42"), "{dbg}");
+        }
+    }
+}
