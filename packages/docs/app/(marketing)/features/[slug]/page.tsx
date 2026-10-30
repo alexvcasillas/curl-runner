@@ -4,7 +4,9 @@ import { notFound } from 'next/navigation';
 import { ButtonLink } from '@/components/site/ButtonLink';
 import { CodePane } from '@/components/site/CodePane';
 import { Eyebrow } from '@/components/site/Eyebrow';
+import { ScreenshotFrame } from '@/components/site/Screenshot';
 import { SiteHeader } from '@/components/site/SiteHeader';
+import { StudioPreview } from '@/components/site/StudioPreview';
 import { Yaml } from '@/components/site/Yaml';
 import { StructuredData } from '@/components/structured-data';
 import {
@@ -62,6 +64,11 @@ function FeatureNav({ current }: { current: string }) {
                 }`}
               >
                 {f.title}
+                {f.preview ? (
+                  <span className="ml-2 rounded-full border border-line px-1.5 py-px font-mono text-[11px] tracking-[0.02em] text-fg-tertiary">
+                    preview
+                  </span>
+                ) : null}
               </Link>
             </li>
           );
@@ -114,7 +121,7 @@ export default async function FeaturePage({ params }: FeaturePageProps) {
           <FeatureNav current={feature.slug} />
 
           <article className="min-w-0 pt-16 pb-24 md:pt-[72px]">
-            <Eyebrow>{feature.title}</Eyebrow>
+            <Eyebrow>{feature.preview ? `${feature.title} · Preview` : feature.title}</Eyebrow>
             <h1 className="mt-4 mb-0 max-w-[18ch] text-[clamp(40px,5.6vw,64px)] leading-[1.03] font-bold tracking-[-0.045em] text-fg">
               {feature.headline}
             </h1>
@@ -125,16 +132,77 @@ export default async function FeaturePage({ params }: FeaturePageProps) {
               <ButtonLink href={`/docs/features/${feature.slug}`} variant="primary" size="lg">
                 Read the docs
               </ButtonLink>
-              <ButtonLink href="/downloads" variant="secondary" size="lg">
-                Install curl-runner
+              <ButtonLink
+                href={feature.secondaryCta?.href ?? '/downloads'}
+                variant="secondary"
+                size="lg"
+              >
+                {feature.secondaryCta?.label ?? 'Install curl-runner'}
               </ButtonLink>
             </div>
 
-            <div className="mt-16">
-              <CodePane filename={feature.example.filename} copyText={feature.example.yaml}>
-                <Yaml source={feature.example.yaml} />
-              </CodePane>
-            </div>
+            {feature.preview ? <StudioPreview className="mt-12 max-w-160" /> : null}
+
+            {feature.screenshots ? (
+              <section aria-labelledby="screenshots-heading" className="mt-20">
+                <h2 id="screenshots-heading" className="sr-only">
+                  Screenshots
+                </h2>
+                <ol className="m-0 flex list-none flex-col gap-16 p-0">
+                  {feature.screenshots.map((shot, i) => (
+                    <li key={shot.src}>
+                      <ScreenshotFrame
+                        shot={shot}
+                        sizes="(min-width: 1200px) 884px, (min-width: 768px) calc(100vw - 316px), calc(100vw - 48px)"
+                        captionClassName="mt-5 flex gap-4"
+                        caption={
+                          <>
+                            <span
+                              aria-hidden="true"
+                              className="pt-px font-mono text-[15px] text-fg-tertiary"
+                            >
+                              {String(i + 1).padStart(2, '0')}
+                            </span>
+                            <span className="flex max-w-160 flex-col gap-1">
+                              <span className="text-[17px] font-semibold text-fg">
+                                {shot.title}
+                              </span>
+                              <span className="text-[15px] leading-[1.6] text-fg-secondary">
+                                {shot.description}
+                              </span>
+                            </span>
+                          </>
+                        }
+                      />
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            ) : null}
+
+            {feature.screenshots ? (
+              <section aria-labelledby="yaml-heading">
+                <h2
+                  id="yaml-heading"
+                  className="mt-20 mb-6 text-[28px] font-bold tracking-[-0.025em] text-fg"
+                >
+                  Plain YAML underneath
+                </h2>
+                <p className="m-0 mb-6 max-w-160 text-base leading-[1.6] text-fg-secondary">
+                  The studio reads and writes the same request files the CLI runs, so a suite you
+                  build here runs unchanged in CI.
+                </p>
+                <CodePane filename={feature.example.filename} copyText={feature.example.yaml}>
+                  <Yaml source={feature.example.yaml} />
+                </CodePane>
+              </section>
+            ) : (
+              <div className="mt-16">
+                <CodePane filename={feature.example.filename} copyText={feature.example.yaml}>
+                  <Yaml source={feature.example.yaml} />
+                </CodePane>
+              </div>
+            )}
 
             <section aria-labelledby="benefits-heading" className="mt-20">
               <h2 id="benefits-heading" className="sr-only">

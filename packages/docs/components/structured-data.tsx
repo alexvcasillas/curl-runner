@@ -37,7 +37,10 @@ export function SoftwareApplicationSchema() {
       url: 'https://github.com/alexvcasillas',
     },
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-    featureList: getAllFeatures().map((feature) => feature.title),
+    // The CLI's features: a preview (the macOS-only studio) isn't part of this application yet.
+    featureList: getAllFeatures()
+      .filter((feature) => !feature.preview)
+      .map((feature) => feature.title),
     sameAs: [REPO_URL],
   };
 

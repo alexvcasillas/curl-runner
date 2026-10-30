@@ -1,0 +1,62 @@
+---
+title: "Studio (preview)"
+description: "curl-runner studio is a macOS app for your YAML request files: live validation, runs, checks, retries, environments and history. A preview, built from source."
+---
+
+curl-runner studio is a macOS desktop app for the request files you already have. It opens a folder of YAML as a collection, validates as you type, runs one request or the whole collection, and shows every check, retry and timing.
+
+<Callout type="warn" title="Preview">
+The studio shipped as a preview in [curl-runner 2.2.0](/changelog#2.2.0). It isn't distributed yet: there is no signed build, Homebrew formula or download. Build it from source as shown below. Expect rough edges, and changes before a first release.
+</Callout>
+
+## Build from source [#build]
+
+You need macOS and a Rust toolchain from [rustup](https://rustup.rs). The repository pins the Rust version, so rustup installs the right one on the first build.
+
+```bash title="Terminal"
+git clone https://github.com/alexvcasillas/curl-runner
+cd curl-runner
+cargo run -p curl-runner-studio
+```
+
+The first build compiles the whole app and takes a while; later runs start straight away.
+
+## Collections are folders [#collections]
+
+A collection is a folder of request files, and its subfolders are the groups in the sidebar. The studio reads and writes plain YAML, so the files stay the ones [`curl-runner`](/docs/cli-commands) runs in a terminal or in CI.
+
+Run a single request, or the whole collection from **Run collection**. The run screen counts passed, failed, skipped and retried requests, and **Re-run failed** runs only the failures again.
+
+<StudioScreenshot name="collection-run" onStudioPage>A collection run with one failure after two retries.</StudioScreenshot>
+
+## Live validation [#validation]
+
+The editor runs the same rules as [`curl-runner validate`](/docs/features/validate) while you type. Problems are underlined and listed in the Problems panel, and many of them come with a quick fix.
+
+<StudioScreenshot name="editor-quick-fix" onStudioPage>An unknown key, with the rename it suggests.</StudioScreenshot>
+
+## Responses and checks [#inspector]
+
+The inspector next to the editor shows the last response: body, headers and timing, and each check from the request's [`expect`](/docs/features/response-validation) block.
+
+<StudioScreenshot name="inspector" onStudioPage>A passing request and its seven checks.</StudioScreenshot>
+
+When a check fails, the Checks tab shows the expected and the actual value, a diff of the response body against what was expected, and the [retry](/docs/features/retry-mechanism) timeline with every attempt.
+
+<StudioScreenshot name="failed-request" onStudioPage>Two 503s, then a 200 whose body doesn't match.</StudioScreenshot>
+
+## Environments and secrets [#environments]
+
+Environments come from the collection's [`.env` files](/docs/features/env-files): **Default** reads `.env`, and an environment such as **Staging** reads `.env.staging` on top of it. Variables named `SECRET_*`, and any you mark as secret, are masked. The values you enter in the studio go to the macOS Keychain rather than the files, and secrets are never shared or synced.
+
+<StudioScreenshot name="environments" onStudioPage>The Staging environment of a collection.</StudioScreenshot>
+
+## Run history [#history]
+
+Runs are kept on your machine for 30 days. Pick one to compare it with the run before it: which requests it fixed, which it broke and which got slower.
+
+<StudioScreenshot name="history" onStudioPage>The latest run fixed one request; six got slower.</StudioScreenshot>
+
+## Sharing and sync [#sharing]
+
+The studio has sharing and sync screens, but in this preview they run against a built-in mock server: nothing you do there leaves your machine.

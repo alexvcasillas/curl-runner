@@ -149,6 +149,8 @@ request:
 
 **Important:** Validation (`expect`) does **not** trigger retries. It runs **after** all retry attempts are exhausted and checks the final response. Retries are triggered only by network errors, timeouts, and retryable HTTP status codes.
 
+<StudioScreenshot name="failed-request">Two 503 answers are retried; the third attempt returns 200, and validation then fails on that final response. The retry timeline lists every attempt.</StudioScreenshot>
+
 ## Retry-After Header Support [#retry-after-header]
 
 When a server responds with HTTP 429 (Too Many Requests) and includes a `Retry-After` header, `curl-runner` will honor the server's requested wait time instead of using the configured delay.
