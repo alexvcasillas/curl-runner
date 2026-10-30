@@ -140,6 +140,8 @@ struct Written {
     secrets: Vec<Extracted>,
     /// Why the rest wasn't written.
     error: Option<String>,
+    /// The commands written (by index), when only some were.
+    done: Vec<usize>,
 }
 
 impl ImportDialog {
@@ -380,6 +382,9 @@ impl ImportDialog {
                 cx.notify();
             }
         }
+        if written.error.is_some() && !written.done.is_empty() {
+            self.drop_written(&written, window, cx);
+        }
         if wrote_any || written.error.is_none() {
             let imported = Imported {
                 root: written.root,
@@ -396,6 +401,25 @@ impl ImportDialog {
             self.retarget(cx);
             self.replan(cx);
         }
+    }
+
+    /// After a partial import: the commands already written leave the
+    /// pasted text, so a second Import can't write them again as `-2`
+    /// copies, and their variables stay taken by their values.
+    fn drop_written(&mut self, written: &Written, window: &mut Window, cx: &mut Context<Self>) {
+        let rest: Vec<&str> = self
+            .imports
+            .iter()
+            .enumerate()
+            .filter(|(ix, _)| !written.done.contains(ix))
+            .map(|(_, i)| i.command.as_str())
+            .collect();
+        let text = rest.join("\n\n");
+        for e in &written.secrets {
+            self.held.insert(e.var.clone(), e.value.clone());
+        }
+        self.curl.update(cx, |s, cx| s.set_value(text, window, cx));
+        self.convert(window, cx);
     }
 
     /// Every value taken out of the commands that will be written, once
@@ -418,7 +442,11 @@ impl ImportDialog {
     /// A variable an extracted value would take whose Keychain item holds
     /// something else now; such names are held back and the commands
     /// converted again, so a stored value is never overwritten.
-    fn hold_taken_names(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn hold_taken_names(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
         for _ in 0..8 {
             let clashes: Vec<(String, String)> = self
                 .extracted()
@@ -429,10 +457,21 @@ impl ImportDialog {
                 })
                 .collect();
             if clashes.is_empty() {
-                return;
+                return Ok(());
             }
             self.held.extend(clashes);
             self.convert(window, cx);
+        }
+        match self
+            .extracted()
+            .into_iter()
+            .find(|e| (self.env.keychain)(&e.var).is_some_and(|held| held != e.value))
+        {
+            Some(e) => Err(format!(
+                "Couldn't find a free variable name for {}; nothing was imported.",
+                e.var
+            )),
+            None => Ok(()),
         }
     }
 
@@ -453,18 +492,21 @@ impl ImportDialog {
             .ok_or("Choose a folder for the requests.")?;
         match self.tab {
             ImportTab::Curl => {
-                self.hold_taken_names(window, cx);
+                self.hold_taken_names(window, cx)?;
                 // Names may have been taken since the preview was drawn.
                 self.retarget(cx);
-                let files: Vec<(&CurlImport, &PathBuf, &str)> = self
+                let files: Vec<(usize, &CurlImport, &PathBuf, &str)> = self
                     .imports
                     .iter()
                     .zip(&self.targets)
-                    .filter_map(|(i, t)| {
-                        Some((i, t.as_ref()?, i.converted.as_ref().ok()?.yaml.as_str()))
+                    .enumerate()
+                    .filter_map(|(ix, (i, t))| {
+                        Some((ix, i, t.as_ref()?, i.converted.as_ref().ok()?.yaml.as_str()))
                     })
                     .collect();
-                if let Some((_, rel, _)) = files.iter().find(|(_, _, yaml)| !reads_as_yaml(yaml)) {
+                if let Some((_, _, rel, _)) =
+                    files.iter().find(|(_, _, _, yaml)| !reads_as_yaml(yaml))
+                {
                     return Err(format!(
                         "{} wouldn't read back as YAML; nothing was imported.",
                         rel.display()
@@ -475,8 +517,9 @@ impl ImportDialog {
                     first: None,
                     secrets: Vec::new(),
                     error: None,
+                    done: Vec::new(),
                 };
-                for (n, (import, rel, yaml)) in files.into_iter().enumerate() {
+                for (n, (ix, import, rel, yaml)) in files.into_iter().enumerate() {
                     #[cfg(test)]
                     let failed = self.fail_after.is_some_and(|k| n >= k);
                     #[cfg(not(test))]
@@ -494,6 +537,7 @@ impl ImportDialog {
                         break;
                     }
                     written.first.get_or_insert_with(|| rel.clone());
+                    written.done.push(ix);
                     for e in &import.extracted {
                         if !written.secrets.iter().any(|w| w.var == e.var) {
                             written.secrets.push(e.clone());
@@ -511,6 +555,7 @@ impl ImportDialog {
                     first: (copied > 0).then(|| plan[0].to.clone()),
                     secrets: Vec::new(),
                     error: error.map(|e| format!("Couldn't copy {e}")),
+                    done: Vec::new(),
                 })
             }
             ImportTab::Postman | ImportTab::OpenApi => unreachable!("count is 0"),
@@ -1829,5 +1874,61 @@ mod tests {
                 .collect();
             assert_eq!(names.len(), 1);
         });
+    }
+
+    #[gpui_kit::test]
+    fn after_a_partial_import_a_retry_writes_no_duplicates(cx: &mut TestAppContext) {
+        let dir = collection();
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        let two =
+            "curl https://api.example.com/v1/charges\n\ncurl https://api.example.com/v1/refunds";
+        cx.update(|window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.dev_fill(two, None, window, cx);
+                d.fail_after = Some(1);
+                d.import(window, cx);
+            })
+        });
+        cx.run_until_parked();
+        dialog.read_with(cx, |d, _| {
+            assert_eq!(d.imports.len(), 1);
+            assert_eq!(d.imports[0].name, "get-refunds");
+        });
+        cx.update(|window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.fail_after = None;
+                d.import(window, cx);
+            })
+        });
+        cx.run_until_parked();
+        assert!(dir.path().join("get-charges.yaml").is_file());
+        assert!(dir.path().join("get-refunds.yaml").is_file());
+        assert!(!dir.path().join("get-charges-2.yaml").exists());
+        cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
+    }
+
+    #[gpui_kit::test]
+    fn no_free_name_fails_before_writing(cx: &mut TestAppContext) {
+        let dir = collection();
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        cx.update(|window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.dev_fill(KEYED, None, window, cx);
+                // Every name already holds something else.
+                d.env.keychain = std::rc::Rc::new(|_| Some("held elsewhere".into()));
+                d.import(window, cx);
+            })
+        });
+        cx.run_until_parked();
+        dialog.read_with(cx, |d, _| {
+            let e = d.error.as_deref().unwrap();
+            assert!(e.contains("free variable name"), "{e}");
+        });
+        assert!(!dir.path().join("create-customer.yaml").exists());
+        cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
     }
 }

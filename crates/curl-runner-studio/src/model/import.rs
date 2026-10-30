@@ -3,8 +3,8 @@
 //! here overwrites a file; a name that is taken gets `-2`, `-3`, ….
 
 use super::templates::{FromCurl, curl_to_ir, file_from_ir, file_name_for, request_name_for};
-use curl_runner_core::convert::{CurlRunnerIr, JsMap};
-use curl_runner_core::security::redact::{REDACTED, is_sensitive_header};
+use curl_runner_core::convert::{Auth, CurlRunnerIr, JsMap};
+use curl_runner_core::security::redact::is_sensitive_header;
 use curl_runner_core::yaml_text::scalar_text;
 use std::collections::HashSet;
 use std::io::{self, Write as _};
@@ -127,39 +127,131 @@ fn scrub_comments(yaml: &str, extracted: &[Extracted]) -> String {
         .collect()
 }
 
-/// `text` with every extracted value as its `${VAR}`, longest first.
+/// `text` with every extracted value as its `${VAR}`, longest first; only
+/// whole tokens (between the start or end, whitespace, quotes, `=`, `:`,
+/// `@` or `/`), never inside a `${…}` already there. A backstop: warnings
+/// carry no values (see [`safe_warning`]).
 fn scrub_text(text: &str, extracted: &[Extracted]) -> String {
+    let boundary = |c: char| c.is_whitespace() || "\"'=:@/".contains(c);
     let mut by_len: Vec<&Extracted> = extracted.iter().filter(|e| !e.value.is_empty()).collect();
     by_len.sort_by_key(|e| std::cmp::Reverse(e.value.len()));
-    by_len.iter().fold(text.to_string(), |t, e| {
-        t.replace(&e.value, &format!("${{{}}}", e.var))
-    })
+    let mut s = text.to_string();
+    for e in by_len {
+        let var = format!("${{{}}}", e.var);
+        let mut out = String::with_capacity(s.len());
+        let mut at = 0;
+        while let Some(found) = s[at..].find(&e.value) {
+            let (start, end) = (at + found, at + found + e.value.len());
+            let whole = s[..start].chars().next_back().is_none_or(boundary)
+                && s[end..].chars().next().is_none_or(boundary);
+            let in_reference = s[..start]
+                .rfind("${")
+                .is_some_and(|open| !s[open..start].contains('}'));
+            out.push_str(&s[at..start]);
+            out.push_str(if whole && !in_reference {
+                &var
+            } else {
+                &e.value
+            });
+            at = end;
+        }
+        out.push_str(&s[at..]);
+        s = out;
+    }
+    s
 }
 
-/// curl flags the converter doesn't carry over whose value is a credential:
-/// their `Unsupported curl flag` warning shows `[REDACTED]` instead.
-const CREDENTIAL_FLAGS: [&str; 16] = [
-    "--oauth2-bearer",
-    "--proxy-user",
-    "-U",
-    "-E",
-    "--pass",
-    "--proxy-pass",
-    "--aws-sigv4",
-    "--proxy-cert",
-    "--proxy-key",
-    "--tlsuser",
-    "--tlspassword",
-    "--proxy-tlsuser",
-    "--proxy-tlspassword",
-    "--login-options",
-    "--sasl-authzid",
-    "--delegation",
+const UNSUPPORTED: &str = "Unsupported curl flag: ";
+
+/// The converter's warnings that quote nothing from the command, kept as
+/// they are.
+const STATIC_WARNINGS: [&str; 4] = [
+    "Flag --compressed has no YAML equivalent; curl handles decompression natively",
+    "--retry-delay 0 means curl's default backoff (1s, 2s, 4s...); converted as such",
+    "--retry-delay has no effect without --retry; ignored",
+    CERT_PASSWORD_WARNING,
 ];
 
-/// The `Unsupported curl flag` warning the converter writes for `flag`.
-fn unsupported_warning(flag: &str, value: &str) -> String {
-    format!("Unsupported curl flag: {flag} {value}")
+const CERT_PASSWORD_WARNING: &str =
+    "The --cert password was left out of the file; set it up outside the request.";
+
+/// The flag of a token as typed: `--proxy-user`, and for an attached short
+/// form (`-Uuser:pw`) its first two characters.
+fn flag_name(token: &str) -> &str {
+    if token.starts_with("--") {
+        token.split('=').next().unwrap_or(token)
+    } else if token.starts_with('-') && token.chars().count() > 2 {
+        let end = token.char_indices().nth(2).map_or(token.len(), |(i, _)| i);
+        &token[..end]
+    } else {
+        token
+    }
+}
+
+/// A converter warning that names only what it must: an unsupported flag
+/// keeps its name, never its value; the cookie warnings drop the cookie;
+/// the file-body note names the file (it is the body's text anyway).
+/// Anything else that may quote the command is replaced by a generic note
+/// (default deny). `None`: drop it (`--oauth2-bearer`, carried over).
+fn safe_warning(w: &str, oauth_carried: bool) -> Option<String> {
+    if let Some(rest) = w.strip_prefix(UNSUPPORTED) {
+        let token = rest.split(' ').next().unwrap_or("");
+        let flag = flag_name(token);
+        if oauth_carried && flag == "--oauth2-bearer" {
+            return None;
+        }
+        let valued = rest.len() > token.len() || flag.len() < token.len();
+        let hint = [
+            "(expected a whole number); ignored",
+            "(expected whole seconds); ignored",
+        ]
+        .into_iter()
+        .find(|h| rest.ends_with(h));
+        return Some(match (valued, hint) {
+            (_, Some(hint)) => format!("{UNSUPPORTED}{flag} (value omitted) {hint}"),
+            (true, None) => format!("{UNSUPPORTED}{flag} (value omitted)"),
+            (false, None) => format!("{UNSUPPORTED}{flag}"),
+        });
+    }
+    if w.starts_with("Cookie flag (-b ") {
+        return Some("Cookie flag (-b) stored as header; manual review recommended".into());
+    }
+    if w.starts_with("Cookie jar flag (-c ") {
+        return Some("Cookie jar flag (-c) has no YAML equivalent".into());
+    }
+    if w.starts_with("Body references a file (") || STATIC_WARNINGS.contains(&w) {
+        return Some(w.to_string());
+    }
+    Some("Part of the command was not converted (details omitted).".into())
+}
+
+/// `scheme://user:pass@host…` split into the part before the userinfo,
+/// the user, the password and the rest (`host…`). Without a scheme the
+/// userinfo may start the text (`user:pass@proxy:8080`).
+fn split_userinfo(url: &str) -> Option<(&str, &str, Option<&str>, &str)> {
+    let start = url.find("://").map_or(0, |i| i + 3);
+    let authority_end = url[start..]
+        .find(['/', '?', '#'])
+        .map_or(url.len(), |i| start + i);
+    let at = url[start..authority_end].rfind('@')? + start;
+    let userinfo = &url[start..at];
+    let (user, pass) = match userinfo.split_once(':') {
+        Some((u, p)) => (u, Some(p)),
+        None => (userinfo, None),
+    };
+    Some((&url[..start], user, pass, &url[at + 1..]))
+}
+
+/// Where `--cert file[:password]` splits: the last `:` that isn't escaped
+/// (`\:`), not a drive letter's, and never in a `pkcs11:` URI.
+fn cert_password_at(cert: &str) -> Option<usize> {
+    if cert.starts_with("pkcs11:") {
+        return None;
+    }
+    cert.char_indices()
+        .filter(|&(i, c)| c == ':' && i != 1 && !cert[..i].ends_with('\\'))
+        .map(|(i, _)| i)
+        .next_back()
 }
 
 /// Query parameters whose values are secrets.
@@ -205,50 +297,66 @@ pub fn scrub_secrets(
         .find(|f| f.flag == "--oauth2-bearer")
         .and_then(|f| f.value.clone())
         .filter(|v| !v.is_empty());
-    let has_auth = ir.auth.is_some()
+    let mut has_auth = ir.auth.is_some()
         || ir
             .headers
             .entries()
             .iter()
             .any(|(k, _)| k.eq_ignore_ascii_case("authorization"));
-    let mut warnings = std::mem::take(&mut ir.warnings);
-    for f in &mut ir.unsupported_flags {
-        let Some(value) = f.value.take().filter(|v| !v.is_empty()) else {
-            continue;
-        };
-        if !CREDENTIAL_FLAGS.contains(&f.flag.as_str()) {
-            f.value = Some(value);
-            continue;
+    // `https://user:pass@host`: curl sends it as basic auth, as `-u` does
+    // (which wins when both are given); the URL keeps no userinfo.
+    if let Some((before, user, pass, rest)) = split_userinfo(&ir.url) {
+        let (user, pass) = (user.to_string(), pass.map(str::to_string));
+        ir.url = format!("{before}{rest}");
+        if !has_auth && !user.is_empty() {
+            ir.auth = Some(Auth {
+                kind: "basic".into(),
+                username: Some(user),
+                password: pass,
+                token: None,
+            });
+            has_auth = true;
         }
-        let raw = unsupported_warning(&f.flag, &value);
-        let carried = f.flag == "--oauth2-bearer" && !has_auth;
-        warnings.retain_mut(|w| {
-            if *w != raw {
-                return true;
-            }
-            *w = unsupported_warning(&f.flag, REDACTED);
-            !carried
-        });
+    }
+    let oauth_carried = oauth.is_some() && !has_auth;
+    let mut warnings: Vec<String> = std::mem::take(&mut ir.warnings)
+        .iter()
+        .filter_map(|w| safe_warning(w, oauth_carried))
+        .collect();
+    for f in &mut ir.unsupported_flags {
+        f.value = None;
     }
     // `--cert file:password`: the file stays, the password doesn't (YAML
     // has no field for it).
     if let Some(cert) = ir.ssl.as_mut().and_then(|s| s.cert.as_mut())
-        && let Some(at) = cert
-            .char_indices()
-            .find(|&(i, c)| c == ':' && i != 1)
-            .map(|(i, _)| i)
+        && let Some(at) = cert_password_at(cert)
     {
-        let password = cert[at + 1..].to_string();
         cert.truncate(at);
-        for w in &mut warnings {
-            *w = w.replace(&password, REDACTED);
-        }
-        warnings.push(
-            "The --cert password was left out of the file; set it up outside the request.".into(),
-        );
+        warnings.push(CERT_PASSWORD_WARNING.into());
+    }
+    // `-x http://user:pass@proxy`: the credentials become variables.
+    if let Some(proxy) = ir.proxy.clone()
+        && let Some((before, user, pass, rest)) = split_userinfo(&proxy)
+    {
+        let user = if user.is_empty() || is_reference(user) {
+            user.to_string()
+        } else {
+            take("PROXY_USER", user, "proxy user".into())
+        };
+        let pass = pass.map(|p| {
+            if p.is_empty() || is_reference(p) {
+                p.to_string()
+            } else {
+                take("PROXY_PASSWORD", p, "proxy password".into())
+            }
+        });
+        ir.proxy = Some(match pass {
+            Some(p) => format!("{before}{user}:{p}@{rest}"),
+            None => format!("{before}{user}@{rest}"),
+        });
     }
     let mut headers = JsMap::new();
-    if let Some(token) = oauth.filter(|_| !has_auth) {
+    if let Some(token) = oauth.filter(|_| oauth_carried) {
         let value = if is_reference(&token) {
             token
         } else {
@@ -312,7 +420,7 @@ pub fn scrub_secrets(
         }
         ir.params = Some(kept);
     }
-    // A warning may quote a value (`Cookie flag (-b …)`).
+    // Backstop: warnings no longer quote the command.
     ir.warnings = warnings.iter().map(|w| scrub_text(w, &out)).collect();
     (ir, out)
 }
@@ -943,7 +1051,7 @@ mod tests {
             &NO_ENV,
         );
         assert!(
-            yaml.contains("Unsupported curl flag: -U [REDACTED]"),
+            yaml.contains("Unsupported curl flag: -U (value omitted)"),
             "{yaml}"
         );
         let (yaml, _, _) = one(
@@ -971,5 +1079,167 @@ mod tests {
         );
         assert!(reads_as_yaml("request:\n  url: ${BASE_URL}/v1\n"));
         assert!(!reads_as_yaml("request: [\n"));
+    }
+
+    /// The secret is nowhere: not in the file (the preview's text), the
+    /// warnings or the note.
+    fn assert_nowhere(command: &str, secret: &str) {
+        let imports = convert_commands(command, &NO_ENV);
+        let i = &imports[0];
+        let c = i
+            .converted
+            .as_ref()
+            .unwrap_or_else(|e| panic!("{command}: {e}"));
+        assert!(!c.yaml.contains(secret), "{command}:\n{}", c.yaml);
+        assert!(
+            c.warnings.iter().all(|w| !w.contains(secret)),
+            "{command}: {:?}",
+            c.warnings
+        );
+        let vars: Vec<&str> = i.extracted.iter().map(|e| e.var.as_str()).collect();
+        assert!(
+            !replaced_note(&vars, i.base_url)
+                .unwrap_or_default()
+                .contains(secret)
+        );
+        assert_parses(&c.yaml);
+    }
+
+    #[test]
+    fn unsupported_flags_never_show_their_values() {
+        for (args, secret) in [
+            ("-Uuser:pw_u_secret1", "pw_u_secret1"),
+            ("-Eclient.pem:pw_e_secret2", "pw_e_secret2"),
+            (
+                "--proxy-header 'Proxy-Authorization: Basic abc_secret3'",
+                "abc_secret3",
+            ),
+            ("--url-query token=abc_secret4", "abc_secret4"),
+            ("--mail-auth mail_secret5", "mail_secret5"),
+            ("--socks5 user:pw_socks6@h.example.com", "pw_socks6"),
+        ] {
+            assert_nowhere(&format!("curl https://api.example.com {args}"), secret);
+        }
+        let (yaml, _, _) = one(
+            "curl https://api.example.com -Uuser:pw_u_secret1 --proxy-header 'X: y'",
+            &NO_ENV,
+        );
+        assert!(
+            yaml.contains("Unsupported curl flag: -U (value omitted)"),
+            "{yaml}"
+        );
+        assert!(
+            yaml.contains("Unsupported curl flag: --proxy-header (value omitted)"),
+            "{yaml}"
+        );
+        assert_eq!(flag_name("-Eclient.pem:pw"), "-E");
+        assert_eq!(flag_name("--socks5"), "--socks5");
+        assert_eq!(flag_name("-k"), "-k");
+        // Anything unrecognised that may quote the command says so, nothing more.
+        assert_eq!(
+            safe_warning("Something about sk_live_x", false).as_deref(),
+            Some("Part of the command was not converted (details omitted).")
+        );
+        assert_eq!(
+            safe_warning(
+                "Unsupported curl flag: --retry abc (expected a whole number); ignored",
+                false
+            )
+            .as_deref(),
+            Some(
+                "Unsupported curl flag: --retry (value omitted) (expected a whole number); ignored"
+            )
+        );
+    }
+
+    #[test]
+    fn proxy_and_url_userinfo_move_into_variables() {
+        let (yaml, extracted, _) = one(
+            "curl -x http://puser:ppass_123456@proxy.example.com:8080 https://api.example.com/x",
+            &NO_ENV,
+        );
+        let vars: Vec<&str> = extracted.iter().map(|e| e.var.as_str()).collect();
+        assert_eq!(vars, ["PROXY_USER", "PROXY_PASSWORD"]);
+        assert!(
+            yaml.contains("${PROXY_USER}:${PROXY_PASSWORD}@proxy.example.com:8080"),
+            "{yaml}"
+        );
+        assert!(
+            !yaml.contains("ppass_123456") && !yaml.contains("puser"),
+            "{yaml}"
+        );
+        assert_parses(&yaml);
+
+        let (yaml, extracted, _) = one(
+            "curl https://uuser:upass_123456@api.example.com/v1/x",
+            &NO_ENV,
+        );
+        let vars: Vec<(&str, &str)> = extracted
+            .iter()
+            .map(|e| (e.var.as_str(), e.value.as_str()))
+            .collect();
+        assert_eq!(
+            vars,
+            [("API_USER", "uuser"), ("API_PASSWORD", "upass_123456")]
+        );
+        assert!(yaml.contains("url: https://api.example.com/v1/x"), "{yaml}");
+        assert!(yaml.contains("type: basic"), "{yaml}");
+        assert!(
+            !yaml.contains("upass_123456") && !yaml.contains("uuser@"),
+            "{yaml}"
+        );
+        assert_parses(&yaml);
+        // `-u` wins over the URL's userinfo, which is dropped either way.
+        let (yaml, extracted, _) = one(
+            "curl -u real:real_pw_1 https://other:other_pw_2@api.example.com/x",
+            &NO_ENV,
+        );
+        assert_eq!(extracted[1].value, "real_pw_1");
+        assert!(
+            !yaml.contains("other_pw_2") && !yaml.contains("other@"),
+            "{yaml}"
+        );
+    }
+
+    #[test]
+    fn short_values_only_replace_whole_tokens() {
+        let (yaml, extracted, _) = one("curl -u a:b --compressed https://api.example.com", &NO_ENV);
+        assert_eq!(extracted.len(), 2);
+        assert!(
+            yaml.contains(
+                "# Warning: Flag --compressed has no YAML equivalent; curl handles decompression natively"
+            ),
+            "{yaml}"
+        );
+        let e = |var: &str, value: &str| Extracted {
+            var: var.into(),
+            value: value.into(),
+            place: String::new(),
+        };
+        let both = [e("API_USER", "a"), e("API_PASSWORD", "b")];
+        assert_eq!(
+            scrub_text("flag a b='b' x/a:a ${API_USER}", &both),
+            "flag ${API_USER} ${API_PASSWORD}='${API_PASSWORD}' x/${API_USER}:${API_USER} ${API_USER}"
+        );
+        // Never inside an inserted reference.
+        let nested = [e("TOKEN", "TOKEN"), e("API", "API")];
+        assert_eq!(scrub_text("TOKEN API", &nested), "${TOKEN} ${API}");
+    }
+
+    #[test]
+    fn cert_passwords_split_on_the_last_plain_colon() {
+        assert_eq!(cert_password_at("client.pem:pw"), Some(10));
+        assert_eq!(cert_password_at("C:\\certs\\c.pem"), None);
+        assert_eq!(cert_password_at("C:\\c.pem:pw"), Some(8));
+        assert_eq!(cert_password_at("a:b.pem:pw"), Some(7));
+        assert_eq!(cert_password_at("my\\:cert.pem"), None);
+        assert_eq!(cert_password_at("my\\:cert.pem:pw"), Some(12));
+        assert_eq!(cert_password_at("pkcs11:token=x;object=y"), None);
+        let (yaml, _, _) = one(
+            "curl --cert 'pkcs11:token=x;object=y' https://api.example.com",
+            &NO_ENV,
+        );
+        assert!(yaml.contains("pkcs11:token=x;object=y"), "{yaml}");
+        assert!(!yaml.contains("password was left out"), "{yaml}");
     }
 }
