@@ -167,6 +167,27 @@ pub fn checks_summary(passed: usize, total: usize) -> String {
     }
 }
 
+/// A part of the inspector's summary line, for its color.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SummaryPart {
+    Checks,
+    Dot,
+    Attempts,
+}
+
+/// `2 of 4 checks failed · 3 attempts` as one text and its parts' ranges.
+pub fn summary_text(checks: &str, attempts: usize) -> (String, Vec<(Range<usize>, SummaryPart)>) {
+    let attempts = plural(attempts, "attempt", "attempts");
+    let dot = checks.len()..checks.len() + " · ".len();
+    let text = format!("{checks} · {attempts}");
+    let runs = vec![
+        (0..dot.start, SummaryPart::Checks),
+        (dot.clone(), SummaryPart::Dot),
+        (dot.end..text.len(), SummaryPart::Attempts),
+    ];
+    (text, runs)
+}
+
 fn plural(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
@@ -742,48 +763,53 @@ impl Workspace {
                     .text_size(px(12.))
                     .text_color(color("text-secondary"))
                     .child(
-                        // The summary may wrap; the buttons keep their width.
+                        // One text, so the summary wraps at word boundaries
+                        // and the dot hugs it; the buttons keep their width.
                         div()
+                            .id("inspector-checks")
+                            .role(Role::Label)
+                            .test_support()
+                            .aria_label(summary.clone())
                             .flex()
                             .flex_1()
                             .min_w_0()
                             .items_center()
-                            .gap(px(8.))
-                            .child(
-                                div()
-                                    .id("inspector-checks")
-                                    .role(Role::Label)
-                                    .test_support()
-                                    .aria_label(summary.clone())
-                                    .flex()
-                                    .flex_shrink(1.)
-                                    .min_w_0()
-                                    .items_center()
-                                    .gap(px(6.))
-                                    .text_color(checks_color)
-                                    .when(!v.checks.is_empty(), |d| {
-                                        d.child(
-                                            glyph(if all_passed {
-                                                icons::CHECK
-                                            } else {
-                                                icons::CROSS
-                                            })
-                                            .size(px(13.))
-                                            .flex_none(),
-                                        )
+                            .gap(px(6.))
+                            .when(!v.checks.is_empty(), |d| {
+                                d.child(
+                                    glyph(if all_passed {
+                                        icons::CHECK
+                                    } else {
+                                        icons::CROSS
                                     })
-                                    .child(div().min_w_0().child(summary)),
-                            )
-                            .child(dot())
-                            .child(
+                                    .size(px(13.))
+                                    .flex_none()
+                                    .text_color(checks_color),
+                                )
+                            })
+                            .child({
+                                let (text, runs) = summary_text(&summary, attempts);
+                                let tone = |part: SummaryPart| match part {
+                                    SummaryPart::Checks => checks_color,
+                                    SummaryPart::Dot => color("text-disabled"),
+                                    SummaryPart::Attempts if attempts > 1 => color("warning"),
+                                    SummaryPart::Attempts => color("text-secondary"),
+                                };
+                                let styles = runs
+                                    .into_iter()
+                                    .map(|(r, part)| {
+                                        let style = HighlightStyle {
+                                            color: Some(tone(part)),
+                                            ..Default::default()
+                                        };
+                                        (r, style)
+                                    })
+                                    .collect::<Vec<_>>();
                                 div()
-                                    .flex_shrink(1.)
-                                    // Wraps at the space, never inside `attempts`
-                                    // (12px Geist).
-                                    .min_w(px(54.))
-                                    .when(attempts > 1, |d| d.text_color(color("warning")))
-                                    .child(plural(attempts, "attempt", "attempts")),
-                            ),
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(StyledText::new(text).with_highlights(styles))
+                            }),
                     )
                     .children(actions),
             )
@@ -1935,6 +1961,24 @@ mod tests {
         assert_eq!(marked_line('+', "{"), "+ {");
         assert_eq!(format_wait(1000), "1.0 s");
         assert_eq!(format_wait(500), "0.5 s");
+    }
+
+    #[test]
+    fn summary_is_one_text_with_colored_parts() {
+        use super::{SummaryPart, summary_text};
+        let (text, runs) = summary_text("2 of 4 checks failed", 3);
+        assert_eq!(text, "2 of 4 checks failed · 3 attempts");
+        let parts: Vec<(&str, SummaryPart)> =
+            runs.iter().map(|(r, p)| (&text[r.clone()], *p)).collect();
+        assert_eq!(
+            parts,
+            [
+                ("2 of 4 checks failed", SummaryPart::Checks),
+                (" · ", SummaryPart::Dot),
+                ("3 attempts", SummaryPart::Attempts),
+            ]
+        );
+        assert_eq!(summary_text("No checks", 1).0, "No checks · 1 attempt");
     }
 
     #[test]
