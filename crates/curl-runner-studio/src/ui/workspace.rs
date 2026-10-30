@@ -174,6 +174,9 @@ pub struct Workspace {
     /// The Open a shared link flow, while it is open (held by its dialog).
     pub(super) open_shared: Option<WeakEntity<super::open_shared::OpenSharedView>>,
     pub(super) _open_shared_events: Option<Subscription>,
+    /// A `curl-runner://` link that came in while the sign-in screen was
+    /// up: opened once it is answered.
+    pub(super) pending_link: Option<String>,
     pub(super) status: Entity<StatusBar>,
     focus: FocusHandle,
     /// Set once the user agreed to close the window with unsaved changes.
@@ -279,6 +282,7 @@ impl Workspace {
             _share_sync_events: None,
             open_shared: None,
             _open_shared_events: None,
+            pending_link: None,
             status,
             focus,
             closing: false,
@@ -1158,7 +1162,7 @@ impl Workspace {
         self.sign_in.is_some()
     }
 
-    fn close_sign_in(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn close_sign_in(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.sign_in = None;
         self._sign_in_events = None;
         match self.sign_in_origin.take() {
@@ -1167,6 +1171,9 @@ impl Workspace {
                 self.focus.focus(window, cx);
                 self.sync_chrome(window, cx);
             }
+        }
+        if let Some(link) = self.pending_link.take() {
+            self.open_shared(Some(link), window, cx);
         }
     }
 

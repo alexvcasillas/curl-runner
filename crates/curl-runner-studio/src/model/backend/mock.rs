@@ -39,7 +39,8 @@ pub struct MockBackend {
     latency: Duration,
     state: Mutex<State>,
     log: Mutex<VecDeque<String>>,
-    /// While held, `update_share` answers wait (the change is already made).
+    /// While held, `update_share` answers wait (the change is already made)
+    /// and `add_received` waits before it is made.
     gate: Arc<Gate>,
 }
 
@@ -853,11 +854,18 @@ impl Backend for MockBackend {
 
     fn add_received(&self, share: ReceivedShare) -> BoxFut<'_, ()> {
         self.record(format!("add_received({share:?})"));
-        self.call(true, move |s| {
-            online(s)?;
-            s.received.retain(|r| r.id != share.id);
-            s.received.push(share);
-            Ok(())
+        // Held, it waits before it is made (tests: a close mid-Add, or
+        // offline by the time it lands).
+        let gate = GateOpen(self.gate.clone());
+        Box::pin(async move {
+            gate.await;
+            self.call(true, move |s| {
+                online(s)?;
+                s.received.retain(|r| r.id != share.id);
+                s.received.push(share);
+                Ok(())
+            })
+            .await
         })
     }
 

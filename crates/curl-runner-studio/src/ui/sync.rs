@@ -21,13 +21,14 @@ use crate::model::backend::{
     scan_sync_files,
 };
 use crate::model::history::relative_time;
+use crate::model::shared_copy::{resolves_inside, writable};
 use crate::model::sync_base::{self, SyncBase};
 use crate::ui::state::Connection;
 use chrono::{DateTime, Local, Utc};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::collections::{HashMap, HashSet};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// Quiet time after the last change before a sync.
@@ -230,31 +231,6 @@ fn really_gone(root: &Path, deleted: Vec<SyncDeletion>) -> Vec<SyncDeletion> {
                 .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
         })
         .collect()
-}
-
-/// A pulled path is written only inside the collection, as a visible YAML
-/// file: plain components, none hidden.
-pub(super) fn writable(rel: &Path) -> bool {
-    let yaml = rel
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("yaml") || e.eq_ignore_ascii_case("yml"));
-    yaml && rel.components().all(|c| match c {
-        Component::Normal(n) => !n.to_string_lossy().starts_with('.'),
-        _ => false,
-    })
-}
-
-/// `dir` resolves under `real_root` (no symlinked folder leading out). A
-/// missing `dir` is judged by its deepest existing ancestor.
-pub(super) fn resolves_inside(dir: &Path, real_root: &Path) -> bool {
-    let mut probe = Some(dir);
-    while let Some(d) = probe {
-        if let Ok(real) = d.canonicalize() {
-            return real.starts_with(real_root);
-        }
-        probe = d.parent();
-    }
-    false
 }
 
 /// What [`apply_pulled`] did on disk.

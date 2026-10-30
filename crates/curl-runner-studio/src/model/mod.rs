@@ -17,6 +17,7 @@ pub mod result_view;
 pub mod run;
 pub mod secrets;
 pub mod settings;
+pub mod shared_copy;
 pub mod sync_base;
 pub mod templates;
 

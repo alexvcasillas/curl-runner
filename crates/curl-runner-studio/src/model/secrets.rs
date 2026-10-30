@@ -62,6 +62,12 @@ impl MemorySecrets {
     fn items(&self) -> std::sync::MutexGuard<'_, BTreeMap<(String, String), String>> {
         self.items.lock().unwrap_or_else(|e| e.into_inner())
     }
+
+    /// How many items it holds, across every service (tests).
+    #[cfg(test)]
+    pub fn len(&self) -> usize {
+        self.items().len()
+    }
 }
 
 #[cfg(any(test, not(target_os = "macos")))]

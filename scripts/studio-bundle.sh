@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Build a local macOS app bundle of curl-runner studio, so the system can
-# hand it `curl-runner://` share links: target/studio/curl-runner studio.app,
-# with an Info.plist that registers the `curl-runner` URL scheme.
+# hand it `curl-runner://` share links: {target}/studio/curl-runner studio.app,
+# with an Info.plist that registers the `curl-runner` URL scheme. {target} is
+# $CARGO_TARGET_DIR when set, else target/ in the repo.
 #
-# Nothing is installed: the bundle stays under target/. To have links open
-# it, `open` the app once; LaunchServices then knows the scheme.
+# Nothing is installed: the bundle stays in the target dir. Opening it once
+# registers it with LaunchServices, which then sends it the scheme's links.
 # Usage: studio-bundle.sh [--release] [repo-root]
 set -euo pipefail
 
@@ -26,12 +27,16 @@ VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/Cargo.toml" | head -n 1)"
   exit 1
 }
 
+TARGET="${CARGO_TARGET_DIR:-$ROOT/target}"
+# Cargo reads a relative CARGO_TARGET_DIR from where it runs: here.
+[[ "$TARGET" == /* ]] || TARGET="$PWD/$TARGET"
+
 cargo_flags=(--manifest-path "$ROOT/Cargo.toml" -p curl-runner-studio)
 [[ "$PROFILE" == release ]] && cargo_flags+=(--release)
 cargo build "${cargo_flags[@]}"
 
-BIN="$ROOT/target/$PROFILE/curl-runner-studio"
-APP="$ROOT/target/studio/curl-runner studio.app"
+BIN="$TARGET/$PROFILE/curl-runner-studio"
+APP="$TARGET/studio/curl-runner studio.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp "$BIN" "$APP/Contents/MacOS/curl-runner-studio"
@@ -78,4 +83,4 @@ PLIST
 
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
 echo "Built $APP ($PROFILE, $VERSION)"
-echo "Open it once (open \"$APP\") so curl-runner:// links find it."
+echo "Open it once (open \"$APP\") to register it with LaunchServices."
