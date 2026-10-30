@@ -3,14 +3,15 @@
 //! once with `Sync now`. One sync runs at a time; a request while one is in
 //! flight queues a single follow-up.
 //!
-//! Sync is on only while signed in and not `Continue offline`. Pending
-//! changes are the tracked files whose hash differs from the one the
-//! server last took: the map is seeded on open by an initial sync (with
-//! "Sync automatically" off, by the files as they are on open). Until it
-//! is seeded (opened offline), the count is the server's own, from
-//! [`Backend::sync_status`](crate::model::backend::Backend::sync_status).
-//! Offline, the count keeps growing and a probe runs every [`OFFLINE_POLL`] (or on
-//! the next save); once back, the waiting changes go.
+//! Sync is on only while signed in and not `Continue offline`. The client
+//! keeps, per collection, the hash of each file as it last synced it (the
+//! base, [`sync_base`]). Pending changes are the files whose hash is not
+//! their base, plus files in the base that are gone (deletions). Each file
+//! goes with its base, so the server reports a conflict when its copy is
+//! neither: conflicts survive a restart and are rebuilt on every sync.
+//! Offline, the count keeps growing and a probe runs every
+//! [`OFFLINE_POLL`] (or on the next save); once back, the waiting changes
+//! go.
 
 use super::backend_call;
 use super::color;
@@ -19,6 +20,7 @@ use crate::model::backend::{
     BackendError, Conflict, SyncFile, SyncReport, SyncStatus, scan_sync_files,
 };
 use crate::model::history::relative_time;
+use crate::model::sync_base::{self, SyncBase};
 use crate::ui::state::Connection;
 use chrono::{DateTime, Local, Utc};
 use gpui_kit::prelude::*;
@@ -37,11 +39,9 @@ const RELATIVE_TICK: Duration = Duration::from_secs(30);
 /// The workspace's sync state for the open collection.
 #[derive(Default)]
 pub(super) struct SyncState {
-    /// Each tracked file's hash as the server last took it.
-    synced: HashMap<PathBuf, u64>,
-    /// `synced` holds the server's hashes (a sync got through, or seeded).
-    seeded: bool,
-    /// Tracked files the server does not have yet.
+    /// Each file's hash as this client last synced it (persisted).
+    base: SyncBase,
+    /// Changed, new or deleted files the server does not have yet.
     pub(super) pending: usize,
     /// A sync is in flight.
     running: bool,
@@ -51,8 +51,7 @@ pub(super) struct SyncState {
     pub(super) offline: bool,
     /// When the last sync finished (or the server's, on open).
     at: Option<DateTime<Utc>>,
-    /// Files the last syncs left changed on both sides; they are held back
-    /// from syncs until resolved (Task 7).
+    /// Files the last sync found changed on both sides (Task 7 resolves).
     pub(super) conflicts: Vec<Conflict>,
     /// People with access, when the collection has a share link.
     pub(super) people: Option<usize>,
@@ -153,16 +152,42 @@ pub(super) fn sync_dot(token: &'static str, ring: bool) -> Div {
     }
 }
 
-/// Number of `files` the server does not have, by `synced` hash.
+/// Changes waiting: `files` whose hash is not their base (less `held`
+/// conflicts), plus, with `deletions`, `base` paths no longer on disk
+/// (`too_big` files are still there).
 fn pending_of(
     files: &[SyncFile],
-    synced: &HashMap<PathBuf, u64>,
+    too_big: &[PathBuf],
+    base: &SyncBase,
     held: &HashSet<PathBuf>,
+    deletions: bool,
 ) -> usize {
-    files
+    let changed = files
         .iter()
-        .filter(|f| !held.contains(&f.rel) && synced.get(&f.rel) != Some(&f.hash))
-        .count()
+        .filter(|f| !held.contains(&f.rel) && base.get(&f.rel) != Some(&f.hash))
+        .count();
+    let deleted = if deletions {
+        deleted_of(files, too_big, base).len()
+    } else {
+        0
+    };
+    changed + deleted
+}
+
+/// The `base` paths gone from disk.
+fn deleted_of(files: &[SyncFile], too_big: &[PathBuf], base: &SyncBase) -> Vec<PathBuf> {
+    let here: HashSet<&Path> = files
+        .iter()
+        .map(|f| f.rel.as_path())
+        .chain(too_big.iter().map(PathBuf::as_path))
+        .collect();
+    let mut gone: Vec<PathBuf> = base
+        .keys()
+        .filter(|rel| !here.contains(rel.as_path()))
+        .cloned()
+        .collect();
+    gone.sort();
+    gone
 }
 
 /// A pulled path is written only inside the collection, as a visible YAML
@@ -177,24 +202,103 @@ fn writable(rel: &Path) -> bool {
     })
 }
 
-/// Writes the server's newer files under `root`; returns the paths written.
-fn write_pulled(root: &Path, pulled: &[SyncFile]) -> Vec<PathBuf> {
-    let mut written = Vec::new();
-    for f in pulled {
-        if !writable(&f.rel) {
+/// `dir` resolves under `real_root` (no symlinked folder leading out). A
+/// missing `dir` is judged by its deepest existing ancestor.
+fn resolves_inside(dir: &Path, real_root: &Path) -> bool {
+    let mut probe = Some(dir);
+    while let Some(d) = probe {
+        if let Ok(real) = d.canonicalize() {
+            return real.starts_with(real_root);
+        }
+        probe = d.parent();
+    }
+    false
+}
+
+/// What [`apply_pulled`] did on disk.
+#[derive(Debug, Default, PartialEq)]
+struct Applied {
+    /// Paths written, with the hash now on disk.
+    written: Vec<(PathBuf, u64)>,
+    /// Paths removed (or already gone) for the server's deletions.
+    removed: Vec<PathBuf>,
+    /// Files changed on disk while the sync was in flight: left alone.
+    conflicts: Vec<Conflict>,
+}
+
+/// Applies the server's newer files and deletions under `root`. A file is
+/// written only if the disk still holds what was `sent` (or it is absent and
+/// was not sent), and removed only if the disk still holds its `base`;
+/// anything else is a conflict by `author`, so an edit saved meanwhile is
+/// never clobbered.
+fn apply_pulled(
+    root: &Path,
+    report: &SyncReport,
+    sent: &HashMap<PathBuf, u64>,
+    base: &SyncBase,
+    author: &str,
+) -> Applied {
+    let mut out = Applied::default();
+    let Ok(real_root) = root.canonicalize() else {
+        return out;
+    };
+    let conflict = |rel: &Path, local: String, server: String| Conflict {
+        rel: rel.to_path_buf(),
+        local,
+        server,
+        server_author: author.to_string(),
+        server_at: Utc::now(),
+    };
+    let inside = |rel: &Path| {
+        let path = root.join(rel);
+        let ok = writable(rel)
+            && path
+                .parent()
+                .is_some_and(|d| resolves_inside(d, &real_root));
+        if !ok {
+            log::warn!("sync: refused to touch {}", rel.display());
+        }
+        ok.then_some(path)
+    };
+    for f in &report.pulled {
+        let Some(path) = inside(&f.rel) else { continue };
+        let disk = std::fs::read_to_string(&path).ok();
+        let unchanged = match (&disk, sent.get(&f.rel)) {
+            (Some(d), Some(h)) => SyncFile::hash_of(d) == *h,
+            (None, None) => true,
+            _ => false,
+        };
+        if !unchanged {
+            out.conflicts
+                .push(conflict(&f.rel, disk.unwrap_or_default(), f.text.clone()));
+            continue;
+        }
+        let Some(dir) = path.parent() else { continue };
+        let _ = std::fs::create_dir_all(dir);
+        // Again once it exists: nothing may have swapped in a link.
+        if !dir.canonicalize().is_ok_and(|d| d.starts_with(&real_root)) {
             log::warn!("sync: refused to write {}", f.rel.display());
             continue;
         }
-        let path = root.join(&f.rel);
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
         match crate::model::write_atomic(&path, &f.text) {
-            Ok(()) => written.push(f.rel.clone()),
+            Ok(()) => out.written.push((f.rel.clone(), f.hash)),
             Err(e) => log::warn!("sync: couldn't write {}: {e}", f.rel.display()),
         }
     }
-    written
+    for rel in &report.deleted {
+        let Some(path) = inside(rel) else { continue };
+        match std::fs::read_to_string(&path) {
+            Err(_) => out.removed.push(rel.clone()),
+            Ok(d) if base.get(rel) == Some(&SyncFile::hash_of(&d)) => {
+                match std::fs::remove_file(&path) {
+                    Ok(()) => out.removed.push(rel.clone()),
+                    Err(e) => log::warn!("sync: couldn't remove {}: {e}", rel.display()),
+                }
+            }
+            Ok(d) => out.conflicts.push(conflict(rel, d, String::new())),
+        }
+    }
+    out
 }
 
 impl Workspace {
@@ -225,13 +329,14 @@ impl Workspace {
     }
 
     /// Starts over for the open collection (opened, signed in or out, the
-    /// server changed): the server's last sync time, the share's people
-    /// and, with "Sync automatically", an initial sync that seeds the
-    /// hashes.
+    /// server changed): the persisted base, the server's last sync time,
+    /// the share's people, the waiting count and, with "Sync
+    /// automatically", a sync (which also rebuilds conflicts).
     pub(super) fn start_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.sync = SyncState::default();
         let key = self.collection_key().filter(|_| self.sync_on());
         if let Some(key) = key {
+            self.sync.base = sync_base::load(self.store.base(), &key.id);
             if let SyncStatus::Synced { at, .. } = self.backend.sync_status(&key) {
                 self.sync.at = Some(at);
             }
@@ -247,7 +352,7 @@ impl Workspace {
             if self.settings.sync.automatic {
                 self.run_sync(window, cx);
             } else {
-                self.refresh_pending(true, false, window, cx);
+                self.refresh_pending(false, window, cx);
             }
         }
         self.sync_changed(cx);
@@ -257,7 +362,7 @@ impl Workspace {
     /// waiting and, with "Sync automatically", sync after a pause.
     pub(super) fn mark_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.sync_on() {
-            self.refresh_pending(false, self.settings.sync.automatic, window, cx);
+            self.refresh_pending(self.settings.sync.automatic, window, cx);
         }
     }
 
@@ -287,6 +392,19 @@ impl Workspace {
         }));
     }
 
+    /// Why Share is disabled, as its tooltip: signed out, sign in first;
+    /// signed in but offline (chosen, or the server can't be reached), go
+    /// online first.
+    pub(super) fn share_blocked(&self) -> Option<&'static str> {
+        if self.backend.account().is_none() {
+            Some("Sign in to share")
+        } else if !self.sync_on() || self.sync.offline {
+            Some("Go online to share")
+        } else {
+            None
+        }
+    }
+
     /// Opens the Share dialog (Task 4).
     pub(super) fn open_share(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         cx.notify();
@@ -297,32 +415,36 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Counts the waiting changes in the background. `seed` takes the files
-    /// as synced instead; `schedule` syncs [`SYNC_DELAY`] later.
-    fn refresh_pending(
-        &mut self,
-        seed: bool,
-        schedule: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    /// The open collection is a received copy: it pulls, never pushes or
+    /// deletes. Its owner, for conflicts on pull.
+    fn received_from(&self) -> Option<String> {
+        let id = &self.meta.id;
+        self.backend
+            .received()
+            .into_iter()
+            .find(|r| &r.collection_id == id)
+            .map(|r| r.owner_org)
+    }
+
+    /// Counts the waiting changes in the background; `schedule` syncs
+    /// [`SYNC_DELAY`] later when there are any.
+    fn refresh_pending(&mut self, schedule: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some(root) = self.state.collection.as_ref().map(|c| c.root.clone()) else {
             return;
         };
-        let scan = cx.background_spawn(async move { scan_sync_files(&root).files });
+        let deletions = self.received_from().is_none();
+        let scan = cx.background_spawn(async move { scan_sync_files(&root) });
         self.sync.scan = Some(cx.spawn_in(window, async move |this, cx| {
-            let files = scan.await;
+            let scan = scan.await;
             this.update_in(cx, |this, window, cx| {
-                if seed {
-                    this.sync.synced = files.iter().map(|f| (f.rel.clone(), f.hash)).collect();
-                    this.sync.seeded = true;
-                }
                 let held = this.held_back();
-                this.sync.pending = if this.sync.seeded {
-                    pending_of(&files, &this.sync.synced, &held)
-                } else {
-                    this.server_pending()
-                };
+                this.sync.pending = pending_of(
+                    &scan.files,
+                    &scan.too_big,
+                    &this.sync.base,
+                    &held,
+                    deletions,
+                );
                 if schedule && this.sync.pending > 0 {
                     this.schedule_sync(window, cx);
                 }
@@ -330,15 +452,6 @@ impl Workspace {
             })
             .ok();
         }));
-    }
-
-    /// What the server counts as waiting, before the hashes are seeded.
-    fn server_pending(&self) -> usize {
-        let status = self.collection_key().map(|k| self.backend.sync_status(&k));
-        match status {
-            Some(SyncStatus::Pending(n) | SyncStatus::Offline(n)) => n,
-            _ => 0,
-        }
     }
 
     /// Paths with an unresolved conflict.
@@ -355,8 +468,9 @@ impl Workspace {
         }));
     }
 
-    /// One sync: the tracked files (less conflicted ones) up, the server's
-    /// newer files down. While one is in flight, queues one more.
+    /// One sync: every tracked file with its base up, deletions too, the
+    /// server's newer files and deletions down. While one is in flight,
+    /// queues one more.
     fn run_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(key) = self.collection_key().filter(|_| self.sync_on()) else {
             return;
@@ -369,7 +483,12 @@ impl Workspace {
         let Some(root) = root else { return };
         self.sync.running = true;
         self.sync.debounce = None;
-        let held = self.held_back();
+        let received = self.received_from();
+        let author = received
+            .clone()
+            .or_else(|| self.backend.account().map(|a| a.name))
+            .unwrap_or_default();
+        let base = self.sync.base.clone();
         let backend = self.backend.clone();
         self.sync.task = Some(cx.spawn_in(window, async move |this, cx| {
             let scan_root = root.clone();
@@ -379,28 +498,42 @@ impl Workspace {
             for rel in &scan.too_big {
                 log::info!("sync: {} stays local (over 1 MB)", rel.display());
             }
+            // Read-only copies never delete (Task 6 keeps them unedited).
+            let deleted = if received.is_some() {
+                Vec::new()
+            } else {
+                deleted_of(&scan.files, &scan.too_big, &base)
+            };
             let files: Vec<SyncFile> = scan
                 .files
                 .into_iter()
-                .filter(|f| !held.contains(&f.rel))
+                .map(|f| {
+                    let b = base.get(&f.rel).copied();
+                    f.with_base(b)
+                })
                 .collect();
-            let sent: Vec<(PathBuf, u64)> = files.iter().map(|f| (f.rel.clone(), f.hash)).collect();
+            let sent: HashMap<PathBuf, u64> =
+                files.iter().map(|f| (f.rel.clone(), f.hash)).collect();
+            let gone = deleted.clone();
             let Ok(call) = this.update(cx, |_, cx| {
-                backend_call(cx, &backend, move |b| b.sync(&key, &files))
+                backend_call(cx, &backend, move |b| b.sync(&key, &files, &gone))
             }) else {
                 return;
             };
             let result = call.await;
-            let written = match &result {
-                Ok(report) if !report.pulled.is_empty() => {
-                    let pulled = report.pulled.clone();
-                    cx.background_spawn(async move { write_pulled(&root, &pulled) })
-                        .await
+            let (result, applied) = match result {
+                Ok(report) if !report.pulled.is_empty() || !report.deleted.is_empty() => {
+                    let s = sent.clone();
+                    cx.background_spawn(async move {
+                        let applied = apply_pulled(&root, &report, &s, &base, &author);
+                        (Ok(report), applied)
+                    })
+                    .await
                 }
-                _ => Vec::new(),
+                other => (other, Applied::default()),
             };
             this.update_in(cx, |this, window, cx| {
-                this.sync_done(sent, result, written, window, cx);
+                this.sync_done(sent, deleted, result, applied, window, cx);
             })
             .ok();
         }));
@@ -409,38 +542,59 @@ impl Workspace {
 
     fn sync_done(
         &mut self,
-        sent: Vec<(PathBuf, u64)>,
+        sent: HashMap<PathBuf, u64>,
+        deleted: Vec<PathBuf>,
         result: Result<SyncReport, BackendError>,
-        written: Vec<PathBuf>,
+        applied: Applied,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.sync.running = false;
         match result {
             Ok(report) => {
-                let conflicted: HashSet<&Path> =
-                    report.conflicts.iter().map(|c| c.rel.as_path()).collect();
+                let mut conflicts = report.conflicts;
+                conflicts.extend(applied.conflicts);
+                let conflicted: HashSet<PathBuf> =
+                    conflicts.iter().map(|c| c.rel.clone()).collect();
+                let base = &mut self.sync.base;
                 for (rel, hash) in sent {
-                    if !conflicted.contains(rel.as_path()) {
-                        self.sync.synced.insert(rel, hash);
+                    if !conflicted.contains(&rel) {
+                        base.insert(rel, hash);
                     }
                 }
-                for f in report.pulled.iter().filter(|f| written.contains(&f.rel)) {
-                    self.sync.synced.insert(f.rel.clone(), f.hash);
+                for rel in deleted.iter().chain(&applied.removed) {
+                    base.remove(rel);
                 }
-                for c in report.conflicts {
-                    self.sync.conflicts.retain(|old| old.rel != c.rel);
-                    self.sync.conflicts.push(c);
+                for (rel, hash) in &applied.written {
+                    base.insert(rel.clone(), *hash);
                 }
-                self.sync.seeded = true;
+                self.sync.conflicts = conflicts;
+                if let Some(key) = self.collection_key() {
+                    let (dir, map) = (
+                        self.store.base().map(Path::to_path_buf),
+                        self.sync.base.clone(),
+                    );
+                    cx.background_spawn(async move {
+                        if let Err(e) = sync_base::save(dir.as_deref(), &key.id, &map) {
+                            log::warn!("sync: couldn't save the sync base: {e}");
+                        }
+                    })
+                    .detach();
+                }
                 self.sync.at = Some(Utc::now());
                 self.sync.offline = false;
                 self.sync.poll = None;
                 if !self.sync.share_known {
                     self.refresh_share(window, cx);
                 }
-                if !written.is_empty() {
-                    self.disk_changed(&written, window, cx);
+                let touched: Vec<PathBuf> = applied
+                    .written
+                    .into_iter()
+                    .map(|(rel, _)| rel)
+                    .chain(applied.removed)
+                    .collect();
+                if !touched.is_empty() {
+                    self.disk_changed(&touched, window, cx);
                 }
             }
             Err(BackendError::Offline) => {
@@ -451,7 +605,7 @@ impl Workspace {
             Err(BackendError::SignedOut) => {}
             Err(e) => super::workspace::notify_error(format!("Couldn't sync: {e}"), window, cx),
         }
-        self.refresh_pending(false, false, window, cx);
+        self.refresh_pending(false, window, cx);
         if std::mem::take(&mut self.sync.again) {
             self.run_sync(window, cx);
         }
@@ -490,7 +644,10 @@ impl Workspace {
 
 #[cfg(test)]
 mod tests {
-    use super::{HashMap, HashSet, Path, PathBuf, SyncFile, SyncLine, Utc, pending_of, writable};
+    use super::{
+        HashMap, HashSet, Path, PathBuf, SyncBase, SyncFile, SyncLine, SyncReport, Utc,
+        apply_pulled, deleted_of, pending_of, writable,
+    };
 
     #[test]
     fn lines_read_like_the_boards() {
@@ -535,8 +692,131 @@ mod tests {
             (PathBuf::from("b.yaml"), SyncFile::hash_of("old")),
         ]);
         let held = HashSet::from([PathBuf::from("c.yaml")]);
-        assert_eq!(pending_of(&files, &synced, &held), 1);
-        assert_eq!(pending_of(&files, &synced, &HashSet::new()), 2);
+        assert_eq!(pending_of(&files, &[], &synced, &held, true), 1);
+        assert_eq!(pending_of(&files, &[], &synced, &HashSet::new(), true), 2);
+        // Deletions: in the base, gone from disk (a too-big file is not).
+        let mut base = synced.clone();
+        base.insert("gone.yaml".into(), 1);
+        base.insert("huge.yaml".into(), 2);
+        let big = [PathBuf::from("huge.yaml")];
+        assert_eq!(
+            deleted_of(&files, &big, &base),
+            [PathBuf::from("gone.yaml")]
+        );
+        assert_eq!(pending_of(&files, &big, &base, &held, true), 2);
+        assert_eq!(
+            pending_of(&files, &big, &base, &held, false),
+            1,
+            "read only"
+        );
+    }
+
+    fn report(pulled: &[SyncFile], deleted: &[&str]) -> SyncReport {
+        SyncReport {
+            pulled: pulled.to_vec(),
+            deleted: deleted.iter().map(PathBuf::from).collect(),
+            ..SyncReport::default()
+        }
+    }
+
+    #[test]
+    fn save_during_sync_is_not_clobbered() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path();
+        std::fs::write(root.join("a.yaml"), "a: saved meanwhile\n").unwrap();
+        std::fs::write(root.join("b.yaml"), "b: 1\n").unwrap();
+        let sent = HashMap::from([
+            (PathBuf::from("a.yaml"), SyncFile::hash_of("a: 1\n")),
+            (PathBuf::from("b.yaml"), SyncFile::hash_of("b: 1\n")),
+        ]);
+        let pulled = [
+            SyncFile::new("a.yaml", "a: theirs\n"),
+            SyncFile::new("b.yaml", "b: theirs\n"),
+            SyncFile::new("new/c.yaml", "c: theirs\n"),
+        ];
+        let out = apply_pulled(root, &report(&pulled, &[]), &sent, &SyncBase::new(), "Acme");
+        let read = |rel: &str| std::fs::read_to_string(root.join(rel)).unwrap();
+        assert_eq!(read("a.yaml"), "a: saved meanwhile\n", "kept");
+        assert_eq!(read("b.yaml"), "b: theirs\n");
+        assert_eq!(read("new/c.yaml"), "c: theirs\n");
+        assert_eq!(out.conflicts.len(), 1);
+        let c = &out.conflicts[0];
+        assert_eq!(c.rel, PathBuf::from("a.yaml"));
+        assert_eq!(
+            (c.local.as_str(), c.server.as_str()),
+            ("a: saved meanwhile\n", "a: theirs\n")
+        );
+        assert_eq!(c.server_author, "Acme");
+        let written: Vec<_> = out.written.iter().map(|(r, _)| r.clone()).collect();
+        assert_eq!(
+            written,
+            [PathBuf::from("b.yaml"), PathBuf::from("new/c.yaml")]
+        );
+        // Created on disk meanwhile (not sent): a conflict too.
+        std::fs::write(root.join("d.yaml"), "d: mine\n").unwrap();
+        let out = apply_pulled(
+            root,
+            &report(&[SyncFile::new("d.yaml", "d: theirs\n")], &[]),
+            &sent,
+            &SyncBase::new(),
+            "Acme",
+        );
+        assert_eq!(out.conflicts.len(), 1);
+        assert_eq!(read("d.yaml"), "d: mine\n");
+    }
+
+    #[test]
+    fn pulled_deletions_remove_only_unchanged_files() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path();
+        std::fs::write(root.join("same.yaml"), "s: 1\n").unwrap();
+        std::fs::write(root.join("edited.yaml"), "e: 2\n").unwrap();
+        let base = SyncBase::from([
+            (PathBuf::from("same.yaml"), SyncFile::hash_of("s: 1\n")),
+            (PathBuf::from("edited.yaml"), SyncFile::hash_of("e: 1\n")),
+            (PathBuf::from("gone.yaml"), 7),
+        ]);
+        let out = apply_pulled(
+            root,
+            &report(&[], &["same.yaml", "edited.yaml", "gone.yaml"]),
+            &HashMap::new(),
+            &base,
+            "Acme",
+        );
+        assert!(!root.join("same.yaml").exists());
+        assert!(root.join("edited.yaml").exists(), "edited: kept");
+        assert_eq!(
+            out.removed,
+            [PathBuf::from("same.yaml"), PathBuf::from("gone.yaml")]
+        );
+        assert_eq!(out.conflicts.len(), 1);
+        assert_eq!(out.conflicts[0].rel, PathBuf::from("edited.yaml"));
+        assert_eq!(out.conflicts[0].server, "");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pulled_files_never_land_through_a_symlinked_folder() {
+        let d = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), d.path().join("linked")).unwrap();
+        let pulled = [
+            SyncFile::new("linked/x.yaml", "x: 1\n"),
+            SyncFile::new("linked/deep/y.yaml", "y: 1\n"),
+        ];
+        let out = apply_pulled(
+            d.path(),
+            &report(&pulled, &[]),
+            &HashMap::new(),
+            &SyncBase::new(),
+            "Acme",
+        );
+        assert!(out.written.is_empty());
+        assert!(!outside.path().join("x.yaml").exists());
+        assert!(
+            !outside.path().join("deep").exists(),
+            "no folder made outside"
+        );
     }
 }
 
@@ -578,6 +858,16 @@ mod gpui_tests {
         root: &Path,
         backend: Arc<dyn Backend>,
     ) -> (AnyWindowHandle, Entity<Workspace>) {
+        open_in(cx, root, backend, StateStore::none())
+    }
+
+    /// [`open`] with a store that keeps state (the sync base) on disk.
+    fn open_in(
+        cx: &mut TestAppContext,
+        root: &Path,
+        backend: Arc<dyn Backend>,
+        store: StateStore,
+    ) -> (AnyWindowHandle, Entity<Workspace>) {
         let root = root.to_path_buf();
         let out = cx.update(|cx| {
             gpui_kit::init(cx);
@@ -590,16 +880,7 @@ mod gpui_tests {
                 ..Default::default()
             };
             gpui_kit::open_window(options, cx, |window, cx| {
-                cx.new(|cx| {
-                    Workspace::new(
-                        Some(root),
-                        StateStore::none(),
-                        test_secrets(),
-                        backend,
-                        window,
-                        cx,
-                    )
-                })
+                cx.new(|cx| Workspace::new(Some(root), store, test_secrets(), backend, window, cx))
             })
             .unwrap()
         });
@@ -783,15 +1064,26 @@ mod gpui_tests {
     #[gpui_kit::test]
     fn opened_offline_counts_only_what_the_server_lacks(cx: &mut TestAppContext) {
         let dir = collection(&[("a.yaml", REQUEST), ("b.yaml", REQUEST)]);
+        let state = tempfile::tempdir().unwrap();
         let backend = signed_in();
-        let _first = open(cx, dir.path(), backend.clone());
+        let _first = open_in(
+            cx,
+            dir.path(),
+            backend.clone(),
+            StateStore::at(state.path()),
+        );
         std::fs::write(
             dir.path().join("a.yaml"),
             "request:\n  url: https://x.example.com\n",
         )
         .unwrap();
         backend.dev().unwrap().set_offline(true);
-        let (window, ws) = open(cx, dir.path(), backend.clone());
+        let (window, ws) = open_in(
+            cx,
+            dir.path(),
+            backend.clone(),
+            StateStore::at(state.path()),
+        );
         assert_eq!(line(cx, &ws), SyncLine::Offline(1));
         assert!(shows(
             cx,
@@ -807,6 +1099,164 @@ mod gpui_tests {
         cx.run_until_parked();
         assert!(matches!(line(cx, &ws), SyncLine::Synced(_)));
         assert!(labelled(cx, window, "title-shared", "Shared · 1"));
+    }
+
+    #[gpui_kit::test]
+    fn edit_while_closed_is_pending_on_open(cx: &mut TestAppContext) {
+        let dir = collection(&[("a.yaml", REQUEST), ("b.yaml", REQUEST)]);
+        let state = tempfile::tempdir().unwrap();
+        let backend = signed_in();
+        let _first = open_in(
+            cx,
+            dir.path(),
+            backend.clone(),
+            StateStore::at(state.path()),
+        );
+        assert_eq!(syncs(&backend).len(), 1);
+        // Closed: an edit, and "Sync automatically" off so nothing syncs.
+        std::fs::write(
+            dir.path().join("b.yaml"),
+            "request:\n  url: https://x.example.com\n",
+        )
+        .unwrap();
+        std::fs::write(
+            state.path().join("settings.json"),
+            r#"{"sync":{"automatic":false}}"#,
+        )
+        .unwrap();
+        let (window, ws) = open_in(
+            cx,
+            dir.path(),
+            backend.clone(),
+            StateStore::at(state.path()),
+        );
+        assert_eq!(line(cx, &ws), SyncLine::Waiting(1));
+        assert!(shows(cx, window, "sidebar-sync", "1 change waiting"));
+        assert_eq!(syncs(&backend).len(), 1, "nothing synced on open");
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.sync_now(window, cx))
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(matches!(line(cx, &ws), SyncLine::Synced(_)));
+    }
+
+    #[gpui_kit::test]
+    fn unresolved_conflict_survives_reopen(cx: &mut TestAppContext) {
+        let dir = collection(&[(
+            "a.yaml",
+            "request:\n  url: https://a.example.com\n  timeout: 30\n",
+        )]);
+        let state = tempfile::tempdir().unwrap();
+        let backend = signed_in();
+        let (window, ws) = open_in(
+            cx,
+            dir.path(),
+            backend.clone(),
+            StateStore::at(state.path()),
+        );
+        backend.dev().unwrap().conflict_next_sync(true);
+        let mine = "request:\n  url: https://a.example.com\n  timeout: 40\n";
+        save(cx, window, &ws, "a.yaml", mine);
+        cx.executor().advance_clock(SYNC_DELAY);
+        cx.run_until_parked();
+        assert_eq!(line(cx, &ws), SyncLine::Conflicts(1));
+        assert!(shows(cx, window, "sidebar-sync", "Resolve"));
+        let key = key(&ws, cx);
+        let server = || {
+            futures::executor::block_on(backend.update_share(&key, ShareUpdate::default()))
+                .unwrap();
+            let files = futures::executor::block_on(backend.fetch_shared(&key.id))
+                .unwrap()
+                .files;
+            files[0].text.clone()
+        };
+        let theirs = server();
+        assert_ne!(theirs, mine);
+        // Reopened (as after a restart): the sync on open finds it again.
+        let (window, ws) = open_in(
+            cx,
+            dir.path(),
+            backend.clone(),
+            StateStore::at(state.path()),
+        );
+        assert_eq!(line(cx, &ws), SyncLine::Conflicts(1));
+        assert!(shows(cx, window, "sidebar-sync", "1 conflict"));
+        ws.read_with(cx, |ws, _| {
+            let c = &ws.sync.conflicts[0];
+            assert_eq!(
+                (c.local.as_str(), c.server.as_str()),
+                (mine, theirs.as_str())
+            );
+        });
+        assert_eq!(server(), theirs, "the server copy is not overwritten");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.yaml")).unwrap(),
+            mine
+        );
+    }
+
+    #[gpui_kit::test]
+    fn deleting_a_file_deletes_it_on_the_server(cx: &mut TestAppContext) {
+        let dir = collection(&[("a.yaml", REQUEST), ("b.yaml", REQUEST)]);
+        let state = tempfile::tempdir().unwrap();
+        let backend = signed_in();
+        let (window, ws) = open_in(
+            cx,
+            dir.path(),
+            backend.clone(),
+            StateStore::at(state.path()),
+        );
+        std::fs::remove_file(dir.path().join("b.yaml")).unwrap();
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.disk_changed(&["b.yaml".into()], window, cx));
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(line(cx, &ws), SyncLine::Waiting(1));
+        cx.executor().advance_clock(SYNC_DELAY);
+        cx.run_until_parked();
+        let last = syncs(&backend).pop().unwrap();
+        assert!(last.ends_with("[\"b.yaml\"])"), "{last}");
+        assert!(matches!(line(cx, &ws), SyncLine::Synced(_)));
+        let key = key(&ws, cx);
+        futures::executor::block_on(backend.update_share(&key, ShareUpdate::default())).unwrap();
+        let files = futures::executor::block_on(backend.fetch_shared(&key.id))
+            .unwrap()
+            .files;
+        let rels: Vec<_> = files.iter().map(|f| f.rel.clone()).collect();
+        assert_eq!(rels, [std::path::PathBuf::from("a.yaml")]);
+        // Not sent again.
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.sync_now(window, cx))
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(syncs(&backend).pop().unwrap().ends_with("[])"));
+    }
+
+    #[gpui_kit::test]
+    fn share_is_disabled_signed_out_or_offline(cx: &mut TestAppContext) {
+        let dir = collection(&[("a.yaml", REQUEST)]);
+        let backend = test_backend();
+        let (_, ws) = open(cx, dir.path(), backend.clone());
+        assert_eq!(
+            ws.read_with(cx, |ws, _| ws.share_blocked()),
+            Some("Sign in to share")
+        );
+        let backend = signed_in();
+        let (window, ws) = open(cx, dir.path(), backend.clone());
+        assert_eq!(ws.read_with(cx, |ws, _| ws.share_blocked()), None);
+        backend.dev().unwrap().set_offline(true);
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.sync_now(window, cx))
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(
+            ws.read_with(cx, |ws, _| ws.share_blocked()),
+            Some("Go online to share")
+        );
     }
 
     #[gpui_kit::test]

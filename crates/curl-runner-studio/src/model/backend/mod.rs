@@ -146,6 +146,10 @@ pub struct SyncFile {
     /// [`SyncFile::hash_of`] the text.
     pub hash: u64,
     pub text: String,
+    /// The hash this client last synced for the file (`None`: never). The
+    /// server reports a conflict when its copy is neither this nor `hash`.
+    #[serde(default)]
+    pub base: Option<u64>,
 }
 
 impl SyncFile {
@@ -155,7 +159,14 @@ impl SyncFile {
             rel: rel.into(),
             hash: SyncFile::hash_of(&text),
             text,
+            base: None,
         }
+    }
+
+    /// With the hash this client last synced.
+    pub fn with_base(mut self, base: Option<u64>) -> SyncFile {
+        self.base = base;
+        self
     }
 
     /// FNV-1a 64 of `text`: stable across releases and machines.
@@ -172,6 +183,9 @@ pub struct SyncReport {
     pub pulled: Vec<SyncFile>,
     /// Files changed on both sides; nothing was written for them.
     pub conflicts: Vec<Conflict>,
+    /// Files the server no longer has that the client synced before
+    /// (received copies): remove them locally.
+    pub deleted: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -391,9 +405,17 @@ pub trait Backend: Send + Sync {
     fn sign_out(&self) -> BoxFut<'_, ()>;
     fn account(&self) -> Option<Account>;
     fn sync_status(&self, collection: &CollectionKey) -> SyncStatus;
-    /// Pushes the `local` files the server does not have, and pulls what it
-    /// has newer (shared collections).
-    fn sync(&self, collection: &CollectionKey, local: &[SyncFile]) -> BoxFut<'_, SyncReport>;
+    /// Pushes the `local` files the server does not have and removes the
+    /// `deleted` ones (paths this client synced before and no longer has);
+    /// pulls what it has newer (shared collections, which never push or
+    /// delete). A file whose server copy is neither its `base` nor its
+    /// hash is a conflict: reported, the server copy kept.
+    fn sync(
+        &self,
+        collection: &CollectionKey,
+        local: &[SyncFile],
+        deleted: &[PathBuf],
+    ) -> BoxFut<'_, SyncReport>;
     fn share_settings(&self, collection: &CollectionKey) -> BoxFut<'_, ShareSettings>;
     fn update_share(
         &self,

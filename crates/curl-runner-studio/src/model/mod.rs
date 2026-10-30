@@ -17,6 +17,7 @@ pub mod result_view;
 pub mod run;
 pub mod secrets;
 pub mod settings;
+pub mod sync_base;
 pub mod templates;
 
 /// A duration as every screen and report shows it: `196 ms`, `4.8 s`,

@@ -330,6 +330,7 @@ fn shared_files(s: &State, id: &str) -> Result<Vec<SyncFile>, BackendError> {
             rel: rel.into(),
             hash: f.hash,
             text: f.text.clone(),
+            base: None,
         })
         .collect())
 }
@@ -465,12 +466,17 @@ impl Backend for MockBackend {
         }
     }
 
-    fn sync(&self, collection: &CollectionKey, local: &[SyncFile]) -> BoxFut<'_, SyncReport> {
+    fn sync(
+        &self,
+        collection: &CollectionKey,
+        local: &[SyncFile],
+        deleted: &[PathBuf],
+    ) -> BoxFut<'_, SyncReport> {
         // Paths and hashes only: the log stays small, and request text is
         // the caller's to check.
-        let files: Vec<_> = local.iter().map(|f| (&f.rel, f.hash)).collect();
-        self.record(format!("sync({collection:?}, {files:?})"));
-        let (key, local) = (collection.clone(), local.to_vec());
+        let files: Vec<_> = local.iter().map(|f| (&f.rel, f.hash, f.base)).collect();
+        self.record(format!("sync({collection:?}, {files:?}, {deleted:?})"));
+        let (key, local, deleted) = (collection.clone(), local.to_vec(), deleted.to_vec());
         self.call(true, move |s| {
             // A received copy pulls from the share it came from.
             let received = s
@@ -500,14 +506,21 @@ impl Backend for MockBackend {
             let now = Utc::now();
             let mut report = SyncReport::default();
             if let Some((share_id, owner_org)) = received {
-                // Read only: the owner's copy wins; nothing is pushed.
-                let by_rel: BTreeMap<String, u64> =
-                    local.iter().map(|f| (rel_key(&f.rel), f.hash)).collect();
+                // Read only: the owner's copy wins; nothing is pushed or
+                // deleted.
+                let by_rel: BTreeMap<String, &SyncFile> =
+                    local.iter().map(|f| (rel_key(&f.rel), f)).collect();
                 let snapshot = shared_files(s, &share_id)?;
                 report.pulled = snapshot
                     .iter()
-                    .filter(|f| by_rel.get(&rel_key(&f.rel)) != Some(&f.hash))
+                    .filter(|f| by_rel.get(&rel_key(&f.rel)).map(|l| l.hash) != Some(f.hash))
                     .cloned()
+                    .collect();
+                let on_server: Vec<String> = snapshot.iter().map(|f| rel_key(&f.rel)).collect();
+                report.deleted = local
+                    .iter()
+                    .filter(|f| f.base.is_some() && !on_server.contains(&rel_key(&f.rel)))
+                    .map(|f| f.rel.clone())
                     .collect();
                 let col = s.synced.entry(key.id.clone()).or_default();
                 col.files = snapshot
@@ -529,7 +542,7 @@ impl Backend for MockBackend {
             }
             let author = signed_in(s)?.name;
             // With nothing changed, a forced conflict takes the first file.
-            let conflicted = s
+            let forced = s
                 .toggles
                 .conflict_next_sync
                 .then(|| changed.first().copied().or(local.first()))
@@ -537,8 +550,26 @@ impl Backend for MockBackend {
                 .cloned();
             let changed: Vec<SyncFile> = changed.into_iter().cloned().collect();
             let col = s.synced.entry(key.id.clone()).or_default();
+            for rel in &deleted {
+                col.files.remove(&rel_key(rel));
+            }
             for f in &changed {
-                if conflicted.as_ref().is_some_and(|c| c.rel == f.rel) {
+                if forced.as_ref().is_some_and(|c| c.rel == f.rel) {
+                    continue;
+                }
+                let k = rel_key(&f.rel);
+                // Changed on the server since this client's base: theirs
+                // stays, the client is told.
+                if let Some(sf) = col.files.get(&k)
+                    && f.base != Some(sf.hash)
+                {
+                    report.conflicts.push(Conflict {
+                        rel: f.rel.clone(),
+                        local: f.text.clone(),
+                        server: sf.text.clone(),
+                        server_author: sf.author.clone(),
+                        server_at: sf.at,
+                    });
                     continue;
                 }
                 let file = ServerFile {
@@ -547,10 +578,10 @@ impl Backend for MockBackend {
                     author: author.clone(),
                     at: now,
                 };
-                col.files.insert(rel_key(&f.rel), file);
+                col.files.insert(k, file);
                 report.pushed += 1;
             }
-            if let Some(c) = conflicted {
+            if let Some(c) = forced {
                 let at = now - chrono::Duration::hours(1);
                 let server = server_side(&c.text);
                 col.files.insert(

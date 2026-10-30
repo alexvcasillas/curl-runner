@@ -94,7 +94,7 @@ fn offline_fails_every_call_with_offline() {
     assert_eq!(block_on(b.test_connection(&Server::Cloud)).map(|_| ()), off);
     assert_eq!(block_on(b.sign_in(SignInMethod::Sso)).map(|_| ()), off);
     assert_eq!(block_on(b.sign_out()), off);
-    assert_eq!(block_on(b.sync(&k, &[])).map(|_| ()), off);
+    assert_eq!(block_on(b.sync(&k, &[], &[])).map(|_| ()), off);
     assert_eq!(block_on(b.share_settings(&k)).map(|_| ()), off);
     assert_eq!(
         block_on(b.update_share(&k, ShareUpdate::default())).map(|_| ()),
@@ -224,7 +224,7 @@ fn signed_out_share_and_sync_say_signed_out() {
         Err(BackendError::SignedOut)
     );
     assert_eq!(
-        block_on(b.sync(&k, &[])).map(|_| ()),
+        block_on(b.sync(&k, &[], &[])).map(|_| ()),
         Err(BackendError::SignedOut)
     );
     assert_eq!(b.sync_status(&k), SyncStatus::Off);
@@ -313,7 +313,7 @@ fn sync_pushes_and_reports_pending_counts() {
         ("charges/list.yaml", "request:\n  url: b\n"),
         ("auth/login.yaml", "request:\n  url: c\n"),
     ]);
-    let report = block_on(b.sync(&k, &local)).unwrap();
+    let report = block_on(b.sync(&k, &local, &[])).unwrap();
     assert_eq!(report.pushed, 3);
     assert!(report.pulled.is_empty() && report.conflicts.is_empty());
     let SyncStatus::Synced {
@@ -325,21 +325,28 @@ fn sync_pushes_and_reports_pending_counts() {
         panic!("{:?}", b.sync_status(&k));
     };
     assert_eq!((collections, requests), (1, 3));
-    assert_eq!(block_on(b.sync(&k, &local)).unwrap().pushed, 0, "no change");
+    assert_eq!(
+        block_on(b.sync(&k, &local, &[])).unwrap().pushed,
+        0,
+        "no change"
+    );
 
     // Offline: changes wait.
-    local[0] = SyncFile::new("charges/create.yaml", "request:\n  url: a2\n");
-    local[1] = SyncFile::new("charges/list.yaml", "request:\n  url: b2\n");
+    let base = |f: &SyncFile| Some(f.hash);
+    local[0] =
+        SyncFile::new("charges/create.yaml", "request:\n  url: a2\n").with_base(base(&local[0]));
+    local[1] =
+        SyncFile::new("charges/list.yaml", "request:\n  url: b2\n").with_base(base(&local[1]));
     dev(&b).set_offline(true);
     assert_eq!(
-        block_on(b.sync(&k, &local)).map(|_| ()),
+        block_on(b.sync(&k, &local, &[])).map(|_| ()),
         Err(BackendError::Offline)
     );
     assert_eq!(b.sync_status(&k), SyncStatus::Offline(2));
     dev(&b).set_offline(false);
     assert_eq!(b.sync_status(&k), SyncStatus::Pending(2));
     assert_eq!(mock(d.path()).sync_status(&k), SyncStatus::Pending(2));
-    assert_eq!(block_on(b.sync(&k, &local)).unwrap().pushed, 2);
+    assert_eq!(block_on(b.sync(&k, &local, &[])).unwrap().pushed, 2);
     assert!(matches!(b.sync_status(&k), SyncStatus::Synced { .. }));
 
     block_on(b.sign_out()).unwrap();
@@ -366,7 +373,7 @@ fn received_collection_pulls_and_never_pushes() {
     assert_eq!(b.received().len(), 1);
     let mut local = fixtures::shipping_snapshot();
     local[0] = SyncFile::new(local[0].rel.clone(), "stale");
-    let report = block_on(b.sync(&k, &local)).unwrap();
+    let report = block_on(b.sync(&k, &local, &[])).unwrap();
     assert_eq!(report.pushed, 0);
     assert_eq!(
         report.pulled,
@@ -383,16 +390,18 @@ fn conflict_next_sync_returns_one_conflict_with_sam_as_author() {
     block_on(b.sync(
         &k,
         &files(&[("charges/create.yaml", base_text), ("a.yaml", "x: 1\n")]),
+        &[],
     ))
     .unwrap();
     let edited = "request:\n  name: Create charge\n  body:\n    amount: 2600\n";
-    let local = files(&[
-        ("a.yaml", "x: 2\n"),
-        ("charges/create.yaml", edited),
-        ("z.yaml", "y: 1\n"),
-    ]);
+    let base = |t: &str| Some(SyncFile::hash_of(t));
+    let local = vec![
+        SyncFile::new("a.yaml", "x: 2\n").with_base(base("x: 1\n")),
+        SyncFile::new("charges/create.yaml", edited).with_base(base(base_text)),
+        SyncFile::new("z.yaml", "y: 1\n"),
+    ];
     dev(&b).conflict_next_sync(true);
-    let report = block_on(b.sync(&k, &local)).unwrap();
+    let report = block_on(b.sync(&k, &local, &[])).unwrap();
     assert_eq!(report.conflicts.len(), 1);
     let c = &report.conflicts[0];
     assert_eq!(c.rel, PathBuf::from("a.yaml"), "the first changed file");
@@ -405,8 +414,21 @@ fn conflict_next_sync_returns_one_conflict_with_sam_as_author() {
     assert_eq!(b.sync_status(&k), SyncStatus::Conflict(1));
     assert!(!dev(&b).toggles().conflict_next_sync, "one shot");
 
-    // "Keep mine": the next sync pushes the local copy.
-    let again = block_on(b.sync(&k, &local)).unwrap();
+    // Unresolved, the next sync reports it again and keeps theirs.
+    let mut local: Vec<SyncFile> = local
+        .into_iter()
+        .map(|f| {
+            let h = f.hash;
+            f.with_base(Some(h))
+        })
+        .collect();
+    local[0].base = base("x: 1\n");
+    let still = block_on(b.sync(&k, &local, &[])).unwrap();
+    assert_eq!((still.pushed, still.conflicts.len()), (0, 1));
+    assert_eq!(still.conflicts[0].server, "x: 4\n");
+    // "Keep mine" (the base becomes theirs): the next sync pushes mine.
+    local[0].base = base("x: 4\n");
+    let again = block_on(b.sync(&k, &local, &[])).unwrap();
     assert_eq!((again.pushed, again.conflicts.len()), (1, 0));
     assert!(matches!(b.sync_status(&k), SyncStatus::Synced { .. }));
 }
@@ -568,9 +590,9 @@ fn no_secret_reaches_backend() {
     block_on(b.invite(&k, "maria@example.com")).unwrap();
     let local = sync_files(&root);
     assert_eq!(local.len(), 1);
-    block_on(b.sync(&k, &local)).unwrap();
+    block_on(b.sync(&k, &local, &[])).unwrap();
     dev(&b).conflict_next_sync(true);
-    block_on(b.sync(&k, &local)).unwrap();
+    block_on(b.sync(&k, &local, &[])).unwrap();
     let link = ShareLink::parse(settings.link.as_deref().unwrap()).unwrap();
     let shared = block_on(b.resolve_link(&link)).unwrap();
     block_on(b.fetch_shared(&shared.id)).unwrap();
@@ -602,7 +624,7 @@ fn received_copy_of_an_owned_share_pulls_the_owners_files() {
     block_on(b.sign_in(SignInMethod::Sso)).unwrap();
     let owner = key();
     let v1 = files(&[("charges/create.yaml", "request:\n  url: a\n")]);
-    block_on(b.sync(&owner, &v1)).unwrap();
+    block_on(b.sync(&owner, &v1, &[])).unwrap();
     let link = block_on(b.update_share(&owner, ShareUpdate::default()))
         .unwrap()
         .link
@@ -624,15 +646,20 @@ fn received_copy_of_an_owned_share_pulls_the_owners_files() {
     .unwrap();
     // The owner pushes a change; the copy pulls it, not the fixture.
     let v2 = files(&[("charges/create.yaml", "request:\n  url: a2\n")]);
-    block_on(b.sync(&owner, &v2)).unwrap();
-    let report = block_on(b.sync(&copy, &v1)).unwrap();
+    let v2_based: Vec<SyncFile> = v2
+        .iter()
+        .cloned()
+        .map(|f| f.with_base(Some(v1[0].hash)))
+        .collect();
+    assert_eq!(block_on(b.sync(&owner, &v2_based, &[])).unwrap().pushed, 1);
+    let report = block_on(b.sync(&copy, &v1, &[])).unwrap();
     assert_eq!((report.pushed, report.pulled.clone()), (0, v2.clone()));
-    assert!(block_on(b.sync(&copy, &v2)).unwrap().pulled.is_empty());
+    assert!(block_on(b.sync(&copy, &v2, &[])).unwrap().pulled.is_empty());
 
     // Signed out, a received copy does not sync.
     block_on(b.sign_out()).unwrap();
     assert_eq!(
-        block_on(b.sync(&copy, &v2)).map(|_| ()),
+        block_on(b.sync(&copy, &v2, &[])).map(|_| ()),
         Err(BackendError::SignedOut)
     );
 }
@@ -666,4 +693,87 @@ fn fetch_shared_honours_expiry() {
     // Resolving and fetching need no account.
     block_on(b.sign_out()).unwrap();
     assert!(block_on(b.fetch_shared(fixtures::SHIPPING_ID)).is_ok());
+}
+
+#[test]
+fn server_copy_changed_since_base_is_a_conflict_and_kept() {
+    let d = tempfile::tempdir().unwrap();
+    let b = signed_in_mock(d.path());
+    let k = key();
+    block_on(b.sync(&k, &files(&[("a.yaml", "x: 1\n")]), &[])).unwrap();
+    // Another client pushes x: 3 on top of x: 1.
+    let other = SyncFile::new("a.yaml", "x: 3\n").with_base(Some(SyncFile::hash_of("x: 1\n")));
+    assert_eq!(block_on(b.sync(&k, &[other], &[])).unwrap().pushed, 1);
+    // This client, still on base x: 1, edited to x: 2.
+    let mine = SyncFile::new("a.yaml", "x: 2\n").with_base(Some(SyncFile::hash_of("x: 1\n")));
+    let report = block_on(b.sync(&k, &[mine], &[])).unwrap();
+    assert_eq!(report.pushed, 0);
+    assert_eq!(report.conflicts.len(), 1);
+    assert_eq!(report.conflicts[0].server, "x: 3\n");
+    assert_eq!(report.conflicts[0].local, "x: 2\n");
+    assert_eq!(
+        b.state().synced[&k.id].files["a.yaml"].text,
+        "x: 3\n",
+        "theirs kept"
+    );
+}
+
+#[test]
+fn deletions_remove_owned_files_and_received_copies_are_told() {
+    let b = MockBackend::open(None, Duration::ZERO);
+    block_on(b.sign_in(SignInMethod::Sso)).unwrap();
+    let owner = key();
+    let both = files(&[("a.yaml", "a: 1\n"), ("b.yaml", "b: 1\n")]);
+    block_on(b.sync(&owner, &both, &[])).unwrap();
+    let link = block_on(b.update_share(&owner, ShareUpdate::default()))
+        .unwrap()
+        .link
+        .unwrap();
+    let shared = block_on(b.resolve_link(&ShareLink::parse(&link).unwrap())).unwrap();
+    let copy = CollectionKey {
+        id: "c0ffee00".into(),
+        name: "Payments API".into(),
+    };
+    block_on(b.add_received(ReceivedShare {
+        id: shared.id.clone(),
+        collection_id: copy.id.clone(),
+        owner_org: shared.owner_org.clone(),
+        name: shared.name.clone(),
+        root: "/tmp/shared/acme-payments-api".into(),
+        added: Utc::now(),
+    }))
+    .unwrap();
+    // The owner deletes b.yaml.
+    let a = files(&[("a.yaml", "a: 1\n")]);
+    let a_based: Vec<SyncFile> = a
+        .iter()
+        .cloned()
+        .map(|f| {
+            let h = f.hash;
+            f.with_base(Some(h))
+        })
+        .collect();
+    block_on(b.sync(&owner, &a_based, &[PathBuf::from("b.yaml")])).unwrap();
+    assert!(!b.state().synced[&owner.id].files.contains_key("b.yaml"));
+    // The copy synced both before: told to remove b.yaml; its own
+    // deletions are ignored (read only).
+    let copy_local: Vec<SyncFile> = both
+        .iter()
+        .cloned()
+        .map(|f| {
+            let h = f.hash;
+            f.with_base(Some(h))
+        })
+        .collect();
+    let report = block_on(b.sync(&copy, &copy_local, &[PathBuf::from("a.yaml")])).unwrap();
+    assert_eq!(report.deleted, [PathBuf::from("b.yaml")]);
+    assert!(b.state().synced[&owner.id].files.contains_key("a.yaml"));
+    // A file the copy never synced is not "deleted".
+    let unsynced = files(&[("a.yaml", "a: 1\n"), ("b.yaml", "b: 1\n")]);
+    assert!(
+        block_on(b.sync(&copy, &unsynced, &[]))
+            .unwrap()
+            .deleted
+            .is_empty()
+    );
 }

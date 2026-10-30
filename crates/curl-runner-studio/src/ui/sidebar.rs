@@ -612,12 +612,12 @@ impl Workspace {
 impl Workspace {
     /// The Main board's foot: `● Synced 2 min ago` and `Share`; offline,
     /// the SyncConflict board's amber `Offline · 3 changes waiting`; with
-    /// conflicts, `1 conflict · Resolve`; signed out, `Local only` and a
-    /// disabled Share.
+    /// conflicts, `1 conflict · Resolve`; signed out, `Local only`. Share
+    /// is disabled signed out (`Sign in to share`) and offline (`Go online
+    /// to share`).
     fn render_sync_footer(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let line = self.sync_line();
         let text = line.text(chrono::Utc::now());
-        let on = !matches!(line, SyncLine::LocalOnly);
         let share = div()
             .id("sidebar-share")
             .role(Role::Button)
@@ -631,18 +631,19 @@ impl Workspace {
             .rounded(px(6.))
             .line_height(relative(1.4))
             .child("Share");
-        let share = if on {
+        let blocked = self.share_blocked();
+        let share = if let Some(why) = blocked {
+            share
+                .text_color(color("text-disabled"))
+                .tooltip(move |window, cx| {
+                    gpui_kit::component::tooltip::Tooltip::new(why).build(window, cx)
+                })
+        } else {
             share
                 .text_color(color("text-primary"))
                 .cursor_pointer()
                 .hover(|s| s.bg(color("surface-100")))
                 .on_click(cx.listener(|this, _, window, cx| this.open_share(window, cx)))
-        } else {
-            share
-                .text_color(color("text-disabled"))
-                .tooltip(|window, cx| {
-                    gpui_kit::component::tooltip::Tooltip::new("Sign in to share").build(window, cx)
-                })
         };
         let resolve = matches!(line, SyncLine::Conflicts(_)).then(|| {
             div()
