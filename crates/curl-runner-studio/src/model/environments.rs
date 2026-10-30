@@ -90,14 +90,14 @@ pub struct EnvCtx {
     pub environment: String,
     /// The collection's `secret_names`.
     pub marked_secret: Vec<String>,
-    /// A received copy's owner defaults: the last source, under the `.env`
-    /// files.
+    /// A received copy's owner defaults: locked, over every local source
+    /// (secret names excepted).
     pub shared: SharedDefaults,
 }
 
 /// A received copy's non-secret defaults, as its owner shared them
-/// (`Shared by {org}`). A run reads one only when nothing local sets the
-/// name: Keychain, process env and `.env` files all come first.
+/// (`Shared by {org}`), locked: a run reads one before the process env and
+/// the `.env` files. Never for a secret name (the Keychain's).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SharedDefaults {
     pub org: String,
@@ -164,7 +164,8 @@ pub fn effective_environment(
 /// run of `files` does. `store.NAME` reads the captured store
 /// only. A plain `NAME` never does: Keychain (secret names only), then the
 /// process env, then the environment's `.env` files (core's fallback, as in
-/// the CLI), then a received copy's shared defaults.
+/// the CLI); a received copy's shared default (never a secret's) comes
+/// before all of them.
 pub fn resolve_vars(
     names: &[String],
     captured: &Store,
@@ -215,20 +216,24 @@ fn resolve_vars_with(
                 };
             }
             let secret = is_secret(name, &ctx.marked_secret);
-            let found = secret
-                .then(|| secrets.get(&service, name))
-                .flatten()
-                .map(|v| (v, VarSource::Keychain))
+            let locked = ctx
+                .shared
+                .get(name)
+                .filter(|_| !secret)
+                .map(|v| (v.to_string(), VarSource::Shared(ctx.shared.org.clone())));
+            let found = locked
+                .or_else(|| {
+                    secret
+                        .then(|| secrets.get(&service, name))
+                        .flatten()
+                        .map(|v| (v, VarSource::Keychain))
+                })
                 .or_else(|| process_env(name).map(|v| (v, VarSource::Process)))
                 .or_else(|| {
                     files.iter().find_map(|(p, vars)| {
                         vars.get(name)
                             .map(|v| (v.clone(), VarSource::EnvFile(p.clone())))
                     })
-                })
-                .or_else(|| {
-                    let v = ctx.shared.get(name).filter(|_| !secret)?;
-                    Some((v.to_string(), VarSource::Shared(ctx.shared.org.clone())))
                 });
             let (value, source) = found.unzip();
             ResolvedVar {
@@ -1094,7 +1099,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_defaults_come_after_every_local_source() {
+    fn shared_defaults_are_locked_over_local_sources() {
         let d = tempfile::tempdir().unwrap();
         fs::write(d.path().join(".env"), "SHIP_REGION_T=eu\n").unwrap();
         let ctx = EnvCtx {
@@ -1114,7 +1119,8 @@ mod tests {
         let v = resolve_vars(&names, &Store::new(), &MemorySecrets::default(), &ctx, &[]);
         assert_eq!(v[0].value.as_deref(), Some("eur"));
         assert_eq!(v[0].source, Some(VarSource::Shared("Acme".into())));
-        assert_eq!(v[1].value.as_deref(), Some("eu"), ".env first");
+        assert_eq!(v[1].value.as_deref(), Some("us"), "over .env");
+        assert_eq!(v[1].source, Some(VarSource::Shared("Acme".into())));
         assert_eq!(v[2].value, None, "a secret never takes one");
     }
 

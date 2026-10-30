@@ -875,6 +875,17 @@ mod gpui_tests {
                 .with_header("Content-Type", "application/json")
         });
         let s = received(cx, false, Some(&srv.base_url));
+        // The owner's `BASE_URL` is locked: point it at the test server.
+        let url = srv.base_url.clone();
+        s.ws.update(cx, |ws, cx| {
+            super::super::workspace::edit_notes(&ws.notes, cx, |m| {
+                for v in &mut m.received_vars {
+                    if v.name == "BASE_URL" {
+                        v.default = Some(url.clone());
+                    }
+                }
+            });
+        });
         open_file(cx, &s, RATES);
         let rates = s.read(RATES);
         dispatch(cx, &s, &RunActive);

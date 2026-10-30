@@ -387,13 +387,12 @@ fn execute(
         }
     }
     // Keychain (secret names only), then the process env; core adds the
-    // `.env` files after both. A received copy's shared default comes last:
-    // for its names the lookup reads the `.env` files itself first, so
-    // core's fallback never sees the default win over them.
-    let shared = Arc::new(shared_fallback(&req.ctx, &files));
+    // `.env` files after both. A received copy's shared default is locked:
+    // it comes before all of them.
+    let shared = Arc::new(shared_lock(&req.ctx));
     let lookup = {
         let source = source.clone();
-        move |k: &str| source.lookup(k).or_else(|| shared(k))
+        move |k: &str| shared(k).or_else(|| source.lookup(k))
     };
     let cli = req.ctx.cli_options();
     let project = config::load_config_file(root).config;
@@ -571,24 +570,18 @@ impl EnvSource {
     }
 }
 
-/// A received copy's defaults as the last lookup: for a shared name,
-/// the run's `.env` value when one sets it, else the owner's default.
-/// Secret names never take one, nor the `CURL_RUNNER_*` overrides the
+/// A received copy's defaults as the first lookup: the owner locked them,
+/// so they win over the process env and the `.env` files. Secret names
+/// never take one (the Keychain's), nor the `CURL_RUNNER_*` overrides the
 /// lookup also answers for the config.
-fn shared_fallback(ctx: &EnvCtx, files: &[PathBuf]) -> impl Fn(&str) -> Option<String> + use<> {
+fn shared_lock(ctx: &EnvCtx) -> impl Fn(&str) -> Option<String> + use<> {
     let shared = ctx.shared.clone();
     let marked = ctx.marked_secret.clone();
-    let dotenv = (!shared.values.is_empty()).then(|| {
-        let environment = effective_environment(ctx, files, &interpolate::process_env);
-        env::load_env_files(&ctx.root, environment.as_deref())
-    });
     move |k: &str| {
         if k.starts_with("CURL_RUNNER_") || is_secret(k, &marked) {
             return None;
         }
-        let default = shared.get(k)?;
-        let local = dotenv.as_ref().and_then(|d| d.get(k).cloned());
-        Some(local.unwrap_or_else(|| default.to_string()))
+        shared.get(k).map(str::to_string)
     }
 }
 
@@ -974,7 +967,7 @@ mod tests {
     }
 
     #[test]
-    fn a_received_copy_sends_the_owners_default_when_nothing_local_sets_it() {
+    fn a_received_copy_sends_the_owners_locked_defaults_over_local_values() {
         let (srv, seen) = recording_server();
         let d = tempfile::tempdir().unwrap();
         let yaml = format!(
@@ -1003,7 +996,8 @@ mod tests {
         );
         let events: Vec<RunEvent> = h.events.iter().collect();
         assert!(results(&events)[0].success);
-        assert_eq!(*seen.lock().unwrap(), ["/rates?c=eur&r=eu"]);
+        // `.env` says `eu`; the owner's `us` is locked.
+        assert_eq!(*seen.lock().unwrap(), ["/rates?c=eur&r=us"]);
     }
 
     #[test]

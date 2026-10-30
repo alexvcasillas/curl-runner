@@ -1929,6 +1929,22 @@ mod gpui_tests {
 
     /// End to end: the copy runs with the token typed in, read back from
     /// the Keychain under the service the workspace resolves.
+    /// The owner's locked `BASE_URL` default pointed at `url` (a test
+    /// server): a received copy's runs send it over any local value.
+    fn owner_base_url(cx: &mut TestAppContext, ws: &Entity<Workspace>, url: &str) {
+        let url = url.to_string();
+        ws.update(cx, |ws, cx| {
+            super::super::workspace::edit_notes(&ws.notes, cx, |m| {
+                for v in &mut m.received_vars {
+                    if v.name == "BASE_URL" {
+                        v.default = Some(url.clone());
+                    }
+                }
+            });
+        });
+        cx.run_until_parked();
+    }
+
     #[gpui_kit::test]
     fn added_copy_runs_with_the_keychain_token(cx: &mut TestAppContext) {
         use gpui_kit::Action as _;
@@ -1953,6 +1969,7 @@ mod gpui_tests {
         fill(cx, &s, &view, "BASE_URL", &srv.base_url);
         fill(cx, &s, &view, "API_TOKEN", TOKEN);
         click(cx, &s, "open-shared-add");
+        owner_base_url(cx, &s.ws, &srv.base_url);
         let ws = s.ws.clone();
         cx.update_window(s.window, |_, window, cx| {
             ws.update(cx, |ws, cx| {
