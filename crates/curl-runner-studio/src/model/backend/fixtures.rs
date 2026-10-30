@@ -97,6 +97,7 @@ request:
   method: POST
   headers:
     Authorization: Bearer ${API_TOKEN}
+    Content-Type: application/json
   body:
     from_zip: "10001"
     to_zip: "94105"
@@ -104,7 +105,8 @@ request:
   expect:
     status: 200
     body:
-      rates: "length > 0"
+      rates:
+        length: "> 0"
 "#,
     ),
     (
@@ -129,6 +131,7 @@ request:
   method: POST
   headers:
     Authorization: Bearer ${API_TOKEN}
+    Content-Type: application/json
   body:
     line1: 1 Market St
     city: San Francisco
@@ -147,6 +150,7 @@ request:
   method: POST
   headers:
     Authorization: Bearer ${API_TOKEN}
+    Content-Type: application/json
   body:
     carrier: ground
     weight_kg: 1.2
@@ -224,6 +228,7 @@ request:
   method: POST
   headers:
     Authorization: Bearer ${API_TOKEN}
+    Content-Type: application/json
   body:
     url: https://hooks.example.com/tracking
   expect:
@@ -238,6 +243,7 @@ request:
   method: POST
   headers:
     Authorization: Bearer ${API_TOKEN}
+    Content-Type: application/json
   body:
     url: https://hooks.example.com/shipping
     events:
@@ -264,7 +270,7 @@ request:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use curl_runner_core::lint::{LintOutcome, Severity, lint_text};
+    use curl_runner_core::lint::{LintOutcome, lint_text};
 
     #[test]
     fn fixture_snapshot_parses_as_curl_runner_yaml() {
@@ -278,12 +284,10 @@ mod tests {
             assert!(f.text.contains("${API_TOKEN}"), "{}", f.rel.display());
             match lint_text(&f.text).expect("no crash") {
                 LintOutcome::ParseError(e) => panic!("{}: {e}", f.rel.display()),
+                // Lint clean: not even an info, so the board's editor
+                // shows no squiggle.
                 LintOutcome::Linted { issues, .. } => {
-                    let errors: Vec<_> = issues
-                        .iter()
-                        .filter(|i| i.severity == Severity::Error)
-                        .collect();
-                    assert!(errors.is_empty(), "{}: {errors:?}", f.rel.display());
+                    assert!(issues.is_empty(), "{}: {issues:?}", f.rel.display());
                 }
             }
         }
