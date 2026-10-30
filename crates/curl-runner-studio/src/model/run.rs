@@ -107,6 +107,9 @@ pub struct RunOutcome {
     /// (they seed the next run): never persist or display them without
     /// `Redactor::redact`.
     pub stores: Vec<(PathBuf, Store)>,
+    /// Transfers per result (retries included), aligned with
+    /// `summary.results`; 0 for skipped requests and load failures.
+    pub attempts: Vec<u32>,
     pub started_at: chrono::DateTime<chrono::Local>,
 }
 
@@ -151,6 +154,7 @@ pub fn start_run(req: RunRequest, secrets: Arc<dyn SecretStore>) -> RunHandle {
             summary: create_summary(Vec::new(), 0.0),
             stopped: false,
             stores: Vec::new(),
+            attempts: Vec::new(),
             started_at,
         };
         let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -325,9 +329,13 @@ fn execute(
             redactor: redactor.clone(),
             root: root.to_path_buf(),
             store: seed.clone().unwrap_or_default(),
+            attempts: HashMap::new(),
         };
         let s = ex.run(reqs, &mut sink);
         out.stores.push((rel, sink.store));
+        // Results are in request order, executor indexes are 1-based.
+        out.attempts
+            .extend((1..=s.results.len()).map(|i| sink.attempts.get(&i).copied().unwrap_or(0)));
         duration += s.duration;
         if multi {
             all.extend(s.results);
@@ -396,6 +404,8 @@ struct Sink {
     redactor: Arc<Mutex<Redactor>>,
     root: PathBuf,
     store: Store,
+    /// Transfers per executor index (1-based).
+    attempts: HashMap<usize, u32>,
 }
 
 impl Sink {
@@ -431,6 +441,7 @@ impl EventSink for Sink {
         attempt: u32,
         outcome: &AttemptOutcome,
     ) {
+        *self.attempts.entry(index).or_default() += 1;
         let mut outcome = outcome.clone();
         if let Some(e) = &mut outcome.error {
             *e = lock(&self.redactor).redact(e);
@@ -617,6 +628,21 @@ mod tests {
                 .with_header("Content-Type", "application/json")
         });
         (srv, seen)
+    }
+
+    #[test]
+    fn outcome_attempts_align_with_results() {
+        let srv = TestServer::start();
+        let d = tempfile::tempdir().unwrap();
+        let yaml = format!(
+            "requests:\n  - name: fine\n    url: {0}/status/200\n  - name: flaky\n    url: {0}/status/503\n    retry:\n      count: 2\n      delay: 10\n",
+            srv.base_url
+        );
+        fs::write(d.path().join("a.yaml"), yaml).unwrap();
+        let events = run(d.path(), RunTarget::File("a.yaml".into()), None);
+        let o = outcome(&events);
+        assert_eq!(o.summary.results.len(), 2);
+        assert_eq!(o.attempts, [1, 3]);
     }
 
     #[test]
