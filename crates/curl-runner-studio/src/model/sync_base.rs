@@ -81,6 +81,14 @@ pub fn save(base: Option<&Path>, id: &str, sync: &SyncBase) -> std::io::Result<(
     super::write_atomic(&file, &json)
 }
 
+/// Forgets collection `id`'s base; missing is not an error.
+pub fn remove(base: Option<&Path>, id: &str) -> std::io::Result<()> {
+    match base.and_then(|b| path(b, id)).map(std::fs::remove_file) {
+        Some(Err(e)) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,5 +119,8 @@ mod tests {
         assert_eq!(load(None, "2230f875"), SyncBase::default());
         std::fs::write(d.path().join("sync/bad.json"), "{not json").unwrap();
         assert_eq!(load(Some(d.path()), "bad"), SyncBase::default());
+        remove(Some(d.path()), "2230f875").unwrap();
+        assert_eq!(load(Some(d.path()), "2230f875"), SyncBase::default());
+        remove(Some(d.path()), "2230f875").unwrap();
     }
 }

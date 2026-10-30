@@ -7,7 +7,7 @@
 
 use super::app::{
     Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder, OpenHistory, OpenSettings,
-    ToggleProblems, mono_font,
+    OpenSharedLink, ToggleProblems, mono_font,
 };
 use super::icons::{self, glyph};
 use super::settings_view::AppPage;
@@ -157,6 +157,7 @@ pub enum Target {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PaletteAction {
     OpenFolder,
+    OpenSharedLink,
     NewRequest,
     NewCollection,
     Import,
@@ -167,8 +168,9 @@ pub enum PaletteAction {
 }
 
 impl PaletteAction {
-    pub const ALL: [PaletteAction; 8] = [
+    pub const ALL: [PaletteAction; 9] = [
         PaletteAction::OpenFolder,
+        PaletteAction::OpenSharedLink,
         PaletteAction::NewRequest,
         PaletteAction::NewCollection,
         PaletteAction::Import,
@@ -181,6 +183,7 @@ impl PaletteAction {
     fn label(self) -> &'static str {
         match self {
             PaletteAction::OpenFolder => "Open folder…",
+            PaletteAction::OpenSharedLink => "Open a shared link…",
             PaletteAction::NewRequest => "New request…",
             PaletteAction::NewCollection => "New collection…",
             PaletteAction::Import => "Import curl…",
@@ -195,6 +198,7 @@ impl PaletteAction {
     pub fn icon(self) -> &'static str {
         match self {
             PaletteAction::OpenFolder => icons::FOLDER_OPEN,
+            PaletteAction::OpenSharedLink => icons::LINK,
             PaletteAction::NewRequest => icons::FILE_PLUS,
             PaletteAction::NewCollection => icons::FOLDER_PLUS,
             PaletteAction::Import => icons::IMPORT,
@@ -209,6 +213,7 @@ impl PaletteAction {
     fn action(self) -> Box<dyn Action> {
         match self {
             PaletteAction::OpenFolder => Box::new(OpenFolder),
+            PaletteAction::OpenSharedLink => Box::new(OpenSharedLink),
             PaletteAction::NewRequest => Box::new(NewRequest),
             PaletteAction::NewCollection => Box::new(NewCollection),
             PaletteAction::Import => Box::new(Import),
@@ -447,6 +452,9 @@ impl Palette {
                 }
                 Target::Folder { path } => ws.reveal_folder(&path, cx),
                 Target::Action(PaletteAction::OpenFolder) => ws.open_folder(window, cx),
+                Target::Action(PaletteAction::OpenSharedLink) => {
+                    drop(ws.open_shared(None, window, cx));
+                }
                 Target::Action(PaletteAction::NewRequest) => drop(ws.new_request(None, window, cx)),
                 Target::Action(PaletteAction::NewCollection) => {
                     drop(ws.new_collection(window, cx));

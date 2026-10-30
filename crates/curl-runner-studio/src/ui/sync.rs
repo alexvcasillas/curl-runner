@@ -234,7 +234,7 @@ fn really_gone(root: &Path, deleted: Vec<SyncDeletion>) -> Vec<SyncDeletion> {
 
 /// A pulled path is written only inside the collection, as a visible YAML
 /// file: plain components, none hidden.
-fn writable(rel: &Path) -> bool {
+pub(super) fn writable(rel: &Path) -> bool {
     let yaml = rel
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("yaml") || e.eq_ignore_ascii_case("yml"));
@@ -246,7 +246,7 @@ fn writable(rel: &Path) -> bool {
 
 /// `dir` resolves under `real_root` (no symlinked folder leading out). A
 /// missing `dir` is judged by its deepest existing ancestor.
-fn resolves_inside(dir: &Path, real_root: &Path) -> bool {
+pub(super) fn resolves_inside(dir: &Path, real_root: &Path) -> bool {
     let mut probe = Some(dir);
     while let Some(d) = probe {
         if let Ok(real) = d.canonicalize() {

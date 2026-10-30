@@ -3,8 +3,8 @@
 
 use super::app::{
     CloseTab, CopyAsCurl, Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder,
-    OpenHistory, OpenPalette, OpenSettings, QuickFix, Rerun, RunActive, RunCollection,
-    RunRequestUnderCursor, SaveFile, Stop, ToggleProblems, ui_font,
+    OpenHistory, OpenPalette, OpenSettings, OpenSharedLink, QuickFix, Rerun, RunActive,
+    RunCollection, RunRequestUnderCursor, SaveFile, Stop, ToggleProblems, ui_font,
 };
 use super::collection_settings::{CollectionSettings, EnvStatus, SettingsEvent, Sharing};
 use super::diagnostic_popover::DiagnosticHover;
@@ -171,6 +171,9 @@ pub struct Workspace {
     /// The open collection's share: its calls outlive the dialog.
     pub(super) share_sync: Option<Entity<super::share_sync::ShareSync>>,
     pub(super) _share_sync_events: Option<Subscription>,
+    /// The Open a shared link flow, while it is open (held by its dialog).
+    pub(super) open_shared: Option<WeakEntity<super::open_shared::OpenSharedView>>,
+    pub(super) _open_shared_events: Option<Subscription>,
     pub(super) status: Entity<StatusBar>,
     focus: FocusHandle,
     /// Set once the user agreed to close the window with unsaved changes.
@@ -274,6 +277,8 @@ impl Workspace {
             _share_events: None,
             share_sync: None,
             _share_sync_events: None,
+            open_shared: None,
+            _open_shared_events: None,
             status,
             focus,
             closing: false,
@@ -1922,6 +1927,9 @@ impl Render for Workspace {
                 }))
                 .on_action(cx.listener(|this, _: &Import, window, cx| {
                     this.import(window, cx);
+                }))
+                .on_action(cx.listener(|this, _: &OpenSharedLink, window, cx| {
+                    this.open_shared(None, window, cx);
                 }))
                 .on_action(cx.listener(|this, _: &OpenPalette, window, cx| {
                     this.open_palette(window, cx);

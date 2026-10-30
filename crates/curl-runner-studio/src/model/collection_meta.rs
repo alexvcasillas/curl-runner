@@ -81,6 +81,15 @@ impl CollectionMeta {
         crate::model::write_atomic(&path, &json)
     }
 
+    /// Forgets the notes of the collection at `root` (a received copy whose
+    /// add was rolled back). A missing file is not an error.
+    pub fn remove(base: &Path, root: &Path) -> io::Result<()> {
+        match std::fs::remove_file(meta_path(base, root)) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        }
+    }
+
     /// The names whose Default value is shared, secrets left out.
     pub fn share_defaults(&self) -> Vec<String> {
         self.vars
@@ -174,6 +183,9 @@ mod tests {
             .join("meta")
             .join(format!("{}.json", root_hash(a.path())));
         assert!(file.is_file());
+        CollectionMeta::remove(base.path(), a.path()).unwrap();
+        assert!(!file.exists());
+        CollectionMeta::remove(base.path(), a.path()).unwrap();
         let mut m = loaded;
         m.set_secret("API_TOKEN", false);
         assert!(m.secret_names.is_empty());

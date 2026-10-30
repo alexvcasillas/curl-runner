@@ -129,7 +129,7 @@ pub fn requests_text(requests: usize, folders: usize) -> String {
 }
 
 /// `JR` for `Jon Rivera`, `AC` for `Acme`.
-fn initials(name: &str) -> String {
+pub(super) fn initials(name: &str) -> String {
     let words: Vec<&str> = name.split_whitespace().collect();
     let letters: String = match words.as_slice() {
         [] => String::new(),

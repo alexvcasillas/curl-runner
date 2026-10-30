@@ -1,6 +1,7 @@
 //! App setup: theme and fonts, the action and keymap table, the window.
 
 use super::collection_settings::Page;
+use super::open_shared;
 use super::palette;
 use super::settings_view::AppPage;
 use super::state;
@@ -25,6 +26,8 @@ actions!(
         Quit,
         /// Pick a folder and open it as the collection (⌘O).
         OpenFolder,
+        /// Open a shared link: paste it, review, add a read-only copy (⌘L).
+        OpenSharedLink,
         /// Save the active file (⌘S).
         SaveFile,
         /// Close the active tab, asking first when it has unsaved changes (⌘W).
@@ -121,6 +124,7 @@ pub fn menus(dev: Option<DevToggles>) -> Vec<Menu> {
             MenuItem::action("Import curl…", Import),
             MenuItem::separator(),
             MenuItem::action("Open Folder…", OpenFolder),
+            MenuItem::action("Open Shared Link…", OpenSharedLink),
             MenuItem::action("Save", SaveFile),
             MenuItem::separator(),
             MenuItem::action("Close Tab", CloseTab),
@@ -165,6 +169,7 @@ pub fn bindings() -> Vec<Shortcut> {
         shortcut("cmd-q", Quit, None, "Quit"),
         shortcut("cmd-,", OpenSettings, None, "Settings"),
         shortcut("cmd-o", OpenFolder, None, "Open folder"),
+        shortcut("cmd-l", OpenSharedLink, None, "Open a shared link"),
         shortcut("cmd-s", SaveFile, None, "Save file"),
         shortcut("cmd-w", CloseTab, None, "Close tab"),
         shortcut("cmd-n", NewRequest, None, "New request"),
@@ -271,202 +276,218 @@ fn parse_size(s: &str) -> Option<(f32, f32)> {
 pub const TITLE_BAR_HEIGHT: f32 = 44.;
 
 pub fn run() {
-    application()
-        .with_assets(gpui_kit::assets::Assets)
-        .run(|cx| {
-            gpui_kit::init(cx);
-            init(cx);
-            let (w, h) = dev_string("CURL_RUNNER_STUDIO_SIZE")
-                .and_then(|s| parse_size(&s))
-                .unwrap_or((1440., 900.));
-            let bounds = Bounds::centered(None, size(px(w), px(h)), cx);
-            let background = dev_string("CURL_RUNNER_STUDIO_BACKGROUND").is_some();
-            let options = WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("curl-runner studio".into()),
-                    appears_transparent: true,
-                    // Centres the traffic lights in the 44px title bar.
-                    traffic_light_position: Some(point(px(16.), px(15.))),
-                }),
-                app_owns_titlebar_drag: true,
-                // Dev screenshots open behind the other windows, so they
-                // never take the keyboard from whoever is typing.
-                focus: !background,
-                window_min_size: Some(size(px(WINDOW_MIN_WIDTH), px(WINDOW_MIN_HEIGHT))),
-                ..Default::default()
-            };
-            let store = dev_env("CURL_RUNNER_STUDIO_STATE")
-                .map(state::StateStore::at)
-                .unwrap_or_else(state::StateStore::app_support);
-            let reopen = store
-                .base()
-                .is_none_or(|b| Settings::load(b).general.reopen_last_collection);
-            let folder = dev_env("CURL_RUNNER_STUDIO_FOLDER")
-                .or_else(|| store.last_folder().filter(|_| reopen))
-                .filter(|p| p.is_dir());
-            let file = dev_env("CURL_RUNNER_STUDIO_OPEN");
-            let show = dev_string("CURL_RUNNER_STUDIO_SHOW");
-            let run = dev_string("CURL_RUNNER_STUDIO_RUN");
-            let line = dev_string("CURL_RUNNER_STUDIO_LINE").and_then(|l| l.parse::<u32>().ok());
-            let tab = dev_string("CURL_RUNNER_STUDIO_TAB");
-            let secrets: Arc<dyn SecretStore> = Arc::new(KeychainSecrets);
-            // The only place the mock is named: views see a `Backend`.
-            let backend: Arc<dyn Backend> = Arc::new(MockBackend::open(store.base(), MOCK_LATENCY));
-            let dev_store = store.clone();
-            let ws_backend = backend.clone();
-            let (window_handle, workspace) = gpui_kit::open_window(options, cx, |window, cx| {
-                cx.new(|cx| {
-                    let mut ws = Workspace::new(folder, store, secrets, ws_backend, window, cx);
-                    // Before Welcome, when the screen was never answered;
-                    // a dev `SHOW` asks for something else.
-                    if show.is_none() {
-                        ws.first_launch(window, cx);
-                    }
-                    if let Some(file) = file {
-                        ws.open_file(&file, window, cx);
-                        // As a click on its row does.
-                        ws.expanded.insert(file);
-                    }
-                    if let Some(line) = line {
-                        ws.dev_move_cursor(line, window, cx);
-                    }
-                    if let Some(tab) = tab {
-                        ws.dev_show_tab(&tab);
-                    }
-                    if dev_string("CURL_RUNNER_STUDIO_BODY").as_deref() == Some("raw") {
-                        ws.body_raw = true;
-                    }
-                    if let Some(run) = run {
-                        cx.defer_in(window, move |ws, window, cx| {
-                            if run == "collection" {
-                                ws.run(RunTarget::Collection, window, cx);
-                            } else {
-                                ws.run_active(window, cx);
+    // `curl-runner://` links (the bundle registers the scheme): queued
+    // until the workspace exists, then opened there.
+    let (links, queued) = futures::channel::mpsc::unbounded();
+    let app = application().with_assets(gpui_kit::assets::Assets);
+    app.on_open_urls(open_shared::link_handler(links));
+    app.run(move |cx| {
+        gpui_kit::init(cx);
+        init(cx);
+        let (w, h) = dev_string("CURL_RUNNER_STUDIO_SIZE")
+            .and_then(|s| parse_size(&s))
+            .unwrap_or((1440., 900.));
+        let bounds = Bounds::centered(None, size(px(w), px(h)), cx);
+        let background = dev_string("CURL_RUNNER_STUDIO_BACKGROUND").is_some();
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(bounds)),
+            titlebar: Some(TitlebarOptions {
+                title: Some("curl-runner studio".into()),
+                appears_transparent: true,
+                // Centres the traffic lights in the 44px title bar.
+                traffic_light_position: Some(point(px(16.), px(15.))),
+            }),
+            app_owns_titlebar_drag: true,
+            // Dev screenshots open behind the other windows, so they
+            // never take the keyboard from whoever is typing.
+            focus: !background,
+            window_min_size: Some(size(px(WINDOW_MIN_WIDTH), px(WINDOW_MIN_HEIGHT))),
+            ..Default::default()
+        };
+        let store = dev_env("CURL_RUNNER_STUDIO_STATE")
+            .map(state::StateStore::at)
+            .unwrap_or_else(state::StateStore::app_support);
+        let reopen = store
+            .base()
+            .is_none_or(|b| Settings::load(b).general.reopen_last_collection);
+        let folder = dev_env("CURL_RUNNER_STUDIO_FOLDER")
+            .or_else(|| store.last_folder().filter(|_| reopen))
+            .filter(|p| p.is_dir());
+        let file = dev_env("CURL_RUNNER_STUDIO_OPEN");
+        let show = dev_string("CURL_RUNNER_STUDIO_SHOW");
+        let run = dev_string("CURL_RUNNER_STUDIO_RUN");
+        let line = dev_string("CURL_RUNNER_STUDIO_LINE").and_then(|l| l.parse::<u32>().ok());
+        let tab = dev_string("CURL_RUNNER_STUDIO_TAB");
+        let link = dev_string("CURL_RUNNER_STUDIO_LINK");
+        let secrets: Arc<dyn SecretStore> = Arc::new(KeychainSecrets);
+        // The only place the mock is named: views see a `Backend`.
+        let backend: Arc<dyn Backend> = Arc::new(MockBackend::open(store.base(), MOCK_LATENCY));
+        let dev_store = store.clone();
+        let ws_backend = backend.clone();
+        let (window_handle, workspace) = gpui_kit::open_window(options, cx, |window, cx| {
+            cx.new(|cx| {
+                let mut ws = Workspace::new(folder, store, secrets, ws_backend, window, cx);
+                // Before Welcome, when the screen was never answered;
+                // a dev `SHOW` asks for something else.
+                if show.is_none() {
+                    ws.first_launch(window, cx);
+                }
+                if let Some(file) = file {
+                    ws.open_file(&file, window, cx);
+                    // As a click on its row does.
+                    ws.expanded.insert(file);
+                }
+                if let Some(line) = line {
+                    ws.dev_move_cursor(line, window, cx);
+                }
+                if let Some(tab) = tab {
+                    ws.dev_show_tab(&tab);
+                }
+                if dev_string("CURL_RUNNER_STUDIO_BODY").as_deref() == Some("raw") {
+                    ws.body_raw = true;
+                }
+                if let Some(link) = link {
+                    // The credentials step, filled in, with
+                    // `CURL_RUNNER_STUDIO_FILL` (`NAME=value,…`).
+                    let fill = dev_string("CURL_RUNNER_STUDIO_FILL");
+                    cx.defer_in(window, move |ws, window, cx| {
+                        let view = ws.open_shared(None, window, cx);
+                        view.update(cx, |v, cx| {
+                            if let Some(fill) = &fill {
+                                v.dev_credentials(fill);
                             }
+                            v.receive(&link, window, cx);
                         });
-                    }
-                    if let Some(show) = show {
-                        // Dialogs need the window's root, which exists once
-                        // this builder returns.
-                        cx.defer_in(window, move |ws, window, cx| match show.as_str() {
-                            "new" | "duplicate" => {
-                                let dialog = ws.new_request(None, window, cx);
-                                let fill =
-                                    dev_string("CURL_RUNNER_STUDIO_FILL").unwrap_or_default();
-                                let duplicate = show == "duplicate";
-                                dialog.update(cx, |d, cx| d.dev_fill(&fill, duplicate, window, cx));
+                    });
+                }
+                if let Some(run) = run {
+                    cx.defer_in(window, move |ws, window, cx| {
+                        if run == "collection" {
+                            ws.run(RunTarget::Collection, window, cx);
+                        } else {
+                            ws.run_active(window, cx);
+                        }
+                    });
+                }
+                if let Some(show) = show {
+                    // Dialogs need the window's root, which exists once
+                    // this builder returns.
+                    cx.defer_in(window, move |ws, window, cx| match show.as_str() {
+                        "new" | "duplicate" => {
+                            let dialog = ws.new_request(None, window, cx);
+                            let fill = dev_string("CURL_RUNNER_STUDIO_FILL").unwrap_or_default();
+                            let duplicate = show == "duplicate";
+                            dialog.update(cx, |d, cx| d.dev_fill(&fill, duplicate, window, cx));
+                        }
+                        "new-collection" => drop(ws.new_collection(window, cx)),
+                        "import" | "import-folder" => {
+                            let dialog = ws.import(window, cx);
+                            let fill = dev_string("CURL_RUNNER_STUDIO_FILL").unwrap_or_default();
+                            let folder = (show == "import-folder").then(|| PathBuf::from(&fill));
+                            dialog.update(cx, |d, cx| d.dev_fill(&fill, folder, window, cx));
+                        }
+                        "palette" => {
+                            let palette = ws.open_palette(window, cx);
+                            if let Some(query) = dev_string("CURL_RUNNER_STUDIO_QUERY") {
+                                palette.update(cx, |p, cx| p.set_query(&query, window, cx));
                             }
-                            "new-collection" => drop(ws.new_collection(window, cx)),
-                            "import" | "import-folder" => {
-                                let dialog = ws.import(window, cx);
-                                let fill =
-                                    dev_string("CURL_RUNNER_STUDIO_FILL").unwrap_or_default();
-                                let folder =
-                                    (show == "import-folder").then(|| PathBuf::from(&fill));
-                                dialog.update(cx, |d, cx| d.dev_fill(&fill, folder, window, cx));
-                            }
-                            "palette" => {
-                                let palette = ws.open_palette(window, cx);
-                                if let Some(query) = dev_string("CURL_RUNNER_STUDIO_QUERY") {
-                                    palette.update(cx, |p, cx| p.set_query(&query, window, cx));
-                                }
-                                if let Some(pos) = dev_string("CURL_RUNNER_STUDIO_SELECT")
-                                    .and_then(|s| s.parse().ok())
-                                {
-                                    // Once the list is laid out, so it can scroll.
-                                    cx.spawn(async move |_, cx| {
-                                        cx.background_executor()
-                                            .timer(std::time::Duration::from_millis(500))
-                                            .await;
-                                        palette.update(cx, |p, cx| p.select(pos, cx));
-                                    })
-                                    .detach();
-                                }
-                            }
-                            "problem" => ws.dev_show_first_problem(window, cx),
-                            "signin" => {
-                                let view = ws.open_sign_in(None, window, cx);
-                                let url = dev_string("CURL_RUNNER_STUDIO_FILL");
-                                let submit = dev_string("CURL_RUNNER_STUDIO_SUBMIT").is_some();
-                                view.update(cx, |v, cx| {
-                                    v.dev_fill(url.as_deref(), window, cx);
-                                    if submit {
-                                        v.dev_submit(cx);
-                                    }
-                                });
-                            }
-                            "history" => ws.open_history(window, cx),
-                            "settings" => {
-                                let page = dev_string("CURL_RUNNER_STUDIO_PAGE")
-                                    .and_then(|p| AppPage::parse(&p))
-                                    .unwrap_or(AppPage::General);
-                                ws.open_app_settings(page, window, cx);
-                            }
-                            "environments" => {
-                                let env = dev_string("CURL_RUNNER_STUDIO_ENV");
-                                let var = dev_string("CURL_RUNNER_STUDIO_VAR");
-                                // After a `CURL_RUNNER_STUDIO_RUN`, so its
-                                // captured values are listed.
-                                cx.spawn_in(window, async move |ws, cx| {
-                                    for _ in 0..150 {
-                                        let running = ws
-                                            .update(cx, |ws, _| ws.runs.active.is_some())
-                                            .unwrap_or(false);
-                                        if !running {
-                                            break;
-                                        }
-                                        cx.background_executor()
-                                            .timer(std::time::Duration::from_millis(100))
-                                            .await;
-                                    }
-                                    ws.update_in(cx, |ws, window, cx| {
-                                        ws.open_settings(window, cx);
-                                        ws.settings_on(env.as_deref(), var.as_deref(), window, cx);
-                                    })
-                                    .ok();
+                            if let Some(pos) =
+                                dev_string("CURL_RUNNER_STUDIO_SELECT").and_then(|s| s.parse().ok())
+                            {
+                                // Once the list is laid out, so it can scroll.
+                                cx.spawn(async move |_, cx| {
+                                    cx.background_executor()
+                                        .timer(std::time::Duration::from_millis(500))
+                                        .await;
+                                    palette.update(cx, |p, cx| p.select(pos, cx));
                                 })
                                 .detach();
                             }
-                            "share" => {
-                                ws.open_share(window, cx);
-                                let fill = dev_string("CURL_RUNNER_STUDIO_FILL");
-                                if let (Some(view), Some(fill)) = (ws.share_view(), fill) {
-                                    let emails = fill.split(',').map(String::from).collect();
-                                    view.update(cx, |v, cx| v.dev_invite(emails, cx));
+                        }
+                        "problem" => ws.dev_show_first_problem(window, cx),
+                        "signin" => {
+                            let view = ws.open_sign_in(None, window, cx);
+                            let url = dev_string("CURL_RUNNER_STUDIO_FILL");
+                            let submit = dev_string("CURL_RUNNER_STUDIO_SUBMIT").is_some();
+                            view.update(cx, |v, cx| {
+                                v.dev_fill(url.as_deref(), window, cx);
+                                if submit {
+                                    v.dev_submit(cx);
                                 }
-                            }
-                            "sharing" => {
-                                ws.open_settings(window, cx);
-                                if let Some(view) = &ws.settings_view {
-                                    view.update(cx, |v, cx| v.set_page(Page::Sharing, window, cx));
+                            });
+                        }
+                        "history" => ws.open_history(window, cx),
+                        "settings" => {
+                            let page = dev_string("CURL_RUNNER_STUDIO_PAGE")
+                                .and_then(|p| AppPage::parse(&p))
+                                .unwrap_or(AppPage::General);
+                            ws.open_app_settings(page, window, cx);
+                        }
+                        "environments" => {
+                            let env = dev_string("CURL_RUNNER_STUDIO_ENV");
+                            let var = dev_string("CURL_RUNNER_STUDIO_VAR");
+                            // After a `CURL_RUNNER_STUDIO_RUN`, so its
+                            // captured values are listed.
+                            cx.spawn_in(window, async move |ws, cx| {
+                                for _ in 0..150 {
+                                    let running = ws
+                                        .update(cx, |ws, _| ws.runs.active.is_some())
+                                        .unwrap_or(false);
+                                    if !running {
+                                        break;
+                                    }
+                                    cx.background_executor()
+                                        .timer(std::time::Duration::from_millis(100))
+                                        .await;
                                 }
+                                ws.update_in(cx, |ws, window, cx| {
+                                    ws.open_settings(window, cx);
+                                    ws.settings_on(env.as_deref(), var.as_deref(), window, cx);
+                                })
+                                .ok();
+                            })
+                            .detach();
+                        }
+                        "share" => {
+                            ws.open_share(window, cx);
+                            let fill = dev_string("CURL_RUNNER_STUDIO_FILL");
+                            if let (Some(view), Some(fill)) = (ws.share_view(), fill) {
+                                let emails = fill.split(',').map(String::from).collect();
+                                view.update(cx, |v, cx| v.dev_invite(emails, cx));
                             }
-                            "export" => {
-                                if let Some(view) = &ws.run_view {
-                                    view.update(cx, |v, cx| v.open_export_menu(cx));
-                                }
+                        }
+                        "sharing" => {
+                            ws.open_settings(window, cx);
+                            if let Some(view) = &ws.settings_view {
+                                view.update(cx, |v, cx| v.set_page(Page::Sharing, window, cx));
                             }
-                            _ => {}
-                        });
-                    }
-                    ws
-                })
-            })
-            .expect("failed to open the studio window");
-            if cfg!(debug_assertions) {
-                install_dev_menu(backend, dev_store, window_handle, workspace.downgrade(), cx);
-            }
-            cx.on_window_closed(|cx, _| {
-                if cx.windows().is_empty() {
-                    cx.quit();
+                        }
+                        "export" => {
+                            if let Some(view) = &ws.run_view {
+                                view.update(cx, |v, cx| v.open_export_menu(cx));
+                            }
+                        }
+                        _ => {}
+                    });
                 }
+                ws
             })
-            .detach();
-            if !background {
-                cx.activate(true);
+        })
+        .expect("failed to open the studio window");
+        open_shared::pump_links(queued, window_handle, workspace.downgrade(), cx);
+        if cfg!(debug_assertions) {
+            install_dev_menu(backend, dev_store, window_handle, workspace.downgrade(), cx);
+        }
+        cx.on_window_closed(|cx, _| {
+            if cx.windows().is_empty() {
+                cx.quit();
             }
-        });
+        })
+        .detach();
+        if !background {
+            cx.activate(true);
+        }
+    });
 }
 
 /// App menu › Developer: the backend's toggles (when it has them, the
@@ -584,7 +605,10 @@ fn toggle_dev(backend: &Arc<dyn Backend>, flip: fn(&dyn DevControls), cx: &mut A
 /// `CURL_RUNNER_STUDIO_STATE` keeps the studio's state (last folder, Recent,
 /// settings, history) in that folder instead of Application Support, and
 /// `CURL_RUNNER_STUDIO_BACKGROUND` opens the window without focusing it or
-/// activating the app (for screenshots).
+/// activating the app (for screenshots). `CURL_RUNNER_STUDIO_LINK` opens a
+/// shared link as a `curl-runner://` event would (with
+/// `CURL_RUNNER_STUDIO_FILL`, `NAME=value,…`: on the credentials step,
+/// filled in).
 ///
 /// Debug builds only: a release build ignores them all.
 fn dev_env(name: &str) -> Option<PathBuf> {
@@ -908,6 +932,7 @@ mod tests {
                 "cmd-q",
                 "cmd-,",
                 "cmd-o",
+                "cmd-l",
                 "cmd-s",
                 "cmd-w",
                 "cmd-n",

@@ -51,7 +51,9 @@ const CARDS: [Card; 4] = [
         keys: "⌘L",
         title: "Open a shared link",
         detail: "Paste a curl-runner link someone sent you. Opens read-only.",
-        action: None,
+        action: Some(|ws, window, cx| {
+            ws.open_shared(None, window, cx);
+        }),
     },
     Card {
         id: "welcome-import",
