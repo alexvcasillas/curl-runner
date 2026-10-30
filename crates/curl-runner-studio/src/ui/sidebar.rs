@@ -244,7 +244,7 @@ impl Workspace {
             return column
                 .child(header)
                 .child(self.render_no_collections(cx))
-                .child(render_cloud_footer());
+                .child(self.render_cloud_footer(cx));
         };
 
         let rows = visible_rows(
@@ -561,36 +561,50 @@ impl Workspace {
     }
 }
 
-/// Welcome's sidebar foot: the curl-runner Cloud connection, inert until a
-/// later build brings accounts.
-fn render_cloud_footer() -> impl IntoElement {
-    div()
-        .id("sidebar-cloud")
-        .flex()
-        .flex_none()
-        .items_center()
-        .gap(px(8.))
-        .px(px(16.))
-        .py(px(12.))
-        .border_t_1()
-        .border_color(color("border-100"))
-        .text_size(px(12.))
-        .text_color(color("text-disabled"))
-        .child(
-            div()
-                .flex_none()
-                .size(px(6.))
-                .rounded_full()
-                .bg(color("text-disabled")),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .line_height(relative(1.4))
-                .child("Connected to curl-runner Cloud"),
-        )
-        .child(super::settings_kit::later_badge())
+impl Workspace {
+    /// Welcome's sidebar foot: where collections live (`Connected to
+    /// curl-runner Cloud`, `Self-hosted · {host}`, `Offline`, `Not signed
+    /// in`) and `Change`, which opens the sign-in screen.
+    fn render_cloud_footer(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let (dot, text) = self.connection_text();
+        div()
+            .id("sidebar-cloud")
+            .role(Role::Group)
+            .test_support()
+            .aria_label(text.clone())
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(8.))
+            .px(px(16.))
+            .py(px(12.))
+            .border_t_1()
+            .border_color(color("border-100"))
+            .text_size(px(12.))
+            .text_color(color("text-secondary"))
+            .child(div().flex_none().size(px(6.)).rounded_full().bg(color(dot)))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .line_height(relative(1.4))
+                    .child(text),
+            )
+            .child(
+                div()
+                    .id("sidebar-cloud-change")
+                    .role(Role::Button)
+                    .test_support()
+                    .aria_label("Change")
+                    .flex_none()
+                    .cursor_pointer()
+                    .hover(|s| s.text_color(color("text-primary")))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.open_sign_in(None, window, cx);
+                    }))
+                    .child("Change"),
+            )
+    }
 }
 
 fn hover(style: StyleRefinement) -> StyleRefinement {
@@ -1060,6 +1074,7 @@ mod gpui_tests {
                         Some(root),
                         StateStore::none(),
                         super::super::workspace::test_secrets(),
+                        super::super::workspace::test_backend(),
                         window,
                         cx,
                     )

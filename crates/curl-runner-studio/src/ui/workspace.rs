@@ -15,11 +15,13 @@ use super::problems_panel::PanelTab;
 use super::result_marks::ResultMarks;
 use super::run_view::{Labels, RunView, RunViewEvent};
 use super::runs::Runs;
-use super::settings_view::{AppPage, AppSettingsEvent, CollectionInfo, SettingsView};
-use super::state::{AppState, RecentEntry, StateStore};
+use super::settings_view::{Accounts, AppPage, AppSettingsEvent, CollectionInfo, SettingsView};
+use super::sign_in::{SignInEvent, SignInView};
+use super::state::{AppState, Connection, RecentEntry, StateStore};
 use super::status_bar::{RunLine, StatusBar, StatusBarEvent, source_groups};
 use super::watch;
 use super::{color, sidebar::request_label};
+use crate::model::backend::{Backend, CollectionKey, Server};
 use crate::model::collection::{Collection, TreeNode, request_at_line, request_lines};
 use crate::model::collection_meta::CollectionMeta;
 use crate::model::document::CloseDecision;
@@ -142,6 +144,14 @@ pub struct Workspace {
     /// The History screen takes the editor's and the inspector's place.
     show_history: bool,
     _history_events: Option<Subscription>,
+    /// The server: sign-in, sync and sharing.
+    pub(super) backend: Arc<dyn Backend>,
+    /// The sign-in screen, while it is shown (it takes the whole window).
+    pub(super) sign_in: Option<Entity<SignInView>>,
+    /// The Settings page the sign-in screen was opened from: it returns
+    /// there.
+    sign_in_origin: Option<AppPage>,
+    _sign_in_events: Option<Subscription>,
     status: Entity<StatusBar>,
     focus: FocusHandle,
     /// Set once the user agreed to close the window with unsaved changes.
@@ -161,6 +171,7 @@ impl Workspace {
         folder: Option<PathBuf>,
         store: StateStore,
         secrets: Arc<dyn SecretStore>,
+        backend: Arc<dyn Backend>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -227,6 +238,10 @@ impl Workspace {
             history_view: None,
             show_history: false,
             _history_events: None,
+            backend,
+            sign_in: None,
+            sign_in_origin: None,
+            _sign_in_events: None,
             status,
             focus,
             closing: false,
@@ -324,7 +339,8 @@ impl Workspace {
             .state
             .active
             .filter(|_| {
-                !self.run_shown()
+                self.sign_in.is_none()
+                    && !self.run_shown()
                     && !self.history_shown()
                     && !self.settings_shown()
                     && !self.app_settings_shown()
@@ -336,6 +352,12 @@ impl Workspace {
             .filter(|_| self.history_shown())
             .map(|v| usage_text(v.read(cx).usage()).into());
         let settings = match &self.app_settings {
+            // The SignIn board's footer: `Not signed in` and the version.
+            _ if self.sign_in_shown() => Some(EnvStatus {
+                environment: SharedString::default(),
+                summary: "Not signed in".into(),
+                keychain: SharedString::default(),
+            }),
             // The Settings board's footer: the environment and `Settings`.
             Some(_) => Some(EnvStatus {
                 environment: name
@@ -932,13 +954,19 @@ impl Workspace {
             name: c.name.clone(),
             id: self.meta.id.clone(),
             marked: self.meta.secret_names.clone(),
+            secrets: self.secret_cache.clone(),
         });
         let (settings, base) = (
             self.settings.clone(),
             self.store.base().map(Path::to_path_buf),
         );
-        let secrets = self.secret_cache.clone();
-        let view = cx.new(|cx| SettingsView::new(page, settings, base, collection, &*secrets, cx));
+        let accounts = Accounts {
+            backend: self.backend.clone(),
+            key: self.collection_key(),
+            offline: self.store.connection() == Some(Connection::Offline),
+        };
+        let view =
+            cx.new(|cx| SettingsView::new(page, settings, base, collection, accounts, window, cx));
         self._app_settings_events =
             Some(cx.subscribe_in(&view, window, Self::on_app_settings_event));
         view.read(cx).focus_handle(cx).focus(window, cx);
@@ -980,6 +1008,12 @@ impl Workspace {
                 self.return_to(page, cx);
                 self.settings_on(Some(&environment), Some(&name), window, cx);
             }
+            AppSettingsEvent::OpenSignIn => {
+                let page = view.read(cx).page();
+                self.open_sign_in(Some(page), window, cx);
+            }
+            AppSettingsEvent::AccountChanged => cx.notify(),
+            AppSettingsEvent::SyncNow => self.sync_now(window, cx),
             AppSettingsEvent::AddVariable => {
                 let page = view.read(cx).page();
                 self.open_settings(window, cx);
@@ -989,6 +1023,96 @@ impl Workspace {
                 }
             }
         }
+    }
+
+    // Sign-in and the server.
+
+    /// The open collection as the server knows it.
+    pub(super) fn collection_key(&self) -> Option<CollectionKey> {
+        let c = self.state.collection.as_ref()?;
+        Some(CollectionKey {
+            id: self.meta.id.clone(),
+            name: c.name.clone(),
+        })
+    }
+
+    /// Shows the sign-in screen on first launch: when it was never
+    /// answered (no stored [`Connection`]).
+    pub(super) fn first_launch(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.store.connection().is_none() {
+            self.open_sign_in(None, window, cx);
+        }
+    }
+
+    /// The sign-in screen, in place of everything under the title bar.
+    /// From Settings (`origin`) it returns there; Esc leaves it unless it
+    /// is the first launch's.
+    pub(super) fn open_sign_in(
+        &mut self,
+        origin: Option<AppPage>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<SignInView> {
+        let can_go_back = self.store.connection().is_some();
+        let backend = self.backend.clone();
+        let view = cx.new(|cx| SignInView::new(backend, can_go_back, window, cx));
+        self._sign_in_events = Some(cx.subscribe_in(&view, window, Self::on_sign_in_event));
+        view.read(cx).focus_handle(cx).focus(window, cx);
+        self.sign_in = Some(view.clone());
+        self.sign_in_origin = origin;
+        self.close_app_settings();
+        self.close_hover(cx);
+        self.sync_chrome(window, cx);
+        view
+    }
+
+    pub(super) fn sign_in_shown(&self) -> bool {
+        self.sign_in.is_some()
+    }
+
+    fn close_sign_in(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.sign_in = None;
+        self._sign_in_events = None;
+        match self.sign_in_origin.take() {
+            Some(page) => self.open_app_settings(page, window, cx),
+            None => {
+                self.focus.focus(window, cx);
+                self.sync_chrome(window, cx);
+            }
+        }
+    }
+
+    fn on_sign_in_event(
+        &mut self,
+        _: &Entity<SignInView>,
+        event: &SignInEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let SignInEvent::Done(connection) = event {
+            self.store.set_connection(Some(*connection));
+        }
+        self.close_sign_in(window, cx);
+    }
+
+    /// Welcome's cloud chip: its dot's token and its text.
+    pub(super) fn connection_text(&self) -> (&'static str, String) {
+        if self.store.connection() == Some(Connection::Offline) {
+            return ("text-tertiary", "Offline".into());
+        }
+        if self.backend.account().is_none() {
+            return ("text-tertiary", "Not signed in".into());
+        }
+        match self.backend.server() {
+            Server::Cloud => ("success", "Connected to curl-runner Cloud".into()),
+            Server::SelfHosted { url } => ("success", format!("Self-hosted · {}", host_of(&url))),
+        }
+    }
+
+    /// `Sync now` (Settings, later the sidebar footer). The sync itself,
+    /// payload and result, is plan 3's Task 3.
+    pub(super) fn sync_now(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        cx.notify();
     }
 
     /// The open collection settings return to Settings on `page`.
@@ -1745,26 +1869,39 @@ impl Render for Workspace {
             .text_color(color("text-primary"))
             .font_family(ui_font())
             .text_size(px(13.))
-            .child(self.render_title_bar(window, cx))
-            .child(match (app_settings, settings) {
-                (Some(view), _) => div().flex().flex_1().min_h_0().child(view),
-                // The page brings its own nav and drawer.
-                (None, Some(view)) => div().flex().flex_1().min_h_0().child(view),
-                (None, None) => div()
-                    .flex()
-                    .flex_1()
-                    .min_h_0()
-                    .child(self.render_sidebar(cx))
-                    .child(main)
-                    .when(open && !run_shown && !history_shown, |row| {
-                        row.child(self.render_inspector(cx))
-                    }),
+            .map(|root| match self.sign_in.clone() {
+                // The SignIn board: the bare title bar and the screen.
+                Some(view) => root
+                    .child(super::title_bar::render_bare_title_bar())
+                    .child(div().flex().flex_1().min_h_0().child(view)),
+                None => root.child(self.render_title_bar(window, cx)).child(
+                    match (app_settings, settings) {
+                        (Some(view), _) => div().flex().flex_1().min_h_0().child(view),
+                        // The page brings its own nav and drawer.
+                        (None, Some(view)) => div().flex().flex_1().min_h_0().child(view),
+                        (None, None) => div()
+                            .flex()
+                            .flex_1()
+                            .min_h_0()
+                            .child(self.render_sidebar(cx))
+                            .child(main)
+                            .when(open && !run_shown && !history_shown, |row| {
+                                row.child(self.render_inspector(cx))
+                            }),
+                    },
+                ),
             })
             .child(self.status.clone())
     }
 }
 
 /// The editor's indent: spaces, never tabs (YAML has none).
+/// `https://curl-runner.example.com/x` → `curl-runner.example.com`.
+pub(super) fn host_of(url: &str) -> &str {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    rest.split(['/', '?', '#']).next().unwrap_or(rest)
+}
+
 fn tab_size(n: u8) -> TabSize {
     TabSize {
         tab_size: usize::from(n),
@@ -1854,6 +1991,11 @@ pub(super) fn test_secrets() -> Arc<dyn SecretStore> {
     Arc::new(crate::model::secrets::MemorySecrets::default())
 }
 
+#[cfg(test)]
+pub(super) fn test_backend() -> Arc<dyn Backend> {
+    crate::model::backend::test_backend()
+}
+
 pub(super) fn notify_error(message: String, window: &mut Window, cx: &mut App) {
     log::warn!("{message}");
     window.push_notification(Notification::error(message), cx);
@@ -1940,6 +2082,7 @@ mod tests {
                         Some(root),
                         StateStore::none(),
                         super::super::workspace::test_secrets(),
+                        super::super::workspace::test_backend(),
                         window,
                         cx,
                     )

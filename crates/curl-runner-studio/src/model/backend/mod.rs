@@ -462,6 +462,13 @@ pub fn sync_files(root: &Path) -> Vec<SyncFile> {
         .collect()
 }
 
+/// The backend the UI tests run on: the mock, in memory, with no latency.
+/// (Views name only [`Backend`]; see `ui_never_imports_mock_backend`.)
+#[cfg(test)]
+pub fn test_backend() -> std::sync::Arc<dyn Backend> {
+    std::sync::Arc::new(MockBackend::open(None, std::time::Duration::ZERO))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

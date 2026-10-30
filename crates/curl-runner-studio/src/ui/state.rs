@@ -203,6 +203,51 @@ impl StateStore {
     }
 }
 
+/// How the studio was told to work, on the sign-in screen. Which server
+/// (Cloud or a self-hosted URL) belongs to the backend; this only records
+/// that the screen was answered, and whether the answer was "offline".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Connection {
+    /// With a server: signed in, or signed out later from Settings.
+    Online,
+    /// `Continue offline`: local files only, never asked again.
+    Offline,
+}
+
+impl StateStore {
+    /// The sign-in screen's answer; `None` on first launch (show it).
+    pub fn connection(&self) -> Option<Connection> {
+        let json = read_state_in(self.base.as_deref()?)?;
+        match json["connection"].as_str()? {
+            "online" => Some(Connection::Online),
+            "offline" => Some(Connection::Offline),
+            _ => None,
+        }
+    }
+
+    /// Records the answer; `None` forgets it, so the next launch asks again.
+    pub fn set_connection(&self, connection: Option<Connection>) {
+        let Some(base) = &self.base else { return };
+        let result = update_state_in(base, |json| match connection {
+            Some(c) => {
+                json["connection"] = match c {
+                    Connection::Online => "online",
+                    Connection::Offline => "offline",
+                }
+                .into();
+            }
+            None => {
+                if let Some(map) = json.as_object_mut() {
+                    map.remove("connection");
+                }
+            }
+        });
+        if let Err(e) = result {
+            log::warn!("could not save the connection choice: {e}");
+        }
+    }
+}
+
 /// A folder opened before, for the Welcome screen's Recent list.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RecentEntry {
@@ -271,6 +316,25 @@ fn update_state_in(dir: &Path, edit: impl FnOnce(&mut serde_json::Value)) -> io:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn connection_choice_round_trips_beside_the_other_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = StateStore::at(dir.path());
+        assert_eq!(store.connection(), None);
+        store.remember_folder(Path::new("/tmp/Payments API"));
+        store.set_connection(Some(Connection::Offline));
+        assert_eq!(store.connection(), Some(Connection::Offline));
+        store.set_connection(Some(Connection::Online));
+        assert_eq!(store.connection(), Some(Connection::Online));
+        store.set_connection(None);
+        assert_eq!(store.connection(), None);
+        assert_eq!(
+            store.last_folder(),
+            Some(PathBuf::from("/tmp/Payments API"))
+        );
+        assert_eq!(StateStore::none().connection(), None);
+    }
 
     #[test]
     fn state_round_trips_last_folder() {

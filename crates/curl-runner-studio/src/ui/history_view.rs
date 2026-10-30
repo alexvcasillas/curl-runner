@@ -1147,7 +1147,16 @@ mod ui_tests {
                 ..Default::default()
             };
             gpui_kit::open_window(options, cx, |window, cx| {
-                cx.new(|cx| Workspace::new(Some(root), store, test_secrets(), window, cx))
+                cx.new(|cx| {
+                    Workspace::new(
+                        Some(root),
+                        store,
+                        test_secrets(),
+                        super::super::workspace::test_backend(),
+                        window,
+                        cx,
+                    )
+                })
             })
             .unwrap()
         });

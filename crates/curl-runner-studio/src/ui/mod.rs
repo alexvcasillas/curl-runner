@@ -23,6 +23,7 @@ mod runs;
 mod settings_kit;
 mod settings_view;
 mod sidebar;
+mod sign_in;
 mod state;
 mod status_bar;
 mod title_bar;
@@ -33,7 +34,7 @@ mod workspace;
 pub use app::run;
 
 use crate::theme;
-use gpui_kit::{Hsla, Rgba};
+use gpui_kit::{App, Hsla, Rgba, Task};
 
 /// A dark design token as a GPUI color.
 fn color(name: &str) -> Hsla {
@@ -52,4 +53,20 @@ fn to_hsla(c: theme::Rgba) -> Hsla {
         a: c.a,
     }
     .into()
+}
+
+/// Runs one [`Backend`](crate::model::backend::Backend) call on the
+/// background executor, so the UI thread never waits on the network.
+fn backend_call<T: Send + 'static>(
+    cx: &App,
+    backend: &std::sync::Arc<dyn crate::model::backend::Backend>,
+    call: impl for<'b> FnOnce(
+        &'b dyn crate::model::backend::Backend,
+    ) -> crate::model::backend::BoxFut<'b, T>
+    + Send
+    + 'static,
+) -> Task<Result<T, crate::model::backend::BackendError>> {
+    let backend = backend.clone();
+    cx.background_executor()
+        .spawn(async move { call(&*backend).await })
 }

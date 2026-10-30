@@ -1,7 +1,8 @@
 //! The studio's pure state model: no GPUI, so it compiles on every target.
 
-// Nothing in the app calls it until the sign-in screen does (plan 3, task 2).
-#[cfg_attr(not(test), allow(dead_code, unused_imports))]
+// Sign-in and accounts use it now; the sync and share halves wait for
+// plan 3's Tasks 3–7.
+#[cfg_attr(not(test), allow(dead_code))]
 pub mod backend;
 pub mod collection;
 pub mod collection_meta;

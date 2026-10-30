@@ -144,6 +144,12 @@ pub const LINK: &str = glyph!(
     "1.5",
     r#"<path d="M6.5 9.5l3-3"/><path d="M7 4.5l1-1a2.8 2.8 0 014 4l-1 1M9 11.5l-1 1a2.8 2.8 0 01-4-4l1-1"/>"#
 );
+pub const MAIL: &str = glyph!(
+    "1.5",
+    r#"<rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2.5 4.5L8 8.5l5.5-4"/>"#
+);
+/// The GitHub mark, filled.
+pub const GITHUB: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="#000"><path d="M8 1a7 7 0 00-2.2 13.6c.35.07.48-.15.48-.34v-1.2c-1.95.42-2.36-.94-2.36-.94-.32-.81-.78-1.03-.78-1.03-.64-.43.05-.42.05-.42.7.05 1.07.72 1.07.72.63 1.07 1.64.76 2.04.58.06-.45.24-.76.44-.94-1.55-.18-3.19-.78-3.19-3.46 0-.76.27-1.39.72-1.88-.07-.18-.31-.89.07-1.85 0 0 .59-.19 1.92.72a6.6 6.6 0 013.5 0c1.33-.91 1.92-.72 1.92-.72.38.96.14 1.67.07 1.85.45.49.72 1.12.72 1.88 0 2.69-1.64 3.28-3.2 3.45.25.22.48.65.48 1.31v1.94c0 .19.13.41.48.34A7 7 0 008 1z"/></svg>"##;
 /// Filled, unlike the stroke glyphs.
 pub const PLAY: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="#000"><path d="M4 2.5v11l9-5.5z"/></svg>"##;
 
@@ -198,6 +204,8 @@ mod tests {
             SYNC,
             LOCK,
             LINK,
+            MAIL,
+            GITHUB,
         ] {
             assert!(svg.starts_with("<svg ") && svg.ends_with("</svg>"), "{svg}");
             assert!(svg.contains(r#"viewBox="0 0 16 16""#));

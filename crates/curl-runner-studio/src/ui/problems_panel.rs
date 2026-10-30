@@ -234,6 +234,7 @@ mod tests {
                         Some(root),
                         super::super::state::StateStore::none(),
                         super::super::workspace::test_secrets(),
+                        super::super::workspace::test_backend(),
                         window,
                         cx,
                     )

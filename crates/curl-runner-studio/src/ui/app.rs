@@ -4,6 +4,7 @@ use super::palette;
 use super::settings_view::AppPage;
 use super::state;
 use super::workspace::{Workspace, quit_app};
+use crate::model::backend::{Backend, DevControls, DevToggles, MOCK_LATENCY, MockBackend};
 use crate::model::run::RunTarget;
 use crate::model::secrets::{KeychainSecrets, SecretStore};
 use crate::model::settings::Settings;
@@ -70,15 +71,49 @@ actions!(
     ]
 );
 
+actions!(
+    studio_dev,
+    [
+        /// Developer › Offline: every backend call fails as offline.
+        DevOffline,
+        /// Developer › Conflict on next sync.
+        DevConflictNextSync,
+        /// Developer › Expire share links.
+        DevExpireLinks,
+        /// Developer › Fail next sign-in.
+        DevFailNextSignIn,
+        /// Developer › Reset mock: the first-launch state, sign-in screen
+        /// included.
+        DevResetMock,
+    ]
+);
+
 /// The macOS menu bar. Quit goes through the workspace's unsaved-changes
-/// check (see `init`).
-pub fn menus() -> Vec<Menu> {
+/// check (see `init`). With `dev` (debug builds, a backend with developer
+/// toggles), the app menu has Developer, checked as `dev` says.
+pub fn menus(dev: Option<DevToggles>) -> Vec<Menu> {
+    let mut app = vec![
+        MenuItem::action("Settings…", OpenSettings),
+        MenuItem::separator(),
+    ];
+    if let Some(t) = dev {
+        app.push(MenuItem::submenu(
+            Menu::new("Developer").items([
+                MenuItem::action("Offline", DevOffline).checked(t.offline),
+                MenuItem::action("Conflict on next sync", DevConflictNextSync)
+                    .checked(t.conflict_next_sync),
+                MenuItem::action("Expire share links", DevExpireLinks).checked(t.expire_links),
+                MenuItem::action("Fail next sign-in", DevFailNextSignIn)
+                    .checked(t.fail_next_sign_in),
+                MenuItem::separator(),
+                MenuItem::action("Reset mock", DevResetMock),
+            ]),
+        ));
+        app.push(MenuItem::separator());
+    }
+    app.push(MenuItem::action("Quit curl-runner studio", Quit));
     vec![
-        Menu::new("curl-runner studio").items([
-            MenuItem::action("Settings…", OpenSettings),
-            MenuItem::separator(),
-            MenuItem::action("Quit curl-runner studio", Quit),
-        ]),
+        Menu::new("curl-runner studio").items(app),
         Menu::new("File").items([
             MenuItem::action("New Request…", NewRequest),
             MenuItem::action("New Collection…", NewCollection),
@@ -180,6 +215,7 @@ pub fn bindings() -> Vec<Shortcut> {
             Some("AppSettings"),
             "Leave settings",
         ),
+        shortcut("escape", CloseSettings, Some("SignIn"), "Leave sign-in"),
         shortcut("cmd-shift-m", ToggleProblems, None, "Problems panel"),
         shortcut("cmd-enter", RunActive, None, "Run file"),
         shortcut(
@@ -274,9 +310,18 @@ pub fn run() {
             let line = dev_string("CURL_RUNNER_STUDIO_LINE").and_then(|l| l.parse::<u32>().ok());
             let tab = dev_string("CURL_RUNNER_STUDIO_TAB");
             let secrets: Arc<dyn SecretStore> = Arc::new(KeychainSecrets);
-            gpui_kit::open_window(options, cx, |window, cx| {
+            // The only place the mock is named: views see a `Backend`.
+            let backend: Arc<dyn Backend> = Arc::new(MockBackend::open(store.base(), MOCK_LATENCY));
+            let dev_store = store.clone();
+            let ws_backend = backend.clone();
+            let (window_handle, workspace) = gpui_kit::open_window(options, cx, |window, cx| {
                 cx.new(|cx| {
-                    let mut ws = Workspace::new(folder, store, secrets, window, cx);
+                    let mut ws = Workspace::new(folder, store, secrets, ws_backend, window, cx);
+                    // Before Welcome, when the screen was never answered;
+                    // a dev `SHOW` asks for something else.
+                    if show.is_none() {
+                        ws.first_launch(window, cx);
+                    }
                     if let Some(file) = file {
                         ws.open_file(&file, window, cx);
                         // As a click on its row does.
@@ -339,6 +384,11 @@ pub fn run() {
                                 }
                             }
                             "problem" => ws.dev_show_first_problem(window, cx),
+                            "signin" => {
+                                let view = ws.open_sign_in(None, window, cx);
+                                let url = dev_string("CURL_RUNNER_STUDIO_FILL");
+                                view.update(cx, |v, cx| v.dev_fill(url.as_deref(), window, cx));
+                            }
                             "history" => ws.open_history(window, cx),
                             "settings" => {
                                 let page = dev_string("CURL_RUNNER_STUDIO_PAGE")
@@ -383,6 +433,9 @@ pub fn run() {
                 })
             })
             .expect("failed to open the studio window");
+            if cfg!(debug_assertions) {
+                install_dev_menu(backend, dev_store, window_handle, workspace.downgrade(), cx);
+            }
             cx.on_window_closed(|cx, _| {
                 if cx.windows().is_empty() {
                     cx.quit();
@@ -393,6 +446,75 @@ pub fn run() {
                 cx.activate(true);
             }
         });
+}
+
+/// App menu › Developer: the backend's toggles (when it has them, the
+/// mock), through [`Backend::dev`] only. Debug builds.
+fn install_dev_menu(
+    backend: Arc<dyn Backend>,
+    store: state::StateStore,
+    window: AnyWindowHandle,
+    workspace: WeakEntity<Workspace>,
+    cx: &mut App,
+) {
+    if backend.dev().is_none() {
+        return;
+    }
+    let b = backend.clone();
+    cx.on_action(move |_: &DevOffline, cx| toggle_dev(&b, |d| d.set_offline(!d.offline()), cx));
+    let b = backend.clone();
+    cx.on_action(move |_: &DevConflictNextSync, cx| {
+        toggle_dev(
+            &b,
+            |d| d.conflict_next_sync(!d.toggles().conflict_next_sync),
+            cx,
+        )
+    });
+    let b = backend.clone();
+    cx.on_action(move |_: &DevExpireLinks, cx| {
+        toggle_dev(&b, |d| d.expire_links(!d.toggles().expire_links), cx)
+    });
+    let b = backend.clone();
+    cx.on_action(move |_: &DevFailNextSignIn, cx| {
+        toggle_dev(
+            &b,
+            |d| d.fail_next_sign_in(!d.toggles().fail_next_sign_in),
+            cx,
+        )
+    });
+    let b = backend.clone();
+    cx.on_action(move |_: &DevResetMock, cx| {
+        if let Some(d) = b.dev() {
+            d.reset();
+        }
+        store.set_connection(None);
+        refresh_dev(&b, cx);
+        // Dispatch has the window checked out: show the screen after.
+        let workspace = workspace.clone();
+        cx.defer(move |cx| {
+            window
+                .update(cx, |_, window, cx| {
+                    workspace
+                        .update(cx, |ws, cx| drop(ws.open_sign_in(None, window, cx)))
+                        .ok();
+                })
+                .ok();
+        });
+    });
+    refresh_dev(&backend, cx);
+}
+
+/// The menu's checkmarks and the windows, after a toggle changed.
+fn refresh_dev(backend: &Arc<dyn Backend>, cx: &mut App) {
+    cx.set_menus(menus(backend.dev().map(|d| d.toggles())));
+    cx.refresh_windows();
+}
+
+fn toggle_dev(backend: &Arc<dyn Backend>, flip: fn(&dyn DevControls), cx: &mut App) {
+    if let Some(d) = backend.dev() {
+        flip(d);
+    }
+    refresh_dev(backend, cx);
 }
 
 /// Development aids for looking at a given state without clicking:
@@ -413,7 +535,9 @@ pub fn run() {
 /// `CURL_RUNNER_STUDIO_ENV` names, with `CURL_RUNNER_STUDIO_VAR` naming the
 /// variable whose drawer opens) and `settings` the app's Settings (on the
 /// page `CURL_RUNNER_STUDIO_PAGE` names: `general`, `editor`,
-/// `appearance`, `accounts`, `shortcuts` or `updates`); hover and click states can't be
+/// `appearance`, `accounts`, `shortcuts` or `updates`) and `signin` the
+/// sign-in screen (with a server URL in `CURL_RUNNER_STUDIO_FILL`: the
+/// Self-hosted card on it, tested); hover and click states can't be
 /// reached without a pointer. `CURL_RUNNER_STUDIO_LINE`
 /// puts the cursor on a zero-based line, `CURL_RUNNER_STUDIO_TAB` picks the
 /// inspector tab, `CURL_RUNNER_STUDIO_BODY=raw` shows the Checks tab's body
@@ -475,7 +599,7 @@ pub fn init(cx: &mut App) {
         Err(e) => log::error!("studio theme does not parse: {e}"),
     }
     cx.bind_keys(keymap());
-    cx.set_menus(menus());
+    cx.set_menus(menus(None));
     // Every Quit lands here (the workspace has no handler of its own). It
     // runs during dispatch, while the window is checked out, so defer.
     cx.on_action(|_: &Quit, cx| cx.defer(quit_app));
@@ -759,6 +883,7 @@ mod tests {
                 "cmd-.",
                 "escape",
                 "cmd-y",
+                "escape",
                 "escape",
                 "escape",
                 "escape",

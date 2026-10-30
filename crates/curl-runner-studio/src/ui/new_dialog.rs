@@ -1171,6 +1171,7 @@ mod tests {
                         root,
                         store,
                         super::super::workspace::test_secrets(),
+                        super::super::workspace::test_backend(),
                         window,
                         cx,
                     )

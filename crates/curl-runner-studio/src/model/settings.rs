@@ -18,6 +18,7 @@ pub struct Settings {
     pub general: GeneralSettings,
     pub editor: EditorSettings,
     pub appearance: AppearanceSettings,
+    pub sync: SyncSettings,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -80,6 +81,25 @@ pub struct AppearanceSettings {
     pub theme: Theme,
 }
 
+/// Accounts & sync › Sync. The syncing itself follows them (plan 3).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SyncSettings {
+    /// Sync after each save.
+    pub automatic: bool,
+    /// Also on a metered (personal hotspot) connection.
+    pub metered: bool,
+}
+
+impl Default for SyncSettings {
+    fn default() -> Self {
+        SyncSettings {
+            automatic: true,
+            metered: false,
+        }
+    }
+}
+
 fn path(base: &Path) -> PathBuf {
     base.join(FILE)
 }
@@ -129,6 +149,8 @@ mod tests {
         assert!(defaults.editor.word_wrap);
         assert!(defaults.general.reopen_last_collection);
         assert_eq!(defaults.appearance.theme, Theme::Dark);
+        assert!(defaults.sync.automatic);
+        assert!(!defaults.sync.metered);
 
         let s = Settings {
             general: GeneralSettings {

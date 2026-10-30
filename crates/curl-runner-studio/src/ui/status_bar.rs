@@ -202,7 +202,13 @@ impl Render for StatusBar {
                 .when(!env.environment.is_empty(), |bar| {
                     bar.child(env.environment.clone())
                 })
-                .child(env.summary.clone())
+                .child(
+                    div()
+                        .id("status-summary")
+                        .test_support()
+                        .aria_label(env.summary.clone())
+                        .child(env.summary.clone()),
+                )
                 .child(div().flex_1())
                 .when(!env.keychain.is_empty(), |bar| {
                     bar.child(env.keychain.clone())

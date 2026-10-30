@@ -2150,7 +2150,16 @@ mod tests {
                 ..Default::default()
             };
             gpui_kit::open_window(options, cx, |window, cx| {
-                cx.new(|cx| Workspace::new(Some(root), store, shared, window, cx))
+                cx.new(|cx| {
+                    Workspace::new(
+                        Some(root),
+                        store,
+                        shared,
+                        super::super::workspace::test_backend(),
+                        window,
+                        cx,
+                    )
+                })
             })
             .unwrap()
         });

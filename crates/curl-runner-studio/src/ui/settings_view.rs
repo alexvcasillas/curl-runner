@@ -4,26 +4,33 @@
 //! like the collection settings page, and leaves on Esc or `Back to
 //! workspace`.
 //!
-//! Accounts & sync: only the Credentials card is real. It lists Keychain
-//! item names (never their values) and the environment files' values; the
-//! Server, Account and Sync cards are a later build.
+//! Accounts & sync: the Server, Account and Sync cards speak to the
+//! [`Backend`]; Credentials lists Keychain item names (never their values)
+//! and the environment files' values.
 
 use super::app::{CloseSettings, Shortcut, bindings, mono_font};
+use super::backend_call;
 use super::color;
 use super::icons::{self, glyph};
 use super::inspector::env_label;
 use super::settings_kit::{
-    MASK, back_link, card, card_body, card_footer, card_text, card_title, kbd_key, later_badge,
-    nav_item, primary_button, segment, segments, setting_row, small_button, switch, th,
+    MASK, back_link, card, card_body, card_footer, card_text, card_title, kbd_key, nav_item,
+    primary_button, segment, segments, setting_row, small_button, switch, th,
 };
+use super::sign_in::SETUP_GUIDE_URL;
 use super::workspace::notify_error;
+use crate::model::backend::{Account, Backend, CollectionKey, Server, SyncStatus, fixtures};
 use crate::model::environments::{env_file, is_secret, list_environments};
+use crate::model::history::relative_time;
 use crate::model::secrets::{SecretStore, service_name};
 use crate::model::settings::{FONT_SIZES, Settings, TAB_SIZES};
+use chrono::{DateTime, Local, Utc};
 use curl_runner_core::env::parse_env_content;
+use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 pub const NAV_WIDTH: f32 = 248.;
 /// The pages' column.
@@ -35,7 +42,6 @@ pub const CHANGELOG_URL: &str = concat!(
     env!("CARGO_PKG_REPOSITORY"),
     "/blob/main/packages/cli/CHANGELOG.md"
 );
-const LATER: &str = "Available in a later build";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppPage {
@@ -127,6 +133,26 @@ pub enum AppSettingsEvent {
     EditVariable { environment: String, name: String },
     /// The Credentials card's Add variable.
     AddVariable,
+    /// `Sign in` or `Switch account`: the sign-in screen.
+    OpenSignIn,
+    /// Signed out or switched servers: what shows the account repaints.
+    AccountChanged,
+    /// `Sync now`, for the open collection.
+    SyncNow,
+}
+
+/// What Accounts & sync reads: the backend, the open collection as the
+/// server knows it, and whether the studio was set to work offline.
+pub struct Accounts {
+    pub backend: Arc<dyn Backend>,
+    pub key: Option<CollectionKey>,
+    pub offline: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ServerPick {
+    Cloud,
+    SelfHosted,
 }
 
 /// Where a credential is kept.
@@ -256,6 +282,8 @@ pub struct CollectionInfo {
     pub id: String,
     /// Names the collection marks secret.
     pub marked: Vec<String>,
+    /// Where its Keychain items are listed from.
+    pub secrets: Arc<dyn SecretStore>,
 }
 
 pub struct SettingsView {
@@ -268,6 +296,13 @@ pub struct SettingsView {
     credentials: Vec<Credential>,
     keychain_locked: bool,
     shortcuts: Vec<(String, String)>,
+    accounts: Accounts,
+    /// The Server card's draft, saved by its Save.
+    server_pick: ServerPick,
+    server_url: Entity<InputState>,
+    /// A backend call in flight (Save, Sign out).
+    busy: bool,
+    task: Option<Task<()>>,
     focus: FocusHandle,
 }
 
@@ -285,12 +320,28 @@ impl SettingsView {
         settings: Settings,
         base: Option<PathBuf>,
         collection: Option<CollectionInfo>,
-        secrets: &dyn SecretStore,
+        accounts: Accounts,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let (server_pick, url) = match accounts.backend.server() {
+            Server::Cloud => (ServerPick::Cloud, String::new()),
+            Server::SelfHosted { url } => (ServerPick::SelfHosted, url),
+        };
+        let server_url = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("https://curl-runner.example.com")
+                .default_value(url)
+        });
+        // Save's enabled state follows the draft.
+        cx.subscribe(
+            &server_url,
+            |_, _, _: &gpui_kit::component::input::InputEvent, cx| cx.notify(),
+        )
+        .detach();
         let (credentials, keychain_locked) = collection
             .as_ref()
-            .map(|c| credential_rows(&c.root, &c.name, &c.id, secrets, &c.marked))
+            .map(|c| credential_rows(&c.root, &c.name, &c.id, &*c.secrets, &c.marked))
             .unwrap_or_default();
         SettingsView {
             page,
@@ -300,6 +351,11 @@ impl SettingsView {
             credentials,
             keychain_locked,
             shortcuts: shortcut_rows(),
+            accounts,
+            server_pick,
+            server_url,
+            busy: false,
+            task: None,
             focus: cx.focus_handle(),
         }
     }
@@ -762,9 +818,9 @@ impl SettingsView {
 
     fn render_accounts(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         vec![
-            later("server-card", "Server", Badge::Title, render_server()).into_any_element(),
-            later("account-card", "Account", Badge::Row, render_account()).into_any_element(),
-            later("sync-card", "Sync", Badge::Title, render_sync()).into_any_element(),
+            self.render_server(cx).into_any_element(),
+            self.render_account(cx).into_any_element(),
+            self.render_sync(cx).into_any_element(),
             self.render_credentials(cx).into_any_element(),
         ]
     }
@@ -978,183 +1034,397 @@ impl SettingsView {
     }
 }
 
-/// Where a later card's badge sits.
-#[derive(Clone, Copy)]
-enum Badge {
-    /// Right of the card's title.
-    Title,
-    /// Centered on the right edge, in place of the card's buttons.
-    Row,
-}
-
-/// A card of a later build: its content dimmed and inert, with the
-/// `Later build` badge at `badge`.
-fn later(
-    id: &'static str,
-    title: &str,
-    badge: Badge,
-    content: impl IntoElement,
-) -> impl IntoElement {
-    let place = div()
-        .absolute()
-        .right(px(24.))
-        .flex()
-        .items_center()
-        .map(|d| match badge {
-            // The title's line: 20px down, 16px type.
-            Badge::Title => d.top(px(20.)).h(px(24.)),
-            Badge::Row => d.top_0().bottom_0(),
-        })
-        .child(later_badge());
-    card(id)
-        .aria_label(format!("{title}: {LATER}"))
-        .child(div().opacity(0.4).child(content))
-        // Takes the pointer, so nothing under it can be clicked.
-        .child(div().id((id, 1usize)).absolute().inset_0().occlude())
-        .child(place)
-}
-
-/// The board's Server card.
-fn render_server() -> impl IntoElement {
-    let kind = segments("server-kind")
-        .child(
-            segment("server-cloud", "curl-runner Cloud", true)
-                .child(glyph(icons::CLOUD).size(px(16.)))
-                .child("curl-runner Cloud"),
-        )
-        .child(
-            segment("server-self-hosted", "Self-hosted", false)
-                .child(glyph(icons::SERVER).size(px(16.)))
-                .child("Self-hosted"),
-        );
-    let url = div()
-        .flex()
-        .flex_1()
-        .min_w_0()
-        .items_center()
-        .h(px(32.))
-        .px(px(10.))
-        .border_1()
-        .border_color(color("border-100"))
-        .rounded(px(6.))
-        .font_family(mono_font())
-        .text_size(px(12.))
-        .text_color(color("text-tertiary"))
-        .child("https://cloud.curl-runner.com");
+/// The Account card's avatar: the board's blue-to-purple disc.
+fn avatar() -> Div {
     div()
-        .child(
-            card_body()
-                .child(card_title("Server"))
-                .child(card_text(
-                    "Collections and sharing links live on this server. Switching servers signs you out.",
-                ))
-                .child(div().flex().items_center().gap(px(8.)).child(kind).child(url)),
-        )
-        .child(
-            card_footer()
-                .child(
-                    div()
-                        .flex()
-                        .flex_1()
-                        .child("Self-hosting? See the\u{a0}")
-                        .child(div().text_color(color("accent-blue")).child("deployment guide"))
-                        .child("."),
-                )
-                .child(primary_button("server-save", "Save").child("Save")),
-        )
+        .flex_none()
+        .size(px(40.))
+        .rounded_full()
+        .bg(linear_gradient(
+            135.,
+            linear_color_stop(color("accent-blue"), 0.),
+            linear_color_stop(color("accent-purple"), 1.),
+        ))
 }
 
-/// The board's Account card, signed out.
-fn render_account() -> impl IntoElement {
-    card_body()
-        .flex_row()
-        .items_center()
-        .gap(px(14.))
-        .child(
-            div()
-                .flex_none()
-                .size(px(40.))
-                .rounded_full()
-                .bg(linear_gradient(
-                    135.,
-                    linear_color_stop(color("accent-blue"), 0.),
-                    linear_color_stop(color("accent-purple"), 1.),
-                )),
-        )
-        .child(
+/// `jamie@acme.dev · Owner of Acme · signed in with GitHub`, the org in
+/// `text-primary`.
+fn account_line(a: &Account) -> Div {
+    let line = div()
+        .flex()
+        .flex_wrap()
+        .text_color(color("text-secondary"))
+        .child(format!("{} · {}", a.email, a.role));
+    match &a.org {
+        Some(org) => line
+            .child("\u{a0}of\u{a0}")
+            .child(div().text_color(color("text-primary")).child(org.clone()))
+            .child(format!(" · signed in with {}", a.provider.label())),
+        None => line.child(format!(" · signed in with {}", a.provider.label())),
+    }
+}
+
+/// The Sync card's status line: its dot's token and text.
+pub fn sync_line(status: &SyncStatus, now: DateTime<Utc>) -> (&'static str, String) {
+    let changes = |n: usize| {
+        if n == 1 {
+            "1 change".to_string()
+        } else {
+            format!("{n} changes")
+        }
+    };
+    match status {
+        SyncStatus::Off => (
+            "text-tertiary",
+            "Not synced · collections stay on this Mac".into(),
+        ),
+        SyncStatus::Synced {
+            at,
+            collections,
+            requests,
+        } => {
+            let when = relative_time(at.with_timezone(&Local), now.with_timezone(&Local));
+            let plural = |n: usize, one: &str| {
+                if n == 1 {
+                    format!("1 {one}")
+                } else {
+                    format!("{n} {one}s")
+                }
+            };
+            (
+                "success",
+                format!(
+                    "Synced {when} · {} · {}",
+                    plural(*collections, "collection"),
+                    plural(*requests, "request")
+                ),
+            )
+        }
+        SyncStatus::Pending(n) => ("warning", format!("{} waiting to sync", changes(*n))),
+        SyncStatus::Offline(n) => (
+            "text-tertiary",
+            format!("Offline · {} waiting to sync", changes(*n)),
+        ),
+        SyncStatus::Conflict(n) => (
+            "danger",
+            if *n == 1 {
+                "1 conflict to resolve".into()
+            } else {
+                format!("{n} conflicts to resolve")
+            },
+        ),
+    }
+}
+
+impl SettingsView {
+    /// The server the Server card describes.
+    fn server_draft(&self, cx: &App) -> Server {
+        match self.server_pick {
+            ServerPick::Cloud => Server::Cloud,
+            ServerPick::SelfHosted => Server::SelfHosted {
+                url: self.server_url.read(cx).value().trim().to_string(),
+            },
+        }
+    }
+
+    fn pick_server(&mut self, pick: ServerPick, cx: &mut Context<Self>) {
+        self.server_pick = pick;
+        cx.notify();
+    }
+
+    /// Save on the Server card: switches servers (which signs out).
+    pub fn save_server(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let server = self.server_draft(cx);
+        if self.busy || server == self.accounts.backend.server() {
+            return;
+        }
+        self.busy = true;
+        let call = backend_call(cx, &self.accounts.backend, move |b| b.set_server(server));
+        self.task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = call.await;
+            this.update_in(cx, |this, window, cx| {
+                this.busy = false;
+                match result {
+                    Ok(()) => cx.emit(AppSettingsEvent::AccountChanged),
+                    Err(e) => notify_error(format!("Couldn't switch servers: {e}"), window, cx),
+                }
+                cx.notify();
+            })
+            .ok();
+        }));
+        cx.notify();
+    }
+
+    pub fn sign_out(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy {
+            return;
+        }
+        self.busy = true;
+        let call = backend_call(cx, &self.accounts.backend, |b| b.sign_out());
+        self.task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = call.await;
+            this.update_in(cx, |this, window, cx| {
+                this.busy = false;
+                match result {
+                    Ok(()) => cx.emit(AppSettingsEvent::AccountChanged),
+                    Err(e) => notify_error(format!("Couldn't sign out: {e}"), window, cx),
+                }
+                cx.notify();
+            })
+            .ok();
+        }));
+        cx.notify();
+    }
+
+    /// The board's Server card.
+    fn render_server(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let cloud = self.server_pick == ServerPick::Cloud;
+        let kind = segments("server-kind")
+            .child(
+                segment("server-cloud", "curl-runner Cloud", cloud)
+                    .on_click(cx.listener(|this, _, _, cx| this.pick_server(ServerPick::Cloud, cx)))
+                    .child(glyph(icons::CLOUD).size(px(16.)))
+                    .child("curl-runner Cloud"),
+            )
+            .child(
+                segment("server-self-hosted", "Self-hosted", !cloud)
+                    .on_click(
+                        cx.listener(|this, _, _, cx| this.pick_server(ServerPick::SelfHosted, cx)),
+                    )
+                    .child(glyph(icons::SERVER).size(px(16.)))
+                    .child("Self-hosted"),
+            );
+        let url = if cloud {
             div()
                 .flex()
-                .flex_col()
                 .flex_1()
                 .min_w_0()
-                .gap(px(2.))
+                .items_center()
+                .h(px(32.))
+                .px(px(10.))
+                .border_1()
+                .border_color(color("border-100"))
+                .rounded(px(6.))
+                .font_family(mono_font())
+                .text_size(px(12.))
+                .text_color(color("text-tertiary"))
+                .child(fixtures::CLOUD_URL)
+                .into_any_element()
+        } else {
+            div()
+                .flex_1()
+                .min_w_0()
+                .font_family(mono_font())
                 .child(
-                    div()
-                        .text_size(px(14.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .child("Not signed in"),
+                    Input::new(&self.server_url)
+                        .aria_label("Server URL")
+                        .min_h(px(32.))
+                        .text_size(px(12.)),
                 )
-                .child(
-                    div()
-                        .text_color(color("text-secondary"))
-                        .child("Sign in to sync your collections and share them."),
-                ),
-        )
-        // The badge takes the buttons' place.
-        .child(div().w(px(96.)).flex_none())
-}
+                .into_any_element()
+        };
+        let draft = self.server_draft(cx);
+        let changed = !self.busy
+            && draft != self.accounts.backend.server()
+            && !matches!(&draft, Server::SelfHosted { url } if url.is_empty());
+        let save = primary_button("server-save", "Save")
+            .when(!changed, |b| b.opacity(0.4).cursor_default())
+            .when(changed, |b| {
+                b.on_click(cx.listener(|this, _, window, cx| this.save_server(window, cx)))
+            })
+            .child("Save");
+        card("server-card")
+            .aria_label("Server")
+            .child(
+                card_body()
+                    .child(card_title("Server"))
+                    .child(card_text(
+                        "Collections and sharing links live on this server. Switching servers signs you out.",
+                    ))
+                    .child(div().flex().items_center().gap(px(8.)).child(kind).child(url)),
+            )
+            .child(
+                card_footer()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_1()
+                            .child("Self-hosting? See the\u{a0}")
+                            .child(
+                                div()
+                                    .id("deployment-guide")
+                                    .role(Role::Link)
+                                    .text_color(color("accent-blue"))
+                                    .cursor_pointer()
+                                    .on_click(|_, _, cx| cx.open_url(SETUP_GUIDE_URL))
+                                    .child("deployment guide"),
+                            )
+                            .child("."),
+                    )
+                    .child(save),
+            )
+    }
 
-/// The board's Sync card.
-fn render_sync() -> impl IntoElement {
-    let toggle = |label: &'static str| {
-        div()
-            .flex()
+    /// The board's Account card: who is signed in, or `Sign in`.
+    fn render_account(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let body = card_body()
+            .flex_row()
             .items_center()
-            .gap(px(12.))
-            .child(switch(false, false))
-            .child(div().flex_1().child(label))
-    };
-    div()
-        .child(
-            card_body()
-                .child(card_title("Sync"))
-                .child(card_text(
-                    "Edits save locally first, then sync. Shared collections update for viewers when you sync.",
-                ))
+            .gap(px(14.))
+            .child(avatar());
+        let body = match self.accounts.backend.account() {
+            Some(a) => body
                 .child(
                     div()
                         .flex()
-                        .items_center()
-                        .gap(px(10.))
-                        .px(px(12.))
-                        .py(px(10.))
-                        .border_1()
-                        .border_color(color("border-100"))
-                        .rounded(px(6.))
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .gap(px(2.))
                         .child(
                             div()
-                                .flex_none()
-                                .size(px(6.))
-                                .rounded_full()
-                                .bg(color("text-tertiary")),
+                                .id("account-name")
+                                .test_support()
+                                .aria_label(a.name.clone())
+                                .text_size(px(14.))
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(a.name.clone()),
                         )
-                        .child(div().flex_1().child("Not synced · collections stay on this Mac"))
-                        .child(
-                            small_button("sync-now", "Sync now")
-                                .child(glyph(icons::SYNC).size(px(14.)))
-                                .child("Sync now"),
-                        ),
+                        .child(account_line(&a)),
                 )
-                .child(toggle("Sync automatically"))
-                .child(toggle("Sync over metered connections")),
-        )
-        .child(
-            card_footer()
-                .child(div().flex_1().child(
-                    "On conflict, the studio shows both versions and asks you. It never merges silently.",
-                ))
-                .child(primary_button("sync-save", "Save").child("Save")),
-        )
+                .child(
+                    small_button("switch-account", "Switch account")
+                        .on_click(cx.listener(|_, _, _, cx| cx.emit(AppSettingsEvent::OpenSignIn)))
+                        .child("Switch account"),
+                )
+                .child(
+                    small_button("sign-out", "Sign out")
+                        .when(self.busy, |b| b.opacity(0.4))
+                        .on_click(cx.listener(|this, _, window, cx| this.sign_out(window, cx)))
+                        .child("Sign out"),
+                ),
+            None => body
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .gap(px(2.))
+                        .child(
+                            div()
+                                .id("account-name")
+                                .test_support()
+                                .aria_label("Not signed in")
+                                .text_size(px(14.))
+                                .font_weight(FontWeight::MEDIUM)
+                                .child("Not signed in"),
+                        )
+                        .child(div().text_color(color("text-secondary")).child(
+                            if self.accounts.offline {
+                                "Working offline. Sign in to sync your collections and share them."
+                            } else {
+                                "Sign in to sync your collections and share them."
+                            },
+                        )),
+                )
+                .child(
+                    small_button("sign-in", "Sign in")
+                        .on_click(cx.listener(|_, _, _, cx| cx.emit(AppSettingsEvent::OpenSignIn)))
+                        .child("Sign in"),
+                ),
+        };
+        card("account-card").aria_label("Account").child(body)
+    }
+
+    /// The board's Sync card: the open collection's status, `Sync now` and
+    /// the two switches.
+    fn render_sync(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let backend = &self.accounts.backend;
+        let status = self
+            .accounts
+            .key
+            .as_ref()
+            .map_or(SyncStatus::Off, |k| backend.sync_status(k));
+        let (dot, text) = sync_line(&status, Utc::now());
+        let can_sync =
+            backend.account().is_some() && self.accounts.key.is_some() && !self.accounts.offline;
+        let sync = self.settings.sync.clone();
+        let toggle = |id: &'static str,
+                      label: &'static str,
+                      on: bool,
+                      flip: fn(&mut Settings),
+                      cx: &mut Context<Self>| {
+            div()
+                .id(id)
+                .role(Role::Switch)
+                .test_support()
+                .aria_label(label)
+                .flex()
+                .items_center()
+                .gap(px(12.))
+                .cursor_pointer()
+                .on_click(
+                    cx.listener(move |this, _, window, cx| this.update_settings(flip, window, cx)),
+                )
+                .child(switch(on, true))
+                .child(div().flex_1().child(label))
+        };
+        card("sync-card")
+            .aria_label("Sync")
+            .child(
+                card_body()
+                    .child(card_title("Sync"))
+                    .child(card_text(
+                        "Edits save locally first, then sync. Shared collections update for viewers when you sync.",
+                    ))
+                    .child(
+                        div()
+                            .id("sync-status")
+                            .role(Role::Status)
+                            .test_support()
+                            .aria_label(text.clone())
+                            .flex()
+                            .items_center()
+                            .gap(px(10.))
+                            .px(px(12.))
+                            .py(px(10.))
+                            .border_1()
+                            .border_color(color("border-100"))
+                            .rounded(px(6.))
+                            .child(div().flex_none().size(px(6.)).rounded_full().bg(color(dot)))
+                            .child(div().flex_1().child(text))
+                            .child(
+                                small_button("sync-now", "Sync now")
+                                    .when(!can_sync, |b| b.opacity(0.4).cursor_default())
+                                    .when(can_sync, |b| {
+                                        b.on_click(cx.listener(|_, _, _, cx| {
+                                            cx.emit(AppSettingsEvent::SyncNow)
+                                        }))
+                                    })
+                                    .child(glyph(icons::SYNC).size(px(14.)))
+                                    .child("Sync now"),
+                            ),
+                    )
+                    .child(toggle(
+                        "sync-automatically",
+                        "Sync automatically",
+                        sync.automatic,
+                        |s| s.sync.automatic = !s.sync.automatic,
+                        cx,
+                    ))
+                    .child(toggle(
+                        "sync-metered",
+                        "Sync over metered connections",
+                        sync.metered,
+                        |s| s.sync.metered = !s.sync.metered,
+                        cx,
+                    )),
+            )
+            .child(card_footer().child(div().flex_1().child(
+                "On conflict, the studio shows both versions and asks you. It never merges silently.",
+            )))
+    }
 }
 
 /// Updates: the versions and the changelog.
@@ -1387,7 +1657,14 @@ mod tests {
             };
             gpui_kit::open_window(options, cx, |window, cx| {
                 cx.new(|cx| {
-                    let mut ws = Workspace::new(Some(root), store, shared, window, cx);
+                    let mut ws = Workspace::new(
+                        Some(root),
+                        store,
+                        shared,
+                        super::super::workspace::test_backend(),
+                        window,
+                        cx,
+                    );
                     ws.open_file(Path::new("a.yaml"), window, cx);
                     ws
                 })
@@ -1469,20 +1746,14 @@ mod tests {
         assert!(shows(cx, window, "BASE_URL Default"));
         assert!(shows(cx, window, "https://api.example.com"));
         assert!(shows(cx, window, super::MASK));
-        for card in ["Server", "Account", "Sync"] {
-            assert!(shows(cx, window, &format!("{card}: {}", super::LATER)));
+        for card in ["Server", "Account", "Sync", "Sync now", "Sign in"] {
+            assert!(shows(cx, window, card), "{card}");
         }
-        // Their buttons sit under a layer that takes the pointer.
-        let synced = cx
-            .update_window(window, |_, window, cx| {
-                window.render_frame(cx);
-                window
-                    .within("app-settings")
-                    .try_find_by_label("Sync now")
-                    .is_some()
-            })
-            .unwrap();
-        assert!(synced, "drawn, dimmed");
+        assert!(shows(
+            cx,
+            window,
+            "Not synced · collections stay on this Mac"
+        ));
         // The Keychain value never reaches the table, nor its tail.
         assert!(!shows(cx, window, "tok_live_9f3a"));
         assert!(!shows(cx, window, &format!("{}9f3a", super::MASK)));

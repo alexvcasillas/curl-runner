@@ -12,6 +12,25 @@ use gpui_kit::component::select::Select;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 
+/// The SignIn board's title bar: only the window's name, centred.
+pub(super) fn render_bare_title_bar() -> impl IntoElement {
+    TitleBar::new()
+        .h(px(TITLE_BAR_HEIGHT))
+        .bg(color("bg-100"))
+        .border_color(color("border-100"))
+        .child(
+            div()
+                .flex_1()
+                .flex()
+                .justify_center()
+                // Balances the traffic lights' inset, as the board does.
+                .pr(px(TRAFFIC_LIGHTS_INSET))
+                .text_size(px(12.))
+                .text_color(color("text-secondary"))
+                .child("curl-runner studio"),
+        )
+}
+
 impl Workspace {
     pub(super) fn render_title_bar(
         &self,
