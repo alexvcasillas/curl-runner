@@ -39,6 +39,46 @@ pub struct MockBackend {
     latency: Duration,
     state: Mutex<State>,
     log: Mutex<VecDeque<String>>,
+    /// While held, `update_share` answers wait (the change is already made).
+    gate: Arc<Gate>,
+}
+
+/// [`DevControls::hold_updates`]: held, and the answers waiting on it.
+#[derive(Default)]
+struct Gate {
+    inner: Mutex<(bool, Vec<Waker>)>,
+}
+
+impl Gate {
+    fn set(&self, held: bool) {
+        let wakers = {
+            let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            g.0 = held;
+            if held {
+                Vec::new()
+            } else {
+                std::mem::take(&mut g.1)
+            }
+        };
+        wakers.into_iter().for_each(Waker::wake);
+    }
+}
+
+/// Resolves once the gate is open.
+struct GateOpen(Arc<Gate>);
+
+impl Future for GateOpen {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        let mut g = self.0.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if g.0 {
+            g.1.push(cx.waker().clone());
+            Poll::Pending
+        } else {
+            Poll::Ready(())
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -103,6 +143,7 @@ impl MockBackend {
             latency,
             state: Mutex::new(state),
             log: Mutex::default(),
+            gate: Arc::default(),
         }
     }
 
@@ -664,7 +705,7 @@ impl Backend for MockBackend {
     ) -> BoxFut<'_, ShareSettings> {
         self.record(format!("update_share({collection:?}, {update:?})"));
         let key = collection.clone();
-        self.call(true, move |s| {
+        let answer = self.call(true, move |s| {
             let account = signed_in(s)?;
             let seq = s.seq;
             let share = share_mut(s, &key, &account);
@@ -683,6 +724,12 @@ impl Backend for MockBackend {
             let settings = settings_of(share);
             s.seq += 1;
             Ok(settings)
+        });
+        let gate = GateOpen(self.gate.clone());
+        Box::pin(async move {
+            let out = answer.await;
+            gate.await;
+            out
         })
     }
 
@@ -848,6 +895,10 @@ impl DevControls for MockBackend {
 
     fn toggles(&self) -> DevToggles {
         self.state().toggles
+    }
+
+    fn hold_updates(&self, held: bool) {
+        self.gate.set(held);
     }
 
     fn recorded(&self) -> Vec<String> {

@@ -3,22 +3,19 @@
 //! it expires, invites, the people with access, what they get and, per
 //! variable, whether its Default value is shared.
 //!
-//! Every change goes to the server at once; a failed call (offline, signed
-//! out) shows the error at the top and changes nothing here. The variables
-//! sent are [`share_payload`]'s: names, descriptions, the required flag and
-//! only the ticked non-secret `.env` defaults. No Keychain value is read.
+//! It is a view onto the collection's [`ShareSync`], which makes the calls
+//! (one at a time) and keeps them going after the dialog closes. A failed
+//! call (offline, signed out) shows its error at the top.
 
 use super::app::mono_font;
 use super::color;
 use super::icons::{self, glyph};
 use super::settings_kit::{label_text, neutral_pill, switch};
+use super::share_sync::{ShareSync, ShareSyncEvent};
 use super::workspace::Workspace;
 use crate::model::backend::{
-    Access, Backend, BackendError, CollectionKey, Expiry, Person, Role as PersonRole,
-    ShareSettings, ShareUpdate, SharedVar, share_candidates, share_payload,
+    Access, Account, Expiry, Person, Role as PersonRole, ShareSettings, SharedVar,
 };
-use crate::model::collection::TreeNode;
-use crate::model::collection_meta::CollectionMeta;
 use chrono::{Local, NaiveDate};
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -27,9 +24,6 @@ use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
-use std::collections::VecDeque;
-use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
 /// The board's dialog.
@@ -52,9 +46,6 @@ const EXPIRIES: [(Expiry, &str); 3] = [
 /// What the view asks of whoever shows it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShareEvent {
-    /// The share changed on the server (link, people, variables) or the
-    /// collection's notes did (a `Share default`): re-read both.
-    Changed,
     /// Close or Done (changes apply as they are made).
     Close,
 }
@@ -67,45 +58,36 @@ pub enum ShareMode {
     Page,
 }
 
-/// The collection being shared.
-pub struct ShareSource {
-    pub backend: Arc<dyn Backend>,
-    pub key: CollectionKey,
-    pub root: PathBuf,
-    /// Where the notes are saved (`None`: kept in memory).
-    pub base: Option<PathBuf>,
-    pub meta: CollectionMeta,
-    /// `18 requests in 4 folders`.
-    pub requests: usize,
-    pub folders: usize,
+/// The share as this frame draws it, read from the [`ShareSync`].
+#[derive(Default)]
+struct Shown {
+    name: String,
+    settings: Option<ShareSettings>,
+    vars: Vec<SharedVar>,
+    error: Option<String>,
+    invite_error: Option<String>,
+    account: Option<Account>,
+    requests: usize,
+    folders: usize,
+    access: Access,
+    expiry: Option<Expiry>,
+    expiry_text: String,
+    /// Names whose `Share default` switch is on (ticks in flight too).
+    defaults: Vec<String>,
 }
 
+/// A view onto the collection's [`ShareSync`]: the dialog or the page.
+/// Closing it leaves the share's calls running.
 pub struct ShareView {
-    src: ShareSource,
+    pub(super) sync: Entity<ShareSync>,
     mode: ShareMode,
-    /// The server's view, once a call got through.
-    pub(super) settings: Option<ShareSettings>,
-    /// Every variable, with the default it would share where it has one
-    /// (never a secret's): what the Variables list shows.
-    vars: Vec<SharedVar>,
-    /// The last call's failure, at the top.
-    pub(super) error: Option<String>,
+    shown: Shown,
     invite: Entity<InputState>,
-    pub(super) invite_error: Option<String>,
     /// The person whose removal waits for a confirm, by email.
     pub(super) removing: Option<String>,
     /// Set while `Copy link` reads `Copied`.
     copied: Option<Task<()>>,
-    save: Option<Task<()>>,
-    /// The notes as the server last accepted them; `src.meta` is ahead by
-    /// the ticks in flight.
-    confirmed: CollectionMeta,
-    /// Calls waiting for the one in flight.
-    queue: VecDeque<Op>,
-    busy: bool,
-    /// Bumped per call started: only the newest call's settings show.
-    generation: u64,
-    _invite_events: Subscription,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl EventEmitter<ShareEvent> for ShareView {}
@@ -121,18 +103,6 @@ pub fn valid_email(text: &str) -> bool {
         && host
             .split_once('.')
             .is_some_and(|(a, b)| !a.is_empty() && !b.is_empty() && !b.ends_with('.'))
-}
-
-/// What a failed call says at the top: offline and signed out in the
-/// boards' words, and that nothing changed.
-pub fn share_error(e: &BackendError) -> String {
-    match e {
-        BackendError::Offline => {
-            "You're offline. Connect to change sharing; nothing changed.".into()
-        }
-        BackendError::SignedOut => "Sign in to share. Nothing changed.".into(),
-        other => other.to_string(),
-    }
 }
 
 /// The Expires menu's label for a link that expires on `date`.
@@ -169,69 +139,11 @@ fn initials(name: &str) -> String {
     letters.to_uppercase()
 }
 
-/// The requests and top-level folders of a collection's tree.
-pub fn tree_counts(tree: &[TreeNode]) -> (usize, usize) {
-    fn requests(nodes: &[TreeNode]) -> usize {
-        nodes
-            .iter()
-            .map(|n| match n {
-                TreeNode::Folder { children, .. } => requests(children),
-                TreeNode::File { requests, .. } => requests.len().max(1),
-            })
-            .sum()
-    }
-    let folders = tree
-        .iter()
-        .filter(|n| matches!(n, TreeNode::Folder { .. }))
-        .count();
-    (requests(tree), folders)
-}
-
-/// One change to the share. Calls run one at a time, each built from the
-/// view's latest state when it starts.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Op {
-    /// Opening: gives the share a link, sends the variables, lists them.
-    Open,
-    /// The variables, as the notes are when the call starts; the tick
-    /// that asked for it rolls back if it fails.
-    Variables {
-        tick: Option<String>,
-    },
-    Access(Access),
-    Expiry(Expiry),
-    Reset,
-    /// Invite, then re-read the share.
-    Invite(String),
-    /// Remove, then re-read the share.
-    Remove(String),
-}
-
-/// What a finished call hands back.
-struct Done {
-    op: Op,
-    /// The notes the call was built from.
-    sent: CollectionMeta,
-    candidates: Option<Vec<SharedVar>>,
-    result: Result<ShareSettings, BackendError>,
-}
-
-/// The Expires choice a link's date is, if it is one of the menu's.
-fn current_expiry(date: Option<NaiveDate>, today: NaiveDate) -> Option<Expiry> {
-    match date {
-        None => Some(Expiry::Never),
-        Some(d) => match (d - today).num_days() {
-            n @ (7 | 30) => Some(Expiry::Days(n as u32)),
-            _ => None,
-        },
-    }
-}
-
 impl ShareView {
-    /// Opens on the collection's share, giving it a link if it has none and
-    /// sending the variables as the notes describe them.
+    /// A view onto `sync`; opening it gives the share a link if it has none
+    /// and sends the variables as the notes describe them.
     pub fn new(
-        src: ShareSource,
+        sync: Entity<ShareSync>,
         mode: ShareMode,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -241,238 +153,123 @@ impl ShareView {
             &invite,
             window,
             |this, _, event: &InputEvent, window, cx| match event {
-                InputEvent::Change if this.invite_error.take().is_some() => cx.notify(),
+                InputEvent::Change => {
+                    if this.sync.read(cx).invite_error.is_some() {
+                        this.sync.update(cx, |s, cx| s.set_invite_error(None, cx));
+                    }
+                }
                 InputEvent::PressEnter { .. } => this.invite(window, cx),
                 _ => {}
             },
         );
-        let mut this = ShareView {
-            confirmed: src.meta.clone(),
-            src,
+        // An address that got in leaves the field (one that didn't stays).
+        let invited = cx.subscribe_in(
+            &sync,
+            window,
+            |this, _, event: &ShareSyncEvent, window, cx| {
+                if let ShareSyncEvent::Invited(email) = event
+                    && this.invite.read(cx).value().trim() == email
+                {
+                    this.invite.update(cx, |s, cx| s.set_value("", window, cx));
+                }
+            },
+        );
+        let redraw = cx.observe(&sync, |_, _, cx| cx.notify());
+        sync.update(cx, |s, cx| s.open(cx));
+        ShareView {
+            sync,
             mode,
-            settings: None,
-            vars: Vec::new(),
-            error: None,
+            shown: Shown::default(),
             invite,
-            invite_error: None,
             removing: None,
             copied: None,
-            save: None,
-            queue: VecDeque::new(),
-            busy: false,
-            generation: 0,
-            _invite_events: invite_events,
-        };
-        this.push(Op::Open, cx);
-        this
-    }
-
-    /// The notes as the server last accepted them (and as saved).
-    pub fn meta(&self) -> &CollectionMeta {
-        &self.confirmed
-    }
-
-    /// People with access, once known.
-    pub fn people(&self) -> Option<usize> {
-        self.settings.as_ref().map(|s| s.people.len())
-    }
-
-    /// `name` can share its Default value: not a secret, and `.env` has one.
-    pub fn offers_share_default(&self, name: &str) -> bool {
-        self.vars
-            .iter()
-            .any(|v| v.name == name && !v.secret && v.default.is_some())
-    }
-
-    /// The switch's state: ticks show at once, before the server answers.
-    pub fn shares_default(&self, name: &str) -> bool {
-        self.src
-            .meta
-            .vars
-            .get(name)
-            .is_some_and(|v| v.share_default)
-    }
-
-    fn push(&mut self, op: Op, cx: &mut Context<Self>) {
-        self.queue.push_back(op);
-        self.run_next(cx);
-    }
-
-    /// Starts the next queued call, unless one is in flight.
-    fn run_next(&mut self, cx: &mut Context<Self>) {
-        if self.busy {
-            return;
+            _subscriptions: vec![invite_events, invited, redraw],
         }
-        let Some(op) = self.queue.pop_front() else {
-            return;
-        };
-        self.busy = true;
-        self.generation += 1;
-        let generation = self.generation;
-        let (backend, key, root) = (
-            self.src.backend.clone(),
-            self.src.key.clone(),
-            self.src.root.clone(),
-        );
-        let sent = self.src.meta.clone();
-        let job = cx.background_spawn(async move {
-            let candidates = (op == Op::Open).then(|| share_candidates(&root, &sent));
-            let update = |u: ShareUpdate| backend.update_share(&key, u);
-            let result = match &op {
-                Op::Open | Op::Variables { .. } => {
-                    update(ShareUpdate {
-                        variables: Some(share_payload(&root, &sent)),
-                        ..ShareUpdate::default()
-                    })
-                    .await
-                }
-                Op::Access(a) => {
-                    update(ShareUpdate {
-                        access: Some(*a),
-                        ..ShareUpdate::default()
-                    })
-                    .await
-                }
-                Op::Expiry(e) => {
-                    update(ShareUpdate {
-                        expires: Some(*e),
-                        ..ShareUpdate::default()
-                    })
-                    .await
-                }
-                Op::Reset => {
-                    update(ShareUpdate {
-                        reset_link: true,
-                        ..ShareUpdate::default()
-                    })
-                    .await
-                }
-                Op::Invite(email) => match backend.invite(&key, email).await {
-                    Ok(_) => backend.share_settings(&key).await,
-                    Err(e) => Err(e),
-                },
-                Op::Remove(email) => match backend.remove_person(&key, email).await {
-                    Ok(()) => backend.share_settings(&key).await,
-                    Err(e) => Err(e),
-                },
-            };
-            Done {
-                op,
-                sent,
-                candidates,
-                result,
-            }
-        });
-        cx.spawn(async move |this, cx| {
-            let done = job.await;
-            this.update(cx, |this, cx| this.finish(generation, done, cx))
-                .ok();
-        })
-        .detach();
     }
 
-    /// A call's answer: the newest settings are shown, a failure goes at
-    /// the top (an invite's refusal under its field) and a failed tick
-    /// rolls back to what the server last accepted.
-    fn finish(&mut self, generation: u64, done: Done, cx: &mut Context<Self>) {
-        self.busy = false;
-        if let Some(vars) = done.candidates {
-            self.vars = vars;
-        }
-        match done.result {
-            Ok(settings) => {
-                if generation == self.generation {
-                    self.settings = Some(settings);
-                }
-                self.error = None;
-                if matches!(done.op, Op::Open | Op::Variables { .. }) && done.sent != self.confirmed
-                {
-                    self.confirmed = done.sent;
-                    self.save_meta(cx);
-                }
-                cx.emit(ShareEvent::Changed);
-            }
-            Err(BackendError::Invalid(why)) if matches!(done.op, Op::Invite(_)) => {
-                self.invite_error = Some(why);
-            }
-            Err(e) => {
-                self.error = Some(share_error(&e));
-                if let Op::Variables { tick: Some(name) } = &done.op {
-                    let accepted = self
-                        .confirmed
-                        .vars
-                        .get(name)
-                        .is_some_and(|v| v.share_default);
-                    self.src
-                        .meta
-                        .vars
-                        .entry(name.clone())
-                        .or_default()
-                        .share_default = accepted;
-                }
-            }
-        }
-        cx.notify();
-        self.run_next(cx);
+    pub fn settings(&self, cx: &App) -> Option<ShareSettings> {
+        self.sync.read(cx).settings.clone()
     }
 
-    fn save_meta(&mut self, cx: &mut Context<Self>) {
-        let Some(base) = self.src.base.clone() else {
-            return;
+    #[cfg(test)]
+    pub fn error(&self, cx: &App) -> Option<String> {
+        self.sync.read(cx).error.clone()
+    }
+
+    #[cfg(test)]
+    pub fn invite_error(&self, cx: &App) -> Option<String> {
+        self.sync.read(cx).invite_error.clone()
+    }
+
+    #[cfg(test)]
+    pub fn people(&self, cx: &App) -> Option<usize> {
+        self.sync.read(cx).people()
+    }
+
+    #[cfg(test)]
+    pub fn offers_share_default(&self, name: &str, cx: &App) -> bool {
+        self.sync.read(cx).offers_share_default(name)
+    }
+
+    #[cfg(test)]
+    pub fn shares_default(&self, name: &str, cx: &App) -> bool {
+        self.sync.read(cx).shares_default(name)
+    }
+
+    /// Reads the share for this frame.
+    fn read_shown(&mut self, cx: &App) {
+        let s = self.sync.read(cx);
+        let today = Local::now().date_naive();
+        let expiry = s.expiry();
+        let expiry_text = match expiry.and_then(|e| EXPIRIES.iter().find(|(v, _)| *v == e)) {
+            Some((_, label)) => (*label).to_string(),
+            None => expiry_label(s.settings.as_ref().and_then(|s| s.expires), today),
         };
-        let (root, meta) = (self.src.root.clone(), self.confirmed.clone());
-        let write = cx.background_spawn(async move { meta.save(&base, &root) });
-        // A newer save replaces this one: each writes the whole notes.
-        self.save = Some(cx.spawn(async move |_, _| {
-            if let Err(e) = write.await {
-                log::warn!("Couldn't save the collection's notes: {e}");
-            }
-        }));
+        self.shown = Shown {
+            name: s.key().name.clone(),
+            settings: s.settings.clone(),
+            defaults: s
+                .vars
+                .iter()
+                .filter(|v| s.shares_default(&v.name))
+                .map(|v| v.name.clone())
+                .collect(),
+            vars: s.vars.clone(),
+            error: s.error.clone(),
+            invite_error: s.invite_error.clone(),
+            account: s.account(),
+            requests: s.requests,
+            folders: s.folders,
+            access: s.access(),
+            expiry,
+            expiry_text,
+        };
+    }
+
+    fn shares_shown(&self, name: &str) -> bool {
+        self.shown.defaults.iter().any(|n| n == name)
     }
 
     pub fn set_access(&mut self, access: Access, cx: &mut Context<Self>) {
-        if self.settings.as_ref().is_some_and(|s| s.access == access) {
-            return;
-        }
-        self.push(Op::Access(access), cx);
+        self.sync.update(cx, |s, cx| s.set_access(access, cx));
     }
 
     pub fn set_expiry(&mut self, expiry: Expiry, cx: &mut Context<Self>) {
-        let today = Local::now().date_naive();
-        if self
-            .settings
-            .as_ref()
-            .is_some_and(|s| current_expiry(s.expires, today) == Some(expiry))
-        {
-            return;
-        }
-        self.push(Op::Expiry(expiry), cx);
+        self.sync.update(cx, |s, cx| s.set_expiry(expiry, cx));
     }
 
     /// `Reset link`: a new token; the old link stops working.
     pub fn reset_link(&mut self, cx: &mut Context<Self>) {
-        self.push(Op::Reset, cx);
+        self.sync.update(cx, |s, cx| s.reset_link(cx));
     }
 
-    /// Ticks or unticks `Share default` for `name` (only where offered):
-    /// shown at once, sent in turn.
     pub fn toggle_share_default(&mut self, name: &str, cx: &mut Context<Self>) {
-        if !self.offers_share_default(name) {
-            return;
-        }
-        let notes = self.src.meta.vars.entry(name.to_string()).or_default();
-        notes.share_default = !notes.share_default;
-        cx.notify();
-        self.push(
-            Op::Variables {
-                tick: Some(name.to_string()),
-            },
-            cx,
-        );
+        self.sync
+            .update(cx, |s, cx| s.toggle_share_default(name, cx));
     }
 
     pub fn copy_link(&mut self, cx: &mut Context<Self>) {
-        let Some(link) = self.settings.as_ref().and_then(|s| s.link.clone()) else {
+        let Some(link) = self.settings(cx).and_then(|s| s.link) else {
             return;
         };
         cx.write_to_clipboard(ClipboardItem::new_string(link));
@@ -487,29 +284,40 @@ impl ShareView {
         cx.notify();
     }
 
-    /// Invites the typed address, once it looks like one.
-    pub fn invite(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// Invites the typed address, once it looks like one; the field clears
+    /// when the server takes it.
+    pub fn invite(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let email = self.invite.read(cx).value().trim().to_string();
         if !valid_email(&email) {
-            self.invite_error = Some("Enter an email address, like name@example.com.".into());
-            cx.notify();
+            self.sync.update(cx, |s, cx| {
+                s.set_invite_error(
+                    Some("Enter an email address, like name@example.com.".into()),
+                    cx,
+                )
+            });
             return;
         }
-        self.invite.update(cx, |s, cx| s.set_value("", window, cx));
-        self.push(Op::Invite(email), cx);
+        self.sync.update(cx, |s, cx| s.invite(email, cx));
     }
 
     /// Dev hook: invites `emails` in turn.
     pub fn dev_invite(&mut self, emails: Vec<String>, cx: &mut Context<Self>) {
-        for email in emails {
-            self.push(Op::Invite(email), cx);
-        }
+        self.sync.update(cx, |s, cx| {
+            for email in emails {
+                s.invite(email, cx);
+            }
+        });
     }
 
     #[cfg(test)]
     pub fn type_invite(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
         self.invite
             .update(cx, |s, cx| s.set_value(text, window, cx));
+    }
+
+    #[cfg(test)]
+    pub fn invite_text(&self, cx: &App) -> String {
+        self.invite.read(cx).value().to_string()
     }
 
     /// Remove asks first, on the person's row.
@@ -525,7 +333,7 @@ impl ShareView {
 
     pub fn confirm_remove(&mut self, cx: &mut Context<Self>) {
         if let Some(email) = self.removing.take() {
-            self.push(Op::Remove(email), cx);
+            self.sync.update(cx, |s, cx| s.remove(email, cx));
         }
         cx.notify();
     }
@@ -587,10 +395,10 @@ impl ShareView {
                         div()
                             .id("share-title")
                             .test_support()
-                            .aria_label(format!("Share {}", self.src.key.name))
+                            .aria_label(format!("Share {}", self.shown.name))
                             .text_size(px(16.))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child(format!("Share {}", self.src.key.name)),
+                            .child(format!("Share {}", self.shown.name)),
                     )
                     .child(
                         div()
@@ -621,7 +429,7 @@ impl ShareView {
     }
 
     fn render_error(&self) -> Option<impl IntoElement + use<>> {
-        let e = self.error.clone()?;
+        let e = self.shown.error.clone()?;
         Some(
             div()
                 .id("share-error")
@@ -651,7 +459,7 @@ impl ShareView {
     }
 
     fn render_link(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let link = self.settings.as_ref().and_then(|s| s.link.clone());
+        let link = self.shown.settings.as_ref().and_then(|s| s.link.clone());
         let copied = self.copied.is_some();
         let copy_label = if copied { "Copied" } else { "Copy link" };
         let field = div()
@@ -686,7 +494,7 @@ impl ShareView {
                 None => div()
                     .text_size(px(12.))
                     .text_color(color("text-tertiary"))
-                    .child(if self.error.is_some() {
+                    .child(if self.shown.error.is_some() {
                         "No link yet"
                     } else {
                         "Creating link…"
@@ -720,11 +528,7 @@ impl ShareView {
                     .text_color(color(if copied { "success" } else { "text-primary" })),
             )
             .child(copy_label);
-        let today = Local::now().date_naive();
-        let (access, expires) = self
-            .settings
-            .as_ref()
-            .map_or((Access::default(), None), |s| (s.access, s.expires));
+        let access = self.shown.access;
         let weak = cx.entity().downgrade();
         let access_menu = select_button(
             "share-access",
@@ -748,8 +552,8 @@ impl ShareView {
                 .item(item("Invited people only", Access::InvitedOnly))
         });
         let weak = cx.entity().downgrade();
-        let expiry_text = expiry_label(expires, today);
-        let current = current_expiry(expires, today);
+        let expiry_text = self.shown.expiry_text.clone();
+        let current = self.shown.expiry;
         let expiry_menu = select_button("share-expiry", expiry_text, 26., 12.).dropdown_menu(
             move |mut menu, _, _| {
                 for (value, label) in EXPIRIES {
@@ -849,7 +653,7 @@ impl ShareView {
             .hover(|s| s.bg(color("primary-hover")))
             .child("Invite")
             .on_click(cx.listener(|this, _, window, cx| this.invite(window, cx)));
-        let border = if self.invite_error.is_some() {
+        let border = if self.shown.invite_error.is_some() {
             color("danger")
         } else {
             color("border-200")
@@ -872,7 +676,7 @@ impl ShareView {
                     .child(role)
                     .child(invite),
             )
-            .children(self.invite_error.clone().map(|e| {
+            .children(self.shown.invite_error.clone().map(|e| {
                 div()
                     .id("share-invite-error")
                     .role(Role::Alert)
@@ -886,11 +690,12 @@ impl ShareView {
 
     fn render_people(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let people = self
+            .shown
             .settings
             .as_ref()
             .map(|s| s.people.clone())
             .unwrap_or_default();
-        let me = self.src.backend.account();
+        let me = self.shown.account.clone();
         let rows = people.iter().enumerate().map(|(ix, p)| {
             let you = me
                 .as_ref()
@@ -1083,7 +888,7 @@ impl ShareView {
                 .flex_none()
                 .text_color(color("success"))
         };
-        let chips = self.vars.iter().map(|v| {
+        let chips = self.shown.vars.iter().map(|v| {
             div()
                 .px(px(6.))
                 .py(px(1.))
@@ -1117,7 +922,7 @@ impl ShareView {
                     .items_center()
                     .gap(px(8.))
                     .child(check())
-                    .child(requests_text(self.src.requests, self.src.folders)),
+                    .child(requests_text(self.shown.requests, self.shown.folders)),
             )
             .child(
                 div()
@@ -1126,7 +931,7 @@ impl ShareView {
                     .items_center()
                     .gap(px(8.))
                     .child(check())
-                    .child(if self.vars.is_empty() {
+                    .child(if self.shown.vars.is_empty() {
                         "No variables to fill in"
                     } else {
                         "Variables they fill in themselves:"
@@ -1157,9 +962,9 @@ impl ShareView {
                 .py_0()
                 .child(text)
         };
-        let rows = self.vars.iter().map(|v| {
+        let rows = self.shown.vars.iter().map(|v| {
             let offers = !v.secret && v.default.is_some();
-            let on = offers && self.shares_default(&v.name);
+            let on = offers && self.shares_shown(&v.name);
             let name = v.name.clone();
             let value = v.default.clone().filter(|_| offers).map(|d| {
                 div()
@@ -1227,7 +1032,12 @@ impl ShareView {
                 .children(value)
                 .child(div().w(px(28.)).flex_none().children(toggle))
         });
-        let secret = self.vars.iter().find(|v| v.secret).map(|v| v.name.clone());
+        let secret = self
+            .shown
+            .vars
+            .iter()
+            .find(|v| v.secret)
+            .map(|v| v.name.clone());
         let note = match secret {
             Some(name) => format!("Secrets like {name} are never included, in any environment"),
             None => "Secrets are never included, in any environment".into(),
@@ -1242,7 +1052,7 @@ impl ShareView {
                     .child(label_text("Share default")),
             )
             .children(rows)
-            .when(self.vars.is_empty(), |d| {
+            .when(self.shown.vars.is_empty(), |d| {
                 d.child(
                     div()
                         .h(px(36.))
@@ -1308,6 +1118,7 @@ impl ShareView {
 
 impl Render for ShareView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.read_shown(cx);
         match self.mode {
             ShareMode::Page => div()
                 .id("share-page")
@@ -1322,7 +1133,7 @@ impl Render for ShareView {
                     .id("share-dialog")
                     .role(Role::Dialog)
                     .test_support()
-                    .aria_label(format!("Share {}", self.src.key.name))
+                    .aria_label(format!("Share {}", self.shown.name))
                     .flex()
                     .flex_col()
                     .child(self.render_header(cx))
@@ -1343,33 +1154,27 @@ impl Render for ShareView {
 }
 
 impl Workspace {
-    /// What the Share dialog and the Sharing page need of the open
-    /// collection.
-    pub(super) fn share_source(&self) -> Option<ShareSource> {
-        let c = self.state.collection.as_ref()?;
-        let (requests, folders) = tree_counts(&c.tree);
-        Some(ShareSource {
-            backend: self.backend.clone(),
-            key: self.collection_key()?,
-            root: c.root.clone(),
-            base: self.store.base().map(std::path::Path::to_path_buf),
-            meta: self.meta.clone(),
-            requests,
-            folders,
-        })
-    }
-
     /// Opens the Share dialog (the footer's Share, the title bar's
     /// `Shared · N`), unless sharing is blocked.
     pub(super) fn open_share(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.share_blocked().is_some() {
             return;
         }
-        let Some(src) = self.share_source() else {
+        let Some(sync) = self.share_sync(window, cx) else {
             return;
         };
-        let view = cx.new(|cx| ShareView::new(src, ShareMode::Dialog, window, cx));
-        self._share_events = Some(cx.subscribe_in(&view, window, Self::on_share_event));
+        let view = cx.new(|cx| ShareView::new(sync, ShareMode::Dialog, window, cx));
+        self._share_events = Some(cx.subscribe_in(
+            &view,
+            window,
+            |this, _, event: &ShareEvent, window, cx| match event {
+                ShareEvent::Close => {
+                    window.close_dialog(cx);
+                    this.share_view = None;
+                    this._share_events = None;
+                }
+            },
+        ));
         let content = view.clone();
         window.open_dialog(cx, move |d, _, _| {
             d.entrance(DialogEntrance::None)
@@ -1381,7 +1186,7 @@ impl Workspace {
                 .child(content.clone())
         });
         // The dialog holds the view: however it closes (Done, ✕, Esc), the
-        // view goes with it.
+        // view goes with it, and the share's calls carry on.
         self.share_view = Some(view.downgrade());
     }
 
@@ -1389,34 +1194,11 @@ impl Workspace {
     pub(super) fn share_view(&self) -> Option<Entity<ShareView>> {
         self.share_view.as_ref().and_then(WeakEntity::upgrade)
     }
-
-    fn on_share_event(
-        &mut self,
-        view: &Entity<ShareView>,
-        event: &ShareEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        match event {
-            ShareEvent::Changed => {
-                self.meta = view.read(cx).meta().clone();
-                self.refresh_share(window, cx);
-            }
-            ShareEvent::Close => {
-                window.close_dialog(cx);
-                self.share_view = None;
-                self._share_events = None;
-            }
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        BackendError, Expiry, current_expiry, expiry_label, initials, requests_text, share_error,
-        valid_email,
-    };
+    use super::{expiry_label, initials, requests_text, valid_email};
     use chrono::NaiveDate;
 
     #[test]
@@ -1456,21 +1238,9 @@ mod tests {
             "18 requests in 4 folders, with every check you wrote"
         );
         assert_eq!(requests_text(1, 0), "1 request, with every check you wrote");
-        assert_eq!(current_expiry(in_days(30), today), Some(Expiry::Days(30)));
-        assert_eq!(current_expiry(in_days(7), today), Some(Expiry::Days(7)));
-        assert_eq!(current_expiry(None, today), Some(Expiry::Never));
-        assert_eq!(
-            current_expiry(in_days(12), today),
-            None,
-            "none of the menu's"
-        );
         assert_eq!(initials("Jon Rivera"), "JR");
         assert_eq!(initials("Acme"), "AC");
         assert_eq!(initials("lena kim"), "LK");
-        assert_eq!(
-            share_error(&BackendError::Offline),
-            "You're offline. Connect to change sharing; nothing changed."
-        );
     }
 }
 
@@ -1605,7 +1375,7 @@ mod gpui_tests {
         let (window, ws) = open(cx, dir.path(), backend.clone());
         let view = open_share(cx, window, &ws);
         let link = view
-            .read_with(cx, |v, _| v.settings.as_ref().and_then(|s| s.link.clone()))
+            .read_with(cx, |v, cx| v.settings(cx).and_then(|s| s.link.clone()))
             .expect("opening Share gives the collection a link");
         assert!(link.starts_with("https://studio.example.com/s/"), "{link}");
         assert!(labelled(cx, window, "share-link", &link));
@@ -1656,7 +1426,7 @@ mod gpui_tests {
         })
         .unwrap();
         cx.run_until_parked();
-        assert!(view.read_with(cx, |v, _| v.invite_error.is_some()));
+        assert!(view.read_with(cx, |v, cx| v.invite_error(cx).is_some()));
         assert!(found(cx, window, "share-invite-error"));
         assert_eq!(invites(&backend), 0);
         for email in ["maria@globex.example", "jon@initech.example"] {
@@ -1669,7 +1439,7 @@ mod gpui_tests {
             .unwrap();
             cx.run_until_parked();
         }
-        assert_eq!(view.read_with(cx, |v, _| v.people()), Some(3));
+        assert_eq!(view.read_with(cx, |v, cx| v.people(cx)), Some(3));
         assert!(labelled(cx, window, "share-dialog", "maria@globex.example"));
         assert!(labelled(cx, window, "title-shared", "Shared · 3"));
         // Remove asks on the row first.
@@ -1682,12 +1452,12 @@ mod gpui_tests {
         ));
         view.update(cx, |v, cx| v.cancel_remove(cx));
         assert!(!found(cx, window, "share-remove-confirm"));
-        assert_eq!(view.read_with(cx, |v, _| v.people()), Some(3));
+        assert_eq!(view.read_with(cx, |v, cx| v.people(cx)), Some(3));
         view.update(cx, |v, cx| v.ask_remove("maria@globex.example", cx));
         cx.update_window(window, |_, window, cx| window.click("share-remove-ok", cx))
             .unwrap();
         cx.run_until_parked();
-        assert_eq!(view.read_with(cx, |v, _| v.people()), Some(2));
+        assert_eq!(view.read_with(cx, |v, cx| v.people(cx)), Some(2));
         assert!(!labelled(
             cx,
             window,
@@ -1708,11 +1478,14 @@ mod gpui_tests {
         let backend = signed_in();
         let (window, ws) = open(cx, dir.path(), backend.clone());
         let view = open_share(cx, window, &ws);
-        view.read_with(cx, |v, _| {
-            assert!(v.offers_share_default("BASE_URL"));
-            assert!(v.offers_share_default("ACCOUNT_ID"));
-            assert!(!v.offers_share_default("API_TOKEN"), "marked secret");
-            assert!(!v.offers_share_default("SECRET_SIGNING"), "SECRET_ prefix");
+        view.read_with(cx, |v, cx| {
+            assert!(v.offers_share_default("BASE_URL", cx));
+            assert!(v.offers_share_default("ACCOUNT_ID", cx));
+            assert!(!v.offers_share_default("API_TOKEN", cx), "marked secret");
+            assert!(
+                !v.offers_share_default("SECRET_SIGNING", cx),
+                "SECRET_ prefix"
+            );
         });
         assert!(found(cx, window, "share-default-BASE_URL"));
         assert!(found(cx, window, "share-var-API_TOKEN"), "listed");
@@ -1729,7 +1502,7 @@ mod gpui_tests {
         view.update(cx, |v, cx| v.toggle_share_default("API_TOKEN", cx));
         cx.run_until_parked();
         assert_eq!(update_shares(&backend).len(), before);
-        assert!(!view.read_with(cx, |v, _| v.shares_default("API_TOKEN")));
+        assert!(!view.read_with(cx, |v, cx| v.shares_default("API_TOKEN", cx)));
     }
 
     #[gpui_kit::test]
@@ -1769,7 +1542,7 @@ mod gpui_tests {
         })
         .unwrap();
         cx.run_until_parked();
-        assert!(view.read_with(cx, |v, _| v.shares_default("BASE_URL")));
+        assert!(view.read_with(cx, |v, cx| v.shares_default("BASE_URL", cx)));
         assert!(ws.read_with(cx, |ws, _| ws.meta.vars["BASE_URL"].share_default));
         let calls = update_shares(&backend);
         assert_eq!(calls.len(), 2);
@@ -1807,30 +1580,28 @@ mod gpui_tests {
         let backend = signed_in();
         let (window, ws) = open(cx, dir.path(), backend.clone());
         let view = open_share(cx, window, &ws);
-        let link = view.read_with(cx, |v, _| v.settings.clone().unwrap());
+        let link = view.read_with(cx, |v, cx| v.settings(cx).unwrap());
         backend.dev().unwrap().set_offline(true);
         view.update(cx, |v, cx| {
             v.set_access(Access::InvitedOnly, cx);
         });
         cx.run_until_parked();
-        let error = view
-            .read_with(cx, |v, _| v.error.clone())
-            .expect("an error");
+        let error = view.read_with(cx, |v, cx| v.error(cx)).expect("an error");
         assert!(error.starts_with("You're offline."), "{error}");
         assert!(labelled(cx, window, "share-error", &error));
         assert_eq!(
-            view.read_with(cx, |v, _| v.settings.clone().unwrap()),
+            view.read_with(cx, |v, cx| v.settings(cx).unwrap()),
             link,
             "nothing changed here"
         );
         // A Share default tick shows at once, then rolls back when it fails.
         view.update(cx, |v, cx| v.toggle_share_default("BASE_URL", cx));
         assert!(
-            view.read_with(cx, |v, _| v.shares_default("BASE_URL")),
+            view.read_with(cx, |v, cx| v.shares_default("BASE_URL", cx)),
             "optimistic"
         );
         cx.run_until_parked();
-        assert!(!view.read_with(cx, |v, _| v.shares_default("BASE_URL")));
+        assert!(!view.read_with(cx, |v, cx| v.shares_default("BASE_URL", cx)));
         assert!(!ws.read_with(cx, |ws, _| {
             ws.meta
                 .vars
@@ -1841,9 +1612,9 @@ mod gpui_tests {
         backend.dev().unwrap().set_offline(false);
         view.update(cx, |v, cx| v.set_access(Access::InvitedOnly, cx));
         cx.run_until_parked();
-        view.read_with(cx, |v, _| {
-            assert_eq!(v.error, None);
-            assert_eq!(v.settings.as_ref().unwrap().access, Access::InvitedOnly);
+        view.read_with(cx, |v, cx| {
+            assert_eq!(v.error(cx), None);
+            assert_eq!(v.settings(cx).unwrap().access, Access::InvitedOnly);
         });
         // Done closes the dialog.
         cx.update_window(window, |_, window, cx| window.click("share-done", cx))
@@ -1863,16 +1634,21 @@ mod gpui_tests {
         let (window, ws) = open(cx, dir.path(), backend.clone());
         backend.dev().unwrap().set_offline(true);
         // Past `share_blocked`, as when Offline flips while it opens.
-        let src = ws.read_with(cx, |ws, _| ws.share_source().unwrap());
         let view = cx
             .update_window(window, |_, window, cx| {
-                cx.new(|cx| ShareView::new(src, ShareMode::Dialog, window, cx))
+                let sync = ws.update(cx, |ws, cx| ws.share_sync(window, cx).unwrap());
+                cx.new(|cx| ShareView::new(sync, ShareMode::Dialog, window, cx))
             })
             .unwrap();
         cx.run_until_parked();
-        view.read_with(cx, |v, _| {
-            assert!(v.error.as_deref().unwrap().starts_with("You're offline."));
-            assert_eq!(v.settings, None);
+        view.read_with(cx, |v, cx| {
+            assert!(
+                v.error(cx)
+                    .as_deref()
+                    .unwrap()
+                    .starts_with("You're offline.")
+            );
+            assert_eq!(v.settings(cx), None);
         });
         backend.dev().unwrap().set_offline(false);
         let key = ws.read_with(cx, |ws, _| ws.collection_key().unwrap());
@@ -1908,8 +1684,8 @@ mod gpui_tests {
             v.toggle_share_default("ACCOUNT_ID", cx);
         });
         cx.run_until_parked();
-        view.read_with(cx, |v, _| {
-            assert!(v.shares_default("BASE_URL") && v.shares_default("ACCOUNT_ID"));
+        view.read_with(cx, |v, cx| {
+            assert!(v.shares_default("BASE_URL", cx) && v.shares_default("ACCOUNT_ID", cx));
         });
         ws.read_with(cx, |ws, _| {
             assert!(ws.meta.vars["BASE_URL"].share_default);
@@ -1936,9 +1712,9 @@ mod gpui_tests {
             v.toggle_share_default("BASE_URL", cx);
             v.toggle_share_default("BASE_URL", cx);
         });
-        assert!(!view.read_with(cx, |v, _| v.shares_default("BASE_URL")));
+        assert!(!view.read_with(cx, |v, cx| v.shares_default("BASE_URL", cx)));
         cx.run_until_parked();
-        assert!(!view.read_with(cx, |v, _| v.shares_default("BASE_URL")));
+        assert!(!view.read_with(cx, |v, cx| v.shares_default("BASE_URL", cx)));
         assert!(!ws.read_with(cx, |ws, _| {
             ws.meta
                 .vars
@@ -1957,23 +1733,110 @@ mod gpui_tests {
         let backend = signed_in();
         let (window, ws) = open(cx, dir.path(), backend.clone());
         let view = open_share(cx, window, &ws);
+        let dev = backend.dev().unwrap();
+        // The tick's answer is held: its call stays in flight.
+        dev.hold_updates(true);
         cx.update_window(window, |_, window, cx| {
             view.update(cx, |v, cx| {
                 v.toggle_share_default("BASE_URL", cx);
                 v.type_invite("maria@globex.example", window, cx);
                 v.invite(window, cx);
-                v.set_access(Access::InvitedOnly, cx);
             })
         })
         .unwrap();
         cx.run_until_parked();
-        view.read_with(cx, |v, _| {
-            let s = v.settings.as_ref().unwrap();
+        view.read_with(cx, |v, cx| {
+            let s = v.settings(cx).unwrap();
+            assert!(
+                s.people.iter().all(|p| p.email != "maria@globex.example"),
+                "queued"
+            );
+            assert_eq!(v.invite_text(cx), "maria@globex.example", "not cleared yet");
+        });
+        assert!(
+            !dev.recorded().iter().any(|c| c.starts_with("invite(")),
+            "one call at a time"
+        );
+        // The tick's answer (without Maria) lands first, then the invite's
+        // re-read: she stays.
+        dev.hold_updates(false);
+        cx.run_until_parked();
+        view.read_with(cx, |v, cx| {
+            let s = v.settings(cx).unwrap();
             assert!(s.people.iter().any(|p| p.email == "maria@globex.example"));
-            assert_eq!(s.access, Access::InvitedOnly);
-            assert!(v.shares_default("BASE_URL"));
+            assert!(v.shares_default("BASE_URL", cx));
+            assert_eq!(v.invite_text(cx), "", "cleared once she got in");
         });
         assert_eq!(on_server(cx, &ws, &backend).people.len(), 2);
+    }
+
+    #[gpui_kit::test]
+    fn refused_invite_keeps_the_address(cx: &mut TestAppContext) {
+        let dir = collection();
+        let backend = signed_in();
+        let (window, ws) = open(cx, dir.path(), backend.clone());
+        let view = open_share(cx, window, &ws);
+        let owner = backend.account().unwrap().email;
+        cx.update_window(window, |_, window, cx| {
+            view.update(cx, |v, cx| {
+                v.type_invite(&owner, window, cx);
+                v.invite(window, cx);
+            })
+        })
+        .unwrap();
+        cx.run_until_parked();
+        view.read_with(cx, |v, cx| {
+            assert!(v.invite_error(cx).unwrap().contains("already has access"));
+            assert_eq!(v.invite_text(cx), owner);
+        });
+    }
+
+    #[gpui_kit::test]
+    fn access_there_and_back_ends_where_asked(cx: &mut TestAppContext) {
+        let dir = collection();
+        let backend = signed_in();
+        let (window, ws) = open(cx, dir.path(), backend.clone());
+        let view = open_share(cx, window, &ws);
+        backend.dev().unwrap().hold_updates(true);
+        view.update(cx, |v, cx| {
+            v.set_access(Access::InvitedOnly, cx);
+            v.set_access(Access::AnyoneWithLink, cx);
+        });
+        cx.run_until_parked();
+        backend.dev().unwrap().hold_updates(false);
+        cx.run_until_parked();
+        assert_eq!(on_server(cx, &ws, &backend).access, Access::AnyoneWithLink);
+        let shown = view.read_with(cx, |v, cx| v.settings(cx).unwrap().access);
+        assert_eq!(shown, Access::AnyoneWithLink);
+    }
+
+    #[gpui_kit::test]
+    fn ticks_land_after_done(cx: &mut TestAppContext) {
+        let dir = collection();
+        let backend = signed_in();
+        let (window, ws) = open(cx, dir.path(), backend.clone());
+        let view = open_share(cx, window, &ws);
+        view.update(cx, |v, cx| {
+            v.toggle_share_default("BASE_URL", cx);
+            v.toggle_share_default("ACCOUNT_ID", cx);
+        });
+        // Done before either call answers.
+        cx.update_window(window, |_, window, cx| window.click("share-done", cx))
+            .unwrap();
+        drop(view);
+        cx.run_until_parked();
+        assert!(ws.read_with(cx, |ws, _| ws.share_view().is_none()));
+        let server = on_server(cx, &ws, &backend);
+        for name in ["BASE_URL", "ACCOUNT_ID"] {
+            assert!(
+                server_default(&server, name).is_some(),
+                "{name} on the server"
+            );
+            assert!(
+                ws.read_with(cx, |ws, _| ws.meta.vars[name].share_default),
+                "{name} in the notes"
+            );
+        }
     }
 
     #[gpui_kit::test]
@@ -1982,14 +1845,14 @@ mod gpui_tests {
         let backend = signed_in();
         let (window, ws) = open(cx, dir.path(), backend.clone());
         backend.dev().unwrap().set_offline(true);
-        let src = ws.read_with(cx, |ws, _| ws.share_source().unwrap());
         let view = cx
             .update_window(window, |_, window, cx| {
-                cx.new(|cx| ShareView::new(src, ShareMode::Dialog, window, cx))
+                let sync = ws.update(cx, |ws, cx| ws.share_sync(window, cx).unwrap());
+                cx.new(|cx| ShareView::new(sync, ShareMode::Dialog, window, cx))
             })
             .unwrap();
         cx.run_until_parked();
-        assert!(view.read_with(cx, |v, _| v.settings.is_none()));
+        assert!(view.read_with(cx, |v, cx| v.settings(cx).is_none()));
         backend.dev().unwrap().set_offline(false);
         cx.update_window(window, |_, window, cx| {
             view.update(cx, |v, cx| {
@@ -1999,9 +1862,9 @@ mod gpui_tests {
         })
         .unwrap();
         cx.run_until_parked();
-        view.read_with(cx, |v, _| {
-            assert_eq!(v.error, None);
-            let s = v.settings.as_ref().expect("re-read");
+        view.read_with(cx, |v, cx| {
+            assert_eq!(v.error(cx), None);
+            let s = v.settings(cx).expect("re-read");
             assert!(s.link.is_some());
             assert_eq!(s.people.len(), 2);
         });

@@ -161,6 +161,9 @@ pub struct Workspace {
     /// Held by the dialog itself, so any close drops it.
     pub(super) share_view: Option<WeakEntity<super::share_dialog::ShareView>>,
     pub(super) _share_events: Option<Subscription>,
+    /// The open collection's share: its calls outlive the dialog.
+    pub(super) share_sync: Option<Entity<super::share_sync::ShareSync>>,
+    pub(super) _share_sync_events: Option<Subscription>,
     pub(super) status: Entity<StatusBar>,
     focus: FocusHandle,
     /// Set once the user agreed to close the window with unsaved changes.
@@ -259,6 +262,8 @@ impl Workspace {
             sync: Default::default(),
             share_view: None,
             _share_events: None,
+            share_sync: None,
+            _share_sync_events: None,
             status,
             focus,
             closing: false,
@@ -892,11 +897,9 @@ impl Workspace {
             self.environment.clone(),
             self.captured_vars(),
         );
-        let sharing = self.share_source().map(|src| Sharing {
-            backend: src.backend,
-            key: src.key,
-            requests: src.requests,
-            folders: src.folders,
+        let sharing = self.share_sync(window, cx).map(|sync| Sharing {
+            backend: self.backend.clone(),
+            sync,
             people: self.sync.people,
         });
         let view = cx.new(|cx| {
@@ -941,10 +944,13 @@ impl Workspace {
                 None => self.hide_settings(window, cx),
             },
             SettingsEvent::Status => self.sync_chrome(window, cx),
-            SettingsEvent::Shared => self.refresh_share(window, cx),
             SettingsEvent::OpenApp(page) => self.open_app_settings(*page, window, cx),
             SettingsEvent::Changed => {
                 self.meta = view.read(cx).meta().clone();
+                if let Some(sync) = &self.share_sync {
+                    let meta = self.meta.clone();
+                    sync.update(cx, |s, _| s.set_notes(meta));
+                }
                 self.invalidate_secrets();
                 if let Some(c) = &self.state.collection
                     && list_environments(&c.root) != self.environments

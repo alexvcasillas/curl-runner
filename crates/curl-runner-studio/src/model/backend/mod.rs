@@ -397,6 +397,9 @@ pub trait DevControls: Send + Sync {
     fn reset(&self);
     /// The toggles, for the menu's checkmarks.
     fn toggles(&self) -> DevToggles;
+    /// While `held`, `update_share` makes its change but its answer waits
+    /// until released (tests: a call that stays in flight).
+    fn hold_updates(&self, held: bool);
     /// `Debug` text of every argument the backend received, oldest first
     /// (debug builds and tests; empty in release).
     fn recorded(&self) -> Vec<String>;

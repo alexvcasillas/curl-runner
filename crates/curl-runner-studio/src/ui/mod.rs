@@ -23,6 +23,7 @@ mod runs;
 mod settings_kit;
 mod settings_view;
 mod share_dialog;
+mod share_sync;
 mod sidebar;
 mod sign_in;
 mod state;

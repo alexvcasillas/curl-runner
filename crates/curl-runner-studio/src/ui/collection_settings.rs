@@ -19,11 +19,10 @@ use super::settings_kit::{
     switch, tinted_pill,
 };
 use super::settings_view::AppPage;
-use super::share_dialog::{
-    SUBTITLE as SHARE_SUBTITLE, ShareEvent, ShareMode, ShareSource, ShareView,
-};
+use super::share_dialog::{SUBTITLE as SHARE_SUBTITLE, ShareMode, ShareView};
+use super::share_sync::ShareSync;
 use super::workspace::notify_error;
-use crate::model::backend::{Backend, CollectionKey};
+use crate::model::backend::Backend;
 use crate::model::collection_meta::{CollectionMeta, VarMeta};
 use crate::model::environments::{
     CapturedVar, DEFAULT_ENVIRONMENT, EnvRow, RowSource, UsageIndex, create_environment, env_file,
@@ -77,8 +76,6 @@ pub enum SettingsEvent {
     Status,
     /// One of the `App` rows: the app's Settings on that page.
     OpenApp(AppPage),
-    /// The Sharing page changed the share: re-read `Shared · N`.
-    Shared,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,9 +88,8 @@ pub enum Page {
 /// What the Sharing page needs beyond the page's own notes.
 pub struct Sharing {
     pub backend: Arc<dyn Backend>,
-    pub key: CollectionKey,
-    pub requests: usize,
-    pub folders: usize,
+    /// The open collection's share, which the workspace keeps.
+    pub sync: Entity<ShareSync>,
     /// People with access, as the title bar last counted them.
     pub people: Option<usize>,
 }
@@ -550,29 +546,26 @@ impl CollectionSettings {
         if s.backend.account().is_none() || self.meta.read_only_from.is_some() {
             return;
         }
-        let src = ShareSource {
-            backend: s.backend.clone(),
-            key: s.key.clone(),
-            root: self.root.clone(),
-            base: self.base.clone(),
-            meta: self.meta.clone(),
-            requests: s.requests,
-            folders: s.folders,
-        };
-        let view = cx.new(|cx| ShareView::new(src, ShareMode::Page, window, cx));
-        self._share_events = Some(cx.subscribe(&view, |this, view, event: &ShareEvent, cx| {
-            if *event == ShareEvent::Changed {
-                let view = view.read(cx);
-                this.meta = view.meta().clone();
-                if let (Some(s), Some(n)) = (&mut this.sharing, view.people()) {
-                    s.people = Some(n);
-                }
-                cx.emit(SettingsEvent::Changed);
-                cx.emit(SettingsEvent::Shared);
-                cx.notify();
-            }
-        }));
+        let sync = s.sync.clone();
+        let meta = self.meta.clone();
+        sync.update(cx, |s, _| s.set_notes(meta));
+        let view = cx.new(|cx| ShareView::new(sync.clone(), ShareMode::Page, window, cx));
+        // The nav's count follows the share.
+        self._share_events = Some(cx.observe(&sync, |_, _, cx| cx.notify()));
         self.share_view = Some(view);
+    }
+
+    /// The share accepted `Share default` changes (the workspace passes
+    /// them on): the page's notes follow, so a drawer save keeps them.
+    pub fn merge_share_defaults(&mut self, flags: &[(String, bool)], cx: &mut Context<Self>) {
+        for (name, on) in flags {
+            self.meta
+                .vars
+                .entry(name.clone())
+                .or_default()
+                .share_default = *on;
+        }
+        cx.notify();
     }
 
     /// Esc: the drawer first, then the page.
@@ -1309,12 +1302,15 @@ impl CollectionSettings {
             )
             .child(
                 page_item("settings-sharing", "Sharing", Page::Sharing, cx).children(
-                    self.sharing.as_ref().and_then(|s| s.people).map(|n| {
-                        div()
-                            .text_size(px(11.))
-                            .text_color(color("text-tertiary"))
-                            .child(n.to_string())
-                    }),
+                    self.sharing
+                        .as_ref()
+                        .and_then(|s| s.sync.read(cx).people().or(s.people))
+                        .map(|n| {
+                            div()
+                                .text_size(px(11.))
+                                .text_color(color("text-tertiary"))
+                                .child(n.to_string())
+                        }),
                 ),
             )
             .child(section("Workspace", false, false))
@@ -3040,11 +3036,17 @@ mod tests {
         })
         .unwrap();
         cx.run_until_parked();
-        assert!(share.read_with(cx, |s, _| s.shares_default("BASE_URL")));
+        assert!(share.read_with(cx, |s, cx| s.shares_default("BASE_URL", cx)));
         // The page's notes, the workspace's and the saved ones agree.
         assert!(view.read_with(cx, |v, _| v.meta().vars["BASE_URL"].share_default));
         assert!(ws.read_with(cx, |ws, _| ws.meta.vars["BASE_URL"].share_default));
         assert_eq!(ws.read_with(cx, |ws, _| ws.sync.people), Some(1));
+        let saved = CollectionMeta::load(state.path(), _dir.path());
+        assert!(saved.vars["BASE_URL"].share_default, "saved");
+        assert!(
+            saved.secret_names.contains(&"API_TOKEN".to_string()),
+            "the rest kept"
+        );
     }
 
     #[gpui_kit::test]
