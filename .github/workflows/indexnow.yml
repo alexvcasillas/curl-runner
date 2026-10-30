@@ -1,0 +1,31 @@
+name: IndexNow
+
+# After Vercel reports a successful production deploy, ping IndexNow with the pages it
+# changed (sitemap lastmod newer than the deployed commit's parent).
+on:
+  deployment_status:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: Submit changed URLs
+    if: github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.deployment.sha }}
+          fetch-depth: 2
+          sparse-checkout: packages/docs/scripts
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Submit
+        run: node packages/docs/scripts/indexnow.mts --since "$(git log -1 --format=%cI HEAD^)"
