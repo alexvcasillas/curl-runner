@@ -15,6 +15,7 @@ struct Rec {
     results: Vec<(usize, bool)>,
     stored: Vec<Store>,
     stops: usize,
+    attempts: Vec<(usize, u32, AttemptOutcome)>,
 }
 
 impl EventSink for Rec {
@@ -26,6 +27,15 @@ impl EventSink for Rec {
     }
     fn on_retry(&mut self, index: usize, _req: &RequestConfig, attempt: u32, delay_ms: u64) {
         self.retries.push((index, attempt, delay_ms));
+    }
+    fn on_attempt(
+        &mut self,
+        index: usize,
+        _req: &RequestConfig,
+        attempt: u32,
+        outcome: &AttemptOutcome,
+    ) {
+        self.attempts.push((index, attempt, outcome.clone()));
     }
     fn on_result(&mut self, index: usize, r: &ExecutionResult) {
         self.results.push((index, r.success));
@@ -106,6 +116,59 @@ fn status_500_without_retry_or_expect_is_success() {
 }
 
 // ---------- retries ----------
+
+#[test]
+fn attempts_reported_for_each_retry() {
+    for mode in both() {
+        let srv = TestServer::start();
+        let ex = exec(json!({ "execution": mode }));
+        let (_, rec) = run(
+            &ex,
+            vec![json!({ "url": format!("{}/flaky/att/2", srv.base_url),
+                "retry": { "count": 2, "delay": 1 } })],
+        );
+        let statuses: Vec<_> = rec.attempts.iter().map(|a| a.2.status).collect();
+        let nums: Vec<_> = rec.attempts.iter().map(|a| a.1).collect();
+        assert_eq!(statuses, [Some(503), Some(503), Some(200)], "{mode}");
+        assert_eq!(nums, [1, 2, 3], "{mode}");
+        assert!(
+            rec.attempts
+                .iter()
+                .all(|a| a.0 == 1 && a.2.duration_ms > 0.0)
+        );
+        assert!(rec.attempts.iter().all(|a| a.2.error.is_none()));
+    }
+}
+
+#[test]
+fn attempt_reports_transport_error() {
+    for mode in both() {
+        let ex = exec(json!({ "execution": mode }));
+        let (_, rec) = run(&ex, vec![json!({ "url": closed_port_url() })]);
+        assert_eq!(rec.attempts.len(), 1, "{mode}");
+        assert_eq!(rec.attempts[0].2.status, None);
+        assert!(rec.attempts[0].2.error.is_some());
+    }
+}
+
+#[test]
+fn seeded_store_interpolates_first_request() {
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let log = seen.clone();
+    let srv = TestServer::with_handler(move |req| {
+        log.lock().unwrap().push(req.url.clone());
+        testkit::Response::from_data(b"{}".to_vec())
+    });
+    let mut store = Store::new();
+    store.insert("CHARGE_ID".into(), "ch_1".into());
+    let ex = exec(json!({})).with_store(store);
+    let (s, _) = run(
+        &ex,
+        vec![json!({ "url": format!("{}/${{store.CHARGE_ID}}", srv.base_url) })],
+    );
+    assert!(s.results[0].success, "{:?}", s.results[0].error);
+    assert_eq!(*seen.lock().unwrap(), ["/ch_1"]);
+}
 
 #[test]
 fn retries_flaky_then_passes() {

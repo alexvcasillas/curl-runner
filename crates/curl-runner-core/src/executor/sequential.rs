@@ -5,7 +5,7 @@
 
 use super::parallel;
 use super::retry::{RetryPolicy, deadline, delay_duration};
-use super::{EventSink, Executor, PreparedRequest, untyped_failure};
+use super::{AttemptOutcome, EventSink, Executor, PreparedRequest, untyped_failure};
 use crate::interpolate::Store;
 use crate::model::{ExecutionResult, RequestConfig};
 use crate::{condition, store, transport};
@@ -22,7 +22,7 @@ pub(super) fn run(
 ) -> Vec<ExecutionResult> {
     let mut results = Vec::with_capacity(requests.len());
     let multi = parallel::new_multi(ex);
-    let mut values = Store::new();
+    let mut values = ex.initial_store.clone().unwrap_or_default();
 
     for (i, prepared) in requests.into_iter().enumerate() {
         if ex.cancelled() {
@@ -93,8 +93,17 @@ fn execute(
         return Some((r, None));
     }
     let policy = RetryPolicy::for_request(req);
-    let attempt = || parallel::send_one(ex, multi, req);
-    let mut last = match attempt() {
+    // One transfer, reported through `on_attempt` with its own wall time.
+    let attempt = |n: u32, sink: &mut dyn EventSink| {
+        let t = Instant::now();
+        let res = parallel::send_one(ex, multi, req);
+        if let Ok(a) = &res {
+            let outcome = AttemptOutcome::from_attempt(a, super::ms_since(t));
+            sink.on_attempt(index, req, n, &outcome);
+        }
+        res
+    };
+    let mut last = match attempt(1, sink) {
         Ok(a) => a,
         // Build errors fail at once, without retries (TS pre-checks).
         Err(Some(e)) => return Some(ex.complete(req, &policy, Err(e), start)),
@@ -107,7 +116,7 @@ fn execute(
         if !sleep_unless_cancelled(ex, delay) {
             return None;
         }
-        last = match attempt() {
+        last = match attempt(done + 1, sink) {
             Ok(a) => a,
             Err(Some(e)) => return Some(ex.complete(req, &policy, Err(e), start)),
             Err(None) => return None,

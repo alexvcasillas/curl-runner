@@ -15,6 +15,7 @@
 //!   request at once, without retries (TS checked them before sending).
 //! - As in TS, neither `when` nor the response store is used in this mode.
 
+use super::AttemptOutcome;
 use super::retry::{Attempt, RetryPolicy, deadline, delay_duration};
 use super::{EventSink, Executor, PreparedRequest, untyped_failure};
 use crate::model::{ExecutionResult, RequestConfig};
@@ -38,6 +39,8 @@ struct Live {
     done: u32,
     /// `Some(deadline)` while waiting for a retry, `None` while in flight.
     retry_at: Option<Instant>,
+    /// When the current transfer was added to the multi handle.
+    attempt_start: Instant,
 }
 
 struct Runner<'a> {
@@ -142,6 +145,7 @@ impl Runner<'_> {
                 start,
                 done: 0,
                 retry_at: None,
+                attempt_start: start,
             },
         );
         self.add(i);
@@ -160,6 +164,9 @@ impl Runner<'_> {
                 return;
             }
         };
+        if let Some(l) = self.live.get_mut(&i) {
+            l.attempt_start = Instant::now();
+        }
         let added = self.multi.add2(easy).map_err(multi_err).and_then(|mut h| {
             h.set_token(i).map_err(|e| TransportError {
                 code: None,
@@ -256,6 +263,8 @@ impl Runner<'_> {
             return;
         };
         l.done += 1;
+        let outcome = AttemptOutcome::from_attempt(&attempt, super::ms_since(l.attempt_start));
+        self.sink.on_attempt(l.index, &l.req, l.done, &outcome);
         if l.policy.wants_another(l.done, &attempt) {
             let delay = l.policy.delay_ms(l.done, &attempt);
             self.sink
