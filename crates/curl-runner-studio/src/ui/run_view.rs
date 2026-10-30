@@ -34,6 +34,12 @@ const MAX_SEGMENTS: usize = 120;
 /// The longest duration's bar fills this much of its track (the board).
 const BAR_SCALE: f32 = 0.94;
 const ROW_HEIGHT: f32 = 28.;
+/// The method column: the widest badge (`DELETE`, `OPTIONS` drawn smaller,
+/// as the tree's `badge_text_size` does; about 37px of 10px Geist Mono)
+/// with room to spare, so `Method` and `Request` read apart in the header
+/// and no badge reaches the name. Wider than the tree's 34px slot, which
+/// lives in a 264px column.
+const METHOD_COLUMN: f32 = 46.;
 
 /// Each file's requests as `(method, name)`, in run order: what a row shows
 /// before its result arrives.
@@ -86,6 +92,11 @@ pub struct Board {
     pub total: usize,
     pub running: Option<usize>,
     running_since: Option<Instant>,
+    /// A transfer happened for the row: a request that failed before
+    /// sending (a typing error) has a result but no attempt.
+    attempted: Vec<bool>,
+    /// The Keychain secrets the run reads, names only.
+    pub keychain_names: Vec<String>,
     pub config: RunConfig,
     /// Files that did not load, with the parser's message.
     pub load_errors: Vec<(PathBuf, String)>,
@@ -107,6 +118,8 @@ impl Board {
             total: 0,
             running: None,
             running_since: None,
+            attempted: Vec::new(),
+            keychain_names: Vec::new(),
             config: RunConfig::default(),
             load_errors: Vec::new(),
             status: BoardStatus::Running,
@@ -127,8 +140,10 @@ impl Board {
                 total,
                 groups,
                 config,
+                keychain_names,
             } => {
                 self.total = *total;
+                self.keychain_names = keychain_names.clone();
                 self.groups = groups.clone();
                 self.config = *config;
                 let labels = &self.labels;
@@ -145,10 +160,12 @@ impl Board {
                 self.rows.clear();
                 self.cells.clear();
                 self.names.clear();
+                self.attempted.clear();
                 for (file, n) in groups {
                     self.offsets.push(self.rows.len());
                     for index in 0..*n {
                         self.rows.push(RowState::Queued);
+                        self.attempted.push(false);
                         let (method, name) = label(file, index)
                             .cloned()
                             .unwrap_or_else(|| ("GET".into(), fallback_name(file, index, *n)));
@@ -175,6 +192,7 @@ impl Board {
             } => {
                 if let Some(row) = self.row(*group, *index) {
                     self.cells[row].attempts = self.cells[row].attempts.max(*attempt);
+                    self.attempted[row] = true;
                 }
             }
             RunEvent::Result {
@@ -199,12 +217,14 @@ impl Board {
                     cell.method = m.to_uppercase();
                 }
                 cell.status = result.status;
-                cell.duration_ms = result.metrics.as_ref().map(|m| m.duration);
+                // Never sent (no attempt): no time and no attempts to show,
+                // whatever the result's metrics say. A transport error did
+                // send, and keeps both.
+                let sent = self.attempted[row];
+                cell.duration_ms = result.metrics.as_ref().map(|m| m.duration).filter(|_| sent);
                 cell.checks =
                     (!all.is_empty()).then(|| (all.iter().filter(|c| c.passed).count(), all.len()));
-                if !skipped {
-                    cell.attempts = cell.attempts.max(1);
-                }
+
                 cell.done = true;
                 if self.running == Some(row) {
                     self.running = None;
@@ -599,6 +619,11 @@ impl RunView {
         cx.notify();
     }
 
+    /// The environment the run used.
+    pub fn environment(&self) -> &str {
+        &self.ctx.environment
+    }
+
     pub fn target(&self) -> &RunTarget {
         &self.target
     }
@@ -660,11 +685,7 @@ impl RunView {
     /// Copies the `curl-runner` command that repeats this run.
     pub fn copy_cli(&mut self, cx: &mut Context<Self>) {
         self.export_open = false;
-        let names = self
-            .outcome
-            .as_ref()
-            .map(|o| o.keychain_names.clone())
-            .unwrap_or_default();
+        let names = self.board.keychain_names.clone();
         let command = cli_command(&self.target, &self.ctx, &names);
         cx.write_to_clipboard(ClipboardItem::new_string(command));
         self.copied = Some(cx.spawn(async move |this, cx| {
@@ -715,7 +736,15 @@ impl Render for RunView {
             .test_support()
             .aria_label("Collection run")
             .on_action(
-                cx.listener(|_, _: &super::app::CloseRun, _, cx| cx.emit(RunViewEvent::Close)),
+                // esc closes the Export menu first, then the screen.
+                cx.listener(|this, _: &super::app::CloseRun, _, cx| {
+                    if this.export_open {
+                        this.export_open = false;
+                        cx.notify();
+                    } else {
+                        cx.emit(RunViewEvent::Close);
+                    }
+                }),
             )
             .flex()
             .flex_col()
@@ -1274,7 +1303,7 @@ impl RunView {
             .border_color(color("border-100"))
             .bg(color("surface-raised"))
             .child(div().w(px(16.)).flex_none())
-            .child(th("Method").w(px(34.)).flex_none())
+            .child(th("Method").w(px(METHOD_COLUMN)).flex_none())
             .child(th("Request").flex_1())
             .child(th("Status").w(px(56.)).flex_none())
             .child(th("Duration").w(px(150.)).flex_none())
@@ -1538,7 +1567,7 @@ impl RunView {
             )
             .child(
                 method_badge(Some(&cell.method))
-                    .w(px(34.))
+                    .w(px(METHOD_COLUMN))
                     .whitespace_nowrap(),
             )
             .child(
@@ -1598,7 +1627,7 @@ fn render_load_error_row(i: usize, file: &Path, message: &str) -> impl IntoEleme
                 .flex()
                 .child(state_icon(("run-load-state", i), RowState::Failed)),
         )
-        .child(div().w(px(34.)).flex_none())
+        .child(div().w(px(METHOD_COLUMN)).flex_none())
         .child(
             div()
                 .flex_none()
@@ -1682,7 +1711,23 @@ mod tests {
                 concurrency: Some(1),
                 continue_on_error: false,
             },
+            keychain_names: vec!["API_TOKEN".into()],
         }
+    }
+
+    /// One transfer, then its result.
+    fn sent(b: &mut Board, group: usize, index: usize, success: bool, ms: f64) {
+        b.apply(&RunEvent::Attempt {
+            group,
+            index,
+            attempt: 1,
+            outcome: curl_runner_core::executor::AttemptOutcome {
+                status: Some(200),
+                duration_ms: ms,
+                error: None,
+            },
+        });
+        b.apply(&result(group, index, success, ms));
     }
 
     fn result(group: usize, index: usize, success: bool, ms: f64) -> RunEvent {
@@ -1758,7 +1803,7 @@ mod tests {
                 error: None,
             },
         });
-        b.apply(&result(0, 0, true, 100.));
+        sent(&mut b, 0, 0, true, 100.);
         b.apply(&RunEvent::RequestStarted {
             group: 1,
             index: 1,
@@ -1768,7 +1813,7 @@ mod tests {
             b.running_label().as_deref(),
             Some("charges/flow · Request 2")
         );
-        b.apply(&result(1, 1, false, 300.));
+        sent(&mut b, 1, 1, false, 300.);
         assert_eq!((b.passed(), b.failed(), b.queued(), b.done()), (1, 1, 2, 2));
         assert_eq!(b.retries(), (2, 1));
         assert_eq!(b.eta_ms(), Some(400.));
@@ -1788,14 +1833,31 @@ mod tests {
     }
 
     #[test]
+    fn a_request_never_sent_shows_no_time_or_attempts() {
+        let mut b = board();
+        assert_eq!(b.keychain_names, ["API_TOKEN"]);
+        // A typing error: a result (with a 0 ms duration) and no attempt.
+        b.apply(&result(0, 0, false, 0.));
+        assert_eq!(b.rows[0], RowState::Failed);
+        assert_eq!((b.cells[0].duration_ms, b.cells[0].attempts), (None, 0));
+        assert_eq!(b.average_ms(), None, "not counted in the average");
+        // A transport error did send: it keeps its time and attempt.
+        sent(&mut b, 1, 0, false, 30.);
+        assert_eq!(
+            (b.cells[1].duration_ms, b.cells[1].attempts),
+            (Some(30.), 1)
+        );
+    }
+
+    #[test]
     fn stop_marks_the_board_stopped() {
         let mut b = board();
-        b.apply(&result(0, 0, true, 100.));
+        sent(&mut b, 0, 0, true, 100.);
         b.apply(&finished(true));
         assert_eq!(b.status, BoardStatus::Stopped);
         b = board();
         for (g, i) in [(0, 0), (1, 0), (1, 1), (2, 0)] {
-            b.apply(&result(g, i, true, 10.));
+            sent(&mut b, g, i, true, 10.);
         }
         b.apply(&finished(false));
         assert_eq!(b.status, BoardStatus::Passed);
@@ -1819,10 +1881,10 @@ mod tests {
     fn folders_fold_when_settled_or_untouched() {
         let mut b = board();
         assert!(!b.open_by_default(&b.folders[0]), "all queued");
-        b.apply(&result(0, 0, true, 1.));
+        sent(&mut b, 0, 0, true, 1.);
         assert!(b.open_by_default(&b.folders[0]), "in progress");
-        b.apply(&result(1, 0, true, 1.));
-        b.apply(&result(1, 1, true, 1.));
+        sent(&mut b, 1, 0, true, 1.);
+        sent(&mut b, 1, 1, true, 1.);
         assert!(!b.open_by_default(&b.folders[0]), "all passed");
     }
 
@@ -2079,6 +2141,81 @@ mod ui_tests {
         })
         .unwrap();
         ws.read_with(cx, |ws, _| assert!(!ws.run_shown()));
+    }
+
+    fn export_open(cx: &mut TestAppContext, ws: &Entity<Workspace>) -> bool {
+        ws.read_with(cx, |ws, cx| {
+            ws.run_view.as_ref().unwrap().read(cx).export_open
+        })
+    }
+
+    #[gpui_kit::test]
+    fn the_export_menu_closes_on_its_button_and_on_esc_first(cx: &mut TestAppContext) {
+        let srv = TestServer::start();
+        let state = tempfile::tempdir().unwrap();
+        let (_dir, window, ws) = open(
+            cx,
+            &[("ok.yaml", yaml(&srv.base_url, "/status/200"))],
+            state.path(),
+        );
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.run(RunTarget::Collection, window, cx));
+        })
+        .unwrap();
+        wait_for_run(cx, &ws);
+        let click_export = |cx: &mut TestAppContext| {
+            cx.update_window(window, |_, window, cx| {
+                window.render_frame(cx);
+                window.within("run-view").click("run-export", cx);
+                window.render_frame(cx);
+            })
+            .unwrap();
+        };
+        click_export(cx);
+        assert!(export_open(cx, &ws));
+        // The press outside the menu lands on its button: it stays closed.
+        click_export(cx);
+        assert!(!export_open(cx, &ws), "the button closes the open menu");
+        click_export(cx);
+        assert!(export_open(cx, &ws), "and opens it again");
+        let esc = |cx: &mut TestAppContext| {
+            cx.update_window(window, |_, window, cx| {
+                window.press("escape", cx);
+                window.render_frame(cx);
+            })
+            .unwrap();
+        };
+        esc(cx);
+        assert!(!export_open(cx, &ws));
+        ws.read_with(cx, |ws, _| {
+            assert!(ws.run_shown(), "esc closed only the menu")
+        });
+        esc(cx);
+        ws.read_with(cx, |ws, _| assert!(!ws.run_shown()));
+    }
+
+    #[gpui_kit::test]
+    fn history_keeps_the_environment_the_run_used(cx: &mut TestAppContext) {
+        let srv = TestServer::start();
+        let state = tempfile::tempdir().unwrap();
+        let (dir, window, ws) = open(
+            cx,
+            &[
+                ("ok.yaml", yaml(&srv.base_url, "/status/200")),
+                (".env.staging", "A=1\n".to_string()),
+            ],
+            state.path(),
+        );
+        ws.update(cx, |ws, cx| ws.set_environment("staging", cx));
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.run(RunTarget::Collection, window, cx));
+            // Picked again while the run goes.
+            ws.update(cx, |ws, cx| ws.set_environment("Default", cx));
+        })
+        .unwrap();
+        wait_for_run(cx, &ws);
+        let entries = History::open(state.path(), dir.path()).list();
+        assert_eq!(entries[0].environment, "staging");
     }
 
     #[gpui_kit::test]

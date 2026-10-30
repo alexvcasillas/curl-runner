@@ -618,6 +618,7 @@ mod tests {
             total: n,
             groups: vec![(file.into(), n)],
             config: Default::default(),
+            keychain_names: vec![],
         }
     }
 
@@ -828,6 +829,7 @@ mod tests {
             total: 2,
             groups: vec![("a.yaml".into(), 1), ("b.yaml".into(), 1)],
             config: Default::default(),
+            keychain_names: vec![],
         });
         r.apply(RunEvent::RequestStarted {
             group: 1,
@@ -1165,7 +1167,7 @@ mod ui_tests {
             );
         });
         assert_eq!(hint_lines(cx, &ws, "a.yaml"), [3], "the hint followed");
-        // Undo puts the line back: the hint goes back down with it.
+        // Typing the line back in above: the hint moves down with it.
         cx.update_window(window, |_, window, cx| {
             ws.update(cx, |ws, cx| {
                 ws.tabs[0].editor.update(cx, |e, cx| {

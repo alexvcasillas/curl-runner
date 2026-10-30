@@ -436,14 +436,24 @@ impl Workspace {
         view.update(cx, |v, cx| v.apply(event, cx));
         if let RunEvent::Finished(o) = event {
             self.run_view_live = false;
-            let target = view.read(cx).target().clone();
-            self.record_history(o, &target, cx);
+            let (target, env) = {
+                let v = view.read(cx);
+                (v.target().clone(), v.environment().to_string())
+            };
+            self.record_history(o, &target, &env, cx);
         }
     }
 
     /// Writes the finished collection run to the history, off the main
-    /// thread, redacted with the run's own redactor.
-    fn record_history(&self, o: &RunOutcome, target: &RunTarget, cx: &mut Context<Self>) {
+    /// thread, redacted with the run's own redactor. `env` is the one the
+    /// run used (the picker may have changed since).
+    fn record_history(
+        &self,
+        o: &RunOutcome,
+        target: &RunTarget,
+        env: &str,
+        cx: &mut Context<Self>,
+    ) {
         let (Some(base), Some(c)) = (self.store.base(), &self.state.collection) else {
             return;
         };
@@ -460,7 +470,7 @@ impl Workspace {
             o,
             &target,
             EntryKind::CollectionRun,
-            &self.environment,
+            env,
             &o.redactor.lock(),
         );
         entry.collection = c.name.clone();

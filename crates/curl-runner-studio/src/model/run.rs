@@ -59,6 +59,9 @@ pub enum RunEvent {
         /// Each file and its request count, in run order.
         groups: Vec<(PathBuf, usize)>,
         config: RunConfig,
+        /// Names (never values) of the secrets read from the Keychain,
+        /// sorted: what the CLI needs set to repeat the run.
+        keychain_names: Vec<String>,
     },
     RequestStarted {
         group: usize,
@@ -331,7 +334,7 @@ fn execute(
     out.redactor = SharedRedactor(redactor.clone());
     let mut names: Vec<String> = keychain.keys().cloned().collect();
     names.sort();
-    out.keychain_names = names;
+    out.keychain_names = names.clone();
 
     let mut groups = group_by_file(&paths, run.requests);
     let mut offset = 0;
@@ -364,6 +367,7 @@ fn execute(
             },
             continue_on_error: run.global.continue_on_error == Some(true),
         },
+        keychain_names: names,
     });
 
     let seed = match req.target {
@@ -1367,6 +1371,11 @@ mod tests {
         let o = outcome(&events);
         assert_eq!(o.summary.results.len(), 1);
         assert_eq!(o.keychain_names, ["SECRET_PLAIN"]);
+        let started = events.iter().find_map(|e| match e {
+            RunEvent::Started { keychain_names, .. } => Some(keychain_names.clone()),
+            _ => None,
+        });
+        assert_eq!(started.unwrap(), ["SECRET_PLAIN"]);
         let r = o.redactor.lock();
         let groups = [(PathBuf::from("auth.yaml"), 1)];
         let entry = entry_from_outcome(o, "collection", EntryKind::CollectionRun, "Default", &r);
