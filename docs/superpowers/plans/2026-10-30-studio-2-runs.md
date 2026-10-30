@@ -42,7 +42,7 @@
   - Each file is its own group, mirroring `RunCtx::execute` in `crates/curl-runner/src/run.rs`: its own `Executor`, its own captured-value store, and the same env lookup.
   - A failure stops only its own group unless `continueOnError` is set; the next group still runs.
   - Ruling: the spec says "one captured-value store shared across the run", but the spec's first anti-goal ("studio and CLI disagree") wins, so the CLI's per-file stores stand.
-- **Value precedence at run time, highest first:** captured (the store) → Keychain secret → the environment's `.env` files → the process env.
+- **Value precedence at run time, highest first:** `${store.NAME}` comes only from captured values. A plain `${NAME}` resolves from the Keychain secret, then the process env, then the environment's `.env` files. That is the CLI's own order (process env before `.env`), with Keychain secrets in front.
   - Pass the merged lookup to `Executor::with_env`.
   - Also pass it to `load_run` as `env`, so `${VAR}` resolves the same way.
 - **Environments.**
