@@ -98,6 +98,90 @@ pub fn request_from_curl(name: &str, curl: &str) -> Result<FromCurl, String> {
     })
 }
 
+/// The curl commands in pasted text: one per paragraph (commands split
+/// on blank lines), and a line starting with `curl ` also starts a new one
+/// unless the line before it continues (`\\`). Each command keeps its own
+/// lines, continuations included.
+pub fn split_curl_commands(text: &str) -> Vec<String> {
+    let mut commands = Vec::new();
+    let mut current: Vec<&str> = Vec::new();
+    let mut flush = |current: &mut Vec<&str>| {
+        if !current.is_empty() {
+            commands.push(current.join("\n").trim().to_string());
+            current.clear();
+        }
+    };
+    for line in text.lines() {
+        let continued = current.last().is_some_and(|l| l.trim_end().ends_with('\\'));
+        if line.trim().is_empty() {
+            flush(&mut current);
+        } else {
+            let starts = line.trim_start();
+            if !continued && (starts.starts_with("curl ") || starts == "curl") {
+                flush(&mut current);
+            }
+            current.push(line);
+        }
+    }
+    flush(&mut current);
+    commands
+}
+
+/// A request name for a converted command, from its method and path:
+/// `POST …/v1/customers` → `create-customer`, `GET …/v1/charges/${ID}` →
+/// `get-charge`, `GET …/v1/charges` → `get-charges`.
+pub fn request_name_for(method: &str, url: &str) -> String {
+    let method = method.to_ascii_uppercase();
+    // The path: after the scheme and host (or a leading `${BASE_URL}`),
+    // without the query or fragment.
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    let path = rest.split(['?', '#']).next().unwrap_or("");
+    let mut segments: Vec<&str> = path.split('/').skip(1).filter(|s| !s.is_empty()).collect();
+    let by_id = segments.last().is_some_and(|s| is_id_segment(s));
+    if by_id {
+        segments.pop();
+    }
+    let Some(resource) = segments.last().map(|s| s.to_ascii_lowercase()) else {
+        return format!("{}-request", method.to_ascii_lowercase());
+    };
+    let verb = match method.as_str() {
+        "POST" => "create",
+        "PUT" | "PATCH" => "update",
+        "GET" => "get",
+        "DELETE" => "delete",
+        other => return format!("{}-{resource}", other.to_ascii_lowercase()),
+    };
+    // One item (by id, or the one being created) reads singular.
+    let resource = if by_id || verb != "get" {
+        singular(&resource)
+    } else {
+        resource
+    };
+    format!("{verb}-{resource}")
+}
+
+/// `${ID}`, `:id`, `{id}`, `42`, or an opaque key such as `ch_1Abc9xYz`.
+fn is_id_segment(s: &str) -> bool {
+    s.starts_with(['$', ':', '{'])
+        || s.chars().all(|c| c.is_ascii_digit())
+        || (s.len() >= 8
+            && s.chars().any(|c| c.is_ascii_digit())
+            && s.chars().any(|c| c.is_ascii_alphabetic()))
+}
+
+/// A plain English singular, for the common plural endings only.
+fn singular(word: &str) -> String {
+    if let Some(stem) = word.strip_suffix("ies") {
+        format!("{stem}y")
+    } else if let Some(stem) = word.strip_suffix("sses") {
+        format!("{stem}ss")
+    } else if word.ends_with("ss") || word.ends_with("us") || word.len() < 4 {
+        word.to_string()
+    } else {
+        word.strip_suffix('s').unwrap_or(word).to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,6 +294,71 @@ mod tests {
         assert_eq!(
             request_from_curl("x", "hello https://api.example.com"),
             Err("Paste a command that starts with curl.".into())
+        );
+    }
+
+    #[test]
+    fn split_curl_commands_handles_continuations() {
+        let text = "curl -X POST https://api.example.com/v1/customers \\\n  -H 'A: b' \\\n  -d x=1\ncurl https://api.example.com/v1/charges \\\n  -H 'C: d'\n";
+        assert_eq!(
+            split_curl_commands(text),
+            [
+                "curl -X POST https://api.example.com/v1/customers \\\n  -H 'A: b' \\\n  -d x=1",
+                "curl https://api.example.com/v1/charges \\\n  -H 'C: d'",
+            ]
+        );
+        // Blank lines separate too; surrounding space and empty text go.
+        assert_eq!(
+            split_curl_commands("\n  curl https://a\n\n\n curl https://b \n\n"),
+            ["curl https://a", "curl https://b"]
+        );
+        assert!(split_curl_commands(" \n\n").is_empty());
+        // Not a curl line: stays with its paragraph (and fails to convert).
+        assert_eq!(split_curl_commands("hello\nworld"), ["hello\nworld"]);
+        // A continued line that starts with `curl ` is not a new command.
+        assert_eq!(
+            split_curl_commands("curl \\\ncurl https://a"),
+            ["curl \\\ncurl https://a"]
+        );
+    }
+
+    #[test]
+    fn request_names_follow_method_and_path() {
+        let name = |m, u| request_name_for(m, u);
+        assert_eq!(
+            name("POST", "https://api.example.com/v1/customers"),
+            "create-customer"
+        );
+        assert_eq!(
+            name("GET", "https://api.example.com/v1/charges"),
+            "get-charges"
+        );
+        assert_eq!(name("GET", "${BASE_URL}/v1/charges/${ID}"), "get-charge");
+        assert_eq!(
+            name("GET", "https://api.example.com/v1/charges/42?expand=x"),
+            "get-charge"
+        );
+        assert_eq!(
+            name("DELETE", "https://api.example.com/v1/charges/ch_1Abc9"),
+            "delete-charge"
+        );
+        assert_eq!(
+            name("PATCH", "https://api.example.com/users/:id"),
+            "update-user"
+        );
+        assert_eq!(
+            name("PUT", "https://api.example.com/addresses/{id}"),
+            "update-address"
+        );
+        assert_eq!(name("GET", "https://api.example.com"), "get-request");
+        assert_eq!(name("GET", "https://api.example.com/status"), "get-status");
+        assert_eq!(
+            name("HEAD", "https://api.example.com/health"),
+            "head-health"
+        );
+        assert_eq!(
+            name("POST", "https://api.example.com/v1/refunds/"),
+            "create-refund"
         );
     }
 }

@@ -1,0 +1,1278 @@
+//! The Import dialog (`Import.dc.html`, ⌘I): request files from pasted curl
+//! commands, or the YAML files of another folder copied into the
+//! collection. The Postman and OpenAPI tabs come in a later build.
+
+use super::app::{CreateNew, mono_font};
+use super::icons::{self, glyph};
+use super::new_dialog::{collect_folders, display_path, folder_label};
+use super::settings_kit::label_text;
+use super::workspace::{Workspace, notify_error};
+use super::{color, method_color};
+use crate::model::collection::Collection;
+use crate::model::import::{
+    CopyPlan, CurlImport, convert_commands, copy_planned, curl_targets, plan_yaml_copy, write_new,
+};
+use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::dialog::DialogEntrance;
+use gpui_kit::component::input::{Editor, EditorState, InputEvent, Textarea, TextareaState};
+use gpui_kit::component::select::{Select, SelectEvent, SelectState};
+use gpui_kit::component::{Disableable as _, IndexPath, WindowExt as _};
+use gpui_kit::prelude::*;
+use gpui_kit::*;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+
+/// Sizes from the board.
+const DIALOG_W: f32 = 1080.;
+const PANE_H: f32 = 300.;
+/// The preview's rows: 12px Geist Mono on 18px lines, 8px above and below.
+const PREVIEW_TEXT: f32 = 12.;
+const PREVIEW_LINE: f32 = 18.;
+const PREVIEW_PAD: f32 = 8.;
+/// A tab's body: 16 + a 16px label + 10 + the pane + 10 + an 18px hint + 16.
+const BODY_H: f32 = PANE_H + 86.;
+/// A folded command's header row in the preview list.
+const SECTION_H: f32 = 32.;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportTab {
+    Curl,
+    Postman,
+    OpenApi,
+    Folder,
+}
+
+const TABS: [(ImportTab, &str, &str); 4] = [
+    (ImportTab::Curl, "import-tab-curl", "curl"),
+    (
+        ImportTab::Postman,
+        "import-tab-postman",
+        "Postman collection",
+    ),
+    (ImportTab::OpenApi, "import-tab-openapi", "OpenAPI"),
+    (ImportTab::Folder, "import-tab-folder", "Folder of YAML"),
+];
+
+pub struct ImportDialog {
+    ws: WeakEntity<Workspace>,
+    pub(super) tab: ImportTab,
+    pub(super) curl: Entity<TextareaState>,
+    /// Each pasted command, converted.
+    imports: Vec<CurlImport>,
+    /// Where each convertible command's file goes, relative to the target
+    /// root (`None`: it failed to convert and is skipped).
+    targets: Vec<Option<PathBuf>>,
+    /// A read-only YAML preview per command, by index.
+    previews: Vec<Option<Entity<EditorState>>>,
+    /// Commands whose preview is folded away.
+    collapsed: HashSet<usize>,
+    /// The open collection's root; `None`: the import starts a collection
+    /// in `picked_target`.
+    root: Option<PathBuf>,
+    folders: Vec<PathBuf>,
+    folder: Option<Entity<SelectState<Vec<SharedString>>>>,
+    /// The folder chosen on disk when no collection is open.
+    pub(super) picked_target: Option<PathBuf>,
+    /// Folder of YAML: the folder to copy from, and what would be copied.
+    pub(super) source: Option<PathBuf>,
+    plan: Result<Vec<CopyPlan>, String>,
+    pub(super) error: Option<String>,
+    _subscriptions: Vec<Subscription>,
+}
+
+impl ImportDialog {
+    fn new(
+        ws: WeakEntity<Workspace>,
+        collection: Option<(&Collection, PathBuf)>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let curl = cx.new(|cx| {
+            TextareaState::new(window, cx).placeholder(
+                "curl -X POST https://api.example.com/v1/customers \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"name\":\"Acme\"}'",
+            )
+        });
+        let mut subscriptions =
+            vec![
+                cx.subscribe_in(&curl, window, |this, _, e: &InputEvent, window, cx| {
+                    if matches!(e, InputEvent::Change) {
+                        this.error = None;
+                        this.convert(window, cx);
+                    }
+                }),
+            ];
+        let root = collection.as_ref().map(|(c, _)| c.root.clone());
+        let (folders, folder) = match collection {
+            Some((collection, preselect)) => {
+                let mut folders = vec![PathBuf::new()];
+                collect_folders(&collection.tree, Path::new(""), &mut folders);
+                let labels = folders
+                    .iter()
+                    .map(|f| folder_label(&collection.name, f))
+                    .collect();
+                let row = folders.iter().position(|f| *f == preselect).unwrap_or(0);
+                let select = cx.new(|cx| {
+                    SelectState::new(
+                        labels,
+                        Some(IndexPath {
+                            row,
+                            ..IndexPath::default()
+                        }),
+                        window,
+                        cx,
+                    )
+                });
+                subscriptions.push(cx.subscribe(
+                    &select,
+                    |this, _, _: &SelectEvent<Vec<SharedString>>, cx| this.retarget(cx),
+                ));
+                (folders, Some(select))
+            }
+            None => (Vec::new(), None),
+        };
+        ImportDialog {
+            ws,
+            tab: ImportTab::Curl,
+            curl,
+            imports: Vec::new(),
+            targets: Vec::new(),
+            previews: Vec::new(),
+            collapsed: HashSet::new(),
+            root,
+            folders,
+            folder,
+            picked_target: None,
+            source: None,
+            plan: Ok(Vec::new()),
+            error: None,
+            _subscriptions: subscriptions,
+        }
+    }
+
+    pub(super) fn set_tab(&mut self, tab: ImportTab, cx: &mut Context<Self>) {
+        self.tab = tab;
+        self.error = None;
+        cx.notify();
+    }
+
+    /// Where files go: the collection root, or the folder picked on disk.
+    fn target_root(&self) -> Option<&Path> {
+        self.root.as_deref().or(self.picked_target.as_deref())
+    }
+
+    /// The folder picked under the target root (`""`: the root itself).
+    fn target_folder(&self, cx: &App) -> PathBuf {
+        let Some(select) = &self.folder else {
+            return PathBuf::new();
+        };
+        let row = select.read(cx).selected_index(cx).map_or(0, |ix| ix.row);
+        self.folders.get(row).cloned().unwrap_or_default()
+    }
+
+    /// Re-converts the pasted text and refreshes the previews.
+    fn convert(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let text = self.curl.read(cx).value();
+        let imports = convert_commands(&text);
+        // Several commands: the first opens, the others fold, so every
+        // command's row shows in the list.
+        if imports.len() != self.imports.len() {
+            self.collapsed = (1..imports.len()).collect();
+        }
+        let mut previews = std::mem::take(&mut self.previews);
+        previews.resize(imports.len(), None);
+        for (slot, import) in previews.iter_mut().zip(&imports) {
+            let Ok(converted) = &import.converted else {
+                *slot = None;
+                continue;
+            };
+            let yaml = converted.yaml.clone();
+            match slot {
+                Some(editor) => {
+                    if editor.read(cx).value().as_ref() != yaml {
+                        editor.update(cx, |e, cx| e.set_value(yaml, window, cx));
+                    }
+                }
+                None => {
+                    *slot = Some(cx.new(|cx| {
+                        EditorState::new(window, cx)
+                            .language("yaml")
+                            .line_number(true)
+                            .folding(true)
+                            .soft_wrap(false)
+                            .default_value(yaml)
+                    }));
+                }
+            }
+        }
+        self.previews = previews;
+        self.imports = imports;
+        self.retarget(cx);
+    }
+
+    /// Recomputes where each file goes after the commands, the source or
+    /// the target changed.
+    fn retarget(&mut self, cx: &mut Context<Self>) {
+        let folder = self.target_folder(cx);
+        let root = self.target_root().map(Path::to_path_buf);
+        self.targets = curl_targets(root.as_deref(), &folder, &self.imports);
+        self.plan = match &self.source {
+            Some(source) => {
+                plan_yaml_copy(source, root.as_deref(), &folder).map_err(|e| e.to_string())
+            }
+            None => Ok(Vec::new()),
+        };
+        cx.notify();
+    }
+
+    /// How many files Import would write on the current tab.
+    pub(super) fn count(&self) -> usize {
+        match self.tab {
+            ImportTab::Curl => self.targets.iter().flatten().count(),
+            ImportTab::Folder => self.plan.as_ref().map_or(0, Vec::len),
+            ImportTab::Postman | ImportTab::OpenApi => 0,
+        }
+    }
+
+    fn import_label(&self) -> String {
+        let n = self.count();
+        let noun = match self.tab {
+            ImportTab::Folder => "file",
+            _ => "request",
+        };
+        match n {
+            0 => "Import".to_string(),
+            1 => format!("Import 1 {noun}"),
+            n => format!("Import {n} {noun}s"),
+        }
+    }
+
+    /// Writes the files and opens what was imported, or shows why not.
+    pub(super) fn import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let result = self.write(cx);
+        match result {
+            Ok((root, first)) => {
+                window.close_dialog(cx);
+                let opened_collection = self.root.is_none();
+                self.ws
+                    .update(cx, |ws, cx| {
+                        ws.imported(&root, opened_collection, first.as_deref(), window, cx)
+                    })
+                    .ok();
+            }
+            Err(e) => {
+                self.error = Some(e);
+                cx.notify();
+            }
+        }
+    }
+
+    /// The files on disk: the root they went into and the first one.
+    fn write(&mut self, cx: &mut Context<Self>) -> Result<(PathBuf, Option<PathBuf>), String> {
+        if self.count() == 0 {
+            return Err(match self.tab {
+                ImportTab::Curl => "Paste a curl command to import.".into(),
+                ImportTab::Folder => "Choose a folder with YAML files.".into(),
+                _ => "This import comes in a later build.".into(),
+            });
+        }
+        let root = self
+            .target_root()
+            .map(Path::to_path_buf)
+            .ok_or("Choose a folder for the requests.")?;
+        // Names may have been taken since the preview was drawn.
+        self.retarget(cx);
+        match self.tab {
+            ImportTab::Curl => {
+                let mut first = None;
+                for (import, target) in self.imports.iter().zip(&self.targets) {
+                    let (Ok(converted), Some(rel)) = (&import.converted, target) else {
+                        continue;
+                    };
+                    write_new(&root.join(rel), converted.yaml.as_bytes())
+                        .map_err(|e| format!("Couldn't create {}: {e}", rel.display()))?;
+                    first.get_or_insert_with(|| rel.clone());
+                }
+                Ok((root, first))
+            }
+            ImportTab::Folder => {
+                let plan = self.plan.clone()?;
+                copy_planned(&root, &plan).map_err(|e| format!("Couldn't copy {e}"))?;
+                Ok((root, plan.first().map(|p| p.to.clone())))
+            }
+            ImportTab::Postman | ImportTab::OpenApi => unreachable!("count is 0"),
+        }
+    }
+
+    fn pick(&mut self, source: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let picked = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some("Choose".into()),
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(Ok(Some(paths))) = picked.await else {
+                return;
+            };
+            this.update(cx, |this, cx| {
+                let dir = paths.into_iter().next();
+                if source {
+                    this.source = dir;
+                } else {
+                    this.picked_target = dir;
+                }
+                this.error = None;
+                this.retarget(cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Development aid (`CURL_RUNNER_STUDIO_FILL`): pastes `text`, or with
+    /// `folder` set picks it as the Folder of YAML source.
+    pub(super) fn dev_fill(
+        &mut self,
+        text: &str,
+        folder: Option<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(folder) = folder {
+            self.source = Some(folder);
+            self.set_tab(ImportTab::Folder, cx);
+            self.retarget(cx);
+        } else {
+            let text = text.replace("\\n", "\n");
+            self.curl.update(cx, |s, cx| s.set_value(text, window, cx));
+            self.convert(window, cx);
+        }
+    }
+
+    // Rendering.
+
+    fn render_header(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let tabs = TABS.iter().map(|&(tab, id, label)| {
+            let on = self.tab == tab;
+            div()
+                .id(id)
+                .flex()
+                .items_center()
+                .h(px(40.))
+                .px(px(2.))
+                .mr(px(18.))
+                .border_b_1()
+                .border_color(if on {
+                    color("text-primary")
+                } else {
+                    transparent_black()
+                })
+                .text_color(color(if on { "text-primary" } else { "text-secondary" }))
+                .when(!on, |el| el.hover(|s| s.text_color(color("text-primary"))))
+                .cursor_pointer()
+                .on_click(cx.listener(move |this, _, _, cx| this.set_tab(tab, cx)))
+                .child(label)
+        });
+        div()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .flex()
+                    .items_start()
+                    .gap(px(12.))
+                    .px(px(24.))
+                    .pt(px(20.))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .child(
+                                div()
+                                    .text_size(px(16.))
+                                    .line_height(px(20.))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child("Import requests"),
+                            )
+                            .child(
+                                div()
+                                    .mt(px(6.))
+                                    .text_size(px(13.))
+                                    .line_height(relative(1.5))
+                                    .text_color(color("text-secondary"))
+                                    .child(
+                                        "Bring in existing calls. You'll see the YAML before \
+                                         anything is added.",
+                                    ),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .id("import-close")
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                            .justify_center()
+                            .size(px(28.))
+                            .rounded(px(6.))
+                            .text_color(color("text-secondary"))
+                            .hover(|s| s.bg(color("surface-100")))
+                            .cursor_pointer()
+                            .on_click(|_, window, cx| window.close_dialog(cx))
+                            .child(glyph(icons::CROSS).size(px(14.))),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .px(px(24.))
+                    .pt(px(8.))
+                    .border_b_1()
+                    .border_color(color("border-100"))
+                    .text_size(px(13.))
+                    .children(tabs),
+            )
+    }
+
+    fn render_curl(&self, cx: &mut Context<Self>) -> Div {
+        let found = self.imports.len();
+        let hint = match found {
+            0 => "Paste a command that starts with curl".to_string(),
+            1 => "1 command found · Separate several with a blank line".to_string(),
+            n => format!("{n} commands found · Separate several with a blank line"),
+        };
+        let left = column(true)
+            .child(label_text("Paste one or more curl commands"))
+            .child(
+                div()
+                    .font_family(mono_font())
+                    .text_size(px(12.))
+                    .line_height(px(20.))
+                    .child(
+                        Textarea::new(&self.curl)
+                            .h(px(PANE_H))
+                            .rounded(px(8.))
+                            .border_color(color("border-100"))
+                            .bg(color("surface-raised")),
+                    ),
+            )
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(color("text-tertiary"))
+                    .child(hint),
+            );
+        left_right(left, self.render_previews(cx))
+    }
+
+    /// One preview for a single command, a foldable list for several.
+    fn render_previews(&self, cx: &mut Context<Self>) -> Div {
+        let valid: Vec<usize> = (0..self.imports.len())
+            .filter(|&i| self.targets.get(i).is_some_and(Option::is_some))
+            .collect();
+        let single = self.imports.len() == 1 && valid.len() == 1;
+        let file_name = |i: usize| -> SharedString {
+            self.targets[i]
+                .as_ref()
+                .and_then(|p| p.file_name())
+                .map(|n| n.to_string_lossy().into_owned().into())
+                .unwrap_or_default()
+        };
+        let aside: SharedString = match valid.len() {
+            _ if single => file_name(valid[0]),
+            _ if self.imports.is_empty() => "".into(),
+            1 => "1 file".into(),
+            n => format!("{n} files").into(),
+        };
+        let header = div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .child(label_text("Preview").flex_1())
+            .child(
+                div()
+                    .font_family(mono_font())
+                    .text_size(px(12.))
+                    .text_color(color("text-secondary"))
+                    .child(aside),
+            );
+        let card = div()
+            .id("import-preview")
+            .flex()
+            .flex_col()
+            .h(px(PANE_H))
+            .rounded(px(8.))
+            .border_1()
+            .border_color(color("border-100"))
+            .bg(color("surface-raised"))
+            .overflow_y_scroll();
+        let card = if single {
+            let editor = self.previews[valid[0]].as_ref().expect("a valid preview");
+            card.child(preview_editor(editor, None))
+        } else if self.imports.is_empty() {
+            card.child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .items_center()
+                    .justify_center()
+                    .text_size(px(12.))
+                    .text_color(color("text-tertiary"))
+                    .child("The YAML for each command shows here."),
+            )
+        } else {
+            // The open previews share what the rows leave, at least 120px.
+            let n = self.imports.len();
+            let open = valid.iter().filter(|i| !self.collapsed.contains(i)).count();
+            let max_h = ((PANE_H - 2. - n as f32 * SECTION_H) / open.max(1) as f32).max(120.);
+            card.children((0..n).map(|i| self.render_section(i, max_h, cx)))
+        };
+        let notes = self.render_notes(single);
+        column(false).child(header).child(card).children(notes)
+    }
+
+    /// Command `i` in the preview list: its file and folded YAML (at most
+    /// `max_h` tall), or why it is skipped.
+    fn render_section(&self, i: usize, max_h: f32, cx: &mut Context<Self>) -> Stateful<Div> {
+        let import = &self.imports[i];
+        let row = div()
+            .id(("import-section", i))
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(8.))
+            .h(px(SECTION_H))
+            .px(px(12.))
+            .when(i > 0, |d| d.border_t_1().border_color(color("border-100")));
+        let section = div()
+            .id(("import-command", i))
+            .flex()
+            .flex_col()
+            .flex_none();
+        let (Ok(_), Some(rel), Some(editor)) =
+            (&import.converted, &self.targets[i], &self.previews[i])
+        else {
+            let why = import.converted.as_ref().err().cloned().unwrap_or_default();
+            return section.child(
+                row.child(
+                    glyph(icons::ERROR)
+                        .size(px(13.))
+                        .text_color(color("danger")),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(px(12.))
+                        .text_color(color("text-secondary"))
+                        .child(format!("Command {}", i + 1)),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(12.))
+                        .text_color(color("danger"))
+                        .child(format!("{why} Skipped.")),
+                ),
+            );
+        };
+        let open = !self.collapsed.contains(&i);
+        let method = method_of(editor.read(cx).value().as_ref());
+        let header = row
+            .cursor_pointer()
+            .hover(|s| s.bg(color("surface-100")))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                if !this.collapsed.remove(&i) {
+                    this.collapsed.insert(i);
+                }
+                cx.notify();
+            }))
+            .child(
+                glyph(if open {
+                    icons::CHEVRON_DOWN
+                } else {
+                    icons::CHEVRON_RIGHT
+                })
+                .size(px(12.))
+                .text_color(color("text-secondary")),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .w(px(40.))
+                    .font_family(mono_font())
+                    .text_size(px(11.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(method_color(&method))
+                    .child(method.clone()),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .font_family(mono_font())
+                    .text_size(px(12.))
+                    .child(rel.display().to_string()),
+            );
+        let lines = editor.read(cx).value().lines().count();
+        let fit = lines as f32 * PREVIEW_LINE + 2. * PREVIEW_PAD;
+        section.child(header).when(open, |s| {
+            s.child(preview_editor(editor, Some(fit.min(max_h))))
+        })
+    }
+
+    /// The conversion's warnings under the preview; with several commands
+    /// each names its file.
+    fn render_notes(&self, single: bool) -> Option<Div> {
+        let notes: Vec<Div> = self
+            .imports
+            .iter()
+            .zip(&self.targets)
+            .filter_map(|(import, target)| Some((import.converted.as_ref().ok()?, target)))
+            .flat_map(|(converted, target)| {
+                let file = target
+                    .as_ref()
+                    .and_then(|t| t.file_name())
+                    .map(|n| n.to_string_lossy().into_owned());
+                converted.warnings.iter().map(move |w| {
+                    let text = match (&file, single) {
+                        (Some(file), false) => format!("{file}: {w}"),
+                        _ => w.clone(),
+                    };
+                    note(icons::WARNING, "warning", text)
+                })
+            })
+            .collect();
+        (!notes.is_empty()).then(|| div().flex().flex_col().gap(px(8.)).children(notes))
+    }
+
+    fn render_folder(&self, cx: &mut Context<Self>) -> Div {
+        let left = column(true)
+            .child(label_text("Folder to copy from"))
+            .child(picker(
+                "import-pick-source",
+                self.source.as_deref(),
+                "No folder chosen",
+                cx.listener(|this, _, window, cx| this.pick(true, window, cx)),
+            ))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.))
+                    .child(note(
+                        icons::INFO,
+                        "accent-blue",
+                        "Every .yaml and .yml file inside is copied, keeping its subfolders. \
+                         Hidden files and a top-level curl-runner.yaml are left out."
+                            .into(),
+                    ))
+                    .child(note(
+                        icons::INFO,
+                        "accent-blue",
+                        "Nothing is overwritten: a name that is taken gets -2, -3, … .".into(),
+                    )),
+            );
+        let folder = self.target_folder(cx);
+        let (aside, list): (SharedString, AnyElement) = match &self.plan {
+            Err(e) => (
+                "".into(),
+                empty_state(format!("Couldn't read the folder: {e}")).into_any_element(),
+            ),
+            Ok(plan) if self.source.is_none() => (
+                "".into(),
+                empty_state("Choose a folder to see its YAML files.".into()).into_any_element(),
+            ),
+            Ok(plan) if plan.is_empty() => (
+                "0 files".into(),
+                empty_state("No YAML files in this folder.".into()).into_any_element(),
+            ),
+            Ok(plan) => (
+                match plan.len() {
+                    1 => "1 file".into(),
+                    n => format!("{n} files").into(),
+                },
+                div()
+                    .flex()
+                    .flex_col()
+                    .py(px(4.))
+                    .children(plan.iter().map(|p| copy_row(p, &folder)))
+                    .into_any_element(),
+            ),
+        };
+        let right = column(false)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(label_text("Files to copy").flex_1())
+                    .child(
+                        div()
+                            .font_family(mono_font())
+                            .text_size(px(12.))
+                            .text_color(color("text-secondary"))
+                            .child(aside),
+                    ),
+            )
+            .child(
+                div()
+                    .id("import-plan")
+                    .flex()
+                    .flex_col()
+                    .h(px(PANE_H))
+                    .rounded(px(8.))
+                    .border_1()
+                    .border_color(color("border-100"))
+                    .bg(color("surface-raised"))
+                    .overflow_y_scroll()
+                    .child(list),
+            );
+        left_right(left, right)
+    }
+
+    fn render_coming_soon(&self) -> Div {
+        let what = match self.tab {
+            ImportTab::Postman => "Postman collections",
+            _ => "OpenAPI files",
+        };
+        div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap(px(10.))
+            .h(px(BODY_H))
+            .text_center()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .size(px(40.))
+                    .rounded(px(8.))
+                    .border_1()
+                    .border_dashed()
+                    .border_color(color("border-200"))
+                    .child(
+                        glyph(icons::IMPORT)
+                            .size(px(16.))
+                            .text_color(color("text-tertiary")),
+                    ),
+            )
+            .child(div().font_weight(FontWeight::MEDIUM).child("Coming soon"))
+            .child(
+                div()
+                    .w(px(360.))
+                    .text_size(px(12.))
+                    .line_height(relative(1.5))
+                    .text_color(color("text-secondary"))
+                    .child(format!(
+                        "Importing {what} comes in a later build. For now, paste curl \
+                         commands or copy a folder of YAML."
+                    )),
+            )
+    }
+
+    fn render_footer(&self, cx: &mut Context<Self>) -> Div {
+        let target = match &self.folder {
+            Some(select) => div()
+                .w(px(240.))
+                .child(Select::new(select).h(px(32.)).text_size(px(13.)))
+                .into_any_element(),
+            None => div()
+                .w(px(360.))
+                .child(picker(
+                    "import-pick-target",
+                    self.picked_target.as_deref(),
+                    "Choose where the files go",
+                    cx.listener(|this, _, window, cx| this.pick(false, window, cx)),
+                ))
+                .into_any_element(),
+        };
+        let enabled = self.count() > 0;
+        div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .pl(px(24.))
+            .pr(px(16.))
+            .py(px(12.))
+            .border_t_1()
+            .border_color(color("border-100"))
+            .bg(color("surface-raised"))
+            .child(label_text("Add to"))
+            .child(target)
+            .child(div().flex_1())
+            .child(
+                Button::new("import-cancel")
+                    .outline()
+                    .h(px(32.))
+                    .px(px(12.))
+                    .text_size(px(13.))
+                    .label("Cancel")
+                    .on_click(|_, window, cx| window.close_dialog(cx)),
+            )
+            .child(
+                Button::new("import-go")
+                    .primary()
+                    .h(px(32.))
+                    .px(px(12.))
+                    .text_size(px(13.))
+                    .label(self.import_label())
+                    .disabled(!enabled)
+                    .on_click(cx.listener(|this, _, window, cx| this.import(window, cx))),
+            )
+    }
+}
+
+impl Render for ImportDialog {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let body = match self.tab {
+            ImportTab::Curl => self.render_curl(cx),
+            ImportTab::Folder => self.render_folder(cx),
+            ImportTab::Postman | ImportTab::OpenApi => self.render_coming_soon(),
+        };
+        div()
+            .id("import-dialog")
+            .key_context("NewDialog")
+            .on_action(cx.listener(|this, _: &CreateNew, window, cx| this.import(window, cx)))
+            .flex()
+            .flex_col()
+            .text_size(px(13.))
+            .child(self.render_header(cx))
+            .child(body)
+            .children(self.error.clone().map(|e| {
+                div()
+                    .id("import-error")
+                    .px(px(24.))
+                    .pb(px(12.))
+                    .text_size(px(12.))
+                    .text_color(color("danger"))
+                    .child(e)
+            }))
+            .child(self.render_footer(cx))
+    }
+}
+
+/// The two halves of a tab's body, split by a hairline.
+/// Every tab's body is as tall as the curl tab's, so switching tabs
+/// doesn't move the footer.
+fn left_right(left: Div, right: Div) -> Div {
+    div().flex().min_h(px(BODY_H)).child(left).child(right)
+}
+
+/// One half: 16px above and below, 24px on the dialog's edge, 20px on the
+/// split's.
+fn column(left: bool) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .flex_basis(px(0.))
+        .min_w_0()
+        .gap(px(10.))
+        .py(px(16.))
+        .map(|d| {
+            if left {
+                d.pl(px(24.))
+                    .pr(px(20.))
+                    .border_r_1()
+                    .border_color(color("border-100"))
+            } else {
+                d.pl(px(20.)).pr(px(24.))
+            }
+        })
+}
+
+/// A read-only YAML preview `height` px tall inside a list (it scrolls
+/// past that); `None` fills its card.
+fn preview_editor(editor: &Entity<EditorState>, height: Option<f32>) -> Div {
+    let el = Editor::new(editor)
+        .readonly(true)
+        .bordered(false)
+        .appearance(false)
+        .text_size(px(PREVIEW_TEXT))
+        .line_height(px(PREVIEW_LINE));
+    // In a list the section's header row gives the space above.
+    let wrap = div()
+        .when(height.is_none(), |d| d.pt(px(PREVIEW_PAD)))
+        .font_family(mono_font());
+    match height {
+        Some(h) => wrap.flex_none().h(px(h)).child(el.h_full()),
+        None => wrap.flex_1().min_h_0().child(el.h_full()),
+    }
+}
+
+/// A 12px note with its 13px icon in `tone`.
+fn note(icon: &'static str, tone: &'static str, text: String) -> Div {
+    div()
+        .flex()
+        .items_start()
+        .gap(px(8.))
+        .text_size(px(12.))
+        .line_height(relative(1.5))
+        .text_color(color(if tone == "warning" {
+            "text-primary"
+        } else {
+            "text-secondary"
+        }))
+        .child(
+            div()
+                .flex_none()
+                .mt(px(2.))
+                .child(glyph(icon).size(px(13.)).text_color(color(tone))),
+        )
+        .child(div().flex_1().min_w_0().child(text))
+}
+
+fn empty_state(text: String) -> Div {
+    div()
+        .flex()
+        .flex_1()
+        .items_center()
+        .justify_center()
+        .h(px(PANE_H - 2.))
+        .px(px(24.))
+        .text_center()
+        .text_size(px(12.))
+        .text_color(color("text-tertiary"))
+        .child(text)
+}
+
+/// One file of the Folder of YAML plan: its path in the source, and the
+/// name it gets when that one is taken.
+fn copy_row(plan: &CopyPlan, folder: &Path) -> Div {
+    let renamed = plan.renamed(folder).then(|| {
+        div()
+            .flex_none()
+            .text_size(px(11.))
+            .text_color(color("warning"))
+            .child(format!(
+                "as {}",
+                plan.to
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            ))
+    });
+    let parent = plan
+        .rel
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(|p| format!("{}/", p.display()));
+    let name = plan
+        .rel
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    div()
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .h(px(28.))
+        .px(px(12.))
+        .child(
+            div()
+                .flex()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .font_family(mono_font())
+                .text_size(px(12.))
+                .children(parent.map(|p| div().text_color(color("text-tertiary")).child(p)))
+                .child(name),
+        )
+        .children(renamed)
+}
+
+/// A chosen folder's path (`~` for home) and its Choose… button.
+fn picker(
+    id: &'static str,
+    dir: Option<&Path>,
+    empty: &'static str,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> Div {
+    let path = match dir {
+        Some(dir) => div()
+            .truncate()
+            .font_family(mono_font())
+            .text_size(px(12.))
+            .child(display_path(dir)),
+        None => div().text_color(color("text-tertiary")).child(empty),
+    };
+    div()
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .child(
+            div()
+                .flex()
+                .flex_1()
+                .min_w_0()
+                .items_center()
+                .h(px(32.))
+                .px(px(10.))
+                .rounded(px(6.))
+                .border_1()
+                .border_color(color("border-200"))
+                .overflow_hidden()
+                .child(path),
+        )
+        .child(
+            Button::new(id)
+                .outline()
+                .h(px(32.))
+                .px(px(12.))
+                .text_size(px(13.))
+                .label("Choose…")
+                .on_click(on_click),
+        )
+}
+
+/// `request.method` of a converted file (GET when absent).
+fn method_of(yaml: &str) -> SharedString {
+    yaml.lines()
+        .find_map(|l| l.strip_prefix("  method: "))
+        .map_or("GET", str::trim)
+        .to_string()
+        .into()
+}
+
+impl Workspace {
+    /// The Import dialog (⌘I), adding to the active file's folder.
+    pub(super) fn import(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<ImportDialog> {
+        let folder = self.default_folder();
+        let ws = cx.entity().downgrade();
+        let collection = self.state.collection.as_ref().map(|c| (c, folder));
+        let dialog = cx.new(|cx| ImportDialog::new(ws, collection, window, cx));
+        let content = dialog.clone();
+        let first_build = std::cell::Cell::new(true);
+        window.open_dialog(cx, move |d, window, cx| {
+            if first_build.replace(false) {
+                let focus = content.read(cx).curl.read(cx).focus_handle(cx);
+                focus.focus(window, cx);
+            }
+            d.entrance(DialogEntrance::None)
+                .w(px(DIALOG_W))
+                .margin_top(px(140.))
+                .p_0()
+                .close_button(false)
+                .on_ok(|_, _, _| false)
+                .child(content.clone())
+        });
+        dialog
+    }
+
+    /// After an import: the tree shows the new files and the first opens;
+    /// a new collection (`opened`) is opened and remembered first.
+    fn imported(
+        &mut self,
+        root: &Path,
+        opened: bool,
+        first: Option<&Path>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if opened {
+            if !self.open_collection(root, window, cx) {
+                return;
+            }
+            self.remember_folder(root);
+        } else if let Some(c) = &mut self.state.collection {
+            c.refresh();
+        }
+        match first {
+            Some(first) => self.open_file(first, window, cx),
+            None => notify_error("Nothing was imported.".into(), window, cx),
+        }
+        cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::state::StateStore;
+    use super::super::workspace::Workspace;
+    use super::ImportTab;
+    use gpui_kit::component::WindowExt as _;
+    use gpui_kit::test::TestWindowExt as _;
+    use gpui_kit::{
+        AnyWindowHandle, AppContext as _, Bounds, Entity, Point, TestAppContext, VisualTestContext,
+        WindowBounds, WindowOptions, px, size,
+    };
+    use std::path::{Path, PathBuf};
+
+    fn open(
+        cx: &mut TestAppContext,
+        root: Option<PathBuf>,
+        store: StateStore,
+    ) -> (AnyWindowHandle, Entity<Workspace>) {
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            super::super::app::init(cx);
+            let options = WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: Point::default(),
+                    size: size(px(1440.), px(900.)),
+                })),
+                ..Default::default()
+            };
+            gpui_kit::open_window(options, cx, |window, cx| {
+                cx.new(|cx| {
+                    Workspace::new(
+                        root,
+                        store,
+                        super::super::workspace::test_secrets(),
+                        window,
+                        cx,
+                    )
+                })
+            })
+            .unwrap()
+        })
+    }
+
+    fn collection() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("customers")).unwrap();
+        std::fs::write(
+            dir.path().join("customers/get-customer.yaml"),
+            "request:\n  url: https://api.example.com\n",
+        )
+        .unwrap();
+        dir
+    }
+
+    const TWO: &str = "curl -X POST https://api.example.com/v1/customers \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\":\"Acme\"}'\n\ncurl https://api.example.com/v1/customers/cus_8f2k1Abc\n\nnot a command";
+
+    #[gpui_kit::test]
+    fn import_two_curls_creates_two_files(cx: &mut TestAppContext) {
+        let dir = collection();
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| {
+            ws.update(cx, |ws, cx| {
+                // The active file's folder is the target.
+                ws.open_file(Path::new("customers/get-customer.yaml"), window, cx);
+                ws.import(window, cx)
+            })
+        });
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.dev_fill(TWO, None, window, cx)));
+        cx.run_until_parked();
+        // Two convert; the third is shown with its error and skipped.
+        dialog.read_with(cx, |d, _| {
+            assert_eq!(d.imports.len(), 3);
+            assert_eq!(d.count(), 2);
+            assert_eq!(d.import_label(), "Import 2 requests");
+        });
+        cx.update(|window, cx| window.render_frame(cx));
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        cx.run_until_parked();
+        let created =
+            std::fs::read_to_string(dir.path().join("customers/create-customer.yaml")).unwrap();
+        assert!(created.starts_with("# Imported from curl\n"), "{created}");
+        assert!(created.contains("name: create-customer"), "{created}");
+        assert!(created.contains("method: POST"), "{created}");
+        assert_eq!(crate::model::diagnostics::diagnose(&created), []);
+        // `get-customer.yaml` was taken: never overwritten.
+        let kept = std::fs::read_to_string(dir.path().join("customers/get-customer.yaml")).unwrap();
+        assert_eq!(kept, "request:\n  url: https://api.example.com\n");
+        let got =
+            std::fs::read_to_string(dir.path().join("customers/get-customer-2.yaml")).unwrap();
+        assert!(got.contains("name: get-customer"), "{got}");
+        ws.read_with(cx, |ws, _| {
+            assert_eq!(
+                ws.state.active_document().unwrap().rel_path,
+                Path::new("customers/create-customer.yaml")
+            );
+        });
+        cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
+    }
+
+    #[gpui_kit::test]
+    fn folder_of_yaml_copies_into_the_target(cx: &mut TestAppContext) {
+        let dir = collection();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(src.path().join("nested")).unwrap();
+        std::fs::write(src.path().join("a.yaml"), "request:\n  url: https://a\n").unwrap();
+        std::fs::write(
+            src.path().join("nested/b.yml"),
+            "request:\n  url: https://b\n",
+        )
+        .unwrap();
+        std::fs::write(src.path().join("readme.md"), "x").unwrap();
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        cx.update(|window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.dev_fill("", Some(src.path().to_path_buf()), window, cx);
+            })
+        });
+        dialog.read_with(cx, |d, _| {
+            assert_eq!(d.tab, ImportTab::Folder);
+            assert_eq!(d.import_label(), "Import 2 files");
+        });
+        cx.update(|window, cx| window.render_frame(cx));
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        cx.run_until_parked();
+        assert!(dir.path().join("a.yaml").is_file());
+        assert!(dir.path().join("nested/b.yml").is_file());
+        assert!(!dir.path().join("readme.md").exists());
+        ws.read_with(cx, |ws, _| {
+            let c = ws.state.collection.as_ref().unwrap();
+            assert!(c.tree.len() >= 3, "{:?}", c.tree);
+        });
+    }
+
+    #[gpui_kit::test]
+    fn coming_soon_tabs_import_nothing(cx: &mut TestAppContext) {
+        let dir = collection();
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.dev_fill(TWO, None, window, cx)));
+        dialog.update(cx, |d, cx| d.set_tab(ImportTab::Postman, cx));
+        cx.update(|window, cx| window.render_frame(cx));
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        dialog.read_with(cx, |d, _| {
+            assert_eq!(d.count(), 0);
+            assert!(d.error.is_some());
+        });
+        assert!(!dir.path().join("customers/create-customer.yaml").exists());
+        cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
+    }
+
+    #[gpui_kit::test]
+    fn without_a_collection_the_import_starts_one(cx: &mut TestAppContext) {
+        let state = tempfile::tempdir().unwrap();
+        let store = StateStore::at(state.path());
+        let (window, ws) = open(cx, None, store.clone());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        let target = tempfile::tempdir().unwrap();
+        cx.update(|window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.picked_target = Some(target.path().to_path_buf());
+                d.dev_fill("curl https://api.example.com/v1/charges", None, window, cx);
+                d.import(window, cx);
+            })
+        });
+        cx.run_until_parked();
+        assert!(target.path().join("get-charges.yaml").is_file());
+        ws.read_with(cx, |ws, _| {
+            assert_eq!(ws.state.collection.as_ref().unwrap().root, target.path());
+            assert_eq!(ws.recent.len(), 1);
+        });
+        assert_eq!(store.recent()[0].path, target.path());
+    }
+}

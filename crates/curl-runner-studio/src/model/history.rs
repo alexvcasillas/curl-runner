@@ -392,6 +392,27 @@ pub fn day_bucket(at: DateTime<Local>, now: DateTime<Local>) -> String {
     }
 }
 
+/// How long ago `at` was, as a list row reads it: `just now`, `5 min ago`,
+/// `3 h ago`, `Yesterday`, `4 days ago`, else the date (`Sep 12`).
+pub fn relative_time(at: DateTime<Local>, now: DateTime<Local>) -> String {
+    let ago = now - at;
+    let (day, today) = (at.date_naive(), now.date_naive());
+    if ago < Duration::minutes(1) {
+        "just now".to_string()
+    } else if ago < Duration::hours(1) {
+        format!("{} min ago", ago.num_minutes())
+    } else if day == today || ago < Duration::hours(12) {
+        format!("{} h ago", ago.num_hours())
+    } else if today.pred_opt() == Some(day) {
+        "Yesterday".to_string()
+    } else {
+        match (today - day).num_days() {
+            days @ 2..7 => format!("{days} days ago"),
+            _ => at.format("%b %-d").to_string(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -704,5 +725,30 @@ mod tests {
             }),
             ("a.yaml#1".to_string(), EntryKind::Request)
         );
+    }
+
+    #[test]
+    fn relative_time_buckets() {
+        let now = Local.with_ymd_and_hms(2026, 10, 30, 12, 0, 0).unwrap();
+        let ago = |d: Duration| relative_time(now - d, now);
+        assert_eq!(ago(Duration::seconds(0)), "just now");
+        assert_eq!(ago(Duration::seconds(59)), "just now");
+        // A clock that moved back reads as now, not "-1 min ago".
+        assert_eq!(ago(Duration::seconds(-90)), "just now");
+        assert_eq!(ago(Duration::minutes(1)), "1 min ago");
+        assert_eq!(ago(Duration::minutes(59)), "59 min ago");
+        assert_eq!(ago(Duration::minutes(60)), "1 h ago");
+        assert_eq!(ago(Duration::hours(11)), "11 h ago");
+        // Earlier than today: by calendar day.
+        assert_eq!(ago(Duration::hours(13)), "Yesterday");
+        assert_eq!(relative_time(at(29, 0), now), "Yesterday");
+        assert_eq!(relative_time(at(28, 23), now), "2 days ago");
+        assert_eq!(relative_time(at(24, 9), now), "6 days ago");
+        assert_eq!(relative_time(at(23, 9), now), "Oct 23");
+        let sep = Local.with_ymd_and_hms(2026, 9, 12, 9, 0, 0).unwrap();
+        assert_eq!(relative_time(sep, now), "Sep 12");
+        // Just after midnight: last night is still hours ago.
+        let early = Local.with_ymd_and_hms(2026, 10, 30, 0, 30, 0).unwrap();
+        assert_eq!(relative_time(at(29, 22), early), "2 h ago");
     }
 }

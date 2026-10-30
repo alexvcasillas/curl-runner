@@ -1,6 +1,6 @@
 //! The New dialog (`NewRequest.dc.html`): a request file from a blank
-//! template, a curl command (⌘N, ⌘I) or a copy of another request, or a new
-//! collection (⇧⌘N).
+//! template, a curl command or a copy of another request (⌘N), or a new
+//! collection (⇧⌘N). Import (⌘I) has its own dialog (`import_dialog.rs`).
 
 use super::app::{CreateNew, mono_font};
 use super::workspace::{Workspace, notify_error};
@@ -985,7 +985,7 @@ fn already_exists(file: &str) -> String {
 }
 
 /// Every folder under `tree`, depth first, as paths relative to the root.
-fn collect_folders(tree: &[TreeNode], parent: &Path, out: &mut Vec<PathBuf>) {
+pub(super) fn collect_folders(tree: &[TreeNode], parent: &Path, out: &mut Vec<PathBuf>) {
     for node in tree {
         if let TreeNode::Folder { name, children } = node {
             let path = parent.join(name);
@@ -996,7 +996,7 @@ fn collect_folders(tree: &[TreeNode], parent: &Path, out: &mut Vec<PathBuf>) {
 }
 
 /// `Payments API` for the root, `Payments API / charges / refunds` below it.
-fn folder_label(collection: &str, folder: &Path) -> SharedString {
+pub(super) fn folder_label(collection: &str, folder: &Path) -> SharedString {
     folder
         .components()
         .fold(collection.to_string(), |label, c| {
@@ -1016,7 +1016,7 @@ fn is_empty_dir(dir: &Path) -> io::Result<bool> {
 }
 
 /// `dir` with the home folder shown as `~`.
-fn display_path(dir: &Path) -> String {
+pub(super) fn display_path(dir: &Path) -> String {
     match std::env::home_dir().and_then(|home| dir.strip_prefix(home).ok().map(Path::to_path_buf)) {
         Some(rest) => format!("~/{}", rest.display()),
         None => dir.display().to_string(),
@@ -1044,12 +1044,18 @@ impl Workspace {
     }
 
     /// The New dialog on the From curl template.
-    pub(super) fn import(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Entity<NewDialog> {
+    #[cfg(test)]
+    fn new_from_curl(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Entity<NewDialog> {
         self.open_new_dialog(Kind::Request, Template::FromCurl, None, window, cx)
+    }
+
+    /// Where a new file goes by default: the active file's folder, else
+    /// the root.
+    pub(super) fn default_folder(&self) -> PathBuf {
+        self.state
+            .active_document()
+            .and_then(|d| d.rel_path.parent().map(Path::to_path_buf))
+            .unwrap_or_default()
     }
 
     fn open_new_dialog(
@@ -1060,12 +1066,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Entity<NewDialog> {
-        let folder = folder.unwrap_or_else(|| {
-            self.state
-                .active_document()
-                .and_then(|d| d.rel_path.parent().map(Path::to_path_buf))
-                .unwrap_or_default()
-        });
+        let folder = folder.unwrap_or_else(|| self.default_folder());
         let ws = cx.entity().downgrade();
         let active = self.state.active_document().map(|d| d.rel_path.clone());
         let collection = self.state.collection.as_ref().map(|c| (c, folder));
@@ -1126,7 +1127,7 @@ impl Workspace {
                     return;
                 }
                 if this.open_collection(&dir, window, cx) {
-                    this.store.remember_folder(&dir);
+                    this.remember_folder(&dir);
                     this.open_file(&file, window, cx);
                 }
             }),
@@ -1371,7 +1372,7 @@ mod tests {
         let dir = collection();
         let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
         let cx = &mut VisualTestContext::from_window(window, cx);
-        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.new_from_curl(window, cx)));
         let (name, curl) = dialog.read_with(cx, |d, _| (d.name.clone(), d.curl.clone()));
         set(&name, "Refund", cx);
         cx.update(|window, cx| {
@@ -1439,7 +1440,7 @@ mod tests {
         let dir = collection();
         let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
         let cx = &mut VisualTestContext::from_window(window, cx);
-        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx)));
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.new_from_curl(window, cx)));
         let name = dialog.read_with(cx, |d, _| d.name.clone());
         set(&name, "Refund", cx);
         cx.run_until_parked();

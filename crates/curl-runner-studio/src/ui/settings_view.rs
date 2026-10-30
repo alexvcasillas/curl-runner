@@ -13,8 +13,8 @@ use super::color;
 use super::icons::{self, glyph};
 use super::inspector::env_label;
 use super::settings_kit::{
-    MASK, back_link, card, card_body, card_footer, card_text, card_title, kbd_key, nav_item,
-    neutral_pill, primary_button, segment, segments, setting_row, small_button, switch, th,
+    MASK, back_link, card, card_body, card_footer, card_text, card_title, kbd_key, later_badge,
+    nav_item, primary_button, segment, segments, setting_row, small_button, switch, th,
 };
 use super::workspace::notify_error;
 use crate::model::environments::{env_file, is_secret, list_environments};
@@ -36,7 +36,6 @@ pub const CHANGELOG_URL: &str = concat!(
     "/blob/main/packages/cli/CHANGELOG.md"
 );
 const LATER: &str = "Available in a later build";
-const LATER_BADGE: &str = "Later build";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppPage {
@@ -983,14 +982,6 @@ enum Badge {
     Title,
     /// Centered on the right edge, in place of the card's buttons.
     Row,
-}
-
-/// The `Later build` badge: the design system's neutral pill.
-fn later_badge() -> Div {
-    neutral_pill()
-        .gap(px(4.))
-        .child(glyph(icons::LOCK).size(px(12.)))
-        .child(LATER_BADGE)
 }
 
 /// A card of a later build: its content dimmed and inert, with the

@@ -255,7 +255,9 @@ pub fn run() {
                 window_min_size: Some(size(px(WINDOW_MIN_WIDTH), px(WINDOW_MIN_HEIGHT))),
                 ..Default::default()
             };
-            let store = state::StateStore::app_support();
+            let store = dev_env("CURL_RUNNER_STUDIO_STATE")
+                .map(state::StateStore::at)
+                .unwrap_or_else(state::StateStore::app_support);
             let reopen = store
                 .base()
                 .is_none_or(|b| Settings::load(b).general.reopen_last_collection);
@@ -306,7 +308,14 @@ pub fn run() {
                                 dialog.update(cx, |d, cx| d.dev_fill(&fill, duplicate, window, cx));
                             }
                             "new-collection" => drop(ws.new_collection(window, cx)),
-                            "import" => drop(ws.import(window, cx)),
+                            "import" | "import-folder" => {
+                                let dialog = ws.import(window, cx);
+                                let fill =
+                                    dev_string("CURL_RUNNER_STUDIO_FILL").unwrap_or_default();
+                                let folder =
+                                    (show == "import-folder").then(|| PathBuf::from(&fill));
+                                dialog.update(cx, |d, cx| d.dev_fill(&fill, folder, window, cx));
+                            }
                             "palette" => {
                                 let palette = ws.open_palette(window, cx);
                                 if let Some(query) = dev_string("CURL_RUNNER_STUDIO_QUERY") {
@@ -385,7 +394,10 @@ pub fn run() {
 /// (without remembering it), `CURL_RUNNER_STUDIO_OPEN` opens a file by
 /// its path relative to the collection and `CURL_RUNNER_STUDIO_SHOW` opens
 /// a dialog: `new` or `duplicate` (fields from `CURL_RUNNER_STUDIO_FILL`,
-/// `name|METHOD|url`), `new-collection`, `import` or `palette` (with the
+/// `name|METHOD|url`), `new-collection`, `import` (the curl text in
+/// `CURL_RUNNER_STUDIO_FILL`, `\n` for newlines), `import-folder` (the
+/// Folder of YAML tab on the folder in `CURL_RUNNER_STUDIO_FILL`) or
+/// `palette` (with the
 /// query in `CURL_RUNNER_STUDIO_QUERY` and the row in
 /// `CURL_RUNNER_STUDIO_SELECT`, if set); `problem`
 /// selects the open file's first problem and opens its popover and `export`
@@ -400,8 +412,10 @@ pub fn run() {
 /// puts the cursor on a zero-based line, `CURL_RUNNER_STUDIO_TAB` picks the
 /// inspector tab, `CURL_RUNNER_STUDIO_BODY=raw` shows the Checks tab's body
 /// raw instead of diffed, `CURL_RUNNER_STUDIO_RUN` runs the open file once
-/// (`collection`: the whole collection, on the run screen) and
-/// `CURL_RUNNER_STUDIO_SIZE` (`960x600`) sizes the window.
+/// (`collection`: the whole collection, on the run screen),
+/// `CURL_RUNNER_STUDIO_SIZE` (`960x600`) sizes the window and
+/// `CURL_RUNNER_STUDIO_STATE` keeps the studio's state (last folder, Recent,
+/// settings, history) in that folder instead of Application Support.
 ///
 /// Debug builds only: a release build ignores them all.
 fn dev_env(name: &str) -> Option<PathBuf> {

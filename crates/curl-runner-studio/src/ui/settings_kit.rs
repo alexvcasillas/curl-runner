@@ -66,6 +66,15 @@ pub fn neutral_pill() -> Div {
     pill(("text-secondary", "", "border-200")).font_weight(FontWeight::NORMAL)
 }
 
+/// The `Later build` badge on what a later build brings: the neutral pill
+/// with a lock.
+pub fn later_badge() -> Div {
+    neutral_pill()
+        .gap(px(4.))
+        .child(glyph(icons::LOCK).size(px(12.)))
+        .child("Later build")
+}
+
 /// The design system's 28×16 toggle.
 pub fn switch(on: bool, enabled: bool) -> Div {
     let knob = div()
@@ -143,8 +152,8 @@ pub fn nav_item(
         })
 }
 
-/// `‹ Back to workspace` (or wherever `label` says), `size` px text. Wire
-/// its click.
+/// `‹ Back to workspace` (or wherever `label` says): `size` px text and a
+/// chevron of the same size. Wire its click.
 pub fn back_link(id: impl Into<ElementId>, label: &'static str, size: f32) -> Observed {
     div()
         .id(id)
@@ -159,7 +168,7 @@ pub fn back_link(id: impl Into<ElementId>, label: &'static str, size: f32) -> Ob
         .text_color(color("text-secondary"))
         .cursor_pointer()
         .hover(|s| s.text_color(color("text-primary")))
-        .child(glyph(icons::CHEVRON_LEFT).size(px(13.)))
+        .child(glyph(icons::CHEVRON_LEFT).size(px(size)))
         .child(label)
 }
 

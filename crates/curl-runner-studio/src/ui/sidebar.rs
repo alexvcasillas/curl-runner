@@ -241,7 +241,10 @@ impl Workspace {
             .border_r_1()
             .border_color(color("border-100"));
         let Some(collection) = &self.state.collection else {
-            return column.child(header).child(self.render_no_collections(cx));
+            return column
+                .child(header)
+                .child(self.render_no_collections(cx))
+                .child(render_cloud_footer());
         };
 
         let rows = visible_rows(
@@ -556,6 +559,38 @@ impl Workspace {
                     })),
             )
     }
+}
+
+/// Welcome's sidebar foot: the curl-runner Cloud connection, inert until a
+/// later build brings accounts.
+fn render_cloud_footer() -> impl IntoElement {
+    div()
+        .id("sidebar-cloud")
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(px(8.))
+        .px(px(16.))
+        .py(px(12.))
+        .border_t_1()
+        .border_color(color("border-100"))
+        .text_size(px(12.))
+        .text_color(color("text-disabled"))
+        .child(
+            div()
+                .flex_none()
+                .size(px(6.))
+                .rounded_full()
+                .bg(color("text-disabled")),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .line_height(relative(1.4))
+                .child("Connected to curl-runner Cloud"),
+        )
+        .child(super::settings_kit::later_badge())
 }
 
 fn hover(style: StyleRefinement) -> StyleRefinement {

@@ -9,6 +9,7 @@ mod diagnostics_view;
 mod editor_pane;
 mod history_view;
 mod icons;
+mod import_dialog;
 mod inspector;
 mod inspector_failed;
 mod method_stack;

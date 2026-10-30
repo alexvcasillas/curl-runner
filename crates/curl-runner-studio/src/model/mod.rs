@@ -10,6 +10,7 @@ pub mod export;
 // picked up by later plan-2 tasks.
 #[allow(dead_code)]
 pub mod history;
+pub mod import;
 #[allow(dead_code)]
 pub mod result_view;
 #[allow(dead_code)]

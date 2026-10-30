@@ -16,7 +16,7 @@ use super::result_marks::ResultMarks;
 use super::run_view::{Labels, RunView, RunViewEvent};
 use super::runs::Runs;
 use super::settings_view::{AppPage, AppSettingsEvent, CollectionInfo, SettingsView};
-use super::state::{AppState, StateStore};
+use super::state::{AppState, RecentEntry, StateStore};
 use super::status_bar::{RunLine, StatusBar, StatusBarEvent, source_groups};
 use super::watch;
 use super::{color, sidebar::request_label};
@@ -124,6 +124,8 @@ pub struct Workspace {
     _settings_events: Option<Subscription>,
     /// The app's settings, as saved.
     pub(super) settings: Settings,
+    /// Welcome's Recent list, each with whether its folder is still there.
+    pub(super) recent: Vec<(RecentEntry, bool)>,
     /// The app's Settings screen (⌘,), while it is open.
     pub(super) app_settings: Option<Entity<SettingsView>>,
     /// The Settings page the collection settings were opened from (a
@@ -216,6 +218,7 @@ impl Workspace {
             settings_view: None,
             _settings_events: None,
             settings,
+            recent: Vec::new(),
             app_settings: None,
             settings_origin: None,
             _app_settings_events: None,
@@ -237,11 +240,31 @@ impl Workspace {
             _env_changes: None,
             _status_events: status_events,
         };
+        this.refresh_recent();
         if let Some(folder) = folder {
             this.open_collection(&folder, window, cx);
         }
         this.sync_chrome(window, cx);
         this
+    }
+
+    /// Records `dir` as the folder to reopen and the first of Recent.
+    pub(super) fn remember_folder(&mut self, dir: &Path) {
+        self.store.remember_folder(dir);
+        self.refresh_recent();
+    }
+
+    /// Re-reads Recent and checks which folders still exist.
+    pub(super) fn refresh_recent(&mut self) {
+        self.recent = self
+            .store
+            .recent()
+            .into_iter()
+            .map(|r| {
+                let exists = r.path.is_dir();
+                (r, exists)
+            })
+            .collect();
     }
 
     /// Opens `root` as the collection, replacing the current one and its
@@ -277,6 +300,9 @@ impl Workspace {
         self._history_events = None;
         self.settings_view = None;
         self._settings_events = None;
+        // Settings would still list the previous collection's credentials.
+        self.close_app_settings();
+        self.settings_origin = None;
         self.meta = self
             .store
             .base()
@@ -1493,7 +1519,7 @@ impl Workspace {
                     };
                     this.update_in(cx, |this, window, cx| {
                         if this.open_collection(&path, window, cx) {
-                            this.store.remember_folder(&path);
+                            this.remember_folder(&path);
                         }
                     })
                     .ok();
@@ -1679,7 +1705,12 @@ impl Render for Workspace {
                 }
             }))
             .on_action(cx.listener(|this, _: &NewRequest, window, cx| {
-                this.new_request(None, window, cx);
+                // On Welcome ⌘N starts a collection, as its card says.
+                if this.state.collection.is_some() {
+                    this.new_request(None, window, cx);
+                } else {
+                    this.new_collection(window, cx);
+                }
             }))
             .on_action(cx.listener(|this, _: &NewCollection, window, cx| {
                 this.new_collection(window, cx);
@@ -2196,6 +2227,29 @@ mod tests {
         cx.update_window(window, |_, window, cx| {
             assert!(ws.update(cx, |ws, cx| ws.should_close(window, cx)));
             assert!(!window.has_active_dialog(cx));
+        })
+        .unwrap();
+    }
+
+    #[gpui_kit::test]
+    fn opening_another_collection_closes_settings(cx: &mut TestAppContext) {
+        let (_dir, window, ws) = open(cx);
+        let other = tempfile::tempdir().unwrap();
+        std::fs::write(other.path().join("x.yaml"), "request:\n  url: https://a\n").unwrap();
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.open_app_settings(super::AppPage::General, window, cx);
+                // A Credentials Edit: collection settings that return to Settings.
+                ws.open_settings(window, cx);
+                ws.return_to(super::AppPage::General, cx);
+                ws.open_app_settings(super::AppPage::General, window, cx);
+                ws.settings_origin = Some(super::AppPage::General);
+                assert!(ws.app_settings_shown());
+                assert!(ws.open_collection(other.path(), window, cx));
+                assert!(!ws.app_settings_shown());
+                assert!(ws.settings_view.is_none());
+                assert_eq!(ws.settings_origin, None);
+            });
         })
         .unwrap();
     }

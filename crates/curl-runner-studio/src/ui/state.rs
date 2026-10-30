@@ -2,6 +2,7 @@
 
 use crate::model::collection::Collection;
 use crate::model::document::Document;
+use chrono::{DateTime, Local};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -95,8 +96,8 @@ impl StateStore {
         StateStore { base }
     }
 
-    /// State kept in `base`.
-    #[cfg(test)]
+    /// State kept in `base`: tests, and the `CURL_RUNNER_STUDIO_STATE` dev
+    /// hook.
     pub fn at(base: impl Into<PathBuf>) -> Self {
         StateStore {
             base: Some(base.into()),
@@ -119,12 +120,62 @@ impl StateStore {
         last_folder_in(self.base.as_deref()?)
     }
 
-    /// Records `p` as the folder to reopen. Failures are logged, not fatal.
+    /// Records `p` as the folder to reopen and moves it to the front of
+    /// Recent. Failures are logged, not fatal.
     pub fn remember_folder(&self, p: &Path) {
+        self.remember_folder_at(p, Local::now());
+    }
+
+    fn remember_folder_at(&self, p: &Path, at: DateTime<Local>) {
         let Some(base) = &self.base else { return };
-        let value = serde_json::Value::from(p.to_string_lossy());
-        if let Err(e) = update_state_in(base, |json| json["lastFolder"] = value) {
+        let path = p.to_string_lossy().into_owned();
+        let result = update_state_in(base, |json| {
+            let mut recent = recent_in(json);
+            recent.retain(|r| r.path != p);
+            recent.insert(
+                0,
+                RecentEntry {
+                    path: p.to_path_buf(),
+                    opened_at: at,
+                },
+            );
+            recent.truncate(RECENT_MAX);
+            json["recent"] = recent_json(&recent);
+            json["lastFolder"] = path.into();
+        });
+        if let Err(e) = result {
             log::warn!("could not save the last folder: {e}");
+        }
+    }
+
+    /// Folders opened before, most recent first.
+    pub fn recent(&self) -> Vec<RecentEntry> {
+        self.base
+            .as_deref()
+            .and_then(read_state_in)
+            .map(|json| recent_in(&json))
+            .unwrap_or_default()
+    }
+
+    /// Forgets every recent folder (the folder to reopen stays).
+    pub fn clear_recent(&self) {
+        self.edit_recent(|recent| recent.clear());
+    }
+
+    /// Forgets the recent folder `p`.
+    pub fn remove_recent(&self, p: &Path) {
+        self.edit_recent(|recent| recent.retain(|r| r.path != p));
+    }
+
+    fn edit_recent(&self, edit: impl FnOnce(&mut Vec<RecentEntry>)) {
+        let Some(base) = &self.base else { return };
+        let result = update_state_in(base, |json| {
+            let mut recent = recent_in(json);
+            edit(&mut recent);
+            json["recent"] = recent_json(&recent);
+        });
+        if let Err(e) = result {
+            log::warn!("could not save the recent folders: {e}");
         }
     }
 
@@ -152,6 +203,16 @@ impl StateStore {
     }
 }
 
+/// A folder opened before, for the Welcome screen's Recent list.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecentEntry {
+    pub path: PathBuf,
+    pub opened_at: DateTime<Local>,
+}
+
+/// How many folders Recent keeps.
+pub const RECENT_MAX: usize = 10;
+
 const STATE_FILE: &str = "state.json";
 
 fn read_state_in(dir: &Path) -> Option<serde_json::Value> {
@@ -159,6 +220,37 @@ fn read_state_in(dir: &Path) -> Option<serde_json::Value> {
     serde_json::from_str::<serde_json::Value>(&text)
         .ok()
         .filter(serde_json::Value::is_object)
+}
+
+/// The `recent` list of a state file; entries that don't read are skipped.
+fn recent_in(json: &serde_json::Value) -> Vec<RecentEntry> {
+    let Some(items) = json["recent"].as_array() else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|item| {
+            let path = item["path"].as_str()?;
+            let at = DateTime::parse_from_rfc3339(item["openedAt"].as_str()?).ok()?;
+            Some(RecentEntry {
+                path: PathBuf::from(path),
+                opened_at: at.with_timezone(&Local),
+            })
+        })
+        .take(RECENT_MAX)
+        .collect()
+}
+
+fn recent_json(recent: &[RecentEntry]) -> serde_json::Value {
+    recent
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "path": r.path.to_string_lossy(),
+                "openedAt": r.opened_at.to_rfc3339(),
+            })
+        })
+        .collect()
 }
 
 fn last_folder_in(dir: &Path) -> Option<PathBuf> {
@@ -282,5 +374,60 @@ mod tests {
         assert_eq!(s.tabs_under(Path::new("x.yaml")), [1]);
         // A sibling whose name only starts with the folder's isn't under it.
         assert!(s.tabs_under(Path::new("ident")).is_empty());
+    }
+
+    #[test]
+    fn recent_is_mru_capped_at_10() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = StateStore::at(dir.path());
+        assert!(store.recent().is_empty());
+        let t0 = Local::now();
+        for i in 0..12 {
+            let at = t0 + chrono::Duration::minutes(i);
+            store.remember_folder_at(Path::new(&format!("/tmp/c{i}")), at);
+        }
+        // Reopening one moves it to the front, once.
+        store.remember_folder_at(Path::new("/tmp/c5"), t0 + chrono::Duration::hours(1));
+        let paths: Vec<String> = store
+            .recent()
+            .iter()
+            .map(|r| r.path.display().to_string())
+            .collect();
+        assert_eq!(paths.len(), RECENT_MAX);
+        assert_eq!(paths[0], "/tmp/c5");
+        assert_eq!(paths[1], "/tmp/c11");
+        assert_eq!(paths.iter().filter(|p| *p == "/tmp/c5").count(), 1);
+        assert!(!paths.contains(&"/tmp/c0".to_string()));
+        assert!(!paths.contains(&"/tmp/c1".to_string()));
+        let first = &store.recent()[0];
+        assert_eq!(
+            first.opened_at.timestamp(),
+            (t0 + chrono::Duration::hours(1)).timestamp()
+        );
+        // The last folder is still the one opened last.
+        assert_eq!(store.last_folder(), Some(PathBuf::from("/tmp/c5")));
+
+        store.remove_recent(Path::new("/tmp/c11"));
+        assert_eq!(store.recent().len(), RECENT_MAX - 1);
+        assert_eq!(store.recent()[1].path, Path::new("/tmp/c10"));
+        store.clear_recent();
+        assert!(store.recent().is_empty());
+        // Clearing the list keeps the folder to reopen.
+        assert_eq!(store.last_folder(), Some(PathBuf::from("/tmp/c5")));
+        StateStore::none().remember_folder(Path::new("/x"));
+        assert!(StateStore::none().recent().is_empty());
+    }
+
+    #[test]
+    fn a_bad_recent_entry_is_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(STATE_FILE),
+            r#"{"recent":[{"path":"/a","openedAt":"nope"},{"path":"/b","openedAt":"2026-10-28T10:00:00+00:00"},7]}"#,
+        )
+        .unwrap();
+        let recent = StateStore::at(dir.path()).recent();
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].path, Path::new("/b"));
     }
 }
