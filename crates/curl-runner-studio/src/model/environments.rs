@@ -55,12 +55,24 @@ pub enum VarSource {
     EnvFile(PathBuf),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Its `Debug` hides the value (it may be a Keychain secret).
+#[derive(Clone, PartialEq, Eq)]
 pub struct ResolvedVar {
     pub name: String,
     pub value: Option<String>,
     pub source: Option<VarSource>,
     pub secret: bool,
+}
+
+impl std::fmt::Debug for ResolvedVar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResolvedVar")
+            .field("name", &self.name)
+            .field("value", &self.value.as_ref().map(|_| ".."))
+            .field("source", &self.source)
+            .field("secret", &self.secret)
+            .finish()
+    }
 }
 
 /// The collection and environment a run or a lookup is for.
@@ -708,7 +720,7 @@ impl UsageIndex {
 
 /// [`UsageIndex::of`] for one name (reads every request file). The screen
 /// scans once with [`UsageIndex::scan`] instead.
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub fn usage(root: &Path, name: &str) -> Vec<(String, usize)> {
     UsageIndex::scan(root).of(name).to_vec()
 }
@@ -1020,6 +1032,21 @@ mod tests {
         assert_eq!(v[2].value, None);
         // Unfilled store refs are filled at run time, never missing.
         assert_eq!(missing_vars(yaml, &v), ["ID"]);
+    }
+
+    #[test]
+    fn resolved_var_debug_hides_the_value() {
+        let v = ResolvedVar {
+            name: "SECRET_TOKEN".into(),
+            value: Some("kc-value-31".into()),
+            source: Some(VarSource::Keychain),
+            secret: true,
+        };
+        let dbg = format!("{v:?}");
+        assert!(
+            dbg.contains("SECRET_TOKEN") && !dbg.contains("kc-value-31"),
+            "{dbg}"
+        );
     }
 
     #[test]

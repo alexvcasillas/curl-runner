@@ -17,7 +17,7 @@ use crate::model::environments::EnvCtx;
 use crate::model::export::{cli_command, to_markdown};
 use crate::model::history::{
     EntryKind, Filter, HistoryEntry, KindFilter, StoredResult, day_bucket, filter_entries,
-    target_of,
+    previous_for, target_of,
 };
 use crate::model::run::RunTarget;
 use chrono::{DateTime, Local};
@@ -379,7 +379,7 @@ impl HistoryView {
             .compare_with
             .as_ref()
             .and_then(|id| self.earlier(e).find(|o| &o.id == id));
-        picked.or_else(|| self.earlier(e).next())
+        picked.or_else(|| previous_for(&self.entries, e))
     }
 
     /// Opens or closes `menu` from its button.

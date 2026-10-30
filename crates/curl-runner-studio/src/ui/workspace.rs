@@ -24,8 +24,8 @@ use crate::model::collection::{Collection, TreeNode, request_at_line, request_li
 use crate::model::collection_meta::CollectionMeta;
 use crate::model::document::CloseDecision;
 use crate::model::environments::{
-    CapturedVar, DEFAULT_ENVIRONMENT, EnvCtx, ResolvedVar, list_environments, missing_vars,
-    referenced_vars, resolve_vars, store_paths,
+    CapturedVar, DEFAULT_ENVIRONMENT, EnvCtx, list_environments, missing_vars, referenced_vars,
+    resolve_vars, store_paths,
 };
 use crate::model::history::{History, HistoryEntry, entry_from_outcome, target_key, target_of};
 use crate::model::run::RunEvent;
@@ -109,9 +109,7 @@ pub struct Workspace {
     pub(super) body_raw: bool,
     /// Set while Copy as curl reads `Copied`; clears itself.
     pub(super) copied: Option<Task<()>>,
-    /// The active file's variables, resolved for the picked environment.
-    pub(super) vars: Vec<ResolvedVar>,
-    /// Its references with no value anywhere.
+    /// The active file's references with no value anywhere.
     pub(super) missing: Vec<String>,
     pub(super) secrets: Arc<dyn SecretStore>,
     /// `secrets` read once per item, for resolving variables while typing
@@ -211,7 +209,6 @@ impl Workspace {
             inspector_tab: InspectorTab::Response,
             body_raw: false,
             copied: None,
-            vars: Vec::new(),
             missing: Vec::new(),
             secret_cache: Arc::new(CachedSecrets::new(secrets.clone())),
             meta: CollectionMeta::default(),
@@ -1104,7 +1101,6 @@ impl Workspace {
             .unwrap_or_default();
         let groups = source_groups(&vars, &missing, &captured_by);
         let missing_count = missing.len();
-        self.vars = vars;
         self.missing = missing;
         self.status
             .update(cx, |s, cx| s.set_vars(env, groups, missing_count, cx));

@@ -1,7 +1,9 @@
 //! Secret values of an environment. They live only in a [`SecretStore`] (the
 //! macOS Keychain in the app), never on disk.
 
-use std::collections::{BTreeMap, HashMap};
+#[cfg(any(test, not(target_os = "macos")))]
+use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 /// Where secret values are kept: one item per `service` (collection and
@@ -36,17 +38,20 @@ pub fn service_name(collection: &str, environment: &str) -> String {
 }
 
 /// An in-process [`SecretStore`] (tests, and other OSes).
+#[cfg(any(test, not(target_os = "macos")))]
 #[derive(Debug, Default)]
 pub struct MemorySecrets {
     items: Mutex<BTreeMap<(String, String), String>>,
 }
 
+#[cfg(any(test, not(target_os = "macos")))]
 impl MemorySecrets {
     fn items(&self) -> std::sync::MutexGuard<'_, BTreeMap<(String, String), String>> {
         self.items.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
+#[cfg(any(test, not(target_os = "macos")))]
 impl SecretStore for MemorySecrets {
     fn get(&self, service: &str, name: &str) -> Option<String> {
         self.items()

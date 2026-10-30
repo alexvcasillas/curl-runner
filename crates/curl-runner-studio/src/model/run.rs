@@ -6,9 +6,8 @@
 //! only its own group (unless `continueOnError`), the next group still runs.
 //! Every result is redacted before it leaves the run thread.
 
-use crate::model::environments::{EnvCtx, is_secret};
+use crate::model::environments::{EnvCtx, effective_environment, is_secret};
 use crate::model::secrets::SecretStore;
-use curl_runner_core::config;
 use curl_runner_core::discover::find_yaml_files;
 use curl_runner_core::executor::{
     self, AttemptOutcome, EventSink, Executor, PreparedRequest, create_summary,
@@ -19,7 +18,8 @@ use curl_runner_core::model::{
 };
 use curl_runner_core::security::redact::Redactor;
 use curl_runner_core::snapshot::ManagerHook;
-use std::collections::HashMap;
+use curl_runner_core::{config, env};
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -44,15 +44,17 @@ pub enum RunTarget {
 pub struct RunRequest {
     pub target: RunTarget,
     pub ctx: EnvCtx,
-    /// The file's response store from its last run; seeds single-file
-    /// targets (`File`, `Request`). Ignored for files with `execution:
-    /// parallel` (core's parallel runner has no store).
+    /// The file's response store from its last run; seeds `Request`
+    /// targets only (a lone request reads what the requests before it
+    /// captured). Every other run starts empty, like the CLI; ignored too
+    /// with `execution: parallel` (core's parallel runner has no store).
     pub seed: Option<Store>,
 }
 
 /// `group` is the position in `Started::groups`; `index` the zero-based
-/// position of the request in its file.
-#[derive(Debug, Clone)]
+/// position of the request in its file. Its `Debug` shows a store's names,
+/// never its values.
+#[derive(Clone)]
 pub enum RunEvent {
     Started {
         total: usize,
@@ -124,11 +126,6 @@ pub struct RunConfig {
 pub struct SharedRedactor(pub Arc<Mutex<Redactor>>);
 
 impl SharedRedactor {
-    /// `text` with every secret of the run masked.
-    pub fn redact(&self, text: &str) -> String {
-        lock(&self.0).redact(text)
-    }
-
     /// The redactor itself, for the export and history functions.
     pub fn lock(&self) -> std::sync::MutexGuard<'_, Redactor> {
         lock(&self.0)
@@ -141,7 +138,8 @@ impl std::fmt::Debug for SharedRedactor {
     }
 }
 
-#[derive(Debug, Clone)]
+/// Its `Debug` shows the stores' names, never their values.
+#[derive(Clone)]
 pub struct RunOutcome {
     /// Redacted, like every event.
     pub summary: ExecutionSummary,
@@ -162,6 +160,112 @@ pub struct RunOutcome {
     /// Names (never values) of the secrets read from the Keychain, sorted:
     /// what the CLI needs set in its environment to repeat the run.
     pub keychain_names: Vec<String>,
+}
+
+/// A store in `Debug` output: its names only (the values are unredacted).
+struct StoreNames<'a>(&'a Store);
+
+impl std::fmt::Debug for StoreNames<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_set().entries(self.0.keys()).finish()
+    }
+}
+
+impl std::fmt::Debug for RunEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RunEvent::Started {
+                total,
+                groups,
+                config,
+                keychain_names,
+            } => f
+                .debug_struct("Started")
+                .field("total", total)
+                .field("groups", groups)
+                .field("config", config)
+                .field("keychain_names", keychain_names)
+                .finish(),
+            RunEvent::RequestStarted { group, index, name } => f
+                .debug_struct("RequestStarted")
+                .field("group", group)
+                .field("index", index)
+                .field("name", name)
+                .finish(),
+            RunEvent::Command {
+                group,
+                index,
+                command,
+            } => f
+                .debug_struct("Command")
+                .field("group", group)
+                .field("index", index)
+                .field("command", command)
+                .finish(),
+            RunEvent::Attempt {
+                group,
+                index,
+                attempt,
+                outcome,
+            } => f
+                .debug_struct("Attempt")
+                .field("group", group)
+                .field("index", index)
+                .field("attempt", attempt)
+                .field("outcome", outcome)
+                .finish(),
+            RunEvent::RetryWait {
+                group,
+                index,
+                delay_ms,
+            } => f
+                .debug_struct("RetryWait")
+                .field("group", group)
+                .field("index", index)
+                .field("delay_ms", delay_ms)
+                .finish(),
+            RunEvent::Result {
+                group,
+                index,
+                result,
+            } => f
+                .debug_struct("Result")
+                .field("group", group)
+                .field("index", index)
+                .field("result", result)
+                .finish(),
+            RunEvent::Stored { group, values } => f
+                .debug_struct("Stored")
+                .field("group", group)
+                .field("values", &StoreNames(values))
+                .finish(),
+            RunEvent::LoadFailed { file, message } => f
+                .debug_struct("LoadFailed")
+                .field("file", file)
+                .field("message", message)
+                .finish(),
+            RunEvent::Finished(o) => f.debug_tuple("Finished").field(o).finish(),
+        }
+    }
+}
+
+impl std::fmt::Debug for RunOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let stores: Vec<_> = self
+            .stores
+            .iter()
+            .map(|(file, s)| (file, StoreNames(s)))
+            .collect();
+        f.debug_struct("RunOutcome")
+            .field("summary", &self.summary)
+            .field("stopped", &self.stopped)
+            .field("stores", &stores)
+            .field("attempts", &self.attempts)
+            .field("started_at", &self.started_at)
+            .field("redactor", &self.redactor)
+            .field("keychain_names", &self.keychain_names)
+            .finish()
+    }
 }
 
 /// A run in progress. Dropping it stops the run.
@@ -222,7 +326,7 @@ pub fn start_run(req: RunRequest, secrets: Arc<dyn SecretStore>) -> RunHandle {
             keychain_names: Vec::new(),
         };
         let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            execute(&req, &*secrets, &flags, &tx, &mut outcome)
+            execute(&req, secrets, &flags, &tx, &mut outcome)
         }));
         if run.is_err() {
             let _ = tx.send(RunEvent::LoadFailed {
@@ -245,7 +349,7 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 /// The run itself; fills `out` as groups finish.
 fn execute(
     req: &RunRequest,
-    secrets: &dyn SecretStore,
+    secrets: Arc<dyn SecretStore>,
     cancel: &Cancel,
     tx: &Sender<RunEvent>,
     out: &mut RunOutcome,
@@ -255,34 +359,38 @@ fn execute(
     let files = target_files(&req.target, root);
     let paths: Vec<PathBuf> = files.iter().map(|f| root.join(f)).collect();
 
-    // Secret names: marked ones and every secret the files reference,
-    // each read from the Keychain once per run (no item search).
-    let mut secret_names: Vec<String> = marked.clone();
-    for p in &paths {
-        let text = std::fs::read_to_string(p).unwrap_or_default();
-        for v in extract_variables(&text) {
-            let name = v.name.split(':').next().unwrap_or_default();
-            if is_secret(name, marked) && !secret_names.iter().any(|n| n == name) {
-                secret_names.push(name.to_string());
-            }
+    let redactor = Arc::new(Mutex::new(Redactor::default()));
+    out.redactor = SharedRedactor(redactor.clone());
+    let source = Arc::new(EnvSource {
+        secrets,
+        service: req.ctx.service(),
+        marked: marked.clone(),
+        redactor: redactor.clone(),
+        read: Mutex::default(),
+    });
+    // Up front, so their values are masked whatever fails first: the marked
+    // names and every secret the files reference. Any other secret name is
+    // read when core first looks it up, always before an event can carry
+    // its value. (Core never interpolates `curl-runner.yaml`, as in the
+    // CLI: its references are sent literally and need no lookup.)
+    let texts: Vec<String> = paths
+        .iter()
+        .map(|p| std::fs::read_to_string(p).unwrap_or_default())
+        .collect();
+    for name in marked.iter().cloned().chain(texts.iter().flat_map(|t| {
+        extract_variables(t)
+            .into_iter()
+            .map(|v| v.name.split(':').next().unwrap_or_default().to_string())
+    })) {
+        if is_secret(&name, marked) {
+            source.lookup(&name);
         }
     }
-    let service = req.ctx.service();
-    let keychain: Arc<HashMap<String, String>> = Arc::new(
-        secret_names
-            .iter()
-            .filter_map(|n| Some((n.clone(), secrets.get(&service, n)?)))
-            .collect(),
-    );
-    // Keychain, then the process env; core adds the `.env` files after both.
+    // Keychain (secret names only), then the process env; core adds the
+    // `.env` files after both.
     let lookup = {
-        let keychain = keychain.clone();
-        move |k: &str| {
-            keychain
-                .get(k)
-                .cloned()
-                .or_else(|| interpolate::process_env(k))
-        }
+        let source = source.clone();
+        move |k: &str| source.lookup(k)
     };
     let cli = req.ctx.cli_options();
     let project = config::load_config_file(root).config;
@@ -290,36 +398,26 @@ fn execute(
         Ok(r) => r,
         Err(e) => {
             let file = e.file.strip_prefix(root).unwrap_or(&e.file).to_path_buf();
-            let _ = tx.send(RunEvent::LoadFailed {
-                file,
-                message: e.source.to_string(),
-            });
+            let message = load_failed_message(
+                &req.ctx,
+                &files,
+                &mut lock(&redactor),
+                &e.source.to_string(),
+            );
+            let _ = tx.send(RunEvent::LoadFailed { file, message });
+            out.keychain_names = source.keychain_names();
             return;
         }
     };
 
-    let redactor = {
+    {
         // Every value a secret name has, whatever its source.
-        let mut r = Redactor::default();
+        let mut r = lock(&redactor);
         let vars = run.global.variables.clone().unwrap_or_default();
-        secret_names.extend(
-            run.dotenv
-                .keys()
-                .chain(vars.keys())
-                .filter(|k| is_secret(k, marked))
-                .cloned(),
-        );
-        for name in &secret_names {
-            r.add_secrets(
-                [
-                    keychain.get(name).cloned(),
-                    interpolate::process_env(name),
-                    run.dotenv.get(name).cloned(),
-                    vars.get(name).cloned(),
-                ]
-                .into_iter()
-                .flatten(),
-            );
+        for (k, v) in run.dotenv.iter().chain(&vars) {
+            if is_secret(k, marked) {
+                r.add_secrets([v.clone()].into_iter().chain(interpolate::process_env(k)));
+            }
         }
         // As the CLI does: every request's inline secrets up front, so a
         // later request's token echoed by an earlier response is masked.
@@ -329,12 +427,7 @@ fn execute(
             .filter_map(|p| serde_json::from_value(p.raw.clone()).ok())
             .collect();
         r.register_request_secrets(&typed);
-        Arc::new(Mutex::new(r))
-    };
-    out.redactor = SharedRedactor(redactor.clone());
-    let mut names: Vec<String> = keychain.keys().cloned().collect();
-    names.sort();
-    out.keychain_names = names.clone();
+    }
 
     let mut groups = group_by_file(&paths, run.requests);
     let mut offset = 0;
@@ -367,12 +460,15 @@ fn execute(
             },
             continue_on_error: run.global.continue_on_error == Some(true),
         },
-        keychain_names: names,
+        keychain_names: source.keychain_names(),
     });
 
+    // Only a lone request starts from its file's last store (`store.*` of
+    // the requests before it); a file run starts empty, like the CLI, and
+    // core's parallel runner has no store.
     let seed = match req.target {
-        RunTarget::File(_) | RunTarget::Request { .. } => req.seed.clone(),
-        RunTarget::Collection | RunTarget::Files(_) => None,
+        RunTarget::Request { .. } if !parallel => req.seed.clone(),
+        _ => None,
     };
     let global = &run.global;
     let multi = groups.len() > 1;
@@ -406,6 +502,7 @@ fn execute(
             offset,
             redactor: redactor.clone(),
             root: root.to_path_buf(),
+            // What the group captures (the seed it started from included).
             store: seed.clone().unwrap_or_default(),
             attempts: HashMap::new(),
         };
@@ -421,6 +518,7 @@ fn execute(
             single = Some(s);
         }
     }
+    out.keychain_names = source.keychain_names();
     let mut summary = single.unwrap_or_else(|| create_summary(all, duration));
     // Skipped groups and cancelled requests leave no result.
     out.stopped = cancel.stopped.load(Ordering::SeqCst) && summary.results.len() < total;
@@ -429,6 +527,63 @@ fn execute(
         prepare_result(result, &r, root);
     }
     out.summary = summary;
+}
+
+/// Where a run's `${VAR}` values come from before core's `.env` fallback:
+/// the Keychain for secret names (each item read once per run), then the
+/// process env. Every secret value it hands out is added to the run's
+/// redactor first.
+struct EnvSource {
+    secrets: Arc<dyn SecretStore>,
+    service: String,
+    marked: Vec<String>,
+    redactor: Arc<Mutex<Redactor>>,
+    /// Secret names looked up so far, with their Keychain value.
+    read: Mutex<BTreeMap<String, Option<String>>>,
+}
+
+impl EnvSource {
+    fn lookup(&self, name: &str) -> Option<String> {
+        if !is_secret(name, &self.marked) {
+            return interpolate::process_env(name);
+        }
+        let held = lock(&self.read)
+            .entry(name.to_string())
+            .or_insert_with(|| self.secrets.get(&self.service, name))
+            .clone();
+        let value = held.or_else(|| interpolate::process_env(name));
+        if let Some(v) = &value {
+            lock(&self.redactor).add_secret(v.clone());
+        }
+        value
+    }
+
+    /// Names (never values) of the secrets read from the Keychain, sorted.
+    fn keychain_names(&self) -> Vec<String> {
+        lock(&self.read)
+            .iter()
+            .filter(|(_, v)| v.is_some())
+            .map(|(k, _)| k.clone())
+            .collect()
+    }
+}
+
+/// A load error's text, safe to send: it may quote an interpolated value
+/// (a secret in a typed field), so `r` (the Keychain values read so far)
+/// also learns every secret name's value in the process env and the run's
+/// `.env` files first.
+fn load_failed_message(ctx: &EnvCtx, files: &[PathBuf], r: &mut Redactor, message: &str) -> String {
+    let environment = effective_environment(ctx, files, &interpolate::process_env);
+    let process = std::env::vars_os()
+        .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)));
+    r.add_secrets(
+        env::load_env_files(&ctx.root, environment.as_deref())
+            .into_iter()
+            .chain(process)
+            .filter(|(k, _)| is_secret(k, &ctx.marked_secret))
+            .map(|(_, v)| v),
+    );
+    r.redact(message)
 }
 
 /// The files of `target`, relative to `root`, in run order.
@@ -1297,6 +1452,217 @@ mod tests {
         assert_eq!(eta_ms(&[], 3), None);
         assert_eq!(eta_ms(&[100.0, 300.0], 3), Some(600.0));
         assert_eq!(eta_ms(&[100.0], 0), Some(0.0));
+    }
+
+    #[test]
+    fn project_config_references_are_sent_as_the_cli_sends_them() {
+        // Core (and so the CLI) never interpolates `curl-runner.yaml`: the
+        // header goes out literally, and the Keychain value nowhere.
+        let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+        let log = seen.clone();
+        let srv = TestServer::with_handler(move |req| {
+            log.lock()
+                .unwrap()
+                .push(req.header("Authorization").unwrap_or_default().to_string());
+            Response::from_data(b"{}".to_vec())
+        });
+        let d = tempfile::tempdir().unwrap();
+        fs::write(
+            d.path().join("curl-runner.yaml"),
+            "global:\n  defaults:\n    headers:\n      Authorization: Bearer ${SECRET_TOKEN}\n",
+        )
+        .unwrap();
+        fs::write(
+            d.path().join("a.yaml"),
+            format!("request:\n  url: {}/a\n", srv.base_url),
+        )
+        .unwrap();
+        let c = ctx(d.path());
+        let secrets = MemorySecrets::default();
+        secrets
+            .set(&c.service(), "SECRET_TOKEN", "kc-only-token-77")
+            .unwrap();
+        let events = run_with(
+            d.path(),
+            RunTarget::File("a.yaml".into()),
+            None,
+            Arc::new(secrets),
+        );
+        assert_eq!(*seen.lock().unwrap(), ["Bearer ${SECRET_TOKEN}"]);
+        for e in &events {
+            let dbg = format!("{e:?}");
+            assert!(!dbg.contains("kc-only-token-77"), "{dbg}");
+        }
+        assert!(outcome(&events).keychain_names.is_empty());
+    }
+
+    #[test]
+    fn env_source_reads_each_secret_once_and_masks_it_first() {
+        #[derive(Default)]
+        struct Counting(MemorySecrets, Mutex<usize>);
+        impl SecretStore for Counting {
+            fn get(&self, service: &str, name: &str) -> Option<String> {
+                *self.1.lock().unwrap() += 1;
+                self.0.get(service, name)
+            }
+            fn set(&self, service: &str, name: &str, value: &str) -> Result<(), String> {
+                self.0.set(service, name, value)
+            }
+            fn delete(&self, service: &str, name: &str) -> Result<(), String> {
+                self.0.delete(service, name)
+            }
+            fn names(&self, _service: &str) -> Vec<String> {
+                Vec::new()
+            }
+        }
+        let secrets = Arc::new(Counting::default());
+        secrets.set("svc", "SECRET_LATE", "zzlate").unwrap();
+        let source = EnvSource {
+            secrets: secrets.clone(),
+            service: "svc".into(),
+            marked: vec![],
+            redactor: Arc::default(),
+            read: Mutex::default(),
+        };
+        assert_eq!(source.lookup("PLAIN_NOT_SECRET_X"), None);
+        assert_eq!(
+            *secrets.1.lock().unwrap(),
+            0,
+            "plain names skip the Keychain"
+        );
+        assert_eq!(source.lookup("SECRET_LATE").as_deref(), Some("zzlate"));
+        assert_eq!(source.lookup("SECRET_LATE").as_deref(), Some("zzlate"));
+        assert_eq!(*secrets.1.lock().unwrap(), 1, "memoised per run");
+        assert_eq!(
+            lock(&source.redactor).redact("a zzlate b"),
+            "a [REDACTED] b"
+        );
+        assert_eq!(source.lookup("SECRET_NONE"), None);
+        assert_eq!(source.keychain_names(), ["SECRET_LATE"]);
+    }
+
+    #[test]
+    fn secret_in_a_typed_field_never_reaches_an_event() {
+        let d = tempfile::tempdir().unwrap();
+        fs::write(
+            d.path().join("t.yaml"),
+            "request:\n  url: http://localhost/x\n  timeout: ${SECRET_T}\n",
+        )
+        .unwrap();
+        fs::write(
+            d.path().join("u.yaml"),
+            "request:\n  url: http://localhost/x\n  timeout: ${SECRET_U}\n",
+        )
+        .unwrap();
+        fs::write(d.path().join(".env"), "SECRET_U=dotenvbad\n").unwrap();
+        let c = ctx(d.path());
+        let secrets = MemorySecrets::default();
+        secrets.set(&c.service(), "SECRET_T", "abc").unwrap();
+        let secrets: Arc<dyn SecretStore> = Arc::new(secrets);
+        for (file, value) in [("t.yaml", "abc"), ("u.yaml", "dotenvbad")] {
+            let events = run_with(
+                d.path(),
+                RunTarget::File(file.into()),
+                None,
+                secrets.clone(),
+            );
+            let r = results(&events);
+            assert!(
+                r[0].error
+                    .as_deref()
+                    .is_some_and(|e| e.contains("[REDACTED]")),
+                "{r:?}"
+            );
+            for e in &events {
+                assert!(!format!("{e:?}").contains(value), "{e:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn load_failed_message_masks_every_secret_value() {
+        let d = tempfile::tempdir().unwrap();
+        fs::write(d.path().join(".env"), "SECRET_U=dotenvbad\nPLAIN=visible\n").unwrap();
+        let mut c = ctx(d.path());
+        c.marked_secret = vec!["API_KEY".into()];
+        fs::write(d.path().join(".env.local"), "API_KEY=markedbad\n").unwrap();
+        let mut r = Redactor::default();
+        r.add_secret("abc");
+        let message = load_failed_message(
+            &c,
+            &[],
+            &mut r,
+            "got \"abc\", \"dotenvbad\", \"markedbad\" and \"visible\"",
+        );
+        assert_eq!(
+            message,
+            "got \"[REDACTED]\", \"[REDACTED]\", \"[REDACTED]\" and \"visible\""
+        );
+    }
+
+    #[test]
+    fn debug_never_prints_a_stored_value() {
+        let mut values = Store::new();
+        values.insert("TOKEN".into(), "captured-value-9".into());
+        let stored = RunEvent::Stored {
+            group: 0,
+            values: values.clone(),
+        };
+        let finished = RunEvent::Finished(RunOutcome {
+            summary: create_summary(Vec::new(), 0.0),
+            stopped: false,
+            stores: vec![("a.yaml".into(), values)],
+            attempts: vec![],
+            started_at: chrono::Local::now(),
+            redactor: SharedRedactor::default(),
+            keychain_names: vec![],
+        });
+        for e in [stored, finished] {
+            let dbg = format!("{e:?}");
+            assert!(dbg.contains("TOKEN"), "{dbg}");
+            assert!(!dbg.contains("captured-value-9"), "{dbg}");
+        }
+    }
+
+    #[test]
+    fn file_runs_ignore_the_seed() {
+        let (srv, seen) = recording_server();
+        let d = tempfile::tempdir().unwrap();
+        fs::write(
+            d.path().join("one.yaml"),
+            format!("request:\n  url: {}/item/${{store.ID}}\n", srv.base_url),
+        )
+        .unwrap();
+        let mut seed = Store::new();
+        seed.insert("ID".into(), "x".into());
+        let events = run(d.path(), RunTarget::File("one.yaml".into()), Some(seed));
+        assert_eq!(*seen.lock().unwrap(), ["/item/${store.ID}"]);
+        assert!(outcome(&events).stores[0].1.is_empty());
+    }
+
+    #[test]
+    fn parallel_request_run_reports_no_seed_store() {
+        let (srv, _) = recording_server();
+        let d = tempfile::tempdir().unwrap();
+        fs::write(
+            d.path().join("p.yaml"),
+            format!(
+                "global:\n  execution: parallel\nrequests:\n  - url: {0}/a\n  - url: {0}/b\n",
+                srv.base_url
+            ),
+        )
+        .unwrap();
+        let mut seed = Store::new();
+        seed.insert("ID".into(), "x".into());
+        let events = run(
+            d.path(),
+            RunTarget::Request {
+                file: "p.yaml".into(),
+                index: 1,
+            },
+            Some(seed),
+        );
+        assert!(outcome(&events).stores[0].1.is_empty());
     }
 
     #[test]
