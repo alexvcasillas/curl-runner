@@ -452,6 +452,7 @@ impl HistoryView {
             collection_id: self.collection_id.clone(),
             environment: e.environment.clone(),
             marked_secret: self.marked.clone(),
+            shared: Default::default(),
         };
         let command = cli_command(&target_of(e), &ctx, &e.keychain_names);
         cx.write_to_clipboard(ClipboardItem::new_string(command));

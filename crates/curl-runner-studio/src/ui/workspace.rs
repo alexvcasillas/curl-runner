@@ -964,6 +964,7 @@ impl Workspace {
             collection_id: meta.id.clone(),
             environment: self.environment.clone(),
             marked_secret: meta.secret_names.clone(),
+            shared: meta.shared_defaults(),
         }
     }
 

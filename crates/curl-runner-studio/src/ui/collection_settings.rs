@@ -446,8 +446,9 @@ impl CollectionSettings {
             &*self.process_env,
         );
         // A received copy: the owner's defaults are listed (and count as
-        // set) in every environment, as `Shared by {org}`, over any local
-        // value.
+        // set) in every environment, as `Shared by {org}`, where nothing
+        // local sets the name: a run reads them last, under the `.env`
+        // files.
         let shared: Vec<EnvRow> = meta
             .received_vars
             .iter()
@@ -464,7 +465,8 @@ impl CollectionSettings {
             .collect();
         for row in shared {
             match self.rows.iter_mut().find(|r| r.name == row.name) {
-                Some(r) => *r = row,
+                Some(r) if r.source == RowSource::NotSet => *r = row,
+                Some(_) => {}
                 None => self.rows.push(row),
             }
         }
@@ -3038,14 +3040,16 @@ mod tests {
             Some("Shared by Acme")
         );
         assert_eq!(label(cx, "env-value", currency).as_deref(), Some("eur"));
+        // Set locally: the local value, as a run reads it (the owner's
+        // default comes last).
         assert_eq!(
             label(cx, "env-source", base_url).as_deref(),
-            Some("Shared by Acme")
+            Some(".env.staging")
         );
-        assert_eq!(
+        assert_ne!(
             label(cx, "env-value", base_url).as_deref(),
             Some("https://api.example.com/shipping"),
-            "the owner's, over the local file's"
+            "the local file's, over the owner's"
         );
         assert!(
             shows(cx, window, "My keychain"),

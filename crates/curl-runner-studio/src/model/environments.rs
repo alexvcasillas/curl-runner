@@ -53,6 +53,8 @@ pub enum VarSource {
     Process,
     /// The `.env` file that sets it (the last one loaded wins).
     EnvFile(PathBuf),
+    /// A received copy's default, set by the owner `org`.
+    Shared(String),
 }
 
 /// Its `Debug` hides the value (it may be a Keychain secret).
@@ -88,6 +90,27 @@ pub struct EnvCtx {
     pub environment: String,
     /// The collection's `secret_names`.
     pub marked_secret: Vec<String>,
+    /// A received copy's owner defaults: the last source, under the `.env`
+    /// files.
+    pub shared: SharedDefaults,
+}
+
+/// A received copy's non-secret defaults, as its owner shared them
+/// (`Shared by {org}`). A run reads one only when nothing local sets the
+/// name: Keychain, process env and `.env` files all come first.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SharedDefaults {
+    pub org: String,
+    pub values: Vec<(String, String)>,
+}
+
+impl SharedDefaults {
+    pub fn get(&self, name: &str) -> Option<&str> {
+        self.values
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.as_str())
+    }
 }
 
 impl EnvCtx {
@@ -141,7 +164,7 @@ pub fn effective_environment(
 /// run of `files` does. `store.NAME` reads the captured store
 /// only. A plain `NAME` never does: Keychain (secret names only), then the
 /// process env, then the environment's `.env` files (core's fallback, as in
-/// the CLI).
+/// the CLI), then a received copy's shared defaults.
 pub fn resolve_vars(
     names: &[String],
     captured: &Store,
@@ -202,6 +225,10 @@ fn resolve_vars_with(
                         vars.get(name)
                             .map(|v| (v.clone(), VarSource::EnvFile(p.clone())))
                     })
+                })
+                .or_else(|| {
+                    let v = ctx.shared.get(name).filter(|_| !secret)?;
+                    Some((v.to_string(), VarSource::Shared(ctx.shared.org.clone())))
                 });
             let (value, source) = found.unzip();
             ResolvedVar {
@@ -955,6 +982,7 @@ mod tests {
             collection_id: "0a1b2c3d".into(),
             environment: environment.into(),
             marked_secret: vec![],
+            shared: SharedDefaults::default(),
         }
     }
 
@@ -1063,6 +1091,31 @@ mod tests {
         let v = resolve_vars(&["BASE_URL".into()], &Store::new(), &secrets, &ctx, &[]);
         assert_eq!(v[0].source, None);
         assert_eq!(v[0].value, None);
+    }
+
+    #[test]
+    fn shared_defaults_come_after_every_local_source() {
+        let d = tempfile::tempdir().unwrap();
+        fs::write(d.path().join(".env"), "SHIP_REGION_T=eu\n").unwrap();
+        let ctx = EnvCtx {
+            shared: SharedDefaults {
+                org: "Acme".into(),
+                values: vec![
+                    ("SHIP_CURRENCY_T".into(), "eur".into()),
+                    ("SHIP_REGION_T".into(), "us".into()),
+                    ("SECRET_SHIP_T".into(), "leak".into()),
+                ],
+            },
+            ..ctx(d.path(), DEFAULT_ENVIRONMENT)
+        };
+        let names: Vec<String> = ["SHIP_CURRENCY_T", "SHIP_REGION_T", "SECRET_SHIP_T"]
+            .map(String::from)
+            .into();
+        let v = resolve_vars(&names, &Store::new(), &MemorySecrets::default(), &ctx, &[]);
+        assert_eq!(v[0].value.as_deref(), Some("eur"));
+        assert_eq!(v[0].source, Some(VarSource::Shared("Acme".into())));
+        assert_eq!(v[1].value.as_deref(), Some("eu"), ".env first");
+        assert_eq!(v[2].value, None, "a secret never takes one");
     }
 
     #[test]

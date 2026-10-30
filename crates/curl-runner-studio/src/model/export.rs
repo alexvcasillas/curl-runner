@@ -378,6 +378,7 @@ mod tests {
             collection_id: "0a1b2c3d".into(),
             environment: env.into(),
             marked_secret: vec![],
+            shared: Default::default(),
         }
     }
 

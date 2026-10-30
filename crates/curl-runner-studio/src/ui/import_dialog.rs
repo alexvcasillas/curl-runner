@@ -1418,6 +1418,7 @@ impl Workspace {
                             .unwrap_or_else(|| DEFAULT_ENVIRONMENT.to_string()),
                         collection_id: meta.id,
                         marked_secret: meta.secret_names,
+                        shared: Default::default(),
                     };
                     context_for(ctx, for_cached.clone(), for_raw.clone(), None)
                 });

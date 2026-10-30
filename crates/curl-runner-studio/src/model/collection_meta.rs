@@ -3,7 +3,7 @@
 //! under `{base}/meta/{root hash}.json`, never in the collection.
 
 use crate::model::backend::SharedVar;
-use crate::model::environments::is_secret;
+use crate::model::environments::{SharedDefaults, is_secret};
 use crate::model::history::root_hash;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -110,6 +110,22 @@ impl CollectionMeta {
             .find(|v| v.name == name && !v.secret && !is_secret(name, &self.secret_names))
             .and_then(|v| v.default.as_deref())
             .map(|value| (org, value))
+    }
+
+    /// A received copy's locked defaults, for runs: every
+    /// [`Self::shared_by`] value.
+    pub fn shared_defaults(&self) -> SharedDefaults {
+        SharedDefaults {
+            org: self.read_only_from.clone().unwrap_or_default(),
+            values: self
+                .received_vars
+                .iter()
+                .filter_map(|v| {
+                    let (_, value) = self.shared_by(&v.name)?;
+                    Some((v.name.clone(), value.to_string()))
+                })
+                .collect(),
+        }
     }
 
     /// Marks or unmarks `name` as secret (a `SECRET_` name always is). A
@@ -265,6 +281,14 @@ mod tests {
             },
         ];
         assert_eq!(meta.shared_by("CURRENCY"), Some(("Acme", "eur")));
+        assert_eq!(
+            meta.shared_defaults(),
+            SharedDefaults {
+                org: "Acme".into(),
+                values: vec![("CURRENCY".into(), "eur".into())],
+            },
+            "what runs read: never a secret"
+        );
         assert_eq!(meta.shared_by("API_TOKEN"), None, "a secret is never shown");
         assert_eq!(meta.shared_by("BASE_URL"), None);
         meta.received_vars[0].name = "SECRET_CURRENCY".into();

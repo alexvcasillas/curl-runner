@@ -97,6 +97,7 @@ pub fn source_groups(
                     None => "from last run".to_string(),
                 }
             }
+            VarSource::Shared(org) => format!("shared by {org}"),
             VarSource::EnvFile(p) => format!(
                 "from {}",
                 p.file_name()
