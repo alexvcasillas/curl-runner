@@ -1096,7 +1096,9 @@ mod ui_tests {
         cx.update_window(window, |_, window, cx| {
             ws.update(cx, |ws, cx| {
                 let text = ws.state.open[0].text.clone();
-                let at = text.find("200").unwrap();
+                // The expected status, not a `200` the server's random
+                // port may hold.
+                let at = text.find("status: 200").unwrap() + "status: ".len();
                 ws.tabs[0].editor.update(cx, |e, cx| {
                     e.set_selected_range(at..at + 3, cx);
                     e.replace("500", window, cx);
@@ -1135,7 +1137,7 @@ mod ui_tests {
         })
         .unwrap();
         assert_eq!(hint_lines(cx, &ws, "a.yaml"), [4]);
-        let changed = format!("# added\n{}", text.replace("200", "201"));
+        let changed = format!("# added\n{}", text.replace("status: 200", "status: 201"));
         std::fs::write(dir.path().join("a.yaml"), changed).unwrap();
         cx.update_window(window, |_, window, cx| {
             ws.update(cx, |ws, cx| ws.disk_changed(&["a.yaml".into()], window, cx));
