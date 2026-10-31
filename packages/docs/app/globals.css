@@ -299,6 +299,11 @@
   .blog-prose a:hover {
     color: var(--color-brand);
   }
+  /* Headings link to their own anchor; keep them looking like headings. */
+  .blog-prose :is(h2, h3) a {
+    color: inherit;
+    text-decoration: none;
+  }
   .blog-prose a:focus-visible {
     outline: 2px solid var(--color-brand);
     outline-offset: 2px;
