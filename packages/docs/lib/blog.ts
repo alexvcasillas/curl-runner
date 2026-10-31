@@ -78,3 +78,13 @@ export async function getBlogMarkdown(post: BlogPost): Promise<string> {
   const body = await post.getText('processed');
   return `${[`# ${post.title}`, `URL: ${SITE_URL}${post.url}`, post.description, body.trim()].join('\n\n')}\n`;
 }
+
+/** `2026-10-31` → `October 31, 2026`, read as a calendar day so no time zone shifts it. */
+export function formatPostDate(day: string): string {
+  return new Date(`${day}T00:00:00Z`).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}

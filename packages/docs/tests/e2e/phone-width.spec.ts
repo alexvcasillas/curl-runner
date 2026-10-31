@@ -7,6 +7,8 @@ const PAGES = [
   '/downloads',
   '/tools-database',
   '/changelog',
+  '/blog',
+  '/blog/testing-in-the-agent-era',
   '/docs/quick-start',
 ];
 
