@@ -14,6 +14,12 @@ describe('blog posts', () => {
     expect(post?.description.length).toBeGreaterThan(0);
   });
 
+  it('keeps every description short enough for search results', () => {
+    for (const post of getPosts()) {
+      expect(post.description.length, post.slug).toBeLessThanOrEqual(160);
+    }
+  });
+
   it('returns undefined for an unknown slug', () => {
     expect(getPost('nope')).toBeUndefined();
   });
