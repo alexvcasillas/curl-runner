@@ -1,7 +1,13 @@
 import type { MetadataRoute } from 'next';
+import { getPosts } from '@/lib/blog';
 import { getAllFeatures } from '@/lib/features-data';
 import { lastCommitDates } from '@/lib/git-dates';
-import { DOCS_CONTENT_DIR, FEATURE_SOURCES, MARKETING_PAGES } from '@/lib/page-sources';
+import {
+  BLOG_POST_SOURCES,
+  DOCS_CONTENT_DIR,
+  FEATURE_SOURCES,
+  MARKETING_PAGES,
+} from '@/lib/page-sources';
 import { SITE_URL, source } from '@/lib/source';
 
 interface Entry {
@@ -11,16 +17,22 @@ interface Entry {
 }
 
 export default function sitemap(): MetadataRoute.Sitemap {
+  const posts = getPosts();
   const entries: Entry[] = [
     ...MARKETING_PAGES.map(({ path, sources }) => ({
       url: `${SITE_URL}${path}`,
-      sources,
+      sources: path === '/blog' ? [...sources, ...posts.map((post) => post.file)] : sources,
       priority: path === '' ? 1 : 0.8,
     })),
     ...getAllFeatures().map((feature) => ({
       url: `${SITE_URL}/features/${feature.slug}`,
       sources: FEATURE_SOURCES,
       priority: 0.8,
+    })),
+    ...posts.map((post) => ({
+      url: `${SITE_URL}${post.url}`,
+      sources: [post.file, ...BLOG_POST_SOURCES],
+      priority: 0.7,
     })),
     ...source.getPages().map((page) => ({
       url: `${SITE_URL}${page.url}`,

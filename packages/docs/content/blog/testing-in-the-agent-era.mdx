@@ -1,0 +1,149 @@
+---
+title: The importance of testing in the Agent era
+description: Agents write code faster than anyone can review it. Here's why unit, e2e and smoke tests are your real safety net, and how curl-runner runs the smoke layer.
+date: 2026-10-31
+author: Alex Casillas
+---
+
+Agents write code faster than any of us can review it. That's the whole point of them, and it's also the problem.
+
+A year ago, most of the code that reached `main` had been read line by line by at least one person. Today a single prompt can touch thirty files, and the pull request looks fine. The types check, the linter is happy and the description is better written than mine would be. The question that matters hasn't changed. Does the thing still work for the people using it?
+
+Review can't answer that anymore, at least not on its own. The test suite can. In the agent era, the test suite is the safety net. It's the only reviewer that reads every change, every time, without getting tired.
+
+## Agents are confident, not careful
+
+An agent doesn't know what your integrators depend on. It knows what you told it and what it can see in the repo. Ask it to "clean up the export handler" and it might rename a field to something nicer, collapse two code paths that looked the same, or "fix" a default that someone, somewhere, relies on.
+
+None of these are stupid changes. Most of them would pass a quick review. That's exactly why they're dangerous. The code is fine. What broke is the contract between your code and everyone who calls it.
+
+So the question isn't "should we let agents write code?". That ship has sailed. The question is what has to be true about your pipeline so you can merge their work and still sleep at night.
+
+## Three layers, three different bugs
+
+Every layer of tests catches a different kind of bug. Skip one and that kind of bug reaches your users.
+
+**Unit tests catch broken logic.** A function that returns the wrong value, an edge case nobody handled, an off-by-one. They're fast and cheap, and agents are great at writing them. They're also the layer agents are most likely to "fix" by changing the assertion instead of the code, so read those diffs carefully.
+
+**End-to-end tests catch broken flows.** Log in, create a document, export it, download the file. Each step can work on its own while the flow as a whole is broken. E2E tests run against a real build of your system and check that the pieces still fit together.
+
+**Smoke tests catch a broken deployment.** This is the one most teams skip, and it's the one that matters most once agents are in the loop. A smoke test runs against the environment you just deployed: preview, staging, production. It doesn't care how the code looks. It sends a few real requests and checks the responses.
+
+That last part is what an agent can't see from inside its editor. It can't see the config that only exists in staging, the proxy that strips a header, or the integrator whose client breaks when a field disappears. A smoke suite can.
+
+## How we do it at Tiptap
+
+I work at [Tiptap](https://tiptap.dev/), and I built and run the curl-runner smoke suite for our [document conversion pipeline](https://tiptap.dev/product/conversion). It converts documents between the Tiptap editor and formats like DOCX, PDF and Markdown. Integrators build their features on it, so a broken response for us means a broken feature for them.
+
+We run hundreds of curl-runner smoke tests against our preview, staging and production pipelines. Each test is a small YAML file that sends a real request and checks the parts of the response integrators depend on: status codes, the fields in the body and their formats.
+
+More than once, those tests have stopped a change that would have broken existing integrators before it shipped. That's the whole job, and it's why I can merge agent-written changes with confidence.
+
+## What a catch looks like
+
+Here's an example. It's made up, but it's the shape of the bugs this layer catches.
+
+Say you have an API that exports reports as PDF. An agent refactors the export handler and, along the way, renames `downloadUrl` to `url` in the response. It's a reasonable change. `url` is shorter, and every test the agent can see still passes. Every client that reads `downloadUrl` is now broken.
+
+This is the smoke test that catches it:
+
+```yaml title="smoke/export-report.yaml"
+request:
+  name: Export a report to PDF
+  url: ${BASE_URL}/v1/reports/monthly/export
+  method: POST
+  headers:
+    Content-Type: application/json
+  body:
+    format: pdf
+  expect:
+    status: 200
+    body:
+      format: pdf
+      downloadUrl: "^https://"
+```
+
+The `expect` block is the contract. The response must be a `200`, `format` must be `pdf`, and `downloadUrl` must exist and look like an HTTPS URL. Run it against the preview deployment with the renamed field and you get this:
+
+```text
+x Export a report to PDF [export-report]
+   ├─ POST: https://preview.example.com/v1/reports/monthly/export
+   ├─ x Status: 200
+   └─ Duration: 41ms | 86.00 B
+
+  ✗ Error: Expected downloadUrl to match pattern ^https://, got undefined
+```
+
+The status is still `200`, so a check that only looks for "is it up?" would pass. The body check is what notices the field is gone. The run exits with code `1`, the pipeline goes red and the change waits until someone decides whether the rename is worth a breaking change. That's a person's call, not an agent's.
+
+## Why curl-runner fits agents so well
+
+I built curl-runner, so take this with a pinch of salt. Still, a few things make it a good fit for this layer, and for working alongside agents in particular.
+
+**Tests are plain YAML.** An agent can read a smoke test and understand what the API promises, and it can write a new one as easily as you can. When an agent adds an endpoint, ask it to add the smoke test in the same pull request. Reviewing twenty lines of YAML is a lot easier than reviewing the handler.
+
+**The same file runs everywhere.** `${BASE_URL}` comes from the environment, so one suite runs against preview, staging and production without changes. You test the deployment you're about to ship, not a mock of it.
+
+**It's built for CI.** `--strict-exit` fails the run if any check fails, and `--continue-on-error` runs the whole suite first, so you see every failure, not just the first one. `--output-format json` gives you results a script, a dashboard or another agent can read.
+
+**It's fast.** It's a single native binary with no runtime to install, and `-p` runs the whole suite in parallel.
+
+**You can see what failed.** When a check fails, [response validation](/docs/features/response-validation) tells you the field, the expected value and what it got. If you'd rather click than read terminal output, [curl-runner studio](/docs/features/studio) opens the same YAML files and shows each failure next to the response. It's an early macOS preview for now, built from source.
+
+## Your first smoke test in five minutes
+
+You don't need hundreds of tests to start. One test against your health endpoint and one against your most important response already puts you ahead of most pipelines.
+
+Install curl-runner:
+
+```bash
+curl -fsSL https://www.curl-runner.com/install.sh | bash
+```
+
+Write a first test:
+
+```yaml title="smoke/health.yaml"
+request:
+  name: API is up
+  url: ${BASE_URL}/health
+  method: GET
+  expect:
+    status: 200
+    body:
+      status: ok
+```
+
+Run it against staging:
+
+```bash
+BASE_URL=https://staging.your-api.com curl-runner smoke/ --continue-on-error --strict-exit
+```
+
+Then put it in your pipeline, right after the deploy step. In GitHub Actions it's one job:
+
+```yaml title=".github/workflows/smoke.yml"
+name: Smoke tests
+on:
+  deployment_status:
+
+jobs:
+  smoke:
+    if: github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm install -g @curl-runner/cli
+      - run: curl-runner smoke/ --continue-on-error --strict-exit
+        env:
+          BASE_URL: ${{ github.event.deployment_status.environment_url }}
+```
+
+From here, one habit pays off. Every time an agent touches an endpoint, the smoke test for that endpoint changes in the same pull request, or the pull request explains why it didn't.
+
+## Speed needs a net
+
+Agents made writing code cheap. They didn't make breaking production any cheaper. The teams that get the most out of agents will be the ones whose pipeline tells them, on every deploy, that what worked yesterday still works today. Reviewing harder won't get you there.
+
+Unit tests for the logic, end-to-end tests for the flows and smoke tests for the deployment. If you only add one of these this week, make it the smoke test. It's the one that checks what your users get.
+
+If you give curl-runner a try, I'd love to hear how it goes. The [docs](/docs/quick-start) are the best place to start, and the project is [on GitHub](https://github.com/alexvcasillas/curl-runner) :)

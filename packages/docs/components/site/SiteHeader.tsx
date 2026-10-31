@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { ButtonLink } from '@/components/site/ButtonLink';
 
-export type SiteSection = 'docs' | 'features' | 'alternatives' | 'downloads' | 'changelog';
+export type SiteSection = 'docs' | 'features' | 'alternatives' | 'downloads' | 'changelog' | 'blog';
 
 const NAV: { label: string; href: string; section?: SiteSection }[] = [
   { label: 'Docs', href: '/docs', section: 'docs' },
@@ -9,6 +9,7 @@ const NAV: { label: string; href: string; section?: SiteSection }[] = [
   { label: 'Alternatives', href: '/alternatives', section: 'alternatives' },
   { label: 'Downloads', href: '/downloads', section: 'downloads' },
   { label: 'Changelog', href: '/changelog', section: 'changelog' },
+  { label: 'Blog', href: '/blog', section: 'blog' },
 ];
 
 export const GITHUB_URL = 'https://github.com/alexvcasillas/curl-runner';

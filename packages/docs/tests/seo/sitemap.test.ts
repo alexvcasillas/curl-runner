@@ -81,6 +81,14 @@ describe('sitemap', () => {
     expect(entry(`${BASE}/changelog`)?.lastModified).toEqual(new Date('2026-10-28T22:17:56Z'));
   });
 
+  it('dates the blog index and a post by the post file', () => {
+    dates.set('app/(marketing)/blog/page.tsx', new Date('2026-01-01T00:00:00Z'));
+    dates.set('content/blog/testing-in-the-agent-era.mdx', new Date('2026-10-31T09:00:00Z'));
+    const expected = new Date('2026-10-31T09:00:00Z');
+    expect(entry(`${BASE}/blog`)?.lastModified).toEqual(expected);
+    expect(entry(`${BASE}/blog/testing-in-the-agent-era`)?.lastModified).toEqual(expected);
+  });
+
   it('leaves lastModified out when no source has a known date', () => {
     for (const e of sitemap()) {
       expect(e.lastModified, e.url).toBeUndefined();

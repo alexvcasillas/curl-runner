@@ -263,6 +263,9 @@ importers:
       shiki:
         specifier: ^3.12.1
         version: 3.23.0
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@playwright/test':
         specifier: ^1.64.1
