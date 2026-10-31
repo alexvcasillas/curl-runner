@@ -189,21 +189,40 @@ fn setup_watcher(files: &[String], tx: Sender<Msg>, ui: &mut dyn Ui) -> Option<R
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc::channel;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Condvar, Mutex};
     use std::thread;
 
+    /// Failure guard for every wait: only hit when the loop is broken.
+    const TIMEOUT: Duration = Duration::from_secs(10);
+
+    /// Records UI calls; [`Mock::wait`] blocks until the log reaches a state.
     #[derive(Clone, Default)]
-    struct Mock(Arc<Mutex<Vec<String>>>);
+    struct Mock(Arc<(Mutex<Vec<String>>, Condvar)>);
     impl Mock {
         fn log(&self, s: impl Into<String>) {
-            self.0.lock().unwrap().push(s.into());
+            self.0.0.lock().unwrap().push(s.into());
+            self.0.1.notify_all();
         }
         fn count(&self, s: &str) -> usize {
-            self.0.lock().unwrap().iter().filter(|x| *x == s).count()
+            self.0.0.lock().unwrap().iter().filter(|x| *x == s).count()
         }
         fn all(&self) -> Vec<String> {
-            self.0.lock().unwrap().clone()
+            self.0.0.lock().unwrap().clone()
+        }
+        /// Wait until `s` has been logged `n` times.
+        fn wait(&self, s: &str, n: usize) {
+            let (log, cv) = &*self.0;
+            let (log, res) = cv
+                .wait_timeout_while(log.lock().unwrap(), TIMEOUT, |l| {
+                    l.iter().filter(|x| *x == s).count() < n
+                })
+                .unwrap();
+            assert!(
+                !res.timed_out(),
+                "no {n}× {s:?} within {TIMEOUT:?}: {log:?}"
+            );
         }
     }
     impl Ui for Mock {
@@ -234,21 +253,25 @@ mod tests {
         }
     }
 
-    /// Run the loop on this thread with `feed` sending messages from another;
-    /// `Stop` is sent after `settle`.
+    /// Run the loop on this thread. `queued` changes are in the channel
+    /// before it starts (so they always land in one debounce window); `feed`
+    /// then runs on another thread, synchronizing on the mock's log, and
+    /// `Stop` is sent once it returns.
     fn drive(
         c: Config,
         mock: &Mock,
-        settle: Duration,
-        feed: impl FnOnce(Sender<Msg>) + Send + 'static,
+        queued: &[&str],
+        feed: impl FnOnce(&Sender<Msg>, &Mock) + Send + 'static,
         mut on_run: impl FnMut() -> Result<(), String>,
     ) {
         let (tx, rx) = channel();
-        let tx2 = tx.clone();
+        for n in queued {
+            change(&tx, n);
+        }
+        let m = mock.clone();
         let h = thread::spawn(move || {
-            feed(tx);
-            thread::sleep(settle);
-            let _ = tx2.send(Msg::Stop);
+            feed(&tx, &m);
+            let _ = tx.send(Msg::Stop);
         });
         event_loop(&rx, &c, &mut mock.clone(), &mut on_run);
         h.join().unwrap();
@@ -266,12 +289,8 @@ mod tests {
         drive(
             cfg(50, true),
             &mock,
-            Duration::from_millis(200),
-            |tx| {
-                for _ in 0..3 {
-                    change(&tx, "test.yaml");
-                }
-            },
+            &["test.yaml"; 3],
+            |_, m| m.wait("ready", 1),
             move || {
                 *r.lock().unwrap() += 1;
                 Ok(())
@@ -285,19 +304,26 @@ mod tests {
         let mock = Mock::default();
         let runs = Arc::new(Mutex::new(0));
         let r = runs.clone();
+        // Each run reports that it started, then blocks until released.
+        let (started_tx, started) = channel();
+        let (release, release_rx) = channel::<()>();
         drive(
             cfg(10, false),
             &mock,
-            Duration::from_millis(500),
-            |tx| {
-                change(&tx, "test.yaml");
-                thread::sleep(Duration::from_millis(40)); // run is in progress
-                change(&tx, "test.yaml");
-                change(&tx, "test.yaml");
+            &["test.yaml"],
+            move |tx, m| {
+                started.recv_timeout(TIMEOUT).expect("first run");
+                change(tx, "test.yaml"); // while the run is in progress
+                change(tx, "test.yaml");
+                release.send(()).unwrap();
+                started.recv_timeout(TIMEOUT).expect("queued run");
+                release.send(()).unwrap();
+                m.wait("ready", 1);
             },
             move || {
                 *r.lock().unwrap() += 1;
-                thread::sleep(Duration::from_millis(100));
+                started_tx.send(()).unwrap();
+                release_rx.recv_timeout(TIMEOUT).expect("released");
                 Ok(())
             },
         );
@@ -324,20 +350,19 @@ mod tests {
     fn default_debounce_is_300ms() {
         assert_eq!(Config::default().debounce, Duration::from_millis(300));
         let mock = Mock::default();
-        let (tx, rx) = channel();
-        let t0 = Instant::now();
-        change(&tx, "test.yaml");
         let ran = Arc::new(Mutex::new(None));
         let r = ran.clone();
-        let h = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(500));
-            let _ = tx.send(Msg::Stop);
-        });
-        event_loop(&rx, &Config::default(), &mut mock.clone(), &mut move || {
-            *r.lock().unwrap() = Some(t0.elapsed());
-            Ok(())
-        });
-        h.join().unwrap();
+        let t0 = Instant::now();
+        drive(
+            Config::default(),
+            &mock,
+            &["test.yaml"],
+            |_, m| m.wait("ready", 1),
+            move || {
+                *r.lock().unwrap() = Some(t0.elapsed());
+                Ok(())
+            },
+        );
         let at = ran.lock().unwrap().expect("ran");
         assert!(at >= Duration::from_millis(300), "ran after {at:?}");
     }
@@ -348,11 +373,11 @@ mod tests {
         drive(
             cfg(10, false),
             &mock,
-            Duration::from_millis(150),
-            |tx| {
-                change(&tx, "a.yaml");
-                thread::sleep(Duration::from_millis(60));
-                change(&tx, "a.yaml");
+            &["a.yaml"],
+            |tx, m| {
+                m.wait("ready", 1);
+                change(tx, "a.yaml");
+                m.wait("ready", 2);
             },
             || Err("Test error".into()),
         );
@@ -366,8 +391,8 @@ mod tests {
         drive(
             cfg(10, false),
             &mock,
-            Duration::from_millis(100),
-            |tx| change(&tx, "my-api.yaml"),
+            &["my-api.yaml"],
+            |_, m| m.wait("ready", 1),
             || Ok(()),
         );
         assert_eq!(mock.count("changed:my-api.yaml"), 1);
@@ -379,8 +404,8 @@ mod tests {
         drive(
             cfg(10, false),
             &mock,
-            Duration::from_millis(100),
-            |tx| change(&tx, "test.yaml"),
+            &["test.yaml"],
+            |_, m| m.wait("ready", 1),
             || Ok(()),
         );
         assert_eq!(mock.all(), ["changed:test.yaml", "ready"]);
@@ -392,8 +417,8 @@ mod tests {
         drive(
             cfg(10, true),
             &mock,
-            Duration::from_millis(100),
-            |tx| change(&tx, "t.yaml"),
+            &["t.yaml"],
+            |_, m| m.wait("ready", 1),
             || Ok(()),
         );
         assert_eq!(mock.all(), ["clear", "changed:t.yaml", "ready"]);
@@ -404,9 +429,14 @@ mod tests {
         let mock = Mock::default();
         let (tx, rx) = channel();
         let stop = tx.clone();
-        let t0 = Instant::now();
+        let m = mock.clone();
+        let stopped = Arc::new(AtomicBool::new(false));
+        let s = stopped.clone();
         let h = thread::spawn(move || {
+            m.wait("watching", 1);
+            // Give a broken loop time to return on its own.
             thread::sleep(Duration::from_millis(300));
+            s.store(true, Ordering::SeqCst);
             let _ = stop.send(Msg::Stop);
         });
         start(
@@ -416,8 +446,8 @@ mod tests {
             &mut || Ok(()),
             (tx, rx),
         );
+        assert!(stopped.load(Ordering::SeqCst), "returned before Stop");
         h.join().unwrap();
-        assert!(t0.elapsed() >= Duration::from_millis(300), "returned early");
         assert_eq!(mock.count("watching"), 1);
         assert!(
             mock.all()

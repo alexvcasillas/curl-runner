@@ -795,10 +795,13 @@ fn diff_dir_flag_moves_the_files() {
 #[test]
 fn diff_subcommand_compares_two_stored_baselines() {
     let e = setup(&[("t.yaml", DIFF)]);
-    e.run(&["t.yaml", "--diff-save", "--diff-label", "a"]);
-    e.run(&["t.yaml", "--diff-save", "--diff-label", "b"]);
-    // same data (dates are not excluded in the offline compare): only dates may differ
-    let mut v = baseline(&e, "__baselines__/t.b.baseline.json");
+    let (code, out, err) = e.run(&["t.yaml", "--diff-save", "--diff-label", "a"]);
+    assert_eq!(code, 0, "{out}{err}");
+    // b is a copy of a with one body field changed. Not a second saved run:
+    // the offline compare does not exclude dates, so two runs that straddle a
+    // second boundary would also differ in every `date` header.
+    let mut v = baseline(&e, "__baselines__/t.a.baseline.json");
+    v["label"] = Value::from("b");
     v["baselines"]["User"]["body"]["name"] = Value::from("changed");
     std::fs::write(
         e.path("__baselines__/t.b.baseline.json"),

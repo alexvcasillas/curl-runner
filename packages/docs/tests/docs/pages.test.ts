@@ -43,6 +43,7 @@ const FEATURES = [
   'validate',
   'convert',
   'env-files',
+  'studio',
   'upgrade',
 ].map((slug) => `features/${slug}`);
 
@@ -140,7 +141,7 @@ describe('features docs', () => {
   it('puts the features pages between Security and CLI Commands in the sidebar', () => {
     const urls = flatten(source.pageTree).map((n) => n.url);
     const first = urls.indexOf('/docs/features/response-storage');
-    const last = urls.indexOf('/docs/features/env-files');
+    const last = urls.indexOf('/docs/features/studio');
     expect(urls.indexOf('/docs/security')).toBeLessThan(first);
     expect(last).toBeLessThan(urls.indexOf('/docs/cli-commands'));
     // docs-config order, with Upgrade living under CLI Reference instead
@@ -151,9 +152,9 @@ describe('features docs', () => {
 });
 
 describe('reference and examples docs', () => {
-  it('serves every page from MDX: index + 39 moved pages = 40', () => {
-    // 1 index + 12 getting-started/config/cli + 20 features + 7 reference and examples
-    expect(source.getPages()).toHaveLength(40);
+  it('serves every page from MDX: index + 39 moved pages + studio = 41', () => {
+    // 1 index + 12 getting-started/config/cli + 21 features + 7 reference and examples
+    expect(source.getPages()).toHaveLength(41);
   });
 
   it('has removed the old React docs tree and its sidebar config', () => {
