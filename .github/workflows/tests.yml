@@ -55,7 +55,12 @@ jobs:
 
       - name: Setup pnpm
         if: runner.os == 'Linux'
-        uses: pnpm/action-setup@v4
+        uses: pnpm/setup@v3
+        with:
+          # Node and the store cache come from actions/setup-node; the job runs
+          # `pnpm install --frozen-lockfile` itself.
+          install: false
+          node-version-file: false
 
       - name: Setup Node
         if: runner.os == 'Linux'

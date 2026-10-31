@@ -88,7 +88,12 @@ jobs:
           fetch-depth: 0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/setup@v3
+        with:
+          # Node and the store cache come from actions/setup-node; the job runs
+          # `pnpm install --frozen-lockfile` itself.
+          install: false
+          node-version-file: false
 
       - name: Setup Node
         uses: actions/setup-node@v7
@@ -114,14 +119,14 @@ jobs:
       # then `changeset publish`. See packages/cli/README.md.
       - name: Create Release Pull Request or Publish to npm
         id: changesets
-        uses: changesets/action@v1
+        uses: changesets/action@v2
         with:
-          version: pnpm run version
-          publish: bash scripts/npm-publish.sh dist-bin
-          commit: "chore: version packages"
-          title: "chore: version packages"
+          version-script: pnpm run version
+          publish-script: bash scripts/npm-publish.sh dist-bin
+          commit-message: "chore: version packages"
+          pr-title: "chore: version packages"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
           PNPM_CONFIG_PROVENANCE: true
 
