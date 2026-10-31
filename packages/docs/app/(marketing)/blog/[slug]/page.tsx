@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { formatPostDate, getPost, getPosts } from '@/lib/blog';
+import { blogPostingJsonLd, getBlogOgUrl } from '@/lib/blog-seo';
 import { INSTALL_METHODS } from '@/lib/install-methods';
 import { pageMetadata } from '@/lib/site';
 import { getMDXComponents } from '@/mdx-components';
@@ -25,7 +26,27 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!post) {
     notFound();
   }
-  return pageMetadata({ title: post.title, description: post.description, path: post.url });
+  const meta = pageMetadata({
+    title: post.title,
+    description: post.description,
+    path: post.url,
+    ownImage: true,
+  });
+  const images = [{ url: getBlogOgUrl(post), width: 1200, height: 630, alt: post.title }];
+  return {
+    ...meta,
+    authors: [{ name: post.author }],
+    alternates: { ...meta.alternates, types: { 'application/rss+xml': '/blog/rss.xml' } },
+    openGraph: {
+      ...meta.openGraph,
+      type: 'article',
+      publishedTime: post.date,
+      modifiedTime: post.updated ?? post.date,
+      authors: [post.author],
+      images,
+    },
+    twitter: { ...meta.twitter, images },
+  };
 }
 
 export default async function BlogPostPage({ params }: Props) {
@@ -39,6 +60,11 @@ export default async function BlogPostPage({ params }: Props) {
     <>
       <SiteHeader active="blog" />
       <main id="main-content" className="mx-auto max-w-[768px] px-6 pt-20 pb-24">
+        <script
+          type="application/ld+json"
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: JSON built from the post's own frontmatter, with < escaped
+          dangerouslySetInnerHTML={{ __html: blogPostingJsonLd(post) }}
+        />
         <a href="/blog" className={`text-sm text-fg-secondary hover:text-fg ${FOCUS}`}>
           ← Blog
         </a>

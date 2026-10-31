@@ -1,21 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getReleaseDates, getReleases } from '@/lib/changelog';
 import { entrySummary } from '@/lib/changelog-markdown';
+import { escapeXml } from '@/lib/xml';
 
 // Prerendered from packages/cli/CHANGELOG.md like /changelog (see next.config.ts).
 export const dynamic = 'force-static';
 
 const SITE_URL = 'https://www.curl-runner.com';
 const FEED_ITEMS = 20;
-
-function escapeXml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
 
 export async function GET() {
   const releases = getReleases().slice(0, FEED_ITEMS);

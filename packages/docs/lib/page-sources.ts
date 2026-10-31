@@ -14,8 +14,12 @@ export const MARKETING_PAGES: { path: string; sources: string[] }[] = [
   { path: '/downloads', sources: ['app/(marketing)/downloads/page.tsx', CLI_CHANGELOG] },
   { path: '/tools-database', sources: ['app/(marketing)/tools-database/page.tsx', CLI_CHANGELOG] },
   { path: '/changelog', sources: ['app/(marketing)/changelog/page.tsx', CLI_CHANGELOG] },
+  // The sitemap adds every post's MDX file: a new post changes the index.
+  { path: '/blog', sources: ['app/(marketing)/blog/page.tsx'] },
 ];
 
 export const FEATURE_SOURCES = ['app/(marketing)/features/[slug]/page.tsx', 'lib/features-data.ts'];
 
 export const DOCS_CONTENT_DIR = 'content/docs';
+
+export const BLOG_POST_SOURCES = ['app/(marketing)/blog/[slug]/page.tsx'];

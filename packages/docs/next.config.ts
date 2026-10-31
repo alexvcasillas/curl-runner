@@ -27,6 +27,8 @@ const nextConfig: NextConfig = {
       { source: '/docs.md', destination: '/llms.mdx' },
       { source: '/docs/index.md', destination: '/llms.mdx' },
       { source: '/docs/:path*.md', destination: '/llms.mdx/:path*' },
+      // Blog posts the same way: /blog/<slug>.md, rendered by app/llms.blog.
+      { source: '/blog/:slug.md', destination: '/llms.blog/:slug' },
     ];
   },
 };

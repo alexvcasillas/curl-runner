@@ -1,5 +1,6 @@
 import type { Item, Node } from 'fumadocs-core/page-tree';
-import { getMarkdownUrl, source } from '@/lib/source';
+import { getPosts } from '@/lib/blog';
+import { getMarkdownUrl, SITE_URL, source } from '@/lib/source';
 
 export const revalidate = false;
 
@@ -38,13 +39,19 @@ function collect(nodes: Node[], sections: Section[]): void {
 export function GET(): Response {
   const sections: Section[] = [{ heading: 'Docs', items: [] }];
   collect(source.getPageTree().children, sections);
+  sections.push({
+    heading: 'Blog',
+    items: getPosts().map(
+      (post) => `- [${post.title}](${SITE_URL}${post.url}.md): ${post.description}`,
+    ),
+  });
 
   const body = [
     '# curl-runner',
     '',
     '> A CLI for running HTTP requests defined in YAML files: sequential or parallel execution, response assertions, variables and CI-friendly output. A single native binary.',
     '',
-    'Every docs page is available as Markdown by appending `.md` to its URL.',
+    'Every docs page and blog post is available as Markdown by appending `.md` to its URL.',
     ...sections
       .filter((section) => section.items.length > 0)
       .flatMap((section) => ['', `## ${section.heading}`, '', ...section.items]),
