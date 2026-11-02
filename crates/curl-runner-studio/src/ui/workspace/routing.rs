@@ -529,7 +529,39 @@ impl Workspace {
     /// answered (no stored [`Connection`]).
     pub(in crate::ui) fn first_launch(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.connection().is_none() {
-            self.open_sign_in(None, window, cx);
+            if crate::features::SERVER {
+                self.open_sign_in(None, window, cx);
+            } else {
+                self.open_first_launch(window, cx);
+            }
+        }
+    }
+
+    /// The local-first screen, in place of everything under the title bar.
+    fn open_first_launch(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let view = cx.new(FirstLaunchView::new);
+        self._first_launch_events = Some(cx.subscribe_in(&view, window, Self::on_first_launch));
+        view.read(cx).focus_handle(cx).focus(window, cx);
+        self.first_launch = Some(view);
+        self.close_hover(cx);
+        self.sync_chrome(window, cx);
+    }
+
+    fn on_first_launch(
+        &mut self,
+        _: &Entity<FirstLaunchView>,
+        FirstLaunchEvent::GetStarted: &FirstLaunchEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.store.set_connection(Some(Connection::Offline));
+        self.session_connection = Some(Connection::Offline);
+        self.first_launch = None;
+        self._first_launch_events = None;
+        self.focus.focus(window, cx);
+        self.sync_chrome(window, cx);
+        if let Some(link) = self.pending_link.take() {
+            self.open_shared(Some(link), window, cx);
         }
     }
 
@@ -556,7 +588,7 @@ impl Workspace {
     }
 
     pub(in crate::ui) fn sign_in_shown(&self) -> bool {
-        self.sign_in.is_some()
+        self.sign_in.is_some() || self.first_launch.is_some()
     }
 
     pub(in crate::ui) fn close_sign_in(&mut self, window: &mut Window, cx: &mut Context<Self>) {

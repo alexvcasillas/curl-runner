@@ -418,7 +418,7 @@ impl Render for SignInView {
 }
 
 /// The 16px radio: a ring, or a 5px ring around a dark dot when `on`.
-fn radio(on: bool) -> Div {
+pub(super) fn radio(on: bool) -> Div {
     div()
         .flex_none()
         .mt(px(2.))
@@ -434,7 +434,17 @@ fn radio(on: bool) -> Div {
 }
 
 /// A choice card: `.opt`, outlined in `text-primary` when picked.
-fn option_card(id: &'static str, label: &'static str, on: bool) -> Stateful<Div> {
+pub(super) fn option_card(id: &'static str, label: &'static str, on: bool) -> Stateful<Div> {
+    choice_card(id, label, on, !on)
+}
+
+/// [`option_card`], `live` when it answers a pointer.
+pub(super) fn choice_card(
+    id: &'static str,
+    label: &'static str,
+    on: bool,
+    live: bool,
+) -> Stateful<Div> {
     div()
         .id(id)
         .role(Role::RadioButton)
@@ -450,15 +460,16 @@ fn option_card(id: &'static str, label: &'static str, on: bool) -> Stateful<Div>
                     .bg(color("surface-raised"))
             } else {
                 d.border_color(color("border-200"))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(color("surface-100")))
             }
+        })
+        .when(live, |d| {
+            d.cursor_pointer().hover(|s| s.bg(color("surface-100")))
         })
         .child(radio(on))
 }
 
 /// The card's name line: icon, name and the pill.
-fn option_title(icon: &'static str, name: &'static str, pill: &'static str) -> Div {
+pub(super) fn option_title(icon: &'static str, name: &'static str, pill: impl IntoElement) -> Div {
     div()
         .flex()
         .items_center()
@@ -467,10 +478,15 @@ fn option_title(icon: &'static str, name: &'static str, pill: &'static str) -> D
         .font_weight(FontWeight::MEDIUM)
         .child(glyph(icon).size(px(16.)).text_color(color("text-primary")))
         .child(name)
-        .child(neutral_pill().text_size(px(11.)).px(px(7.)).child(pill))
+        .child(pill)
 }
 
-fn option_text() -> Div {
+/// The neutral pill after a card's name.
+fn tag(label: &'static str) -> Div {
+    neutral_pill().text_size(px(11.)).px(px(7.)).child(label)
+}
+
+pub(super) fn option_text() -> Div {
     div()
         .text_size(px(12.))
         .line_height(relative(1.5))
@@ -495,7 +511,11 @@ impl SignInView {
                     .flex_col()
                     .flex_1()
                     .gap(px(4.))
-                    .child(option_title(icons::CLOUD, "curl-runner Cloud", "Managed"))
+                    .child(option_title(
+                        icons::CLOUD,
+                        "curl-runner Cloud",
+                        tag("Managed"),
+                    ))
                     .child(
                         option_text().child(
                             "Nothing to run. Sign in with GitHub or email and start sharing.",
@@ -523,7 +543,11 @@ impl SignInView {
             .flex()
             .flex_col()
             .gap(px(4.))
-            .child(option_title(icons::SERVER, "Self-hosted", "Open source"))
+            .child(option_title(
+                icons::SERVER,
+                "Self-hosted",
+                tag("Open source"),
+            ))
             .child(text);
         let body = div()
             .flex()
@@ -774,7 +798,10 @@ mod tests {
             gpui_kit::open_window(options, cx, |window, cx| {
                 cx.new(|cx| {
                     let mut ws = Workspace::new(None, store, test_secrets(), backend, window, cx);
-                    ws.first_launch(window, cx);
+                    // The sign-in screen itself, whatever the build's first launch.
+                    if ws.connection().is_none() {
+                        drop(ws.open_sign_in(None, window, cx));
+                    }
                     ws
                 })
             })

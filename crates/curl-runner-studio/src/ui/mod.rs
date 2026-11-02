@@ -9,6 +9,7 @@ mod diagnostic_marks;
 mod diagnostic_popover;
 mod diagnostics_view;
 mod editor_pane;
+mod first_launch;
 mod history_view;
 mod icons;
 mod import_dialog;
