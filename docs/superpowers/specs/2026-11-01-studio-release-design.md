@@ -176,11 +176,21 @@ Help menu.
   down cleanly on SIGTERM, so Coolify redeploys don't drop requests.
 - CORS open for `GET /health` (it's public and harmless).
 - **Docker image:** a static musl binary in a minimal base image, for `linux/amd64` and
-  `linux/arm64`. Published to `ghcr.io/alexvcasillas/curl-runner-server`, tagged with the
-  version and `latest`, from the release workflow.
-- **Self-hosting:** a `docker-compose.yml` example in the docs. It's a single service today,
-  and it's where Postgres goes in the next project.
-- **Deploying:** Coolify runs the GHCR image. The owner sets up the Coolify app and the DNS.
+  `linux/arm64`. Published to `ghcr.io/alexvcasillas/curl-runner-server`.
+- **Same pattern as the owner's other Coolify project (owner's call):**
+  - A workflow builds the image with Buildx and the GitHub Actions cache, and pushes it to
+    GHCR as `latest` and `sha-<short>`. It runs on pushes to `main` that touch the server
+    (or what it depends on), and by hand (`workflow_dispatch`). The server deploys on its
+    own schedule, not with CLI releases.
+  - A deploy job then calls the Coolify deploy webhook with a bearer token. Secrets:
+    `COOLIFY_WEBHOOK_SERVER` and `COOLIFY_TOKEN`.
+  - `docker-compose.prod.yml` at the repo root is what Coolify runs: the GHCR image, the
+    external `coolify` network (Coolify manages networking and the proxy), a healthcheck,
+    `restart: unless-stopped`, and settings as `${VAR}` so Coolify shows them in its UI.
+  - The image must be able to run its own healthcheck without `curl` in a minimal image,
+    for example a `curl-runner-server healthcheck` subcommand.
+- **Self-hosting:** the same compose file, documented. It's a single service today, and
+  it's where Postgres goes in the next project.
 - Tests: `/health` returns the status and version, and unknown paths return `404`.
 
 ## The website
@@ -204,12 +214,14 @@ apply the same global `diff.exclude` and match rules, with a test that pins it.
 
 ## Release and versioning
 
-- The studio and the server ship with the CLI's release, same version, same GitHub release.
-- New jobs in `.github/workflows/release.yml` (studio: macOS build, sign, notarize, dmg,
-  upload; server: image build and push) run only when the CLI release runs.
+- The studio ships with the CLI's release, same version, same GitHub release. New jobs in
+  `.github/workflows/release.yml` (macOS build, sign, notarize, dmg, upload) run only when
+  the CLI release runs.
+- The server has its own workflow (above).
 - Secrets the owner adds to GitHub Actions: the Developer ID certificate (`.p12`, base64)
   and its password, and an App Store Connect API key (key ID, issuer ID, `.p8`) for
-  notarization. The image push uses `GITHUB_TOKEN`.
+  notarization. The image push uses `GITHUB_TOKEN`. For deploys: `COOLIFY_WEBHOOK_SERVER`
+  and `COOLIFY_TOKEN`.
 - Changeset bump: ask the owner after human verification (`AGENTS.md`).
 
 ## Constraints
@@ -229,21 +241,23 @@ apply the same global `diff.exclude` and match rules, with a test that pins it.
 - **`/health` returns `status` and `version`, nothing else.**
 - **Universal binary and a `.dmg`**, rather than separate per-architecture downloads or a
   `.zip`.
-- **One release for everything**, sharing the CLI's version and tag.
+- **The studio ships with the CLI's release**, sharing its version and tag. The server
+  doesn't: it deploys from `main` (owner's Coolify pattern, above).
 - **Coolify pulls the published GHCR image** rather than building from the repo.
+- **Image tags are `latest` and `sha-<short>`**, so a bad deploy can be rolled back in
+  Coolify by pinning a sha.
 - **The studio and server jobs never block the CLI.** They run after the CLI is published.
   If notarization or the image push fails, the CLI still ships, and a manual
   `workflow_dispatch` rebuilds the studio or the server for an existing tag. A studio-only
   fix ships as a normal patch release.
 - **Order of shipping:**
-  1. The server PR merges first. A manual workflow run publishes its image. The owner makes
-     the GHCR package public, sets up Coolify and points DNS, and
+  1. The server PR merges first and its workflow publishes the image. The owner makes the
+     GHCR package public, sets up the Coolify stack from `docker-compose.prod.yml`, adds the
+     deploy secrets and points DNS, and
      `https://api.curl-runner.com/health` answers.
   2. The studio PRs merge and a release produces the signed `.dmg`.
   3. The website changes (download buttons, copy) merge only after that release exists, so
      no button links to nothing.
-- **Coolify redeploys by hand for now.** A deploy webhook can come with the next project,
-  when the server changes often.
 - **Old v1 state:** with the switch off, the release build ignores any stored server
   connection, sign-in, received copies or mock data, and treats the app as local. It
   doesn't delete them, so a dev build still finds them. A test pins that a stored "Cloud"
@@ -269,4 +283,5 @@ apply the same global `diff.exclude` and match rules, with a test that pins it.
 ## Open questions
 
 None left for the owner. Owner steps during the work: make the GHCR package public, set up
-the Coolify app, point `api.curl-runner.com` at it, and add the signing secrets.
+the Coolify stack, point `api.curl-runner.com` at it, and add the signing and Coolify
+secrets.
