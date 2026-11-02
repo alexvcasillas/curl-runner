@@ -177,20 +177,29 @@ Help menu.
 - CORS open for `GET /health` (it's public and harmless).
 - **Docker image:** a static musl binary in a minimal base image, for `linux/amd64` and
   `linux/arm64`. Published to `ghcr.io/alexvcasillas/curl-runner-server`.
-- **Same pattern as the owner's other Coolify project (owner's call):**
-  - A workflow builds the image with Buildx and the GitHub Actions cache, and pushes it to
-    GHCR as `latest` and `sha-<short>`. It runs on pushes to `main` that touch the server
-    (or what it depends on), and by hand (`workflow_dispatch`). The server deploys on its
-    own schedule, not with CLI releases.
-  - A deploy job then calls the Coolify deploy webhook with a bearer token. Secrets:
-    `COOLIFY_WEBHOOK_SERVER` and `COOLIFY_TOKEN`.
-  - `docker-compose.prod.yml` at the repo root is what Coolify runs: the GHCR image, the
-    external `coolify` network (Coolify manages networking and the proxy), a healthcheck,
-    `restart: unless-stopped`, and settings as `${VAR}` so Coolify shows them in its UI.
-  - The image must be able to run its own healthcheck without `curl` in a minimal image,
-    for example a `curl-runner-server healthcheck` subcommand.
-- **Self-hosting:** the same compose file, documented. It's a single service today, and
-  it's where Postgres goes in the next project.
+- **Same pattern as the owner's other Coolify projects (owner's call), in one workflow:**
+  - Runs on pull requests, on pushes to `main`, and by hand (`workflow_dispatch`). The
+    server deploys from `main` on its own schedule, not with CLI releases.
+  - **Build** needs the tests to pass. Buildx with the GitHub Actions cache.
+    `docker/metadata-action` tags `latest` on `main` and `sha-<short>` on every build. Pull
+    requests build the image but don't push it, so a broken Dockerfile fails before merge.
+  - **Deploy** (not on pull requests) `POST`s the Coolify deploy webhook with a bearer
+    token, `--fail` and `--retry 3`, in a deploy concurrency group that never cancels a
+    running deploy. Secrets: `COOLIFY_WEBHOOK_SERVER` and `COOLIFY_TOKEN`.
+  - **`docker-compose.prod.yml`** at the repo root is what Coolify runs, as one Docker
+    Compose resource:
+    - `image: ghcr.io/alexvcasillas/curl-runner-server:${SERVER_IMAGE_TAG:-latest}`, so a
+      rollback is setting the tag to a sha in Coolify;
+    - the external `coolify` network, so Coolify manages networking and the proxy;
+    - a healthcheck with a `start_period`, and `restart: unless-stopped`;
+    - settings as `${VAR}`, which Coolify shows in its UI.
+  - **`docker-compose.preview.yml`** runs the real production image locally, the closest
+    check to "does what we ship boot and serve".
+  - A minimal image has no `curl`, so the binary checks itself: a
+    `curl-runner-server healthcheck` subcommand calls its own `/health` and exits 0 or 1.
+- **Self-hosting:** the same compose file, documented. When Postgres arrives in the next
+  project it runs as its own service (a separate Coolify service in our deploy), and the
+  server gets its host and credentials through `${VAR}` settings.
 - Tests: `/health` returns the status and version, and unknown paths return `404`.
 
 ## The website
@@ -244,8 +253,6 @@ apply the same global `diff.exclude` and match rules, with a test that pins it.
 - **The studio ships with the CLI's release**, sharing its version and tag. The server
   doesn't: it deploys from `main` (owner's Coolify pattern, above).
 - **Coolify pulls the published GHCR image** rather than building from the repo.
-- **Image tags are `latest` and `sha-<short>`**, so a bad deploy can be rolled back in
-  Coolify by pinning a sha.
 - **The studio and server jobs never block the CLI.** They run after the CLI is published.
   If notarization or the image push fails, the CLI still ships, and a manual
   `workflow_dispatch` rebuilds the studio or the server for an existing tag. A studio-only
