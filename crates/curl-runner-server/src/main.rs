@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use curl_runner_server::{healthcheck, port_from_env, serve};
 use tokio::net::TcpListener;
 use tokio::signal;
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
@@ -17,7 +18,12 @@ async fn main() -> std::process::ExitCode {
         };
     }
 
-    tracing_subscriber::fmt().with_ansi(false).init();
+    tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .init();
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = match TcpListener::bind(addr).await {
