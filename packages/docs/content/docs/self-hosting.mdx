@@ -17,7 +17,18 @@ From a checkout of the repo:
 docker compose up -d
 ```
 
-This pulls the image and starts a service called `server` on port 8080.
+This pulls the image and starts a service called `server`. It listens on port 8080 inside the container, but the compose file doesn't publish it to your machine.
+
+To reach it from your host, add a `docker-compose.override.yml` next to `docker-compose.yaml`. Compose picks it up automatically:
+
+```yaml
+services:
+  server:
+    ports:
+      - "8080:8080"
+```
+
+If you change `PORT`, map that port instead, for example `"9000:9000"`.
 
 The compose file attaches the service to an external network named `coolify`, because that's how it's deployed. If you don't use Coolify, create the network first:
 
@@ -29,8 +40,16 @@ Or delete the two `networks` keys from `docker-compose.yaml`.
 
 ## Check it's up [#health]
 
+With the port published as above:
+
 ```bash
 curl localhost:8080/health
+```
+
+Without it, run the image's own check inside the container:
+
+```bash
+docker compose exec server /curl-runner-server healthcheck
 ```
 
 ```json
