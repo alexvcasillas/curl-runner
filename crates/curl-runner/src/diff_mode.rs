@@ -3,10 +3,11 @@
 
 use crate::output::diff::DiffFormatter;
 use crate::output::{Console, Logger, OutCfg};
-use curl_runner_core::config::CliOptions;
+use curl_runner_core::config::{self, CliOptions};
 use curl_runner_core::diff::{BaselineManager, DiffOrchestrator};
 use curl_runner_core::discover::find_yaml_files;
-use curl_runner_core::model::{DiffConfig, DiffSetting, ExecutionResult, GlobalDiffConfig};
+use curl_runner_core::model::{DiffSetting, ExecutionResult, GlobalDiffConfig};
+use curl_runner_core::parser;
 use curl_runner_core::security::redact::Redactor;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -151,11 +152,16 @@ pub fn run_subcommand(
             }
         }
     };
-    let dc = GlobalDiffConfig {
-        dir: Some(truthy(&cli.diff_dir).unwrap_or("__baselines__").to_string()),
-        output_format: Some(truthy(&cli.diff_output).unwrap_or("terminal").to_string()),
-        ..Default::default()
-    };
+    // Same layering as a run: curl-runner.yaml < the file's `global` < env <
+    // CLI flags, so `--diff-dir` / `--diff-output` still win.
+    let project = config::load_config_file(cwd).config;
+    let file_cfg = parser::load_raw(&cwd.join(&yaml))
+        .and_then(|raw| parser::global_from_raw(&raw))
+        .unwrap_or_default();
+    let resolved = config::resolve(file_cfg, Some(project), &|k| std::env::var(k).ok(), cli);
+    let mut dc = resolved.diff.unwrap_or_default();
+    dc.dir = Some(truthy(&dc.dir).unwrap_or("__baselines__").to_string());
+    dc.output_format = Some(truthy(&dc.output_format).unwrap_or("terminal").to_string());
     let orch = DiffOrchestrator::new(Some(&dc), cwd);
     let ident = |s: &str| s.to_string();
     let fmt = DiffFormatter::new(
@@ -163,11 +169,8 @@ pub fn run_subcommand(
         color,
         &ident,
     );
-    let config = DiffConfig {
-        exclude: Some(Vec::new()),
-        match_rules: Some(Default::default()),
-        ..Default::default()
-    };
+    let config = BaselineManager::merge_config(Some(&dc), Some(&DiffSetting::Bool(true)))
+        .unwrap_or_default();
     match orch.compare_two_baselines(&yaml, label1, label2, &config) {
         Ok(summary) => {
             console.out(&fmt.format_summary(&summary, label1, label2));

@@ -1183,3 +1183,83 @@ request:
     );
     assert!(r["metrics"]["duration"].as_f64().unwrap() >= 2500.0, "{v}");
 }
+
+const DIFF_REQ: &str = "requests:\n  - name: User\n    url: \"{BASE}/json/user\"\n";
+
+/// Two stored baselines that differ only at `body.<field>`.
+fn two_baselines_differing_at(e: &Env, dir: &str, field: &str) {
+    let (code, out, err) = e.run(&[
+        "t.yaml",
+        "--diff-save",
+        "--diff-label",
+        "a",
+        "--diff-dir",
+        dir,
+    ]);
+    assert_eq!(code, 0, "{out}{err}");
+    let mut v = baseline(e, &format!("{dir}/t.a.baseline.json"));
+    v["label"] = Value::from("b");
+    v["baselines"]["User"]["body"][field] = Value::from("changed");
+    std::fs::write(
+        e.path(&format!("{dir}/t.b.baseline.json")),
+        serde_json::to_string(&v).unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn diff_subcommand_ignores_excluded_paths() {
+    let e = setup(&[
+        ("t.yaml", DIFF_REQ),
+        (
+            "curl-runner.yaml",
+            "global:\n  diff:\n    exclude: [\"body.name\"]\n",
+        ),
+    ]);
+    two_baselines_differing_at(&e, "__baselines__", "name");
+    let (code, out, err) = e.run(&["diff", "a", "b", "t.yaml"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(!out.contains("body.name"), "{out}");
+}
+
+#[test]
+fn diff_subcommand_reads_exclude_from_the_yaml_global() {
+    let yaml = format!("global:\n  diff:\n    exclude: [\"body.name\"]\n{DIFF_REQ}");
+    let e = setup(&[("t.yaml", &yaml)]);
+    two_baselines_differing_at(&e, "__baselines__", "name");
+    let (code, out, err) = e.run(&["diff", "a", "b", "t.yaml"]);
+    assert_eq!(code, 0, "{out}{err}");
+}
+
+#[test]
+fn diff_subcommand_flags_override_config_dir() {
+    let e = setup(&[
+        ("t.yaml", DIFF_REQ),
+        (
+            "curl-runner.yaml",
+            "global:\n  diff:\n    dir: other\n    exclude: [\"body.name\"]\n",
+        ),
+    ]);
+    two_baselines_differing_at(&e, "__baselines__", "name");
+    // config dir is used without the flag: no baselines there
+    let (code, _, err) = e.run(&["diff", "a", "b", "t.yaml"]);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("not found"), "{err}");
+    let (code, out, err) = e.run(&["diff", "a", "b", "t.yaml", "--diff-dir", "__baselines__"]);
+    assert_eq!(code, 0, "{out}{err}");
+}
+
+#[test]
+fn diff_subcommand_still_reports_real_changes() {
+    let e = setup(&[
+        ("t.yaml", DIFF_REQ),
+        (
+            "curl-runner.yaml",
+            "global:\n  diff:\n    exclude: [\"body.name\"]\n",
+        ),
+    ]);
+    two_baselines_differing_at(&e, "__baselines__", "email");
+    let (code, out, err) = e.run(&["diff", "a", "b", "t.yaml"]);
+    assert_eq!(code, 1, "{out}{err}");
+    assert!(out.contains("body.email"), "{out}");
+}
