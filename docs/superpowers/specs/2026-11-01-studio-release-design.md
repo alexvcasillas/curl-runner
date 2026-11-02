@@ -157,8 +157,11 @@ Help menu.
 - `scripts/studio-bundle.sh` already builds `curl-runner studio.app` with an Info.plist
   (`com.curl-runner.studio`, macOS 12.0+, the `curl-runner://` scheme). Release builds use
   it.
-- **The app has no icon today.** This release needs one (`.icns`), in the design system's
-  look: the `>_` mark on the light tile, as in the mockups.
+- **The app has no icon today.** Use the website's mark (owner's call): the `TerminalMark`
+  SVG from `packages/docs/components/site/SiteHeader.tsx`, white on the dark rounded tile,
+  as in `packages/docs/public/apple-icon-dark.png`. The 1024px master is generated from
+  that SVG with the padding of macOS's app icon grid, then turned into an `.icns`, both
+  committed. The source SVG stays the one place the mark is defined.
 - One universal binary (Apple silicon and Intel).
 - Signed with a Developer ID Application certificate and the hardened runtime, notarized,
   and stapled. Shipped as a `.dmg` (drag to Applications) on the GitHub release.
@@ -265,4 +268,5 @@ apply the same global `diff.exclude` and match rules, with a test that pins it.
 
 ## Open questions
 
-- **The app icon:** design it here, or does the owner have one?
+None left for the owner. Owner steps during the work: make the GHCR package public, set up
+the Coolify app, point `api.curl-runner.com` at it, and add the signing secrets.
