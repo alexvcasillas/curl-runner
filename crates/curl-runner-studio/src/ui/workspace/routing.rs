@@ -514,17 +514,52 @@ impl Workspace {
         })
     }
 
-    /// The sign-in screen's answer: stored, else this session's.
+    /// The sign-in screen's answer: stored, else this session's. Without
+    /// the server any answer means local only (an `Online` from a build
+    /// that had one included); the stored value is left as it is.
     pub(in crate::ui) fn connection(&self) -> Option<Connection> {
-        self.store.connection().or(self.session_connection)
+        let answer = self.store.connection().or(self.session_connection);
+        if !crate::features::SERVER {
+            return answer.map(|_| Connection::Offline);
+        }
+        answer
     }
 
     /// Shows the sign-in screen on first launch: when it was never
     /// answered (no stored [`Connection`]).
     pub(in crate::ui) fn first_launch(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.connection().is_none() {
-            self.open_sign_in(None, window, cx);
+            if crate::features::SERVER {
+                self.open_sign_in(None, window, cx);
+            } else {
+                self.open_first_launch(window, cx);
+            }
         }
+    }
+
+    /// The local-first screen, in place of everything under the title bar.
+    fn open_first_launch(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let view = cx.new(FirstLaunchView::new);
+        self._first_launch_events = Some(cx.subscribe_in(&view, window, Self::on_first_launch));
+        view.read(cx).focus_handle(cx).focus(window, cx);
+        self.first_launch = Some(view);
+        self.close_hover(cx);
+        self.sync_chrome(window, cx);
+    }
+
+    fn on_first_launch(
+        &mut self,
+        _: &Entity<FirstLaunchView>,
+        FirstLaunchEvent::GetStarted: &FirstLaunchEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.store.set_connection(Some(Connection::Offline));
+        self.session_connection = Some(Connection::Offline);
+        self.first_launch = None;
+        self._first_launch_events = None;
+        self.focus.focus(window, cx);
+        self.sync_chrome(window, cx);
     }
 
     /// The sign-in screen, in place of everything under the title bar.
@@ -542,6 +577,9 @@ impl Workspace {
         self._sign_in_events = Some(cx.subscribe_in(&view, window, Self::on_sign_in_event));
         view.read(cx).focus_handle(cx).focus(window, cx);
         self.sign_in = Some(view.clone());
+        // It answers instead of the local-first screen.
+        self.first_launch = None;
+        self._first_launch_events = None;
         self.sign_in_origin = origin;
         self.close_app_settings();
         self.close_hover(cx);
@@ -550,7 +588,7 @@ impl Workspace {
     }
 
     pub(in crate::ui) fn sign_in_shown(&self) -> bool {
-        self.sign_in.is_some()
+        self.sign_in.is_some() || self.first_launch.is_some()
     }
 
     pub(in crate::ui) fn close_sign_in(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -585,6 +623,9 @@ impl Workspace {
 
     /// Welcome's cloud chip: its dot's token and its text.
     pub(in crate::ui) fn connection_text(&self) -> (&'static str, String) {
+        if !crate::features::SERVER {
+            return ("text-tertiary", "Working locally".into());
+        }
         if self.connection() == Some(Connection::Offline) {
             return ("text-tertiary", "Offline".into());
         }

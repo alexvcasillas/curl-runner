@@ -193,27 +193,27 @@ impl ShareView {
         self.sync.read(cx).settings.clone()
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "server"))]
     pub fn error(&self, cx: &App) -> Option<String> {
         self.sync.read(cx).error.clone()
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "server"))]
     pub fn invite_error(&self, cx: &App) -> Option<String> {
         self.sync.read(cx).invite_error.clone()
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "server"))]
     pub fn people(&self, cx: &App) -> Option<usize> {
         self.sync.read(cx).people()
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "server"))]
     pub fn offers_share_default(&self, name: &str, cx: &App) -> bool {
         self.sync.read(cx).offers_share_default(name, cx)
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "server"))]
     pub fn shares_default(&self, name: &str, cx: &App) -> bool {
         self.sync.read(cx).shares_default(name, cx)
     }
@@ -322,13 +322,13 @@ impl ShareView {
         });
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "server"))]
     pub fn type_invite(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
         self.invite
             .update(cx, |s, cx| s.set_value(text, window, cx));
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "server"))]
     pub fn invite_text(&self, cx: &App) -> String {
         self.invite.read(cx).value().to_string()
     }
@@ -1287,7 +1287,8 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+/// Server behaviour: only in builds with the `server` feature.
+#[cfg(all(test, feature = "server"))]
 mod gpui_tests {
     use super::super::state::StateStore;
     use super::super::workspace::{Workspace, edit_notes, test_backend, test_secrets};

@@ -579,6 +579,12 @@ impl Workspace {
         if over {
             // Captured values may now resolve `${store.*}`.
             self.refresh_vars(cx);
+            let ran_health = self
+                .runs
+                .groups
+                .iter()
+                .any(|f| f == Path::new(crate::model::tour::HEALTH_FILE));
+            self.tour_run_finished(ran_health, cx);
             // Only the files this run ran: others keep hints that followed
             // their edits.
             for ix in 0..self.tabs.len() {

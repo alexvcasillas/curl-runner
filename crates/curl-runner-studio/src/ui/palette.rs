@@ -7,7 +7,7 @@
 
 use super::app::{
     Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder, OpenHistory, OpenSettings,
-    OpenSharedLink, ToggleProblems, mono_font,
+    OpenSharedLink, ToggleProblems, Walkthrough, mono_font,
 };
 use super::icons::{self, glyph};
 use super::settings_view::AppPage;
@@ -165,10 +165,11 @@ pub enum PaletteAction {
     OpenHistory,
     Environments,
     Settings,
+    Walkthrough,
 }
 
 impl PaletteAction {
-    pub const ALL: [PaletteAction; 9] = [
+    pub const ALL: [PaletteAction; 10] = [
         PaletteAction::OpenFolder,
         PaletteAction::OpenSharedLink,
         PaletteAction::NewRequest,
@@ -178,7 +179,14 @@ impl PaletteAction {
         PaletteAction::OpenHistory,
         PaletteAction::Environments,
         PaletteAction::Settings,
+        PaletteAction::Walkthrough,
     ];
+
+    /// Whether this build lists it: opening a shared link needs the
+    /// curl-runner server.
+    pub fn listed(self) -> bool {
+        crate::features::SERVER || self != PaletteAction::OpenSharedLink
+    }
 
     fn label(self) -> &'static str {
         match self {
@@ -191,6 +199,7 @@ impl PaletteAction {
             PaletteAction::OpenHistory => "Open history",
             PaletteAction::Environments => "Environments…",
             PaletteAction::Settings => "Settings…",
+            PaletteAction::Walkthrough => "Run the walkthrough",
         }
     }
 
@@ -206,6 +215,7 @@ impl PaletteAction {
             PaletteAction::OpenHistory => icons::HISTORY,
             PaletteAction::Environments => icons::KEY,
             PaletteAction::Settings => icons::GENERAL,
+            PaletteAction::Walkthrough => icons::PLAY,
         }
     }
 
@@ -221,6 +231,7 @@ impl PaletteAction {
             PaletteAction::OpenHistory => Box::new(OpenHistory),
             PaletteAction::Environments => Box::new(OpenEnvironments),
             PaletteAction::Settings => Box::new(OpenSettings),
+            PaletteAction::Walkthrough => Box::new(Walkthrough),
         }
     }
 }
@@ -243,7 +254,7 @@ pub fn palette_entries(
     out.extend(
         PaletteAction::ALL
             .iter()
-            .filter(|a| !(read_only && writes(a)))
+            .filter(|a| a.listed() && !(read_only && writes(a)))
             .map(|&a| {
                 let item = PaletteItem {
                     group: Group::Actions,
@@ -394,7 +405,7 @@ impl Palette {
     }
 
     /// Whether the palette lists action `a` (tests).
-    #[cfg(test)]
+    #[cfg(all(test, feature = "server"))]
     pub fn lists(&self, a: PaletteAction) -> bool {
         self.targets.contains(&Target::Action(a))
     }
@@ -441,7 +452,7 @@ impl Palette {
         cx.notify();
     }
 
-    fn confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let (matches, order) = self.order();
         if let Some(&m) = order.get(self.selected) {
             self.perform(matches[m].0, window, cx);
@@ -484,6 +495,7 @@ impl Palette {
                 Target::Action(PaletteAction::Settings) => {
                     ws.open_app_settings(AppPage::General, window, cx)
                 }
+                Target::Action(PaletteAction::Walkthrough) => ws.start_walkthrough(window, cx),
             })
             .ok();
     }
@@ -1020,7 +1032,12 @@ mod tests {
             }
         );
         let actions: Vec<_> = entries[7..].iter().map(|(_, t)| t.clone()).collect();
-        assert_eq!(actions, PaletteAction::ALL.map(Target::Action));
+        let listed: Vec<_> = PaletteAction::ALL
+            .into_iter()
+            .filter(|a| a.listed())
+            .map(Target::Action)
+            .collect();
+        assert_eq!(actions, listed);
         // No collection: no folders.
         assert!(
             palette_entries(None, &tree(), false)

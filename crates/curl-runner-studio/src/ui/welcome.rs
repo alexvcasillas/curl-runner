@@ -3,17 +3,28 @@
 
 use super::app::mono_font;
 use super::color;
+use super::coming_soon::soon_pill;
 use super::icons::{self, glyph};
 use super::new_dialog::display_path;
-use super::settings_kit::later_badge;
+use super::settings_kit::{later_badge, primary_button};
 use super::state::RecentEntry;
+use super::tour::prose;
 use super::workspace::Workspace;
 use crate::model::history::relative_time;
+use crate::model::tour::TourStatus;
 use chrono::Local;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::path::Path;
+
+/// Welcome's lede without the server: nothing about sharing.
+pub(super) const WELCOME_LEDE_LOCAL: &str =
+    "Write requests as YAML, run them as tests and read the results.";
+
+const TOUR_CARD_TITLE: &str = "Run your first request";
+const TOUR_CARD_BODY: &str = "A two-minute walkthrough. We'll create a small collection and \
+     check that `api.curl-runner.com` is up.";
 
 /// One of the four start actions.
 struct Card {
@@ -24,6 +35,9 @@ struct Card {
     detail: &'static str,
     /// `None`: shown disabled with the `Later build` badge.
     action: Option<fn(&mut Workspace, &mut Window, &mut Context<Workspace>)>,
+    /// Needs the curl-runner server: without it, disabled with this text
+    /// and the `Coming soon` pill.
+    soon: Option<&'static str>,
 }
 
 const CARDS: [Card; 4] = [
@@ -36,6 +50,7 @@ const CARDS: [Card; 4] = [
         action: Some(|ws, window, cx| {
             ws.new_collection(window, cx);
         }),
+        soon: None,
     },
     Card {
         id: "welcome-open-folder",
@@ -44,6 +59,7 @@ const CARDS: [Card; 4] = [
         title: "Open folder",
         detail: "Work on YAML files already on disk, for example a repo checkout.",
         action: Some(|ws, window, cx| ws.open_folder(window, cx)),
+        soon: None,
     },
     Card {
         id: "welcome-open-link",
@@ -54,6 +70,9 @@ const CARDS: [Card; 4] = [
         action: Some(|ws, window, cx| {
             ws.open_shared(None, window, cx);
         }),
+        soon: Some(
+            "Open a collection someone shared with you. Arrives with the curl-runner server.",
+        ),
     },
     Card {
         id: "welcome-import",
@@ -64,6 +83,7 @@ const CARDS: [Card; 4] = [
         action: Some(|ws, window, cx| {
             ws.import(window, cx);
         }),
+        soon: None,
     },
 ];
 
@@ -100,10 +120,12 @@ impl Workspace {
                     .text_size(px(14.))
                     .line_height(relative(1.6))
                     .text_color(color("text-secondary"))
-                    .child(
+                    .child(if crate::features::SERVER {
                         "Write requests as YAML, run them as tests, and share collections \
-                         read-only with the people who call your API.",
-                    ),
+                         read-only with the people who call your API."
+                    } else {
+                        WELCOME_LEDE_LOCAL
+                    }),
             );
         div()
             .id("welcome")
@@ -121,6 +143,7 @@ impl Workspace {
                     .pt(px(72.))
                     .pb(px(40.))
                     .child(intro)
+                    .children(self.render_tour_card(cx))
                     .child(
                         div()
                             .grid()
@@ -131,6 +154,67 @@ impl Workspace {
                     .children(self.render_recent(cx))
                     .child(render_secrets_note()),
             )
+    }
+
+    /// `Run your first request` (mockup `WelcomeLocal`), until the
+    /// walkthrough is done or skipped, and not while it is shown.
+    fn render_tour_card(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        if self.tour_status != TourStatus::NotStarted || self.tour.is_some() {
+            return None;
+        }
+        Some(
+            div()
+                .id("welcome-tour")
+                .flex()
+                .items_center()
+                .gap(px(14.))
+                .p(px(16.))
+                .rounded(px(8.))
+                .border_1()
+                .border_color(color("accent-blue"))
+                .bg(color("info-subtle"))
+                .child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .justify_center()
+                        .size(px(40.))
+                        .rounded(px(8.))
+                        .bg(color("primary"))
+                        .child(
+                            glyph(icons::PLAY)
+                                .size(px(16.))
+                                .text_color(color("on-primary")),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .gap(px(4.))
+                        .child(
+                            div()
+                                .id("welcome-tour-title")
+                                .role(Role::Heading)
+                                .test_support()
+                                .aria_label(TOUR_CARD_TITLE)
+                                .text_size(px(14.))
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(TOUR_CARD_TITLE),
+                        )
+                        .child(prose(TOUR_CARD_BODY).text_color(color("text-secondary"))),
+                )
+                .child(
+                    primary_button("welcome-tour-start", "Start")
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.start_walkthrough(window, cx)),
+                        )
+                        .child("Start"),
+                ),
+        )
     }
 
     /// Recent, or nothing when no folder was opened yet.
@@ -326,7 +410,9 @@ fn render_secrets_note() -> impl IntoElement {
 }
 
 fn render_card(card: &Card, cx: &mut Context<Workspace>) -> impl IntoElement + use<> {
-    let enabled = card.action.is_some();
+    let soon = card.soon.filter(|_| !crate::features::SERVER);
+    let action = card.action.filter(|_| soon.is_none());
+    let enabled = action.is_some();
     let fg = |token| color(if enabled { token } else { "text-disabled" });
     let top = div()
         .flex()
@@ -353,22 +439,29 @@ fn render_card(card: &Card, cx: &mut Context<Workspace>) -> impl IntoElement + u
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .when(!enabled, |d| d.child(later_badge()))
-                .child(
-                    div()
-                        .px(px(5.))
-                        .rounded(px(4.))
-                        .border_1()
-                        .border_color(color("border-200"))
-                        .font_family(mono_font())
-                        .text_size(px(11.))
-                        .line_height(px(18.))
-                        .text_color(fg("text-secondary"))
-                        .child(card.keys),
-                ),
+                .when(soon.is_some(), |d| d.child(soon_pill()))
+                .when(!enabled && soon.is_none(), |d| d.child(later_badge()))
+                .when(soon.is_none(), |d| {
+                    d.child(
+                        div()
+                            .px(px(5.))
+                            .rounded(px(4.))
+                            .border_1()
+                            .border_color(color("border-200"))
+                            .font_family(mono_font())
+                            .text_size(px(11.))
+                            .line_height(px(18.))
+                            .text_color(fg("text-secondary"))
+                            .child(card.keys),
+                    )
+                }),
         );
+    let detail = soon.unwrap_or(card.detail);
     div()
         .id(card.id)
+        .role(Role::Button)
+        .test_support()
+        .aria_label(card.title)
         .flex()
         .flex_col()
         .items_start()
@@ -376,7 +469,12 @@ fn render_card(card: &Card, cx: &mut Context<Workspace>) -> impl IntoElement + u
         .p(px(16.))
         .rounded(px(8.))
         .border_1()
-        .border_color(color("border-100"))
+        .when(soon.is_some(), |d| d.border_dashed())
+        .border_color(color(if soon.is_some() {
+            "border-200"
+        } else {
+            "border-100"
+        }))
         .child(top)
         .child(
             div()
@@ -387,12 +485,15 @@ fn render_card(card: &Card, cx: &mut Context<Workspace>) -> impl IntoElement + u
         )
         .child(
             div()
+                .id("detail")
+                .test_support()
+                .aria_label(detail)
                 .text_size(px(12.))
                 .line_height(relative(1.5))
                 .text_color(fg("text-secondary"))
-                .child(card.detail),
+                .child(detail),
         )
-        .map(|el| match card.action {
+        .map(|el| match action {
             Some(action) => el
                 .cursor_pointer()
                 .hover(|s| s.bg(color("surface-100")))

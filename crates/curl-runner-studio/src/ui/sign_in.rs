@@ -418,7 +418,7 @@ impl Render for SignInView {
 }
 
 /// The 16px radio: a ring, or a 5px ring around a dark dot when `on`.
-fn radio(on: bool) -> Div {
+pub(super) fn radio(on: bool) -> Div {
     div()
         .flex_none()
         .mt(px(2.))
@@ -434,7 +434,17 @@ fn radio(on: bool) -> Div {
 }
 
 /// A choice card: `.opt`, outlined in `text-primary` when picked.
-fn option_card(id: &'static str, label: &'static str, on: bool) -> Stateful<Div> {
+pub(super) fn option_card(id: &'static str, label: &'static str, on: bool) -> Stateful<Div> {
+    choice_card(id, label, on, !on)
+}
+
+/// [`option_card`], `live` when it answers a pointer.
+pub(super) fn choice_card(
+    id: &'static str,
+    label: &'static str,
+    on: bool,
+    live: bool,
+) -> Stateful<Div> {
     div()
         .id(id)
         .role(Role::RadioButton)
@@ -450,15 +460,16 @@ fn option_card(id: &'static str, label: &'static str, on: bool) -> Stateful<Div>
                     .bg(color("surface-raised"))
             } else {
                 d.border_color(color("border-200"))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(color("surface-100")))
             }
+        })
+        .when(live, |d| {
+            d.cursor_pointer().hover(|s| s.bg(color("surface-100")))
         })
         .child(radio(on))
 }
 
 /// The card's name line: icon, name and the pill.
-fn option_title(icon: &'static str, name: &'static str, pill: &'static str) -> Div {
+pub(super) fn option_title(icon: &'static str, name: &'static str, pill: impl IntoElement) -> Div {
     div()
         .flex()
         .items_center()
@@ -467,10 +478,15 @@ fn option_title(icon: &'static str, name: &'static str, pill: &'static str) -> D
         .font_weight(FontWeight::MEDIUM)
         .child(glyph(icon).size(px(16.)).text_color(color("text-primary")))
         .child(name)
-        .child(neutral_pill().text_size(px(11.)).px(px(7.)).child(pill))
+        .child(pill)
 }
 
-fn option_text() -> Div {
+/// The neutral pill after a card's name.
+fn tag(label: &'static str) -> Div {
+    neutral_pill().text_size(px(11.)).px(px(7.)).child(label)
+}
+
+pub(super) fn option_text() -> Div {
     div()
         .text_size(px(12.))
         .line_height(relative(1.5))
@@ -495,7 +511,11 @@ impl SignInView {
                     .flex_col()
                     .flex_1()
                     .gap(px(4.))
-                    .child(option_title(icons::CLOUD, "curl-runner Cloud", "Managed"))
+                    .child(option_title(
+                        icons::CLOUD,
+                        "curl-runner Cloud",
+                        tag("Managed"),
+                    ))
                     .child(
                         option_text().child(
                             "Nothing to run. Sign in with GitHub or email and start sharing.",
@@ -523,7 +543,11 @@ impl SignInView {
             .flex()
             .flex_col()
             .gap(px(4.))
-            .child(option_title(icons::SERVER, "Self-hosted", "Open source"))
+            .child(option_title(
+                icons::SERVER,
+                "Self-hosted",
+                tag("Open source"),
+            ))
             .child(text);
         let body = div()
             .flex()
@@ -742,6 +766,7 @@ impl SignInView {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "server")]
     use super::super::settings_view::AppPage;
     use super::super::state::{Connection, StateStore};
     use super::super::workspace::{Workspace, test_secrets};
@@ -781,6 +806,19 @@ mod tests {
         })
     }
 
+    /// The sign-in screen itself: first launch shows it with the server,
+    /// and only then; without it the tests ask for it.
+    fn open_sign_in(
+        cx: &mut TestAppContext,
+        window: AnyWindowHandle,
+        ws: &Entity<Workspace>,
+    ) -> Entity<super::SignInView> {
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.open_sign_in(None, window, cx))
+        })
+        .unwrap()
+    }
+
     fn click(cx: &mut TestAppContext, window: AnyWindowHandle, id: &'static str) {
         cx.update_window(window, |_, window, cx| {
             window.render_frame(cx);
@@ -805,6 +843,7 @@ mod tests {
         ws.read_with(cx, |ws, _| ws.sign_in_shown())
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn first_launch_shows_sign_in_once(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();
@@ -826,6 +865,7 @@ mod tests {
         assert!(!sign_in_shown(cx, &ws));
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn continue_offline_skips_next_launch(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();
@@ -856,7 +896,7 @@ mod tests {
     fn self_hosted_test_connection_shows_info(cx: &mut TestAppContext) {
         let backend = test_backend();
         let (window, ws) = open(cx, StateStore::none(), backend.clone());
-        let view = ws.read_with(cx, |ws, _| ws.sign_in.clone().unwrap());
+        let view = open_sign_in(cx, window, &ws);
         cx.update_window(window, |_, window, cx| {
             view.update(cx, |v, cx| {
                 v.set_self_hosted("https://studio.api.example.com", window, cx)
@@ -895,7 +935,7 @@ mod tests {
         let backend = test_backend();
         backend.dev().unwrap().fail_next_sign_in(true);
         let (window, ws) = open(cx, StateStore::none(), backend.clone());
-        let view = ws.read_with(cx, |ws, _| ws.sign_in.clone().unwrap());
+        let view = open_sign_in(cx, window, &ws);
         click(cx, window, "sign-in-github");
         assert!(sign_in_shown(cx, &ws));
         assert_eq!(
@@ -910,6 +950,7 @@ mod tests {
         assert_eq!(backend.account().unwrap().name, "Maria");
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn settings_sign_out_returns_to_signed_out_cards(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();
@@ -943,6 +984,7 @@ mod tests {
         assert!(shows(cx, window, "Jamie Rivera"));
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn shortcuts_do_nothing_behind_the_sign_in_screen(cx: &mut TestAppContext) {
         use gpui_kit::component::WindowExt as _;
@@ -979,6 +1021,7 @@ mod tests {
         ws.read_with(cx, |ws, _| assert!(ws.app_settings_shown()));
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn continue_offline_signs_out(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();
@@ -1000,6 +1043,7 @@ mod tests {
         assert!(shows(cx, window, "Offline"));
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn without_a_store_the_answer_holds_for_the_session(cx: &mut TestAppContext) {
         let (window, ws) = open(cx, StateStore::none(), test_backend());
@@ -1015,6 +1059,7 @@ mod tests {
         assert!(shows(cx, window, "Offline"));
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn settings_server_save_tests_first_and_shows_the_error(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();
@@ -1060,10 +1105,55 @@ mod tests {
         ));
     }
 
-    /// Views reach the server through `Backend` only; `app.rs` alone builds
-    /// the mock. No other ui file names the mock or its fixtures.
+    /// Without the server, a stored `Online` answer from an earlier build
+    /// opens Welcome working locally: no first-launch screen, no received
+    /// copies, and nothing it left behind is rewritten or removed.
+    #[cfg(not(feature = "server"))]
+    #[gpui_kit::test]
+    fn stored_online_connection_opens_welcome_locally(cx: &mut TestAppContext) {
+        use crate::model::backend::ReceivedShare;
+        use crate::model::received::{self, LocalCopy};
+        let state = tempfile::tempdir().unwrap();
+        let base = state.path();
+        let store = StateStore::at(base);
+        store.set_connection(Some(Connection::Online));
+        let backend = test_backend();
+        futures::executor::block_on(backend.sign_in(SignInMethod::Email)).unwrap();
+        let share = ReceivedShare {
+            id: "acme/shipping-api".into(),
+            owner_org: "Acme".into(),
+            name: "Shipping API".into(),
+            added: chrono::Utc::now(),
+        };
+        futures::executor::block_on(backend.add_received(share.clone())).unwrap();
+        let copy = tempfile::tempdir().unwrap();
+        let local = LocalCopy {
+            share_id: share.id.clone(),
+            root: copy.path().to_path_buf(),
+            collection_id: "c".into(),
+        };
+        received::record(base, local).unwrap();
+        let mock_state = base.join("mock-backend.json");
+        std::fs::write(&mock_state, "{}").unwrap();
+        let before = |name: &str| std::fs::read(base.join(name)).unwrap();
+        let (state_json, received_json) = (before("state.json"), before("received.json"));
+
+        let (window, ws) = open(cx, store.clone(), backend);
+        assert!(!sign_in_shown(cx, &ws));
+        assert!(shows(cx, window, "Working locally"));
+        ws.read_with(cx, |ws, _| assert!(ws.received_all.is_empty()));
+
+        assert_eq!(before("state.json"), state_json);
+        assert_eq!(before("received.json"), received_json);
+        assert_eq!(std::fs::read_to_string(&mock_state).unwrap(), "{}");
+        assert_eq!(store.connection(), Some(Connection::Online));
+    }
+
+    /// Views reach the server through `Backend` only; in `app.rs` only
+    /// `app_backend` builds the mock. No other ui file names the mock or
+    /// its fixtures.
     #[test]
-    fn ui_never_imports_mock_backend() {
+    fn mock_is_only_named_in_app_backend() {
         fn rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
             for entry in std::fs::read_dir(dir).unwrap() {
                 let path = entry.unwrap().path();
@@ -1093,7 +1183,22 @@ mod tests {
             }
         }
         assert!(offenders.is_empty(), "{offenders:?}");
+        // In app.rs, the mock is named inside `app_backend` and nowhere else.
         let app = std::fs::read_to_string(app).unwrap();
-        assert!(app.contains(needles[0]), "app.rs builds it");
+        let start = app
+            .find("pub fn app_backend(")
+            .expect("app.rs has app_backend");
+        let end = start + app[start..].find("\n}\n").expect("app_backend ends");
+        let (inside, outside) = (
+            &app[start..end],
+            format!("{}{}", &app[..start], &app[end..]),
+        );
+        assert!(inside.contains(needles[0]), "app_backend builds it");
+        for needle in needles {
+            assert!(
+                !outside.contains(needle),
+                "app.rs names {needle} outside app_backend"
+            );
+        }
     }
 }

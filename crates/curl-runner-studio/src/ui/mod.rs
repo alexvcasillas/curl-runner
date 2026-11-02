@@ -3,11 +3,13 @@
 
 mod app;
 mod collection_settings;
+mod coming_soon;
 mod conflict_view;
 mod diagnostic_marks;
 mod diagnostic_popover;
 mod diagnostics_view;
 mod editor_pane;
+mod first_launch;
 mod history_view;
 mod icons;
 mod import_dialog;
@@ -33,6 +35,7 @@ mod state;
 mod status_bar;
 mod sync;
 mod title_bar;
+mod tour;
 mod watch;
 mod welcome;
 mod workspace;

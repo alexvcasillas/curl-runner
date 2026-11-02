@@ -6,7 +6,9 @@ use super::palette;
 use super::settings_view::AppPage;
 use super::state;
 use super::workspace::{Workspace, quit_app};
-use crate::model::backend::{Backend, DevControls, DevToggles, MOCK_LATENCY, MockBackend};
+#[cfg(feature = "server")]
+use crate::model::backend::DevControls;
+use crate::model::backend::{Backend, DevToggles};
 use crate::model::run::RunTarget;
 use crate::model::secrets::{KeychainSecrets, SecretStore};
 use crate::model::settings::Settings;
@@ -15,7 +17,7 @@ use gpui_kit::base::actions::{Cancel, Confirm, SelectDown, SelectUp};
 use gpui_kit::component::{Theme, ThemeConfig};
 use gpui_kit::*;
 use std::borrow::Cow;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 
@@ -74,9 +76,13 @@ actions!(
         CloseSettings,
         /// Show the app's Settings (⌘,).
         OpenSettings,
+        /// Start the first-run walkthrough at step 1 (Help › Walkthrough).
+        Walkthrough,
     ]
 );
 
+// The mock's toggles: never in a build without the server.
+#[cfg(feature = "server")]
 actions!(
     studio_dev,
     [
@@ -95,13 +101,17 @@ actions!(
 );
 
 /// The macOS menu bar. Quit goes through the workspace's unsaved-changes
-/// check (see `init`). With `dev` (debug builds, a backend with developer
-/// toggles), the app menu has Developer, checked as `dev` says.
+/// check (see `init`). With `dev` (debug builds with the `server` feature,
+/// a backend with developer toggles), the app menu has Developer, checked
+/// as `dev` says.
 pub fn menus(dev: Option<DevToggles>) -> Vec<Menu> {
     let mut app = vec![
         MenuItem::action("Settings…", OpenSettings),
         MenuItem::separator(),
     ];
+    #[cfg(not(feature = "server"))]
+    let _ = dev;
+    #[cfg(feature = "server")]
     if let Some(t) = dev {
         app.push(MenuItem::submenu(
             Menu::new("Developer").items([
@@ -118,19 +128,25 @@ pub fn menus(dev: Option<DevToggles>) -> Vec<Menu> {
         app.push(MenuItem::separator());
     }
     app.push(MenuItem::action("Quit curl-runner studio", Quit));
+    let mut file = vec![
+        MenuItem::action("New Request…", NewRequest),
+        MenuItem::action("New Collection…", NewCollection),
+        MenuItem::action("Import curl…", Import),
+        MenuItem::separator(),
+        MenuItem::action("Open Folder…", OpenFolder),
+    ];
+    // Shared links need the curl-runner server.
+    if crate::features::SERVER {
+        file.push(MenuItem::action("Open Shared Link…", OpenSharedLink));
+    }
+    file.extend([
+        MenuItem::action("Save", SaveFile),
+        MenuItem::separator(),
+        MenuItem::action("Close Tab", CloseTab),
+    ]);
     vec![
         Menu::new("curl-runner studio").items(app),
-        Menu::new("File").items([
-            MenuItem::action("New Request…", NewRequest),
-            MenuItem::action("New Collection…", NewCollection),
-            MenuItem::action("Import curl…", Import),
-            MenuItem::separator(),
-            MenuItem::action("Open Folder…", OpenFolder),
-            MenuItem::action("Open Shared Link…", OpenSharedLink),
-            MenuItem::action("Save", SaveFile),
-            MenuItem::separator(),
-            MenuItem::action("Close Tab", CloseTab),
-        ]),
+        Menu::new("File").items(file),
         Menu::new("Run").items([
             MenuItem::action("Run", RunActive),
             MenuItem::action("Run Request Under Cursor", RunRequestUnderCursor),
@@ -141,6 +157,7 @@ pub fn menus(dev: Option<DevToggles>) -> Vec<Menu> {
             MenuItem::action("History", OpenHistory),
             MenuItem::action("Environments…", OpenEnvironments),
         ]),
+        Menu::new("Help").items([MenuItem::action("Walkthrough", Walkthrough)]),
     ]
 }
 
@@ -167,7 +184,7 @@ fn shortcut<A: Action>(
 /// shortcuts page read. They apply anywhere in the window, the editor
 /// included.
 pub fn bindings() -> Vec<Shortcut> {
-    vec![
+    let all = vec![
         shortcut("cmd-q", Quit, None, "Quit"),
         shortcut("cmd-,", OpenSettings, None, "Settings"),
         shortcut("cmd-o", OpenFolder, None, "Open folder"),
@@ -261,7 +278,11 @@ pub fn bindings() -> Vec<Shortcut> {
             "Palette: run command",
         ),
         shortcut("escape", Cancel, Some(palette::CONTEXT), "Palette: close"),
-    ]
+    ];
+    // ⌘L opens a shared link, which needs the curl-runner server.
+    all.into_iter()
+        .filter(|s| crate::features::SERVER || s.label != "Open a shared link")
+        .collect()
 }
 
 /// The bindings [`init`] registers.
@@ -326,10 +347,12 @@ pub fn run() {
         let run = dev_string("CURL_RUNNER_STUDIO_RUN");
         let line = dev_string("CURL_RUNNER_STUDIO_LINE").and_then(|l| l.parse::<u32>().ok());
         let tab = dev_string("CURL_RUNNER_STUDIO_TAB");
-        let link = dev_string("CURL_RUNNER_STUDIO_LINK");
+        // The server's screens only where there is one.
+        let server = crate::features::SERVER;
+        let link = dev_string("CURL_RUNNER_STUDIO_LINK").filter(|_| server);
         let secrets: Arc<dyn SecretStore> = Arc::new(KeychainSecrets);
-        // The only place the mock is named: views see a `Backend`.
-        let backend: Arc<dyn Backend> = Arc::new(MockBackend::open(store.base(), MOCK_LATENCY));
+        let backend = app_backend(store.base());
+        #[cfg(feature = "server")]
         let dev_store = store.clone();
         let ws_backend = backend.clone();
         let (window_handle, workspace) = gpui_kit::open_window(options, cx, |window, cx| {
@@ -427,7 +450,11 @@ pub fn run() {
                             });
                         }
                         "history" => ws.open_history(window, cx),
-                        "conflict" => ws.dev_show_conflict(window, cx),
+                        "tour" | "tour-run" | "tour-result" => {
+                            let fill = dev_string("CURL_RUNNER_STUDIO_FILL").unwrap_or_default();
+                            ws.dev_tour(&fill, &show, window, cx);
+                        }
+                        "conflict" if server => ws.dev_show_conflict(window, cx),
                         "settings" => {
                             let page = dev_string("CURL_RUNNER_STUDIO_PAGE")
                                 .and_then(|p| AppPage::parse(&p))
@@ -459,7 +486,7 @@ pub fn run() {
                             })
                             .detach();
                         }
-                        "share" => {
+                        "share" if server => {
                             ws.open_share(window, cx);
                             let fill = dev_string("CURL_RUNNER_STUDIO_FILL");
                             if let (Some(view), Some(fill)) = (ws.share_view(), fill) {
@@ -467,7 +494,7 @@ pub fn run() {
                                 view.update(cx, |v, cx| v.dev_invite(emails, cx));
                             }
                         }
-                        "sharing" => {
+                        "sharing" if server => {
                             ws.open_settings(window, cx);
                             if let Some(view) = &ws.settings_view {
                                 view.update(cx, |v, cx| v.set_page(Page::Sharing, window, cx));
@@ -486,6 +513,7 @@ pub fn run() {
         })
         .expect("failed to open the studio window");
         open_shared::pump_links(queued, window_handle, workspace.downgrade(), cx);
+        #[cfg(feature = "server")]
         if cfg!(debug_assertions) {
             install_dev_menu(backend, dev_store, window_handle, workspace.downgrade(), cx);
         }
@@ -501,8 +529,25 @@ pub fn run() {
     });
 }
 
+/// The app's server. The only place the mock is named: views see a
+/// `Backend`. Without the `server` feature there is none (`NoServer`),
+/// and the mock isn't compiled in.
+pub fn app_backend(base: Option<&Path>) -> Arc<dyn Backend> {
+    #[cfg(feature = "server")]
+    {
+        use crate::model::backend::{MOCK_LATENCY, MockBackend};
+        Arc::new(MockBackend::open(base, MOCK_LATENCY))
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        let _ = base;
+        Arc::new(crate::model::backend::NoServer)
+    }
+}
+
 /// App menu › Developer: the backend's toggles (when it has them, the
-/// mock), through [`Backend::dev`] only. Debug builds.
+/// mock), through [`Backend::dev`] only. Debug builds with the server.
+#[cfg(feature = "server")]
 fn install_dev_menu(
     backend: Arc<dyn Backend>,
     store: state::StateStore,
@@ -574,11 +619,13 @@ fn install_dev_menu(
 }
 
 /// The menu's checkmarks and the windows, after a toggle changed.
+#[cfg(feature = "server")]
 fn refresh_dev(backend: &Arc<dyn Backend>, cx: &mut App) {
     cx.set_menus(menus(backend.dev().map(|d| d.toggles())));
     cx.refresh_windows();
 }
 
+#[cfg(feature = "server")]
 fn toggle_dev(backend: &Arc<dyn Backend>, flip: fn(&dyn DevControls), cx: &mut App) {
     if let Some(d) = backend.dev() {
         flip(d);
@@ -604,7 +651,10 @@ fn toggle_dev(backend: &Arc<dyn Backend>, flip: fn(&dyn DevControls), cx: &mut A
 /// `CURL_RUNNER_STUDIO_ENV` names, with `CURL_RUNNER_STUDIO_VAR` naming the
 /// variable whose drawer opens) and `settings` the app's Settings (on the
 /// page `CURL_RUNNER_STUDIO_PAGE` names: `general`, `editor`,
-/// `appearance`, `accounts`, `shortcuts` or `updates`), `share` the Share
+/// `appearance`, `accounts`, `shortcuts` or `updates`), `tour` the
+/// walkthrough's first step (`tour-run`: created, on step 2;
+/// `tour-result`: run, on step 3), on the home folder and URL in
+/// `CURL_RUNNER_STUDIO_FILL` (`home|url`, each optional), `share` the Share
 /// dialog (inviting the comma-separated addresses in
 /// `CURL_RUNNER_STUDIO_FILL`), `sharing` the collection's Sharing page
 /// and `signin` the
@@ -947,6 +997,18 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "server"))]
+    #[test]
+    fn app_backend_without_feature_is_no_server() {
+        use crate::model::backend::{BackendError, Server};
+        let backend = super::app_backend(None);
+        assert_eq!(
+            futures::executor::block_on(backend.test_connection(&Server::Cloud)),
+            Err(BackendError::Unavailable)
+        );
+        assert!(backend.dev().is_none(), "no Developer menu");
+    }
+
     #[test]
     fn hex_keeps_alpha() {
         assert_eq!(hex("bg-100"), "#0a0a0aff");
@@ -965,40 +1027,42 @@ mod tests {
                     .join(" ")
             })
             .collect();
-        assert_eq!(
-            keys,
-            [
-                "cmd-q",
-                "cmd-,",
-                "cmd-o",
-                "cmd-l",
-                "cmd-s",
-                "cmd-w",
-                "cmd-n",
-                "cmd-shift-n",
-                "cmd-i",
-                "cmd-enter",
-                "cmd-enter",
-                "cmd-k",
-                "cmd-.",
-                "cmd-.",
-                "escape",
-                "cmd-y",
-                "escape",
-                "escape",
-                "escape",
-                "escape",
-                "escape",
-                "cmd-shift-m",
-                "cmd-enter",
-                "alt-cmd-enter",
-                "cmd-enter",
-                "alt-cmd-enter",
-                "up",
-                "down",
-                "enter",
-                "escape"
-            ]
-        );
+        // ⌘L (a shared link) only with the server.
+        let expected: Vec<&str> = [
+            "cmd-q",
+            "cmd-,",
+            "cmd-o",
+            "cmd-l",
+            "cmd-s",
+            "cmd-w",
+            "cmd-n",
+            "cmd-shift-n",
+            "cmd-i",
+            "cmd-enter",
+            "cmd-enter",
+            "cmd-k",
+            "cmd-.",
+            "cmd-.",
+            "escape",
+            "cmd-y",
+            "escape",
+            "escape",
+            "escape",
+            "escape",
+            "escape",
+            "cmd-shift-m",
+            "cmd-enter",
+            "alt-cmd-enter",
+            "cmd-enter",
+            "alt-cmd-enter",
+            "up",
+            "down",
+            "enter",
+            "escape",
+        ]
+        .into_iter()
+        .filter(|k| crate::features::SERVER || *k != "cmd-l")
+        .collect();
+        assert_eq!(keys, expected);
     }
 }

@@ -18,6 +18,7 @@ pub mod settings;
 pub mod shared_copy;
 pub mod sync_base;
 pub mod templates;
+pub mod tour;
 
 /// A duration as every screen and report shows it: `196 ms`, `4.8 s`,
 /// `2 min 4 s`.

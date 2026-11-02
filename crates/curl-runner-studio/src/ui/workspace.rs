@@ -4,11 +4,12 @@
 use super::app::{
     CloseTab, CopyAsCurl, Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder,
     OpenHistory, OpenPalette, OpenSettings, OpenSharedLink, QuickFix, Rerun, RunActive,
-    RunCollection, RunRequestUnderCursor, SaveFile, Stop, ToggleProblems, ui_font,
+    RunCollection, RunRequestUnderCursor, SaveFile, Stop, ToggleProblems, Walkthrough, ui_font,
 };
 use super::collection_settings::{CollectionSettings, EnvStatus, SettingsEvent, Sharing};
 use super::diagnostic_popover::DiagnosticHover;
 use super::diagnostics_view::DiagnosticsView;
+use super::first_launch::{FirstLaunchEvent, FirstLaunchView};
 use super::history_view::{HistoryView, HistoryViewEvent, usage_text};
 use super::inspector::{InspectorTab, env_label};
 use super::problems_panel::PanelTab;
@@ -171,10 +172,18 @@ pub struct Workspace {
     /// The Settings page the sign-in screen was opened from: it returns
     /// there.
     sign_in_origin: Option<AppPage>,
+    /// The local-first screen, first launch of a build without the server.
+    pub(super) first_launch: Option<Entity<FirstLaunchView>>,
+    _first_launch_events: Option<Subscription>,
     _sign_in_events: Option<Subscription>,
     /// The sign-in screen's answer this session, for a store that keeps
     /// nothing (no base): it is not asked again until the next launch.
     session_connection: Option<Connection>,
+    /// The first-run walkthrough's callout, while it is shown.
+    pub(super) tour: Option<Entity<super::tour::TourView>>,
+    pub(super) _tour_events: Option<Subscription>,
+    /// Whether the walkthrough was finished or skipped (Welcome's card).
+    pub(super) tour_status: crate::model::tour::TourStatus,
     /// The open collection's sync: pending changes, offline, conflicts.
     pub(super) sync: super::sync::SyncState,
     /// The Share dialog, while it is open.
@@ -306,8 +315,13 @@ impl Workspace {
             backend,
             sign_in: None,
             sign_in_origin: None,
+            first_launch: None,
+            _first_launch_events: None,
             _sign_in_events: None,
             session_connection: None,
+            tour: None,
+            _tour_events: None,
+            tour_status: Default::default(),
             sync: Default::default(),
             share_view: None,
             _share_events: None,
@@ -333,6 +347,7 @@ impl Workspace {
             _status_events: status_events,
         };
         this.refresh_recent();
+        this.tour_status = this.store.tour_status();
         if let Some(folder) = folder {
             this.open_collection(&folder, window, cx);
         }
@@ -376,8 +391,13 @@ impl Workspace {
         };
         let meta = CollectionMeta::load_or_init(self.store.base(), root);
         // A received copy is locked where it is written: the collection
-        // and each document refuse changes.
-        if let Some(org) = &meta.read_only_from {
+        // and each document refuse changes. Without the server there are
+        // no received copies, only local folders.
+        if let Some(org) = meta
+            .read_only_from
+            .as_ref()
+            .filter(|_| crate::features::SERVER)
+        {
             collection.read_only = Some(org.clone());
         }
         self.refresh_received_all();
@@ -443,7 +463,7 @@ impl Workspace {
             .state
             .active
             .filter(|_| {
-                self.sign_in.is_none()
+                !self.sign_in_shown()
                     && !self.run_shown()
                     && !self.history_shown()
                     && !self.conflicts_shown()
@@ -461,6 +481,7 @@ impl Workspace {
             _ if self.sign_in_shown() => Some(EnvStatus {
                 environment: SharedString::default(),
                 summary: match self.backend.account() {
+                    _ if self.first_launch.is_some() => "Working locally".into(),
                     Some(a) => format!("Signed in as {}", a.email).into(),
                     None => "Not signed in".into(),
                 },
@@ -671,8 +692,14 @@ impl Workspace {
 
     /// Re-reads the received copies: the server's records joined with the
     /// copies on this Mac (the sidebar's Shared with me): on open, after an
-    /// Add, after a reset. Records with no copy here are left out.
+    /// Add, after a reset. Records with no copy here are left out. Without
+    /// the server there are none; `received.json` stays as it is.
     pub(super) fn refresh_received_all(&mut self) {
+        if !crate::features::SERVER {
+            self.received_all.clear();
+            self.received = None;
+            return;
+        }
         let local = crate::model::received::load(self.store.base());
         self.received_all = crate::model::received::join(self.backend.received(), &local);
         // The open copy keeps its record only while the server has it.
@@ -1348,7 +1375,7 @@ impl Render for Workspace {
         };
         // The sign-in screen answers first: nothing opens behind it (the
         // global Quit still works).
-        let actions = self.sign_in.is_none();
+        let actions = !self.sign_in_shown();
         div()
             .id("workspace")
             .key_context("Workspace")
@@ -1382,7 +1409,10 @@ impl Render for Workspace {
                     this.import(window, cx);
                 }))
                 .on_action(cx.listener(|this, _: &OpenSharedLink, window, cx| {
-                    this.open_shared(None, window, cx);
+                    // Shared links need the curl-runner server.
+                    if crate::features::SERVER {
+                        this.open_shared(None, window, cx);
+                    }
                 }))
                 .on_action(cx.listener(|this, _: &OpenPalette, window, cx| {
                     this.open_palette(window, cx);
@@ -1412,35 +1442,46 @@ impl Render for Workspace {
                 .on_action(cx.listener(|this, _: &OpenSettings, window, cx| {
                     this.open_app_settings(AppPage::General, window, cx)
                 }))
+                .on_action(cx.listener(|this, _: &Walkthrough, window, cx| {
+                    this.start_walkthrough(window, cx)
+                }))
             })
             .size_full()
+            .relative()
             .flex()
             .flex_col()
             .bg(color("bg-100"))
             .text_color(color("text-primary"))
             .font_family(ui_font())
             .text_size(px(13.))
-            .map(|root| match self.sign_in.clone() {
-                // The SignIn board: the bare title bar and the screen.
-                Some(view) => root
-                    .child(super::title_bar::render_bare_title_bar())
-                    .child(div().flex().flex_1().min_h_0().child(view)),
-                None => root.child(self.render_title_bar(window, cx)).child(
-                    match (app_settings, settings) {
-                        (Some(view), _) => div().flex().flex_1().min_h_0().child(view),
-                        // The page brings its own nav and drawer.
-                        (None, Some(view)) => div().flex().flex_1().min_h_0().child(view),
-                        (None, None) => div()
-                            .flex()
-                            .flex_1()
-                            .min_h_0()
-                            .child(self.render_sidebar(cx))
-                            .child(main)
-                            .when(open && !full, |row| row.child(self.render_inspector(cx))),
-                    },
-                ),
-            })
+            .map(
+                |root| match (self.sign_in.clone(), self.first_launch.clone()) {
+                    // The SignIn board: the bare title bar and the screen.
+                    (Some(view), _) => root
+                        .child(super::title_bar::render_bare_title_bar())
+                        .child(div().flex().flex_1().min_h_0().child(view)),
+                    (None, Some(view)) => root
+                        .child(super::title_bar::render_bare_title_bar())
+                        .child(div().flex().flex_1().min_h_0().child(view)),
+                    (None, None) => root.child(self.render_title_bar(window, cx)).child(
+                        match (app_settings, settings) {
+                            (Some(view), _) => div().flex().flex_1().min_h_0().child(view),
+                            // The page brings its own nav and drawer.
+                            (None, Some(view)) => div().flex().flex_1().min_h_0().child(view),
+                            (None, None) => div()
+                                .flex()
+                                .flex_1()
+                                .min_h_0()
+                                .child(self.render_sidebar(cx))
+                                .child(main)
+                                .when(open && !full, |row| row.child(self.render_inspector(cx))),
+                        },
+                    ),
+                },
+            )
             .child(self.status.clone())
+            // Over everything, anchored to the window's top-right corner.
+            .children(self.tour.clone().filter(|_| actions))
     }
 }
 

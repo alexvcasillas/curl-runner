@@ -1,17 +1,30 @@
 //! The studio's only door to "the server": an async, object-safe
-//! [`Backend`]. v1 ships [`MockBackend`], in process, with fixture data.
+//! [`Backend`]. A release build has `NoServer`; with the `server`
+//! feature (and in tests) there is `MockBackend`, in process, with fixture
+//! data.
 //!
 //! Nothing that crosses this seam carries a variable value: share payloads
 //! carry names, descriptions, the required flag and (only when the owner
 //! ticks "Share default") a non-secret `.env` default; sync payloads carry
 //! YAML request files. Build them with [`shared_vars`] and [`sync_files`].
 
+// The mock and its fixtures (Acme, fake accounts and links) are never in a
+// release build: only with the `server` feature, and for the tests.
+#[cfg(any(test, feature = "server"))]
 pub mod fixtures;
+#[cfg(any(test, feature = "server"))]
 mod mock;
+#[cfg(any(test, not(feature = "server")))]
+mod no_server;
 
 // Only the macOS app constructs the mock; off macOS the UI isn't built.
+#[cfg(any(test, feature = "server"))]
 #[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 pub use mock::{MOCK_LATENCY, MockBackend};
+// Only the macOS app constructs it; off macOS the UI isn't built.
+#[cfg(not(feature = "server"))]
+#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
+pub use no_server::NoServer;
 
 use crate::model::collection_meta::CollectionMeta;
 use crate::model::environments::is_secret;
@@ -26,6 +39,8 @@ use std::pin::Pin;
 /// object-safe (`Arc<dyn Backend>`).
 pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = Result<T, BackendError>> + Send + 'a>>;
 
+// Only a server (the mock, for now) makes some of these.
+#[cfg_attr(not(feature = "server"), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackendError {
     Offline,
@@ -37,6 +52,9 @@ pub enum BackendError {
     Expired,
     /// The input was refused; the text says why.
     Invalid(String),
+    /// A build without the server (`NoServer`).
+    #[cfg_attr(feature = "server", allow(dead_code))]
+    Unavailable,
 }
 
 impl BackendError {
@@ -59,11 +77,19 @@ impl fmt::Display for BackendError {
             BackendError::NotFound => f.write_str("This link doesn't work."),
             BackendError::Expired => f.write_str("This link has expired."),
             BackendError::Invalid(why) => f.write_str(why),
+            BackendError::Unavailable => {
+                f.write_str("This needs the curl-runner server, which is coming soon.")
+            }
         }
     }
 }
 
 impl std::error::Error for BackendError {}
+
+/// The cloud server's address.
+pub const CLOUD_URL: &str = "https://cloud.curl-runner.com";
+/// Where web share links point ([`ShareLink`]).
+pub const SHARE_HOST: &str = "https://studio.example.com";
 
 /// Where collections live.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,7 +105,7 @@ pub enum Server {
 impl Server {
     pub fn url(&self) -> &str {
         match self {
-            Server::Cloud => fixtures::CLOUD_URL,
+            Server::Cloud => CLOUD_URL,
             Server::SelfHosted { url } => url,
         }
     }
@@ -213,6 +239,8 @@ pub struct SyncDeletion {
 /// What the server knows of one collection's sync. Anything about this
 /// client's unsent work (changes waiting, offline, conflicts) is the
 /// client's own state, never the server's.
+// Only a server (the mock, for now) makes some of these.
+#[cfg_attr(not(feature = "server"), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SyncStatus {
     /// Signed out, or the server never got the collection.
@@ -328,9 +356,7 @@ impl ShareLink {
                 token: t.into(),
             });
         }
-        let rest = text
-            .strip_prefix(fixtures::SHARE_HOST)?
-            .strip_prefix("/s/")?;
+        let rest = text.strip_prefix(SHARE_HOST)?.strip_prefix("/s/")?;
         let rest = rest.trim_end_matches('/');
         let (collection, t) = rest.rsplit_once('-')?;
         (slug(collection) && token(t)).then(|| ShareLink {
@@ -341,8 +367,9 @@ impl ShareLink {
     }
 
     /// The web form, as the Share dialog shows it.
+    #[cfg_attr(not(feature = "server"), allow(dead_code))]
     pub fn web(collection_slug: &str, token: &str) -> String {
-        format!("{}/s/{collection_slug}-{token}", fixtures::SHARE_HOST)
+        format!("{}/s/{collection_slug}-{token}", SHARE_HOST)
     }
 }
 
@@ -380,7 +407,9 @@ pub struct ReceivedShare {
     pub added: DateTime<Utc>,
 }
 
-/// The mock's developer toggles (App menu › Developer, debug builds).
+/// The mock's developer toggles (App menu › Developer, debug builds with
+/// the `server` feature).
+#[cfg_attr(not(feature = "server"), allow(dead_code))]
 pub trait DevControls: Send + Sync {
     /// Every call fails with [`BackendError::Offline`] while on.
     fn set_offline(&self, on: bool);

@@ -11,6 +11,7 @@
 use super::app::{CloseSettings, Shortcut, bindings, mono_font};
 use super::backend_call;
 use super::color;
+use super::coming_soon::soon_card;
 use super::icons::{self, glyph};
 use super::inspector::env_label;
 use super::settings_kit::{
@@ -38,6 +39,10 @@ pub const NAV_WIDTH: f32 = 248.;
 const CONTENT_WIDTH: f32 = 760.;
 /// The studio's own version, and the CLI's it runs requests with.
 pub const STUDIO_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Accounts & sync without the server: one card in place of Server,
+/// Account and Sync.
+const ACCOUNTS_SOON_TITLE: &str = "Accounts and sync";
+const ACCOUNTS_SOON_BODY: &str = "Signing in, syncing collections between your Macs and sharing them need the curl-runner server. Until then, your collections are YAML files on this Mac.";
 /// The changelog on the website (the studio ships in the CLI's release train).
 const CHANGELOG_URL: &str = "https://www.curl-runner.com/changelog";
 
@@ -84,6 +89,9 @@ impl AppPage {
                 "How the YAML editor looks and indents. Changes apply to open files right away."
             }
             AppPage::Appearance => "The studio's colors.",
+            AppPage::Accounts if !crate::features::SERVER => {
+                "Where secrets are kept. Accounts and sync need the curl-runner server, which is coming soon."
+            }
             AppPage::Accounts => {
                 "Which server your collections sync with, who you're signed in as, and where secrets are kept."
             }
@@ -839,6 +847,12 @@ impl SettingsView {
     // Accounts & sync.
 
     fn render_accounts(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        if !crate::features::SERVER {
+            return vec![
+                soon_card(ACCOUNTS_SOON_TITLE, ACCOUNTS_SOON_BODY).into_any_element(),
+                self.render_credentials(cx).into_any_element(),
+            ];
+        }
         vec![
             self.render_server(cx).into_any_element(),
             self.render_account(cx).into_any_element(),
@@ -989,9 +1003,11 @@ impl SettingsView {
             )
             .child(
                 card_footer()
-                    .child(div().flex_1().child(
-                        "Customers opening a shared collection are asked for their own values on first run.",
-                    ))
+                    .child(div().flex_1().when(crate::features::SERVER, |d| {
+                        d.child(
+                            "Customers opening a shared collection are asked for their own values on first run.",
+                        )
+                    }))
                     .when(self.collection.is_some(), |f| {
                         f.child(
                             small_button("credentials-add", "Add variable")
@@ -1209,7 +1225,7 @@ impl SettingsView {
         cx.notify();
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "server"))]
     pub fn set_self_hosted(&mut self, url: &str, window: &mut Window, cx: &mut Context<Self>) {
         self.server_pick = ServerPick::SelfHosted;
         let url = url.to_string();
@@ -1828,14 +1844,16 @@ mod tests {
         assert!(shows(cx, window, "BASE_URL Default"));
         assert!(shows(cx, window, "https://api.example.com"));
         assert!(shows(cx, window, super::MASK));
-        for card in ["Server", "Account", "Sync", "Sync now", "Sign in"] {
-            assert!(shows(cx, window, card), "{card}");
+        if crate::features::SERVER {
+            for card in ["Server", "Account", "Sync", "Sync now", "Sign in"] {
+                assert!(shows(cx, window, card), "{card}");
+            }
+            assert!(shows(
+                cx,
+                window,
+                "Not synced · collections stay on this Mac"
+            ));
         }
-        assert!(shows(
-            cx,
-            window,
-            "Not synced · collections stay on this Mac"
-        ));
         // The Keychain value never reaches the table, nor its tail.
         assert!(!shows(cx, window, "tok_live_9f3a"));
         assert!(!shows(cx, window, &format!("{}9f3a", super::MASK)));

@@ -1,5 +1,6 @@
 //! The collections column: header, filter and the collection tree.
 
+use super::coming_soon::{soon_pill_labelled, soon_tooltip};
 use super::icons::{self, glyph};
 use super::method_stack::{Stack, method_stack};
 use super::runs::RunStatus;
@@ -17,6 +18,25 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 pub const SIDEBAR_WIDTH: f32 = 264.;
+
+/// The empty sidebar without the server: nothing about sharing.
+pub(super) const NO_COLLECTIONS_LOCAL: &str =
+    "A collection is a folder of request files. Open one from disk or start a new one.";
+/// The sidebar foot without the server.
+const WORKING_LOCALLY: &str = "Working locally";
+const SYNC_SOON: &str = "Sync soon";
+/// `Sync soon`, with what it is waiting for.
+fn sync_soon_pill() -> impl IntoElement {
+    soon_pill_labelled(SYNC_SOON).tooltip(soon_tooltip(
+        "Sync",
+        "Syncing your collections needs the curl-runner server, which is coming soon.",
+    ))
+}
+
+/// Share's tooltip without the server.
+const SHARING_SOON_TITLE: &str = "Sharing";
+const SHARING_SOON_BODY: &str =
+    "Share links need the curl-runner server. Until then, share the YAML files through git.";
 const ROW_HEIGHT: f32 = 28.;
 const FILTER_HEIGHT: f32 = 30.;
 const CHEVRON_SIZE: f32 = 12.;
@@ -620,9 +640,11 @@ impl Workspace {
                     .text_size(px(12.))
                     .line_height(relative(1.5))
                     .text_color(color("text-secondary"))
-                    .child(
-                        "Collections group your request files into folders you can run and share.",
-                    ),
+                    .child(if crate::features::SERVER {
+                        "Collections group your request files into folders you can run and share."
+                    } else {
+                        NO_COLLECTIONS_LOCAL
+                    }),
             )
             .child(
                 Button::new("sidebar-new-collection")
@@ -667,20 +689,23 @@ impl Workspace {
                     .line_height(relative(1.4))
                     .child(text),
             )
-            .child(
-                div()
-                    .id("sidebar-cloud-change")
-                    .role(Role::Button)
-                    .test_support()
-                    .aria_label("Change")
-                    .flex_none()
-                    .cursor_pointer()
-                    .hover(|s| s.text_color(color("text-primary")))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.open_sign_in(None, window, cx);
-                    }))
-                    .child("Change"),
-            )
+            .when(!crate::features::SERVER, |d| d.child(sync_soon_pill()))
+            .when(crate::features::SERVER, |d| {
+                d.child(
+                    div()
+                        .id("sidebar-cloud-change")
+                        .role(Role::Button)
+                        .test_support()
+                        .aria_label("Change")
+                        .flex_none()
+                        .cursor_pointer()
+                        .hover(|s| s.text_color(color("text-primary")))
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.open_sign_in(None, window, cx);
+                        }))
+                        .child("Change"),
+                )
+            })
     }
 }
 
@@ -692,7 +717,11 @@ impl Workspace {
     /// to share`).
     fn render_sync_footer(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let line = self.sync_line();
-        let text = line.text(chrono::Utc::now());
+        let text = if crate::features::SERVER {
+            line.text(chrono::Utc::now())
+        } else {
+            WORKING_LOCALLY.into()
+        };
         let share = div()
             .id("sidebar-share")
             .role(Role::Button)
@@ -707,7 +736,11 @@ impl Workspace {
             .line_height(relative(1.4))
             .child("Share");
         let blocked = self.share_blocked(cx);
-        let share = if let Some(why) = blocked {
+        let share = if !crate::features::SERVER {
+            share
+                .text_color(color("text-disabled"))
+                .tooltip(soon_tooltip(SHARING_SOON_TITLE, SHARING_SOON_BODY))
+        } else if let Some(why) = blocked {
             share
                 .text_color(color("text-disabled"))
                 .tooltip(move |window, cx| {
@@ -769,6 +802,7 @@ impl Workspace {
                     )
                     .when_some(resolve, |d, resolve| d.child("·").child(resolve)),
             )
+            .when(!crate::features::SERVER, |d| d.child(sync_soon_pill()))
             .child(share)
     }
 }
@@ -778,6 +812,11 @@ impl Workspace {
     /// the Main board), or, in a received copy, `My collections` (the
     /// recent folders that are not received copies; the ReadOnly board).
     fn render_other_collections(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        // Received copies need the server; one left by an earlier build
+        // stays an ordinary folder.
+        if !crate::features::SERVER {
+            return None;
+        }
         let root = self.state.collection.as_ref()?.root.clone();
         let received = &self.received_all;
         let (heading, rows): (&'static str, Vec<(PathBuf, String, bool)>) =

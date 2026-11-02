@@ -5,6 +5,9 @@
 mod theme;
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod features;
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod model;
 
 #[cfg(target_os = "macos")]
