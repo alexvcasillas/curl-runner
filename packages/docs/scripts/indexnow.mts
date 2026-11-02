@@ -8,7 +8,15 @@ import { parseArgs } from 'node:util';
 export const SITE_URL = 'https://www.curl-runner.com';
 /** Served at `${SITE_URL}/${INDEXNOW_KEY}.txt` (public/) to prove we own the host. */
 export const INDEXNOW_KEY = 'd7213017d0574809aa42e7ecc4801a52';
-export const ENDPOINT = 'https://api.indexnow.org/indexnow';
+/**
+ * Engines we ping directly. api.indexnow.org forwards to Bing, which can reject a key the
+ * others accept (403 UserForbiddedToAccessSite), so one engine's answer never decides the run.
+ */
+export const ENDPOINTS = [
+  'https://api.indexnow.org/indexnow',
+  'https://yandex.com/indexnow',
+  'https://search.seznam.cz/indexnow',
+] as const;
 /** IndexNow's per-request URL cap. */
 const MAX_URLS = 10_000;
 
@@ -45,8 +53,12 @@ export function payload(urls: string[]) {
 }
 
 /** Submits `urls`; throws on a non-2xx answer (200 accepted, 202 key pending validation). */
-export async function submit(urls: string[], fetchImpl: typeof fetch = fetch): Promise<number> {
-  const response = await fetchImpl(ENDPOINT, {
+export async function submit(
+  urls: string[],
+  fetchImpl: typeof fetch = fetch,
+  endpoint: string = ENDPOINTS[0],
+): Promise<number> {
+  const response = await fetchImpl(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json; charset=utf-8' },
     body: JSON.stringify(payload(urls)),
@@ -55,6 +67,29 @@ export async function submit(urls: string[], fetchImpl: typeof fetch = fetch): P
     throw new Error(`IndexNow answered ${response.status}: ${await response.text()}`);
   }
   return response.status;
+}
+
+export interface EngineResult {
+  endpoint: string;
+  ok: boolean;
+  message: string;
+}
+
+/** Submits `urls` to every engine; never throws, so one engine's failure can't hide the rest. */
+export async function submitAll(
+  urls: string[],
+  fetchImpl: typeof fetch = fetch,
+): Promise<EngineResult[]> {
+  return Promise.all(
+    ENDPOINTS.map(async (endpoint) => {
+      try {
+        return { endpoint, ok: true, message: String(await submit(urls, fetchImpl, endpoint)) };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return { endpoint, ok: false, message: message.replace(/^IndexNow answered /, '') };
+      }
+    }),
+  );
 }
 
 async function main(): Promise<void> {
@@ -78,7 +113,17 @@ async function main(): Promise<void> {
   if (urls.length === 0 || values['dry-run']) {
     return;
   }
-  console.log(`IndexNow: ${await submit(urls)}`);
+  const results = await submitAll(urls);
+  for (const { endpoint, ok, message } of results) {
+    console.log(`${ok ? '✓' : '✗'} ${new URL(endpoint).host}: ${message}`);
+  }
+  if (results.every(({ ok }) => !ok)) {
+    throw new Error('Every IndexNow engine rejected the submission');
+  }
+  for (const { endpoint, message } of results.filter(({ ok }) => !ok)) {
+    // A GitHub Actions annotation, so a rejection stays visible on a green run.
+    console.log(`::warning::IndexNow ${new URL(endpoint).host} answered ${message}`);
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
