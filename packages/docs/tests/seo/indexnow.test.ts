@@ -4,12 +4,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { SITE_URL as LIVE_SITE_URL } from '@/lib/source';
 import {
   changedSince,
-  ENDPOINT,
+  ENDPOINTS,
   INDEXNOW_KEY,
   parseSitemap,
   payload,
   SITE_URL,
   submit,
+  submitAll,
 } from '@/scripts/indexnow.mjs';
 
 // The shape Next.js renders app/sitemap.ts in.
@@ -85,7 +86,7 @@ describe('indexnow', () => {
       202,
     );
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe(ENDPOINT);
+    expect(url).toBe(ENDPOINTS[0]);
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body as string).urlList).toEqual([`${SITE_URL}/docs`]);
   });
@@ -95,5 +96,30 @@ describe('indexnow', () => {
     await expect(
       submit([`${SITE_URL}/docs`], fetchImpl as unknown as typeof fetch),
     ).rejects.toThrow('403: Invalid key');
+  });
+
+  it('posts to each engine and reports every answer', async () => {
+    const fetchImpl = vi.fn(async (url: string) =>
+      url.includes('indexnow.org')
+        ? new Response('UserForbiddedToAccessSite', { status: 403 })
+        : new Response(null, { status: 202 }),
+    );
+    const results = await submitAll([`${SITE_URL}/docs`], fetchImpl as unknown as typeof fetch);
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([...ENDPOINTS]);
+    expect(results.filter((result) => result.ok)).toHaveLength(ENDPOINTS.length - 1);
+    expect(results[0]).toEqual({
+      endpoint: ENDPOINTS[0],
+      ok: false,
+      message: '403: UserForbiddedToAccessSite',
+    });
+  });
+
+  it('reports a network error as a failed engine', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('getaddrinfo ENOTFOUND');
+    });
+    const results = await submitAll([`${SITE_URL}/docs`], fetchImpl as unknown as typeof fetch);
+    expect(results.every((result) => !result.ok)).toBe(true);
+    expect(results[0].message).toContain('ENOTFOUND');
   });
 });
