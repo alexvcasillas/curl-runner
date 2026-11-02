@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/curl-runner-core", "crates/curl-runner", "crates/curl-runner-studio", "crates/testkit"]
+members = ["crates/curl-runner-core", "crates/curl-runner", "crates/curl-runner-studio", "crates/testkit", "crates/curl-runner-server"]
 
 [workspace.package]
 # Synced from packages/cli/package.json by scripts/sync-cargo-version.sh.
