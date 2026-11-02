@@ -10,6 +10,10 @@ on:
         description: "Build all release artifacts and smoke-test them WITHOUT publishing (skips the changesets release)"
         type: boolean
         default: false
+      studio_tag:
+        description: "Rebuild, sign and re-upload only the studio dmg for this existing release tag (e.g. @curl-runner/cli@2.3.0). The tag must already contain the studio packaging (scripts/studio-dmg.sh). Everything else is skipped."
+        type: string
+        default: ""
 
 # Flow: meta -> build (matrix) -> release (changesets: version PR, or publish
 # the five @curl-runner/cli-<platform> npm packages with the built binaries,
@@ -18,10 +22,16 @@ on:
 # version is not on npm yet) or for smoke runs. If a job fails after npm
 # publishing, re-run the failed jobs: scripts/npm-publish.sh skips versions
 # already on npm, and changeset publish does the same.
+# After upload, the studio job signs, notarizes and attaches the macOS dmg.
+# It never blocks the CLI release; if it fails, re-run it or dispatch with
+# studio_tag set to the release tag. Smoke runs also sign and notarize the
+# studio, and keep the dmg as a workflow artifact instead of attaching it.
 permissions:
   contents: read
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+# Dispatches that don't publish (smoke, studio_tag) get their own group, so
+# they never replace a pending release run on main.
+concurrency: ${{ github.workflow }}-${{ github.ref }}${{ inputs.smoke && '-smoke' || '' }}${{ inputs.studio_tag && format('-studio-{0}', inputs.studio_tag) || '' }}
 
 jobs:
   meta:
@@ -40,10 +50,28 @@ jobs:
         id: meta
         env:
           SMOKE: ${{ inputs.smoke }}
+          STUDIO_TAG: ${{ inputs.studio_tag }}
         run: |
           VERSION=$(jq -r .version packages/cli/package.json)
           pending=$(find .changeset -name '*.md' ! -name README.md | wc -l)
-          if [ "$SMOKE" = "true" ]; then
+          if [ -n "$STUDIO_TAG" ]; then
+            # Studio-only run: BUILD=false skips build, package and upload;
+            # release and the smoke jobs check studio_tag themselves.
+            if [ "$SMOKE" = "true" ]; then
+              echo "::error::smoke and studio_tag can't be combined"; exit 1
+            fi
+            case "$STUDIO_TAG" in
+              @curl-runner/cli@?*) VERSION=${STUDIO_TAG#@curl-runner/cli@} ;;
+              *) echo "::error::studio_tag must look like @curl-runner/cli@<version>"; exit 1 ;;
+            esac
+            git fetch --quiet --depth=1 origin "refs/tags/$STUDIO_TAG:refs/tags/$STUDIO_TAG" || {
+              echo "::error::tag $STUDIO_TAG not found"; exit 1
+            }
+            git cat-file -e "refs/tags/$STUDIO_TAG:scripts/studio-dmg.sh" 2>/dev/null || {
+              echo "::error::$STUDIO_TAG predates the studio packaging (no scripts/studio-dmg.sh); studio_tag only rebuilds releases that ship the studio"; exit 1
+            }
+            BUILD=false
+          elif [ "$SMOKE" = "true" ]; then
             BUILD=true
           elif [ "$pending" -gt 0 ]; then
             BUILD=false  # changesets opens/updates the version PR; nothing to publish
@@ -69,7 +97,7 @@ jobs:
   release:
     name: Release
     needs: [meta, build]
-    if: ${{ !inputs.smoke && !cancelled() && needs.meta.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    if: ${{ !inputs.smoke && !inputs.studio_tag && !cancelled() && needs.meta.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: ubuntu-latest
     outputs:
       published: ${{ steps.changesets.outputs.published }}
@@ -307,6 +335,179 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # macOS app: universal bundle, signed with the hardened runtime, packed into
+  # a dmg, notarized, stapled and attached to the release. Runs after the CLI
+  # is uploaded (or alone, with studio_tag) so it can never hold the CLI back.
+  # On smoke runs it does the same from the workflow's ref and keeps the dmg
+  # as a workflow artifact; nothing depends on it.
+  # The signing identity is found in the imported certificate at run time.
+  studio:
+    name: Studio dmg
+    needs: [meta, upload]
+    if: ${{ !cancelled() && needs.meta.result == 'success' && (inputs.studio_tag != '' || inputs.smoke || (needs.meta.outputs.BUILD == 'true' && needs.upload.result == 'success')) }}
+    runs-on: macos-latest
+    environment:
+      name: Production
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash  # -eo pipefail
+    env:
+      TAG: ${{ needs.meta.outputs.TAG }}
+      VERSION: ${{ needs.meta.outputs.VERSION }}
+      APP: target/studio/curl-runner studio.app
+      ENTITLEMENTS: crates/curl-runner-studio/entitlements.plist
+    steps:
+      - name: Check signing secrets
+        env:
+          STUDIO_CERT_P12_BASE64: ${{ secrets.STUDIO_CERT_P12_BASE64 }}
+          STUDIO_CERT_PASSWORD: ${{ secrets.STUDIO_CERT_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          missing=()
+          for name in STUDIO_CERT_P12_BASE64 STUDIO_CERT_PASSWORD APPLE_API_KEY_ID APPLE_API_ISSUER_ID APPLE_API_KEY_P8; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::missing signing secrets: ${missing[*]}. Add them to the repository (or the Production environment) to sign the studio."
+            exit 1
+          fi
+          {
+            echo "KEYCHAIN=$RUNNER_TEMP/studio-signing.keychain-db"
+            echo "NOTARY_KEY=$RUNNER_TEMP/studio-notary-key.p8"
+          } >> "$GITHUB_ENV"
+
+      - name: Checkout Repo
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.studio_tag != '' && format('refs/tags/{0}', inputs.studio_tag) || github.sha }}
+
+      - name: Check release and version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SMOKE: ${{ inputs.smoke }}
+        run: |
+          cargo_version=$(awk -F'"' '/^version = /{print $2; exit}' Cargo.toml)
+          if [ "$SMOKE" = "true" ]; then
+            # Dry run: no release to check; the dmg takes the workspace version.
+            echo "VERSION=$cargo_version" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          if [ "$cargo_version" != "$VERSION" ]; then
+            echo "::error::Cargo.toml is at $cargo_version but the release is $VERSION"
+            exit 1
+          fi
+          gh release view "$TAG" --json tagName >/dev/null || {
+            echo "::error::no GitHub release for $TAG"
+            exit 1
+          }
+
+      - name: Install Rust targets
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: studio-universal
+
+      - name: Import signing certificate
+        env:
+          STUDIO_CERT_P12_BASE64: ${{ secrets.STUDIO_CERT_P12_BASE64 }}
+          STUDIO_CERT_PASSWORD: ${{ secrets.STUDIO_CERT_PASSWORD }}
+        run: |
+          umask 077
+          cert="$RUNNER_TEMP/studio-cert.p12"
+          keychain_password=$(openssl rand -base64 32)
+          printf '%s' "$STUDIO_CERT_P12_BASE64" | base64 --decode > "$cert"
+          security create-keychain -p "$keychain_password" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$keychain_password" "$KEYCHAIN"
+          security import "$cert" -k "$KEYCHAIN" -f pkcs12 -P "$STUDIO_CERT_PASSWORD" -T /usr/bin/codesign >/dev/null
+          rm -f "$cert"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$KEYCHAIN" >/dev/null
+          # Prepend to the search list so codesign finds the identity.
+          existing=()
+          while IFS= read -r k; do
+            k=${k#"${k%%[![:space:]]*}"}; k=${k//\"/}
+            [ -n "$k" ] && existing+=("$k")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$KEYCHAIN" "${existing[@]}"
+          # The SHA-1 of the first Developer ID Application identity, so no
+          # name or team id is printed or kept anywhere.
+          identity=$(security find-identity -v -p codesigning "$KEYCHAIN" | awk '/"Developer ID Application: / { print $2; exit }')
+          if [ -z "$identity" ]; then
+            echo "::error::STUDIO_CERT_P12_BASE64 holds no valid Developer ID Application identity"
+            exit 1
+          fi
+          echo "IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Build universal app bundle
+        run: scripts/studio-bundle.sh --release --universal
+
+      - name: Sign app
+        run: |
+          codesign --force --options runtime --timestamp \
+            --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Build and sign dmg
+        run: |
+          DMG="$RUNNER_TEMP/curl-runner-studio-$VERSION.dmg"
+          scripts/studio-dmg.sh "$APP" "$DMG"
+          codesign --force --timestamp --sign "$IDENTITY" "$DMG"
+          echo "DMG=$DMG" >> "$GITHUB_ENV"
+
+      - name: Notarize and staple dmg
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          umask 077
+          trap 'rm -f "$NOTARY_KEY"' EXIT
+          printf '%s\n' "$APPLE_API_KEY_P8" > "$NOTARY_KEY"
+          auth=(--key "$NOTARY_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID")
+          result="$RUNNER_TEMP/notary.json"
+          xcrun notarytool submit "$DMG" "${auth[@]}" --wait --output-format json > "$result" || true
+          status=$(jq -r '.status // empty' "$result" 2>/dev/null || true)
+          id=$(jq -r '.id // empty' "$result" 2>/dev/null || true)
+          echo "notarization ${id:-(no id)}: ${status:-(no status)}"
+          if [ "$status" != "Accepted" ]; then
+            [ -n "$id" ] && { xcrun notarytool log "$id" "${auth[@]}" || true; }
+            echo "::error::notarization failed (status: ${status:-submit error})"
+            exit 1
+          fi
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          spctl -a -t open --context context:primary-signature -v "$DMG"
+
+      - name: Upload dmg to GitHub Release
+        if: ${{ !inputs.smoke }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$TAG" "$DMG" --clobber
+
+      - name: Keep dmg as a workflow artifact (smoke)
+        if: ${{ inputs.smoke }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: studio-dmg
+          path: ${{ env.DMG }}
+          if-no-files-found: error
+
+      - name: Remove signing keychain and key
+        if: always()
+        run: |
+          if [ -n "${KEYCHAIN:-}" ]; then
+            security delete-keychain "$KEYCHAIN" 2>/dev/null || true
+          fi
+          rm -f "$RUNNER_TEMP/studio-notary-key.p8" "$RUNNER_TEMP/studio-cert.p12"
 
   # Manual only (smoke=true): packages both crates and builds them from the
   # packaged sources, as crates.io and `cargo install` will. Never uploads.

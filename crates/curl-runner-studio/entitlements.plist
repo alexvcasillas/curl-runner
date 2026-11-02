@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The release build is signed with the hardened runtime. The studio
+  sends HTTP requests, so it declares the network client entitlement. No
+  runtime exceptions: GPUI draws through Metal, which needs none; nothing is
+  JIT compiled or written to executable memory; and the binary links only
+  system frameworks, so library validation stays on.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.network.client</key>
+  <true/>
+</dict>
+</plist>
