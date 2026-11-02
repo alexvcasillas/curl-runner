@@ -186,8 +186,11 @@ Help menu.
   - **Deploy** (not on pull requests) `POST`s the Coolify deploy webhook with a bearer
     token, `--fail` and `--retry 3`, in a deploy concurrency group that never cancels a
     running deploy. Secrets: `COOLIFY_WEBHOOK_SERVER` and `COOLIFY_TOKEN`.
-  - **`docker-compose.prod.yml`** at the repo root is what Coolify runs, as one Docker
-    Compose resource:
+  - **`docker-compose.yaml`** at the repo root is what Coolify runs, as one Docker
+    Compose resource. The owner already created that Coolify project, pointing at this
+    file. Coolify's own "auto deploy on push" is off: it would redeploy before the new
+    image exists. Only the workflow's webhook deploys. Coolify never builds; the image is
+    built on GitHub runners, so builds don't load the shared Coolify server:
     - `image: ghcr.io/alexvcasillas/curl-runner-server:${SERVER_IMAGE_TAG:-latest}`, so a
       rollback is setting the tag to a sha in Coolify;
     - the external `coolify` network, so Coolify manages networking and the proxy;
@@ -259,7 +262,7 @@ apply the same global `diff.exclude` and match rules, with a test that pins it.
   fix ships as a normal patch release.
 - **Order of shipping:**
   1. The server PR merges first and its workflow publishes the image. The owner makes the
-     GHCR package public, sets up the Coolify stack from `docker-compose.prod.yml`, adds the
+     GHCR package public, sets up the Coolify stack from `docker-compose.yaml`, adds the
      deploy secrets and points DNS, and
      `https://api.curl-runner.com/health` answers.
   2. The studio PRs merge and a release produces the signed `.dmg`.
