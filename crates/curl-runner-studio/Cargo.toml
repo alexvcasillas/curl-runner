@@ -8,6 +8,10 @@ homepage.workspace = true
 description = "curl-runner studio: a macOS desktop app for YAML request suites"
 publish = false
 
+[features]
+# The server-backed UI and the mock behind it. Off in release builds.
+server = []
+
 [[bin]]
 name = "curl-runner-studio"
 path = "src/main.rs"

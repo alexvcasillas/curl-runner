@@ -3,14 +3,10 @@
 
 use super::{Account, SharedVar, SignInMethod, SyncFile};
 
-/// The cloud server's address (fake).
-pub const CLOUD_URL: &str = "https://cloud.curl-runner.com";
 /// The version every mocked server reports (board SignIn).
 pub const SERVER_VERSION: &str = "2.1.1";
 /// What `Test connection` measures (board SignIn).
 pub const CONNECTION_MS: u64 = 42;
-/// Where web share links point.
-pub const SHARE_HOST: &str = "https://studio.example.com";
 
 /// The teammate who pushes the conflicting change (board SyncConflict).
 pub const CONFLICT_AUTHOR: &str = "Sam";

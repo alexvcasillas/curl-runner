@@ -514,9 +514,15 @@ impl Workspace {
         })
     }
 
-    /// The sign-in screen's answer: stored, else this session's.
+    /// The sign-in screen's answer: stored, else this session's. Without
+    /// the server any answer means local only (an `Online` from a build
+    /// that had one included); the stored value is left as it is.
     pub(in crate::ui) fn connection(&self) -> Option<Connection> {
-        self.store.connection().or(self.session_connection)
+        let answer = self.store.connection().or(self.session_connection);
+        if !crate::features::SERVER {
+            return answer.map(|_| Connection::Offline);
+        }
+        answer
     }
 
     /// Shows the sign-in screen on first launch: when it was never
@@ -585,6 +591,9 @@ impl Workspace {
 
     /// Welcome's cloud chip: its dot's token and its text.
     pub(in crate::ui) fn connection_text(&self) -> (&'static str, String) {
+        if !crate::features::SERVER {
+            return ("text-tertiary", "Working locally".into());
+        }
         if self.connection() == Some(Connection::Offline) {
             return ("text-tertiary", "Offline".into());
         }

@@ -48,6 +48,15 @@ jobs:
       - name: Test
         run: cargo test --workspace --no-fail-fast
 
+      # The studio's server-backed UI and its mock, off in release builds.
+      - name: Clippy (studio, server feature)
+        if: runner.os == 'macOS'
+        run: cargo clippy -p curl-runner-studio --all-targets --features server -- -D warnings
+
+      - name: Test (studio, server feature)
+        if: runner.os == 'macOS'
+        run: cargo test -p curl-runner-studio --features server
+
       # The website's feature examples must pass `curl-runner validate --strict`.
       - name: Build CLI for docs examples
         if: runner.os == 'Linux'

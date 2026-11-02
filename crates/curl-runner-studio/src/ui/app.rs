@@ -6,7 +6,9 @@ use super::palette;
 use super::settings_view::AppPage;
 use super::state;
 use super::workspace::{Workspace, quit_app};
-use crate::model::backend::{Backend, DevControls, DevToggles, MOCK_LATENCY, MockBackend};
+#[cfg(feature = "server")]
+use crate::model::backend::DevControls;
+use crate::model::backend::{Backend, DevToggles};
 use crate::model::run::RunTarget;
 use crate::model::secrets::{KeychainSecrets, SecretStore};
 use crate::model::settings::Settings;
@@ -15,7 +17,7 @@ use gpui_kit::base::actions::{Cancel, Confirm, SelectDown, SelectUp};
 use gpui_kit::component::{Theme, ThemeConfig};
 use gpui_kit::*;
 use std::borrow::Cow;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 
@@ -77,6 +79,8 @@ actions!(
     ]
 );
 
+// The mock's toggles: never in a build without the server.
+#[cfg(feature = "server")]
 actions!(
     studio_dev,
     [
@@ -95,13 +99,17 @@ actions!(
 );
 
 /// The macOS menu bar. Quit goes through the workspace's unsaved-changes
-/// check (see `init`). With `dev` (debug builds, a backend with developer
-/// toggles), the app menu has Developer, checked as `dev` says.
+/// check (see `init`). With `dev` (debug builds with the `server` feature,
+/// a backend with developer toggles), the app menu has Developer, checked
+/// as `dev` says.
 pub fn menus(dev: Option<DevToggles>) -> Vec<Menu> {
     let mut app = vec![
         MenuItem::action("Settings…", OpenSettings),
         MenuItem::separator(),
     ];
+    #[cfg(not(feature = "server"))]
+    let _ = dev;
+    #[cfg(feature = "server")]
     if let Some(t) = dev {
         app.push(MenuItem::submenu(
             Menu::new("Developer").items([
@@ -328,8 +336,8 @@ pub fn run() {
         let tab = dev_string("CURL_RUNNER_STUDIO_TAB");
         let link = dev_string("CURL_RUNNER_STUDIO_LINK");
         let secrets: Arc<dyn SecretStore> = Arc::new(KeychainSecrets);
-        // The only place the mock is named: views see a `Backend`.
-        let backend: Arc<dyn Backend> = Arc::new(MockBackend::open(store.base(), MOCK_LATENCY));
+        let backend = app_backend(store.base());
+        #[cfg(feature = "server")]
         let dev_store = store.clone();
         let ws_backend = backend.clone();
         let (window_handle, workspace) = gpui_kit::open_window(options, cx, |window, cx| {
@@ -486,6 +494,7 @@ pub fn run() {
         })
         .expect("failed to open the studio window");
         open_shared::pump_links(queued, window_handle, workspace.downgrade(), cx);
+        #[cfg(feature = "server")]
         if cfg!(debug_assertions) {
             install_dev_menu(backend, dev_store, window_handle, workspace.downgrade(), cx);
         }
@@ -501,8 +510,25 @@ pub fn run() {
     });
 }
 
+/// The app's server. The only place the mock is named: views see a
+/// `Backend`. Without the `server` feature there is none (`NoServer`),
+/// and the mock isn't compiled in.
+pub fn app_backend(base: Option<&Path>) -> Arc<dyn Backend> {
+    #[cfg(feature = "server")]
+    {
+        use crate::model::backend::{MOCK_LATENCY, MockBackend};
+        Arc::new(MockBackend::open(base, MOCK_LATENCY))
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        let _ = base;
+        Arc::new(crate::model::backend::NoServer)
+    }
+}
+
 /// App menu › Developer: the backend's toggles (when it has them, the
-/// mock), through [`Backend::dev`] only. Debug builds.
+/// mock), through [`Backend::dev`] only. Debug builds with the server.
+#[cfg(feature = "server")]
 fn install_dev_menu(
     backend: Arc<dyn Backend>,
     store: state::StateStore,
@@ -574,11 +600,13 @@ fn install_dev_menu(
 }
 
 /// The menu's checkmarks and the windows, after a toggle changed.
+#[cfg(feature = "server")]
 fn refresh_dev(backend: &Arc<dyn Backend>, cx: &mut App) {
     cx.set_menus(menus(backend.dev().map(|d| d.toggles())));
     cx.refresh_windows();
 }
 
+#[cfg(feature = "server")]
 fn toggle_dev(backend: &Arc<dyn Backend>, flip: fn(&dyn DevControls), cx: &mut App) {
     if let Some(d) = backend.dev() {
         flip(d);
@@ -945,6 +973,18 @@ mod tests {
             highlight.editor_line_number,
             Some(super::super::color("text-gutter"))
         );
+    }
+
+    #[cfg(not(feature = "server"))]
+    #[test]
+    fn app_backend_without_feature_is_no_server() {
+        use crate::model::backend::{BackendError, Server};
+        let backend = super::app_backend(None);
+        assert_eq!(
+            futures::executor::block_on(backend.test_connection(&Server::Cloud)),
+            Err(BackendError::Unavailable)
+        );
+        assert!(backend.dev().is_none(), "no Developer menu");
     }
 
     #[test]

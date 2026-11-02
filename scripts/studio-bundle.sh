@@ -6,14 +6,24 @@
 #
 # Nothing is installed: the bundle stays in the target dir. Opening it once
 # registers it with LaunchServices, which then sends it the scheme's links.
-# Usage: studio-bundle.sh [--release] [repo-root]
+# `--server` builds with the server-backed UI (and the mock behind it); a
+# distributed build never passes it.
+# Usage: studio-bundle.sh [--release] [--server] [repo-root]
 set -euo pipefail
 
 PROFILE=debug
-if [[ "${1:-}" == "--release" ]]; then
-  PROFILE=release
+SERVER=
+while [[ "${1:-}" == --* ]]; do
+  case "$1" in
+    --release) PROFILE=release ;;
+    --server) SERVER=1 ;;
+    *)
+      echo "error: unknown option $1" >&2
+      exit 1
+      ;;
+  esac
   shift
-fi
+done
 ROOT="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 
 [[ "$(uname -s)" == Darwin ]] || {
@@ -33,6 +43,7 @@ TARGET="${CARGO_TARGET_DIR:-$ROOT/target}"
 
 cargo_flags=(--manifest-path "$ROOT/Cargo.toml" -p curl-runner-studio)
 [[ "$PROFILE" == release ]] && cargo_flags+=(--release)
+[[ -n "$SERVER" ]] && cargo_flags+=(--features server)
 cargo build "${cargo_flags[@]}"
 
 BIN="$TARGET/$PROFILE/curl-runner-studio"

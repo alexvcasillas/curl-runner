@@ -503,9 +503,9 @@ mod gpui_tests {
     use super::super::state::StateStore;
     use super::super::workspace::{Workspace, test_backend, wait_for_run};
     use super::{DUPLICATED, STATE_FOLDER_TEXT};
-    use crate::model::backend::{
-        Backend, CollectionKey, ShareUpdate, SignInMethod, SyncFile, sync_files,
-    };
+    use crate::model::backend::{Backend, SignInMethod, SyncFile, sync_files};
+    #[cfg(feature = "server")]
+    use crate::model::backend::{CollectionKey, ShareUpdate};
     use crate::model::collection_meta::CollectionMeta;
     use crate::model::secrets::{MemorySecrets, SecretStore, service_name};
     use gpui_kit::component::WindowExt as _;
@@ -821,6 +821,7 @@ mod gpui_tests {
         assert_eq!(toasts(cx, &s).len(), 9);
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn read_only_view_reads_like_the_board(cx: &mut TestAppContext) {
         let s = received(cx, false, None);
@@ -956,6 +957,7 @@ mod gpui_tests {
         assert!(!copied.contains(TOKEN), "{copied}");
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn check_for_updates_replaces_files(cx: &mut TestAppContext) {
         let s = received(cx, false, None);
@@ -1162,6 +1164,7 @@ mod gpui_tests {
         );
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn a_received_copy_never_pushes(cx: &mut TestAppContext) {
         let s = received(cx, true, None);
@@ -1286,6 +1289,7 @@ mod gpui_tests {
         assert!(s.spy.sent.lock().unwrap().is_empty());
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn shared_variables_follow_the_owner_on_sync_and_check(cx: &mut TestAppContext) {
         use crate::model::backend::SharedVar;

@@ -1933,6 +1933,7 @@ mod gpui_tests {
         );
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn an_added_copy_is_listed_while_unsaved_changes_wait(cx: &mut TestAppContext) {
         let s = studio(cx);

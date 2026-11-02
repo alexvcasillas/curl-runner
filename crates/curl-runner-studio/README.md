@@ -3,7 +3,8 @@
 A macOS desktop app for curl-runner YAML request suites. Not published.
 
 ```sh
-cargo run -p curl-runner-studio
+cargo run -p curl-runner-studio                    # local only, as released
+cargo run -p curl-runner-studio --features server  # sign-in, share and sync, on the mock
 ```
 
 ## Share links (`curl-runner://`)
@@ -12,7 +13,7 @@ macOS hands `curl-runner://` links only to an app bundle that registers the
 scheme. Build one locally:
 
 ```sh
-scripts/studio-bundle.sh            # debug build; --release for a release one
+scripts/studio-bundle.sh --server   # debug build; --release for a release one
 open "target/studio/curl-runner studio.app"
 ```
 

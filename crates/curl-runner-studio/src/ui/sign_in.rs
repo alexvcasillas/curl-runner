@@ -805,6 +805,7 @@ mod tests {
         ws.read_with(cx, |ws, _| ws.sign_in_shown())
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn first_launch_shows_sign_in_once(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();
@@ -826,6 +827,7 @@ mod tests {
         assert!(!sign_in_shown(cx, &ws));
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn continue_offline_skips_next_launch(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();
@@ -943,6 +945,7 @@ mod tests {
         assert!(shows(cx, window, "Jamie Rivera"));
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn shortcuts_do_nothing_behind_the_sign_in_screen(cx: &mut TestAppContext) {
         use gpui_kit::component::WindowExt as _;
@@ -979,6 +982,7 @@ mod tests {
         ws.read_with(cx, |ws, _| assert!(ws.app_settings_shown()));
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn continue_offline_signs_out(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();
@@ -1000,6 +1004,7 @@ mod tests {
         assert!(shows(cx, window, "Offline"));
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn without_a_store_the_answer_holds_for_the_session(cx: &mut TestAppContext) {
         let (window, ws) = open(cx, StateStore::none(), test_backend());
@@ -1060,10 +1065,55 @@ mod tests {
         ));
     }
 
-    /// Views reach the server through `Backend` only; `app.rs` alone builds
-    /// the mock. No other ui file names the mock or its fixtures.
+    /// Without the server, a stored `Online` answer from an earlier build
+    /// opens Welcome working locally: no first-launch screen, no received
+    /// copies, and nothing it left behind is rewritten or removed.
+    #[cfg(not(feature = "server"))]
+    #[gpui_kit::test]
+    fn stored_online_connection_opens_welcome_locally(cx: &mut TestAppContext) {
+        use crate::model::backend::ReceivedShare;
+        use crate::model::received::{self, LocalCopy};
+        let state = tempfile::tempdir().unwrap();
+        let base = state.path();
+        let store = StateStore::at(base);
+        store.set_connection(Some(Connection::Online));
+        let backend = test_backend();
+        futures::executor::block_on(backend.sign_in(SignInMethod::Email)).unwrap();
+        let share = ReceivedShare {
+            id: "acme/shipping-api".into(),
+            owner_org: "Acme".into(),
+            name: "Shipping API".into(),
+            added: chrono::Utc::now(),
+        };
+        futures::executor::block_on(backend.add_received(share.clone())).unwrap();
+        let copy = tempfile::tempdir().unwrap();
+        let local = LocalCopy {
+            share_id: share.id.clone(),
+            root: copy.path().to_path_buf(),
+            collection_id: "c".into(),
+        };
+        received::record(base, local).unwrap();
+        let mock_state = base.join("mock-backend.json");
+        std::fs::write(&mock_state, "{}").unwrap();
+        let before = |name: &str| std::fs::read(base.join(name)).unwrap();
+        let (state_json, received_json) = (before("state.json"), before("received.json"));
+
+        let (window, ws) = open(cx, store.clone(), backend);
+        assert!(!sign_in_shown(cx, &ws));
+        assert!(shows(cx, window, "Working locally"));
+        ws.read_with(cx, |ws, _| assert!(ws.received_all.is_empty()));
+
+        assert_eq!(before("state.json"), state_json);
+        assert_eq!(before("received.json"), received_json);
+        assert_eq!(std::fs::read_to_string(&mock_state).unwrap(), "{}");
+        assert_eq!(store.connection(), Some(Connection::Online));
+    }
+
+    /// Views reach the server through `Backend` only; in `app.rs` only
+    /// `app_backend` builds the mock. No other ui file names the mock or
+    /// its fixtures.
     #[test]
-    fn ui_never_imports_mock_backend() {
+    fn mock_is_only_named_in_app_backend() {
         fn rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
             for entry in std::fs::read_dir(dir).unwrap() {
                 let path = entry.unwrap().path();
@@ -1093,7 +1143,22 @@ mod tests {
             }
         }
         assert!(offenders.is_empty(), "{offenders:?}");
+        // In app.rs, the mock is named inside `app_backend` and nowhere else.
         let app = std::fs::read_to_string(app).unwrap();
-        assert!(app.contains(needles[0]), "app.rs builds it");
+        let start = app
+            .find("pub fn app_backend(")
+            .expect("app.rs has app_backend");
+        let end = start + app[start..].find("\n}\n").expect("app_backend ends");
+        let (inside, outside) = (
+            &app[start..end],
+            format!("{}{}", &app[..start], &app[end..]),
+        );
+        assert!(inside.contains(needles[0]), "app_backend builds it");
+        for needle in needles {
+            assert!(
+                !outside.contains(needle),
+                "app.rs names {needle} outside app_backend"
+            );
+        }
     }
 }

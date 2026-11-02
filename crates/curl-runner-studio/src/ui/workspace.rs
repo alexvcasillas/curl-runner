@@ -671,8 +671,14 @@ impl Workspace {
 
     /// Re-reads the received copies: the server's records joined with the
     /// copies on this Mac (the sidebar's Shared with me): on open, after an
-    /// Add, after a reset. Records with no copy here are left out.
+    /// Add, after a reset. Records with no copy here are left out. Without
+    /// the server there are none; `received.json` stays as it is.
     pub(super) fn refresh_received_all(&mut self) {
+        if !crate::features::SERVER {
+            self.received_all.clear();
+            self.received = None;
+            return;
+        }
         let local = crate::model::received::load(self.store.base());
         self.received_all = crate::model::received::join(self.backend.received(), &local);
         // The open copy keeps its record only while the server has it.
