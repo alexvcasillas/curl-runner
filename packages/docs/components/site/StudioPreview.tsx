@@ -6,6 +6,7 @@ import {
   STUDIO_CHANGELOG_HREF,
   STUDIO_DOWNLOAD_HREF,
   STUDIO_REQUIREMENTS,
+  STUDIO_VERSION,
 } from '@/lib/studio';
 
 /** How to get the studio: the dmg on the downloads page, or the Homebrew cask. */
@@ -37,7 +38,7 @@ export function StudioPreview({ className = '' }: { className?: string }) {
             href={STUDIO_CHANGELOG_HREF}
             className="text-fg underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-brand"
           >
-            what shipped in 2.2.0
+            {`what shipped in ${STUDIO_VERSION}`}
           </Link>
           .
         </p>
