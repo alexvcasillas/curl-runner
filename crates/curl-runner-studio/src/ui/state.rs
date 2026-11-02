@@ -2,6 +2,7 @@
 
 use crate::model::collection::Collection;
 use crate::model::document::Document;
+use crate::model::shared_copy::is_received;
 use crate::model::tour::TourStatus;
 use chrono::{DateTime, Local};
 use std::io;
@@ -121,7 +122,15 @@ impl StateStore {
 
     /// The folder opened last, if it is still recorded.
     pub fn last_folder(&self) -> Option<PathBuf> {
-        last_folder_in(self.base.as_deref()?)
+        self.last_folder_for(crate::features::SERVER)
+    }
+
+    /// [`last_folder`](Self::last_folder), for a build with or without the
+    /// server. Without it, a received copy is no folder of the user's.
+    fn last_folder_for(&self, server: bool) -> Option<PathBuf> {
+        let base = self.base.as_deref()?;
+        let dir = last_folder_in(base)?;
+        (server || !is_received(Some(base), &dir)).then_some(dir)
     }
 
     /// Records `p` as the folder to reopen and moves it to the front of
@@ -154,11 +163,22 @@ impl StateStore {
 
     /// Folders opened before, most recent first.
     pub fn recent(&self) -> Vec<RecentEntry> {
-        self.base
-            .as_deref()
-            .and_then(read_state_in)
+        self.recent_for(crate::features::SERVER)
+    }
+
+    /// [`recent`](Self::recent), for a build with or without the server.
+    /// Without it, received copies are not listed.
+    fn recent_for(&self, server: bool) -> Vec<RecentEntry> {
+        let Some(base) = self.base.as_deref() else {
+            return Vec::new();
+        };
+        let mut recent = read_state_in(base)
             .map(|json| recent_in(&json))
-            .unwrap_or_default()
+            .unwrap_or_default();
+        if !server {
+            recent.retain(|r| !is_received(Some(base), &r.path));
+        }
+        recent
     }
 
     /// Forgets every recent folder (the folder to reopen stays).
@@ -530,5 +550,28 @@ mod tests {
         let recent = StateStore::at(dir.path()).recent();
         assert_eq!(recent.len(), 1);
         assert_eq!(recent[0].path, Path::new("/b"));
+    }
+
+    #[test]
+    fn without_the_server_received_copies_are_not_recent_or_reopened() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = StateStore::at(dir.path());
+        let mine = dir.path().join("mine");
+        let copy = dir.path().join("shared").join("acme-api");
+        std::fs::create_dir_all(&mine).unwrap();
+        std::fs::create_dir_all(&copy).unwrap();
+        store.remember_folder(&mine);
+        store.remember_folder(&copy);
+        // The copy was opened last.
+        assert_eq!(store.last_folder_for(true), Some(copy.clone()));
+        assert_eq!(store.recent_for(true).len(), 2);
+        // A build without the server hides it, and does not reopen it.
+        assert_eq!(store.last_folder_for(false), None);
+        let paths: Vec<_> = store
+            .recent_for(false)
+            .into_iter()
+            .map(|r| r.path)
+            .collect();
+        assert_eq!(paths, [mine]);
     }
 }
