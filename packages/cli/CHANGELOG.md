@@ -1,5 +1,13 @@
 # @curl-runner/cli
 
+## 2.3.0
+
+### Minor Changes
+
+- [#157](https://github.com/alexvcasillas/curl-runner/pull/157) [`7ba1f71`](https://github.com/alexvcasillas/curl-runner/commit/7ba1f71d6d318755f90f8589bbb27e4452f6844a) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - curl-runner studio is now a download: a signed, notarized macOS app for Apple silicon and Intel, attached to each release as `curl-runner-studio-<version>.dmg`. It works with your local YAML files out of the box, and a short walkthrough runs your first request. Sync and sharing are marked as coming soon.
+  
+  `curl-runner diff a b` now honours `diff.exclude` and `diff.match` from your config file and the file's `global` section.
+
 ## 2.2.0
 
 ### Minor Changes
