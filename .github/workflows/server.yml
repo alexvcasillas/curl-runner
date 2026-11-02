@@ -1,0 +1,84 @@
+name: Server
+
+on:
+  pull_request:
+    paths:
+      - "crates/curl-runner-server/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "docker-compose.yaml"
+      - ".github/workflows/server.yml"
+  push:
+    branches: [main]
+    paths:
+      - "crates/curl-runner-server/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "docker-compose.yaml"
+      - ".github/workflows/server.yml"
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/alexvcasillas/curl-runner-server
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p curl-runner-server
+      - run: cargo clippy -p curl-runner-server -- -D warnings
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      # No QEMU: the Dockerfile cross-compiles on the build host, and the final
+      # stage only copies files, so no foreign-arch instruction is ever executed.
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short,prefix=sha-
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: crates/curl-runner-server/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-server
+      cancel-in-progress: false
+    steps:
+      - name: Trigger Coolify deploy
+        env:
+          COOLIFY_WEBHOOK_SERVER: ${{ secrets.COOLIFY_WEBHOOK_SERVER }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          curl --request POST "$COOLIFY_WEBHOOK_SERVER" \
+            --header "Authorization: Bearer $COOLIFY_TOKEN" \
+            --fail --silent --show-error --retry 3 --retry-delay 5
