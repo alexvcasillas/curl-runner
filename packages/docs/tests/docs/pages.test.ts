@@ -20,6 +20,7 @@ const GETTING_STARTED = [
   'tutorials/coming-soon',
   'cli-commands',
   'cli-options',
+  'self-hosting',
 ];
 
 // In the order of lib/docs-config.ts (Upgrade sits under CLI Reference there).
@@ -152,9 +153,9 @@ describe('features docs', () => {
 });
 
 describe('reference and examples docs', () => {
-  it('serves every page from MDX: index + 39 moved pages + studio = 41', () => {
+  it('serves every page from MDX: index + 39 moved pages + studio + self-hosting = 42', () => {
     // 1 index + 12 getting-started/config/cli + 21 features + 7 reference and examples
-    expect(source.getPages()).toHaveLength(41);
+    expect(source.getPages()).toHaveLength(42);
   });
 
   it('has removed the old React docs tree and its sidebar config', () => {

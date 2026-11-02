@@ -1,0 +1,62 @@
+---
+title: "Self-hosting (early)"
+description: "Run the curl-runner server from its prebuilt Docker image with docker compose. Set the port and log level, pin a version, and check that it's up."
+---
+
+<Callout type="warn" title="Early">
+The server only has a `/health` endpoint today. Accounts, sync and sharing are coming, and this page will change with them.
+</Callout>
+
+The curl-runner server ships as a Docker image: `ghcr.io/alexvcasillas/curl-runner-server`. The repo's `docker-compose.yaml` runs it.
+
+## Run it [#run]
+
+From a checkout of the repo:
+
+```bash
+docker compose up -d
+```
+
+This pulls the image and starts a service called `server` on port 8080.
+
+The compose file attaches the service to an external network named `coolify`, because that's how it's deployed. If you don't use Coolify, create the network first:
+
+```bash
+docker network create coolify
+```
+
+Or delete the two `networks` keys from `docker-compose.yaml`.
+
+## Check it's up [#health]
+
+```bash
+curl localhost:8080/health
+```
+
+```json
+{"status":"ok","version":"<version>"}
+```
+
+The container also runs its own healthcheck every 10 seconds. `docker compose ps` shows `healthy` once it passes.
+
+## Settings [#settings]
+
+Set these in your shell or in a `.env` file next to `docker-compose.yaml`.
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `PORT` | `8080` | Port the server listens on. |
+| `RUST_LOG` | `info` | Log level, for example `debug` or `warn`. |
+| `SERVER_IMAGE_TAG` | `latest` | Image tag to run. |
+
+```bash
+PORT=9000 RUST_LOG=debug docker compose up -d
+```
+
+## Pin a version [#pin]
+
+Every build is tagged `latest` and `sha-<short>`, where `<short>` is the short commit hash. `latest` moves with each build. To stay on one build, pin the tag:
+
+```bash
+SERVER_IMAGE_TAG=sha-abc1234 docker compose up -d
+```

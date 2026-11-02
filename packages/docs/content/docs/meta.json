@@ -12,6 +12,8 @@
     "variables",
     "global-settings",
     "security",
+    "---Server---",
+    "self-hosting",
     "---Features---",
     "...features",
     "---CLI Reference---",
