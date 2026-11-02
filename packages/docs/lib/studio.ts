@@ -2,13 +2,16 @@
 // that show it point at /downloads and the Homebrew cask. Sync and sharing are coming soon.
 
 import { SITE_URL } from '@/lib/site';
+import cliPackage from '../../cli/package.json';
 
 export const STUDIO_REPO_URL = 'https://github.com/alexvcasillas/curl-runner';
 export const STUDIO_SOURCE_URL = `${STUDIO_REPO_URL}/tree/main/crates/curl-runner-studio`;
 export const STUDIO_CASK_COMMAND = 'brew install --cask alexvcasillas/tap/curl-runner-studio';
 export const STUDIO_DOWNLOAD_HREF = '/downloads';
 export const STUDIO_REQUIREMENTS = 'macOS 12 or later, Apple silicon and Intel';
-export const STUDIO_CHANGELOG_HREF = '/changelog#2.2.0';
+/** The studio ships with every CLI release and shares its version. */
+export const STUDIO_VERSION = cliPackage.version;
+export const STUDIO_CHANGELOG_HREF = `/changelog#${STUDIO_VERSION}`;
 export const STUDIO_PAGE_HREF = '/features/studio';
 export const STUDIO_DOCS_HREF = '/docs/features/studio';
 export const STUDIO_PAGE_URL = `${SITE_URL}${STUDIO_PAGE_HREF}`;
