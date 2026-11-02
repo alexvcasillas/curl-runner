@@ -302,6 +302,9 @@ mod tests {
         assert!(shows(cx, window, "Welcome to curl-runner studio"));
         click(cx, window, "first-launch-get-started");
         assert!(!shown(cx, &ws));
+        let (window, ws) = open(cx, store);
+        assert!(!shown(cx, &ws));
+        assert!(shows(cx, window, "Working locally"), "Welcome's chip");
     }
 
     #[gpui_kit::test]

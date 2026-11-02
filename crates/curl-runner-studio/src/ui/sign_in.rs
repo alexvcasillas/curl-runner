@@ -798,15 +798,25 @@ mod tests {
             gpui_kit::open_window(options, cx, |window, cx| {
                 cx.new(|cx| {
                     let mut ws = Workspace::new(None, store, test_secrets(), backend, window, cx);
-                    // The sign-in screen itself, whatever the build's first launch.
-                    if ws.connection().is_none() {
-                        drop(ws.open_sign_in(None, window, cx));
-                    }
+                    ws.first_launch(window, cx);
                     ws
                 })
             })
             .unwrap()
         })
+    }
+
+    /// The sign-in screen itself: first launch shows it with the server,
+    /// and only then; without it the tests ask for it.
+    fn open_sign_in(
+        cx: &mut TestAppContext,
+        window: AnyWindowHandle,
+        ws: &Entity<Workspace>,
+    ) -> Entity<super::SignInView> {
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.open_sign_in(None, window, cx))
+        })
+        .unwrap()
     }
 
     fn click(cx: &mut TestAppContext, window: AnyWindowHandle, id: &'static str) {
@@ -886,7 +896,7 @@ mod tests {
     fn self_hosted_test_connection_shows_info(cx: &mut TestAppContext) {
         let backend = test_backend();
         let (window, ws) = open(cx, StateStore::none(), backend.clone());
-        let view = ws.read_with(cx, |ws, _| ws.sign_in.clone().unwrap());
+        let view = open_sign_in(cx, window, &ws);
         cx.update_window(window, |_, window, cx| {
             view.update(cx, |v, cx| {
                 v.set_self_hosted("https://studio.api.example.com", window, cx)
@@ -925,7 +935,7 @@ mod tests {
         let backend = test_backend();
         backend.dev().unwrap().fail_next_sign_in(true);
         let (window, ws) = open(cx, StateStore::none(), backend.clone());
-        let view = ws.read_with(cx, |ws, _| ws.sign_in.clone().unwrap());
+        let view = open_sign_in(cx, window, &ws);
         click(cx, window, "sign-in-github");
         assert!(sign_in_shown(cx, &ws));
         assert_eq!(

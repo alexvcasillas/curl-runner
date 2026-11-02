@@ -560,9 +560,6 @@ impl Workspace {
         self._first_launch_events = None;
         self.focus.focus(window, cx);
         self.sync_chrome(window, cx);
-        if let Some(link) = self.pending_link.take() {
-            self.open_shared(Some(link), window, cx);
-        }
     }
 
     /// The sign-in screen, in place of everything under the title bar.
@@ -580,6 +577,9 @@ impl Workspace {
         self._sign_in_events = Some(cx.subscribe_in(&view, window, Self::on_sign_in_event));
         view.read(cx).focus_handle(cx).focus(window, cx);
         self.sign_in = Some(view.clone());
+        // It answers instead of the local-first screen.
+        self.first_launch = None;
+        self._first_launch_events = None;
         self.sign_in_origin = origin;
         self.close_app_settings();
         self.close_hover(cx);
