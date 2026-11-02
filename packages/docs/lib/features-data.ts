@@ -1,4 +1,9 @@
-import { type Screenshot, studioScreenshots } from '@/lib/studio';
+import {
+  type Screenshot,
+  STUDIO_CHANGELOG_HREF,
+  STUDIO_VERSION,
+  studioScreenshots,
+} from '@/lib/studio';
 
 export interface Benefit {
   title: string;
@@ -1099,7 +1104,7 @@ request:
     ],
     preview: true,
     screenshots: studioScreenshots(),
-    secondaryCta: { label: 'What’s new in 2.2.0', href: '/changelog#2.2.0' },
+    secondaryCta: { label: `What’s new in ${STUDIO_VERSION}`, href: STUDIO_CHANGELOG_HREF },
   },
 ];
 

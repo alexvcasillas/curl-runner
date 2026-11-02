@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { prerenderToNodeStream } from 'react-dom/static.node';
 import { describe, expect, it, vi } from 'vitest';
+import cliPackage from '../../../cli/package.json';
 
 vi.mock('@/lib/git-dates', () => ({ lastCommitDates: () => new Map() }));
 
@@ -59,11 +60,12 @@ function imageSize(file: string): { width: number; height: number } {
 }
 
 describe('home studio section', () => {
-  it('labels the studio a preview and links to its page and the 2.2.0 changelog', async () => {
+  it('labels the studio a preview and links to its page and the current release changelog', async () => {
     const section = studioSection(await render(<Home />));
     expect(section).toContain('Studio · Preview');
     expect(section).toContain('href="/features/studio"');
-    expect(section).toContain('href="/changelog#2.2.0"');
+    expect(section).toContain(`href="/changelog#${cliPackage.version}"`);
+    expect(section).toContain(`What’s new in ${cliPackage.version}`);
   });
 
   it('links to the download, not to building from source', async () => {
@@ -111,7 +113,8 @@ describe('studio feature page', () => {
     expect(html).toContain('Studio · Preview');
     expect(html).toContain('Download the studio');
     expect(html).toContain(STUDIO_CASK_COMMAND);
-    expect(html).toContain('href="/changelog#2.2.0"');
+    expect(html).toContain(`href="/changelog#${cliPackage.version}"`);
+    expect(html).toContain(`what shipped in ${cliPackage.version}`);
     expect(html).toContain('href="/docs/features/studio"');
     const article = html.slice(html.indexOf('<article'), html.indexOf('</article>'));
     expect(article).toContain('href="/downloads"');

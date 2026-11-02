@@ -16,6 +16,7 @@ import {
   STUDIO_DOWNLOAD_HREF,
   STUDIO_HERO,
   STUDIO_PAGE_HREF,
+  STUDIO_VERSION,
 } from '@/lib/studio';
 
 const TITLE = 'curl-runner — API tests as YAML, run anywhere';
@@ -275,7 +276,7 @@ export default function Home() {
                     href={STUDIO_CHANGELOG_HREF}
                     className="inline-flex items-center gap-1.5 text-[15px] text-fg-secondary transition-colors hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                   >
-                    What’s new in 2.2.0
+                    {`What’s new in ${STUDIO_VERSION}`}
                     <ArrowRight aria-hidden="true" className="size-3.5" />
                   </Link>
                 </div>
