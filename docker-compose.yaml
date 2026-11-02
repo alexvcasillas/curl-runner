@@ -1,0 +1,23 @@
+# Runs the curl-runner server from the prebuilt image on GHCR.
+# Coolify deploys this file; the image is built by .github/workflows/server.yml.
+# Without Coolify, create the network first with `docker network create coolify`
+# or remove the `networks` keys below.
+services:
+  server:
+    image: ghcr.io/alexvcasillas/curl-runner-server:${SERVER_IMAGE_TAG:-latest}
+    environment:
+      PORT: ${PORT:-8080}
+      RUST_LOG: ${RUST_LOG:-info}
+    networks:
+      - coolify
+    healthcheck:
+      test: ["CMD", "/curl-runner-server", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+networks:
+  coolify:
+    external: true

@@ -1,0 +1,12 @@
+# Builds the server image from source and runs it locally on port 8080:
+#   docker compose -f docker-compose.preview.yml up -d --build
+# Stop it with:
+#   docker compose -f docker-compose.preview.yml down
+services:
+  server:
+    image: curl-runner-server-preview
+    build:
+      context: .
+      dockerfile: crates/curl-runner-server/Dockerfile
+    ports:
+      - "8080:8080"
