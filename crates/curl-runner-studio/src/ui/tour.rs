@@ -406,7 +406,7 @@ impl Workspace {
                 this.open_file(Path::new(HEALTH_FILE), window, cx);
                 tour.update(cx, |t, cx| t.set_step(TourStep::Run, cx));
                 if run {
-                    this.run(RunTarget::File(HEALTH_FILE.into()), window, cx);
+                    this.tour_start_run(&tour, window, cx);
                 }
             }),
             window,
@@ -429,7 +429,31 @@ impl Workspace {
         }
         self.open_file(file, window, cx);
         tour.update(cx, |t, cx| t.set_step(TourStep::Run, cx));
-        self.run(RunTarget::File(file.into()), window, cx);
+        self.tour_start_run(&tour, window, cx);
+    }
+
+    /// Runs `health.yaml`. When no run starts (another one is in flight,
+    /// or the file has problems) the walkthrough says why, so Run and Try
+    /// again never do nothing.
+    fn tour_start_run(
+        &mut self,
+        tour: &Entity<TourView>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let busy = self.runs.active.is_some();
+        self.run(RunTarget::File(HEALTH_FILE.into()), window, cx);
+        if !busy && self.runs.active.is_some() {
+            return;
+        }
+        let message = if busy {
+            "Another run is still going. Wait for it to finish, then try again."
+        } else {
+            "health.yaml has problems. Fix them in the Problems panel, then try again."
+        };
+        tour.update(cx, |t, cx| {
+            t.show_result(TourOutcome::Other(message.into()), cx)
+        });
     }
 
     /// A run finished; `ran_health` when it ran `health.yaml`. On step 2,
@@ -596,6 +620,46 @@ mod tests {
         click(cx, window, "tour-done");
         assert!(tour(cx, &ws).is_none());
         assert_eq!(store.tour_status(), TourStatus::Done);
+    }
+
+    #[gpui_kit::test]
+    fn tour_run_with_lint_errors_says_so(cx: &mut TestAppContext) {
+        let home = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let store = StateStore::at(state.path());
+        let (window, ws) = open(cx, store);
+        // A health.yaml someone broke earlier is never replaced.
+        let dir = getting_started_dir(home.path());
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("health.yaml"),
+            "request:\n  url: http://127.0.0.1:1/health\n  headers: [\n",
+        )
+        .unwrap();
+        start(
+            cx,
+            window,
+            &ws,
+            home.path(),
+            "http://127.0.0.1:1/health".into(),
+        );
+        click(cx, window, "tour-create");
+        click(cx, window, "tour-run");
+        cx.run_until_parked();
+
+        let t = tour(cx, &ws).unwrap();
+        t.read_with(cx, |t, _| {
+            assert_eq!(t.step(), TourStep::Result);
+            assert_eq!(
+                t.outcome(),
+                Some(&TourOutcome::Other(
+                    "health.yaml has problems. Fix them in the Problems panel, then try again."
+                        .into()
+                ))
+            );
+        });
+        assert!(shows(cx, window, "Try again"));
+        ws.read_with(cx, |ws, _| assert!(ws.runs.last.is_empty(), "nothing ran"));
     }
 
     #[gpui_kit::test]
