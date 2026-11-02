@@ -62,12 +62,12 @@ if [[ -n "$UNIVERSAL" ]]; then
   archs=(aarch64-apple-darwin x86_64-apple-darwin)
   bins=()
   for arch in "${archs[@]}"; do
-    cargo build "${cargo_flags[@]}" --target "$arch"
+    cargo build --locked "${cargo_flags[@]}" --target "$arch"
     bins+=("$TARGET/$arch/$PROFILE/curl-runner-studio")
   done
   lipo -create "${bins[@]}" -output "$APP/Contents/MacOS/curl-runner-studio"
 else
-  cargo build "${cargo_flags[@]}"
+  cargo build --locked "${cargo_flags[@]}"
   cp "$TARGET/$PROFILE/curl-runner-studio" "$APP/Contents/MacOS/curl-runner-studio"
 fi
 cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
