@@ -11,7 +11,7 @@ on:
         type: boolean
         default: false
       studio_tag:
-        description: "Rebuild, sign and re-upload only the studio dmg for this existing release tag (e.g. @curl-runner/cli@2.2.0). Everything else is skipped."
+        description: "Rebuild, sign and re-upload only the studio dmg for this existing release tag (e.g. @curl-runner/cli@2.3.0). The tag must already contain the studio packaging (scripts/studio-dmg.sh). Everything else is skipped."
         type: string
         default: ""
 
@@ -24,11 +24,14 @@ on:
 # already on npm, and changeset publish does the same.
 # After upload, the studio job signs, notarizes and attaches the macOS dmg.
 # It never blocks the CLI release; if it fails, re-run it or dispatch with
-# studio_tag set to the release tag.
+# studio_tag set to the release tag. Smoke runs also sign and notarize the
+# studio, and keep the dmg as a workflow artifact instead of attaching it.
 permissions:
   contents: read
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+# Dispatches that don't publish (smoke, studio_tag) get their own group, so
+# they never replace a pending release run on main.
+concurrency: ${{ github.workflow }}-${{ github.ref }}${{ inputs.smoke && '-smoke' || '' }}${{ inputs.studio_tag && format('-studio-{0}', inputs.studio_tag) || '' }}
 
 jobs:
   meta:
@@ -61,6 +64,12 @@ jobs:
               @curl-runner/cli@?*) VERSION=${STUDIO_TAG#@curl-runner/cli@} ;;
               *) echo "::error::studio_tag must look like @curl-runner/cli@<version>"; exit 1 ;;
             esac
+            git fetch --quiet --depth=1 origin "refs/tags/$STUDIO_TAG:refs/tags/$STUDIO_TAG" || {
+              echo "::error::tag $STUDIO_TAG not found"; exit 1
+            }
+            git cat-file -e "refs/tags/$STUDIO_TAG:scripts/studio-dmg.sh" 2>/dev/null || {
+              echo "::error::$STUDIO_TAG predates the studio packaging (no scripts/studio-dmg.sh); studio_tag only rebuilds releases that ship the studio"; exit 1
+            }
             BUILD=false
           elif [ "$SMOKE" = "true" ]; then
             BUILD=true
@@ -330,11 +339,13 @@ jobs:
   # macOS app: universal bundle, signed with the hardened runtime, packed into
   # a dmg, notarized, stapled and attached to the release. Runs after the CLI
   # is uploaded (or alone, with studio_tag) so it can never hold the CLI back.
+  # On smoke runs it does the same from the workflow's ref and keeps the dmg
+  # as a workflow artifact; nothing depends on it.
   # The signing identity is found in the imported certificate at run time.
   studio:
     name: Studio dmg
     needs: [meta, upload]
-    if: ${{ !cancelled() && needs.meta.result == 'success' && (inputs.studio_tag != '' || (needs.meta.outputs.BUILD == 'true' && needs.upload.result == 'success')) }}
+    if: ${{ !cancelled() && needs.meta.result == 'success' && (inputs.studio_tag != '' || inputs.smoke || (needs.meta.outputs.BUILD == 'true' && needs.upload.result == 'success')) }}
     runs-on: macos-latest
     environment:
       name: Production
@@ -378,8 +389,14 @@ jobs:
       - name: Check release and version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SMOKE: ${{ inputs.smoke }}
         run: |
-          cargo_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          cargo_version=$(awk -F'"' '/^version = /{print $2; exit}' Cargo.toml)
+          if [ "$SMOKE" = "true" ]; then
+            # Dry run: no release to check; the dmg takes the workspace version.
+            echo "VERSION=$cargo_version" >> "$GITHUB_ENV"
+            exit 0
+          fi
           if [ "$cargo_version" != "$VERSION" ]; then
             echo "::error::Cargo.toml is at $cargo_version but the release is $VERSION"
             exit 1
@@ -471,9 +488,18 @@ jobs:
           spctl -a -t open --context context:primary-signature -v "$DMG"
 
       - name: Upload dmg to GitHub Release
+        if: ${{ !inputs.smoke }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "$TAG" "$DMG" --clobber
+
+      - name: Keep dmg as a workflow artifact (smoke)
+        if: ${{ inputs.smoke }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: studio-dmg
+          path: ${{ env.DMG }}
+          if-no-files-found: error
 
       - name: Remove signing keychain and key
         if: always()
