@@ -76,6 +76,8 @@ actions!(
         CloseSettings,
         /// Show the app's Settings (⌘,).
         OpenSettings,
+        /// Start the first-run walkthrough at step 1 (Help › Walkthrough).
+        Walkthrough,
     ]
 );
 
@@ -155,6 +157,7 @@ pub fn menus(dev: Option<DevToggles>) -> Vec<Menu> {
             MenuItem::action("History", OpenHistory),
             MenuItem::action("Environments…", OpenEnvironments),
         ]),
+        Menu::new("Help").items([MenuItem::action("Walkthrough", Walkthrough)]),
     ]
 }
 
@@ -447,6 +450,10 @@ pub fn run() {
                             });
                         }
                         "history" => ws.open_history(window, cx),
+                        "tour" | "tour-run" | "tour-result" => {
+                            let fill = dev_string("CURL_RUNNER_STUDIO_FILL").unwrap_or_default();
+                            ws.dev_tour(&fill, &show, window, cx);
+                        }
                         "conflict" if server => ws.dev_show_conflict(window, cx),
                         "settings" => {
                             let page = dev_string("CURL_RUNNER_STUDIO_PAGE")
@@ -644,7 +651,10 @@ fn toggle_dev(backend: &Arc<dyn Backend>, flip: fn(&dyn DevControls), cx: &mut A
 /// `CURL_RUNNER_STUDIO_ENV` names, with `CURL_RUNNER_STUDIO_VAR` naming the
 /// variable whose drawer opens) and `settings` the app's Settings (on the
 /// page `CURL_RUNNER_STUDIO_PAGE` names: `general`, `editor`,
-/// `appearance`, `accounts`, `shortcuts` or `updates`), `share` the Share
+/// `appearance`, `accounts`, `shortcuts` or `updates`), `tour` the
+/// walkthrough's first step (`tour-run`: created, on step 2;
+/// `tour-result`: run, on step 3), on the home folder and URL in
+/// `CURL_RUNNER_STUDIO_FILL` (`home|url`, each optional), `share` the Share
 /// dialog (inviting the comma-separated addresses in
 /// `CURL_RUNNER_STUDIO_FILL`), `sharing` the collection's Sharing page
 /// and `signin` the

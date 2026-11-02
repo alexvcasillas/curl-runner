@@ -6,6 +6,7 @@ use super::diagnostic_popover::kbd;
 use super::icons::{self, glyph};
 use super::workspace::Workspace;
 use crate::model::diagnostics::{StudioDiagnostic, can_run, counts};
+use crate::model::tour::TourStep;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
@@ -57,7 +58,10 @@ impl Workspace {
             .child(glyph(icons::PLAY).size(px(12.)).text_color(fg))
             .child("Run")
             .child(kbd("⌘↵", 11., hint));
-        match state {
+        // The walkthrough's step 2 points here: a 3px focus ring, outside
+        // the button so the title bar does not move.
+        let ring = self.tour_on(TourStep::Run, cx);
+        let button = match state {
             Ok(()) => button
                 .cursor_pointer()
                 .hover(|s| s.bg(color("primary-hover")))
@@ -65,7 +69,12 @@ impl Workspace {
             Err(reason) => button
                 .cursor_not_allowed()
                 .tooltip(move |window, cx| Tooltip::new(reason.clone()).build(window, cx)),
-        }
+        };
+        div()
+            .flex_none()
+            .rounded(px(9.))
+            .when(ring, |d| d.m(px(-3.)).p(px(3.)).bg(color("selection")))
+            .child(button)
     }
 }
 

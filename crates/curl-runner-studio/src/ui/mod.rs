@@ -35,6 +35,7 @@ mod state;
 mod status_bar;
 mod sync;
 mod title_bar;
+mod tour;
 mod watch;
 mod welcome;
 mod workspace;

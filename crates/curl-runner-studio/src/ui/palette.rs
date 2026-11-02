@@ -7,7 +7,7 @@
 
 use super::app::{
     Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder, OpenHistory, OpenSettings,
-    OpenSharedLink, ToggleProblems, mono_font,
+    OpenSharedLink, ToggleProblems, Walkthrough, mono_font,
 };
 use super::icons::{self, glyph};
 use super::settings_view::AppPage;
@@ -165,10 +165,11 @@ pub enum PaletteAction {
     OpenHistory,
     Environments,
     Settings,
+    Walkthrough,
 }
 
 impl PaletteAction {
-    pub const ALL: [PaletteAction; 9] = [
+    pub const ALL: [PaletteAction; 10] = [
         PaletteAction::OpenFolder,
         PaletteAction::OpenSharedLink,
         PaletteAction::NewRequest,
@@ -178,6 +179,7 @@ impl PaletteAction {
         PaletteAction::OpenHistory,
         PaletteAction::Environments,
         PaletteAction::Settings,
+        PaletteAction::Walkthrough,
     ];
 
     /// Whether this build lists it: opening a shared link needs the
@@ -197,6 +199,7 @@ impl PaletteAction {
             PaletteAction::OpenHistory => "Open history",
             PaletteAction::Environments => "Environments…",
             PaletteAction::Settings => "Settings…",
+            PaletteAction::Walkthrough => "Run the walkthrough",
         }
     }
 
@@ -212,6 +215,7 @@ impl PaletteAction {
             PaletteAction::OpenHistory => icons::HISTORY,
             PaletteAction::Environments => icons::KEY,
             PaletteAction::Settings => icons::GENERAL,
+            PaletteAction::Walkthrough => icons::PLAY,
         }
     }
 
@@ -227,6 +231,7 @@ impl PaletteAction {
             PaletteAction::OpenHistory => Box::new(OpenHistory),
             PaletteAction::Environments => Box::new(OpenEnvironments),
             PaletteAction::Settings => Box::new(OpenSettings),
+            PaletteAction::Walkthrough => Box::new(Walkthrough),
         }
     }
 }
@@ -447,7 +452,7 @@ impl Palette {
         cx.notify();
     }
 
-    fn confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let (matches, order) = self.order();
         if let Some(&m) = order.get(self.selected) {
             self.perform(matches[m].0, window, cx);
@@ -490,6 +495,7 @@ impl Palette {
                 Target::Action(PaletteAction::Settings) => {
                     ws.open_app_settings(AppPage::General, window, cx)
                 }
+                Target::Action(PaletteAction::Walkthrough) => ws.start_walkthrough(window, cx),
             })
             .ok();
     }

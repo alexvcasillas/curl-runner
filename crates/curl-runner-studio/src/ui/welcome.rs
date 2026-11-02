@@ -6,10 +6,12 @@ use super::color;
 use super::coming_soon::soon_pill;
 use super::icons::{self, glyph};
 use super::new_dialog::display_path;
-use super::settings_kit::later_badge;
+use super::settings_kit::{later_badge, primary_button};
 use super::state::RecentEntry;
+use super::tour::prose;
 use super::workspace::Workspace;
 use crate::model::history::relative_time;
+use crate::model::tour::TourStatus;
 use chrono::Local;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::prelude::*;
@@ -19,6 +21,10 @@ use std::path::Path;
 /// Welcome's lede without the server: nothing about sharing.
 pub(super) const WELCOME_LEDE_LOCAL: &str =
     "Write requests as YAML, run them as tests and read the results.";
+
+const TOUR_CARD_TITLE: &str = "Run your first request";
+const TOUR_CARD_BODY: &str = "A two-minute walkthrough. We'll create a small collection and \
+     check that `api.curl-runner.com` is up.";
 
 /// One of the four start actions.
 struct Card {
@@ -137,6 +143,7 @@ impl Workspace {
                     .pt(px(72.))
                     .pb(px(40.))
                     .child(intro)
+                    .children(self.render_tour_card(cx))
                     .child(
                         div()
                             .grid()
@@ -147,6 +154,67 @@ impl Workspace {
                     .children(self.render_recent(cx))
                     .child(render_secrets_note()),
             )
+    }
+
+    /// `Run your first request` (mockup `WelcomeLocal`), until the
+    /// walkthrough is done or skipped, and not while it is shown.
+    fn render_tour_card(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        if self.tour_status != TourStatus::NotStarted || self.tour.is_some() {
+            return None;
+        }
+        Some(
+            div()
+                .id("welcome-tour")
+                .flex()
+                .items_center()
+                .gap(px(14.))
+                .p(px(16.))
+                .rounded(px(8.))
+                .border_1()
+                .border_color(color("accent-blue"))
+                .bg(color("info-subtle"))
+                .child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .justify_center()
+                        .size(px(40.))
+                        .rounded(px(8.))
+                        .bg(color("primary"))
+                        .child(
+                            glyph(icons::PLAY)
+                                .size(px(16.))
+                                .text_color(color("on-primary")),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .gap(px(4.))
+                        .child(
+                            div()
+                                .id("welcome-tour-title")
+                                .role(Role::Heading)
+                                .test_support()
+                                .aria_label(TOUR_CARD_TITLE)
+                                .text_size(px(14.))
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(TOUR_CARD_TITLE),
+                        )
+                        .child(prose(TOUR_CARD_BODY).text_color(color("text-secondary"))),
+                )
+                .child(
+                    primary_button("welcome-tour-start", "Start")
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.start_walkthrough(window, cx)),
+                        )
+                        .child("Start"),
+                ),
+        )
     }
 
     /// Recent, or nothing when no folder was opened yet.

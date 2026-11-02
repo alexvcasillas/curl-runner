@@ -2,6 +2,7 @@
 
 use crate::model::collection::Collection;
 use crate::model::document::Document;
+use crate::model::tour::TourStatus;
 use chrono::{DateTime, Local};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -251,6 +252,24 @@ impl StateStore {
     }
 }
 
+impl StateStore {
+    /// Whether the walkthrough was finished or skipped.
+    pub fn tour_status(&self) -> TourStatus {
+        self.base
+            .as_deref()
+            .and_then(read_state_in)
+            .and_then(|json| TourStatus::parse(json["tour"].as_str()?))
+            .unwrap_or_default()
+    }
+
+    pub fn set_tour_status(&self, status: TourStatus) {
+        let Some(base) = &self.base else { return };
+        if let Err(e) = update_state_in(base, |json| json["tour"] = status.as_str().into()) {
+            log::warn!("could not save the walkthrough status: {e}");
+        }
+    }
+}
+
 /// A folder opened before, for the Welcome screen's Recent list.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RecentEntry {
@@ -337,6 +356,21 @@ mod tests {
             Some(PathBuf::from("/tmp/Payments API"))
         );
         assert_eq!(StateStore::none().connection(), None);
+    }
+
+    #[test]
+    fn tour_status_round_trips_beside_the_other_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = StateStore::at(dir.path());
+        assert_eq!(store.tour_status(), TourStatus::NotStarted);
+        store.remember_folder(Path::new("/tmp/a"));
+        store.set_tour_status(TourStatus::Skipped);
+        assert_eq!(store.tour_status(), TourStatus::Skipped);
+        store.set_tour_status(TourStatus::Done);
+        assert_eq!(store.tour_status(), TourStatus::Done);
+        assert_eq!(store.last_folder(), Some(PathBuf::from("/tmp/a")));
+        StateStore::none().set_tour_status(TourStatus::Done);
+        assert_eq!(StateStore::none().tour_status(), TourStatus::NotStarted);
     }
 
     #[test]

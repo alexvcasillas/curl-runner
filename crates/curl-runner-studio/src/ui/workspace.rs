@@ -4,7 +4,7 @@
 use super::app::{
     CloseTab, CopyAsCurl, Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder,
     OpenHistory, OpenPalette, OpenSettings, OpenSharedLink, QuickFix, Rerun, RunActive,
-    RunCollection, RunRequestUnderCursor, SaveFile, Stop, ToggleProblems, ui_font,
+    RunCollection, RunRequestUnderCursor, SaveFile, Stop, ToggleProblems, Walkthrough, ui_font,
 };
 use super::collection_settings::{CollectionSettings, EnvStatus, SettingsEvent, Sharing};
 use super::diagnostic_popover::DiagnosticHover;
@@ -179,6 +179,11 @@ pub struct Workspace {
     /// The sign-in screen's answer this session, for a store that keeps
     /// nothing (no base): it is not asked again until the next launch.
     session_connection: Option<Connection>,
+    /// The first-run walkthrough's callout, while it is shown.
+    pub(super) tour: Option<Entity<super::tour::TourView>>,
+    pub(super) _tour_events: Option<Subscription>,
+    /// Whether the walkthrough was finished or skipped (Welcome's card).
+    pub(super) tour_status: crate::model::tour::TourStatus,
     /// The open collection's sync: pending changes, offline, conflicts.
     pub(super) sync: super::sync::SyncState,
     /// The Share dialog, while it is open.
@@ -314,6 +319,9 @@ impl Workspace {
             _first_launch_events: None,
             _sign_in_events: None,
             session_connection: None,
+            tour: None,
+            _tour_events: None,
+            tour_status: Default::default(),
             sync: Default::default(),
             share_view: None,
             _share_events: None,
@@ -339,6 +347,7 @@ impl Workspace {
             _status_events: status_events,
         };
         this.refresh_recent();
+        this.tour_status = this.store.tour_status();
         if let Some(folder) = folder {
             this.open_collection(&folder, window, cx);
         }
@@ -1433,8 +1442,12 @@ impl Render for Workspace {
                 .on_action(cx.listener(|this, _: &OpenSettings, window, cx| {
                     this.open_app_settings(AppPage::General, window, cx)
                 }))
+                .on_action(cx.listener(|this, _: &Walkthrough, window, cx| {
+                    this.start_walkthrough(window, cx)
+                }))
             })
             .size_full()
+            .relative()
             .flex()
             .flex_col()
             .bg(color("bg-100"))
@@ -1467,6 +1480,8 @@ impl Render for Workspace {
                 },
             )
             .child(self.status.clone())
+            // Over everything, anchored to the window's top-right corner.
+            .children(self.tour.clone().filter(|_| actions))
     }
 }
 
