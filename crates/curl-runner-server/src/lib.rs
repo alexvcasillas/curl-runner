@@ -1,4 +1,5 @@
-//! curl-runner server: the sync/sharing backend. Today it only serves `GET /health`.
+//! curl-runner server: the sync/sharing backend. Today it only serves `GET /health`
+//! (and `GET /`, which answers the same).
 
 use std::future::Future;
 use std::time::Duration;
@@ -16,6 +17,7 @@ const DEFAULT_PORT: u16 = 8080;
 /// The application router.
 pub fn app() -> Router {
     Router::new()
+        .route("/", get(health))
         .route("/health", get(health))
         .layer(CorsLayer::permissive())
         .layer(
@@ -120,6 +122,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn root_returns_the_same_as_health() {
+        let health = send("GET", "/health", None).await;
+        let health_body = health.into_body().collect().await.unwrap().to_bytes();
+
+        let res = send("GET", "/", None).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(res.headers()[header::CONTENT_TYPE], "application/json");
+        let body = res.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(body, health_body);
+    }
+
+    #[tokio::test]
+    async fn root_allows_any_origin() {
+        let res = send("GET", "/", Some("https://example.com")).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(res.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
+    }
+
+    #[tokio::test]
     async fn unknown_path_is_404() {
         assert_eq!(
             send("GET", "/nope", None).await.status(),
@@ -130,6 +151,12 @@ mod tests {
     #[tokio::test]
     async fn post_health_is_405() {
         let res = send("POST", "/health", None).await;
+        assert_eq!(res.status(), StatusCode::METHOD_NOT_ALLOWED);
+    }
+
+    #[tokio::test]
+    async fn post_root_is_405() {
+        let res = send("POST", "/", None).await;
         assert_eq!(res.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
 

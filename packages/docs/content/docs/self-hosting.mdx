@@ -37,6 +37,8 @@ curl localhost:8080/health
 {"status":"ok","version":"<version>"}
 ```
 
+`GET /` answers the same way, so opening the server's root URL in a browser also shows this.
+
 The container also runs its own healthcheck every 10 seconds. `docker compose ps` shows `healthy` once it passes.
 
 ## Settings [#settings]
