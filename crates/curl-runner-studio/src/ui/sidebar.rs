@@ -19,9 +19,20 @@ use std::path::{Path, PathBuf};
 
 pub const SIDEBAR_WIDTH: f32 = 264.;
 
+/// The empty sidebar without the server: nothing about sharing.
+pub(super) const NO_COLLECTIONS_LOCAL: &str =
+    "A collection is a folder of request files. Open one from disk or start a new one.";
 /// The sidebar foot without the server.
 const WORKING_LOCALLY: &str = "Working locally";
 const SYNC_SOON: &str = "Sync soon";
+/// `Sync soon`, with what it is waiting for.
+fn sync_soon_pill() -> impl IntoElement {
+    soon_pill_labelled(SYNC_SOON).tooltip(soon_tooltip(
+        "Sync",
+        "Syncing your collections needs the curl-runner server, which is coming soon.",
+    ))
+}
+
 /// Share's tooltip without the server.
 const SHARING_SOON_TITLE: &str = "Sharing";
 const SHARING_SOON_BODY: &str =
@@ -629,9 +640,11 @@ impl Workspace {
                     .text_size(px(12.))
                     .line_height(relative(1.5))
                     .text_color(color("text-secondary"))
-                    .child(
-                        "Collections group your request files into folders you can run and share.",
-                    ),
+                    .child(if crate::features::SERVER {
+                        "Collections group your request files into folders you can run and share."
+                    } else {
+                        NO_COLLECTIONS_LOCAL
+                    }),
             )
             .child(
                 Button::new("sidebar-new-collection")
@@ -676,9 +689,7 @@ impl Workspace {
                     .line_height(relative(1.4))
                     .child(text),
             )
-            .when(!crate::features::SERVER, |d| {
-                d.child(soon_pill_labelled(SYNC_SOON))
-            })
+            .when(!crate::features::SERVER, |d| d.child(sync_soon_pill()))
             .when(crate::features::SERVER, |d| {
                 d.child(
                     div()
@@ -791,9 +802,7 @@ impl Workspace {
                     )
                     .when_some(resolve, |d, resolve| d.child("·").child(resolve)),
             )
-            .when(!crate::features::SERVER, |d| {
-                d.child(soon_pill_labelled(SYNC_SOON))
-            })
+            .when(!crate::features::SERVER, |d| d.child(sync_soon_pill()))
             .child(share)
     }
 }
@@ -803,6 +812,11 @@ impl Workspace {
     /// the Main board), or, in a received copy, `My collections` (the
     /// recent folders that are not received copies; the ReadOnly board).
     fn render_other_collections(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        // Received copies need the server; one left by an earlier build
+        // stays an ordinary folder.
+        if !crate::features::SERVER {
+            return None;
+        }
         let root = self.state.collection.as_ref()?.root.clone();
         let received = &self.received_all;
         let (heading, rows): (&'static str, Vec<(PathBuf, String, bool)>) =

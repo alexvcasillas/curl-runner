@@ -458,8 +458,14 @@ impl CollectionSettings {
         // set) in every environment, as a run reads them. A locked one is
         // `Shared by {org}` over any local value; a suggested one is
         // `Suggested by {org}` only where nothing local sets the name.
-        let shared: Vec<(EnvRow, bool)> = meta
-            .received_vars
+        // Without the server there are no received copies: an owner's
+        // defaults left by an earlier build aren't listed.
+        let received: &[_] = if crate::features::SERVER {
+            &meta.received_vars
+        } else {
+            &[]
+        };
+        let shared: Vec<(EnvRow, bool)> = received
             .iter()
             .filter_map(|v| {
                 let (locked, (org, value)) = match meta.shared_by(&v.name) {
@@ -881,10 +887,13 @@ impl CollectionSettings {
                     ),
                 )
             })
-            .child(section("Workspace", false, false))
-            .child(disabled("settings-members", "Members"))
-            .child(disabled("settings-sync", "Sync & hosting"))
-            .child(disabled("settings-billing", "Billing"))
+            // Members, sync and billing come with the curl-runner server.
+            .when(crate::features::SERVER, |nav| {
+                nav.child(section("Workspace", false, false))
+                    .child(disabled("settings-members", "Members"))
+                    .child(disabled("settings-sync", "Sync & hosting"))
+                    .child(disabled("settings-billing", "Billing"))
+            })
             .child(section("App", true, false))
             .child(app_item(
                 "settings-appearance",
@@ -1527,7 +1536,7 @@ fn render_legend(shared: bool) -> impl IntoElement {
                         .text_color(color("accent-purple"))
                         .child(key_icon(12.)),
                 )
-                .child("Secret — stored in local keychain, never synced"),
+                .child("Secret. Stored in your keychain."),
         )
         .when(shared, |d| {
             d.child(
@@ -2242,6 +2251,7 @@ mod tests {
         cx.run_until_parked();
     }
 
+    #[cfg(feature = "server")]
     fn found(cx: &mut TestAppContext, window: AnyWindowHandle, id: &'static str) -> bool {
         cx.update_window(window, |_, window, cx| {
             window.render_frame(cx);
@@ -2250,6 +2260,7 @@ mod tests {
         .unwrap()
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn shared_by_rows_are_locked_and_only_for_received_copies(cx: &mut TestAppContext) {
         use crate::model::backend::SharedVar;
@@ -2334,6 +2345,7 @@ mod tests {
         assert!(view.read_with(cx, |v, _| v.status().summary.ends_with("1 missing")));
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn suggested_rows_show_the_local_value_else_the_owners(cx: &mut TestAppContext) {
         use crate::model::backend::SharedVar;

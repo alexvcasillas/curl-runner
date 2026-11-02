@@ -15,6 +15,9 @@ use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::collections::HashMap;
 
+/// The History panel's note on where runs are kept.
+pub(super) const HISTORY_NOTE: &str = "History stays on this device.";
+
 pub const STATUS_BAR_HEIGHT: f32 = 28.;
 
 #[derive(Default)]
@@ -287,7 +290,7 @@ impl Render for StatusBar {
             })
             .when_some(self.history.clone(), |bar, usage| {
                 bar.child(div().flex_none().child(usage))
-                    .child("History stays on this device unless you share a run")
+                    .child(HISTORY_NOTE)
             })
             .when(self.history.is_none(), |bar| self.render_vars(bar, cx))
             .child(div().flex_1())

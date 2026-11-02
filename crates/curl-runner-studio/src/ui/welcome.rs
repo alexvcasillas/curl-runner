@@ -16,6 +16,10 @@ use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::path::Path;
 
+/// Welcome's lede without the server: nothing about sharing.
+pub(super) const WELCOME_LEDE_LOCAL: &str =
+    "Write requests as YAML, run them as tests and read the results.";
+
 /// One of the four start actions.
 struct Card {
     id: &'static str,
@@ -110,10 +114,12 @@ impl Workspace {
                     .text_size(px(14.))
                     .line_height(relative(1.6))
                     .text_color(color("text-secondary"))
-                    .child(
+                    .child(if crate::features::SERVER {
                         "Write requests as YAML, run them as tests, and share collections \
-                         read-only with the people who call your API.",
-                    ),
+                         read-only with the people who call your API."
+                    } else {
+                        WELCOME_LEDE_LOCAL
+                    }),
             );
         div()
             .id("welcome")

@@ -205,6 +205,30 @@ mod tests {
         assert!(ws.read_with(cx, |ws, _| ws.open_shared_view().is_none()));
     }
 
+    /// Welcome, the empty sidebar and the status bar promise nothing the
+    /// build can't do.
+    #[test]
+    fn local_copy_never_mentions_sharing() {
+        let local = [
+            super::super::welcome::WELCOME_LEDE_LOCAL,
+            super::super::sidebar::NO_COLLECTIONS_LOCAL,
+            super::super::status_bar::HISTORY_NOTE,
+        ];
+        assert_eq!(
+            local[0],
+            "Write requests as YAML, run them as tests and read the results."
+        );
+        assert_eq!(
+            local[1],
+            "A collection is a folder of request files. Open one from disk or start a new one."
+        );
+        assert_eq!(local[2], "History stays on this device.");
+        for text in local {
+            let text = text.to_lowercase();
+            assert!(!text.contains("shar") && !text.contains("sync"), "{text}");
+        }
+    }
+
     #[gpui_kit::test]
     fn share_button_is_disabled_and_explains(cx: &mut TestAppContext) {
         let dir = collection();
@@ -328,6 +352,79 @@ mod tests {
             assert!(window.try_find("environments-callout").is_none());
         })
         .unwrap();
+    }
+
+    /// Received copies an earlier build left behind: no `Shared with me`,
+    /// no owner's `Shared by` rows, an ordinary writable folder.
+    #[gpui_kit::test]
+    fn leftover_received_copies_stay_local_folders(cx: &mut TestAppContext) {
+        use crate::model::backend::{ReceivedShare, SharedVar};
+        use crate::model::collection_meta::CollectionMeta;
+        use crate::model::received::{self, LocalCopy, ReceivedCopy};
+        let state = tempfile::tempdir().unwrap();
+        let base = state.path();
+        let copy = collection();
+        let meta = CollectionMeta {
+            read_only_from: Some("Acme".into()),
+            received_vars: vec![SharedVar {
+                name: "REGION".into(),
+                description: String::new(),
+                required: false,
+                secret: false,
+                default: Some("eu".into()),
+                locked: true,
+            }],
+            ..Default::default()
+        };
+        meta.save(base, copy.path()).unwrap();
+        let other = collection();
+        for root in [copy.path(), other.path()] {
+            let local = LocalCopy {
+                share_id: format!("acme/{}", root.display()),
+                root: root.to_path_buf(),
+                collection_id: "c".into(),
+            };
+            received::record(base, local).unwrap();
+        }
+        assert!(base.join("received.json").is_file());
+        let store = StateStore::at(base);
+        store.set_connection(Some(Connection::Offline));
+        let (window, ws) = open(cx, Some(copy.path().to_path_buf()), store, signed_in());
+        // Even with a copy listed, the section isn't drawn.
+        ws.update(cx, |ws, _| {
+            assert!(ws.received_all.is_empty());
+            assert!(ws.read_only_org().is_none());
+            ws.received_all.push(ReceivedCopy {
+                share: ReceivedShare {
+                    id: "acme/x".into(),
+                    owner_org: "Acme".into(),
+                    name: "Shipping API".into(),
+                    added: chrono::Utc::now(),
+                },
+                root: other.path().to_path_buf(),
+                collection_id: "c".into(),
+            });
+        });
+        assert!(!shows(cx, window, "sidebar", "Shared with me"));
+        assert!(!shows(cx, window, "sidebar", "Shipping API"));
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.open_settings(window, cx));
+            window.render_frame(cx);
+            // Workspace › Members, Sync & hosting and Billing need the server.
+            for gone in ["settings-members", "settings-sync", "settings-billing"] {
+                assert!(window.try_find(gone).is_none(), "{gone}");
+            }
+        })
+        .unwrap();
+        cx.run_until_parked();
+        let listed = ws.read_with(cx, |ws, cx| {
+            let view = ws.settings_view.as_ref().unwrap().read(cx);
+            view.rows().iter().any(|r| r.name == "REGION")
+        });
+        assert!(!listed, "the owner's default isn't listed");
+        // An ordinary, writable folder.
+        let mut c = crate::model::collection::Collection::open_in(copy.path(), Some(base)).unwrap();
+        c.create_file(Path::new("b.yaml"), REQUEST).unwrap();
     }
 
     #[gpui_kit::test]
