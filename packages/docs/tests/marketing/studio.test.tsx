@@ -13,7 +13,7 @@ import { SoftwareApplicationSchema } from '@/components/structured-data';
 import { getFeatureBySlug } from '@/lib/features-data';
 import { SITE_URL, source } from '@/lib/source';
 import {
-  STUDIO_BUILD_COMMAND,
+  STUDIO_CASK_COMMAND,
   STUDIO_HERO,
   STUDIO_SCREENSHOT_NAMES,
   type StudioScreenshotName,
@@ -64,8 +64,14 @@ describe('home studio section', () => {
     expect(section).toContain('Studio · Preview');
     expect(section).toContain('href="/features/studio"');
     expect(section).toContain('href="/changelog#2.2.0"');
-    expect(section).toContain(STUDIO_BUILD_COMMAND);
-    expect(section).toContain('not distributed yet');
+  });
+
+  it('links to the download, not to building from source', async () => {
+    const section = studioSection(await render(<Home />));
+    expect(section).toContain('href="/downloads"');
+    expect(section).toContain(STUDIO_CASK_COMMAND);
+    expect(section).toContain('macOS 12');
+    expect(section).not.toMatch(/from source|not distributed|cargo run/);
   });
 
   it('serves the animated WebP as is, lazy, sized, with a still for reduced motion', async () => {
@@ -100,17 +106,16 @@ describe('studio feature page', () => {
     expect(studio?.screenshots?.length).toBeLessThanOrEqual(6);
   });
 
-  it('says it is a preview and how to build it, never that there is a download', async () => {
+  it('says it is a preview and offers the download and the cask', async () => {
     const html = await render(<FeaturePage params={Promise.resolve({ slug: 'studio' })} />);
     expect(html).toContain('Studio · Preview');
-    expect(html).toContain('A preview, built from source');
-    expect(html).toContain(STUDIO_BUILD_COMMAND);
+    expect(html).toContain('Download the studio');
+    expect(html).toContain(STUDIO_CASK_COMMAND);
     expect(html).toContain('href="/changelog#2.2.0"');
     expect(html).toContain('href="/docs/features/studio"');
-    // The header links Downloads site-wide; the page itself must not offer an install.
     const article = html.slice(html.indexOf('<article'), html.indexOf('</article>'));
-    expect(article).not.toContain('href="/downloads"');
-    expect(article).not.toMatch(/Install curl-runner|Download/);
+    expect(article).toContain('href="/downloads"');
+    expect(article).not.toMatch(/from source|not distributed|cargo run/);
   });
 
   it('renders each screenshot through next/image with its alt text and caption', async () => {
@@ -180,12 +185,14 @@ describe('studio images', () => {
 describe('studio docs', () => {
   const mdx = (path: string) => readFileSync(join(CONTENT_DIR, `${path}.mdx`), 'utf8');
 
-  it('has a docs page that says it is a preview and how to build it', () => {
+  it('has a docs page with the download, the cask and the system requirements', () => {
     expect(source.getPage(['features', 'studio'])?.data.title).toBe('Studio (preview)');
     const text = mdx('features/studio');
-    expect(text).toContain(STUDIO_BUILD_COMMAND);
-    expect(text).toContain('/changelog#2.2.0');
-    expect(text).toMatch(/no signed build, Homebrew formula or download/);
+    expect(text).toContain(STUDIO_CASK_COMMAND);
+    expect(text).toContain('/downloads');
+    expect(text).toContain('macOS 12');
+    expect(text).toContain('https://api.curl-runner.com/health');
+    expect(text).not.toMatch(/from source|isn't distributed|cargo run/);
   });
 
   it('captions docs screenshots as the studio preview, linking to its page', async () => {

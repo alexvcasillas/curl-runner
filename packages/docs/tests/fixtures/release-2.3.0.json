@@ -1,0 +1,49 @@
+{
+  "tag_name": "@curl-runner/cli@2.3.0",
+  "published_at": "2026-11-02T18:24:45Z",
+  "html_url": "https://github.com/alexvcasillas/curl-runner/releases/tag/%40curl-runner/cli%402.3.0",
+  "assets": [
+    {
+      "name": "curl-runner-cli-2.3.0-darwin-arm64.tar.gz",
+      "browser_download_url": "https://github.com/alexvcasillas/curl-runner/releases/download/%40curl-runner/cli%402.3.0/curl-runner-cli-2.3.0-darwin-arm64.tar.gz",
+      "size": 4359438,
+      "content_type": "application/gzip"
+    },
+    {
+      "name": "curl-runner-cli-2.3.0-darwin-x64.tar.gz",
+      "browser_download_url": "https://github.com/alexvcasillas/curl-runner/releases/download/%40curl-runner/cli%402.3.0/curl-runner-cli-2.3.0-darwin-x64.tar.gz",
+      "size": 4659367,
+      "content_type": "application/gzip"
+    },
+    {
+      "name": "curl-runner-cli-2.3.0-linux-arm64.tar.gz",
+      "browser_download_url": "https://github.com/alexvcasillas/curl-runner/releases/download/%40curl-runner/cli%402.3.0/curl-runner-cli-2.3.0-linux-arm64.tar.gz",
+      "size": 4851981,
+      "content_type": "application/gzip"
+    },
+    {
+      "name": "curl-runner-cli-2.3.0-linux-x64.tar.gz",
+      "browser_download_url": "https://github.com/alexvcasillas/curl-runner/releases/download/%40curl-runner/cli%402.3.0/curl-runner-cli-2.3.0-linux-x64.tar.gz",
+      "size": 5173856,
+      "content_type": "application/gzip"
+    },
+    {
+      "name": "curl-runner-cli-2.3.0-windows-x64.zip",
+      "browser_download_url": "https://github.com/alexvcasillas/curl-runner/releases/download/%40curl-runner/cli%402.3.0/curl-runner-cli-2.3.0-windows-x64.zip",
+      "size": 4175089,
+      "content_type": "application/zip"
+    },
+    {
+      "name": "curl-runner-studio-2.3.0.dmg",
+      "browser_download_url": "https://github.com/alexvcasillas/curl-runner/releases/download/%40curl-runner/cli%402.3.0/curl-runner-studio-2.3.0.dmg",
+      "size": 33189613,
+      "content_type": "application/x-apple-diskimage"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "browser_download_url": "https://github.com/alexvcasillas/curl-runner/releases/download/%40curl-runner/cli%402.3.0/SHA256SUMS.txt",
+      "size": 530,
+      "content_type": "text/plain"
+    }
+  ]
+}

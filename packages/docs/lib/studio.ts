@@ -1,12 +1,13 @@
-// curl-runner studio: a macOS desktop app, released as a preview in 2.2.0. It is not
-// distributed yet (no signed build, Homebrew formula or download), so every page that
-// shows it says so and points at the build from source.
+// curl-runner studio: a macOS desktop app, a signed and notarized dmg since 2.3.0. Pages
+// that show it point at /downloads and the Homebrew cask. Sync and sharing are coming soon.
 
 import { SITE_URL } from '@/lib/site';
 
 export const STUDIO_REPO_URL = 'https://github.com/alexvcasillas/curl-runner';
 export const STUDIO_SOURCE_URL = `${STUDIO_REPO_URL}/tree/main/crates/curl-runner-studio`;
-export const STUDIO_BUILD_COMMAND = 'cargo run -p curl-runner-studio';
+export const STUDIO_CASK_COMMAND = 'brew install --cask alexvcasillas/tap/curl-runner-studio';
+export const STUDIO_DOWNLOAD_HREF = '/downloads';
+export const STUDIO_REQUIREMENTS = 'macOS 12 or later, Apple silicon and Intel';
 export const STUDIO_CHANGELOG_HREF = '/changelog#2.2.0';
 export const STUDIO_PAGE_HREF = '/features/studio';
 export const STUDIO_DOCS_HREF = '/docs/features/studio';

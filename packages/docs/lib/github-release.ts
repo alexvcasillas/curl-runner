@@ -23,6 +23,8 @@ export interface LatestRelease {
   htmlUrl: string;
   binaries: BinaryDownload[];
   checksumUrl?: string;
+  /** The macOS studio disk image, when the release has one. */
+  studio?: { fileName: string; url: string; size: number };
 }
 
 const GITHUB_REPO = 'alexvcasillas/curl-runner';
@@ -49,6 +51,7 @@ export function parseRelease(json: unknown): LatestRelease | null {
 
   const binaries: BinaryDownload[] = [];
   let checksumUrl: string | undefined;
+  let studio: LatestRelease['studio'];
   const assets = Array.isArray(json.assets) ? json.assets : [];
 
   for (const asset of assets) {
@@ -61,6 +64,14 @@ export function parseRelease(json: unknown): LatestRelease | null {
     }
     if (asset.name === 'SHA256SUMS.txt') {
       checksumUrl = asset.browser_download_url;
+      continue;
+    }
+    if (/^curl-runner-studio-(\d+\.\d+\.\d+\S*)\.dmg$/.test(asset.name)) {
+      studio = {
+        fileName: asset.name,
+        url: asset.browser_download_url,
+        size: typeof asset.size === 'number' ? asset.size : 0,
+      };
       continue;
     }
     const match = asset.name.match(
@@ -90,6 +101,7 @@ export function parseRelease(json: unknown): LatestRelease | null {
         : `https://github.com/${GITHUB_REPO}/releases`,
     binaries,
     checksumUrl,
+    studio,
   };
 }
 

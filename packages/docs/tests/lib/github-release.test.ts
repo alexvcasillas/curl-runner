@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fixture from '../fixtures/release-2.1.0.json';
+import fixture230 from '../fixtures/release-2.3.0.json';
 
 vi.mock('next/cache', () => ({
   unstable_cache: <T extends (...args: never[]) => unknown>(fn: T) => fn,
@@ -37,6 +38,20 @@ describe('parseRelease', () => {
       '4.6 MB',
       '4.0 MB',
     ]);
+  });
+
+  it('parses the studio dmg from release assets', () => {
+    const release = parseRelease(fixture230);
+    expect(release?.studio).toEqual({
+      fileName: 'curl-runner-studio-2.3.0.dmg',
+      url: 'https://github.com/alexvcasillas/curl-runner/releases/download/%40curl-runner/cli%402.3.0/curl-runner-studio-2.3.0.dmg',
+      size: 33189613,
+    });
+    expect(release?.binaries).toHaveLength(5);
+  });
+
+  it('studio is undefined when the release has no dmg', () => {
+    expect(parseRelease(fixture)?.studio).toBeUndefined();
   });
 
   it('returns null for malformed input', () => {
