@@ -2,6 +2,7 @@
 title: The importance of testing in the Agent era
 description: Agents write code faster than anyone can review it. Here's why unit, e2e and smoke tests are your real safety net, and how curl-runner runs the smoke layer.
 date: 2026-10-31
+updated: 2026-11-02
 author: Alex Casillas
 ---
 
@@ -88,7 +89,7 @@ I built curl-runner, so take this with a pinch of salt. Still, a few things make
 
 **It's fast.** It's a single native binary with no runtime to install, and `-p` runs the whole suite in parallel.
 
-**You can see what failed.** When a check fails, [response validation](/docs/features/response-validation) tells you the field, the expected value and what it got. If you'd rather click than read terminal output, [curl-runner studio](/docs/features/studio) opens the same YAML files and shows each failure next to the response. It's an early macOS preview for now, built from source.
+**You can see what failed.** When a check fails, [response validation](/docs/features/response-validation) tells you the field, the expected value and what it got. If you'd rather click than read terminal output, [curl-runner studio](/docs/features/studio) opens the same YAML files and shows each failure next to the response. You can [download it for macOS](/downloads).
 
 ## Your first smoke test in five minutes
 

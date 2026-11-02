@@ -5,6 +5,7 @@ import { InstallTabs } from '@/components/site/InstallTabs';
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { formatFileSize, getLatestRelease, getPlatformLabel } from '@/lib/github-release';
 import { pageMetadata } from '@/lib/site';
+import { STUDIO_CASK_COMMAND, STUDIO_REQUIREMENTS } from '@/lib/studio';
 
 export const revalidate = 3600;
 
@@ -66,6 +67,49 @@ export default async function DownloadsPage() {
             defaultId="curl"
             showNote
           />
+        </section>
+
+        <section aria-labelledby="studio-heading" className="mx-auto max-w-[1200px] px-6 pb-18">
+          <h2
+            id="studio-heading"
+            className="m-0 mb-5 text-[28px] font-bold tracking-[-0.025em] text-fg"
+          >
+            curl-runner studio for macOS
+          </h2>
+          <div className="rounded-[14px] border border-line p-6">
+            <p className="m-0 text-fg-secondary">
+              A desktop app for your YAML request files. {STUDIO_REQUIREMENTS}. Signed and
+              notarized. Sync and sharing are coming soon.
+            </p>
+            {release?.studio ? (
+              <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
+                <span className="min-w-0 flex-[1_1_260px] font-mono text-[13px] break-all text-fg-tertiary">
+                  {release.studio.fileName}
+                </span>
+                <span className="font-mono text-[13px] text-fg-secondary">
+                  {formatFileSize(release.studio.size)}
+                </span>
+                <a
+                  href={release.studio.url}
+                  aria-label={`Download curl-runner studio (${release.studio.fileName})`}
+                  className="relative inline-flex h-9 items-center gap-2 rounded-lg border border-line px-3.5 text-sm transition-colors before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                >
+                  <Download aria-hidden="true" className="size-3.5" />
+                  Download
+                </a>
+              </div>
+            ) : (
+              <p className="mt-4 mb-0">
+                <a href={RELEASES_URL} className={`text-fg ${LINK}`}>
+                  Get the studio from GitHub Releases
+                </a>
+              </p>
+            )}
+            <p className="mt-5 mb-0 text-sm text-fg-tertiary">
+              Or install with Homebrew:{' '}
+              <code className="font-mono text-[#d4d4d4]">{STUDIO_CASK_COMMAND}</code>
+            </p>
+          </div>
         </section>
 
         <section aria-labelledby="binaries-heading" className="mx-auto max-w-[1200px] px-6 pb-24">

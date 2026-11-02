@@ -1,25 +1,27 @@
 ---
 title: "Studio (preview)"
-description: "curl-runner studio is a macOS app for your YAML request files: live validation, runs, checks, retries, environments and history. A preview, built from source."
+description: "curl-runner studio is a macOS app for your YAML request files: live validation, runs, checks, retries, environments and history. Download the dmg."
 ---
 
 curl-runner studio is a macOS desktop app for the request files you already have. It opens a folder of YAML as a collection, validates as you type, runs one request or the whole collection, and shows every check, retry and timing.
 
-<Callout type="warn" title="Preview">
-The studio shipped as a preview in [curl-runner 2.2.0](/changelog#2.2.0). It isn't distributed yet: there is no signed build, Homebrew formula or download. Build it from source as shown below. Expect rough edges, and changes before a first release.
+<Callout type="info" title="Preview">
+The studio is a preview. It works fully on local YAML files. Sync and sharing are coming soon, and they need the curl-runner server.
 </Callout>
 
-## Build from source [#build]
+## Install [#install]
 
-You need macOS and a Rust toolchain from [rustup](https://rustup.rs). The repository pins the Rust version, so rustup installs the right one on the first build.
+You need macOS 12 or later. The app is a universal build for Apple silicon and Intel, signed and notarized.
+
+Download `curl-runner-studio-<version>.dmg` from the [downloads page](/downloads), open it and drag the app to Applications. Or install it with Homebrew:
 
 ```bash title="Terminal"
-git clone https://github.com/alexvcasillas/curl-runner
-cd curl-runner
-cargo run -p curl-runner-studio
+brew install --cask alexvcasillas/tap/curl-runner-studio
 ```
 
-The first build compiles the whole app and takes a while; later runs start straight away.
+## Your first request [#first-request]
+
+On first launch, choose **Get started**. Welcome then offers **Run your first request**, a short walkthrough that creates `~/curl-runner/getting-started/health.yaml`, a request to `https://api.curl-runner.com/health`, and runs it. The file is never overwritten, so you can edit it freely. To replay the walkthrough, use **Help › Walkthrough**.
 
 ## Collections are folders [#collections]
 
@@ -59,4 +61,4 @@ Runs are kept on your machine for 30 days. Pick one to compare it with the run b
 
 ## Sharing and sync [#sharing]
 
-The studio has sharing and sync screens, but in this preview they run against a built-in mock server: nothing you do there leaves your machine.
+Sharing and sync are coming soon. They need the curl-runner server, so for now everything stays on your machine.

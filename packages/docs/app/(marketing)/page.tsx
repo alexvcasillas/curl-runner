@@ -11,8 +11,9 @@ import { SoftwareApplicationSchema } from '@/components/structured-data';
 import { HOME_FEATURES } from '@/lib/home-features';
 import { SITE_DESCRIPTION } from '@/lib/site';
 import {
-  STUDIO_BUILD_COMMAND,
+  STUDIO_CASK_COMMAND,
   STUDIO_CHANGELOG_HREF,
+  STUDIO_DOWNLOAD_HREF,
   STUDIO_HERO,
   STUDIO_PAGE_HREF,
 } from '@/lib/studio';
@@ -261,9 +262,12 @@ export default function Home() {
                 <p className="m-0 max-w-136 text-[17px] leading-[1.65] text-fg-secondary">
                   curl-runner studio opens a folder of request files as a collection. Edit with live
                   validation, run one request or all of them, and read every check, retry and
-                  timing. A macOS preview for now: no download yet, you build it from source.
+                  timing. It works on local YAML files. Sync and sharing are coming soon.
                 </p>
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+                  <ButtonLink href={STUDIO_DOWNLOAD_HREF} variant="primary" size="lg">
+                    Download for macOS
+                  </ButtonLink>
                   <ButtonLink href={STUDIO_PAGE_HREF} variant="secondary" size="lg">
                     Explore the studio
                   </ButtonLink>
@@ -298,8 +302,8 @@ export default function Home() {
               </picture>
             </div>
             <p className="mt-3.5 mb-0 text-center text-[13px] text-fg-tertiary">
-              macOS only and not distributed yet. Build it from source with{' '}
-              <code className="font-mono text-fg-secondary">{STUDIO_BUILD_COMMAND}</code>.
+              macOS 12 or later, Apple silicon and Intel. Or install it with{' '}
+              <code className="font-mono text-fg-secondary">{STUDIO_CASK_COMMAND}</code>.
             </p>
           </div>
         </section>
