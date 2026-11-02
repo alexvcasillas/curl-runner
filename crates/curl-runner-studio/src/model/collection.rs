@@ -96,10 +96,14 @@ impl Collection {
 
     /// [`Collection::open`], locked when `root` is a received copy (see
     /// [`received_from`](crate::model::shared_copy::received_from)), so
-    /// the model refuses writes into a folder picked by hand.
+    /// the model refuses writes into a folder picked by hand. A build
+    /// without the server has no received copies: such a folder is an
+    /// ordinary local collection.
     pub fn open_in(root: &Path, base: Option<&Path>) -> io::Result<Collection> {
         let mut c = Collection::open(root)?;
-        c.read_only = crate::model::shared_copy::received_from(base, root);
+        if crate::features::SERVER {
+            c.read_only = crate::model::shared_copy::received_from(base, root);
+        }
         Ok(c)
     }
 
@@ -424,6 +428,47 @@ fn sort(level: &mut [TreeNode]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A folder whose notes name an owner, and one under `{base}/shared/`.
+    fn received_copies(base: &Path) -> [PathBuf; 2] {
+        let noted = base.join("noted");
+        std::fs::create_dir_all(&noted).unwrap();
+        let meta = crate::model::collection_meta::CollectionMeta {
+            read_only_from: Some("Acme".into()),
+            ..Default::default()
+        };
+        meta.save(base, &noted).unwrap();
+        let placed = base.join("shared").join("shipping-api");
+        std::fs::create_dir_all(&placed).unwrap();
+        for dir in [&noted, &placed] {
+            std::fs::write(dir.join("a.yaml"), "request:\n  url: https://a\n").unwrap();
+        }
+        [noted, placed]
+    }
+
+    #[cfg(not(feature = "server"))]
+    #[test]
+    fn without_the_server_a_received_copy_opens_as_a_local_collection() {
+        let base = tempfile::tempdir().unwrap();
+        for root in received_copies(base.path()) {
+            let mut c = Collection::open_in(&root, Some(base.path())).unwrap();
+            assert_eq!(c.read_only, None, "{}", root.display());
+            c.create_file(Path::new("b.yaml"), "request:\n  url: https://b\n")
+                .unwrap();
+            assert!(root.join("b.yaml").is_file());
+        }
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn with_the_server_a_received_copy_opens_locked() {
+        let base = tempfile::tempdir().unwrap();
+        let [noted, placed] = received_copies(base.path());
+        let c = Collection::open_in(&noted, Some(base.path())).unwrap();
+        assert_eq!(c.read_only.as_deref(), Some("Acme"));
+        let c = Collection::open_in(&placed, Some(base.path())).unwrap();
+        assert_eq!(c.read_only.as_deref(), Some("its owner"));
+    }
 
     #[test]
     fn request_lines_follow_the_cursor() {

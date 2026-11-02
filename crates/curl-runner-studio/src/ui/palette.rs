@@ -180,6 +180,12 @@ impl PaletteAction {
         PaletteAction::Settings,
     ];
 
+    /// Whether this build lists it: opening a shared link needs the
+    /// curl-runner server.
+    pub fn listed(self) -> bool {
+        crate::features::SERVER || self != PaletteAction::OpenSharedLink
+    }
+
     fn label(self) -> &'static str {
         match self {
             PaletteAction::OpenFolder => "Open folder…",
@@ -243,7 +249,7 @@ pub fn palette_entries(
     out.extend(
         PaletteAction::ALL
             .iter()
-            .filter(|a| !(read_only && writes(a)))
+            .filter(|a| a.listed() && !(read_only && writes(a)))
             .map(|&a| {
                 let item = PaletteItem {
                     group: Group::Actions,
@@ -394,7 +400,7 @@ impl Palette {
     }
 
     /// Whether the palette lists action `a` (tests).
-    #[cfg(test)]
+    #[cfg(all(test, feature = "server"))]
     pub fn lists(&self, a: PaletteAction) -> bool {
         self.targets.contains(&Target::Action(a))
     }
@@ -1020,7 +1026,12 @@ mod tests {
             }
         );
         let actions: Vec<_> = entries[7..].iter().map(|(_, t)| t.clone()).collect();
-        assert_eq!(actions, PaletteAction::ALL.map(Target::Action));
+        let listed: Vec<_> = PaletteAction::ALL
+            .into_iter()
+            .filter(|a| a.listed())
+            .map(Target::Action)
+            .collect();
+        assert_eq!(actions, listed);
         // No collection: no folders.
         assert!(
             palette_entries(None, &tree(), false)

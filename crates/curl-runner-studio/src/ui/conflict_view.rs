@@ -1052,7 +1052,8 @@ mod note_tests {
     }
 }
 
-#[cfg(test)]
+/// Server behaviour: only in builds with the `server` feature.
+#[cfg(all(test, feature = "server"))]
 mod tests {
     use super::super::state::StateStore;
     use super::super::sync::{SYNC_DELAY, SyncLine};

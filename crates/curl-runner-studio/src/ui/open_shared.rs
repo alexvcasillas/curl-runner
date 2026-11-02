@@ -26,6 +26,7 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::dialog::DialogEntrance;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::notification::Notification;
 use gpui_kit::component::{Disableable as _, WindowExt as _};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
@@ -1371,12 +1372,29 @@ impl Workspace {
         else {
             return;
         };
+        // Without the server the app still opens, and says so.
+        if !crate::features::SERVER {
+            self.notify_soon(SHARED_LINKS_SOON, window, cx);
+            return;
+        }
         // The sign-in screen answers first; the link waits for it.
         if self.sign_in_shown() {
             self.pending_link = Some(url);
         } else {
             self.open_shared(Some(url), window, cx);
         }
+    }
+}
+
+/// What a `curl-runner://` link gets in a build without the server.
+const SHARED_LINKS_SOON: &str = "Shared links need the curl-runner server, which is coming soon.";
+
+impl Workspace {
+    /// A `Coming soon` notice.
+    fn notify_soon(&mut self, text: &'static str, window: &mut Window, cx: &mut App) {
+        #[cfg(test)]
+        self.toasts.push(text.into());
+        window.push_notification(Notification::info(text), cx);
     }
 }
 
@@ -1455,7 +1473,9 @@ mod tests {
 mod gpui_tests {
     use super::super::state::StateStore;
     use super::super::workspace::{Workspace, test_backend};
-    use super::{OpenSharedView, Step, link_handler, pump_links};
+    use super::{OpenSharedView, Step};
+    #[cfg(feature = "server")]
+    use super::{link_handler, pump_links};
     use crate::model::backend::Backend;
     use crate::model::secrets::{MemorySecrets, SecretStore, service_name};
     use gpui_kit::component::WindowExt as _;
@@ -1813,6 +1833,7 @@ mod gpui_tests {
         assert!(s.ws.read_with(cx, |ws, _| ws.open_shared_view().is_none()));
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn deep_link_event_opens_flow(cx: &mut TestAppContext) {
         let s = studio(cx);
@@ -1860,6 +1881,7 @@ mod gpui_tests {
         view
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn closing_mid_add_still_finishes_and_opens(cx: &mut TestAppContext) {
         let s = studio(cx);
@@ -1987,6 +2009,7 @@ mod gpui_tests {
         assert!(s.ws.read_with(cx, |ws, _| ws.state.collection.is_none()));
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn a_link_during_sign_in_waits_for_it(cx: &mut TestAppContext) {
         let s = studio(cx);

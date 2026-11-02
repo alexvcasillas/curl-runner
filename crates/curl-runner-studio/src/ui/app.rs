@@ -126,19 +126,25 @@ pub fn menus(dev: Option<DevToggles>) -> Vec<Menu> {
         app.push(MenuItem::separator());
     }
     app.push(MenuItem::action("Quit curl-runner studio", Quit));
+    let mut file = vec![
+        MenuItem::action("New Request…", NewRequest),
+        MenuItem::action("New Collection…", NewCollection),
+        MenuItem::action("Import curl…", Import),
+        MenuItem::separator(),
+        MenuItem::action("Open Folder…", OpenFolder),
+    ];
+    // Shared links need the curl-runner server.
+    if crate::features::SERVER {
+        file.push(MenuItem::action("Open Shared Link…", OpenSharedLink));
+    }
+    file.extend([
+        MenuItem::action("Save", SaveFile),
+        MenuItem::separator(),
+        MenuItem::action("Close Tab", CloseTab),
+    ]);
     vec![
         Menu::new("curl-runner studio").items(app),
-        Menu::new("File").items([
-            MenuItem::action("New Request…", NewRequest),
-            MenuItem::action("New Collection…", NewCollection),
-            MenuItem::action("Import curl…", Import),
-            MenuItem::separator(),
-            MenuItem::action("Open Folder…", OpenFolder),
-            MenuItem::action("Open Shared Link…", OpenSharedLink),
-            MenuItem::action("Save", SaveFile),
-            MenuItem::separator(),
-            MenuItem::action("Close Tab", CloseTab),
-        ]),
+        Menu::new("File").items(file),
         Menu::new("Run").items([
             MenuItem::action("Run", RunActive),
             MenuItem::action("Run Request Under Cursor", RunRequestUnderCursor),
@@ -175,7 +181,7 @@ fn shortcut<A: Action>(
 /// shortcuts page read. They apply anywhere in the window, the editor
 /// included.
 pub fn bindings() -> Vec<Shortcut> {
-    vec![
+    let all = vec![
         shortcut("cmd-q", Quit, None, "Quit"),
         shortcut("cmd-,", OpenSettings, None, "Settings"),
         shortcut("cmd-o", OpenFolder, None, "Open folder"),
@@ -269,7 +275,11 @@ pub fn bindings() -> Vec<Shortcut> {
             "Palette: run command",
         ),
         shortcut("escape", Cancel, Some(palette::CONTEXT), "Palette: close"),
-    ]
+    ];
+    // ⌘L opens a shared link, which needs the curl-runner server.
+    all.into_iter()
+        .filter(|s| crate::features::SERVER || s.label != "Open a shared link")
+        .collect()
 }
 
 /// The bindings [`init`] registers.
@@ -334,7 +344,9 @@ pub fn run() {
         let run = dev_string("CURL_RUNNER_STUDIO_RUN");
         let line = dev_string("CURL_RUNNER_STUDIO_LINE").and_then(|l| l.parse::<u32>().ok());
         let tab = dev_string("CURL_RUNNER_STUDIO_TAB");
-        let link = dev_string("CURL_RUNNER_STUDIO_LINK");
+        // The server's screens only where there is one.
+        let server = crate::features::SERVER;
+        let link = dev_string("CURL_RUNNER_STUDIO_LINK").filter(|_| server);
         let secrets: Arc<dyn SecretStore> = Arc::new(KeychainSecrets);
         let backend = app_backend(store.base());
         #[cfg(feature = "server")]
@@ -435,7 +447,7 @@ pub fn run() {
                             });
                         }
                         "history" => ws.open_history(window, cx),
-                        "conflict" => ws.dev_show_conflict(window, cx),
+                        "conflict" if server => ws.dev_show_conflict(window, cx),
                         "settings" => {
                             let page = dev_string("CURL_RUNNER_STUDIO_PAGE")
                                 .and_then(|p| AppPage::parse(&p))
@@ -467,7 +479,7 @@ pub fn run() {
                             })
                             .detach();
                         }
-                        "share" => {
+                        "share" if server => {
                             ws.open_share(window, cx);
                             let fill = dev_string("CURL_RUNNER_STUDIO_FILL");
                             if let (Some(view), Some(fill)) = (ws.share_view(), fill) {
@@ -475,7 +487,7 @@ pub fn run() {
                                 view.update(cx, |v, cx| v.dev_invite(emails, cx));
                             }
                         }
-                        "sharing" => {
+                        "sharing" if server => {
                             ws.open_settings(window, cx);
                             if let Some(view) = &ws.settings_view {
                                 view.update(cx, |v, cx| v.set_page(Page::Sharing, window, cx));
@@ -1005,40 +1017,42 @@ mod tests {
                     .join(" ")
             })
             .collect();
-        assert_eq!(
-            keys,
-            [
-                "cmd-q",
-                "cmd-,",
-                "cmd-o",
-                "cmd-l",
-                "cmd-s",
-                "cmd-w",
-                "cmd-n",
-                "cmd-shift-n",
-                "cmd-i",
-                "cmd-enter",
-                "cmd-enter",
-                "cmd-k",
-                "cmd-.",
-                "cmd-.",
-                "escape",
-                "cmd-y",
-                "escape",
-                "escape",
-                "escape",
-                "escape",
-                "escape",
-                "cmd-shift-m",
-                "cmd-enter",
-                "alt-cmd-enter",
-                "cmd-enter",
-                "alt-cmd-enter",
-                "up",
-                "down",
-                "enter",
-                "escape"
-            ]
-        );
+        // ⌘L (a shared link) only with the server.
+        let expected: Vec<&str> = [
+            "cmd-q",
+            "cmd-,",
+            "cmd-o",
+            "cmd-l",
+            "cmd-s",
+            "cmd-w",
+            "cmd-n",
+            "cmd-shift-n",
+            "cmd-i",
+            "cmd-enter",
+            "cmd-enter",
+            "cmd-k",
+            "cmd-.",
+            "cmd-.",
+            "escape",
+            "cmd-y",
+            "escape",
+            "escape",
+            "escape",
+            "escape",
+            "escape",
+            "cmd-shift-m",
+            "cmd-enter",
+            "alt-cmd-enter",
+            "cmd-enter",
+            "alt-cmd-enter",
+            "up",
+            "down",
+            "enter",
+            "escape",
+        ]
+        .into_iter()
+        .filter(|k| crate::features::SERVER || *k != "cmd-l")
+        .collect();
+        assert_eq!(keys, expected);
     }
 }

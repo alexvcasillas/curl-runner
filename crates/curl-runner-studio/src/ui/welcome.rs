@@ -3,6 +3,7 @@
 
 use super::app::mono_font;
 use super::color;
+use super::coming_soon::soon_pill;
 use super::icons::{self, glyph};
 use super::new_dialog::display_path;
 use super::settings_kit::later_badge;
@@ -24,6 +25,9 @@ struct Card {
     detail: &'static str,
     /// `None`: shown disabled with the `Later build` badge.
     action: Option<fn(&mut Workspace, &mut Window, &mut Context<Workspace>)>,
+    /// Needs the curl-runner server: without it, disabled with this text
+    /// and the `Coming soon` pill.
+    soon: Option<&'static str>,
 }
 
 const CARDS: [Card; 4] = [
@@ -36,6 +40,7 @@ const CARDS: [Card; 4] = [
         action: Some(|ws, window, cx| {
             ws.new_collection(window, cx);
         }),
+        soon: None,
     },
     Card {
         id: "welcome-open-folder",
@@ -44,6 +49,7 @@ const CARDS: [Card; 4] = [
         title: "Open folder",
         detail: "Work on YAML files already on disk, for example a repo checkout.",
         action: Some(|ws, window, cx| ws.open_folder(window, cx)),
+        soon: None,
     },
     Card {
         id: "welcome-open-link",
@@ -54,6 +60,9 @@ const CARDS: [Card; 4] = [
         action: Some(|ws, window, cx| {
             ws.open_shared(None, window, cx);
         }),
+        soon: Some(
+            "Open a collection someone shared with you. Arrives with the curl-runner server.",
+        ),
     },
     Card {
         id: "welcome-import",
@@ -64,6 +73,7 @@ const CARDS: [Card; 4] = [
         action: Some(|ws, window, cx| {
             ws.import(window, cx);
         }),
+        soon: None,
     },
 ];
 
@@ -326,7 +336,9 @@ fn render_secrets_note() -> impl IntoElement {
 }
 
 fn render_card(card: &Card, cx: &mut Context<Workspace>) -> impl IntoElement + use<> {
-    let enabled = card.action.is_some();
+    let soon = card.soon.filter(|_| !crate::features::SERVER);
+    let action = card.action.filter(|_| soon.is_none());
+    let enabled = action.is_some();
     let fg = |token| color(if enabled { token } else { "text-disabled" });
     let top = div()
         .flex()
@@ -353,22 +365,29 @@ fn render_card(card: &Card, cx: &mut Context<Workspace>) -> impl IntoElement + u
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .when(!enabled, |d| d.child(later_badge()))
-                .child(
-                    div()
-                        .px(px(5.))
-                        .rounded(px(4.))
-                        .border_1()
-                        .border_color(color("border-200"))
-                        .font_family(mono_font())
-                        .text_size(px(11.))
-                        .line_height(px(18.))
-                        .text_color(fg("text-secondary"))
-                        .child(card.keys),
-                ),
+                .when(soon.is_some(), |d| d.child(soon_pill()))
+                .when(!enabled && soon.is_none(), |d| d.child(later_badge()))
+                .when(soon.is_none(), |d| {
+                    d.child(
+                        div()
+                            .px(px(5.))
+                            .rounded(px(4.))
+                            .border_1()
+                            .border_color(color("border-200"))
+                            .font_family(mono_font())
+                            .text_size(px(11.))
+                            .line_height(px(18.))
+                            .text_color(fg("text-secondary"))
+                            .child(card.keys),
+                    )
+                }),
         );
+    let detail = soon.unwrap_or(card.detail);
     div()
         .id(card.id)
+        .role(Role::Button)
+        .test_support()
+        .aria_label(card.title)
         .flex()
         .flex_col()
         .items_start()
@@ -376,7 +395,12 @@ fn render_card(card: &Card, cx: &mut Context<Workspace>) -> impl IntoElement + u
         .p(px(16.))
         .rounded(px(8.))
         .border_1()
-        .border_color(color("border-100"))
+        .when(soon.is_some(), |d| d.border_dashed())
+        .border_color(color(if soon.is_some() {
+            "border-200"
+        } else {
+            "border-100"
+        }))
         .child(top)
         .child(
             div()
@@ -387,12 +411,15 @@ fn render_card(card: &Card, cx: &mut Context<Workspace>) -> impl IntoElement + u
         )
         .child(
             div()
+                .id("detail")
+                .test_support()
+                .aria_label(detail)
                 .text_size(px(12.))
                 .line_height(relative(1.5))
                 .text_color(fg("text-secondary"))
-                .child(card.detail),
+                .child(detail),
         )
-        .map(|el| match card.action {
+        .map(|el| match action {
             Some(action) => el
                 .cursor_pointer()
                 .hover(|s| s.bg(color("surface-100")))

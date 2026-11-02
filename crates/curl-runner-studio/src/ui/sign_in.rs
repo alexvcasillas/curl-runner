@@ -742,6 +742,7 @@ impl SignInView {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "server")]
     use super::super::settings_view::AppPage;
     use super::super::state::{Connection, StateStore};
     use super::super::workspace::{Workspace, test_secrets};
@@ -912,6 +913,7 @@ mod tests {
         assert_eq!(backend.account().unwrap().name, "Maria");
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn settings_sign_out_returns_to_signed_out_cards(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();
@@ -1020,6 +1022,7 @@ mod tests {
         assert!(shows(cx, window, "Offline"));
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn settings_server_save_tests_first_and_shows_the_error(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();

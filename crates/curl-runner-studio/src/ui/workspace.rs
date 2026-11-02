@@ -376,8 +376,13 @@ impl Workspace {
         };
         let meta = CollectionMeta::load_or_init(self.store.base(), root);
         // A received copy is locked where it is written: the collection
-        // and each document refuse changes.
-        if let Some(org) = &meta.read_only_from {
+        // and each document refuse changes. Without the server there are
+        // no received copies, only local folders.
+        if let Some(org) = meta
+            .read_only_from
+            .as_ref()
+            .filter(|_| crate::features::SERVER)
+        {
             collection.read_only = Some(org.clone());
         }
         self.refresh_received_all();
@@ -1388,7 +1393,10 @@ impl Render for Workspace {
                     this.import(window, cx);
                 }))
                 .on_action(cx.listener(|this, _: &OpenSharedLink, window, cx| {
-                    this.open_shared(None, window, cx);
+                    // Shared links need the curl-runner server.
+                    if crate::features::SERVER {
+                        this.open_shared(None, window, cx);
+                    }
                 }))
                 .on_action(cx.listener(|this, _: &OpenPalette, window, cx| {
                     this.open_palette(window, cx);

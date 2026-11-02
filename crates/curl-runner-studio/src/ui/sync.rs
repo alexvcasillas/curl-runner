@@ -405,10 +405,11 @@ fn apply_pulled(
 }
 
 impl Workspace {
-    /// Whether the open collection syncs: signed in, not `Continue
-    /// offline`.
+    /// Whether the open collection syncs: a build with the server,
+    /// signed in, not `Continue offline`.
     pub(super) fn sync_on(&self) -> bool {
-        self.state.collection.is_some()
+        crate::features::SERVER
+            && self.state.collection.is_some()
             && self.connection() != Some(Connection::Offline)
             && self.backend.account().is_some()
     }
@@ -441,7 +442,11 @@ impl Workspace {
     /// server changed): the persisted base and conflicts, the server's last
     /// sync time, the share's people, the waiting count and, with "Sync
     /// automatically", a sync (which also rebuilds conflicts).
+    /// Without the server, nothing: no base, no share, no timers.
     pub(super) fn start_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !crate::features::SERVER {
+            return;
+        }
         // The share belongs to the collection and account it was made for.
         self.drop_share(window, cx);
         // Which received copies the server (still) records.
@@ -1274,7 +1279,8 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+/// Server behaviour: only in builds with the `server` feature.
+#[cfg(all(test, feature = "server"))]
 mod gpui_tests {
     use super::super::state::StateStore;
     use super::super::workspace::{Workspace, test_backend, test_secrets};

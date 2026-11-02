@@ -3,6 +3,7 @@
 
 mod app;
 mod collection_settings;
+mod coming_soon;
 mod conflict_view;
 mod diagnostic_marks;
 mod diagnostic_popover;

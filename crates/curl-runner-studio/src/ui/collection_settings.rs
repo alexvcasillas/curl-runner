@@ -9,7 +9,7 @@
 //! It takes the sidebar's, the main area's and the inspector's place. The
 //! workspace re-reads what changed when the page emits [`SettingsEvent`].
 
-use super::app::{CloseSettings, mono_font, ui_font};
+use super::app::{CloseSettings, mono_font};
 use super::color;
 use super::icons::{self, glyph};
 use super::inspector::env_label;
@@ -54,10 +54,15 @@ const NAME_COL: f32 = 180.;
 const SOURCE_COL: f32 = 150.;
 const SCOPE_COL: f32 = 110.;
 
-/// The board's callout, verbatim.
+/// The board's callout, verbatim. It is about sharing, so a build
+/// without the server has neither the callout nor its text.
+#[cfg(feature = "server")]
 const CALLOUT_HEAD: &str = "How customers bring their own values.";
+#[cfg(feature = "server")]
 const CALLOUT_BODY: &str = " When you share this collection, people get the variable names, descriptions and non-secret defaults. Secrets are never shared or synced: each person enters their own, and it stays in their device keychain. Values marked ";
+#[cfg(feature = "server")]
 const CALLOUT_SHARED: &str = "Shared by Acme";
+#[cfg(feature = "server")]
 const CALLOUT_TAIL: &str = " are locked for them.";
 const LEGEND_SHARED: &str = "Set by the collection owner, read only for others";
 /// The largest `.env` file Import reads.
@@ -516,7 +521,7 @@ impl CollectionSettings {
     }
 
     /// The Sharing page's controls, when it is shown.
-    #[cfg(test)]
+    #[cfg(all(test, feature = "server"))]
     pub fn share_view(&self) -> Option<&Entity<ShareView>> {
         self.share_view.as_ref()
     }
@@ -559,8 +564,9 @@ impl CollectionSettings {
     /// The collection's notes (the workspace's).
     /// A received copy: its variables are the owner's (no new, deleted or
     /// re-described ones); only their values are the customer's.
+    /// Without the server there are none.
     fn received(&self, cx: &App) -> bool {
-        self.meta(cx).read_only_from.is_some()
+        crate::features::SERVER && self.meta(cx).read_only_from.is_some()
     }
 
     pub fn meta<'a>(&self, cx: &'a App) -> &'a CollectionMeta {
@@ -579,6 +585,9 @@ impl CollectionSettings {
     }
 
     pub fn set_page(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
+        if page == Page::Sharing && !crate::features::SERVER {
+            return;
+        }
         self.page = page;
         self.drawer = None;
         self.share_view = None;
@@ -859,16 +868,19 @@ impl CollectionSettings {
                         .child(self.environments.len().to_string()),
                 ),
             )
-            .child(
-                page_item("settings-sharing", "Sharing", Page::Sharing, cx).children(
-                    self.sharing_count(cx).map(|n| {
-                        div()
-                            .text_size(px(11.))
-                            .text_color(color("text-tertiary"))
-                            .child(n.to_string())
-                    }),
-                ),
-            )
+            // Sharing needs the curl-runner server.
+            .when(crate::features::SERVER, |nav| {
+                nav.child(
+                    page_item("settings-sharing", "Sharing", Page::Sharing, cx).children(
+                        self.sharing_count(cx).map(|n| {
+                            div()
+                                .text_size(px(11.))
+                                .text_color(color("text-tertiary"))
+                                .child(n.to_string())
+                        }),
+                    ),
+                )
+            })
             .child(section("Workspace", false, false))
             .child(disabled("settings-members", "Members"))
             .child(disabled("settings-sync", "Sync & hosting"))
@@ -1068,7 +1080,7 @@ impl CollectionSettings {
                     .min_h_0()
                     .overflow_y_scroll()
                     .pb(px(24.))
-                    .child(render_callout())
+                    .children(render_callout())
                     .child(self.render_table(cx))
                     .child(render_legend(self.shared_rows())),
             )
@@ -1441,13 +1453,20 @@ impl CollectionSettings {
     }
 }
 
+/// Without the server: no callout.
+#[cfg(not(feature = "server"))]
+fn render_callout() -> Option<Div> {
+    None
+}
+
 /// The board's info callout, wrapping as one text.
-fn render_callout() -> impl IntoElement {
+#[cfg(feature = "server")]
+fn render_callout() -> Option<impl IntoElement> {
     let run = |len: usize, weight: FontWeight, tone: &str| TextRun {
         len,
         font: Font {
             weight,
-            ..font(ui_font())
+            ..font(super::app::ui_font())
         },
         color: color(tone),
         background_color: None,
@@ -1461,30 +1480,32 @@ fn render_callout() -> impl IntoElement {
         run(CALLOUT_SHARED.len(), FontWeight::NORMAL, "text-secondary"),
         run(CALLOUT_TAIL.len(), FontWeight::NORMAL, "text-primary"),
     ]);
-    div()
-        .id("environments-callout")
-        .role(Role::Note)
-        .test_support()
-        .flex()
-        .gap(px(10.))
-        .mx(px(24.))
-        .mt(px(16.))
-        .px(px(14.))
-        .py(px(12.))
-        .border_1()
-        .border_color(color("info-border"))
-        .bg(color("info-subtle"))
-        .rounded(px(8.))
-        .text_size(px(12.))
-        .line_height(relative(1.5))
-        .child(
-            glyph(icons::INFO)
-                .size(px(14.))
-                .flex_none()
-                .mt(px(2.))
-                .text_color(color("accent-blue")),
-        )
-        .child(div().flex_1().min_w_0().child(styled))
+    Some(
+        div()
+            .id("environments-callout")
+            .role(Role::Note)
+            .test_support()
+            .flex()
+            .gap(px(10.))
+            .mx(px(24.))
+            .mt(px(16.))
+            .px(px(14.))
+            .py(px(12.))
+            .border_1()
+            .border_color(color("info-border"))
+            .bg(color("info-subtle"))
+            .rounded(px(8.))
+            .text_size(px(12.))
+            .line_height(relative(1.5))
+            .child(
+                glyph(icons::INFO)
+                    .size(px(14.))
+                    .flex_none()
+                    .mt(px(2.))
+                    .text_color(color("accent-blue")),
+            )
+            .child(div().flex_1().min_w_0().child(styled)),
+    )
 }
 
 /// `shared`: the lock's `Set by the collection owner` joins the legend.
@@ -2369,6 +2390,7 @@ mod tests {
         assert!(view.read_with(cx, |v, _| v.drawer_open_on("REGION")));
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn a_drawer_save_keeps_the_owners_lock(cx: &mut TestAppContext) {
         use crate::model::backend::{SignInMethod, share_payload};
@@ -2403,6 +2425,7 @@ mod tests {
         assert!(base.locked && base.default.is_some(), "{base:?}");
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn sharing_page_shares_like_the_dialog(cx: &mut TestAppContext) {
         use crate::model::backend::SignInMethod;
@@ -2443,6 +2466,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn sharing_page_signed_out_asks_to_sign_in(cx: &mut TestAppContext) {
         let state = tempfile::tempdir().unwrap();
@@ -2456,6 +2480,7 @@ mod tests {
         assert!(view.read_with(cx, |v, _| v.share_view().is_none()));
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn signing_out_drops_the_old_sessions_share(cx: &mut TestAppContext) {
         use crate::model::backend::SignInMethod;
@@ -2589,6 +2614,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn marked_secret_while_its_tick_is_in_flight_shares_nothing(cx: &mut TestAppContext) {
         use crate::model::backend::SignInMethod;
@@ -2655,6 +2681,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn each_change_writes_the_notes_once(cx: &mut TestAppContext) {
         use crate::model::backend::SignInMethod;

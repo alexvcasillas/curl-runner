@@ -111,7 +111,9 @@ impl Workspace {
     /// folder in one), or the studio's own data folder or one holding it.
     fn refusal_of(&self, dir: &Path) -> Option<String> {
         let base = self.store.base();
-        if let Some(org) = received_from(base, dir) {
+        // Without the server there are no received copies to protect.
+        let received = received_from(base, dir).filter(|_| crate::features::SERVER);
+        if let Some(org) = received {
             Some(read_only_text(&org))
         } else if holds_studio_state(base, dir) {
             Some(STATE_FOLDER_TEXT.to_string())
@@ -496,7 +498,8 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+/// Server behaviour: only in builds with the `server` feature.
+#[cfg(all(test, feature = "server"))]
 mod gpui_tests {
     use super::super::app::{Import, NewRequest, QuickFix, RunActive, SaveFile};
     use super::super::palette::PaletteAction;
@@ -504,7 +507,6 @@ mod gpui_tests {
     use super::super::workspace::{Workspace, test_backend, wait_for_run};
     use super::{DUPLICATED, STATE_FOLDER_TEXT};
     use crate::model::backend::{Backend, SignInMethod, SyncFile, sync_files};
-    #[cfg(feature = "server")]
     use crate::model::backend::{CollectionKey, ShareUpdate};
     use crate::model::collection_meta::CollectionMeta;
     use crate::model::secrets::{MemorySecrets, SecretStore, service_name};
@@ -821,7 +823,6 @@ mod gpui_tests {
         assert_eq!(toasts(cx, &s).len(), 9);
     }
 
-    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn read_only_view_reads_like_the_board(cx: &mut TestAppContext) {
         let s = received(cx, false, None);
@@ -957,7 +958,6 @@ mod gpui_tests {
         assert!(!copied.contains(TOKEN), "{copied}");
     }
 
-    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn check_for_updates_replaces_files(cx: &mut TestAppContext) {
         let s = received(cx, false, None);
@@ -1164,7 +1164,6 @@ mod gpui_tests {
         );
     }
 
-    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn a_received_copy_never_pushes(cx: &mut TestAppContext) {
         let s = received(cx, true, None);
@@ -1289,7 +1288,6 @@ mod gpui_tests {
         assert!(s.spy.sent.lock().unwrap().is_empty());
     }
 
-    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn shared_variables_follow_the_owner_on_sync_and_check(cx: &mut TestAppContext) {
         use crate::model::backend::SharedVar;
