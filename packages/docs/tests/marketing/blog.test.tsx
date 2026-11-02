@@ -64,3 +64,30 @@ describe('header', () => {
     expect(screen.getByRole('link', { name: 'Blog' })).toHaveAttribute('href', '/blog');
   });
 });
+
+describe('studio preview post', () => {
+  const STUDIO_SLUG = 'curl-runner-studio-preview';
+
+  it('is the newest post', () => {
+    expect(getPosts()[0]?.slug).toBe(STUDIO_SLUG);
+  });
+
+  it('shows the studio screenshots and links to the download and the cask', async () => {
+    const out = await html(await postPage(STUDIO_SLUG));
+    for (const shot of [
+      'collection-run',
+      'editor-quick-fix',
+      'inspector',
+      'failed-request',
+      'environments',
+      'history',
+    ]) {
+      expect(out, shot).toMatch(new RegExp(`studio(/|%2F)${shot}\\.png`));
+    }
+    expect(out).toContain('href="/downloads"');
+    expect(out.replace(/<[^>]+>/g, '')).toContain(
+      'brew install --cask alexvcasillas/tap/curl-runner-studio',
+    );
+    expect(out).not.toContain('—');
+  });
+});
