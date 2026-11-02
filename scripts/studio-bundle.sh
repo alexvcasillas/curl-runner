@@ -7,15 +7,19 @@
 # Nothing is installed: the bundle stays in the target dir. Opening it once
 # registers it with LaunchServices, which then sends it the scheme's links.
 # `--server` builds with the server-backed UI (and the mock behind it); a
-# distributed build never passes it.
-# Usage: studio-bundle.sh [--release] [--server] [repo-root]
+# distributed build never passes it. `--universal` builds arm64 and x86_64 and
+# joins them with lipo. The icon comes from assets/AppIcon.icns
+# (scripts/studio-icon.sh renders it).
+# Usage: studio-bundle.sh [--release] [--universal] [--server] [repo-root]
 set -euo pipefail
 
 PROFILE=debug
 SERVER=
+UNIVERSAL=
 while [[ "${1:-}" == --* ]]; do
   case "$1" in
     --release) PROFILE=release ;;
+    --universal) UNIVERSAL=1 ;;
     --server) SERVER=1 ;;
     *)
       echo "error: unknown option $1" >&2
@@ -41,16 +45,32 @@ TARGET="${CARGO_TARGET_DIR:-$ROOT/target}"
 # Cargo reads a relative CARGO_TARGET_DIR from where it runs: here.
 [[ "$TARGET" == /* ]] || TARGET="$PWD/$TARGET"
 
+ICON="$ROOT/crates/curl-runner-studio/assets/AppIcon.icns"
+[[ -f "$ICON" ]] || {
+  echo "error: $ICON not found (run scripts/studio-icon.sh)" >&2
+  exit 1
+}
+
 cargo_flags=(--manifest-path "$ROOT/Cargo.toml" -p curl-runner-studio)
 [[ "$PROFILE" == release ]] && cargo_flags+=(--release)
 [[ -n "$SERVER" ]] && cargo_flags+=(--features server)
-cargo build "${cargo_flags[@]}"
 
-BIN="$TARGET/$PROFILE/curl-runner-studio"
 APP="$TARGET/studio/curl-runner studio.app"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
-cp "$BIN" "$APP/Contents/MacOS/curl-runner-studio"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+if [[ -n "$UNIVERSAL" ]]; then
+  archs=(aarch64-apple-darwin x86_64-apple-darwin)
+  bins=()
+  for arch in "${archs[@]}"; do
+    cargo build "${cargo_flags[@]}" --target "$arch"
+    bins+=("$TARGET/$arch/$PROFILE/curl-runner-studio")
+  done
+  lipo -create "${bins[@]}" -output "$APP/Contents/MacOS/curl-runner-studio"
+else
+  cargo build "${cargo_flags[@]}"
+  cp "$TARGET/$PROFILE/curl-runner-studio" "$APP/Contents/MacOS/curl-runner-studio"
+fi
+cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -65,6 +85,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <string>curl-runner studio</string>
   <key>CFBundleExecutable</key>
   <string>curl-runner-studio</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
