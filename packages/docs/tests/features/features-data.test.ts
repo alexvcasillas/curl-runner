@@ -20,6 +20,7 @@ const SIDEBAR_ORDER = [
   'yaml-wizard',
   'validate',
   'convert',
+  'postman-import',
   'env-files',
   'studio',
 ];
@@ -29,7 +30,7 @@ const BANNED_CLAIMS = /\d+x faster|up to \d+x|blazing|dramatically faster/i;
 describe('features data', () => {
   const features = getAllFeatures();
 
-  it('has all 20 features in sidebar order', () => {
+  it('has all 21 features in sidebar order', () => {
     expect(features.map((f) => f.slug)).toEqual(SIDEBAR_ORDER);
   });
 
@@ -68,7 +69,8 @@ describe('features data', () => {
     expect(retry.prev?.slug).toBe('response-validation');
     expect(retry.next?.slug).toBe('watch-mode');
     expect(getAdjacentFeatures('env-files').next?.slug).toBe('studio');
-    expect(getAdjacentFeatures('env-files').prev?.slug).toBe('convert');
+    expect(getAdjacentFeatures('env-files').prev?.slug).toBe('postman-import');
+    expect(getAdjacentFeatures('postman-import').prev?.slug).toBe('convert');
     expect(getAdjacentFeatures('studio').next).toBeNull();
   });
 
@@ -77,6 +79,7 @@ describe('features data', () => {
       ['convert', 'Convert curl to YAML (and back) — curl-runner', 'convert curl'],
       ['retry-mechanism', 'Retry failed curl requests with backoff — curl-runner', 'retry'],
       ['file-uploads', 'Upload files with multipart form data — curl-runner', 'upload files'],
+      ['postman-import', 'Import Postman collections to YAML — curl-runner', 'postman collection'],
     ] as const;
     for (const [slug, seoTitle, query] of cases) {
       const f = getFeatureBySlug(slug);

@@ -30,7 +30,7 @@ describe('sitemap', () => {
 
   it('lists every feature page', () => {
     const features = getAllFeatures();
-    expect(features).toHaveLength(20);
+    expect(features).toHaveLength(21);
     for (const feature of features) {
       expect(urls).toContain(`${BASE}/features/${feature.slug}`);
     }

@@ -1,4 +1,5 @@
 import {
+  postmanScreenshots,
   type Screenshot,
   STUDIO_CHANGELOG_HREF,
   STUDIO_VERSION,
@@ -38,6 +39,8 @@ export interface FeatureData {
   preview?: boolean;
   /** App screenshots, shown between the intro and the example. */
   screenshots?: Screenshot[];
+  /** With screenshots: the line above the example. Defaults to the studio's. */
+  exampleIntro?: string;
   /** Replaces the "Install curl-runner" button. */
   secondaryCta?: { label: string; href: string };
 }
@@ -953,7 +956,7 @@ request:
     seoTitle: 'Convert curl to YAML (and back)',
     headline: 'Paste a curl command, get a test.',
     description:
-      'Convert curl commands, or a whole shell script of them, to YAML and back. Flags curl-runner doesn’t recognise come back as warnings, not errors.',
+      'Convert curl commands, or a whole shell script, to YAML and back. Unknown flags come back as warnings, not errors. Postman collections convert too.',
     example: {
       filename: 'users.yaml',
       yaml: yaml(`
@@ -996,6 +999,65 @@ request:
       'Reproducing a request from browser dev tools',
     ],
     keywords: ['curl to YAML', 'convert curl', 'curl converter', 'shell script migration', 'curl'],
+  },
+  {
+    slug: 'postman-import',
+    title: 'Postman Import',
+    seoTitle: 'Import Postman collections to YAML',
+    headline: 'Bring your Postman collection, keep plain YAML.',
+    description:
+      'Turn a Postman collection into curl-runner YAML with one command or in the studio. You get a file per request and a .env. Secrets stay out of files.',
+    example: {
+      filename: 'customers/list-customers.yaml',
+      yaml: yaml(`
+# Imported from Postman: Example API
+# Lists customers, newest first.
+
+request:
+  name: List customers
+  method: GET
+  url: \${baseUrl}/v1/customers
+  headers:
+    X-Api-Key: \${apiKey}
+  params:
+    limit: "10"
+    # starting_after: cus_1
+`),
+    },
+    exampleIntro:
+      'Each request becomes a file like this one. The CLI, CI and the studio run it as it is.',
+    benefits: [
+      {
+        title: 'One file per request',
+        description:
+          'Each Postman folder becomes a folder and each request its own YAML file, so a change shows up as a small diff in a pull request.',
+      },
+      {
+        title: 'Optional fields stay optional',
+        description:
+          'A header, param or form field you turned off in Postman comes in commented out. Uncomment it to switch it on.',
+      },
+      {
+        title: 'Secrets stay out of files',
+        description:
+          'The CLI asks you to set secrets in .env.local, and the studio saves them to the macOS Keychain. Both list what still needs your attention.',
+      },
+    ],
+    goodFor: [
+      'Moving a team off Postman',
+      'Reviewing API changes in pull requests',
+      'Running a shared collection in CI',
+      'Regenerating YAML from a collection your build generates',
+    ],
+    keywords: [
+      'postman to yaml',
+      'import postman collection',
+      'convert postman collection',
+      'postman collection to curl',
+      'postman alternative',
+      'postman cli alternative',
+    ],
+    screenshots: postmanScreenshots(),
   },
   {
     slug: 'env-files',

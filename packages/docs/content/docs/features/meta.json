@@ -19,6 +19,7 @@
     "yaml-wizard",
     "validate",
     "convert",
+    "postman-import",
     "env-files",
     "studio"
   ]

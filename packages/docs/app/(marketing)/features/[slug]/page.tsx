@@ -189,8 +189,8 @@ export default async function FeaturePage({ params }: FeaturePageProps) {
                   Plain YAML underneath
                 </h2>
                 <p className="m-0 mb-6 max-w-160 text-base leading-[1.6] text-fg-secondary">
-                  The studio reads and writes the same request files the CLI runs, so a suite you
-                  build here runs unchanged in CI.
+                  {feature.exampleIntro ??
+                    'The studio reads and writes the same request files the CLI runs, so a suite you build here runs unchanged in CI.'}
                 </p>
                 <CodePane filename={feature.example.filename} copyText={feature.example.yaml}>
                   <Yaml source={feature.example.yaml} />

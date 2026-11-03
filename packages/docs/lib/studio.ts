@@ -1,12 +1,17 @@
 // curl-runner studio: a macOS desktop app, a signed and notarized dmg since 2.3.0. Pages
 // that show it point at /downloads and the Homebrew cask. Sync and sharing are coming soon.
 
+import { BREW_TRUST_COMMAND } from '@/lib/install-methods';
 import { SITE_URL } from '@/lib/site';
 import cliPackage from '../../cli/package.json';
 
 export const STUDIO_REPO_URL = 'https://github.com/alexvcasillas/curl-runner';
 export const STUDIO_SOURCE_URL = `${STUDIO_REPO_URL}/tree/main/crates/curl-runner-studio`;
-export const STUDIO_CASK_COMMAND = 'brew install --cask alexvcasillas/tap/curl-runner-studio';
+export const STUDIO_CASK_INSTALL = 'brew install --cask alexvcasillas/tap/curl-runner-studio';
+/** Trust the tap, then install the cask, one line to paste. */
+export const STUDIO_CASK_COMMAND = `${BREW_TRUST_COMMAND} && ${STUDIO_CASK_INSTALL}`;
+/** The same two steps, one per line, for terminal blocks. */
+export const STUDIO_CASK_STEPS: readonly string[] = [BREW_TRUST_COMMAND, STUDIO_CASK_INSTALL];
 export const STUDIO_DOWNLOAD_HREF = '/downloads';
 export const STUDIO_REQUIREMENTS = 'macOS 12 or later, Apple silicon and Intel';
 /** The studio ships with every CLI release and shares its version. */
@@ -90,6 +95,24 @@ const SCREENSHOTS = {
     description:
       'Run history stays on your machine. Pick a run to see what it fixed, what it broke and what got slower than the run before it.',
   },
+  'postman-import': {
+    src: '/studio/postman-import.png',
+    width: 2400,
+    height: 1500,
+    alt: 'The Import dialog on the Postman collection tab with example-api.postman_collection.json picked: 5 requests in 2 folders. Two items need attention, a file to pick for the document field and the secret apiKey to set. The preview lists the five request files in customers and documents.',
+    title: 'See every file before you import',
+    description:
+      'Pick a collection exported from Postman. The preview lists the request files you get and what needs your attention, before anything is written.',
+  },
+  'postman-import-summary': {
+    src: '/studio/postman-import-summary.png',
+    width: 2400,
+    height: 1500,
+    alt: 'The Import dialog after a Postman import: Imported 5 requests, and the variables are in .env. Needs your attention lists a file to pick for the document field, with an Open link, and the secret apiKey to set.',
+    title: 'Finish what the import left',
+    description:
+      'The summary lists what still needs you. Open goes straight to the request with a file to pick.',
+  },
 } as const satisfies Record<string, Screenshot>;
 
 export type StudioScreenshotName = keyof typeof SCREENSHOTS;
@@ -103,6 +126,16 @@ export const STUDIO_SCREENSHOT_NAMES: readonly StudioScreenshotName[] = [
   'environments',
   'history',
 ];
+
+/** The Postman import, in the order you see it. */
+export const POSTMAN_SCREENSHOT_NAMES: readonly StudioScreenshotName[] = [
+  'postman-import',
+  'postman-import-summary',
+];
+
+export function postmanScreenshots(): Screenshot[] {
+  return POSTMAN_SCREENSHOT_NAMES.map((name) => SCREENSHOTS[name]);
+}
 
 export function studioScreenshot(name: StudioScreenshotName): Screenshot {
   return SCREENSHOTS[name];

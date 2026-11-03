@@ -106,7 +106,7 @@ export default async function DownloadsPage() {
               </p>
             )}
             <p className="mt-5 mb-0 text-sm text-fg-tertiary">
-              Or install with Homebrew:{' '}
+              Or install with Homebrew. It asks you to trust the tap first:{' '}
               <code className="font-mono text-[#d4d4d4]">{STUDIO_CASK_COMMAND}</code>
             </p>
           </div>

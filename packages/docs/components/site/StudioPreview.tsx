@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { CopyButton } from '@/components/site/CopyButton';
 import {
   STUDIO_CASK_COMMAND,
+  STUDIO_CASK_STEPS,
   STUDIO_CHANGELOG_HREF,
   STUDIO_DOWNLOAD_HREF,
   STUDIO_REQUIREMENTS,
@@ -51,12 +52,14 @@ export function StudioPreview({ className = '' }: { className?: string }) {
         </div>
         <pre className="m-0 overflow-x-auto px-5 py-4 font-mono text-[13.5px] leading-[1.75] text-fg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand">
           <code className="font-mono">
-            <span className="block">
-              <span aria-hidden="true" className="text-fg-tertiary select-none">
-                ${' '}
+            {STUDIO_CASK_STEPS.map((step) => (
+              <span key={step} className="block">
+                <span aria-hidden="true" className="text-fg-tertiary select-none">
+                  ${' '}
+                </span>
+                {step}
               </span>
-              {STUDIO_CASK_COMMAND}
-            </span>
+            ))}
           </code>
         </pre>
       </div>

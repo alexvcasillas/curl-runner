@@ -7,9 +7,9 @@ describe('INSTALL_METHODS', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('uses the tap for Homebrew', () => {
+  it('trusts the tap, then installs from it, for Homebrew', () => {
     expect(INSTALL_METHODS.find((m) => m.id === 'brew')?.command).toBe(
-      'brew install alexvcasillas/tap/curl-runner',
+      'brew trust alexvcasillas/tap && brew install alexvcasillas/tap/curl-runner',
     );
   });
 

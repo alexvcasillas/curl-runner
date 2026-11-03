@@ -2,12 +2,14 @@
 title: curl-runner studio is here (preview)
 description: A native macOS app for the YAML request files you already run in CI. What it does, why I built it, what's coming next and how to install it.
 date: 2026-11-02
+updated: 2026-11-03
 author: Alex Casillas
 ---
 
-curl-runner studio is a macOS app that opens your curl-runner YAML files and runs them. It's out today as a preview, signed and notarized, for Apple silicon and Intel. You can [download it](/downloads) or install it with Homebrew:
+curl-runner studio is a macOS app that opens your curl-runner YAML files and runs them. It's out today as a preview, signed and notarized, for Apple silicon and Intel. You can [download it](/downloads) or install it with Homebrew. Trust the tap first, then install:
 
 ```bash title="Terminal"
+brew trust alexvcasillas/tap
 brew install --cask alexvcasillas/tap/curl-runner-studio
 ```
 
@@ -78,7 +80,7 @@ Here's what I'm working on next, roughly in this order:
 - **Postman and OpenAPI import.** The Import dialog already has the tabs, marked **Coming soon**.
 - **Self-hosting.** The curl-runner server is a small Rust service in a Docker image. It's already live at `api.curl-runner.com`, and that's what the walkthrough calls. When sync and sharing land, you'll be able to run the same image on your own infrastructure. The [self-hosting docs](/docs/self-hosting) cover what exists today.
 
-The studio is macOS only for now. Updates come through `brew upgrade --cask curl-runner-studio` or a new download from the [downloads page](/downloads).
+The studio is macOS only for now. Updates come through `brew upgrade --cask curl-runner-studio` or a new download from the [downloads page](/downloads). If Homebrew says the tap is untrusted, run `brew trust alexvcasillas/tap` once.
 
 ## Try it
 

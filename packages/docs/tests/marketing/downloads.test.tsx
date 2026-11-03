@@ -40,7 +40,9 @@ describe('downloads page', () => {
     const html = await render();
     expect(html).toContain('curl-runner-studio-2.3.0.dmg');
     expect(html).toMatch(/href="[^"]*curl-runner-studio-2\.3\.0\.dmg"/);
-    expect(html).toContain('brew install --cask alexvcasillas/tap/curl-runner-studio');
+    expect(html).toContain(
+      'brew trust alexvcasillas/tap &amp;&amp; brew install --cask alexvcasillas/tap/curl-runner-studio',
+    );
     expect(html).toContain('macOS 12');
     expect(html).toContain('31.7 MB');
   });
@@ -49,7 +51,9 @@ describe('downloads page', () => {
     getLatestRelease.mockResolvedValue(parseRelease(fixture));
     const html = await render();
     expect(html).not.toMatch(/\.dmg/);
-    expect(html).toContain('brew install --cask alexvcasillas/tap/curl-runner-studio');
+    expect(html).toContain(
+      'brew trust alexvcasillas/tap &amp;&amp; brew install --cask alexvcasillas/tap/curl-runner-studio',
+    );
     expect(html).toContain('Get the studio from GitHub Releases');
   });
 

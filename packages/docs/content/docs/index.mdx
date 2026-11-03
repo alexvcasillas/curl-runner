@@ -25,7 +25,8 @@ curl -fsSL https://www.curl-runner.com/install.sh | bash
 # Windows (PowerShell)
 irm https://www.curl-runner.com/install.ps1 | iex
 
-# Homebrew
+# Homebrew (trust the tap, then install)
+brew trust alexvcasillas/tap
 brew install alexvcasillas/tap/curl-runner
 
 # npm (works with bun and pnpm too)

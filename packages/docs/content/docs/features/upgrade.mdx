@@ -112,6 +112,8 @@ Upgrade complete!
 Run `curl-runner --version` to verify.
 ```
 
+If `brew upgrade` says the tap is untrusted, run `brew trust alexvcasillas/tap` once, then run `curl-runner upgrade` again.
+
 ## Manual Upgrade
 
 If the automatic upgrade does not work, run the command for your install method yourself.
@@ -123,7 +125,7 @@ curl -fsSL https://www.curl-runner.com/install.sh | bash
 # Standalone installs (Windows PowerShell)
 irm https://www.curl-runner.com/install.ps1 | iex
 
-# Homebrew
+# Homebrew (if it says the tap is untrusted, run: brew trust alexvcasillas/tap)
 brew upgrade curl-runner
 
 # cargo
