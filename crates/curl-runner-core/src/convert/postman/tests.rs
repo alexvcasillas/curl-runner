@@ -1142,3 +1142,24 @@ fn folders_with_empty_slugs_fall_back_to_folder() {
         ]
     );
 }
+
+#[test]
+fn refuses_hand_built_paths_outside_the_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let good = convert_postman(&fixture("sample.postman_collection.json")).unwrap();
+    for bad in ["../x.yaml", "/tmp/x.yaml", "a/../../x.yaml", "./x.yaml", ""] {
+        let mut imp = good.clone();
+        // The bad entry comes last: nothing before it may be written either.
+        imp.files.push(PostmanFile {
+            rel_path: bad.into(),
+            name: "x".into(),
+            yaml: "x".into(),
+        });
+        let err = write_postman(dir.path(), Path::new("in"), &imp, "x").unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput, "{bad:?}");
+        assert!(
+            std::fs::read_dir(dir.path()).unwrap().next().is_none(),
+            "{bad:?}"
+        );
+    }
+}

@@ -99,6 +99,16 @@ pub fn write_postman(
     secret_note: &str,
 ) -> io::Result<WriteOutcome> {
     let folder = safe_folder(folder)?;
+    // Checked before the first write, so a bad entry writes nothing.
+    if let Some(bad) = import.files.iter().find(|f| !plain_relative(&f.rel_path)) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "An imported file must stay inside the import folder: {}",
+                bad.rel_path.display()
+            ),
+        ));
+    }
     let mut out = WriteOutcome::default();
 
     for file in &import.files {
@@ -119,6 +129,12 @@ pub fn write_postman(
         };
     }
     Ok(out)
+}
+
+/// At least one component, and only `Normal` ones.
+fn plain_relative(path: &Path) -> bool {
+    path.components().next().is_some()
+        && path.components().all(|c| matches!(c, Component::Normal(_)))
 }
 
 /// `folder` with `.` dropped; an absolute path or `..` is refused.
