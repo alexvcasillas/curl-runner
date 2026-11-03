@@ -64,6 +64,10 @@
             {
               "listen": "prerequest",
               "script": { "type": "text/javascript", "exec": ["pm.variables.set('n', 1);"] }
+            },
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["", "  "] }
             }
           ],
           "request": { "method": "GET", "url": "{{baseUrl}}/scripted" },

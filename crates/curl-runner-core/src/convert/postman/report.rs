@@ -15,16 +15,44 @@ pub struct ImportReport {
 /// or folder's path joined with `/`; an empty `at` is the collection itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Attention {
-    PickFile { request: String, field: String },
-    SetSecret { var: String },
-    SetVariable { var: String },
-    Renamed { from: String, to: String },
-    Script { at: String },
-    UnsupportedAuth { at: String, kind: String },
-    UnsupportedBody { at: String, mode: String },
-    DynamicVar { at: String, name: String },
-    Examples { at: String, count: usize },
-    KeptEnv { var: String },
+    PickFile {
+        request: String,
+        field: String,
+    },
+    SetSecret {
+        var: String,
+    },
+    SetVariable {
+        var: String,
+    },
+    Renamed {
+        from: String,
+        to: String,
+    },
+    /// `listen` is Postman's event kind: `prerequest`, `test`, ….
+    Script {
+        at: String,
+        listen: String,
+    },
+    UnsupportedAuth {
+        at: String,
+        kind: String,
+    },
+    UnsupportedBody {
+        at: String,
+        mode: String,
+    },
+    DynamicVar {
+        at: String,
+        name: String,
+    },
+    Examples {
+        at: String,
+        count: usize,
+    },
+    KeptEnv {
+        var: String,
+    },
 }
 
 struct Place<'a>(&'a str);
@@ -48,7 +76,14 @@ impl fmt::Display for Attention {
             Attention::SetSecret { var } => write!(f, "Set the secret {var}"),
             Attention::SetVariable { var } => write!(f, "Set the variable {var}"),
             Attention::Renamed { from, to } => write!(f, "Renamed the variable {from} to {to}"),
-            Attention::Script { at } => write!(f, "Skipped a script in {}", Place(at)),
+            Attention::Script { at, listen } => {
+                let kind = match listen.as_str() {
+                    "prerequest" => "pre-request ",
+                    "test" => "test ",
+                    _ => "",
+                };
+                write!(f, "Skipped a {kind}script in {}", Place(at))
+            }
             Attention::UnsupportedAuth { at, kind } => {
                 write!(f, "Skipped {kind} auth in {}. Add it by hand.", Place(at))
             }

@@ -111,7 +111,7 @@ fn m_has(m: &Mapped, r: &MappedRequest, f: impl Fn(&Attention) -> bool) -> bool 
     m.report.attention.iter().any(|a| {
         let at = match a {
             Attention::PickFile { request, .. } => request,
-            Attention::Script { at }
+            Attention::Script { at, .. }
             | Attention::UnsupportedAuth { at, .. }
             | Attention::UnsupportedBody { at, .. }
             | Attention::DynamicVar { at, .. }
@@ -274,10 +274,20 @@ fn edge_report_lists_every_unsupported_part() {
 fn edge_report_points_at_the_request() {
     let m = mapped("edge.postman_collection.json");
     let scripted = req(&m, "Scripted");
-    assert!(m_has(&m, &scripted, |a| matches!(
-        a,
-        Attention::Script { .. }
-    )));
+    let scripts: Vec<_> = m
+        .report
+        .attention
+        .iter()
+        .filter(|a| matches!(a, Attention::Script { at, .. } if *at == scripted.path()))
+        .collect();
+    // The empty `test` event is not reported.
+    assert_eq!(
+        scripts,
+        [&Attention::Script {
+            at: "Requests/Scripted".into(),
+            listen: "prerequest".into()
+        }]
+    );
     assert!(m_has(&m, &scripted, |a| matches!(
         a,
         Attention::Examples { count: 1, .. }
@@ -438,8 +448,25 @@ fn attention_lines_read_plainly() {
         "Skipped 2 saved examples in A/B"
     );
     assert_eq!(
-        at(Attention::Script { at: String::new() }),
+        at(Attention::Script {
+            at: String::new(),
+            listen: "other".into()
+        }),
         "Skipped a script in the collection"
+    );
+    assert_eq!(
+        at(Attention::Script {
+            at: "Documents/Upload".into(),
+            listen: "prerequest".into()
+        }),
+        "Skipped a pre-request script in Documents/Upload"
+    );
+    assert_eq!(
+        at(Attention::Script {
+            at: "A".into(),
+            listen: "test".into()
+        }),
+        "Skipped a test script in A"
     );
 }
 
@@ -449,4 +476,80 @@ fn imported_var_debug_hides_the_value() {
     assert!(!format!("{:?} {:?}", m.variables, m.report).contains("test-key-123"));
     let e = mapped("edge.postman_collection.json");
     assert!(!format!("{:?} {:?}", e.variables, e.report).contains("abc"));
+}
+
+#[test]
+fn event_exec_is_a_string_or_lines() {
+    let json = r#"{"info":{"name":"e","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+      "event":[{"listen":"test","script":{"exec":"pm.test('ok');"}}],
+      "item":[{"name":"F","event":[{"listen":"prerequest","script":{"exec":" "}},{"listen":"test"}],
+        "item":[{"name":"R","request":"https://api.example.com/r"}]}]}"#;
+    let c = parse_collection(json).unwrap();
+    assert!(c.event[0].has_code());
+    let m = map_collection(&c);
+    assert_eq!(
+        m.report.attention,
+        [Attention::Script {
+            at: String::new(),
+            listen: "test".into()
+        }]
+    );
+}
+
+#[test]
+fn secret_form_fields_are_scrubbed() {
+    let m = mapped("sample.postman_collection.json");
+    let r = req(&m, "Convert document");
+    let MappedBody::Form(f) = &r.body else {
+        panic!()
+    };
+    let pw = f.iter().find(|x| x.key == "password").unwrap();
+    assert!(pw.disabled);
+    assert_eq!(text(pw), "${PASSWORD}");
+    let var = m.variables.iter().find(|v| v.name == "PASSWORD").unwrap();
+    assert!(var.secret && var.value == "secret");
+
+    let json = r#"{"info":{"name":"u","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+      "item":[{"name":"T","request":{"method":"POST","url":"https://api.example.com/t",
+        "body":{"mode":"urlencoded","urlencoded":[
+          {"key":"client_secret","value":"cs1"},{"key":"Token","value":"t1"},
+          {"key":"password","value":"p1","disabled":true}]}}}]}"#;
+    let u = map_collection(&parse_collection(json).unwrap());
+    let r = &u.requests[0];
+    assert!(matches!(&r.body, MappedBody::Text(t) if t == "client_secret=cs1&Token=${TOKEN}"));
+    assert!(
+        r.comments
+            .iter()
+            .any(|c| c == "Disabled form field: password=${PASSWORD}")
+    );
+    assert!(u.variables.iter().any(|v| v.secret && v.value == "p1"));
+
+    // No literal secret anywhere in either fixture's mapped requests.
+    for (file, secrets) in [
+        (
+            "sample.postman_collection.json",
+            &["test-key-123", "secret"][..],
+        ),
+        ("edge.postman_collection.json", &["abc"][..]),
+    ] {
+        for r in mapped(file).requests {
+            let fields = r.headers.iter().chain(&r.params).chain(match &r.body {
+                MappedBody::Form(f) => f.as_slice(),
+                _ => &[],
+            });
+            for f in fields {
+                for s in secrets {
+                    assert!(
+                        !matches!(&f.value, FieldValue::Text(v) if v == s || v.contains(&format!(" {s}"))),
+                        "{}",
+                        r.name
+                    );
+                    assert_ne!(text(f), *s);
+                }
+            }
+            for s in secrets {
+                assert!(!format!("{:?}", r.comments).contains(s));
+            }
+        }
+    }
 }

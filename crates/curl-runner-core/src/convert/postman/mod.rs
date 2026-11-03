@@ -10,8 +10,8 @@ pub use map::{
 };
 pub use model::Collection;
 pub use model::{
-    Auth, Body, Description, Event, Folder, Info, Item, KeyValue, Request, RequestItem, Url,
-    Variable,
+    Auth, Body, Description, Event, Folder, Info, Item, KeyValue, Request, RequestItem, Script,
+    Url, Variable,
 };
 pub use report::{Attention, ImportReport};
 

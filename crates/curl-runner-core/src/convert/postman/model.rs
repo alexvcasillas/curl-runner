@@ -211,4 +211,36 @@ impl fmt::Debug for Variable {
 #[serde(default)]
 pub struct Event {
     pub listen: String,
+    pub script: Option<Script>,
+}
+
+impl Event {
+    /// The script has something besides whitespace.
+    pub fn has_code(&self) -> bool {
+        self.script
+            .as_ref()
+            .is_some_and(|s| s.exec.iter().any(|l| !l.trim().is_empty()))
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Script {
+    /// One string or a list of lines in the JSON.
+    #[serde(deserialize_with = "de_lines")]
+    pub exec: Vec<String>,
+}
+
+fn de_lines<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    Ok(match Option::<Value>::deserialize(d)? {
+        Some(Value::String(s)) => vec![s],
+        Some(Value::Array(a)) => a
+            .into_iter()
+            .filter_map(|v| match v {
+                Value::String(s) => Some(s),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    })
 }

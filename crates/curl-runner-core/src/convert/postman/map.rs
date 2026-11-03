@@ -1,7 +1,9 @@
 //! Postman requests turned into an ordered, format-neutral model. The
 //! emitter writes it as YAML; this module decides what each part becomes.
 
-use super::model::{Auth, Body, Collection, Description, Folder, Item, KeyValue, RequestItem, Url};
+use super::model::{
+    Auth, Body, Collection, Description, Event, Folder, Item, KeyValue, RequestItem, Url,
+};
 use super::report::{Attention, ImportReport};
 use crate::convert::{SECRET_PARAMS, header_var, param_var, secret_header};
 use serde_json::Value;
@@ -148,9 +150,7 @@ pub fn map_collection(c: &Collection) -> Mapped {
             secret: v.secret,
         });
     }
-    if !c.event.is_empty() {
-        m.attention.push(Attention::Script { at: String::new() });
-    }
+    m.scripts(&c.event, String::new());
     m.walk(&c.item, &mut Vec::new());
     let description = c
         .info
@@ -165,6 +165,7 @@ pub fn map_collection(c: &Collection) -> Mapped {
 #[derive(Clone, Copy)]
 enum Kind {
     Header,
+    /// Query params and form text fields.
     Param,
 }
 
@@ -185,16 +186,24 @@ struct Mapper<'c> {
 }
 
 impl<'c> Mapper<'c> {
+    /// One `Script` per event that has code.
+    fn scripts(&mut self, events: &[Event], at: String) {
+        for e in events.iter().filter(|e| e.has_code()) {
+            self.attention.push(Attention::Script {
+                at: at.clone(),
+                listen: e.listen.clone(),
+            });
+        }
+    }
+
     fn walk(&mut self, items: &'c [Item], stack: &mut Vec<&'c Folder>) {
         for item in items {
             match item {
                 Item::Folder(f) => {
                     self.folders += 1;
                     stack.push(f);
-                    if !f.event.is_empty() {
-                        let at = stack.iter().map(|f| f.name.as_str()).collect::<Vec<_>>();
-                        self.attention.push(Attention::Script { at: at.join("/") });
-                    }
+                    let at = stack.iter().map(|f| f.name.as_str()).collect::<Vec<_>>();
+                    self.scripts(&f.event, at.join("/"));
                     self.walk(&f.item, stack);
                     stack.pop();
                 }
@@ -226,11 +235,7 @@ impl<'c> Mapper<'c> {
         };
         self.at = out.path();
         self.req_refs.clear();
-        if !item.event.is_empty() {
-            self.attention.push(Attention::Script {
-                at: self.at.clone(),
-            });
-        }
+        self.scripts(&item.event, self.at.clone());
         if !item.response.is_empty() {
             self.attention.push(Attention::Examples {
                 at: self.at.clone(),
@@ -464,7 +469,7 @@ impl<'c> Mapper<'c> {
                 let mut parts = Vec::new();
                 for kv in &b.urlencoded {
                     let key = self.subst(&kv.key);
-                    let value = self.subst(kv.value.as_deref().unwrap_or(""));
+                    let value = self.value(&kv.key, kv.value.as_deref().unwrap_or(""), Kind::Param);
                     if kv.disabled {
                         comments.push(format!("Disabled form field: {key}={value}"));
                     } else {
@@ -502,7 +507,11 @@ impl<'c> Mapper<'c> {
                             placeholder: src.is_none(),
                         }
                     } else {
-                        FieldValue::Text(self.subst(kv.value.as_deref().unwrap_or("")))
+                        FieldValue::Text(self.value(
+                            &kv.key,
+                            kv.value.as_deref().unwrap_or(""),
+                            Kind::Param,
+                        ))
                     };
                     fields.push(Field {
                         key,
@@ -566,34 +575,40 @@ impl<'c> Mapper<'c> {
         description: Option<&Description>,
         kind: Kind,
     ) -> Field {
-        let secret = match kind {
-            Kind::Header => secret_header(key),
-            Kind::Param => SECRET_PARAMS.iter().any(|p| p.eq_ignore_ascii_case(key)),
-        };
-        let value = if !secret || value.is_empty() {
-            self.subst(value)
-        } else if value.contains("{{") {
-            self.credential("", value)
-        } else {
-            match kind {
-                Kind::Param => self.secret_literal(&param_var(key), value),
-                Kind::Header if key.eq_ignore_ascii_case("authorization") => {
-                    // Keep the scheme: `Bearer abc` → `Bearer ${API_TOKEN}`.
-                    match value.split_once(' ') {
-                        Some((scheme, cred)) => {
-                            format!("{scheme} {}", self.secret_literal("API_TOKEN", cred.trim()))
-                        }
-                        None => self.secret_literal("API_TOKEN", value),
-                    }
-                }
-                Kind::Header => self.secret_literal(&header_var(key), value),
-            }
-        };
+        let value = self.value(key, value, kind);
         Field {
             key: self.subst(key),
             value: FieldValue::Text(value),
             disabled,
             note: note(description),
+        }
+    }
+
+    /// `value` with its variables replaced, or a `${VAR}` holding it when
+    /// `key` names a secret.
+    fn value(&mut self, key: &str, value: &str, kind: Kind) -> String {
+        let secret = match kind {
+            Kind::Header => secret_header(key),
+            Kind::Param => SECRET_PARAMS.iter().any(|p| p.eq_ignore_ascii_case(key)),
+        };
+        if !secret || value.is_empty() {
+            return self.subst(value);
+        }
+        if value.contains("{{") {
+            return self.credential("", value);
+        }
+        match kind {
+            Kind::Param => self.secret_literal(&param_var(key), value),
+            Kind::Header if key.eq_ignore_ascii_case("authorization") => {
+                // Keep the scheme: `Bearer abc` → `Bearer ${API_TOKEN}`.
+                match value.split_once(' ') {
+                    Some((scheme, cred)) => {
+                        format!("{scheme} {}", self.secret_literal("API_TOKEN", cred.trim()))
+                    }
+                    None => self.secret_literal("API_TOKEN", value),
+                }
+            }
+            Kind::Header => self.secret_literal(&header_var(key), value),
         }
     }
 
