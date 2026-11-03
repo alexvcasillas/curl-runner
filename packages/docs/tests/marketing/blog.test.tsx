@@ -68,8 +68,8 @@ describe('header', () => {
 describe('studio preview post', () => {
   const STUDIO_SLUG = 'curl-runner-studio-preview';
 
-  it('is the newest post', () => {
-    expect(getPosts()[0]?.slug).toBe(STUDIO_SLUG);
+  it('is listed', () => {
+    expect(getPosts().map((p) => p.slug)).toContain(STUDIO_SLUG);
   });
 
   it('shows the studio screenshots and links to the download and the cask', async () => {
@@ -88,6 +88,28 @@ describe('studio preview post', () => {
     const text = out.replace(/<[^>]+>/g, '');
     expect(text).toContain('brew trust alexvcasillas/tap');
     expect(text).toContain('brew install --cask alexvcasillas/tap/curl-runner-studio');
+    expect(out).not.toContain('—');
+  });
+});
+
+describe('2.4 Postman import post', () => {
+  const SLUG = 'curl-runner-2-4-postman-import';
+
+  it('is the newest post', () => {
+    expect(getPosts()[0]?.slug).toBe(SLUG);
+  });
+
+  it('shows the Postman screenshots and links to the docs, downloads and changelog', async () => {
+    const out = await html(await postPage(SLUG));
+    for (const shot of ['postman-import', 'postman-import-summary']) {
+      expect(out, shot).toMatch(new RegExp(`studio(/|%2F)${shot}\\.png`));
+    }
+    expect(out).toContain('href="/docs/features/postman-import"');
+    expect(out).toContain('href="/downloads"');
+    expect(out).toContain('href="/changelog#2.4.0"');
+    const text = out.replace(/<[^>]+>/g, '');
+    expect(text).toContain('curl-runner convert postman');
+    expect(text).toContain('brew trust alexvcasillas/tap');
     expect(out).not.toContain('—');
   });
 });
