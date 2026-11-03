@@ -97,13 +97,14 @@ example-api/
 - JSON, raw, GraphQL, form, and urlencoded bodies. File fields in a form come in as a placeholder you point at a real file.
 - Basic, bearer, and API key auth. Collection and folder auth carries down to each request.
 - Collection variables, which become `${name}` and land in `.env`.
+- The Postman dynamic variables `{{$guid}}` and `{{$randomUUID}}`, which become `${UUID}`, and `{{$randomInt}}`, which becomes `${RANDOM:0-1000}`.
 - Request and folder descriptions, which become comments.
 
 Optional fields that are turned off in Postman come in commented out, so you can switch them on.
 
 ### The report
 
-The command prints what it couldn't finish for you under `Needs your attention:`. It exits with `0` anyway. It exits with `1` only if the file can't be read or isn't a v2.0 or v2.1 collection.
+The command prints what it couldn't finish for you under `Needs your attention:`. It exits with `0` anyway. It exits with `1` only if the file can't be read, isn't a v2.0 or v2.1 collection, or the files can't be written.
 
 Secret values never land in a file. A secret variable is listed in `.env` as a commented name. Set its value in `.env.local`, which you keep out of git.
 
@@ -122,7 +123,7 @@ curl-runner customers/
 - Auth types other than the three above. Add them by hand.
 - Any other body mode, such as a binary file.
 - Saved examples.
-- Postman dynamic variables such as `{{$guid}}`. They stay as written.
+- Other Postman dynamic variables, such as `{{$randomEmail}}`. They stay as written. `{{$timestamp}}` stays too: it counts seconds, and curl-runner's `${TIMESTAMP}` counts milliseconds.
 
 Each one shows up in the report with the request it came from.
 
