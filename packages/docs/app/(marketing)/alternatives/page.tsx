@@ -6,7 +6,7 @@ import { COMPARISON_CARDS, COMPARISON_CHECKED, COMPARISON_ROWS } from '@/lib/alt
 import { pageMetadata } from '@/lib/site';
 
 const DESCRIPTION =
-  'How curl-runner compares with Postman, Insomnia, curl and HTTPie, including when each of them is the better choice.';
+  'How curl-runner, a CLI with a macOS app in preview, compares with Postman, Insomnia, curl and HTTPie, including when each is the better choice.';
 
 export const metadata: Metadata = pageMetadata({
   title: 'Alternatives: Postman, Insomnia, curl, HTTPie',
@@ -28,9 +28,9 @@ export default function AlternativesPage() {
             The right tool depends on the job.
           </h1>
           <p className="mt-6 mb-0 max-w-2xl text-[19px] leading-[1.6] text-fg-secondary">
-            curl-runner is built for API suites that live in your repo and run in CI. Here is how it
-            compares with the tools you might already use, including when they are the better
-            choice.
+            curl-runner is built for API suites that live in your repo and run in CI. A macOS app,
+            in preview, opens the same files to write and debug them. Here is how it compares with
+            the tools you might already use, including when they are the better choice.
           </p>
         </section>
 
