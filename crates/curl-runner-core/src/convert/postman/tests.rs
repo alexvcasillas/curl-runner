@@ -1256,3 +1256,27 @@ fn variables_renamed_to_one_name_report_the_dropped_one() {
         "Skipped the variable a_b: another variable is already named a_b"
     );
 }
+
+#[test]
+fn a_file_field_with_several_files_reports_the_rest() {
+    let json = collection(
+        r#"[{"name":"Upload","request":{"method":"POST","url":"https://api.example.com/u",
+          "body":{"mode":"formdata","formdata":[{"key":"docs","type":"file","src":["./a.pdf","./b.pdf","./c.pdf"]}]}}}]"#,
+    );
+    let m = map_collection(&parse_collection(&json).unwrap());
+    let r = &m.requests[0];
+    let MappedBody::Form(fields) = &r.body else {
+        panic!("{:?}", r.body)
+    };
+    assert_eq!(text(&fields[0]), "./a.pdf");
+    let extra = Attention::ExtraFiles {
+        request: "Upload".into(),
+        field: "docs".into(),
+        count: 3,
+    };
+    assert!(m.report.attention.contains(&extra), "{:?}", m.report);
+    assert_eq!(
+        extra.to_string(),
+        "Kept the first of 3 files for \"docs\" in Upload. Add the others by hand."
+    );
+}

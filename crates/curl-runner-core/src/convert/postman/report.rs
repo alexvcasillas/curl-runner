@@ -19,6 +19,12 @@ pub enum Attention {
         request: String,
         field: String,
     },
+    /// A file field that held `count` files; only the first was kept.
+    ExtraFiles {
+        request: String,
+        field: String,
+        count: usize,
+    },
     SetSecret {
         var: String,
     },
@@ -78,6 +84,15 @@ impl fmt::Display for Attention {
             Attention::PickFile { request, field } => {
                 write!(f, "Pick a file for \"{field}\" in {}", Place(request))
             }
+            Attention::ExtraFiles {
+                request,
+                field,
+                count,
+            } => write!(
+                f,
+                "Kept the first of {count} files for \"{field}\" in {}. Add the others by hand.",
+                Place(request)
+            ),
             Attention::SetSecret { var } => write!(f, "Set the secret {var}"),
             Attention::SetVariable { var } => write!(f, "Set the variable {var}"),
             Attention::Renamed { from, to } => write!(f, "Renamed the variable {from} to {to}"),

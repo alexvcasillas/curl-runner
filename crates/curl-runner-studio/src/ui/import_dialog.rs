@@ -1684,6 +1684,7 @@ fn file_name(path: &Path) -> String {
 fn attention_row(ix: usize, a: &Attention) -> Stateful<Div> {
     let (icon, tone) = match a {
         Attention::PickFile { .. }
+        | Attention::ExtraFiles { .. }
         | Attention::SetSecret { .. }
         | Attention::SetVariable { .. }
         | Attention::UnsupportedAuth { .. } => (icons::WARNING, "warning"),

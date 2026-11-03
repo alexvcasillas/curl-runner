@@ -494,12 +494,22 @@ impl<'c> Mapper<'c> {
                 for kv in &b.formdata {
                     let key = self.subst(&kv.key);
                     let value = if kv.kind.as_deref() == Some("file") {
-                        let src = match &kv.src {
-                            Some(Value::String(s)) => Some(s.as_str()),
-                            Some(Value::Array(a)) => a.iter().find_map(Value::as_str),
-                            _ => None,
+                        let files: Vec<&str> = match &kv.src {
+                            Some(Value::String(s)) => vec![s.as_str()],
+                            Some(Value::Array(a)) => a.iter().filter_map(Value::as_str).collect(),
+                            _ => Vec::new(),
                         }
-                        .filter(|s| !s.is_empty());
+                        .into_iter()
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                        if files.len() > 1 {
+                            self.attention.push(Attention::ExtraFiles {
+                                request: self.at.clone(),
+                                field: key.clone(),
+                                count: files.len(),
+                            });
+                        }
+                        let src = files.first().copied();
                         if src.is_none() && !kv.disabled {
                             self.attention.push(Attention::PickFile {
                                 request: self.at.clone(),
