@@ -1312,7 +1312,10 @@ fn a_write_error_names_the_file() {
     let msg = err.to_string();
     let want = format!(
         "Couldn't write {}",
-        dir.path().join("customers/create-customer.yaml").display()
+        dir.path()
+            .join("customers")
+            .join("create-customer.yaml")
+            .display()
     );
     assert!(msg.starts_with(&want), "{msg}");
 }

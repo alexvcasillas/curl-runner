@@ -121,10 +121,14 @@ fn a_write_error_names_the_real_cause() {
     let out = convert(work.path(), &["c.json", "-o", "out"]);
     let err = stderr(&out);
     assert_eq!(out.status.code(), Some(1), "{err}");
-    assert!(
-        err.contains("Couldn't write out/customers/create-customer.yaml: "),
-        "{err}"
+    let want = format!(
+        "Couldn't write {}: ",
+        Path::new("out")
+            .join("customers")
+            .join("create-customer.yaml")
+            .display()
     );
+    assert!(err.contains(&want), "{err}");
     assert!(!err.contains("EISDIR"), "{err}");
 }
 
