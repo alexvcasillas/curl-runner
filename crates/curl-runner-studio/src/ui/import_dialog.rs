@@ -150,6 +150,8 @@ struct Written {
     first: Option<PathBuf>,
     /// The secrets of the files written.
     secrets: Vec<Extracted>,
+    /// More names to mark secret, whose values aren't in `secrets`.
+    secret_names: Vec<String>,
     /// Why the rest wasn't written.
     error: Option<String>,
     /// The commands written (by index), when only some were.
@@ -421,6 +423,11 @@ impl ImportDialog {
     /// When only some were written, those are followed up on (tree,
     /// secrets) and the dialog stays open on the error.
     pub(super) fn import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // On the Postman summary, ⌘↵ is Done.
+        if self.tab == ImportTab::Postman && self.postman_done.is_some() {
+            window.close_dialog(cx);
+            return;
+        }
         let written = match self.write(window, cx) {
             Ok(w) => w,
             Err(e) => {
@@ -453,6 +460,7 @@ impl ImportDialog {
                 opened: opened && wrote_any,
                 first: written.first,
                 secrets: written.secrets,
+                secret_names: written.secret_names,
                 save_secrets: self.save_secrets,
             };
             self.ws
@@ -599,6 +607,7 @@ impl ImportDialog {
                     root: root.clone(),
                     first: None,
                     secrets: Vec::new(),
+                    secret_names: Vec::new(),
                     error: None,
                     done: Vec::new(),
                 };
@@ -637,6 +646,7 @@ impl ImportDialog {
                     root,
                     first: (copied > 0).then(|| plan[0].to.clone()),
                     secrets: Vec::new(),
+                    secret_names: Vec::new(),
                     error: error.map(|e| format!("Couldn't copy {e}")),
                     done: Vec::new(),
                 })
@@ -675,18 +685,19 @@ impl ImportDialog {
                         });
                     }
                 }
-                let outcome = match write_postman(
-                    &root,
-                    &folder,
-                    import,
-                    "the studio keeps it in your Keychain",
-                ) {
+                let note = if self.save_secrets {
+                    "the studio keeps it in your Keychain"
+                } else {
+                    "set it in the studio's Environments"
+                };
+                let outcome = match write_postman(&root, &folder, import, note) {
                     Ok(o) => o,
                     Err(e) => {
                         return Ok(Written {
                             root,
                             first: None,
                             secrets: Vec::new(),
+                            secret_names: Vec::new(),
                             error: Some(format!("Couldn't import the collection: {e}")),
                             done: Vec::new(),
                         });
@@ -720,6 +731,13 @@ impl ImportDialog {
                     Attention::SetSecret { .. } => 1,
                     _ => 2,
                 });
+                // Every secret, set or not, so the studio masks it.
+                let secret_names = import
+                    .variables
+                    .iter()
+                    .filter(|v| v.secret)
+                    .map(|v| v.name.clone())
+                    .collect();
                 let saved = if self.save_secrets { secrets.len() } else { 0 };
                 self.postman_done = Some(PostmanDone {
                     written: outcome.written.len(),
@@ -732,6 +750,7 @@ impl ImportDialog {
                     root,
                     first: outcome.written.first().cloned(),
                     secrets,
+                    secret_names,
                     error: None,
                     done: Vec::new(),
                 })
@@ -1913,7 +1932,8 @@ impl Workspace {
 
     /// After an import: the tree shows the new files and the first opens;
     /// a new collection (`opened`) is opened and remembered first. The
-    /// extracted secrets are marked secret in the collection and, when
+    /// extracted secrets and `secret_names` are marked secret in the
+    /// collection and the extracted ones, when
     /// asked, saved to the Keychain for the picked environment; their
     /// values go nowhere else.
     fn imported(&mut self, imported: Imported, window: &mut Window, cx: &mut Context<Self>) {
@@ -1922,6 +1942,7 @@ impl Workspace {
             opened,
             first,
             secrets,
+            secret_names,
             save_secrets,
         } = imported;
         if opened {
@@ -1932,14 +1953,14 @@ impl Workspace {
         } else if let Some(c) = &mut self.state.collection {
             c.refresh();
         }
-        if !secrets.is_empty()
+        if !(secrets.is_empty() && secret_names.is_empty())
             && let Some(c) = &self.state.collection
         {
             let service = self.env_ctx(c, cx).service();
             // The shared notes; the workspace saves them once.
             edit_notes(&self.notes, cx, |meta| {
-                for e in &secrets {
-                    meta.set_secret(&e.var, true);
+                for name in secrets.iter().map(|e| &e.var).chain(&secret_names) {
+                    meta.set_secret(name, true);
                 }
             });
             if save_secrets {
@@ -2032,6 +2053,8 @@ struct Imported {
     first: Option<PathBuf>,
     /// The secret values taken out of the files.
     secrets: Vec<Extracted>,
+    /// More names to mark secret, whose values aren't in `secrets`.
+    secret_names: Vec<String>,
     save_secrets: bool,
 }
 
@@ -2536,12 +2559,19 @@ mod tests {
 
     /// Imports the sample with the Keychain box `save`, after `before` ran
     /// on the Keychain; returns the dialog's summary lines, what the
-    /// Keychain holds for apiKey and PASSWORD, and the names marked secret.
+    /// Keychain holds for apiKey and PASSWORD, the names marked secret and
+    /// the `.env` written.
     fn import_postman(
         cx: &mut TestAppContext,
         save: bool,
         before: impl FnOnce(&dyn crate::model::secrets::SecretStore, &str),
-    ) -> (Vec<String>, Option<String>, Option<String>, Vec<String>) {
+    ) -> (
+        Vec<String>,
+        Option<String>,
+        Option<String>,
+        Vec<String>,
+        String,
+    ) {
         let dir = collection();
         let (_src, file) = postman_file(SAMPLE);
         let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
@@ -2578,12 +2608,13 @@ mod tests {
             secrets.get(&service, "apiKey"),
             secrets.get(&service, "PASSWORD"),
             marked,
+            std::fs::read_to_string(dir.path().join(".env")).unwrap(),
         )
     }
 
     #[gpui_kit::test]
     fn postman_secrets_go_to_the_keychain(cx: &mut TestAppContext) {
-        let (lines, api_key, password, marked) = import_postman(cx, true, |_, _| {});
+        let (lines, api_key, password, marked, env) = import_postman(cx, true, |_, _| {});
         assert_eq!(api_key.as_deref(), Some("test-key-123"));
         assert_eq!(password.as_deref(), Some("secret"));
         assert!(marked.iter().any(|n| n == "apiKey"), "{marked:?}");
@@ -2593,11 +2624,15 @@ mod tests {
             !lines.iter().any(|l| l.starts_with("Set the secret")),
             "{lines:?}"
         );
+        assert!(
+            env.contains("# apiKey is a secret: the studio keeps it in your Keychain"),
+            "{env}"
+        );
     }
 
     #[gpui_kit::test]
     fn unchecked_postman_secrets_leave_the_keychain_alone(cx: &mut TestAppContext) {
-        let (lines, api_key, password, marked) = import_postman(cx, false, |_, _| {});
+        let (lines, api_key, password, marked, env) = import_postman(cx, false, |_, _| {});
         assert_eq!(api_key, None);
         assert_eq!(password, None);
         assert!(marked.iter().any(|n| n == "apiKey"), "{marked:?}");
@@ -2605,15 +2640,23 @@ mod tests {
             let want = format!("Set the secret {var}");
             assert!(lines.contains(&want), "{lines:?}");
         }
+        // Not in the Keychain: the note says where to set it.
+        assert!(
+            env.contains("# apiKey is a secret: set it in the studio's Environments"),
+            "{env}"
+        );
+        assert!(!env.contains("Keychain"), "{env}");
     }
 
     #[gpui_kit::test]
     fn a_postman_secret_never_overwrites_the_keychain(cx: &mut TestAppContext) {
-        let (lines, api_key, password, _) = import_postman(cx, true, |secrets, service| {
+        let (lines, api_key, password, marked, _) = import_postman(cx, true, |secrets, service| {
             secrets.set(service, "apiKey", "key_already_there").unwrap();
         });
         assert_eq!(api_key.as_deref(), Some("key_already_there"));
         assert_eq!(password.as_deref(), Some("secret"));
+        // Left for the user to set, and still marked secret.
+        assert!(marked.iter().any(|n| n == "apiKey"), "{marked:?}");
         assert!(
             lines.contains(&"Set the secret apiKey".to_string()),
             "{lines:?}"
@@ -2645,5 +2688,96 @@ mod tests {
         dialog.read_with(cx, |d, _| assert!(d.error.is_some()));
         assert_eq!(all_text(dir.path()), before);
         cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
+    }
+
+    const EMPTY_SECRET: &str = r#"{"info":{"name":"Empty secret","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+      "variable":[{"key":"apiToken","value":"","secret":true}],
+      "item":[{"name":"Ping","request":{"method":"GET","url":"https://api.example.com/ping",
+        "header":[{"key":"X-Token","value":"{{apiToken}}"}]}}]}"#;
+
+    #[gpui_kit::test]
+    fn an_empty_postman_secret_is_still_marked_secret(cx: &mut TestAppContext) {
+        let dir = collection();
+        let (_src, file) = postman_file(EMPTY_SECRET);
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
+        cx.update(|window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.dev_fill(&file.to_string_lossy(), None, window, cx);
+                d.save_secrets = true;
+            })
+        });
+        cx.update(|window, cx| window.render_frame(cx));
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        cx.run_until_parked();
+        assert!(dir.path().join("ping.yaml").is_file());
+        ws.read_with(cx, |ws, cx| {
+            let c = ws.state.collection.as_ref().unwrap();
+            let service = ws.env_ctx(c, cx).service();
+            let marked = &ws.meta(cx).secret_names;
+            assert!(marked.iter().any(|n| n == "apiToken"), "{marked:?}");
+            assert_eq!(ws.secrets.get(&service, "apiToken"), None);
+        });
+    }
+
+    #[gpui_kit::test]
+    fn import_again_on_the_postman_summary_closes_the_dialog(cx: &mut TestAppContext) {
+        let dir = collection();
+        let (_src, file) = postman_file(SAMPLE);
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
+        cx.update(|window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.dev_fill(&file.to_string_lossy(), None, window, cx)
+            })
+        });
+        cx.update(|window, cx| window.render_frame(cx));
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        cx.run_until_parked();
+        cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
+        // ⌘↵ on the summary is Done.
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        cx.run_until_parked();
+        dialog.read_with(cx, |d, _| assert!(d.error.is_none(), "{:?}", d.error));
+        cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
+    }
+
+    #[gpui_kit::test]
+    fn postman_without_a_collection_starts_one(cx: &mut TestAppContext) {
+        let state = tempfile::tempdir().unwrap();
+        let store = StateStore::at(state.path());
+        let (_src, file) = postman_file(SAMPLE);
+        let (window, ws) = open(cx, None, store.clone());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
+        let target = tempfile::tempdir().unwrap();
+        cx.update(|window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.set_target(Some(target.path().to_path_buf()), window, cx);
+                d.dev_fill(&file.to_string_lossy(), None, window, cx);
+            })
+        });
+        cx.update(|window, cx| window.render_frame(cx));
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        cx.run_until_parked();
+        assert!(
+            target
+                .path()
+                .join("customers/create-customer.yaml")
+                .is_file()
+        );
+        assert!(target.path().join(".env").is_file());
+        ws.read_with(cx, |ws, _| {
+            assert_eq!(ws.state.collection.as_ref().unwrap().root, target.path());
+        });
+        assert_eq!(store.recent()[0].path, target.path());
+        // The summary stays up.
+        cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
+        dialog.read_with(cx, |d, _| {
+            assert!(d.error.is_none(), "{:?}", d.error);
+            assert_eq!(d.postman_done.as_ref().unwrap().written, 5);
+        });
     }
 }
