@@ -268,6 +268,7 @@ pub fn parse_convert_args(args: &[String]) -> Option<ConvertArgs> {
         "curl" => Subcommand::Curl,
         "file" => Subcommand::File,
         "yaml" => Subcommand::Yaml,
+        "postman" => Subcommand::Postman,
         _ => return None,
     };
     let mut options = ConvertOptions::default();

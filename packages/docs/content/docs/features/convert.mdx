@@ -57,6 +57,71 @@ curl \
   https://api.example.com/users
 ```
 
+## Postman to YAML [#postman]
+
+Turn a Postman collection into curl-runner files. Export it from Postman as Collection v2.1, then run:
+
+```bash title="Command"
+curl-runner convert postman my-api.postman_collection.json
+```
+
+```text title="Output"
+Converted 5 requests in 2 folders to example-api
+Needs your attention:
+  - Pick a file for "document" in Documents/Convert document
+Run them from example-api so curl-runner loads its .env.
+```
+
+You get one YAML file per request, in a folder per Postman folder, and a `.env` with the collection variables.
+
+```text title="Result"
+example-api/
+  .env
+  README.md
+  customers/
+    create-customer.yaml
+    list-customers.yaml
+  documents/
+    convert-document.yaml
+```
+
+`-o` is a directory here, not a file. Without it, the files go into a folder named after the collection. Existing files are never overwritten. A clashing file gets a numbered name instead.
+
+### What's converted
+
+- Methods, URLs, query params, and headers.
+- JSON, raw, GraphQL, form, and urlencoded bodies. File fields in a form come in as a placeholder you point at a real file.
+- Basic, bearer, and API key auth. Collection and folder auth carries down to each request.
+- Collection variables, which become `${name}` and land in `.env`.
+- Request and folder descriptions, which become comments.
+
+Optional fields that are turned off in Postman come in commented out, so you can switch them on.
+
+### The report
+
+The command prints what it couldn't finish for you under `Needs your attention:`. It exits with `0` anyway. It exits with `1` only if the file can't be read or isn't a v2.0 or v2.1 collection.
+
+Secret values never land in a file. A secret variable is listed in `.env` as a commented name. Set its value in `.env.local`, which you keep out of git.
+
+### Run it
+
+Run the files from the output folder. That's where curl-runner finds `.env`.
+
+```bash title="Run"
+cd example-api
+curl-runner customers/
+```
+
+### What's skipped
+
+- Pre-request and test scripts.
+- Auth types other than the three above. Add them by hand.
+- Any other body mode, such as a binary file.
+- Saved examples.
+- Postman dynamic variables such as `{{$guid}}`. They stay as written.
+
+Each one shows up in the report with the request it came from.
+
 ## Batch Script Conversion [#batch-conversion]
 
 Extract and convert all curl commands from a shell script into a single YAML collection. The parser handles multiline commands, ignores non-curl lines, and strips piped output.
@@ -218,10 +283,11 @@ request:
 | `convert curl "<cmd>"` | Convert inline curl command to YAML |
 | `convert file <script.sh>` | Convert shell script to YAML (batch) |
 | `convert yaml <file.yaml>` | Convert YAML to curl command(s) |
+| `convert postman <collection.json>` | Convert a Postman collection to YAML files and a `.env` |
 
 | Flag | Description |
 | --- | --- |
-| `-o, --output <file>` | Write output to file |
+| `-o, --output <file>` | Write output to file. For `convert postman`, a directory |
 | `--pretty` | Pretty-print output (default) |
 | `--loss-report` | Include warnings for unsupported features (default) |
 | `--debug` | Show token stream, AST, and IR |

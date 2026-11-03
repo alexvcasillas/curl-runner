@@ -4,6 +4,7 @@
 
 use crate::colors::Color;
 use crate::output::{Console, Logger, OutCfg};
+use curl_runner_core::convert::postman::{Attention, convert_postman, slug, write_postman};
 use curl_runner_core::convert::{
     ConvertArgs, ConvertError, ConvertResult, Subcommand, convert_curl_to_yaml,
     convert_script_to_yaml, convert_yaml_to_curl, parse_convert_args,
@@ -18,6 +19,10 @@ pub fn run(argv: &[String], color: bool, console: &mut Console) -> i32 {
     let log = Logger::new(OutCfg::from_config(None), color, None);
 
     if argv.iter().any(|a| a == "--help" || a == "-h") {
+        if argv.get(1).is_some_and(|a| a == "postman") {
+            console.out(&postman_help(&log));
+            return 0;
+        }
         console.out(&help(&log));
         return 0;
     }
@@ -25,6 +30,10 @@ pub fn run(argv: &[String], color: bool, console: &mut Console) -> i32 {
         console.out(&help(&log));
         return 1;
     };
+
+    if parsed.subcommand == Subcommand::Postman {
+        return run_postman(&parsed, &log, console);
+    }
 
     let result = match convert(&parsed) {
         Ok(r) => r,
@@ -62,6 +71,70 @@ pub fn run(argv: &[String], color: bool, console: &mut Console) -> i32 {
     0
 }
 
+/// `convert postman <file> [-o <dir>]`: writes request files and a `.env`
+/// into the directory and reports what needs the user's attention.
+fn run_postman(parsed: &ConvertArgs, log: &Logger, console: &mut Console) -> i32 {
+    let import =
+        match read_text(&parsed.input).and_then(|text| convert_postman(&text).map_err(|e| e.0)) {
+            Ok(i) => i,
+            Err(msg) => {
+                log.log_error(console, &msg);
+                return 1;
+            }
+        };
+    let dir = match parsed.options.output.as_deref().filter(|o| !o.is_empty()) {
+        Some(o) => o.to_string(),
+        None => slug(&import.name, "postman-import"),
+    };
+    let outcome = match write_postman(
+        Path::new(&dir),
+        Path::new(""),
+        &import,
+        "set it in .env.local",
+    ) {
+        Ok(o) => o,
+        Err(e) => {
+            log.log_error(console, &fs_message(&e, &dir, "open"));
+            return 1;
+        }
+    };
+
+    let folders = import.report.folders;
+    console.err(&format!(
+        "Converted {} request{} in {} folder{} to {dir}",
+        import.report.requests,
+        plural(import.report.requests),
+        folders,
+        plural(folders),
+    ));
+    let mut attention: Vec<String> = import
+        .report
+        .attention
+        .iter()
+        .map(|a| a.to_string())
+        .collect();
+    attention.extend(
+        outcome
+            .kept_env
+            .iter()
+            .map(|var| Attention::KeptEnv { var: var.clone() }.to_string()),
+    );
+    if !attention.is_empty() {
+        console.err("Needs your attention:");
+        for line in &attention {
+            console.err(&format!("  - {line}"));
+        }
+    }
+    console.err(&format!(
+        "Run them from {dir} so curl-runner loads its .env."
+    ));
+    0
+}
+
+fn plural(n: usize) -> &'static str {
+    if n == 1 { "" } else { "s" }
+}
+
 fn convert(parsed: &ConvertArgs) -> Result<ConvertResult, String> {
     let to_msg = |e: ConvertError| e.0;
     match parsed.subcommand {
@@ -70,6 +143,7 @@ fn convert(parsed: &ConvertArgs) -> Result<ConvertResult, String> {
             convert_script_to_yaml(&read_text(&parsed.input)?, &parsed.options).map_err(to_msg)
         }
         Subcommand::Yaml => convert_yaml_to_curl(&read_text(&parsed.input)?).map_err(to_msg),
+        Subcommand::Postman => unreachable!("handled by run_postman"),
     }
 }
 
@@ -114,5 +188,17 @@ fn help(log: &Logger) -> String {
         y("USAGE:"),
         y("OPTIONS:"),
         y("EXAMPLES:"),
+    )
+}
+
+/// Help for `convert postman --help`. The shared help is pinned to the
+/// TypeScript goldens, so Postman has its own.
+fn postman_help(log: &Logger) -> String {
+    let y = |s: &str| log.color(s, Color::Yellow);
+    format!(
+        "\n{}\n\n{}\n  curl-runner convert postman <collection.json> [-o <dir>]\n\n{}\n  -o, --output <dir>   Write the files into this directory (default: the collection's name)\n  -h, --help           Show this help\n",
+        log.color("CURL RUNNER - CONVERT POSTMAN", Color::Bright),
+        y("USAGE:"),
+        y("OPTIONS:"),
     )
 }

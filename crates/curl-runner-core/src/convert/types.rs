@@ -190,6 +190,7 @@ pub enum Subcommand {
     Curl,
     File,
     Yaml,
+    Postman,
 }
 
 /// Parsed `convert` arguments (`ConvertArgs`).
