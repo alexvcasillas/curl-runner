@@ -1181,3 +1181,43 @@ fn each_file_names_the_request_the_report_names() {
     assert_eq!(file.rel_path, Path::new("documents/convert-document.yaml"));
     assert_eq!(imp.files[0].request, "Customers/Create customer");
 }
+
+#[test]
+fn v2_0_object_auth_keeps_its_variables_secret() {
+    let json = r#"{"info":{"name":"Old auth","schema":"https://schema.getpostman.com/json/collection/v2.0.0/collection.json"},
+      "variable":[{"key":"tok","value":"tok-value-1"},{"key":"user","value":"user-value-1"},{"key":"k","value":"k-value-1"}],
+      "item":[
+        {"name":"Bearer","request":{"method":"GET","url":"https://api.example.com/a",
+          "auth":{"type":"bearer","bearer":{"token":"{{tok}}"}}}},
+        {"name":"Basic","request":{"method":"GET","url":"https://api.example.com/b",
+          "auth":{"type":"basic","basic":{"username":"{{user}}","password":"pw-value-1"}}}},
+        {"name":"Key","request":{"method":"GET","url":"https://api.example.com/c",
+          "auth":{"type":"apikey","apikey":{"key":"X-Api-Key","value":"{{k}}","in":"header"}}}}]}"#;
+    let m = map_collection(&parse_collection(json).unwrap());
+    assert!(matches!(&req(&m, "Bearer").auth, Some(MappedAuth::Bearer(t)) if t == "${tok}"));
+    assert!(matches!(
+        &req(&m, "Basic").auth,
+        Some(MappedAuth::Basic { username, password })
+            if username == "${user}" && password == "${API_PASSWORD}"
+    ));
+    let key = req(&m, "Key");
+    assert_eq!(key.headers[0].key, "X-Api-Key");
+    assert_eq!(text(&key.headers[0]), "${k}");
+    let var = |n: &str| m.variables.iter().find(|v| v.name == n);
+    for name in ["tok", "user", "k", "API_PASSWORD"] {
+        assert!(var(name).unwrap().secret, "{name}");
+    }
+    assert!(var("API_TOKEN").is_none() && var("API_USER").is_none());
+
+    let dir = tempfile::tempdir().unwrap();
+    let imp = convert_postman(json).unwrap();
+    write_postman(dir.path(), Path::new(""), &imp, "x").unwrap();
+    let mut files = vec![dir.path().join(".env")];
+    files.extend(imp.files.iter().map(|f| dir.path().join(&f.rel_path)));
+    for f in files {
+        let text = std::fs::read_to_string(&f).unwrap();
+        for secret in ["tok-value-1", "user-value-1", "k-value-1", "pw-value-1"] {
+            assert!(!text.contains(secret), "{secret} in {}", f.display());
+        }
+    }
+}

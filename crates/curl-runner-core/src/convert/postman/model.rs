@@ -169,23 +169,25 @@ pub struct Auth {
 }
 
 impl Auth {
-    /// The `[{key, value}]` array Postman keeps under the auth's own type.
+    /// The settings Postman keeps under the auth's own type: a
+    /// `[{key, value}]` array in v2.1, a `{key: value}` object in v2.0.
     pub fn params(&self) -> Vec<(String, String)> {
-        let Some(Value::Array(items)) = self.rest.get(&self.kind) else {
-            return Vec::new();
+        let text = |v: Option<&Value>| match v {
+            Some(Value::String(s)) => s.clone(),
+            Some(Value::Null) | None => String::new(),
+            Some(other) => other.to_string(),
         };
-        items
-            .iter()
-            .filter_map(|p| {
-                let key = p.get("key")?.as_str()?.to_string();
-                let value = match p.get("value") {
-                    Some(Value::String(s)) => s.clone(),
-                    Some(Value::Null) | None => String::new(),
-                    Some(other) => other.to_string(),
-                };
-                Some((key, value))
-            })
-            .collect()
+        match self.rest.get(&self.kind) {
+            Some(Value::Array(items)) => items
+                .iter()
+                .filter_map(|p| Some((p.get("key")?.as_str()?.to_string(), text(p.get("value")))))
+                .collect(),
+            Some(Value::Object(map)) => map
+                .iter()
+                .map(|(k, v)| (k.clone(), text(Some(v))))
+                .collect(),
+            _ => Vec::new(),
+        }
     }
 }
 
