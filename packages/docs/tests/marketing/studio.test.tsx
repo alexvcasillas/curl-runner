@@ -229,6 +229,7 @@ describe('studio docs', () => {
       'features/retry-mechanism': ['failed-request'],
       'features/env-files': ['environments'],
       'features/studio': [...STUDIO_SCREENSHOT_NAMES, ...POSTMAN_SCREENSHOT_NAMES],
+      'features/postman-import': [...POSTMAN_SCREENSHOT_NAMES],
     };
     for (const [page, names] of Object.entries(expected)) {
       const used = [...mdx(page).matchAll(/<StudioScreenshot name="([^"]+)"/g)].map((m) => m[1]);

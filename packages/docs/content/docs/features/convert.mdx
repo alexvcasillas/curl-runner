@@ -59,73 +59,13 @@ curl \
 
 ## Postman to YAML [#postman]
 
-Turn a Postman collection into curl-runner files. Export it from Postman as Collection v2.1, then run:
+Turn a Postman collection into curl-runner files, one per request, with a `.env` for the variables:
 
 ```bash title="Command"
 curl-runner convert postman my-api.postman_collection.json
 ```
 
-```text title="Output"
-Converted 5 requests in 2 folders to example-api
-Needs your attention:
-  - Pick a file for "document" in Documents/Convert document
-  - Set the secret apiKey
-  - Set the secret PASSWORD
-Run them from example-api so curl-runner loads its .env.
-Set the secrets above in example-api/.env.local.
-A secret left unset is sent as written, like ${apiKey}.
-```
-
-You get one YAML file per request, in a folder per Postman folder, and a `.env` with the collection variables.
-
-```text title="Result"
-example-api/
-  .env
-  README.md
-  customers/
-    create-customer.yaml
-    list-customers.yaml
-  documents/
-    convert-document.yaml
-```
-
-`-o` is a directory here, not a file. Without it, the files go into a folder named after the collection. Existing files are never overwritten. A clashing file gets a numbered name instead.
-
-### What's converted
-
-- Methods, URLs, query params, and headers.
-- JSON, raw, GraphQL, form, and urlencoded bodies. File fields in a form come in as a placeholder you point at a real file.
-- Basic, bearer, and API key auth. Collection and folder auth carries down to each request.
-- Collection variables, which become `${name}` and land in `.env`.
-- The Postman dynamic variables `{{$guid}}` and `{{$randomUUID}}`, which become `${UUID}`, and `{{$randomInt}}`, which becomes `${RANDOM:0-1000}`.
-- Request and folder descriptions, which become comments.
-
-Optional fields that are turned off in Postman come in commented out, so you can switch them on.
-
-### The report
-
-The command prints what it couldn't finish for you under `Needs your attention:`. It exits with `0` anyway. It exits with `1` only if the file can't be read, isn't a v2.0 or v2.1 collection, or the files can't be written.
-
-Secret values never land in a file. A secret variable is listed in `.env` as a commented name. Set its value in `.env.local`, which you keep out of git.
-
-### Run it
-
-Run the files from the output folder. That's where curl-runner finds `.env`.
-
-```bash title="Run"
-cd example-api
-curl-runner customers/
-```
-
-### What's skipped
-
-- Pre-request and test scripts.
-- Auth types other than the three above. Add them by hand.
-- Any other body mode, such as a binary file.
-- Saved examples.
-- Other Postman dynamic variables, such as `{{$randomEmail}}`. They stay as written. `{{$timestamp}}` stays too: it counts seconds, and curl-runner's `${TIMESTAMP}` counts milliseconds.
-
-Each one shows up in the report with the request it came from.
+See [Postman Import](/docs/features/postman-import) for the output, what's converted and what needs your attention.
 
 ## Batch Script Conversion [#batch-conversion]
 
