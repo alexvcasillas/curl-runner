@@ -3,11 +3,13 @@
 //! here overwrites a file; a name that is taken gets `-2`, `-3`, ….
 
 use super::templates::{FromCurl, curl_to_ir, file_from_ir, file_name_for, request_name_for};
-use curl_runner_core::convert::{Auth, CurlRunnerIr, JsMap};
-use curl_runner_core::security::redact::is_sensitive_header;
+use curl_runner_core::convert::{
+    Auth, CurlRunnerIr, JsMap, SECRET_PARAMS, header_var, param_var, secret_header,
+};
+pub use curl_runner_core::convert::{unique_path, write_new};
 use curl_runner_core::yaml_text::scalar_text;
 use std::collections::HashSet;
-use std::io::{self, Write as _};
+use std::io;
 use std::path::{Path, PathBuf};
 
 /// The comment an imported request file starts with.
@@ -263,19 +265,6 @@ fn cert_password_at(cert: &str) -> Option<usize> {
         .map(|(i, _)| i)
         .next_back()
 }
-
-/// Query parameters whose values are secrets.
-const SECRET_PARAMS: [&str; 9] = [
-    "token",
-    "access_token",
-    "api_key",
-    "apikey",
-    "key",
-    "secret",
-    "password",
-    "sig",
-    "signature",
-];
 
 /// `ir` with its secret values (bearer token, basic credentials, sensitive
 /// headers as the CLI's redactor judges them, secret query parameters)
@@ -559,43 +548,6 @@ fn is_reference(value: &str) -> bool {
     value.contains("${")
 }
 
-/// A secret header: the CLI redactor's names, plus `X-…-Key`.
-fn secret_header(name: &str) -> bool {
-    let lower = name.to_ascii_lowercase();
-    is_sensitive_header(name) || lower.ends_with("-key") || lower.ends_with("_key")
-}
-
-/// `X-Auth-Token` → `AUTH_TOKEN`, `x-api-key` → `API_KEY`.
-fn header_var(name: &str) -> String {
-    let lower = name.to_ascii_lowercase();
-    screaming(lower.strip_prefix("x-").unwrap_or(&lower))
-}
-
-/// `access_token` → `ACCESS_TOKEN`; a bare key is `API_KEY`.
-fn param_var(name: &str) -> String {
-    match name.to_ascii_lowercase().as_str() {
-        "key" | "apikey" | "api_key" => "API_KEY".into(),
-        other => screaming(other),
-    }
-}
-
-fn screaming(s: &str) -> String {
-    let mut out = String::new();
-    for c in s.chars() {
-        if c.is_ascii_alphanumeric() {
-            out.push(c.to_ascii_uppercase());
-        } else if !out.is_empty() && !out.ends_with('_') {
-            out.push('_');
-        }
-    }
-    let out = out.trim_end_matches('_');
-    if out.is_empty() {
-        "SECRET".into()
-    } else {
-        out.to_string()
-    }
-}
-
 /// `base`, or `base_2`, `base_3`, …: the first name that is free or
 /// already holds `value`.
 fn pick_var(
@@ -620,25 +572,6 @@ fn pick_var(
                 .or_else(|| known(var));
             held.is_none_or(|v| v == value)
         })
-        .expect("an unbounded range finds a free name")
-}
-
-/// `path` if `taken` says it is free, else `stem-2.ext`, `stem-3.ext`, ….
-pub fn unique_path(path: &Path, taken: impl Fn(&Path) -> bool) -> PathBuf {
-    if !taken(path) {
-        return path.to_path_buf();
-    }
-    let stem = path
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let ext = path
-        .extension()
-        .map(|e| format!(".{}", e.to_string_lossy()))
-        .unwrap_or_default();
-    (2..)
-        .map(|n| path.with_file_name(format!("{stem}-{n}{ext}")))
-        .find(|p| !taken(p))
         .expect("an unbounded range finds a free name")
 }
 
@@ -757,19 +690,6 @@ pub fn copy_planned(root: &Path, plan: &[CopyPlan]) -> (usize, Option<io::Error>
         }
     }
     (plan.len(), None)
-}
-
-/// Writes a new file, creating its folders; an existing one fails with
-/// `AlreadyExists`.
-pub fn write_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)?
-        .write_all(bytes)
 }
 
 #[cfg(test)]

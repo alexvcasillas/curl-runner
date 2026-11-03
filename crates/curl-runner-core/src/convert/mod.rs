@@ -10,6 +10,8 @@ mod generator;
 mod jsjson;
 mod jsutil;
 mod normalizer;
+pub mod postman;
+mod secrets;
 mod tokenizer;
 mod types;
 mod yaml_serializer;
@@ -21,6 +23,7 @@ pub use generator::{generate_curl_from_ir, shell_quote};
 /// The map type of [`CurlRunnerIr`] fields, so callers can rebuild them.
 pub use jsutil::JsMap;
 pub use normalizer::{NormalizeError, normalize};
+pub use secrets::*;
 pub use tokenizer::tokenize;
 pub use types::*;
 pub use yaml_serializer::{serialize_batch_to_yaml, serialize_to_yaml};
@@ -265,6 +268,7 @@ pub fn parse_convert_args(args: &[String]) -> Option<ConvertArgs> {
         "curl" => Subcommand::Curl,
         "file" => Subcommand::File,
         "yaml" => Subcommand::Yaml,
+        "postman" => Subcommand::Postman,
         _ => return None,
     };
     let mut options = ConvertOptions::default();

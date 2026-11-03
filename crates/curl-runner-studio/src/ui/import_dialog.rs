@@ -1,6 +1,6 @@
 //! The Import dialog (`Import.dc.html`, ⌘I): request files from pasted curl
-//! commands, or the YAML files of another folder copied into the
-//! collection. The Postman and OpenAPI tabs come in a later build.
+//! commands, a Postman collection, or the YAML files of another folder
+//! copied into the collection. The OpenAPI tab comes in a later build.
 
 use super::app::{CreateNew, mono_font};
 use super::icons::{self, glyph};
@@ -17,6 +17,9 @@ use crate::model::import::{
     plan_yaml_copy, reads_as_yaml, replaced_note, write_new,
 };
 use crate::model::secrets::SecretStore;
+use curl_runner_core::convert::postman::{
+    Attention, PostmanImport, convert_postman, write_postman,
+};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::dialog::DialogEntrance;
@@ -41,6 +44,11 @@ const PREVIEW_PAD: f32 = 8.;
 const BODY_H: f32 = PANE_H + 86.;
 /// A folded command's header row in the preview list.
 const SECTION_H: f32 = 32.;
+/// The Postman tab's attention pane, so it ends with the preview beside
+/// it: the pane, less the picker (32), its status line (18), the pane's
+/// label (about 19.5 on the dialog's default line height) and three 10px
+/// gaps.
+const ATTENTION_H: f32 = PANE_H - 99.5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImportTab {
@@ -84,6 +92,10 @@ pub struct ImportDialog {
     /// Folder of YAML: the folder to copy from, and what would be copied.
     pub(super) source: Option<PathBuf>,
     plan: Result<Vec<CopyPlan>, String>,
+    /// Postman: the collection file picked, and what it converts to.
+    pub(super) postman: Option<(PathBuf, Result<PostmanImport, String>)>,
+    /// Postman: what the import wrote and left to do, shown in its place.
+    pub(super) postman_done: Option<PostmanDone>,
     pub(super) error: Option<String>,
     /// The environment the import resolves `BASE_URL` and variables in.
     env: ImportContext,
@@ -138,6 +150,8 @@ struct Written {
     first: Option<PathBuf>,
     /// The secrets of the files written.
     secrets: Vec<Extracted>,
+    /// More names to mark secret, whose values aren't in `secrets`.
+    secret_names: Vec<String>,
     /// Why the rest wasn't written.
     error: Option<String>,
     /// The commands written (by index), when only some were.
@@ -212,6 +226,8 @@ impl ImportDialog {
             picked_target: None,
             source: None,
             plan: Ok(Vec::new()),
+            postman: None,
+            postman_done: None,
             error: None,
             env,
             held: HashMap::new(),
@@ -348,8 +364,46 @@ impl ImportDialog {
         match self.tab {
             ImportTab::Curl => self.targets.iter().flatten().count(),
             ImportTab::Folder => self.plan.as_ref().map_or(0, Vec::len),
-            ImportTab::Postman | ImportTab::OpenApi => 0,
+            ImportTab::Postman => match &self.postman {
+                Some((_, Ok(import))) => import.files.len(),
+                _ => 0,
+            },
+            ImportTab::OpenApi => 0,
         }
+    }
+
+    /// Reads and converts the Postman collection at `path`; the file
+    /// picker and a dropped file both land here.
+    pub(super) fn set_postman(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        let import = std::fs::read_to_string(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|json| convert_postman(&json).map_err(|e| e.0));
+        self.postman = Some((path, import));
+        self.postman_done = None;
+        self.error = None;
+        cx.notify();
+    }
+
+    /// Opens the file a summary item points at (a Pick a file item's
+    /// request), closing the dialog so it shows.
+    pub(super) fn open_attention(
+        &mut self,
+        ix: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(rel) = self
+            .postman_done
+            .as_ref()
+            .and_then(|d| d.attention.get(ix))
+            .and_then(|(_, opens)| opens.clone())
+        else {
+            return;
+        };
+        window.close_dialog(cx);
+        self.ws
+            .update(cx, |ws, cx| ws.open_file(&rel, window, cx))
+            .ok();
     }
 
     fn import_label(&self) -> String {
@@ -369,6 +423,11 @@ impl ImportDialog {
     /// When only some were written, those are followed up on (tree,
     /// secrets) and the dialog stays open on the error.
     pub(super) fn import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // On the Postman summary, ⌘↵ is Done.
+        if self.tab == ImportTab::Postman && self.postman_done.is_some() {
+            window.close_dialog(cx);
+            return;
+        }
         let written = match self.write(window, cx) {
             Ok(w) => w,
             Err(e) => {
@@ -380,6 +439,8 @@ impl ImportDialog {
         let opened = self.root.is_none();
         let wrote_any = written.first.is_some();
         match &written.error {
+            // The Postman summary stays up in the dialog.
+            None if self.tab == ImportTab::Postman => cx.notify(),
             None => window.close_dialog(cx),
             Some(e) => {
                 self.error = Some(e.clone());
@@ -399,6 +460,7 @@ impl ImportDialog {
                 opened: opened && wrote_any,
                 first: written.first,
                 secrets: written.secrets,
+                secret_names: written.secret_names,
                 save_secrets: self.save_secrets,
             };
             self.ws
@@ -499,7 +561,11 @@ impl ImportDialog {
             return Err(match self.tab {
                 ImportTab::Curl => "Paste a curl command to import.".into(),
                 ImportTab::Folder => "Choose a folder with YAML files.".into(),
-                _ => "This import comes in a later build.".into(),
+                ImportTab::Postman => match &self.postman {
+                    Some((_, Err(e))) => format!("Couldn't import the collection: {e}"),
+                    _ => "Choose a Postman collection to import.".into(),
+                },
+                ImportTab::OpenApi => "This import comes in a later build.".into(),
             });
         }
         let root = self
@@ -541,6 +607,7 @@ impl ImportDialog {
                     root: root.clone(),
                     first: None,
                     secrets: Vec::new(),
+                    secret_names: Vec::new(),
                     error: None,
                     done: Vec::new(),
                 };
@@ -579,18 +646,126 @@ impl ImportDialog {
                     root,
                     first: (copied > 0).then(|| plan[0].to.clone()),
                     secrets: Vec::new(),
+                    secret_names: Vec::new(),
                     error: error.map(|e| format!("Couldn't copy {e}")),
                     done: Vec::new(),
                 })
             }
-            ImportTab::Postman | ImportTab::OpenApi => unreachable!("count is 0"),
+            ImportTab::Postman => {
+                let folder = self.target_folder(cx);
+                let Some((_, Ok(import))) = &self.postman else {
+                    unreachable!("count is 0");
+                };
+                if let Some(f) = import.files.iter().find(|f| !reads_as_yaml(&f.yaml)) {
+                    return Err(format!(
+                        "{} wouldn't read back as YAML; nothing was imported.",
+                        f.rel_path.display()
+                    ));
+                }
+                // A value never goes over another one in the Keychain: that
+                // secret is left for the user to set.
+                let mut secrets = Vec::new();
+                let mut to_set = Vec::new();
+                for v in import
+                    .variables
+                    .iter()
+                    .filter(|v| v.secret && !v.value.is_empty())
+                {
+                    let taken = (self.env.keychain)(&v.name).is_some_and(|held| held != v.value);
+                    if taken || !self.save_secrets {
+                        to_set.push(Attention::SetSecret {
+                            var: v.name.clone(),
+                        });
+                    }
+                    if !taken {
+                        secrets.push(Extracted {
+                            var: v.name.clone(),
+                            value: v.value.clone(),
+                            place: "Postman variable".into(),
+                        });
+                    }
+                }
+                let note = if self.save_secrets {
+                    "the studio keeps it in your Keychain"
+                } else {
+                    "set it in the studio's Environments"
+                };
+                let outcome = match write_postman(&root, &folder, import, note) {
+                    Ok(o) => o,
+                    Err(e) => {
+                        return Ok(Written {
+                            root,
+                            first: None,
+                            secrets: Vec::new(),
+                            secret_names: Vec::new(),
+                            error: Some(format!("Couldn't import the collection: {e}")),
+                            done: Vec::new(),
+                        });
+                    }
+                };
+                let kept = outcome
+                    .kept_env
+                    .iter()
+                    .map(|var| Attention::KeptEnv { var: var.clone() });
+                let mut attention: Vec<(Attention, Option<PathBuf>)> = import
+                    .report
+                    .attention
+                    .iter()
+                    .cloned()
+                    .chain(to_set)
+                    .chain(kept)
+                    .map(|a| {
+                        let opens = match &a {
+                            Attention::PickFile { request, .. } => import
+                                .files
+                                .iter()
+                                .position(|f| f.request == *request)
+                                .and_then(|i| outcome.written.get(i).cloned()),
+                            _ => None,
+                        };
+                        (a, opens)
+                    })
+                    .collect();
+                attention.sort_by_key(|(a, _)| match a {
+                    Attention::PickFile { .. } => 0,
+                    Attention::SetSecret { .. } => 1,
+                    _ => 2,
+                });
+                // Every secret, set or not, so the studio masks it.
+                let secret_names = import
+                    .variables
+                    .iter()
+                    .filter(|v| v.secret)
+                    .map(|v| v.name.clone())
+                    .collect();
+                let saved = if self.save_secrets { secrets.len() } else { 0 };
+                self.postman_done = Some(PostmanDone {
+                    written: outcome.written.len(),
+                    folder,
+                    saved,
+                    attention,
+                });
+                self.postman = None;
+                Ok(Written {
+                    root,
+                    first: outcome.written.first().cloned(),
+                    secrets,
+                    secret_names,
+                    error: None,
+                    done: Vec::new(),
+                })
+            }
+            ImportTab::OpenApi => unreachable!("count is 0"),
         }
     }
 
+    /// Picks the tab's source (`source`: a folder, or the Postman tab's
+    /// collection file) or the target folder.
     fn pick(&mut self, source: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let file = source && self.tab == ImportTab::Postman;
         let picked = cx.prompt_for_paths(PathPromptOptions {
-            files: false,
-            directories: true,
+            files: file,
+            directories: !file,
             multiple: false,
             prompt: Some("Choose".into()),
         });
@@ -601,7 +776,11 @@ impl ImportDialog {
             this.update_in(cx, |this, window, cx| {
                 let dir = paths.into_iter().next();
                 this.error = None;
-                if source {
+                if file {
+                    if let Some(path) = dir {
+                        this.set_postman(path, cx);
+                    }
+                } else if source {
                     this.source = dir;
                     this.replan(cx);
                 } else {
@@ -613,8 +792,9 @@ impl ImportDialog {
         .detach();
     }
 
-    /// Development aid (`CURL_RUNNER_STUDIO_FILL`): pastes `text`, or with
-    /// `folder` set picks it as the Folder of YAML source.
+    /// Development aid (`CURL_RUNNER_STUDIO_FILL`): pastes `text`, with
+    /// `folder` set picks it as the Folder of YAML source, and a path to a
+    /// `.json` file fills the Postman tab.
     pub(super) fn dev_fill(
         &mut self,
         text: &str,
@@ -622,9 +802,13 @@ impl ImportDialog {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let json = Path::new(text);
         if let Some(folder) = folder {
             self.source = Some(folder);
             self.set_tab(ImportTab::Folder, cx);
+        } else if json.extension().is_some_and(|e| e == "json") && json.is_file() {
+            self.set_postman(json.to_path_buf(), cx);
+            self.set_tab(ImportTab::Postman, cx);
         } else {
             let text = text.replace("\\n", "\n");
             self.curl.update(cx, |s, cx| s.set_value(text, window, cx));
@@ -1058,11 +1242,186 @@ impl ImportDialog {
         left_right(left, right)
     }
 
-    fn render_coming_soon(&self) -> Div {
-        let what = match self.tab {
-            ImportTab::Postman => "Postman collections",
-            _ => "OpenAPI files",
+    /// Postman: the collection's file, what it converts to and what
+    /// needs attention; after the import, the summary in its place.
+    fn render_postman(&self, cx: &mut Context<Self>) -> Div {
+        if let Some(done) = &self.postman_done {
+            return self.render_postman_done(done, cx);
+        }
+        let (path, import) = match &self.postman {
+            Some((path, Ok(import))) => (Some(path), Some(import)),
+            Some((path, Err(_))) => (Some(path), None),
+            None => (None, None),
         };
+        let status = match &self.postman {
+            None => div()
+                .h(px(18.))
+                .text_size(px(12.))
+                .line_height(px(18.))
+                .text_color(color("text-tertiary"))
+                .child("Pick a collection exported from Postman, or drop it here."),
+            Some((path, Err(e))) => note(
+                icons::ERROR,
+                "danger",
+                format!("Couldn't read {}: {e}", file_name(path)),
+            ),
+            Some((path, Ok(import))) => div()
+                .h(px(18.))
+                .text_size(px(12.))
+                .line_height(px(18.))
+                .text_color(color("text-secondary"))
+                .child(format!(
+                    "{}: {} in {}",
+                    file_name(path),
+                    plural(import.report.requests, "request"),
+                    plural(import.report.folders, "folder"),
+                )),
+        };
+        let attention: Vec<&Attention> = import
+            .map(|i| {
+                let mut items: Vec<&Attention> = i.report.attention.iter().collect();
+                items.sort_by_key(|a| !matches!(a, Attention::PickFile { .. }));
+                items
+            })
+            .unwrap_or_default();
+        let list = if import.is_none() {
+            empty_state_in(ATTENTION_H, "What needs your attention shows here.")
+        } else if attention.is_empty() {
+            empty_state_in(ATTENTION_H, "Nothing needs your attention.")
+        } else {
+            div().flex().flex_col().py(px(4.)).children(
+                attention
+                    .iter()
+                    .enumerate()
+                    .map(|(ix, a)| attention_row(ix, a)),
+            )
+        };
+        let left = column(true)
+            .child(label_text("Postman collection"))
+            .child(picker(
+                "import-pick-postman",
+                path.map(PathBuf::as_path),
+                "No file chosen",
+                cx.listener(|this, _, window, cx| this.pick(true, window, cx)),
+            ))
+            .child(status)
+            .child(pane_header(
+                "Needs your attention",
+                count_label(attention.len(), import.is_some()),
+            ))
+            .child(pane("import-attention", ATTENTION_H).child(list));
+        let folder = self.target_folder(cx);
+        let files = match import {
+            None => empty_state("The request files show here.".into()),
+            Some(i) => div().flex().flex_col().py(px(4.)).children(
+                i.files
+                    .iter()
+                    .map(|f| file_row(&folder.join(&f.rel_path), &f.yaml)),
+            ),
+        };
+        let aside = import.map_or_else(String::new, |i| plural(i.files.len(), "file"));
+        let secrets = import.map_or(0, |i| {
+            i.variables
+                .iter()
+                .filter(|v| v.secret && !v.value.is_empty())
+                .count()
+        });
+        let env = env_label(&self.env.environment);
+        let save = self.save_secrets;
+        let right = column(false)
+            .child(pane_header("Preview", aside))
+            .child(pane("import-postman-files", PANE_H).child(files))
+            .child(note(
+                icons::INFO,
+                "accent-blue",
+                "Each request gets its own file, in a folder per Postman folder. Variables go \
+                 to .env. Nothing is overwritten: a name that is taken gets -2, -3, … ."
+                    .into(),
+            ))
+            .when(secrets > 0, |d| {
+                d.child(
+                    div().pl(px(21.)).text_size(px(12.)).child(
+                        Checkbox::new("import-save-secrets")
+                            .checked(save)
+                            .label(format!("Save the secret values to the Keychain for {env}"))
+                            .on_click(cx.listener(|this, checked: &bool, _, cx| {
+                                this.save_secrets = *checked;
+                                cx.notify();
+                            })),
+                    ),
+                )
+            });
+        left_right(left, right).on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
+            if let Some(path) = paths.paths().iter().find(|p| p.is_file()) {
+                this.set_postman(path.clone(), cx);
+            }
+        }))
+    }
+
+    /// After a Postman import: what was written, and the items left, each
+    /// Pick a file one opening its request.
+    fn render_postman_done(&self, done: &PostmanDone, cx: &mut Context<Self>) -> Div {
+        let mut what = format!("Imported {}", plural(done.written, "request"));
+        if !done.folder.as_os_str().is_empty() {
+            what.push_str(&format!(" into {}/", done.folder.display()));
+        }
+        what.push('.');
+        let env = env_label(&self.env.environment);
+        let left = column(true)
+            .child(label_text("Imported"))
+            .child(note(icons::CHECK, "success", what))
+            .child(note(
+                icons::INFO,
+                "accent-blue",
+                "The collection's variables are in .env. Secrets are listed there by name \
+                 only."
+                    .into(),
+            ))
+            .when(done.saved > 0, |d| {
+                d.child(note(
+                    icons::KEY,
+                    "accent-blue",
+                    format!(
+                        "Saved {} to the Keychain for {env}.",
+                        plural(done.saved, "secret value")
+                    ),
+                ))
+            });
+        let list = if done.attention.is_empty() {
+            empty_state("Nothing needs your attention.".into())
+        } else {
+            div()
+                .flex()
+                .flex_col()
+                .py(px(4.))
+                .children(done.attention.iter().enumerate().map(|(ix, (a, opens))| {
+                    let row = attention_row(ix, a);
+                    if opens.is_none() {
+                        return row;
+                    }
+                    row.cursor_pointer()
+                        .hover(|s| s.bg(color("surface-100")))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.open_attention(ix, window, cx)
+                        }))
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_color(color("text-secondary"))
+                                .child("Open"),
+                        )
+                }))
+        };
+        let right = column(false)
+            .child(pane_header(
+                "Needs your attention",
+                count_label(done.attention.len(), true),
+            ))
+            .child(pane("import-attention", PANE_H).child(list));
+        left_right(left, right)
+    }
+
+    fn render_coming_soon(&self) -> Div {
         div()
             .flex()
             .flex_col()
@@ -1094,10 +1453,10 @@ impl ImportDialog {
                     .text_size(px(12.))
                     .line_height(relative(1.5))
                     .text_color(color("text-secondary"))
-                    .child(format!(
-                        "Importing {what} comes in a later build. For now, paste curl \
-                         commands or copy a folder of YAML."
-                    )),
+                    .child(
+                        "Importing OpenAPI files comes in a later build. For now, paste \
+                         curl commands, pick a Postman collection or copy a folder of YAML.",
+                    ),
             )
     }
 
@@ -1118,6 +1477,39 @@ impl ImportDialog {
                 .into_any_element(),
         };
         let enabled = self.count() > 0;
+        let done = self.tab == ImportTab::Postman && self.postman_done.is_some();
+        let buttons: Vec<AnyElement> = if done {
+            vec![
+                Button::new("import-done")
+                    .primary()
+                    .h(px(32.))
+                    .px(px(12.))
+                    .text_size(px(13.))
+                    .label("Done")
+                    .on_click(|_, window, cx| window.close_dialog(cx))
+                    .into_any_element(),
+            ]
+        } else {
+            vec![
+                Button::new("import-cancel")
+                    .outline()
+                    .h(px(32.))
+                    .px(px(12.))
+                    .text_size(px(13.))
+                    .label("Cancel")
+                    .on_click(|_, window, cx| window.close_dialog(cx))
+                    .into_any_element(),
+                Button::new("import-go")
+                    .primary()
+                    .h(px(32.))
+                    .px(px(12.))
+                    .text_size(px(13.))
+                    .label(self.import_label())
+                    .disabled(!enabled)
+                    .on_click(cx.listener(|this, _, window, cx| this.import(window, cx)))
+                    .into_any_element(),
+            ]
+        };
         div()
             .flex()
             .items_center()
@@ -1131,25 +1523,7 @@ impl ImportDialog {
             .child(label_text("Add to"))
             .child(target)
             .child(div().flex_1())
-            .child(
-                Button::new("import-cancel")
-                    .outline()
-                    .h(px(32.))
-                    .px(px(12.))
-                    .text_size(px(13.))
-                    .label("Cancel")
-                    .on_click(|_, window, cx| window.close_dialog(cx)),
-            )
-            .child(
-                Button::new("import-go")
-                    .primary()
-                    .h(px(32.))
-                    .px(px(12.))
-                    .text_size(px(13.))
-                    .label(self.import_label())
-                    .disabled(!enabled)
-                    .on_click(cx.listener(|this, _, window, cx| this.import(window, cx))),
-            )
+            .children(buttons)
     }
 }
 
@@ -1158,7 +1532,8 @@ impl Render for ImportDialog {
         let body = match self.tab {
             ImportTab::Curl => self.render_curl(cx),
             ImportTab::Folder => self.render_folder(cx),
-            ImportTab::Postman | ImportTab::OpenApi => self.render_coming_soon(),
+            ImportTab::Postman => self.render_postman(cx),
+            ImportTab::OpenApi => self.render_coming_soon(),
         };
         div()
             .id("import-dialog")
@@ -1265,6 +1640,121 @@ fn empty_state(text: String) -> Div {
         .text_size(px(12.))
         .text_color(color("text-tertiary"))
         .child(text)
+}
+
+/// [`empty_state`] in a pane `h` px tall.
+fn empty_state_in(h: f32, text: &'static str) -> Div {
+    empty_state(text.into()).h(px(h - 2.))
+}
+
+/// A pane's label, with its count or file name on the right.
+fn pane_header(label: &'static str, aside: String) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .child(label_text(label).flex_1())
+        .child(
+            div()
+                .font_family(mono_font())
+                .text_size(px(12.))
+                .text_color(color("text-secondary"))
+                .child(aside),
+        )
+}
+
+/// A bordered pane `h` px tall that scrolls its list.
+fn pane(id: &'static str, h: f32) -> Stateful<Div> {
+    div()
+        .id(id)
+        .flex()
+        .flex_col()
+        .flex_none()
+        .h(px(h))
+        .rounded(px(8.))
+        .border_1()
+        .border_color(color("border-100"))
+        .bg(color("surface-raised"))
+        .overflow_y_scroll()
+}
+
+/// `n` items, once there is something to count.
+fn count_label(n: usize, shown: bool) -> String {
+    if shown { n.to_string() } else { String::new() }
+}
+
+/// `1 request`, `5 requests`.
+fn plural(n: usize, noun: &str) -> String {
+    if n == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{n} {noun}s")
+    }
+}
+
+fn file_name(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+/// One item a Postman import couldn't finish, with its icon: a warning
+/// for what the user must do, info for what was left out or changed.
+fn attention_row(ix: usize, a: &Attention) -> Stateful<Div> {
+    let (icon, tone) = match a {
+        Attention::PickFile { .. }
+        | Attention::ExtraFiles { .. }
+        | Attention::SetSecret { .. }
+        | Attention::SetVariable { .. }
+        | Attention::UnsupportedAuth { .. } => (icons::WARNING, "warning"),
+        _ => (icons::INFO, "accent-blue"),
+    };
+    div()
+        .id(("import-attention-item", ix))
+        .flex()
+        .items_start()
+        .gap(px(8.))
+        .px(px(12.))
+        .py(px(5.))
+        .text_size(px(12.))
+        .line_height(relative(1.5))
+        .child(
+            div()
+                .flex_none()
+                .mt(px(2.))
+                .child(glyph(icon).size(px(13.)).text_color(color(tone))),
+        )
+        .child(div().flex_1().min_w_0().child(a.to_string()))
+}
+
+/// A Postman request file in the preview: its method and path.
+fn file_row(rel: &Path, yaml: &str) -> Div {
+    let method = method_of(yaml);
+    div()
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .h(px(28.))
+        .px(px(12.))
+        .child(
+            div()
+                .flex_none()
+                .w(px(48.))
+                .font_family(mono_font())
+                .text_size(px(11.))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(method_color(&method))
+                .child(method.clone()),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .font_family(mono_font())
+                .text_size(px(12.))
+                .child(rel.display().to_string()),
+        )
 }
 
 /// One file of the Folder of YAML plan: its path in the source, and the
@@ -1442,7 +1932,8 @@ impl Workspace {
 
     /// After an import: the tree shows the new files and the first opens;
     /// a new collection (`opened`) is opened and remembered first. The
-    /// extracted secrets are marked secret in the collection and, when
+    /// extracted secrets and `secret_names` are marked secret in the
+    /// collection and the extracted ones, when
     /// asked, saved to the Keychain for the picked environment; their
     /// values go nowhere else.
     fn imported(&mut self, imported: Imported, window: &mut Window, cx: &mut Context<Self>) {
@@ -1451,6 +1942,7 @@ impl Workspace {
             opened,
             first,
             secrets,
+            secret_names,
             save_secrets,
         } = imported;
         if opened {
@@ -1461,14 +1953,14 @@ impl Workspace {
         } else if let Some(c) = &mut self.state.collection {
             c.refresh();
         }
-        if !secrets.is_empty()
+        if !(secrets.is_empty() && secret_names.is_empty())
             && let Some(c) = &self.state.collection
         {
             let service = self.env_ctx(c, cx).service();
             // The shared notes; the workspace saves them once.
             edit_notes(&self.notes, cx, |meta| {
-                for e in &secrets {
-                    meta.set_secret(&e.var, true);
+                for name in secrets.iter().map(|e| &e.var).chain(&secret_names) {
+                    meta.set_secret(name, true);
                 }
             });
             if save_secrets {
@@ -1541,6 +2033,18 @@ fn context_for(
     }
 }
 
+/// What a Postman import wrote and left for the user.
+pub(super) struct PostmanDone {
+    /// How many request files were written.
+    pub written: usize,
+    /// The folder they went into, under the target root.
+    pub folder: PathBuf,
+    /// How many secret values go to the Keychain.
+    pub saved: usize,
+    /// What is left, Pick a file first, with the file each item opens.
+    pub attention: Vec<(Attention, Option<PathBuf>)>,
+}
+
 /// What an Import wrote, for the workspace to follow up on.
 struct Imported {
     root: PathBuf,
@@ -1549,6 +2053,8 @@ struct Imported {
     first: Option<PathBuf>,
     /// The secret values taken out of the files.
     secrets: Vec<Extracted>,
+    /// More names to mark secret, whose values aren't in `secrets`.
+    secret_names: Vec<String>,
     save_secrets: bool,
 }
 
@@ -1557,6 +2063,7 @@ mod tests {
     use super::super::state::StateStore;
     use super::super::workspace::Workspace;
     use super::ImportTab;
+    use curl_runner_core::convert::postman::Attention;
     use gpui_kit::component::WindowExt as _;
     use gpui_kit::test::TestWindowExt as _;
     use gpui_kit::{
@@ -1690,13 +2197,13 @@ mod tests {
     }
 
     #[gpui_kit::test]
-    fn coming_soon_tabs_import_nothing(cx: &mut TestAppContext) {
+    fn openapi_tab_imports_nothing(cx: &mut TestAppContext) {
         let dir = collection();
         let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
         let cx = &mut VisualTestContext::from_window(window, cx);
         let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
         cx.update(|window, cx| dialog.update(cx, |d, cx| d.dev_fill(TWO, None, window, cx)));
-        dialog.update(cx, |d, cx| d.set_tab(ImportTab::Postman, cx));
+        dialog.update(cx, |d, cx| d.set_tab(ImportTab::OpenApi, cx));
         cx.update(|window, cx| window.render_frame(cx));
         cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
         dialog.read_with(cx, |d, _| {
@@ -1960,6 +2467,317 @@ mod tests {
                     .iter()
                     .all(|e| !e.var.ends_with("_9"))
             );
+        });
+    }
+
+    const SAMPLE: &str = include_str!(
+        "../../../curl-runner-core/tests/fixtures/postman/sample.postman_collection.json"
+    );
+
+    /// `json` in a temp file; the dir keeps it alive.
+    fn postman_file(json: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sample.postman_collection.json");
+        std::fs::write(&path, json).unwrap();
+        (dir, path)
+    }
+
+    /// Every file under `dir`, read as text.
+    fn all_text(dir: &Path) -> Vec<(PathBuf, String)> {
+        let mut out = Vec::new();
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                out.extend(all_text(&path));
+            } else {
+                out.push((
+                    path.clone(),
+                    std::fs::read_to_string(&path).unwrap_or_default(),
+                ));
+            }
+        }
+        out
+    }
+
+    #[gpui_kit::test]
+    fn postman_import_writes_files_and_env(cx: &mut TestAppContext) {
+        let dir = collection();
+        let (_src, file) = postman_file(SAMPLE);
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
+        dialog.update(cx, |d, cx| {
+            d.set_postman(file, cx);
+            d.set_tab(ImportTab::Postman, cx);
+        });
+        dialog.read_with(cx, |d, _| {
+            assert_eq!(d.count(), 5);
+            assert_eq!(d.import_label(), "Import 5 requests");
+        });
+        cx.update(|window, cx| window.render_frame(cx));
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        cx.run_until_parked();
+        for rel in [
+            "customers/create-customer.yaml",
+            "customers/list-customers.yaml",
+            "customers/delete-customer.yaml",
+            "documents/convert-document.yaml",
+            "documents/health.yaml",
+        ] {
+            assert!(dir.path().join(rel).is_file(), "{rel}");
+        }
+        let env = std::fs::read_to_string(dir.path().join(".env")).unwrap();
+        assert!(env.contains("baseUrl="), "{env}");
+        for (path, text) in all_text(dir.path()) {
+            assert!(!text.contains("test-key-123"), "{}", path.display());
+        }
+        // The summary stays up with what is left, Pick a file first.
+        cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
+        dialog.read_with(cx, |d, _| {
+            assert!(d.error.is_none(), "{:?}", d.error);
+            assert_eq!(d.count(), 0);
+            let done = d.postman_done.as_ref().unwrap();
+            assert_eq!(done.written, 5);
+            let (first, opens) = &done.attention[0];
+            assert!(matches!(first, Attention::PickFile { .. }), "{first}");
+            assert_eq!(
+                opens.as_deref(),
+                Some(Path::new("documents/convert-document.yaml"))
+            );
+        });
+        cx.update(|window, cx| window.render_frame(cx));
+        // A Pick a file row opens its request.
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.open_attention(0, window, cx)));
+        cx.run_until_parked();
+        ws.read_with(cx, |ws, _| {
+            assert_eq!(
+                ws.state.active_document().unwrap().rel_path,
+                Path::new("documents/convert-document.yaml")
+            );
+        });
+    }
+
+    /// Imports the sample with the Keychain box `save`, after `before` ran
+    /// on the Keychain; returns the dialog's summary lines, what the
+    /// Keychain holds for apiKey and PASSWORD, the names marked secret and
+    /// the `.env` written.
+    fn import_postman(
+        cx: &mut TestAppContext,
+        save: bool,
+        before: impl FnOnce(&dyn crate::model::secrets::SecretStore, &str),
+    ) -> (
+        Vec<String>,
+        Option<String>,
+        Option<String>,
+        Vec<String>,
+        String,
+    ) {
+        let dir = collection();
+        let (_src, file) = postman_file(SAMPLE);
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let (secrets, service) = ws.read_with(cx, |ws, cx| {
+            let c = ws.state.collection.as_ref().unwrap();
+            (ws.secrets.clone(), ws.env_ctx(c, cx).service())
+        });
+        before(&*secrets, &service);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
+        cx.update(|window, cx| {
+            dialog.update(cx, |d, cx| {
+                // The dev hook: a .json path fills the Postman tab.
+                d.dev_fill(&file.to_string_lossy(), None, window, cx);
+                d.save_secrets = save;
+            })
+        });
+        dialog.read_with(cx, |d, _| assert_eq!(d.tab, ImportTab::Postman));
+        cx.update(|window, cx| window.render_frame(cx));
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        cx.run_until_parked();
+        let lines = dialog.read_with(cx, |d, _| {
+            d.postman_done
+                .as_ref()
+                .unwrap()
+                .attention
+                .iter()
+                .map(|(a, _)| a.to_string())
+                .collect()
+        });
+        let marked = ws.read_with(cx, |ws, cx| ws.meta(cx).secret_names.clone());
+        (
+            lines,
+            secrets.get(&service, "apiKey"),
+            secrets.get(&service, "PASSWORD"),
+            marked,
+            std::fs::read_to_string(dir.path().join(".env")).unwrap(),
+        )
+    }
+
+    #[gpui_kit::test]
+    fn postman_secrets_go_to_the_keychain(cx: &mut TestAppContext) {
+        let (lines, api_key, password, marked, env) = import_postman(cx, true, |_, _| {});
+        assert_eq!(api_key.as_deref(), Some("test-key-123"));
+        assert_eq!(password.as_deref(), Some("secret"));
+        assert!(marked.iter().any(|n| n == "apiKey"), "{marked:?}");
+        assert!(marked.iter().any(|n| n == "PASSWORD"), "{marked:?}");
+        // Saved: nothing left to set.
+        assert!(
+            !lines.iter().any(|l| l.starts_with("Set the secret")),
+            "{lines:?}"
+        );
+        assert!(
+            env.contains("# apiKey is a secret: the studio keeps it in your Keychain"),
+            "{env}"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn unchecked_postman_secrets_leave_the_keychain_alone(cx: &mut TestAppContext) {
+        let (lines, api_key, password, marked, env) = import_postman(cx, false, |_, _| {});
+        assert_eq!(api_key, None);
+        assert_eq!(password, None);
+        assert!(marked.iter().any(|n| n == "apiKey"), "{marked:?}");
+        for var in ["apiKey", "PASSWORD"] {
+            let want = format!("Set the secret {var}");
+            assert!(lines.contains(&want), "{lines:?}");
+        }
+        // Not in the Keychain: the note says where to set it.
+        assert!(
+            env.contains("# apiKey is a secret: set it in the studio's Environments"),
+            "{env}"
+        );
+        assert!(!env.contains("Keychain"), "{env}");
+    }
+
+    #[gpui_kit::test]
+    fn a_postman_secret_never_overwrites_the_keychain(cx: &mut TestAppContext) {
+        let (lines, api_key, password, marked, _) = import_postman(cx, true, |secrets, service| {
+            secrets.set(service, "apiKey", "key_already_there").unwrap();
+        });
+        assert_eq!(api_key.as_deref(), Some("key_already_there"));
+        assert_eq!(password.as_deref(), Some("secret"));
+        // Left for the user to set, and still marked secret.
+        assert!(marked.iter().any(|n| n == "apiKey"), "{marked:?}");
+        assert!(
+            lines.contains(&"Set the secret apiKey".to_string()),
+            "{lines:?}"
+        );
+        assert!(
+            !lines.contains(&"Set the secret PASSWORD".to_string()),
+            "{lines:?}"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn a_bad_postman_file_shows_an_error_and_writes_nothing(cx: &mut TestAppContext) {
+        let dir = collection();
+        let before = all_text(dir.path());
+        let (_src, file) = postman_file("{ not a collection");
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
+        dialog.update(cx, |d, cx| {
+            d.set_postman(file, cx);
+            d.set_tab(ImportTab::Postman, cx);
+        });
+        dialog.read_with(cx, |d, _| {
+            assert_eq!(d.count(), 0);
+            assert!(matches!(&d.postman, Some((_, Err(_)))));
+        });
+        cx.update(|window, cx| window.render_frame(cx));
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        dialog.read_with(cx, |d, _| assert!(d.error.is_some()));
+        assert_eq!(all_text(dir.path()), before);
+        cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
+    }
+
+    const EMPTY_SECRET: &str = r#"{"info":{"name":"Empty secret","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+      "variable":[{"key":"apiToken","value":"","secret":true}],
+      "item":[{"name":"Ping","request":{"method":"GET","url":"https://api.example.com/ping",
+        "header":[{"key":"X-Token","value":"{{apiToken}}"}]}}]}"#;
+
+    #[gpui_kit::test]
+    fn an_empty_postman_secret_is_still_marked_secret(cx: &mut TestAppContext) {
+        let dir = collection();
+        let (_src, file) = postman_file(EMPTY_SECRET);
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
+        cx.update(|window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.dev_fill(&file.to_string_lossy(), None, window, cx);
+                d.save_secrets = true;
+            })
+        });
+        cx.update(|window, cx| window.render_frame(cx));
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        cx.run_until_parked();
+        assert!(dir.path().join("ping.yaml").is_file());
+        ws.read_with(cx, |ws, cx| {
+            let c = ws.state.collection.as_ref().unwrap();
+            let service = ws.env_ctx(c, cx).service();
+            let marked = &ws.meta(cx).secret_names;
+            assert!(marked.iter().any(|n| n == "apiToken"), "{marked:?}");
+            assert_eq!(ws.secrets.get(&service, "apiToken"), None);
+        });
+    }
+
+    #[gpui_kit::test]
+    fn import_again_on_the_postman_summary_closes_the_dialog(cx: &mut TestAppContext) {
+        let dir = collection();
+        let (_src, file) = postman_file(SAMPLE);
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
+        cx.update(|window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.dev_fill(&file.to_string_lossy(), None, window, cx)
+            })
+        });
+        cx.update(|window, cx| window.render_frame(cx));
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        cx.run_until_parked();
+        cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
+        // ⌘↵ on the summary is Done.
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        cx.run_until_parked();
+        dialog.read_with(cx, |d, _| assert!(d.error.is_none(), "{:?}", d.error));
+        cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
+    }
+
+    #[gpui_kit::test]
+    fn postman_without_a_collection_starts_one(cx: &mut TestAppContext) {
+        let state = tempfile::tempdir().unwrap();
+        let store = StateStore::at(state.path());
+        let (_src, file) = postman_file(SAMPLE);
+        let (window, ws) = open(cx, None, store.clone());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
+        let target = tempfile::tempdir().unwrap();
+        cx.update(|window, cx| {
+            dialog.update(cx, |d, cx| {
+                d.set_target(Some(target.path().to_path_buf()), window, cx);
+                d.dev_fill(&file.to_string_lossy(), None, window, cx);
+            })
+        });
+        cx.update(|window, cx| window.render_frame(cx));
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        cx.run_until_parked();
+        assert!(
+            target
+                .path()
+                .join("customers/create-customer.yaml")
+                .is_file()
+        );
+        assert!(target.path().join(".env").is_file());
+        ws.read_with(cx, |ws, _| {
+            assert_eq!(ws.state.collection.as_ref().unwrap().root, target.path());
+        });
+        assert_eq!(store.recent()[0].path, target.path());
+        // The summary stays up.
+        cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
+        dialog.read_with(cx, |d, _| {
+            assert!(d.error.is_none(), "{:?}", d.error);
+            assert_eq!(d.postman_done.as_ref().unwrap().written, 5);
         });
     }
 }

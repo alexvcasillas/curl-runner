@@ -1,0 +1,122 @@
+{
+  "info": {
+    "name": "Example API",
+    "description": "A small example collection.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      { "key": "in", "value": "header", "type": "string" },
+      { "key": "key", "value": "X-Api-Key", "type": "string" },
+      { "key": "value", "value": "{{apiKey}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://api.example.com", "type": "string" },
+    { "key": "apiKey", "value": "test-key-123", "type": "secret", "secret": true }
+  ],
+  "item": [
+    {
+      "name": "Customers",
+      "item": [
+        {
+          "name": "Create customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/v1/customers",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ada Lovelace\",\n  \"email\": \"ada@example.com\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Creates a customer."
+          },
+          "response": []
+        },
+        {
+          "name": "List customers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/customers?limit=10&starting_after=cus_1",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "customers"],
+              "query": [
+                { "key": "limit", "value": "10" },
+                { "key": "starting_after", "value": "cus_1", "disabled": true }
+              ]
+            },
+            "description": {
+              "content": "Lists customers, newest first.",
+              "type": "text/plain"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete customer",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/v1/customers/cus_1",
+            "description": "Deletes a customer."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Documents",
+      "item": [
+        {
+          "name": "Convert document",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/v1/convert",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "document", "type": "file" },
+                { "key": "attachment", "type": "file", "src": "/tmp/example.pdf" },
+                { "key": "format", "value": "pdf", "type": "text" },
+                {
+                  "key": "watermark",
+                  "value": "draft",
+                  "type": "text",
+                  "disabled": true,
+                  "description": "Stamp text across each page."
+                },
+                {
+                  "key": "password",
+                  "value": "secret",
+                  "type": "text",
+                  "disabled": true,
+                  "description": "Unlocks a protected document."
+                }
+              ]
+            },
+            "description": "Converts an uploaded document."
+          },
+          "response": []
+        },
+        {
+          "name": "Health",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "description": "Public health check."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

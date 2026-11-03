@@ -53,6 +53,22 @@ Environments come from the collection's [`.env` files](/docs/features/env-files)
 
 <StudioScreenshot name="environments" onStudioPage>The Staging environment of a collection.</StudioScreenshot>
 
+## Import requests [#import]
+
+Choose **File › Import Requests…** or press ⌘I to bring in requests you already have. You can paste curl commands, pick a Postman collection or copy a folder of YAML. You see what will be added before anything is written, and no existing file is overwritten.
+
+### Postman collections [#import-postman]
+
+On the **Postman collection** tab, choose a collection you exported from Postman as `.json`, or drop the file on the dialog. The preview lists the request files you'll get and what needs your attention, such as a file to pick for an upload field.
+
+Choose **Import** to add them to the folder in **Add to**:
+
+- You get one YAML file per request, in a folder per Postman folder.
+- The collection's variables go to `.env`.
+- Secret values go to the macOS Keychain, never into a file. Clear **Save the secret values to the Keychain** to set them yourself later in **Environments**. If the Keychain already holds a different value for a secret, the studio keeps that value and lists the secret for you to set.
+
+After the import, the dialog lists what still needs your attention. Choose **Open** next to a "Pick a file" item to open that request and set the file. The same conversion runs in a terminal with [`curl-runner convert postman`](/docs/features/convert#postman).
+
 ## Run history [#history]
 
 Runs are kept on your machine for 30 days. Pick one to compare it with the run before it: which requests it fixed, which it broke and which got slower.

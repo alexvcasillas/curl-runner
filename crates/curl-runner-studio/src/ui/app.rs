@@ -131,7 +131,7 @@ pub fn menus(dev: Option<DevToggles>) -> Vec<Menu> {
     let mut file = vec![
         MenuItem::action("New Request…", NewRequest),
         MenuItem::action("New Collection…", NewCollection),
-        MenuItem::action("Import curl…", Import),
+        MenuItem::action("Import Requests…", Import),
         MenuItem::separator(),
         MenuItem::action("Open Folder…", OpenFolder),
     ];
@@ -193,7 +193,7 @@ pub fn bindings() -> Vec<Shortcut> {
         shortcut("cmd-w", CloseTab, None, "Close tab"),
         shortcut("cmd-n", NewRequest, None, "New request"),
         shortcut("cmd-shift-n", NewCollection, None, "New collection"),
-        shortcut("cmd-i", Import, None, "Import curl"),
+        shortcut("cmd-i", Import, None, "Import requests"),
         shortcut(
             "cmd-enter",
             CreateNew,
@@ -415,8 +415,17 @@ pub fn run() {
                         "import" | "import-folder" => {
                             let fill = dev_string("CURL_RUNNER_STUDIO_FILL").unwrap_or_default();
                             let folder = (show == "import-folder").then(|| PathBuf::from(&fill));
+                            // `CURL_RUNNER_STUDIO_SUBMIT`: imports it, for the summary.
+                            let submit = dev_string("CURL_RUNNER_STUDIO_SUBMIT").is_some();
                             if let Some(dialog) = ws.import(window, cx) {
                                 dialog.update(cx, |d, cx| d.dev_fill(&fill, folder, window, cx));
+                                if submit {
+                                    // Once this update ends: the import
+                                    // updates the workspace.
+                                    window.defer(cx, move |window, cx| {
+                                        dialog.update(cx, |d, cx| d.import(window, cx));
+                                    });
+                                }
                             }
                         }
                         "palette" => {
