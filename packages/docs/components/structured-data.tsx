@@ -29,7 +29,7 @@ export function SoftwareApplicationSchema() {
     downloadUrl: `${SITE_URL}/downloads`,
     applicationCategory: 'DeveloperApplication',
     operatingSystem: ['macOS', 'Linux', 'Windows'],
-    license: `${REPO_URL}/blob/main/LICENSE.md`,
+    license: `${REPO_URL}/blob/main/LICENSE`,
     codeRepository: REPO_URL,
     author: {
       '@type': 'Person',

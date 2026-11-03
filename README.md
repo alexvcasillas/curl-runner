@@ -168,7 +168,7 @@ curl-runner/
 ├── biome.json             # Code formatting and linting
 ├── @README.md             # This file
 ├── CONTRIBUTE.md          # Contribution guidelines
-└── LICENSE.md             # MIT License
+└── LICENSE                # MIT License
 ```
 
 ## 🛠️ Development
@@ -404,7 +404,7 @@ We welcome contributions! Please see our [CONTRIBUTE.md](CONTRIBUTE.md) for guid
 
 ## 📄 License
 
-This project is licensed under the MIT License. See [LICENSE.md](LICENSE.md) for details.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ## 🙏 Acknowledgments
 
