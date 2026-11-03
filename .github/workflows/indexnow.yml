@@ -2,6 +2,8 @@ name: IndexNow
 
 # After Vercel reports a successful production deploy, ping IndexNow with the pages it
 # changed (sitemap lastmod newer than the deployed commit's parent).
+# Vercel posts two `success` statuses per deploy; only the second carries the
+# environment URL and comes once the new site is live, so we wait for that one.
 on:
   deployment_status:
 
@@ -11,7 +13,10 @@ permissions:
 jobs:
   ping:
     name: Submit changed URLs
-    if: github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production'
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment.environment == 'Production' &&
+      github.event.deployment_status.environment_url != ''
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
