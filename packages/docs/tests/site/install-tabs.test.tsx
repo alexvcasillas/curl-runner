@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { InstallTabs } from '@/components/site/InstallTabs';
 
 const CURL = 'curl -fsSL https://www.curl-runner.com/install.sh | bash';
-const BREW = 'brew install alexvcasillas/tap/curl-runner';
+const BREW = 'brew trust alexvcasillas/tap && brew install alexvcasillas/tap/curl-runner';
 
 describe('InstallTabs', () => {
   it('server-renders the default command without JS', () => {

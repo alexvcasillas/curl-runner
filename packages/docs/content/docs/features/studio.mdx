@@ -13,9 +13,10 @@ The studio is a preview. It works fully on local YAML files. Sync and sharing ar
 
 You need macOS 12 or later. The app is a universal build for Apple silicon and Intel, signed and notarized.
 
-Download `curl-runner-studio-<version>.dmg` from the [downloads page](/downloads), open it and drag the app to Applications. Or install it with Homebrew:
+Download `curl-runner-studio-<version>.dmg` from the [downloads page](/downloads), open it and drag the app to Applications. Or install it with Homebrew. Homebrew asks you to trust third-party taps before it installs from them, so trust the tap first:
 
 ```bash title="Terminal"
+brew trust alexvcasillas/tap
 brew install --cask alexvcasillas/tap/curl-runner-studio
 ```
 

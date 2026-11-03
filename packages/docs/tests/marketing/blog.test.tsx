@@ -85,9 +85,9 @@ describe('studio preview post', () => {
       expect(out, shot).toMatch(new RegExp(`studio(/|%2F)${shot}\\.png`));
     }
     expect(out).toContain('href="/downloads"');
-    expect(out.replace(/<[^>]+>/g, '')).toContain(
-      'brew install --cask alexvcasillas/tap/curl-runner-studio',
-    );
+    const text = out.replace(/<[^>]+>/g, '');
+    expect(text).toContain('brew trust alexvcasillas/tap');
+    expect(text).toContain('brew install --cask alexvcasillas/tap/curl-runner-studio');
     expect(out).not.toContain('—');
   });
 });

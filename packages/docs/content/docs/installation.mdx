@@ -36,14 +36,17 @@ irm https://www.curl-runner.com/install.ps1 | iex
 
 ### Homebrew (macOS, Linux)
 
-Install the prebuilt binary from the `alexvcasillas/tap` tap. `curl-runner upgrade` runs `brew upgrade curl-runner` for you.
+Install the prebuilt binary from the `alexvcasillas/tap` tap. Homebrew asks you to trust third-party taps before it installs from them, so trust it first. `curl-runner upgrade` runs `brew upgrade curl-runner` for you.
 
 ```bash
+brew trust alexvcasillas/tap
 brew install alexvcasillas/tap/curl-runner
 
 # Upgrade later
 brew upgrade curl-runner
 ```
+
+If `brew upgrade` says the tap is untrusted, run `brew trust alexvcasillas/tap` once.
 
 ### npm, pnpm, yarn and bun
 

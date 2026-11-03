@@ -1,12 +1,17 @@
 // curl-runner studio: a macOS desktop app, a signed and notarized dmg since 2.3.0. Pages
 // that show it point at /downloads and the Homebrew cask. Sync and sharing are coming soon.
 
+import { BREW_TRUST_COMMAND } from '@/lib/install-methods';
 import { SITE_URL } from '@/lib/site';
 import cliPackage from '../../cli/package.json';
 
 export const STUDIO_REPO_URL = 'https://github.com/alexvcasillas/curl-runner';
 export const STUDIO_SOURCE_URL = `${STUDIO_REPO_URL}/tree/main/crates/curl-runner-studio`;
-export const STUDIO_CASK_COMMAND = 'brew install --cask alexvcasillas/tap/curl-runner-studio';
+export const STUDIO_CASK_INSTALL = 'brew install --cask alexvcasillas/tap/curl-runner-studio';
+/** Trust the tap, then install the cask, one line to paste. */
+export const STUDIO_CASK_COMMAND = `${BREW_TRUST_COMMAND} && ${STUDIO_CASK_INSTALL}`;
+/** The same two steps, one per line, for terminal blocks. */
+export const STUDIO_CASK_STEPS: readonly string[] = [BREW_TRUST_COMMAND, STUDIO_CASK_INSTALL];
 export const STUDIO_DOWNLOAD_HREF = '/downloads';
 export const STUDIO_REQUIREMENTS = 'macOS 12 or later, Apple silicon and Intel';
 /** The studio ships with every CLI release and shares its version. */

@@ -12,9 +12,10 @@ import sitemap from '@/app/sitemap';
 import { StudioScreenshot } from '@/components/site/Screenshot';
 import { SoftwareApplicationSchema } from '@/components/structured-data';
 import { getFeatureBySlug } from '@/lib/features-data';
+import { BREW_TRUST_COMMAND } from '@/lib/install-methods';
 import { SITE_URL, source } from '@/lib/source';
 import {
-  STUDIO_CASK_COMMAND,
+  STUDIO_CASK_INSTALL,
   STUDIO_HERO,
   STUDIO_SCREENSHOT_NAMES,
   type StudioScreenshotName,
@@ -71,7 +72,8 @@ describe('home studio section', () => {
   it('links to the download, not to building from source', async () => {
     const section = studioSection(await render(<Home />));
     expect(section).toContain('href="/downloads"');
-    expect(section).toContain(STUDIO_CASK_COMMAND);
+    expect(section).toContain(BREW_TRUST_COMMAND);
+    expect(section).toContain(STUDIO_CASK_INSTALL);
     expect(section).toContain('macOS 12');
     expect(section).not.toMatch(/from source|not distributed|cargo run/);
   });
@@ -112,7 +114,8 @@ describe('studio feature page', () => {
     const html = await render(<FeaturePage params={Promise.resolve({ slug: 'studio' })} />);
     expect(html).toContain('Studio · Preview');
     expect(html).toContain('Download the studio');
-    expect(html).toContain(STUDIO_CASK_COMMAND);
+    expect(html).toContain(BREW_TRUST_COMMAND);
+    expect(html).toContain(STUDIO_CASK_INSTALL);
     expect(html).toContain(`href="/changelog#${cliPackage.version}"`);
     expect(html).toContain(`what shipped in ${cliPackage.version}`);
     expect(html).toContain('href="/docs/features/studio"');
@@ -191,7 +194,8 @@ describe('studio docs', () => {
   it('has a docs page with the download, the cask and the system requirements', () => {
     expect(source.getPage(['features', 'studio'])?.data.title).toBe('Studio (preview)');
     const text = mdx('features/studio');
-    expect(text).toContain(STUDIO_CASK_COMMAND);
+    expect(text).toContain(BREW_TRUST_COMMAND);
+    expect(text).toContain(STUDIO_CASK_INSTALL);
     expect(text).toContain('/downloads');
     expect(text).toContain('macOS 12');
     expect(text).toContain('https://api.curl-runner.com/health');

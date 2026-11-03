@@ -7,6 +7,9 @@ export interface InstallMethod {
   note: string;
 }
 
+/** Homebrew asks you to trust third-party taps before it installs from them. */
+export const BREW_TRUST_COMMAND = 'brew trust alexvcasillas/tap';
+
 export const INSTALL_METHODS: readonly InstallMethod[] = [
   {
     id: 'curl',
@@ -23,8 +26,8 @@ export const INSTALL_METHODS: readonly InstallMethod[] = [
   {
     id: 'brew',
     label: 'Homebrew',
-    command: 'brew install alexvcasillas/tap/curl-runner',
-    note: 'macOS and Linux. Upgrade with brew upgrade curl-runner.',
+    command: `${BREW_TRUST_COMMAND} && brew install alexvcasillas/tap/curl-runner`,
+    note: 'macOS and Linux. Homebrew asks you to trust the tap first. Upgrade with brew upgrade curl-runner.',
   },
   {
     id: 'npm',
