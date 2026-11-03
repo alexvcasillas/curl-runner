@@ -1,10 +1,12 @@
 //! Postman collection importer.
 
+pub mod emit;
 pub mod map;
 pub mod model;
 pub mod report;
 
 use super::ConvertError;
+pub use emit::emit_request;
 pub use map::{
     Field, FieldValue, ImportedVar, Mapped, MappedAuth, MappedBody, MappedRequest, map_collection,
 };

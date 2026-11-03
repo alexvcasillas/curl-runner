@@ -553,3 +553,345 @@ fn secret_form_fields_are_scrubbed() {
         }
     }
 }
+
+// ---- emit ----
+
+/// Every request of both fixtures, emitted.
+fn all_emitted() -> Vec<(MappedRequest, String)> {
+    [
+        "sample.postman_collection.json",
+        "edge.postman_collection.json",
+    ]
+    .into_iter()
+    .flat_map(|f| mapped(f).requests)
+    .map(|r| {
+        let y = emit_request(&r, "Sample");
+        (r, y)
+    })
+    .collect()
+}
+
+/// Load emitted YAML the way a run does: file variables and `env`
+/// interpolated, defaults merged, then typed.
+fn load_with_env(yaml: &str, env: &dyn Fn(&str) -> Option<String>) -> crate::model::RequestConfig {
+    let raw = crate::parser::parse_raw(yaml).unwrap();
+    let file = crate::parser::prepare_raw(
+        &raw,
+        Path::new("emitted.yaml"),
+        &crate::config::DefaultsLayers::default(),
+        Some(env),
+    )
+    .unwrap();
+    let ctx = crate::interpolate::InterpCtx::new(&file.variables, None, env);
+    crate::interpolate::interpolate_request_json(&file.requests[0], &ctx).unwrap()
+}
+
+#[test]
+fn every_emitted_file_reads_as_yaml() {
+    for (r, y) in all_emitted() {
+        crate::parser::parse_raw_stream(&y).unwrap_or_else(|e| panic!("{}: {e:?}\n{y}", r.name));
+        // And types as a request.
+        let raw = crate::parser::parse_raw(&y).unwrap();
+        crate::parser::from_raw(raw, Path::new("emitted.yaml"))
+            .unwrap_or_else(|e| panic!("{}: {e:?}\n{y}", r.name));
+    }
+}
+
+/// The disabled fields of `r`, as (section, key) in emitted order.
+fn disabled_fields(r: &MappedRequest) -> Vec<(&'static str, String)> {
+    let mut out = Vec::new();
+    for (section, fields) in [("headers", &r.headers), ("params", &r.params)] {
+        out.extend(
+            fields
+                .iter()
+                .filter(|f| f.disabled)
+                .map(|f| (section, f.key.clone())),
+        );
+    }
+    if let MappedBody::Form(f) = &r.body {
+        out.extend(
+            f.iter()
+                .filter(|f| f.disabled)
+                .map(|f| ("formData", f.key.clone())),
+        );
+    }
+    out
+}
+
+/// Lines that are a commented-out field: indented, `# ` (not `# #`), and
+/// what follows reads as a one-entry map. Paired with the section (the
+/// nearest `  key:` line above) and the field key.
+fn commented_fields(y: &str) -> Vec<(usize, String, String)> {
+    let mut section = String::new();
+    let mut out = Vec::new();
+    for (i, l) in y.lines().enumerate() {
+        let t = l.trim_start();
+        let indent = l.len() - t.len();
+        if indent == 2 && !t.starts_with('#') {
+            section = t.split(':').next().unwrap().to_string();
+        }
+        let Some(rest) = t.strip_prefix("# ") else {
+            continue;
+        };
+        if indent == 0 || rest.starts_with('#') {
+            continue;
+        }
+        if let Ok(serde_json::Value::Object(o)) = crate::parser::parse_raw(rest)
+            && o.len() == 1
+        {
+            out.push((i, section.clone(), o.keys().next().unwrap().clone()));
+        }
+    }
+    out
+}
+
+#[test]
+fn uncommenting_any_disabled_line_still_parses_and_adds_it() {
+    let mut seen = 0;
+    for (r, y) in all_emitted() {
+        let want = disabled_fields(&r);
+        let found = commented_fields(&y);
+        let got: Vec<_> = found
+            .iter()
+            .map(|(_, s, k)| (s.as_str(), k.clone()))
+            .collect();
+        assert_eq!(got, want, "{}:\n{y}", r.name);
+        for (i, section, key) in found {
+            let lines: Vec<String> = y
+                .lines()
+                .enumerate()
+                .map(|(j, l)| {
+                    if j == i {
+                        l.replacen("# ", "", 1)
+                    } else {
+                        l.to_string()
+                    }
+                })
+                .collect();
+            let text = lines.join("\n");
+            let v = crate::parser::parse_raw_stream(&text)
+                .unwrap_or_else(|e| panic!("{}: {e:?}\n{text}", r.name));
+            assert!(
+                v["request"][&section].get(&key).is_some(),
+                "{}: {section}.{key} missing\n{text}",
+                r.name
+            );
+            let raw = crate::parser::parse_raw(&text).unwrap();
+            crate::parser::from_raw(raw, Path::new("emitted.yaml")).unwrap();
+            seen += 1;
+        }
+    }
+    // Sample: starting_after, watermark, password; plus whatever edge has.
+    assert!(seen >= 3, "{seen}");
+}
+
+#[test]
+fn notes_sit_above_their_field() {
+    let r = req(
+        &mapped("sample.postman_collection.json"),
+        "Convert document",
+    );
+    let y = emit_request(&r, "Sample");
+    let MappedBody::Form(f) = &r.body else {
+        panic!()
+    };
+    let lines: Vec<&str> = y.lines().collect();
+    for field in f.iter().filter(|x| x.note.is_some()) {
+        let note = field.note.as_deref().unwrap().lines().last().unwrap();
+        let prefix = if field.disabled { "    # # " } else { "    # " };
+        let at = lines
+            .iter()
+            .position(|l| *l == format!("{prefix}{note}"))
+            .unwrap_or_else(|| panic!("note for {}\n{y}", field.key));
+        let next = lines[at + 1];
+        let field_line = if field.disabled { "    # " } else { "    " };
+        assert!(
+            next.starts_with(&format!("{field_line}{}:", field.key)),
+            "{next}\n{y}"
+        );
+    }
+}
+
+#[test]
+fn keeps_postman_order_and_descriptions() {
+    let r = req(&mapped("sample.postman_collection.json"), "Create customer");
+    let y = emit_request(&r, "Sample");
+    assert!(
+        y.starts_with("# Imported from Postman: Sample\n# Creates a customer.\n\n"),
+        "{y}"
+    );
+    assert!(y.find("X-Api-Key").unwrap() < y.find("Content-Type").unwrap()); // fixture order
+    let keys = ["name:", "method:", "url:", "headers:", "body:"];
+    let at: Vec<_> = keys
+        .iter()
+        .map(|k| y.find(&format!("  {k}")).unwrap())
+        .collect();
+    assert!(at.windows(2).all(|w| w[0] < w[1]), "{y}");
+}
+
+#[test]
+fn the_runner_reads_what_postman_would_send() {
+    let m = mapped("sample.postman_collection.json");
+    let r = req(&m, "Create customer");
+    let y = emit_request(&r, "Sample");
+    let env = |k: &str| match k {
+        "baseUrl" => Some("https://api.example.com".into()),
+        "apiKey" => Some("k".into()),
+        _ => None,
+    };
+    let parsed = load_with_env(&y, &env);
+    assert_eq!(parsed.url, "https://api.example.com/v1/customers");
+    let headers = parsed.headers.unwrap();
+    assert_eq!(headers.get("X-Api-Key").map(String::as_str), Some("k"));
+    let MappedBody::Json(body) = &r.body else {
+        panic!()
+    };
+    assert_eq!(parsed.body.as_ref(), Some(body));
+}
+
+#[test]
+fn path_variables_go_under_global() {
+    let r = req(&mapped("edge.postman_collection.json"), "Get item");
+    let y = emit_request(&r, "Edge");
+    assert!(y.contains("\nglobal:\n  variables:\n"), "{y}");
+    let parsed = load_with_env(&y, &|k| {
+        (k == "baseUrl").then(|| "https://api.example.com".into())
+    });
+    assert_eq!(parsed.url, "https://api.example.com/items/42");
+}
+
+#[test]
+fn auth_and_form_files_use_runner_shapes() {
+    for (r, y) in all_emitted() {
+        let raw = crate::parser::parse_raw(&y).unwrap();
+        let file = crate::parser::from_raw(raw, Path::new("emitted.yaml")).unwrap();
+        let got = &file.requests[0];
+        match &r.auth {
+            Some(MappedAuth::Bearer(t)) => {
+                let a = got.auth.as_ref().unwrap();
+                assert_eq!(
+                    (a.auth_type.as_str(), a.token.as_ref()),
+                    ("bearer", Some(t))
+                );
+            }
+            Some(MappedAuth::Basic { username, password }) => {
+                let a = got.auth.as_ref().unwrap();
+                assert_eq!(a.auth_type, "basic");
+                assert_eq!(a.username.as_ref(), Some(username));
+                assert_eq!(a.password.as_ref(), Some(password));
+            }
+            None => assert!(got.auth.is_none(), "{}", r.name),
+        }
+        if let MappedBody::Form(fields) = &r.body {
+            let form = got.form_data.clone().unwrap_or_default();
+            for f in fields.iter().filter(|f| !f.disabled) {
+                let v = form.get(&f.key).unwrap_or_else(|| panic!("{}\n{y}", f.key));
+                match (&f.value, v) {
+                    (FieldValue::Text(t), crate::model::FormFieldValue::Text(g)) => {
+                        assert_eq!(t, g)
+                    }
+                    (FieldValue::File { path, .. }, crate::model::FormFieldValue::File(g)) => {
+                        assert_eq!(path, &g.file)
+                    }
+                    other => panic!("{}: {other:?}", f.key),
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn text_bodies_and_odd_values_round_trip() {
+    let base = req(&mapped("sample.postman_collection.json"), "Health");
+    let odd = [
+        "line one\nline two",
+        "trailing newline\n",
+        "two trailing\n\n",
+        "  leading spaces\nnext",
+        "\nstarts with a newline",
+        "tab\tand \"quotes\" and \\ back",
+        "- a list?",
+        "# not a comment",
+        "yes",
+        "0123",
+        "",
+        "a: b",
+        "${baseUrl}/x?y=${id}",
+        "{\"json\": ${id}}",
+        "windows\r\nline",
+        "lone\rcr and\u{2028}sep",
+    ];
+    for s in odd {
+        let mut r = base.clone();
+        r.body = MappedBody::Text(s.into());
+        r.comments = vec![s.into()];
+        r.headers = vec![Field {
+            key: "X-Odd".into(),
+            value: FieldValue::Text(s.into()),
+            disabled: false,
+            note: Some(s.into()),
+        }];
+        let y = emit_request(&r, s);
+        let v = crate::parser::parse_raw_stream(&y).unwrap_or_else(|e| panic!("{s:?}: {e:?}\n{y}"));
+        assert_eq!(v["request"]["body"], serde_json::json!(s), "{s:?}\n{y}");
+        assert_eq!(
+            v["request"]["headers"]["X-Odd"],
+            serde_json::json!(s),
+            "{s:?}\n{y}"
+        );
+    }
+}
+
+#[test]
+fn multi_line_text_is_a_block_scalar() {
+    let mut r = req(&mapped("sample.postman_collection.json"), "Health");
+    r.body = MappedBody::Text("<a>\n  <b/>\n</a>\n".into());
+    let y = emit_request(&r, "Sample");
+    assert!(
+        y.contains("  body: |\n    <a>\n      <b/>\n    </a>\n"),
+        "{y}"
+    );
+}
+
+#[test]
+fn references_stay_unquoted() {
+    let r = req(&mapped("sample.postman_collection.json"), "Create customer");
+    let y = emit_request(&r, "Sample");
+    assert!(y.contains("  url: ${baseUrl}/v1/customers\n"), "{y}");
+    assert!(y.contains("    X-Api-Key: ${apiKey}\n"), "{y}");
+}
+#[test]
+fn a_map_of_only_disabled_entries_is_still_written() {
+    let mut r = req(&mapped("sample.postman_collection.json"), "Health");
+    let off = |k: &str| Field {
+        key: k.into(),
+        value: FieldValue::Text("v".into()),
+        disabled: true,
+        note: None,
+    };
+    r.headers = vec![off("X-One"), off("X-Two")];
+    let y = emit_request(&r, "Sample");
+    assert!(
+        y.contains("  headers:\n    # X-One: v\n    # X-Two: v\n"),
+        "{y}"
+    );
+    let raw = crate::parser::parse_raw(&y).unwrap();
+    crate::parser::from_raw(raw, Path::new("emitted.yaml")).unwrap();
+    let found = commented_fields(&y);
+    assert_eq!(found.len(), 2);
+    for (i, _, key) in found {
+        let text: Vec<String> = y
+            .lines()
+            .enumerate()
+            .map(|(j, l)| {
+                if j == i {
+                    l.replacen("# ", "", 1)
+                } else {
+                    l.to_string()
+                }
+            })
+            .collect();
+        let v = crate::parser::parse_raw_stream(&text.join("\n")).unwrap();
+        assert_eq!(v["request"]["headers"][&key], "v");
+    }
+}
