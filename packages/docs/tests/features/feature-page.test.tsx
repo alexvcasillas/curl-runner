@@ -40,6 +40,20 @@ describe('feature page', () => {
     expect(html).toContain('Rate-limited APIs that answer 429');
   });
 
+  it('renders the Postman import page with its screenshots and the docs link', async () => {
+    const html = await render('postman-import');
+    expect(html).toContain('Bring your Postman collection, keep plain YAML.');
+    expect(html).toContain('href="/docs/features/postman-import"');
+    expect(html).toContain('customers/list-customers.yaml');
+    expect(html).toContain('Imported from Postman: Example API');
+    expect(html).toContain(`/_next/image?url=${encodeURIComponent('/studio/postman-import.png')}`);
+    expect(html).toContain(
+      `/_next/image?url=${encodeURIComponent('/studio/postman-import-summary.png')}`,
+    );
+    expect(html).toContain('Each request becomes a file like this one.');
+    expect(html).toContain('Moving a team off Postman');
+  });
+
   it('lists every feature in the sidebar and marks the current one', async () => {
     const html = await render('retry-mechanism');
     for (const f of getAllFeatures()) {

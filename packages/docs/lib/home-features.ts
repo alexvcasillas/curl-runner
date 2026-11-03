@@ -47,7 +47,7 @@ export const HOME_FEATURES: readonly HomeFeature[] = [
   },
   {
     key: 'convert',
-    title: 'From curl to YAML',
-    body: 'Paste a curl command or a shell script and get a ready-to-run suite back.',
+    title: 'From curl or Postman to YAML',
+    body: 'Paste a curl command or a shell script, or import a Postman collection, and get a ready-to-run suite back.',
   },
 ];
