@@ -48,8 +48,8 @@ pub fn convert_postman(json: &str) -> Result<PostmanImport, ConvertError> {
         .requests
         .iter()
         .map(|r| {
-            let mut planned: PathBuf = r.folders.iter().map(|f| slug(f)).collect();
-            planned.push(format!("{}.yaml", slug(&r.name)));
+            let mut planned: PathBuf = r.folders.iter().map(|f| slug(f, "folder")).collect();
+            planned.push(format!("{}.yaml", slug(&r.name, "request")));
             let rel_path = unique_path(&planned, |p| taken.contains(p));
             taken.insert(rel_path.clone());
             PostmanFile {
@@ -70,9 +70,9 @@ pub fn convert_postman(json: &str) -> Result<PostmanImport, ConvertError> {
 }
 
 /// Lowercase ASCII letters and digits; any run of other characters becomes
-/// `-`, trimmed; empty falls back to `request`. `.`, `/` and `\` are among
+/// `-`, trimmed; empty falls back to `fallback`. `.`, `/` and `\` are among
 /// the "other" characters, so a slug is always a single plain component.
-pub fn slug(name: &str) -> String {
+pub fn slug(name: &str, fallback: &str) -> String {
     let mut out = String::new();
     for c in name.chars() {
         if c.is_ascii_alphanumeric() {
@@ -83,7 +83,7 @@ pub fn slug(name: &str) -> String {
     }
     let out = out.trim_matches('-');
     if out.is_empty() {
-        "request".into()
+        fallback.into()
     } else {
         out.to_string()
     }

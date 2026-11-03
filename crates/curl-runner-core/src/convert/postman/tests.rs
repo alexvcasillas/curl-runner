@@ -1021,8 +1021,8 @@ fn hostile_names_become_plain_components() {
     let paths: Vec<_> = imp.files.iter().map(|f| f.rel_path.clone()).collect();
     assert!(paths.contains(&std::path::PathBuf::from("get-user/get-user.yaml")));
     assert!(paths.contains(&std::path::PathBuf::from("etc-passwd/etc-passwd.yaml")));
-    assert!(paths.contains(&std::path::PathBuf::from("request/request.yaml")));
-    assert!(paths.contains(&std::path::PathBuf::from("request/request-2.yaml")));
+    assert!(paths.contains(&std::path::PathBuf::from("folder/request.yaml")));
+    assert!(paths.contains(&std::path::PathBuf::from("folder/request-2.yaml")));
 }
 
 #[test]
@@ -1122,5 +1122,23 @@ fn readme_is_written_once() {
     assert_eq!(
         std::fs::read_to_string(dir.path().join("api/README.md")).unwrap(),
         "mine"
+    );
+}
+
+#[test]
+fn folders_with_empty_slugs_fall_back_to_folder() {
+    let imp = convert_postman(&fixture("edge.postman_collection.json")).unwrap();
+    let paths: Vec<_> = imp.files.iter().map(|f| f.rel_path.clone()).collect();
+    assert!(paths.contains(&std::path::PathBuf::from("escape/inside.yaml")));
+    let req = r#"{"name":"Ping","request":{"method":"GET","url":"https://api.example.com"}}"#;
+    let items = format!(r#"[{{"name":"🚀","item":[{req}]}},{{"name":"✨","item":[{req}]}}]"#);
+    let imp = convert_postman(&collection(&items)).unwrap();
+    let paths: Vec<_> = imp.files.iter().map(|f| f.rel_path.clone()).collect();
+    assert_eq!(
+        paths,
+        [
+            std::path::PathBuf::from("folder/ping.yaml"),
+            std::path::PathBuf::from("folder/ping-2.yaml")
+        ]
     );
 }
