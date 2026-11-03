@@ -668,7 +668,8 @@ impl<'c> Mapper<'c> {
         if let Some(dynamic) = inner.strip_prefix('$') {
             let to = match dynamic {
                 "guid" | "randomUUID" => "UUID",
-                "timestamp" => "TIMESTAMP",
+                // `$timestamp` is in seconds, curl-runner's TIMESTAMP in
+                // milliseconds: it stays as written.
                 "randomInt" => "RANDOM:0-1000",
                 _ => {
                     let a = Attention::DynamicVar {

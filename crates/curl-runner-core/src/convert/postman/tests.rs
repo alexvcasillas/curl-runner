@@ -1221,3 +1221,19 @@ fn v2_0_object_auth_keeps_its_variables_secret() {
         }
     }
 }
+
+#[test]
+fn timestamp_stays_as_written() {
+    // Postman's is in seconds, curl-runner's TIMESTAMP in milliseconds.
+    let json = collection(
+        r#"[{"name":"T","request":{"method":"GET","url":"https://api.example.com/t?at={{$timestamp}}&id={{$guid}}"}}]"#,
+    );
+    let m = map_collection(&parse_collection(&json).unwrap());
+    let r = &m.requests[0];
+    let params: Vec<_> = r.params.iter().map(|p| (p.key.as_str(), text(p))).collect();
+    assert_eq!(params, [("at", "{{$timestamp}}"), ("id", "${UUID}")]);
+    assert!(m_has(&m, r, |a| matches!(
+        a,
+        Attention::DynamicVar { name, .. } if name == "$timestamp"
+    )));
+}
