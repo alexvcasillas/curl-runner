@@ -1280,3 +1280,39 @@ fn a_file_field_with_several_files_reports_the_rest() {
         "Kept the first of 3 files for \"docs\" in Upload. Add the others by hand."
     );
 }
+
+#[test]
+fn long_names_are_capped_so_the_file_can_be_written() {
+    let long = "Get ".repeat(75); // 300 characters
+    let json = collection(&format!(
+        r#"[{{"name":{long:?},"item":[{{"name":{long:?},"request":{{"method":"GET","url":"https://api.example.com"}}}}]}}]"#
+    ));
+    let imp = convert_postman(&json).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let out = write_postman(dir.path(), Path::new(""), &imp, "x").unwrap();
+    assert_eq!(out.written.len(), 1);
+    for c in out.written[0].components() {
+        let s = c.as_os_str().to_str().unwrap();
+        let stem = s.strip_suffix(".yaml").unwrap_or(s);
+        assert_eq!(stem.len(), 99, "{s}"); // 100, less the trailing `-`
+        assert!(stem.starts_with("get-get-") && !stem.ends_with('-'), "{s}");
+    }
+    assert!(dir.path().join(&out.written[0]).is_file());
+    assert_eq!(slug(&"é".repeat(300), "x"), "x");
+    assert_eq!(slug(&"a".repeat(300), "x").len(), 100);
+}
+
+#[test]
+fn a_write_error_names_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    // A file where the import needs its `customers` folder.
+    std::fs::write(dir.path().join("customers"), "").unwrap();
+    let imp = convert_postman(&fixture("sample.postman_collection.json")).unwrap();
+    let err = write_postman(dir.path(), Path::new(""), &imp, "x").unwrap_err();
+    let msg = err.to_string();
+    let want = format!(
+        "Couldn't write {}",
+        dir.path().join("customers/create-customer.yaml").display()
+    );
+    assert!(msg.starts_with(&want), "{msg}");
+}

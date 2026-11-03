@@ -94,7 +94,8 @@ fn run_postman(parsed: &ConvertArgs, log: &Logger, console: &mut Console) -> i32
     ) {
         Ok(o) => o,
         Err(e) => {
-            log.log_error(console, &fs_message(&e, &dir, "open"));
+            // Names the file and the real cause.
+            log.log_error(console, &e.to_string());
             return 1;
         }
     };

@@ -72,9 +72,14 @@ pub fn convert_postman(json: &str) -> Result<PostmanImport, ConvertError> {
     })
 }
 
+/// The longest slug, so a file name stays well under the file system's
+/// limit.
+const MAX_SLUG: usize = 100;
+
 /// Lowercase ASCII letters and digits; any run of other characters becomes
-/// `-`, trimmed; empty falls back to `fallback`. `.`, `/` and `\` are among
-/// the "other" characters, so a slug is always a single plain component.
+/// `-`, trimmed; at most `MAX_SLUG` characters; empty falls back to
+/// `fallback`. `.`, `/` and `\` are among the "other" characters, so a
+/// slug is always a single plain component.
 pub fn slug(name: &str, fallback: &str) -> String {
     let mut out = String::new();
     for c in name.chars() {
@@ -84,7 +89,11 @@ pub fn slug(name: &str, fallback: &str) -> String {
             out.push('-');
         }
     }
-    let out = out.trim_matches('-');
+    let mut out = out.trim_start_matches('-');
+    if let Some((end, _)) = out.char_indices().nth(MAX_SLUG) {
+        out = &out[..end];
+    }
+    let out = out.trim_end_matches('-');
     if out.is_empty() {
         fallback.into()
     } else {
@@ -118,20 +127,28 @@ pub fn write_postman(
         let rel = unique_path(&folder.join(&file.rel_path), |p| {
             out.written.iter().any(|w| w == p) || root.join(p).symlink_metadata().is_ok()
         });
-        write_new(&root.join(&rel), file.yaml.as_bytes())?;
+        let path = root.join(&rel);
+        write_new(&path, file.yaml.as_bytes()).map_err(|e| naming(&path, e))?;
         out.written.push(rel);
     }
 
-    out.kept_env = append_env(&root.join(".env"), import, secret_note)?;
+    let env = root.join(".env");
+    out.kept_env = append_env(&env, import, secret_note).map_err(|e| naming(&env, e))?;
 
     if let Some(readme) = &import.readme {
-        out.readme = match write_new(&root.join(&folder).join("README.md"), readme.as_bytes()) {
+        let path = root.join(&folder).join("README.md");
+        out.readme = match write_new(&path, readme.as_bytes()) {
             Ok(()) => true,
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => false,
-            Err(e) => return Err(e),
+            Err(e) => return Err(naming(&path, e)),
         };
     }
     Ok(out)
+}
+
+/// `e` with the file it happened on, keeping its kind.
+fn naming(path: &Path, e: io::Error) -> io::Error {
+    io::Error::new(e.kind(), format!("Couldn't write {}: {e}", path.display()))
 }
 
 /// At least one component, and only `Normal` ones.

@@ -108,3 +108,37 @@ fn tree_text(dir: &Path) -> String {
     }
     all
 }
+
+#[test]
+fn a_write_error_names_the_real_cause() {
+    let work = tempfile::tempdir().unwrap();
+    std::fs::write(work.path().join("c.json"), SAMPLE).unwrap();
+    // A file where the import needs its `customers` folder.
+    std::fs::create_dir(work.path().join("out")).unwrap();
+    std::fs::write(work.path().join("out/customers"), "").unwrap();
+    let out = convert(work.path(), &["c.json", "-o", "out"]);
+    let err = stderr(&out);
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert!(
+        err.contains("Couldn't write out/customers/create-customer.yaml: "),
+        "{err}"
+    );
+    assert!(!err.contains("EISDIR"), "{err}");
+}
+
+#[test]
+fn a_very_long_request_name_still_writes() {
+    let work = tempfile::tempdir().unwrap();
+    let long = "x".repeat(300);
+    std::fs::write(
+        work.path().join("c.json"),
+        format!(
+            r#"{{"info":{{"name":"Long","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"}},"item":[{{"name":"{long}","request":{{"method":"GET","url":"https://api.example.com"}}}}]}}"#
+        ),
+    )
+    .unwrap();
+    let out = convert(work.path(), &["c.json", "-o", "out"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let file = format!("{}.yaml", "x".repeat(100));
+    assert!(work.path().join("out").join(file).is_file());
+}
