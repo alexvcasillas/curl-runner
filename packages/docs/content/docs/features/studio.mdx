@@ -62,6 +62,8 @@ Choose **File › Import Requests…** or press ⌘I to bring in requests you al
 
 On the **Postman collection** tab, choose a collection you exported from Postman as `.json`, or drop the file on the dialog. The preview lists the request files you'll get and what needs your attention, such as a file to pick for an upload field.
 
+<StudioScreenshot name="postman-import" onStudioPage>Five requests in two folders. Two things need you before they run.</StudioScreenshot>
+
 Choose **Import** to add them to the folder in **Add to**:
 
 - You get one YAML file per request, in a folder per Postman folder.
@@ -69,6 +71,8 @@ Choose **Import** to add them to the folder in **Add to**:
 - Secret values go to the macOS Keychain, never into a file. Clear **Save the secret values to the Keychain** to set them yourself later in **Environments**. If the Keychain already holds a different value for a secret, the studio keeps that value and lists the secret for you to set.
 
 After the import, the dialog lists what still needs your attention. Choose **Open** next to a "Pick a file" item to open that request and set the file. The same conversion runs in a terminal with [`curl-runner convert postman`](/docs/features/convert#postman).
+
+<StudioScreenshot name="postman-import-summary" onStudioPage>After the import. **Open** goes to the request with a file to pick.</StudioScreenshot>
 
 ## Run history [#history]
 

@@ -15,6 +15,8 @@ import { getFeatureBySlug } from '@/lib/features-data';
 import { BREW_TRUST_COMMAND } from '@/lib/install-methods';
 import { SITE_URL, source } from '@/lib/source';
 import {
+  POSTMAN_SCREENSHOT_NAMES,
+  postmanScreenshots,
   STUDIO_CASK_INSTALL,
   STUDIO_HERO,
   STUDIO_SCREENSHOT_NAMES,
@@ -165,7 +167,7 @@ describe('studio feature page', () => {
 
 describe('studio images', () => {
   it('has every referenced image in public/, at the size the markup declares', () => {
-    for (const shot of studioScreenshots()) {
+    for (const shot of [...studioScreenshots(), ...postmanScreenshots()]) {
       const file = join(PUBLIC_DIR, shot.src);
       expect(existsSync(file), shot.src).toBe(true);
       expect(imageSize(file), shot.src).toEqual({ width: shot.width, height: shot.height });
@@ -179,6 +181,7 @@ describe('studio images', () => {
   it('ships no image nothing references', () => {
     const referenced = new Set([
       ...studioScreenshots().map((s) => s.src),
+      ...postmanScreenshots().map((s) => s.src),
       STUDIO_HERO.src,
       STUDIO_HERO.still,
     ]);
@@ -225,7 +228,7 @@ describe('studio docs', () => {
       'features/response-validation': ['failed-request'],
       'features/retry-mechanism': ['failed-request'],
       'features/env-files': ['environments'],
-      'features/studio': [...STUDIO_SCREENSHOT_NAMES],
+      'features/studio': [...STUDIO_SCREENSHOT_NAMES, ...POSTMAN_SCREENSHOT_NAMES],
     };
     for (const [page, names] of Object.entries(expected)) {
       const used = [...mdx(page).matchAll(/<StudioScreenshot name="([^"]+)"/g)].map((m) => m[1]);

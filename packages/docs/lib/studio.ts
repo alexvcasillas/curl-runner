@@ -95,6 +95,24 @@ const SCREENSHOTS = {
     description:
       'Run history stays on your machine. Pick a run to see what it fixed, what it broke and what got slower than the run before it.',
   },
+  'postman-import': {
+    src: '/studio/postman-import.png',
+    width: 2400,
+    height: 1500,
+    alt: 'The Import dialog on the Postman collection tab with example-api.postman_collection.json picked: 5 requests in 2 folders. Two items need attention, a file to pick for the document field and the secret apiKey to set. The preview lists the five request files in customers and documents.',
+    title: 'See every file before you import',
+    description:
+      'Pick a collection exported from Postman. The preview lists the request files you get and what needs your attention, before anything is written.',
+  },
+  'postman-import-summary': {
+    src: '/studio/postman-import-summary.png',
+    width: 2400,
+    height: 1500,
+    alt: 'The Import dialog after a Postman import: Imported 5 requests, and the variables are in .env. Needs your attention lists a file to pick for the document field, with an Open link, and the secret apiKey to set.',
+    title: 'Finish what the import left',
+    description:
+      'The summary lists what still needs you. Open goes straight to the request with a file to pick.',
+  },
 } as const satisfies Record<string, Screenshot>;
 
 export type StudioScreenshotName = keyof typeof SCREENSHOTS;
@@ -108,6 +126,16 @@ export const STUDIO_SCREENSHOT_NAMES: readonly StudioScreenshotName[] = [
   'environments',
   'history',
 ];
+
+/** The Postman import, in the order you see it. */
+export const POSTMAN_SCREENSHOT_NAMES: readonly StudioScreenshotName[] = [
+  'postman-import',
+  'postman-import-summary',
+];
+
+export function postmanScreenshots(): Screenshot[] {
+  return POSTMAN_SCREENSHOT_NAMES.map((name) => SCREENSHOTS[name]);
+}
 
 export function studioScreenshot(name: StudioScreenshotName): Screenshot {
   return SCREENSHOTS[name];

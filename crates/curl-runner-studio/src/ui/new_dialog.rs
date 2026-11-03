@@ -1151,13 +1151,24 @@ impl Workspace {
 mod tests {
     use super::super::state::StateStore;
     use super::super::workspace::Workspace;
-    use super::{Kind, NewDialog, Template, url_segments};
+    use super::{Kind, NewDialog, Template, display_path, url_segments};
     use gpui_kit::component::WindowExt as _;
     use gpui_kit::{
         AnyWindowHandle, AppContext as _, Bounds, Entity, Point, TestAppContext, VisualTestContext,
         WindowBounds, WindowOptions, px, size,
     };
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn display_path_shows_home_as_tilde() {
+        let home = std::env::home_dir().expect("a home folder");
+        let file = home.join("Downloads/example-api.postman_collection.json");
+        assert_eq!(
+            display_path(&file),
+            "~/Downloads/example-api.postman_collection.json"
+        );
+        assert_eq!(display_path(Path::new("/opt/api")), "/opt/api");
+    }
 
     /// A window on a collection with `charges/create-charge.yaml`.
     fn open(
