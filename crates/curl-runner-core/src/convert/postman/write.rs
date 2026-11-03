@@ -26,6 +26,8 @@ pub struct PostmanImport {
 pub struct PostmanFile {
     pub rel_path: PathBuf,
     pub name: String,
+    /// Folders and name joined with `/`, as the report's `request` names it.
+    pub request: String,
     pub yaml: String,
 }
 
@@ -55,6 +57,7 @@ pub fn convert_postman(json: &str) -> Result<PostmanImport, ConvertError> {
             PostmanFile {
                 rel_path,
                 name: r.name.clone(),
+                request: r.path(),
                 yaml: emit_request(r, &name),
             }
         })

@@ -194,7 +194,7 @@ impl PaletteAction {
             PaletteAction::OpenSharedLink => "Open a shared link…",
             PaletteAction::NewRequest => "New request…",
             PaletteAction::NewCollection => "New collection…",
-            PaletteAction::Import => "Import curl…",
+            PaletteAction::Import => "Import requests…",
             PaletteAction::ToggleProblems => "Toggle Problems",
             PaletteAction::OpenHistory => "Open history",
             PaletteAction::Environments => "Environments…",

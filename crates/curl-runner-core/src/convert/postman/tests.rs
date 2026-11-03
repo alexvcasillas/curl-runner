@@ -1153,6 +1153,7 @@ fn refuses_hand_built_paths_outside_the_folder() {
         imp.files.push(PostmanFile {
             rel_path: bad.into(),
             name: "x".into(),
+            request: "x".into(),
             yaml: "x".into(),
         });
         let err = write_postman(dir.path(), Path::new("in"), &imp, "x").unwrap_err();
@@ -1162,4 +1163,21 @@ fn refuses_hand_built_paths_outside_the_folder() {
             "{bad:?}"
         );
     }
+}
+
+#[test]
+fn each_file_names_the_request_the_report_names() {
+    let imp = convert_postman(&fixture("sample.postman_collection.json")).unwrap();
+    let pick = imp
+        .report
+        .attention
+        .iter()
+        .find_map(|a| match a {
+            Attention::PickFile { request, .. } => Some(request.as_str()),
+            _ => None,
+        })
+        .unwrap();
+    let file = imp.files.iter().find(|f| f.request == pick).unwrap();
+    assert_eq!(file.rel_path, Path::new("documents/convert-document.yaml"));
+    assert_eq!(imp.files[0].request, "Customers/Create customer");
 }
