@@ -133,9 +133,10 @@ fn run_postman(parsed: &ConvertArgs, log: &Logger, console: &mut Console) -> i32
         _ => 2,
     };
     items.sort_by_key(rank);
-    let has_secrets = items
-        .iter()
-        .any(|a| matches!(a, Attention::SetSecret { .. }));
+    let first_secret = items.iter().find_map(|a| match a {
+        Attention::SetSecret { var } => Some(var.clone()),
+        _ => None,
+    });
     if !items.is_empty() {
         console.err("Needs your attention:");
         for item in &items {
@@ -145,8 +146,11 @@ fn run_postman(parsed: &ConvertArgs, log: &Logger, console: &mut Console) -> i32
     console.err(&format!(
         "Run them from {dir} so curl-runner loads its .env."
     ));
-    if has_secrets {
+    if let Some(var) = first_secret {
         console.err(&format!("Set the secrets above in {dir}/.env.local."));
+        console.err(&format!(
+            "A secret left unset is sent as written, like ${{{var}}}."
+        ));
     }
     0
 }

@@ -46,7 +46,9 @@ fn writes_files_and_reports() {
     assert!(err.contains("Set the secret apiKey"), "{err}");
     assert!(err.contains("Set the secret PASSWORD"), "{err}");
     assert!(
-        err.contains("Set the secrets above in out/.env.local."),
+        err.contains(
+            "Set the secrets above in out/.env.local.\nA secret left unset is sent as written, like ${apiKey}.\n"
+        ),
         "{err}"
     );
     assert!(!err.contains("test-key-123"), "{err}");
