@@ -69,7 +69,10 @@ curl-runner convert postman my-api.postman_collection.json
 Converted 5 requests in 2 folders to example-api
 Needs your attention:
   - Pick a file for "document" in Documents/Convert document
+  - Set the secret apiKey
+  - Set the secret PASSWORD
 Run them from example-api so curl-runner loads its .env.
+Set the secrets above in example-api/.env.local.
 ```
 
 You get one YAML file per request, in a folder per Postman folder, and a `.env` with the collection variables.

@@ -43,7 +43,15 @@ fn writes_files_and_reports() {
         err.contains("Run them from out so curl-runner loads its .env."),
         "{err}"
     );
+    assert!(err.contains("Set the secret apiKey"), "{err}");
+    assert!(err.contains("Set the secret PASSWORD"), "{err}");
+    assert!(
+        err.contains("Set the secrets above in out/.env.local."),
+        "{err}"
+    );
+    assert!(!err.contains("test-key-123"), "{err}");
     assert!(work.path().join("out/.env").is_file());
+    assert!(!tree_text(&work.path().join("out")).contains("test-key-123"));
 }
 
 #[test]
@@ -86,4 +94,17 @@ fn help_describes_the_directory_output() {
     let out = convert(work.path(), &["--help"]);
     assert_eq!(out.status.code(), Some(0));
     assert!(String::from_utf8_lossy(&out.stdout).contains("-o, --output <dir>"));
+}
+
+fn tree_text(dir: &Path) -> String {
+    let mut all = String::new();
+    for e in std::fs::read_dir(dir).unwrap() {
+        let p = e.unwrap().path();
+        if p.is_dir() {
+            all.push_str(&tree_text(&p));
+        } else {
+            all.push_str(&std::fs::read_to_string(&p).unwrap());
+        }
+    }
+    all
 }

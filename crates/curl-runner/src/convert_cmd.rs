@@ -107,27 +107,46 @@ fn run_postman(parsed: &ConvertArgs, log: &Logger, console: &mut Console) -> i32
         folders,
         plural(folders),
     ));
-    let mut attention: Vec<String> = import
-        .report
-        .attention
-        .iter()
-        .map(|a| a.to_string())
-        .collect();
-    attention.extend(
+    // The CLI never writes a secret's value, so every secret is listed, not
+    // only the ones the import found empty.
+    let mut items: Vec<Attention> = import.report.attention.clone();
+    for v in import.variables.iter().filter(|v| v.secret) {
+        let covered = items
+            .iter()
+            .any(|a| matches!(a, Attention::SetSecret { var } if *var == v.name));
+        if !covered {
+            items.push(Attention::SetSecret {
+                var: v.name.clone(),
+            });
+        }
+    }
+    items.extend(
         outcome
             .kept_env
             .iter()
-            .map(|var| Attention::KeptEnv { var: var.clone() }.to_string()),
+            .map(|var| Attention::KeptEnv { var: var.clone() }),
     );
-    if !attention.is_empty() {
+    let rank = |a: &Attention| match a {
+        Attention::PickFile { .. } => 0,
+        Attention::SetSecret { .. } => 1,
+        _ => 2,
+    };
+    items.sort_by_key(rank);
+    let has_secrets = items
+        .iter()
+        .any(|a| matches!(a, Attention::SetSecret { .. }));
+    if !items.is_empty() {
         console.err("Needs your attention:");
-        for line in &attention {
-            console.err(&format!("  - {line}"));
+        for item in &items {
+            console.err(&format!("  - {item}"));
         }
     }
     console.err(&format!(
         "Run them from {dir} so curl-runner loads its .env."
     ));
+    if has_secrets {
+        console.err(&format!("Set the secrets above in {dir}/.env.local."));
+    }
     0
 }
 
