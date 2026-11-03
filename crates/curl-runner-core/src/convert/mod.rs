@@ -10,6 +10,7 @@ mod generator;
 mod jsjson;
 mod jsutil;
 mod normalizer;
+pub mod postman;
 mod secrets;
 mod tokenizer;
 mod types;

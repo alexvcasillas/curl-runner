@@ -1,0 +1,193 @@
+{
+  "info": {
+    "name": "Edge cases",
+    "schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://api.example.com" },
+    { "key": "UUID", "value": "00000000-0000-0000-0000-000000000000" }
+  ],
+  "item": [
+    {
+      "name": "Nested",
+      "item": [
+        {
+          "name": "Level two",
+          "item": [
+            {
+              "name": "Level three",
+              "item": [
+                {
+                  "name": "Deep",
+                  "request": { "method": "GET", "url": "{{baseUrl}}/deep" }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Requests",
+      "item": [
+        {
+          "name": "Plain string",
+          "request": "https://api.example.com/plain"
+        },
+        {
+          "name": "Get item",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/items/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["items", ":id"],
+              "variable": [{ "key": "id", "value": "42" }]
+            }
+          }
+        },
+        {
+          "name": "Count",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/count",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"count\": {{n}},\n  \"id\": \"{{$guid}}\",\n  \"color\": \"{{$randomColor}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "Scripted",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "type": "text/javascript", "exec": ["pm.variables.set('n', 1);"] }
+            }
+          ],
+          "request": { "method": "GET", "url": "{{baseUrl}}/scripted" },
+          "response": [
+            {
+              "name": "Saved example",
+              "originalRequest": { "method": "GET", "url": "{{baseUrl}}/scripted" },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\"ok\": true}"
+            }
+          ]
+        },
+        {
+          "name": "OAuth2",
+          "request": {
+            "auth": {
+              "type": "oauth2",
+              "oauth2": [
+                { "key": "accessToken", "value": "{{token}}", "type": "string" },
+                { "key": "tokenType", "value": "Bearer", "type": "string" }
+              ]
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/oauth"
+          }
+        },
+        {
+          "name": "Bearer",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/bearer"
+          }
+        },
+        {
+          "name": "Basic",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "user", "type": "string" },
+                { "key": "password", "value": "{{password}}", "type": "string" }
+              ]
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/basic"
+          }
+        },
+        {
+          "name": "Literal auth",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer abc" }],
+            "url": "{{baseUrl}}/literal"
+          }
+        },
+        {
+          "name": "Form",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/form",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "client_credentials" },
+                { "key": "scope", "value": "read", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Query",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query { viewer { id } }",
+                "variables": "{}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Upload",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/upload",
+            "body": { "mode": "file", "file": { "src": "/tmp/example.bin" } }
+          }
+        },
+        {
+          "name": "🚀",
+          "request": { "method": "GET", "url": "{{baseUrl}}/launch" }
+        }
+      ]
+    },
+    {
+      "name": "Duplicates",
+      "item": [
+        {
+          "name": "Create",
+          "request": { "method": "POST", "url": "{{baseUrl}}/a" }
+        },
+        {
+          "name": "Create",
+          "request": { "method": "POST", "url": "{{baseUrl}}/b" }
+        }
+      ]
+    },
+    {
+      "name": "../escape",
+      "item": [
+        {
+          "name": "Inside",
+          "request": { "method": "GET", "url": "{{baseUrl}}/inside" }
+        }
+      ]
+    }
+  ]
+}
