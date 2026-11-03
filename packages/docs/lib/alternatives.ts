@@ -1,4 +1,4 @@
-export const COMPARISON_CHECKED = '2026-10-28';
+export const COMPARISON_CHECKED = '2026-11-03';
 
 export interface ComparisonRow {
   label: string;
@@ -18,11 +18,12 @@ export interface ComparisonCard {
 
 // Competitor values below were checked against official sources on COMPARISON_CHECKED.
 // Where the official docs are silent we say "Not documented" rather than guess.
-// curl-runner values reflect the repo (README.md, Cargo.toml license = "MIT").
+// curl-runner values reflect the repo (README.md, Cargo.toml license = "MIT", which
+// crates/curl-runner-studio inherits) and the docs (features/studio, features/postman-import).
 export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   {
     label: 'Primary interface',
-    curlRunner: 'CLI',
+    curlRunner: 'CLI, plus a macOS app (preview)',
     // https://www.postman.com/downloads/ ("Postman on the web"); https://www.postman.com/pricing/ (Postman CLI); https://learning.postman.com/docs/postman-cli/postman-cli-overview/
     postman: 'Desktop and web app, plus the Postman CLI',
     // https://github.com/Kong/insomnia (cross-platform API client); https://developer.konghq.com/inso-cli/
@@ -75,8 +76,19 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
     httpie: 'Not documented',
   },
   {
+    label: 'Import from Postman / curl',
+    curlRunner: 'Postman collections and curl (CLI and app)',
+    // https://learning.postman.com/docs/getting-started/importing-and-exporting/importing-data/ (cURL, OpenAPI, Insomnia and other clients)
+    postman: 'curl, OpenAPI, Insomnia and more',
+    // https://developer.konghq.com/insomnia/import-export/ (Postman v2.0/v2.1, HAR, OpenAPI, cURL)
+    insomnia: 'Postman collections, curl, OpenAPI and more',
+    curl: 'Not applicable',
+    // https://httpie.io/docs/desktop/postman-and-insomnia-import; https://httpie.io/docs/desktop/curl-import (desktop and web app docs; no CLI import documented)
+    httpie: 'App: Postman, Insomnia, curl',
+  },
+  {
     label: 'Account needed',
-    curlRunner: 'No',
+    curlRunner: 'No (CLI or app)',
     // https://www.postman.com/pricing/ (Free plan); https://learning.postman.com/docs/getting-started/first-steps/sending-the-first-request/ (sign in to save); https://learning.postman.com/docs/postman-cli/postman-cli-overview/ (login, or init without an account)
     postman: 'Free plan available; sign-in needed to save work',
     // https://github.com/Kong/insomnia (local Scratch Pad without an account; most capabilities need one)
@@ -87,7 +99,7 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   },
   {
     label: 'Open source',
-    curlRunner: 'Yes, MIT',
+    curlRunner: 'Yes, MIT (CLI and app)',
     // https://github.com/postmanlabs/newman (Apache-2.0); https://github.com/postmanlabs/postman-app-support (no app license stated)
     postman: 'Newman: Yes (Apache-2.0). App: no license stated',
     // https://github.com/Kong/insomnia (Apache-2.0)
@@ -103,9 +115,9 @@ export const COMPARISON_CARDS: readonly ComparisonCard[] = [
     tool: 'Postman',
     what: 'GUI platform for designing, exploring and sharing APIs.',
     pickCurlRunner:
-      'Suites reviewed in pull requests, CI without exports, one binary on any runner.',
+      'Suites reviewed in pull requests, CI without exports, one binary on any runner. Bring a collection over with convert postman, and write and debug in the macOS app (preview).',
     pickTool:
-      'Exploring an unfamiliar API by clicking, shared workspaces, mock servers and published docs.',
+      'Exploring an API in the browser, shared workspaces, mock servers and published docs.',
   },
   {
     tool: 'curl',
@@ -117,7 +129,8 @@ export const COMPARISON_CARDS: readonly ComparisonCard[] = [
   {
     tool: 'Insomnia',
     what: 'Desktop API client with design and testing features.',
-    pickCurlRunner: 'Configuration as code, headless servers and terminal-first workflows.',
+    pickCurlRunner:
+      'Configuration as code, headless servers and terminal-first workflows, with a macOS app (preview) on the same files.',
     pickTool: 'A polished desktop client for GraphQL and gRPC exploration and design-first work.',
   },
   {
