@@ -29,6 +29,11 @@ pub enum Attention {
         from: String,
         to: String,
     },
+    /// A collection variable `from` whose name `to` an earlier one took.
+    SkippedVariable {
+        from: String,
+        to: String,
+    },
     /// `listen` is Postman's event kind: `prerequest`, `test`, ….
     Script {
         at: String,
@@ -76,6 +81,10 @@ impl fmt::Display for Attention {
             Attention::SetSecret { var } => write!(f, "Set the secret {var}"),
             Attention::SetVariable { var } => write!(f, "Set the variable {var}"),
             Attention::Renamed { from, to } => write!(f, "Renamed the variable {from} to {to}"),
+            Attention::SkippedVariable { from, to } => write!(
+                f,
+                "Skipped the variable {from}: another variable is already named {to}"
+            ),
             Attention::Script { at, listen } => {
                 let kind = match listen.as_str() {
                     "prerequest" => "pre-request ",

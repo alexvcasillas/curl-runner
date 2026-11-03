@@ -137,6 +137,10 @@ pub fn map_collection(c: &Collection) -> Mapped {
         }
         let name = m.rename(&v.key);
         if m.vars.iter().any(|x| x.name == name) {
+            m.attention.push(Attention::SkippedVariable {
+                from: v.key.clone(),
+                to: name,
+            });
             continue;
         }
         let value = match &v.value {

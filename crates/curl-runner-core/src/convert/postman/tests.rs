@@ -1237,3 +1237,22 @@ fn timestamp_stays_as_written() {
         Attention::DynamicVar { name, .. } if name == "$timestamp"
     )));
 }
+
+#[test]
+fn variables_renamed_to_one_name_report_the_dropped_one() {
+    let json = r#"{"info":{"name":"T","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+      "variable":[{"key":"a-b","value":"first"},{"key":"a_b","value":"second"}],"item":[]}"#;
+    let m = map_collection(&parse_collection(json).unwrap());
+    let same: Vec<_> = m.variables.iter().filter(|v| v.name == "a_b").collect();
+    assert_eq!(same.len(), 1);
+    assert_eq!(same[0].value, "first");
+    let skipped = Attention::SkippedVariable {
+        from: "a_b".into(),
+        to: "a_b".into(),
+    };
+    assert!(m.report.attention.contains(&skipped), "{:?}", m.report);
+    assert_eq!(
+        skipped.to_string(),
+        "Skipped the variable a_b: another variable is already named a_b"
+    );
+}
