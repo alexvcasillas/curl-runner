@@ -895,3 +895,232 @@ fn a_map_of_only_disabled_entries_is_still_written() {
         assert_eq!(v["request"]["headers"][&key], "v");
     }
 }
+
+#[test]
+fn writes_the_sample_tree_and_env() {
+    let dir = tempfile::tempdir().unwrap();
+    let imp = convert_postman(&fixture("sample.postman_collection.json")).unwrap();
+    let out = write_postman(dir.path(), Path::new("api"), &imp, "set it in .env.local").unwrap();
+    assert_eq!(out.written.len(), 5);
+    let env = std::fs::read_to_string(dir.path().join(".env")).unwrap();
+    assert!(env.contains("baseUrl="));
+    assert!(env.contains("# apiKey="));
+    assert!(!env.contains("test-key-123"));
+    for f in &out.written {
+        assert!(
+            !std::fs::read_to_string(dir.path().join(f))
+                .unwrap()
+                .contains("test-key-123")
+        );
+    }
+}
+
+#[test]
+fn same_names_and_empty_slugs_get_distinct_files() {
+    let imp = convert_postman(&fixture("edge.postman_collection.json")).unwrap();
+    let paths: std::collections::HashSet<_> =
+        imp.files.iter().map(|f| f.rel_path.clone()).collect();
+    assert_eq!(paths.len(), imp.files.len());
+    assert!(
+        imp.files
+            .iter()
+            .all(|f| f.rel_path.file_stem().is_some_and(|s| !s.is_empty()))
+    );
+}
+
+#[test]
+fn importing_twice_overwrites_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join(".env"),
+        "baseUrl=https://mine.example.com\n",
+    )
+    .unwrap();
+    let imp = convert_postman(&fixture("sample.postman_collection.json")).unwrap();
+    let first = write_postman(dir.path(), Path::new(""), &imp, "x").unwrap();
+    let again = write_postman(dir.path(), Path::new(""), &imp, "x").unwrap();
+    assert!(again.written.iter().all(|p| !first.written.contains(p)));
+    assert!(
+        again
+            .written
+            .iter()
+            .any(|p| p.to_string_lossy().ends_with("-2.yaml"))
+    );
+    assert!(
+        std::fs::read_to_string(dir.path().join(".env"))
+            .unwrap()
+            .starts_with("baseUrl=https://mine.example.com\n")
+    );
+    assert_eq!(first.kept_env, vec!["baseUrl".to_string()]);
+}
+
+#[test]
+fn names_never_escape_the_target_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let imp = convert_postman(&fixture("edge.postman_collection.json")).unwrap();
+    let out = write_postman(dir.path(), Path::new("in"), &imp, "x").unwrap();
+    for p in &out.written {
+        assert!(
+            dir.path()
+                .join(p)
+                .canonicalize()
+                .unwrap()
+                .starts_with(dir.path().join("in").canonicalize().unwrap())
+        );
+        assert!(
+            p.components()
+                .all(|c| matches!(c, std::path::Component::Normal(_)))
+        );
+    }
+}
+
+fn collection(items: &str) -> String {
+    format!(
+        r#"{{"info":{{"name":"T","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"}},"item":{items}}}"#
+    )
+}
+
+#[test]
+fn hostile_names_become_plain_components() {
+    let req = |n: &str| {
+        format!(r#"{{"name":{n:?},"request":{{"method":"GET","url":"https://api.example.com"}}}}"#)
+    };
+    let names = [
+        "..",
+        ".",
+        "",
+        "/etc/passwd",
+        "a\\..\\b",
+        "C:\\x",
+        "~",
+        "Get User",
+        "🚀",
+    ];
+    let items: Vec<String> = names
+        .iter()
+        .map(|n| format!(r#"{{"name":{n:?},"item":[{}]}}"#, req(n)))
+        .collect();
+    let imp = convert_postman(&collection(&format!("[{}]", items.join(",")))).unwrap();
+    assert_eq!(imp.files.len(), names.len());
+    for f in &imp.files {
+        assert_eq!(f.rel_path.components().count(), 2, "{:?}", f.rel_path);
+        for c in f.rel_path.components() {
+            let std::path::Component::Normal(s) = c else {
+                panic!("{:?}", f.rel_path)
+            };
+            let s = s.to_str().unwrap();
+            assert!(!s.is_empty() && !s.starts_with('-') && !s.starts_with('.'));
+            assert!(
+                s.bytes().all(|b| b.is_ascii_lowercase()
+                    || b.is_ascii_digit()
+                    || b == b'-'
+                    || b == b'.')
+            );
+        }
+    }
+    let paths: Vec<_> = imp.files.iter().map(|f| f.rel_path.clone()).collect();
+    assert!(paths.contains(&std::path::PathBuf::from("get-user/get-user.yaml")));
+    assert!(paths.contains(&std::path::PathBuf::from("etc-passwd/etc-passwd.yaml")));
+    assert!(paths.contains(&std::path::PathBuf::from("request/request.yaml")));
+    assert!(paths.contains(&std::path::PathBuf::from("request/request-2.yaml")));
+}
+
+#[test]
+fn refuses_a_folder_outside_the_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let imp = convert_postman(&fixture("sample.postman_collection.json")).unwrap();
+    for bad in ["../out", "a/../../out", "/tmp/out"] {
+        let err = write_postman(dir.path(), Path::new(bad), &imp, "x").unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput, "{bad}");
+    }
+    assert!(std::fs::read_dir(dir.path()).unwrap().next().is_none());
+}
+
+#[test]
+fn env_values_round_trip_through_the_runner_loader() {
+    let dir = tempfile::tempdir().unwrap();
+    let values = [
+        ("plain", "https://api.example.com"),
+        ("spaced", "two words"),
+        ("hash", "a#b"),
+        ("dq", "say \"hi\""),
+        ("sq", "it's"),
+        ("lead", "  padded "),
+        ("quoted", "\"x\""),
+        ("slash", "C:\\new\\table"),
+        ("spaced_slash", "C:\\new folder"),
+        ("newline", "one\ntwo"),
+        ("empty", ""),
+    ];
+    let vars: Vec<String> = values
+        .iter()
+        .map(|(k, v)| format!(r#"{{"key":{k:?},"value":{v:?}}}"#))
+        .collect();
+    let json = collection("[]").replacen(
+        r#""item":[]"#,
+        &format!(r#""item":[],"variable":[{}]"#, vars.join(",")),
+        1,
+    );
+    std::fs::write(dir.path().join(".env"), "existing=1").unwrap();
+    let imp = convert_postman(&json).unwrap();
+    write_postman(dir.path(), Path::new(""), &imp, "x").unwrap();
+    let loaded = crate::env::load_env_files(dir.path(), None);
+    assert_eq!(loaded["existing"], "1");
+    for (k, v) in values {
+        assert_eq!(loaded[k], v, "{k}");
+    }
+    let env = std::fs::read_to_string(dir.path().join(".env")).unwrap();
+    assert!(env.contains("\n# Imported from Postman: T\nplain=https://api.example.com\n"));
+    assert!(env.contains("\nspaced=\"two words\"\n"));
+    assert!(env.contains("\nspaced_slash='C:\\new folder'\n"));
+}
+
+#[test]
+fn secrets_get_a_note_and_same_values_are_not_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join(".env"), "baseUrl=https://api.example.com\n").unwrap();
+    let imp = convert_postman(&fixture("sample.postman_collection.json")).unwrap();
+    let out = write_postman(dir.path(), Path::new(""), &imp, "set it in .env.local").unwrap();
+    assert!(out.kept_env.is_empty());
+    let env = std::fs::read_to_string(dir.path().join(".env")).unwrap();
+    assert_eq!(
+        env,
+        "baseUrl=https://api.example.com\n\
+         # Imported from Postman: Example API\n\
+         # apiKey is a secret: set it in .env.local\n\
+         # apiKey=\n\
+         # PASSWORD is a secret: set it in .env.local\n\
+         # PASSWORD=\n"
+    );
+    // Nothing left to add: the file stays as it is.
+    write_postman(dir.path(), Path::new(""), &imp, "x").unwrap();
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join(".env")).unwrap(),
+        env
+    );
+}
+
+#[test]
+fn readme_is_written_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let imp = convert_postman(&fixture("sample.postman_collection.json")).unwrap();
+    assert_eq!(
+        imp.readme.as_deref(),
+        Some("# Example API\n\nA small example collection.\n")
+    );
+    assert!(
+        write_postman(dir.path(), Path::new("api"), &imp, "x")
+            .unwrap()
+            .readme
+    );
+    std::fs::write(dir.path().join("api/README.md"), "mine").unwrap();
+    assert!(
+        !write_postman(dir.path(), Path::new("api"), &imp, "x")
+            .unwrap()
+            .readme
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("api/README.md")).unwrap(),
+        "mine"
+    );
+}

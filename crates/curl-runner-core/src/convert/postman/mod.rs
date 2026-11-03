@@ -4,6 +4,7 @@ pub mod emit;
 pub mod map;
 pub mod model;
 pub mod report;
+pub mod write;
 
 use super::ConvertError;
 pub use emit::emit_request;
@@ -16,6 +17,7 @@ pub use model::{
     Url, Variable,
 };
 pub use report::{Attention, ImportReport};
+pub use write::{PostmanFile, PostmanImport, WriteOutcome, convert_postman, write_postman};
 
 /// Parse a Postman Collection v2.0/v2.1 export.
 pub fn parse_collection(json: &str) -> Result<Collection, ConvertError> {
