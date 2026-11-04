@@ -191,6 +191,7 @@ pub enum Subcommand {
     File,
     Yaml,
     Postman,
+    OpenApi,
 }
 
 /// Parsed `convert` arguments (`ConvertArgs`).
