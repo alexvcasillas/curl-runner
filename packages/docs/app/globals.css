@@ -372,3 +372,23 @@
     overflow-x: auto;
   }
 }
+
+/* An open folded item list on /changelog continues the rows above it, with its toggle
+   moved below. Unlayered so it beats the list's Tailwind margin and border utilities. */
+@supports selector(::details-content) {
+  .release-items-more {
+    display: flex;
+    flex-direction: column;
+  }
+  .release-items-more[open] {
+    margin-top: -16px;
+  }
+  .release-items-more[open] > summary {
+    order: 1;
+    margin-top: 16px;
+  }
+  .release-items-more[open] > ul {
+    margin-top: 0;
+    border-top-width: 0;
+  }
+}

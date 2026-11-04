@@ -84,7 +84,9 @@ describe('changelog page', () => {
     const article = html.slice(html.indexOf('id="2.0.0"'), html.indexOf('id="1.25.0"'));
     expect(article).toContain('<details');
     expect(article).toContain('Show all 2.0.0 changes');
-    const details = article.indexOf('<details');
+    // The notes fold, not the folded item list (`data-more-items`).
+    const details = article.indexOf('<details class="group">');
+    expect(details).toBeGreaterThan(-1);
     expect(article.indexOf('release-migration')).toBeGreaterThan(-1);
     expect(article.indexOf('release-migration')).toBeLessThan(details);
     expect(article.indexOf('Behavior changes')).toBeGreaterThan(details);
@@ -115,6 +117,8 @@ const TAGGED_CHANGELOG = [
   '  - **New:** A `--thing` flag.',
   '  - **Improved:** Faster runs.',
   '  - **Fixed:** A crash on empty files.',
+  ...Array.from({ length: 8 }, (_, n) => `  - **Improved:** Extra ${n + 1}.`),
+  '  - **Fixed:** Late fix.',
   '',
   '  ```yaml',
   '  retry: 3',
@@ -271,6 +275,47 @@ describe('changelog page with tagged entries', () => {
     expect(html).not.toMatch(/\shidden=""/);
     expect(html).not.toContain('Load older releases');
     expect(html).toMatch(/<div role="group" aria-label="Filter changes by tag" class="invisible /);
+  });
+
+  it('folds an entry with more than ten items after the first eight', async () => {
+    renderDom(await ChangelogPage());
+    const tagged = release('3.2.0');
+    const more = tagged.querySelector('details[data-more-items]') as HTMLDetailsElement;
+    expect(more).not.toBeNull();
+    expect(more.open).toBe(false);
+    expect(tagged.querySelectorAll('[data-tag]')).toHaveLength(12);
+    expect(more.querySelectorAll('[data-tag]')).toHaveLength(4);
+    expect(within(more).getByText('Show all 12 changes')).toBeInTheDocument();
+    expect(within(tagged).getByText('Extra 5.')).toBeVisible();
+    expect(within(tagged).getByText('Late fix.')).not.toBeVisible();
+    // Short lists are not folded.
+    expect(release('3.1.1').querySelector('details[data-more-items]')).toBeNull();
+  });
+
+  it('opens folded items for a filter and restores the fold on All', async () => {
+    renderDom(await ChangelogPage());
+    const tagged = release('3.2.0');
+    const more = tagged.querySelector('details[data-more-items]') as HTMLDetailsElement;
+    fireEvent.click(screen.getByRole('button', { name: 'Fixed' }));
+    expect(more.open).toBe(true);
+    expect(more.querySelector('summary')).not.toBeVisible();
+    expect(within(tagged).getByText('Late fix.')).toBeVisible();
+    expect(within(tagged).getByText('Extra 8.')).not.toBeVisible();
+    // No New item is folded, so the fold hides entirely.
+    fireEvent.click(screen.getByRole('button', { name: 'New' }));
+    expect(more).not.toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    // jest-dom calls a closed <details> itself not visible, so check the attribute.
+    expect(more).not.toHaveAttribute('hidden');
+    expect(more.open).toBe(false);
+    expect(more.querySelector('summary')).toBeVisible();
+    expect(within(tagged).getByText('Late fix.')).not.toBeVisible();
+
+    // A fold the reader opened stays open after filtering.
+    more.open = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Fixed' }));
+    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    expect(more.open).toBe(true);
   });
 
   it('re-scrolls to a matching hash target once the filter hides releases above it', async () => {
@@ -456,7 +501,7 @@ describe('rss.xml', () => {
       const xml = await (await GET()).text();
       expect(xml).toContain('<title>curl-runner 3.2.0: Tagged headline</title>');
       expect(xml).toContain(
-        '<description>The tagged lead paragraph.\nNew: A --thing flag.\nImproved: Faster runs.\nFixed: A crash on empty files.</description>',
+        `<description>The tagged lead paragraph.\nNew: A --thing flag.\nImproved: Faster runs.\nFixed: A crash on empty files.\n${Array.from({ length: 8 }, (_, n) => `Improved: Extra ${n + 1}.`).join('\n')}\nFixed: Late fix.</description>`,
       );
       expect(xml).toContain('<description>An untagged entry body.</description>');
       expect(xml).toContain('<description>Release 18\nNew: Change 18.</description>');

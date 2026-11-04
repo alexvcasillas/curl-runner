@@ -75,9 +75,17 @@ function BumpBadge({ bump }: { bump: Bump }) {
   );
 }
 
-function Items({ items }: { items: { tag: ChangeTag; html: string }[] }) {
+type Item = { tag: ChangeTag; html: string };
+
+/** Entries with more than this many items show the first COLLAPSED_ITEMS and fold the rest. */
+const MAX_ITEMS = 10;
+const COLLAPSED_ITEMS = 8;
+
+const TOGGLE = `inline-flex h-10 cursor-pointer list-none items-center gap-2 self-start rounded-[10px] border border-line px-4 text-sm text-fg transition-colors hover:bg-hover [&::-webkit-details-marker]:hidden ${FOCUS}`;
+
+function ItemRows({ items, className }: { items: Item[]; className: string }) {
   return (
-    <ul className="m-0 mt-2 flex list-none flex-col border-t border-hairline p-0">
+    <ul className={`m-0 flex list-none flex-col border-t border-hairline p-0 ${className}`}>
       {items.map((item, index) => (
         <li
           key={index}
@@ -97,6 +105,31 @@ function Items({ items }: { items: { tag: ChangeTag; html: string }[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * The tagged rows. A long list shows its first rows and folds the rest behind a
+ * native `<details data-more-items>`, which the tag filter opens while active.
+ */
+function Items({ items }: { items: Item[] }) {
+  if (items.length <= MAX_ITEMS) {
+    return <ItemRows items={items} className="mt-2" />;
+  }
+  return (
+    <>
+      <ItemRows items={items.slice(0, COLLAPSED_ITEMS)} className="mt-2" />
+      <details data-more-items="" className="release-items-more group/items data-filtering:-mt-4">
+        <summary className={TOGGLE}>
+          <span className="group-open/items:hidden">{`Show all ${items.length} changes`}</span>
+          <span className="hidden group-open/items:inline">Show fewer changes</span>
+        </summary>
+        <ItemRows
+          items={items.slice(COLLAPSED_ITEMS)}
+          className="mt-4 group-data-filtering/items:mt-0 group-data-filtering/items:border-t-0"
+        />
+      </details>
+    </>
   );
 }
 
@@ -216,9 +249,7 @@ export default async function ChangelogPage() {
                       {html.previewHtml ? <Notes html={html.previewHtml} /> : null}
                       {html.restHtml ? (
                         <details className="group">
-                          <summary
-                            className={`inline-flex h-10 cursor-pointer list-none items-center gap-2 self-start rounded-[10px] border border-line px-4 text-sm text-fg transition-colors hover:bg-hover [&::-webkit-details-marker]:hidden ${FOCUS}`}
-                          >
+                          <summary className={TOGGLE}>
                             <span className="group-open:hidden">{`Show all ${release.version} changes`}</span>
                             <span className="hidden group-open:inline">Show fewer changes</span>
                           </summary>

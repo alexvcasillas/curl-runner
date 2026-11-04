@@ -31,6 +31,33 @@ function hasTag(release: HTMLElement, tag: string | null): boolean {
 }
 
 /**
+ * While a tag is active, a folded item list opens (its toggle hidden) so every
+ * matching row shows, and hides when none of its rows match. Back on All it
+ * returns to the open state it had before filtering.
+ */
+function foldItems(more: HTMLDetailsElement, tag: string | null) {
+  const summary = more.querySelector('summary');
+  if (tag === null) {
+    if (more.dataset.wasOpen !== undefined) {
+      more.open = more.dataset.wasOpen === 'true';
+      delete more.dataset.wasOpen;
+    }
+    more.hidden = false;
+    delete more.dataset.filtering;
+  } else {
+    more.dataset.filtering = '';
+    if (more.dataset.wasOpen === undefined) {
+      more.dataset.wasOpen = String(more.open);
+    }
+    more.open = true;
+    more.hidden = !more.querySelector('[data-tag]:not([hidden])');
+  }
+  if (summary) {
+    summary.hidden = tag !== null;
+  }
+}
+
+/**
  * Filters and pages the server-rendered releases by toggling `hidden` on them,
  * their entries (`data-entry`) and item rows (`data-tag`). The page stays static:
  * the tag lives in `?tag=` and is written with `history.replaceState`. Without
@@ -133,6 +160,9 @@ export function ChangelogFilter({ tags, pageSize, children }: ChangelogFilterPro
           kept += row.hidden ? 0 : 1;
         }
         entry.hidden = tag !== null && kept === 0;
+        for (const more of entry.querySelectorAll<HTMLDetailsElement>('details[data-more-items]')) {
+          foldItems(more, tag);
+        }
       }
       const matches = hasTag(release, tag);
       release.hidden = !matches || count >= limit;
