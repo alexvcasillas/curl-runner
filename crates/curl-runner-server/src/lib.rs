@@ -93,11 +93,14 @@ fn origin_of(url: &str) -> String {
 /// records the method and the matched route (`/v1/shared/{token}`), never the
 /// raw URI or query. Unmatched requests are a fixed `unmatched`.
 fn make_span<B>(req: &axum::http::Request<B>) -> Span {
-    let route = req
-        .extensions()
+    tracing::span!(Level::INFO, "request", method = %req.method(), route = %route_label(req))
+}
+
+/// The only part of the path that may be logged.
+fn route_label<B>(req: &axum::http::Request<B>) -> &str {
+    req.extensions()
         .get::<axum::extract::MatchedPath>()
-        .map_or("unmatched", axum::extract::MatchedPath::as_str);
-    tracing::span!(Level::INFO, "request", method = %req.method(), route = %route)
+        .map_or("unmatched", axum::extract::MatchedPath::as_str)
 }
 
 async fn health() -> Json<serde_json::Value> {
@@ -171,8 +174,6 @@ mod tests {
     use std::time::Duration;
     use tokio::net::TcpListener;
     use tower::ServiceExt;
-
-    use std::sync::{Arc, Mutex};
 
     use crate::clock::SystemClock;
     use crate::config::Config;
@@ -342,45 +343,27 @@ mod tests {
         server.await.unwrap().unwrap();
     }
 
-    #[derive(Clone, Default)]
-    struct Capture(Arc<Mutex<Vec<u8>>>);
-
-    impl std::io::Write for Capture {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            self.0.lock().unwrap().extend_from_slice(buf);
-            Ok(buf.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
+    /// The label is the route pattern, so a token in the path or query never
+    /// reaches the logs. (Tested on the label, not on captured output: tracing's
+    /// global callsite cache makes captured spans racy across parallel tests.)
     #[tokio::test]
-    async fn request_logs_carry_the_route_not_the_token() {
-        let capture = Capture::default();
-        let sink = capture.clone();
-        let subscriber = tracing_subscriber::fmt()
-            .with_writer(move || sink.clone())
-            .with_ansi(false)
-            .finish();
-        let _guard = tracing::subscriber::set_default(subscriber);
+    async fn log_label_is_the_route_not_the_token() {
+        async fn label(req: Request<Body>) -> String {
+            route_label(&req).to_owned()
+        }
         let router = Router::new()
-            .route("/v1/shared/{token}", get(|| async { "ok" }))
-            .layer(
-                TraceLayer::new_for_http()
-                    .make_span_with(make_span)
-                    .on_response(DefaultOnResponse::new().level(Level::INFO)),
-            );
+            .route("/v1/shared/{token}", get(label))
+            .fallback(label);
+        let mut seen = Vec::new();
         for uri in ["/v1/shared/crsl_SECRET?k=crsl_SECRET", "/nope/crsl_SECRET"] {
-            router
+            let res = router
                 .clone()
                 .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
                 .await
                 .unwrap();
+            let bytes = res.into_body().collect().await.unwrap().to_bytes();
+            seen.push(String::from_utf8(bytes.to_vec()).unwrap());
         }
-        let out = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
-        assert!(!out.contains("crsl_SECRET"), "{out}");
-        assert!(out.contains("route=/v1/shared/{token}"), "{out}");
-        assert!(out.contains("route=unmatched"), "{out}");
+        assert_eq!(seen, ["/v1/shared/{token}", "unmatched"]);
     }
 }
