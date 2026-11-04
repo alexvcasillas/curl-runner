@@ -44,6 +44,7 @@ const FEATURES = [
   'validate',
   'convert',
   'postman-import',
+  'openapi-import',
   'env-files',
   'studio',
   'upgrade',
@@ -154,9 +155,9 @@ describe('features docs', () => {
 });
 
 describe('reference and examples docs', () => {
-  it('serves every page from MDX: index + 40 moved pages + studio + self-hosting = 43', () => {
-    // 1 index + 12 getting-started/config/cli + 22 features + 7 reference and examples
-    expect(source.getPages()).toHaveLength(43);
+  it('serves every page from MDX: index + 40 moved pages + studio + self-hosting + openapi-import = 44', () => {
+    // 1 index + 12 getting-started/config/cli + 23 features + 7 reference and examples
+    expect(source.getPages()).toHaveLength(44);
   });
 
   it('has removed the old React docs tree and its sidebar config', () => {

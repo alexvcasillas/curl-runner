@@ -1930,7 +1930,13 @@ mod convert {
     fn dump(imp: &Import) -> String {
         let mut out = String::new();
         for f in &imp.files {
-            out.push_str(&format!("=== {}\n{}\n", f.rel_path.display(), f.yaml));
+            let rel = f
+                .rel_path
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/");
+            out.push_str(&format!("=== {rel}\n{}\n", f.yaml));
         }
         out
     }
