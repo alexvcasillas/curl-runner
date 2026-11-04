@@ -50,9 +50,8 @@ fn lists_secrets_first() {
     let attention = err.find("Needs your attention:").expect(&err);
     let secret = err.find("Set the secret PETS_API_KEY").expect(&err);
     assert!(attention < secret, "{err}");
-    if let Some(pick) = err.find("Pick a file") {
-        assert!(pick < secret, "{err}");
-    }
+    let pick = err.find("Pick a file").expect(&err);
+    assert!(pick < secret, "{err}");
     assert!(
         err.contains("Set the secrets above in out/.env.local."),
         "{err}"
