@@ -13,7 +13,7 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use curl_runner_cloud_proto::{
     BundleFile, ErrorCode, FileChanges, MAX_BUNDLE_BYTES, PublishRequest, PublishResponse,
-    PublishStatus, bundle_hash_from_file_hashes, file_hash, validate_bundle,
+    PublishStatus, bundle_hash_from_file_hashes, file_hash, validate_bundle, validate_inputs,
 };
 use flate2::read::GzDecoder;
 use sqlx::PgConnection;
@@ -36,6 +36,8 @@ use crate::tokens::PublishAuth;
 const MAX_JSON: usize = 2 * MAX_BUNDLE_BYTES + (1 << 20);
 const MAX_BODY: usize = MAX_JSON;
 const TOO_LARGE: &str = "The request body is larger than 51 MiB.";
+const MAX_NAME_CHARS: usize = 100;
+const MAX_DESCRIPTION_CHARS: usize = 500;
 
 fn invalid_bundle(message: impl Into<String>) -> ApiError {
     ApiError::new(ErrorCode::InvalidBundle, message)
@@ -98,6 +100,21 @@ fn check(headers: &HeaderMap, body: &[u8], slug: &str) -> Result<Checked, ApiErr
     let req: PublishRequest = serde_json::from_slice(&decode_body(headers, body)?)
         .map_err(|_| invalid_request("The request body is not a valid publish request."))?;
     validate_bundle(&req.files).map_err(|e| invalid_bundle(e.to_string()))?;
+    validate_inputs(&req.inputs).map_err(|e| invalid_bundle(e.to_string()))?;
+    if let Some(name) = &req.name
+        && (name.trim().is_empty() || name.chars().count() > MAX_NAME_CHARS)
+    {
+        return Err(invalid_bundle(format!(
+            "The collection name must be 1 to {MAX_NAME_CHARS} characters."
+        )));
+    }
+    if let Some(description) = &req.description
+        && description.chars().count() > MAX_DESCRIPTION_CHARS
+    {
+        return Err(invalid_bundle(format!(
+            "The description must be at most {MAX_DESCRIPTION_CHARS} characters."
+        )));
+    }
     // Postgres text cannot hold NUL.
     if let Some(f) = req.files.iter().find(|f| f.text.contains('\0')) {
         return Err(invalid_bundle(format!("{}: text contains a NUL", f.path)));

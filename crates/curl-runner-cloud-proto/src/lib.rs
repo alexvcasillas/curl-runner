@@ -3,8 +3,10 @@
 
 pub mod bundle;
 pub mod error;
+pub mod inputs;
 pub mod wire;
 
 pub use bundle::*;
 pub use error::ErrorCode;
+pub use inputs::*;
 pub use wire::*;

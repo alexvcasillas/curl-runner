@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use curl_runner_cloud_proto::{Input, bundle_hash};
+use curl_runner_cloud_proto::{Input, InputError, bundle_hash};
 
 use super::*;
 
@@ -85,6 +85,34 @@ fn secret_prefix_defaults_secret() {
         .unwrap()
         .unwrap();
     assert!(cfg.inputs[0].secret);
+}
+
+#[test]
+fn secret_input_with_default_is_rejected() {
+    for config in [
+        "cloud:\n  collection: acme\n  inputs:\n    - name: API_KEY\n      secret: true\n      default: sk_live_123\n",
+        "cloud:\n  collection: acme\n  inputs:\n    - name: SECRET_TOKEN\n      default: abc\n",
+    ] {
+        let err = load(config).unwrap_err();
+        assert!(
+            matches!(err, CloudConfigError::Input(InputError::SecretDefault(_))),
+            "{err}"
+        );
+        assert!(err.to_string().contains("cannot have a default"), "{err}");
+    }
+}
+
+#[test]
+fn bad_input_names_are_rejected() {
+    for (inputs, want) in [
+        ("    - name: \"1X\"\n", "1X"),
+        ("    - name: A-B\n", "A-B"),
+        ("    - name: A\n    - name: A\n", "A"),
+    ] {
+        let err = load(&format!("cloud:\n  collection: acme\n  inputs:\n{inputs}")).unwrap_err();
+        assert!(matches!(err, CloudConfigError::Input(_)), "{err}");
+        assert!(err.to_string().contains(want), "{err}");
+    }
 }
 
 #[test]

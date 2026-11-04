@@ -251,6 +251,75 @@ async fn malformed_requests_are_400(pool: PgPool) {
     );
 }
 
+fn input(name: &str, secret: bool, default: Option<&str>) -> Value {
+    json!({
+        "name": name,
+        "description": null,
+        "secret": secret,
+        "required": false,
+        "locked": false,
+        "default": default,
+    })
+}
+
+#[sqlx::test]
+async fn bad_inputs_are_400_invalid_bundle(pool: PgPool) {
+    let (app, s) = setup(pool).await;
+    let long = "A".repeat(129);
+    for (inputs, needle) in [
+        (
+            json!([input("API_KEY", true, Some("sk_live_123"))]),
+            "API_KEY",
+        ),
+        (json!([input("", false, None)]), "empty name"),
+        (json!([input(&long, false, None)]), "longer than 128"),
+        (json!([input("1BAD", false, None)]), "1BAD"),
+        (json!([input("A-B", false, None)]), "A-B"),
+        (
+            json!([input("TOKEN", false, None), input("TOKEN", false, None)]),
+            "more than once",
+        ),
+    ] {
+        let mut body = body_for(&[("a.yaml", "1")]);
+        body["inputs"] = inputs;
+        let (status, res) = put_raw(&app, PUBLISH, &s, body.to_string().into_bytes(), false).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{res}");
+        assert_eq!(res["error"], "invalid_bundle");
+        assert!(res["message"].as_str().unwrap().contains(needle), "{res}");
+    }
+    assert_eq!(count(&app, "collections").await, 0);
+
+    // A secret without a default and a plain input with one are fine.
+    let mut body = body_for(&[("a.yaml", "1")]);
+    body["inputs"] = json!([
+        input("API_KEY", true, None),
+        input("BASE_URL", false, Some("https://api.example.com"))
+    ]);
+    let (status, res) = put_raw(&app, PUBLISH, &s, body.to_string().into_bytes(), false).await;
+    assert_eq!(status, StatusCode::CREATED, "{res}");
+}
+
+#[sqlx::test]
+async fn name_and_description_bounds_400(pool: PgPool) {
+    let (app, s) = setup(pool).await;
+    for (field, value) in [
+        ("name", "x".repeat(101)),
+        ("name", "  ".to_string()),
+        ("description", "x".repeat(501)),
+    ] {
+        let mut body = body_for(&[("a.yaml", "1")]);
+        body[field] = json!(value);
+        let (status, res) = put_raw(&app, PUBLISH, &s, body.to_string().into_bytes(), false).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{field}: {res}");
+        assert_eq!(res["error"], "invalid_bundle");
+    }
+    let mut body = body_for(&[("a.yaml", "1")]);
+    body["name"] = json!("é".repeat(100));
+    body["description"] = json!("x".repeat(500));
+    let (status, res) = put_raw(&app, PUBLISH, &s, body.to_string().into_bytes(), false).await;
+    assert_eq!(status, StatusCode::CREATED, "{res}");
+}
+
 #[sqlx::test]
 async fn zip_bomb_400_invalid_bundle(pool: PgPool) {
     let (app, s) = setup(pool).await;

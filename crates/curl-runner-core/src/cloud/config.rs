@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use curl_runner_cloud_proto::Input;
+use curl_runner_cloud_proto::{Input, InputError, validate_inputs};
 use serde::Deserialize;
 
 use crate::config::CONFIG_FILE_PATHS;
@@ -25,6 +25,8 @@ pub enum CloudConfigError {
     BadSlug(String),
     #[error("invalid cloud block: {0}")]
     Invalid(String),
+    #[error("invalid cloud.inputs: {0}")]
+    Input(#[from] InputError),
 }
 
 #[derive(Deserialize)]
@@ -107,6 +109,7 @@ pub fn load_cloud_config(dir: &Path) -> Result<Option<CloudConfig>, CloudConfigE
             default,
         });
     }
+    validate_inputs(&inputs)?;
     Ok(Some(CloudConfig {
         collection: raw.collection,
         name: raw.name,
