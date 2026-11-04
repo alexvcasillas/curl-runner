@@ -27,6 +27,14 @@ impl std::fmt::Display for NetError {
     }
 }
 
+/// One HTTP answer.
+pub struct Reply {
+    pub status: u16,
+    pub body: Vec<u8>,
+    /// `Retry-After` in seconds, when the server sent one as a number.
+    pub retry_after: Option<u64>,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum CloudError {
     /// The server answered with an error body and this status.
@@ -123,6 +131,18 @@ impl Client {
         body: Option<&[u8]>,
         gzip: bool,
     ) -> Result<(u16, Vec<u8>), NetError> {
+        self.send_full(method, path, body, gzip)
+            .map(|r| (r.status, r.body))
+    }
+
+    /// [`Client::send`] that also reports the `Retry-After` header.
+    pub fn send_full(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        gzip: bool,
+    ) -> Result<Reply, NetError> {
         let url = format!("{}{}", self.base, path);
         let e = |e: curl::Error| NetError(e.to_string());
         let mut easy = net::easy_for(&url, TIMEOUT).map_err(e)?;
@@ -157,8 +177,19 @@ impl Client {
         }
         easy.http_headers(headers).map_err(e)?;
         let mut out = Vec::new();
+        let mut retry_after = None;
         {
             let mut t = easy.transfer();
+            t.header_function(|h| {
+                if let Ok(line) = std::str::from_utf8(h)
+                    && let Some((name, value)) = line.split_once(':')
+                    && name.trim().eq_ignore_ascii_case("retry-after")
+                {
+                    retry_after = value.trim().parse::<u64>().ok();
+                }
+                true
+            })
+            .map_err(e)?;
             t.write_function(|d| {
                 if out.len() + d.len() > MAX_RESPONSE {
                     return Ok(0);
@@ -170,7 +201,11 @@ impl Client {
             t.perform().map_err(e)?;
         }
         let code = easy.response_code().map_err(e)?;
-        Ok((code as u16, out))
+        Ok(Reply {
+            status: code as u16,
+            body: out,
+            retry_after,
+        })
     }
 
     /// JSON in, JSON out. Non-2xx statuses become [`CloudError::Api`].

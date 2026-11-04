@@ -50,6 +50,10 @@ fn validate_file(path: &Path, fix: bool) -> Result<FileResult, Crash> {
         Ok(text) => lint_text(&text)?,
         Err(e) => LintOutcome::ParseError(format!("Failed to parse YAML: {e}")),
     };
+    file_result(outcome, fix)
+}
+
+fn file_result(outcome: LintOutcome, fix: bool) -> Result<FileResult, Crash> {
     let (content, issues) = match outcome {
         LintOutcome::ParseError(message) => {
             return Ok(FileResult {
@@ -81,6 +85,25 @@ fn validate_file(path: &Path, fix: bool) -> Result<FileResult, Crash> {
         fixed,
         fix_skipped,
     })
+}
+
+/// Lint one file's text and print what `validate` prints for it. Returns
+/// whether the file is valid (warnings and infos do not fail it).
+pub fn lint_and_print(name: &str, text: &str, color: bool, c: &mut Console) -> Result<bool, Crash> {
+    let p = Paint(color);
+    let r = file_result(lint_text(text)?, false)?;
+    let n = Counts::of(&r.issues);
+    if !r.valid || n.warnings > 0 || n.infos > 0 {
+        let icon = if r.valid {
+            p.c("✓", Color::Green)
+        } else {
+            p.c("✗", Color::Red)
+        };
+        c.out(&format!("{icon} {name}"));
+        report::print_issues(c, p, &r.issues, false);
+        report::print_counts(c, p, &n, !r.valid);
+    }
+    Ok(r.valid)
 }
 
 /// Run `validate`; `argv[0]` is `validate`. Returns the exit code.
