@@ -17,7 +17,7 @@ fn is_literal(v: &Json) -> bool {
     match v {
         Json::String(s) => {
             let s = s.trim();
-            !s.is_empty() && !(s.starts_with("${") && s.ends_with('}'))
+            !s.is_empty() && !s.contains("${")
         }
         Json::Number(_) | Json::Bool(_) => true,
         _ => false,

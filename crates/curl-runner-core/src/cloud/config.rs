@@ -81,6 +81,7 @@ pub fn load_cloud_config(dir: &Path) -> Result<Option<CloudConfig>, CloudConfigE
     if !valid_slug(&raw.collection) {
         return Err(CloudConfigError::BadSlug(raw.collection));
     }
+    // collection.variables takes precedence over global.variables.
     let variable = |name: &str| {
         ["collection", "global"]
             .iter()

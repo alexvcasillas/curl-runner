@@ -220,3 +220,9 @@ fn secret_in_other_places_is_not_scanned() {
     let b = bundle_of("request:\n  url: https://x\n  headers:\n    API_KEY: k\n");
     assert!(find_secret_literals(&b, &[secret("API_KEY")]).is_empty());
 }
+
+#[test]
+fn partial_reference_is_fine() {
+    let b = bundle_of("global:\n  variables:\n    API_KEY: sk_${X}\n");
+    assert!(find_secret_literals(&b, &[secret("API_KEY")]).is_empty());
+}
