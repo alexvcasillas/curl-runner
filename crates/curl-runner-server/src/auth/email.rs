@@ -88,14 +88,14 @@ pub async fn start(
     {
         return Err(invalid("The label is too long."));
     }
+    state
+        .limiter
+        .check(&format!("email-start:ip:{ip}"), START_PER_IP, START_WINDOW)?;
     state.limiter.check(
         &format!("email-start:email:{email}"),
         START_PER_EMAIL,
         START_WINDOW,
     )?;
-    state
-        .limiter
-        .check(&format!("email-start:ip:{ip}"), START_PER_IP, START_WINDOW)?;
 
     let pepper = state.config.secret_key.as_bytes();
     let code = new_code();
@@ -106,6 +106,11 @@ pub async fn start(
         req.client.as_str()
     );
     let mut tx = state.db.begin().await?;
+    // Serialise starts for one address so concurrent ones leave a single live code.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
+        .bind(&email)
+        .execute(&mut *tx)
+        .await?;
     sqlx::query("DELETE FROM email_codes WHERE email = $1 AND used_at IS NULL")
         .bind(&email)
         .execute(&mut *tx)

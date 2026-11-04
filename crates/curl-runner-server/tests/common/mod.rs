@@ -181,4 +181,14 @@ impl TestApp {
         };
         (status, value)
     }
+
+    /// GET with a raw `Authorization` header value.
+    pub async fn request_with_auth(&self, path: &str, authorization: &str) -> (StatusCode, Value) {
+        let req = Request::builder()
+            .uri(path)
+            .header(header::AUTHORIZATION, authorization)
+            .body(Body::empty())
+            .unwrap();
+        self.send(req).await
+    }
 }

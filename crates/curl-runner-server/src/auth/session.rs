@@ -6,7 +6,7 @@ use axum::http::StatusCode;
 use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
 use chrono::{DateTime, Duration, Utc};
-use curl_runner_cloud_proto::ErrorCode;
+use curl_runner_cloud_proto::{ErrorCode, Plan, Role};
 use serde::Serialize;
 use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
@@ -43,8 +43,9 @@ impl FromRequestParts<AppState> for UserAuth {
             .headers
             .get(AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .map(str::trim)
+            .and_then(|v| v.split_once(' '))
+            .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
+            .map(|(_, token)| token.trim())
             .filter(|t| t.starts_with("crs_"))
             .ok_or_else(unauthorized)?;
         let hash = secret_hash(state.config.secret_key.as_bytes(), token);
@@ -107,12 +108,20 @@ pub struct UserBody {
     pub name: Option<String>,
 }
 
-#[derive(Serialize, FromRow)]
+#[derive(Serialize)]
 struct TeamBody {
     slug: String,
     name: String,
-    role: String,
-    plan: String,
+    role: Role,
+    plan: Plan,
+}
+
+/// A role or plan column (checked by the schema) as its proto enum.
+fn column_enum<T: serde::de::DeserializeOwned>(value: String) -> Result<T, ApiError> {
+    serde_json::from_value(serde_json::Value::String(value)).map_err(|err| {
+        tracing::error!("unexpected role or plan in the database: {err}");
+        ApiError::unavailable()
+    })
 }
 
 #[derive(Serialize)]
@@ -127,23 +136,34 @@ pub async fn me(State(state): State<AppState>, auth: UserAuth) -> Result<Json<Me
             .bind(auth.user_id)
             .fetch_one(&state.db)
             .await?;
-    let teams: Vec<TeamBody> = sqlx::query_as(
-        "SELECT t.slug::text AS slug, t.name, m.role, t.plan \
+    let rows: Vec<(String, String, String, String)> = sqlx::query_as(
+        "SELECT t.slug::text, t.name, m.role, t.plan \
          FROM memberships m JOIN teams t ON t.id = m.team_id \
          WHERE m.user_id = $1 ORDER BY t.name, t.slug",
     )
     .bind(auth.user_id)
     .fetch_all(&state.db)
     .await?;
+    let teams = rows
+        .into_iter()
+        .map(|(slug, name, role, plan)| {
+            Ok(TeamBody {
+                slug,
+                name,
+                role: column_enum(role)?,
+                plan: column_enum(plan)?,
+            })
+        })
+        .collect::<Result<_, ApiError>>()?;
     Ok(Json(MeBody { user, teams }))
 }
 
 pub async fn sign_out(
     State(state): State<AppState>,
     auth: UserAuth,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<StatusCode, ApiError> {
     revoke_session(&state, auth.user_id, auth.session_id).await?;
-    Ok(Json(serde_json::json!({})))
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Serialize, FromRow)]

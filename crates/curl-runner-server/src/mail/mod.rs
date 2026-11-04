@@ -14,8 +14,8 @@ use crate::error::ApiError;
 
 pub use transport::{LogTransport, SmtpTransport, Transport};
 
-/// An email the server can send.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// An email the server can send. `Debug` hides codes and links.
+#[derive(Clone, PartialEq, Eq)]
 pub enum Mail {
     SignInCode {
         to: String,
@@ -34,6 +34,44 @@ pub enum Mail {
         collection_name: String,
         link: String,
     },
+}
+
+impl std::fmt::Debug for Mail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        const R: &str = "<redacted>";
+        match self {
+            Self::SignInCode { to, .. } => f
+                .debug_struct("SignInCode")
+                .field("to", to)
+                .field("code", &R)
+                .field("link", &R)
+                .finish(),
+            Self::MemberInvite {
+                to,
+                team_name,
+                inviter,
+                ..
+            } => f
+                .debug_struct("MemberInvite")
+                .field("to", to)
+                .field("team_name", team_name)
+                .field("inviter", inviter)
+                .field("link", &R)
+                .finish(),
+            Self::CustomerInvite {
+                to,
+                team_name,
+                collection_name,
+                ..
+            } => f
+                .debug_struct("CustomerInvite")
+                .field("to", to)
+                .field("team_name", team_name)
+                .field("collection_name", collection_name)
+                .field("link", &R)
+                .finish(),
+        }
+    }
 }
 
 impl Mail {
@@ -77,5 +115,40 @@ impl Mailer {
             ApiError::unavailable()
         })?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_redacts_codes_and_links() {
+        let mails = [
+            Mail::SignInCode {
+                to: "ada@example.com".into(),
+                code: "123456".into(),
+                link: "https://app.example.com/x?token=SECRET".into(),
+            },
+            Mail::MemberInvite {
+                to: "ada@example.com".into(),
+                team_name: "Acme".into(),
+                inviter: "Jane".into(),
+                link: "https://app.example.com/x?token=SECRET".into(),
+            },
+            Mail::CustomerInvite {
+                to: "ada@example.com".into(),
+                team_name: "Acme".into(),
+                collection_name: "payments-api".into(),
+                link: "https://app.example.com/x?token=SECRET".into(),
+            },
+        ];
+        for mail in mails {
+            let shown = format!("{mail:?}");
+            assert!(!shown.contains("123456"), "{shown}");
+            assert!(!shown.contains("SECRET"), "{shown}");
+            assert!(shown.contains("<redacted>"), "{shown}");
+            assert!(shown.contains("ada@example.com"), "{shown}");
+        }
     }
 }

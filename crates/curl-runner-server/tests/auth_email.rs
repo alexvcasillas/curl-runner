@@ -282,7 +282,7 @@ async fn start_rate_limited_per_ip(pool: PgPool) {
             .request_with_ip(
                 "/v1/auth/email/start",
                 json!({"email": format!("u{i}@example.com"), "client": "web"}),
-                "203.0.113.7, 10.0.0.1",
+                "10.9.9.9, 203.0.113.7",
             )
             .await;
         if i < 20 {
@@ -347,7 +347,7 @@ async fn revoked_session_is_401(pool: PgPool) {
     let (status, body) = app
         .request(Method::POST, "/v1/auth/sign-out", None, Some(&token))
         .await;
-    assert_eq!((status, body), (StatusCode::OK, json!({})));
+    assert_eq!((status, body), (StatusCode::NO_CONTENT, Value::Null));
     let (status, body) = me(&app, &token).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["error"], "unauthorized");
@@ -429,4 +429,67 @@ async fn malformed_json_is_400_invalid_request(pool: PgPool) {
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_request");
+}
+
+#[sqlx::test]
+async fn start_for_existing_user_is_also_202_empty(pool: PgPool) {
+    let app = test_app(pool).await;
+    app.sign_in("jane@example.com").await;
+    let (status, body) = app
+        .request(
+            Method::POST,
+            "/v1/auth/email/start",
+            Some(json!({"email": "jane@example.com", "client": "web"})),
+            None,
+        )
+        .await;
+    assert_eq!((status, body), (StatusCode::ACCEPTED, json!({})));
+}
+
+#[sqlx::test]
+async fn bearer_scheme_is_case_insensitive(pool: PgPool) {
+    let app = test_app(pool).await;
+    let token = app.sign_in("jane@example.com").await;
+    let (status, _) = app
+        .request_with_auth("/v1/me", &format!("bearer {token}"))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[sqlx::test]
+async fn concurrent_starts_leave_one_live_code(pool: PgPool) {
+    let app = test_app(pool).await;
+    let start = || {
+        app.request(
+            Method::POST,
+            "/v1/auth/email/start",
+            Some(json!({"email": "jane@example.com", "client": "web"})),
+            None,
+        )
+    };
+    let (a, b, c, d) = tokio::join!(start(), start(), start(), start());
+    for (status, _) in [a, b, c, d] {
+        assert_eq!(status, StatusCode::ACCEPTED);
+    }
+    let live: i64 = sqlx::query_scalar("SELECT count(*) FROM email_codes WHERE used_at IS NULL")
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(live, 1);
+}
+
+#[sqlx::test]
+async fn forwarded_for_spoofing_cannot_dodge_ip_limit(pool: PgPool) {
+    let app = test_app(pool).await;
+    // One proxy hop: the rightmost entry counts, the spoofed left one is ignored.
+    for i in 0..21 {
+        let (status, _) = app
+            .request_with_ip(
+                "/v1/auth/email/start",
+                json!({"email": format!("s{i}@example.com"), "client": "web"}),
+                &format!("spoof-{i}, 198.51.100.1"),
+            )
+            .await;
+        assert_eq!(status == StatusCode::TOO_MANY_REQUESTS, i == 20, "{i}");
+    }
 }

@@ -9,6 +9,7 @@ use curl_runner_cloud_proto::ErrorCode;
 use serde::de::DeserializeOwned;
 
 use crate::error::ApiError;
+use crate::state::AppState;
 
 /// `Json<T>` whose rejections are `400 invalid_request` in the API error shape.
 pub struct ApiJson<T>(pub T);
@@ -37,28 +38,35 @@ fn json_rejection(rejection: &JsonRejection) -> ApiError {
     ApiError::new(ErrorCode::InvalidRequest, message)
 }
 
-/// The caller's IP: the first `X-Forwarded-For` hop (the reverse proxy sets
-/// it), else the socket peer, else `"unknown"`.
+/// The caller's IP. Behind `TRUSTED_PROXY_HOPS` proxies it is the entry that
+/// many places from the right of `X-Forwarded-For` (earlier entries are
+/// client-controlled). With too few entries, or 0 hops, it is the socket peer;
+/// without that, `"unknown"`.
 pub struct ClientIp(pub String);
 
-impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
+impl FromRequestParts<AppState> for ClientIp {
     type Rejection = std::convert::Infallible;
 
-    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
-        Ok(Self(client_ip(parts)))
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        Ok(Self(client_ip(parts, state.config.trusted_proxy_hops)))
     }
 }
 
-fn client_ip(parts: &Parts) -> String {
+fn client_ip(parts: &Parts, hops: usize) -> String {
     let forwarded = parts
         .headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split(',').next())
+        .get_all("x-forwarded-for")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(','))
         .map(str::trim)
-        .filter(|ip| !ip.is_empty());
-    if let Some(ip) = forwarded {
-        return ip.to_owned();
+        .filter(|ip| !ip.is_empty())
+        .collect::<Vec<_>>();
+    if hops > 0 && forwarded.len() >= hops {
+        return forwarded[forwarded.len() - hops].to_owned();
     }
     parts
         .extensions
@@ -139,15 +147,22 @@ mod tests {
     }
 
     #[test]
-    fn client_ip_prefers_first_forwarded_hop() {
-        let p = parts(Some("203.0.113.9, 10.0.0.1"), Some("10.0.0.2:5000"));
-        assert_eq!(client_ip(&p), "203.0.113.9");
+    fn client_ip_takes_nth_entry_from_the_right() {
+        let p = parts(Some("spoofed, 1.2.3.4"), Some("10.0.0.2:5000"));
+        assert_eq!(client_ip(&p, 1), "1.2.3.4");
+        assert_eq!(client_ip(&p, 2), "spoofed");
     }
 
     #[test]
-    fn client_ip_falls_back_to_peer_then_unknown() {
-        assert_eq!(client_ip(&parts(None, Some("10.0.0.2:5000"))), "10.0.0.2");
-        assert_eq!(client_ip(&parts(None, None)), "unknown");
-        assert_eq!(client_ip(&parts(Some(" "), None)), "unknown");
+    fn client_ip_uses_peer_for_zero_hops_or_short_list() {
+        let p = parts(Some("spoofed, 1.2.3.4"), Some("10.0.0.2:5000"));
+        assert_eq!(client_ip(&p, 0), "10.0.0.2");
+        assert_eq!(client_ip(&p, 3), "10.0.0.2");
+        assert_eq!(
+            client_ip(&parts(None, Some("10.0.0.2:5000")), 1),
+            "10.0.0.2"
+        );
+        assert_eq!(client_ip(&parts(None, None), 1), "unknown");
+        assert_eq!(client_ip(&parts(Some(" "), None), 1), "unknown");
     }
 }

@@ -29,6 +29,9 @@ pub struct Config {
     pub signup_domains: Vec<String>,
     /// Lower-cased operator emails.
     pub operators: Vec<String>,
+    /// Reverse proxies in front of the server; the client IP is that many
+    /// entries from the right of `X-Forwarded-For`. 0 trusts only the socket.
+    pub trusted_proxy_hops: usize,
 }
 
 /// How to reach the SMTP relay.
@@ -119,6 +122,13 @@ impl Config {
             signup,
             signup_domains: lower_list(get("SIGNUP_DOMAINS")),
             operators: lower_list(get("OPERATOR_EMAILS")),
+            trusted_proxy_hops: match get("TRUSTED_PROXY_HOPS") {
+                None => 1,
+                Some(v) => v.trim().parse().map_err(|_| ConfigError::Invalid {
+                    var: "TRUSTED_PROXY_HOPS",
+                    reason: "expected a non-negative whole number".into(),
+                })?,
+            },
         })
     }
 }
@@ -262,6 +272,7 @@ impl fmt::Debug for Config {
             .field("signup", &self.signup)
             .field("signup_domains", &self.signup_domains)
             .field("operators", &self.operators)
+            .field("trusted_proxy_hops", &self.trusted_proxy_hops)
             .finish()
     }
 }
@@ -413,6 +424,7 @@ mod tests {
         assert!(cfg.google.is_none());
         assert!(cfg.signup_domains.is_empty());
         assert!(cfg.operators.is_empty());
+        assert_eq!(cfg.trusted_proxy_hops, 1);
     }
 
     #[test]
