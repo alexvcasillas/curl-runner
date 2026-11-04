@@ -142,12 +142,14 @@ fn run_import(parsed: &ConvertArgs, kind: ImportKind, log: &Logger, console: &mu
         plural(folders),
     ));
     // The CLI never writes a secret's value, so every secret is listed, not
-    // only the ones the import found empty.
+    // only the ones the import found empty. An access token entry already
+    // asks for its secret.
     let mut items: Vec<Attention> = import.report.attention.clone();
     for v in import.variables.iter().filter(|v| v.secret) {
-        let covered = items
-            .iter()
-            .any(|a| matches!(a, Attention::SetSecret { var } if *var == v.name));
+        let covered = items.iter().any(|a| match a {
+            Attention::SetSecret { var } | Attention::AccessToken { var, .. } => *var == v.name,
+            _ => false,
+        });
         if !covered {
             items.push(Attention::SetSecret {
                 var: v.name.clone(),
@@ -160,6 +162,12 @@ fn run_import(parsed: &ConvertArgs, kind: ImportKind, log: &Logger, console: &mu
             .iter()
             .map(|var| Attention::KeptEnv { var: var.clone() }),
     );
+    items.extend(
+        outcome
+            .cleaned_env
+            .iter()
+            .map(|var| Attention::CleanedEnv { var: var.clone() }),
+    );
     let rank = |a: &Attention| match a {
         Attention::PickFile { .. } => 0,
         Attention::SetSecret { .. } => 1,
@@ -167,7 +175,7 @@ fn run_import(parsed: &ConvertArgs, kind: ImportKind, log: &Logger, console: &mu
     };
     items.sort_by_key(rank);
     let first_secret = items.iter().find_map(|a| match a {
-        Attention::SetSecret { var } => Some(var.clone()),
+        Attention::SetSecret { var } | Attention::AccessToken { var, .. } => Some(var.clone()),
         _ => None,
     });
     if !items.is_empty() {

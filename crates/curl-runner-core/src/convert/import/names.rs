@@ -3,6 +3,22 @@
 /// Path of a file field an export left without one.
 pub const PLACEHOLDER_FILE: &str = "./pick-a-file";
 
+/// A character that can end a line for some reader: `\n`, `\r`, vertical
+/// tab, form feed, NEL and the Unicode line and paragraph separators.
+pub fn is_line_break(c: char) -> bool {
+    matches!(
+        c,
+        '\n' | '\r' | '\u{b}' | '\u{c}' | '\u{85}' | '\u{2028}' | '\u{2029}'
+    )
+}
+
+/// `s` without control characters and line breaks.
+pub fn one_line(s: &str) -> String {
+    s.chars()
+        .filter(|&c| !c.is_control() && !is_line_break(c))
+        .collect()
+}
+
 /// Names that curl-runner reads as dynamic variables.
 const RESERVED_PREFIXES: [&str; 6] = [
     "DATE",

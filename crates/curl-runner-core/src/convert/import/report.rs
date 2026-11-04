@@ -13,7 +13,7 @@ pub struct ImportReport {
 
 /// One thing the import couldn't finish. `request` and `at` are a request's
 /// or folder's path joined with `/`; an empty `at` is the collection itself.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Attention {
     PickFile {
         request: String,
@@ -78,7 +78,7 @@ pub enum Attention {
         examples: Vec<String>,
     },
     /// `count` requests used the `used` security requirement and also
-    /// accept `others`.
+    /// accept `others`. An empty `used` means no auth.
     AuthChoice {
         used: String,
         others: String,
@@ -128,6 +128,30 @@ pub enum Attention {
     BadParams {
         count: usize,
         examples: Vec<String>,
+    },
+    /// A server URL held a user name or password, which was removed. The
+    /// entry never holds them.
+    ServerCredentials,
+    /// Required `Authorization` header parameters left out of requests
+    /// with no auth: OpenAPI ignores them.
+    AuthHeaderParam {
+        count: usize,
+        examples: Vec<String>,
+    },
+    /// Values from the document holding `${`, which the runner fills in
+    /// from the environment.
+    DocumentVars {
+        count: usize,
+        examples: Vec<String>,
+    },
+    /// Path template variables no parameter declares, given a sample.
+    UndeclaredPathVars {
+        count: usize,
+        examples: Vec<String>,
+    },
+    /// A `.env` value that lost line breaks or control characters.
+    CleanedEnv {
+        var: String,
     },
 }
 
@@ -265,12 +289,15 @@ impl fmt::Display for Attention {
                 used,
                 others,
                 count,
-            } => write!(
-                f,
-                "Used {used} in {} that also accept{} {others}",
-                Count(*count, "request"),
-                if *count == 1 { "s" } else { "" }
-            ),
+            } => {
+                let reqs = Count(*count, "request");
+                let s = if *count == 1 { "s" } else { "" };
+                if used.is_empty() {
+                    write!(f, "Sent no auth in {reqs} that also accept{s} {others}")
+                } else {
+                    write!(f, "Used {used} in {reqs} that also accept{s} {others}")
+                }
+            }
             Attention::AccessToken { var, kind } => {
                 write!(f, "Put an {kind} access token in {var}")
             }
@@ -325,6 +352,34 @@ impl fmt::Display for Attention {
                 "Skipped {} with no name or an unknown location, like in {}",
                 Count(*count, "parameter"),
                 Examples(examples)
+            ),
+            Attention::ServerCredentials => f.write_str(
+                "Removed a user name or password from a server URL. Add credentials as auth if the API needs them.",
+            ),
+            Attention::AuthHeaderParam { count, examples } => write!(
+                f,
+                "Left out the Authorization header parameter in {}, like {} OpenAPI sends auth through security schemes. Add it by hand if the API needs it.",
+                Count(*count, "request"),
+                Ended(examples)
+            ),
+            Attention::DocumentVars { count, examples } => {
+                let them = if *count == 1 { "it" } else { "them" };
+                write!(
+                    f,
+                    "Kept ${{…}} from the API description in {}, like {} curl-runner fills {them} from your environment when it runs. Check {them}.",
+                    Count(*count, "request"),
+                    Ended(examples)
+                )
+            }
+            Attention::UndeclaredPathVars { count, examples } => write!(
+                f,
+                "Gave undeclared path variables a sample value in {}, like {} Set the right values.",
+                Count(*count, "request"),
+                Ended(examples)
+            ),
+            Attention::CleanedEnv { var } => write!(
+                f,
+                "Removed line breaks and control characters from {var} in .env"
             ),
         }
     }

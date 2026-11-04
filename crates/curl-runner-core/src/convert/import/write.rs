@@ -3,7 +3,7 @@
 //! Every path is built from slugged names only, so nothing in a collection
 //! can point a file outside the target folder.
 
-use super::{ImportReport, ImportedVar, Mapped, emit_request, slug};
+use super::{ImportReport, ImportedVar, Mapped, emit_request, is_line_break, one_line, slug};
 use crate::convert::secrets::{unique_path, write_new};
 use crate::env::parse_env_content;
 use std::collections::HashSet;
@@ -40,6 +40,8 @@ pub struct WriteOutcome {
     pub written: Vec<PathBuf>,
     /// `.env` keys that already had a different value and were left alone.
     pub kept_env: Vec<String>,
+    /// `.env` keys whose value lost line breaks or control characters.
+    pub cleaned_env: Vec<String>,
     pub readme: bool,
 }
 
@@ -97,17 +99,20 @@ pub fn write_import(
     }
     let mut out = WriteOutcome::default();
 
+    let mut taken = HashSet::new();
     for file in &import.files {
         let rel = unique_path(&folder.join(&file.rel_path), |p| {
-            out.written.iter().any(|w| w == p) || root.join(p).symlink_metadata().is_ok()
+            taken.contains(p) || root.join(p).symlink_metadata().is_ok()
         });
         let path = root.join(&rel);
         write_new(&path, file.yaml.as_bytes()).map_err(|e| naming(&path, e))?;
+        taken.insert(rel.clone());
         out.written.push(rel);
     }
 
     let env = root.join(".env");
-    out.kept_env = append_env(&env, import, secret_note).map_err(|e| naming(&env, e))?;
+    (out.kept_env, out.cleaned_env) =
+        append_env(&env, import, secret_note).map_err(|e| naming(&env, e))?;
 
     if let Some(readme) = &import.readme {
         let path = root.join(&folder).join("README.md");
@@ -152,9 +157,14 @@ fn safe_folder(folder: &Path) -> io::Result<PathBuf> {
     Ok(safe)
 }
 
-/// Append the keys `.env` doesn't have yet; returns the keys it already had
-/// with a different value.
-fn append_env(path: &Path, import: &Import, secret_note: &str) -> io::Result<Vec<String>> {
+/// Append the keys `.env` doesn't have yet. Returns the keys it already had
+/// with a different value, and the keys whose value lost characters that
+/// could break its line.
+fn append_env(
+    path: &Path,
+    import: &Import,
+    secret_note: &str,
+) -> io::Result<(Vec<String>, Vec<String>)> {
     let existing = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) if e.kind() == io::ErrorKind::NotFound => String::new(),
@@ -167,13 +177,14 @@ fn append_env(path: &Path, import: &Import, secret_note: &str) -> io::Result<Vec
         .collect();
 
     let mut kept = Vec::new();
+    let mut cleaned = Vec::new();
     let mut lines = Vec::new();
     for v in &import.variables {
         let notes = import
             .env_comments
             .iter()
             .filter(|(name, _)| *name == v.name)
-            .map(|(_, line)| format!("# {line}"));
+            .flat_map(|(_, line)| comment(line));
         if let Some(value) = present.get(&v.name) {
             if !v.secret && *value != v.value {
                 kept.push(v.name.clone());
@@ -181,16 +192,21 @@ fn append_env(path: &Path, import: &Import, secret_note: &str) -> io::Result<Vec
         } else if v.secret {
             if !placeholders.contains(v.name.as_str()) {
                 lines.extend(notes);
-                lines.push(format!("# {} is a secret: {secret_note}", v.name));
+                lines.extend(comment(&format!("{} is a secret: {secret_note}", v.name)));
                 lines.push(format!("# {}=", v.name));
             }
         } else {
             lines.extend(notes);
-            lines.push(format!("{}={}", v.name, env_value(&v.name, &v.value)));
+            let mut value = env_value(&v.name, &v.value);
+            if value.chars().any(|c| c.is_control() || is_line_break(c)) {
+                value = env_value(&v.name, &one_line(&v.value));
+                cleaned.push(v.name.clone());
+            }
+            lines.push(format!("{}={value}", v.name));
         }
     }
     if lines.is_empty() {
-        return Ok(kept);
+        return Ok((kept, cleaned));
     }
 
     let name = import.name.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -208,7 +224,15 @@ fn append_env(path: &Path, import: &Import, secret_note: &str) -> io::Result<Vec
         .create(true)
         .open(path)?;
     io::Write::write_all(&mut f, text.as_bytes())?;
-    Ok(kept)
+    Ok((kept, cleaned))
+}
+
+/// `text` as `.env` comment lines: one `# ` line per line of text, so
+/// nothing in it can start a `KEY=VALUE` line.
+fn comment(text: &str) -> impl Iterator<Item = String> + '_ {
+    text.split(is_line_break)
+        .filter(|l| !l.is_empty())
+        .map(|l| format!("# {l}"))
 }
 
 /// `value` as the runner's `.env` loader reads it back: bare when that is

@@ -82,3 +82,24 @@ fn help_lists_openapi() {
         "{text}"
     );
 }
+
+#[test]
+fn access_token_is_not_also_a_set_secret() {
+    let work = tempfile::tempdir().unwrap();
+    let spec = r#"{"openapi":"3.0.0","info":{"title":"Pets","version":"1"},
+        "servers":[{"url":"https://api.example.com"}],
+        "components":{"securitySchemes":{"oauth":{"type":"oauth2","flows":{}}}},
+        "security":[{"oauth":[]}],
+        "paths":{"/a":{"get":{"responses":{"200":{"description":"ok"}}}}}}"#;
+    std::fs::write(work.path().join("spec.json"), spec).unwrap();
+    let err = stderr(&convert(work.path(), &["spec.json", "-o", "out"]));
+    assert!(
+        err.contains("Put an OAuth 2 access token in PETS_OAUTH"),
+        "{err}"
+    );
+    assert!(!err.contains("Set the secret PETS_OAUTH"), "{err}");
+    assert!(
+        err.contains("Set the secrets above in out/.env.local."),
+        "{err}"
+    );
+}
