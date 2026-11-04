@@ -59,10 +59,10 @@ Swagger 2.0 still shows up in older APIs and many generated SDKs, so it's accept
 | --- | --- |
 | `info.title` | Collection name. The CLI's default output folder is its slug. |
 | `info.description` | `README.md` in the output folder, created only if missing. |
-| First tag of an operation | Subfolder (slugged). Untagged operations go in the root. An operation is written once, under its first tag. |
+| First tag of an operation | Subfolder (slugged). An operation is written once, under its first tag. An untagged operation goes in a folder named after its first path segment that isn't a version (`v1`), `api` or a `{template}`, and in the root only when there's no such segment. (Amended after a real 600-operation spec without tags came out as one flat folder.) |
 | Operation | One YAML file, named from `summary`, else `operationId`, else `method path`. The name is slugged with the Postman importer's `slug` and collisions get the same numeric suffixes. |
 | `summary`, else `operationId`, else `GET /pets/{id}` | `name:` |
-| `description`, `operationId`, `deprecated`, `externalDocs.url` | `#` comment lines at the top of the file, then the tag's description. |
+| `description`, `operationId`, `deprecated`, `externalDocs.url` | `#` comment lines at the top of the file, then the tag's description. HTML tags are stripped and basic entities decoded. |
 | `servers[0].url` (operation, then path item, then document) | `${API_BASE_URL}` at the start of every URL, with its value in `.env` (see Variable names) |
 | Server variables (`{region}`) | Replaced with their `default`. Report a variable with no default. |
 | More than one server | The first is used. The others are listed as comment lines in `.env` next to the base URL variable. |
@@ -71,7 +71,7 @@ Swagger 2.0 still shows up in older APIs and many generated SDKs, so it's accept
 | Path template `{id}` | `${id}` in the URL, with a sample value in the file's `global.variables`, as Postman path variables are handled |
 | Required query or header parameter | Enabled `params:` or `headers:` entry with a sample value |
 | Optional query or header parameter | A disabled (commented-out) entry with a sample value, and the parameter's description as a note. This reuses the Postman importer's disabled fields. |
-| Array query parameter | Its items joined with `,`. `explode` and the other `style` variants aren't modeled. A parameter that needs them is reported. |
+| Array query parameter | Its items joined with `,`. `explode` and the other `style` variants aren't modeled. A required parameter that needs them is reported. Optional ones are commented out, so they aren't. |
 | Cookie parameter | One `Cookie` header joining the required ones. Optional ones are left out and reported together, once per request. |
 | Path-item `parameters` | Merged with the operation's. The operation's parameters win on the same `name` + `in`. |
 | `requestBody` | See Bodies below |
@@ -110,7 +110,7 @@ Media type preference when a request body lists several: `application/json` or a
 - **multipart:** each top-level property becomes a form field. `format: binary` (3.0), `contentMediaType` (3.1) or Swagger's `type: file` becomes a file field with the Postman importer's placeholder path, and is listed as "pick a file". Required fields are enabled. Optional ones are disabled, as in Postman. No `Content-Type` header, because curl sets the boundary.
 - **form-urlencoded:** a urlencoded string body with the required properties, plus a `Content-Type` header. Optional properties are listed by name in a comment above the body. A string can't hold disabled lines, so this is the closest equivalent.
 - **text and XML:** the `example` as a string when there is one, else an empty string, plus a `Content-Type`. XML isn't generated from schemas.
-- **No request body:** no `body:`.
+- **No request body:** no `body:`. A form schema that is explicitly empty (no properties, no `allOf`, `additionalProperties` false or absent) also means no body, and isn't reported.
 
 ### Auth
 
@@ -128,7 +128,7 @@ An operation's `security` overrides the document's. `security: []` means no auth
 | `oauth2`, `openIdConnect` | `auth: {type: bearer, token: ${VAR}}`. The report says to put an access token there, once per scheme. |
 | Any other `http` scheme (digest, ...) | Request without auth, reported once per scheme |
 
-`VAR` is the API prefix (see Variable names) plus the security scheme's key from `components.securitySchemes`, made safe with the Postman importer's `var_name` and uppercased, for example `PETSTORE_API_KEY`. The builder picks the suffixes. Every auth variable is a secret, handled exactly as in the Postman spec's Secrets section: the CLI writes `# NAME=` with the `.env.local` note, and the studio lists it as "set this secret" through the Keychain path. A literal credential found in a parameter `example` (the curl import's scrub list) also becomes a secret variable.
+`VAR` is the API prefix (see Variable names) plus the security scheme's key from `components.securitySchemes`, made safe with the Postman importer's `var_name` and uppercased, for example `PETSTORE_API_KEY`. The builder picks the suffixes. Every auth variable except a basic username is a secret, handled exactly as in the Postman spec's Secrets section: the CLI writes `# NAME=` with the `.env.local` note, and the studio lists it as "set this secret" through the Keychain path. A literal credential found in a parameter `example` (the curl import's scrub list) also becomes a secret variable. Path parameters are identifiers, so one is scrubbed only when the document gives it a value and its name is exactly one of the secret parameter names. A generated sample is never treated as a secret.
 
 ### Variable names
 
