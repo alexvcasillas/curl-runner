@@ -1,4 +1,4 @@
-//! `curl-runner convert curl|file|yaml` (`cli.ts` `executeConvert`): reads the
+//! `curl-runner convert curl|file|yaml|postman|openapi` (`cli.ts` `executeConvert`): reads the
 //! input, runs the pure conversion from `curl_runner_core::convert`, prints
 //! the YAML or curl command, the warnings and the `--debug` dump.
 
