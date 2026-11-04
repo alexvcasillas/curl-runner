@@ -88,16 +88,19 @@
 
   - **Breaking:** `timeout` and `--timeout` are now honored in milliseconds, as documented. 1.x passed the value to curl as seconds. See the migration notes below.
   - **Breaking:** The `curl-runner` bin is a POSIX `sh` launcher. On Windows the npm/bun/pnpm/yarn shims therefore need `sh` on `PATH` (Git for Windows, MSYS2 or Cygwin). Without `sh`, install with `install.ps1` or run the `.exe` from the platform package directly.
+  - **Breaking:** On Debian/Ubuntu images keep `ca-certificates` installed, since HTTPS uses the operating system trust store unless `ssl.ca` is set.
+  - **Breaking:** Installing with `--omit=optional` leaves no binary.
+  - **Breaking:** Transport failures (connection refused, DNS failure, timeout, max redirects exceeded) now fail the request and are retried. In 1.x they were reported as success with status 0 and never retried. Errors read `Request timeout after {timeout}ms`, `Connection timeout after {ms}ms` (when the pool's connect timeout is the smaller one still running), or `curl: (N) <libcurl message>`. Exhausted retries after a transport failure report that error; exhausted retriable statuses keep `Operation returned retriable result`.
+  - **Breaking:** Settings now resolve as defaults < `curl-runner.yaml` < test file `global` < environment variables < CLI flags, as documented. In 1.x a test file's `global` beat CLI flags and environment variables.
+  - **Breaking:** URL globbing (`{a,b}`, `[1-3]`) is no longer applied; URLs are sent literally.
   - **New:** `cargo install curl-runner --locked` installs from crates.io (`curl-runner` and its engine `curl-runner-core`). `curl-runner upgrade` detects cargo installs and reruns that command.
-  - **Improved:** The CLI is now a native Rust binary with libcurl linked statically (rustls for TLS). No Bun, Node.js or `curl` binary is needed at runtime. HTTPS uses the operating system trust store (on Debian/Ubuntu images keep `ca-certificates` installed) unless `ssl.ca` is set.
+  - **Improved:** The CLI is now a native Rust binary with libcurl linked statically (rustls for TLS). No Bun, Node.js or `curl` binary is needed at runtime. HTTPS uses the operating system trust store unless `ssl.ca` is set.
   - **Improved:** `curl-runner upgrade` replaces the binary in-process (checksum verified). npm and bun installs still run `npm|bun install -g @curl-runner/cli@latest`.
-  - **Improved:** `@curl-runner/cli` has no JavaScript and no postinstall. It ships the binary through one optional dependency per platform (`@curl-runner/cli-linux-x64`, `-linux-arm64`, `-darwin-x64`, `-darwin-arm64`, `-win32-x64`), downloaded by npm, bun, pnpm and yarn according to `os`/`cpu`. Installing with `--omit=optional` leaves no binary.
+  - **Improved:** `@curl-runner/cli` has no JavaScript and no postinstall. It ships the binary through one optional dependency per platform (`@curl-runner/cli-linux-x64`, `-linux-arm64`, `-darwin-x64`, `-darwin-arm64`, `-win32-x64`), downloaded by npm, bun, pnpm and yarn according to `os`/`cpu`.
   - **Improved:** Linux binaries are static musl builds.
-  - **Fixed:** Request `timeout` is applied in milliseconds (see the migration notes below). `--dry-run` prints `--max-time` in fractional seconds (`5000` is `5`, `1500` is `1.5`).
-  - **Fixed:** Transport failures (connection refused, DNS failure, timeout, max redirects exceeded) now fail the request and are retried. In 1.x they were reported as success with status 0 and never retried. Errors read `Request timeout after {timeout}ms`, `Connection timeout after {ms}ms` (when the pool's connect timeout is the smaller one still running), or `curl: (N) <libcurl message>`. Exhausted retries after a transport failure report that error; exhausted retriable statuses keep `Operation returned retriable result`.
+  - **Fixed:** `--dry-run` prints `--max-time` in fractional seconds (`5000` is `5`, `1500` is `1.5`).
   - **Fixed:** `method: HEAD` no longer waits for a body that never comes.
   - **Fixed:** Profile mode (`--profile`): a failed iteration (transport failure) is counted in `failures` and excluded from the timings instead of counting as a successful sample. `failureRate` is measured failures divided by measured iterations (1.x divided by successful samples, which could exceed 100%). `--profile-concurrency 0` runs sequentially (1.x looped forever). A `--profile-export` write error prints `Cannot export profile results: ...` and exits 1 instead of crashing.
-  - **Fixed:** Settings now resolve as defaults < `curl-runner.yaml` < test file `global` < environment variables < CLI flags, as documented. In 1.x a test file's `global` beat CLI flags and environment variables.
   - **Fixed:** Per request, settings resolve as base < file `global.defaults` < `collection.defaults` < CLI/env-derived defaults < the request itself. `retry` merges field by field (`--retries` and `--retry-delay` no longer wipe each other or the file's other retry fields), and CLI/env output flags beat the file's `global.output`.
   - **Fixed:** A `curl-runner.yaml` `global` with a wrongly typed field (for example `maxConcurrency: abc`) is skipped with a warning.
   - **Fixed:** With several test files, `--output` now holds the aggregate of all files (`total`, `successful`, `failed`, `skipped` summed, `results` concatenated in run order, `duration` the sum of the per-file durations). In 1.x only the last file's summary was saved. The file is also written on Ctrl-C with the completed results, and atomically (temp file, then rename), so an interrupted run never leaves a truncated file.
@@ -111,7 +114,7 @@
   - **Fixed:** `interpolate` failures (a value that no longer fits a typed field, for example `timeout: "${store.name}"`) fail the request with `` invalid value at `timeout`: ... `` instead of running it with the raw value. An explicit `null` in a request replaces the default, like a JS spread. `RANDOM:string:N` with an unrepresentable `N` is left unresolved instead of aborting.
   - **Fixed:** Duplicate mapping keys: the last value wins (they were a parse error). YAML scalars resolve like `Bun.YAML.parse` 1.3 (`yes/no/on/off` are booleans, `010` is 10, ...), so `insecure: yes` loads. Integers beyond the i64/u64 range are read as floats. Nesting deeper than 128 levels is a clean parse error.
   - **Fixed:** Absolute paths now work for files, directories and globs (`curl-runner /abs/path/test.yaml` used to find nothing).
-  - **Fixed:** Dry run also checks that formData files exist. URL globbing (`{a,b}`, `[1-3]`) is no longer applied; URLs are sent literally.
+  - **Fixed:** Dry run also checks that formData files exist.
   - **Fixed:** Redaction: explicit secrets are keyed by value (two tokens sharing their first 8 characters no longer overwrite each other), `api_key=`/`token=`/`secret=` values are replaced by span, and known secrets are also masked in every other printed string (bodies, header values, errors, stored values, names, JSON/raw output), and in snapshot and diff output.
   - **Fixed:** Snapshots: parallel requests no longer race on the snapshot file; a snapshot or baseline file that fails to parse is never overwritten (the comparison fails with an error naming the file) so stored snapshots are not lost; write failures are reported as a failed comparison instead of aborting the request. `--diff-compare <label>` saves the run only when the baseline file does not exist (1.x also replaced the file when no request name matched or nothing succeeded).
   - **Fixed:** `validate --fix` no longer writes YAML that fails to read back or changes meaning (empty `{}`/`[]`, strings such as `*/*`, `@x`, `yes`, `-1`); on a file whose root is not one mapping it leaves the file untouched and prints a warning instead of erasing it.
@@ -152,7 +155,7 @@
   - **New:** Filesystem path confinement: `output`, `saveToFile`, and `formData` file paths are confined to the working directory by default. Opt out with `--allow-path` or `CURL_RUNNER_ALLOW_PATHS`. SSL `ca`/`cert`/`key` paths are exempt: they are TLS handshake material and are never transmitted to the server.
   - **Improved:** Secret redaction: inline credentials (`auth.token`, `auth.password`, and sensitive request headers) are now auto-registered for redaction, the saved results summary is redacted before being written to disk, and detection patterns were extended (JWT, Google API keys, `api_key=`/`token=`/`secret=` assignments).
   - **Fixed:** ReDoS and prototype pollution: user/server-controlled regex matching now caps input length, and `__proto__`/`prototype`/`constructor` keys are rejected during variable interpolation and response-path traversal.
-  - **Breaking:** Configs that rely on non-`http(s)` URLs, or that read/write files outside the working directory, must now opt in with `--allow-protocol` or `--allow-path`.
+  - **Breaking:** Potentially breaking: configs that rely on non-`http(s)` URLs, or that read/write files outside the working directory, must now opt in with `--allow-protocol` or `--allow-path` (or `CURL_RUNNER_ALLOWED_PROTOCOLS` / `CURL_RUNNER_ALLOW_PATHS`).
 
 ## 1.24.0
 
@@ -664,7 +667,7 @@
 - [#7](https://github.com/alexvcasillas/curl-runner/pull/7) [`0f1d1b5`](https://github.com/alexvcasillas/curl-runner/commit/0f1d1b5609a4848dd2da9482ef219ceee4812229) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **Version checking and platform builds**
 
   - **Improved:** Version checking and version releases are improved.
-  - **New:** Platform builds for each release.
+  - **New:** Platform builds for releases.
 
 ## 1.0.1
 
