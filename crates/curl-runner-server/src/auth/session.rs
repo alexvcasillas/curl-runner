@@ -2,6 +2,7 @@
 
 use axum::Json;
 use axum::extract::{FromRequestParts, Path, State};
+use axum::http::HeaderMap;
 use axum::http::StatusCode;
 use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
@@ -32,6 +33,16 @@ fn unauthorized() -> ApiError {
     ApiError::new(ErrorCode::Unauthorized, "Sign in to continue.")
 }
 
+/// The bearer token in an `Authorization` header, whatever its prefix.
+pub(crate) fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split_once(' '))
+        .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
+        .map(|(_, token)| token.trim())
+}
+
 impl FromRequestParts<AppState> for UserAuth {
     type Rejection = ApiError;
 
@@ -39,41 +50,40 @@ impl FromRequestParts<AppState> for UserAuth {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let token = parts
-            .headers
-            .get(AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.split_once(' '))
-            .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
-            .map(|(_, token)| token.trim())
+        let token = bearer_token(&parts.headers)
             .filter(|t| t.starts_with("crs_"))
             .ok_or_else(unauthorized)?;
-        let hash = secret_hash(state.config.secret_key.as_bytes(), token);
-        let now = state.clock.now();
-        let row: Option<(Uuid, Uuid, String, DateTime<Utc>)> = sqlx::query_as(
-            "SELECT s.id, s.user_id, u.email::text, s.last_used_at \
-             FROM sessions s JOIN users u ON u.id = s.user_id \
-             WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > $2",
-        )
-        .bind(&hash)
-        .bind(now)
-        .fetch_optional(&state.db)
-        .await?;
-        let (session_id, user_id, email, last_used_at) = row.ok_or_else(unauthorized)?;
-        if now - last_used_at >= TOUCH_EVERY {
-            sqlx::query("UPDATE sessions SET last_used_at = $2, expires_at = $3 WHERE id = $1")
-                .bind(session_id)
-                .bind(now)
-                .bind(now + SESSION_TTL)
-                .execute(&state.db)
-                .await?;
-        }
-        Ok(Self {
-            user_id,
-            session_id,
-            email,
-        })
+        validate_session(state, token).await
     }
+}
+
+/// The user behind the live `crs_...` session `token`, sliding its expiry.
+pub(crate) async fn validate_session(state: &AppState, token: &str) -> Result<UserAuth, ApiError> {
+    let hash = secret_hash(state.config.secret_key.as_bytes(), token);
+    let now = state.clock.now();
+    let row: Option<(Uuid, Uuid, String, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT s.id, s.user_id, u.email::text, s.last_used_at \
+         FROM sessions s JOIN users u ON u.id = s.user_id \
+         WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > $2",
+    )
+    .bind(&hash)
+    .bind(now)
+    .fetch_optional(&state.db)
+    .await?;
+    let (session_id, user_id, email, last_used_at) = row.ok_or_else(unauthorized)?;
+    if now - last_used_at >= TOUCH_EVERY {
+        sqlx::query("UPDATE sessions SET last_used_at = $2, expires_at = $3 WHERE id = $1")
+            .bind(session_id)
+            .bind(now)
+            .bind(now + SESSION_TTL)
+            .execute(&state.db)
+            .await?;
+    }
+    Ok(UserAuth {
+        user_id,
+        session_id,
+        email,
+    })
 }
 
 /// Insert a session for `user_id` and return the clear token (shown once).
