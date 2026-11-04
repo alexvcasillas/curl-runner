@@ -53,71 +53,97 @@ pub async fn run(
     }
 }
 
-/// Process one batch of due messages. Returns how many were sent.
+/// Process up to one batch of due messages, each in its own short transaction
+/// so a slow send holds one row lock and a later failure never undoes an
+/// earlier send. Returns how many were sent.
 pub async fn run_once(
     db: &PgPool,
     transport: &dyn Transport,
     clock: &dyn Clock,
 ) -> Result<usize, sqlx::Error> {
+    let mut sent = 0;
+    for _ in 0..BATCH {
+        match send_next(db, transport, clock).await? {
+            Some(true) => sent += 1,
+            Some(false) => {}
+            None => break,
+        }
+    }
+    Ok(sent)
+}
+
+/// Lock one due message, try it and record the outcome. `None` when nothing
+/// is due, else whether the send succeeded.
+async fn send_next(
+    db: &PgPool,
+    transport: &dyn Transport,
+    clock: &dyn Clock,
+) -> Result<Option<bool>, sqlx::Error> {
     let now = clock.now();
     let mut tx = db.begin().await?;
-    let rows: Vec<Row> = sqlx::query_as(
+    let row: Option<Row> = sqlx::query_as(
         "SELECT id, to_addr, subject, text_body, html_body, attempts FROM outbox_emails \
          WHERE sent_at IS NULL AND attempts < $1 AND next_attempt_at <= $2 \
-         ORDER BY next_attempt_at LIMIT $3 FOR UPDATE SKIP LOCKED",
+         ORDER BY next_attempt_at LIMIT 1 FOR UPDATE SKIP LOCKED",
     )
     .bind(MAX_ATTEMPTS)
     .bind(now)
-    .bind(BATCH)
-    .fetch_all(&mut *tx)
+    .fetch_optional(&mut *tx)
     .await?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
 
-    let mut sent = 0;
-    for row in rows {
-        let result = transport
-            .send(
-                &row.to_addr,
-                &row.subject,
-                &row.text_body,
-                row.html_body.as_deref(),
+    let result = transport
+        .send(
+            &row.to_addr,
+            &row.subject,
+            &row.text_body,
+            row.html_body.as_deref(),
+        )
+        .await;
+    let ok = result.is_ok();
+    match result {
+        Ok(()) => {
+            // Bodies hold sign-in codes and links: blank them once sent.
+            sqlx::query(
+                "UPDATE outbox_emails SET sent_at = $2, last_error = NULL, \
+                 subject = '', text_body = '', html_body = '' WHERE id = $1",
             )
-            .await;
-        match result {
-            Ok(()) => {
-                sqlx::query(
-                    "UPDATE outbox_emails SET sent_at = $2, last_error = NULL WHERE id = $1",
-                )
-                .bind(row.id)
-                .bind(now)
-                .execute(&mut *tx)
-                .await?;
-                sent += 1;
+            .bind(row.id)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+        }
+        Err(error) => {
+            let attempts = row.attempts + 1;
+            let gave_up = attempts >= MAX_ATTEMPTS;
+            if gave_up {
+                tracing::error!(
+                    "giving up on email {} after {attempts} attempts: {error}",
+                    row.id
+                );
+            } else {
+                tracing::warn!("email {} failed (attempt {attempts}): {error}", row.id);
             }
-            Err(error) => {
-                let attempts = row.attempts + 1;
-                if attempts >= MAX_ATTEMPTS {
-                    tracing::error!(
-                        "giving up on email {} after {attempts} attempts: {error}",
-                        row.id
-                    );
-                } else {
-                    tracing::warn!("email {} failed (attempt {attempts}): {error}", row.id);
-                }
-                sqlx::query(
-                    "UPDATE outbox_emails SET attempts = $2, next_attempt_at = $3, last_error = $4 \
-                     WHERE id = $1",
-                )
-                .bind(row.id)
-                .bind(attempts)
-                .bind(now + backoff(row.attempts))
-                .bind(error)
-                .execute(&mut *tx)
-                .await?;
-            }
+            // After the last attempt nothing will read the bodies again.
+            sqlx::query(
+                "UPDATE outbox_emails SET attempts = $2, next_attempt_at = $3, last_error = $4, \
+                 subject = CASE WHEN $5 THEN '' ELSE subject END, \
+                 text_body = CASE WHEN $5 THEN '' ELSE text_body END, \
+                 html_body = CASE WHEN $5 THEN '' ELSE html_body END WHERE id = $1",
+            )
+            .bind(row.id)
+            .bind(attempts)
+            .bind(now + backoff(row.attempts))
+            .bind(error)
+            .bind(gave_up)
+            .execute(&mut *tx)
+            .await?;
         }
     }
     tx.commit().await?;
-    Ok(sent)
+    Ok(Some(ok))
 }
 
 #[cfg(test)]

@@ -116,6 +116,15 @@ async fn worker_sends_and_marks_sent(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(sent_at, Some(NOW.parse().unwrap()));
+    let (subject, text, html): (String, String, Option<String>) =
+        sqlx::query_as("SELECT subject, text_body, html_body FROM outbox_emails")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        (subject.as_str(), text.as_str(), html.as_deref()),
+        ("", "", Some(""))
+    );
     // Already sent: a second pass does nothing.
     assert_eq!(
         run_once(&pool, &transport, app.clock.as_ref())
@@ -197,6 +206,15 @@ async fn worker_gives_up_after_max_attempts(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(attempts, MAX_ATTEMPTS);
+    let (subject, text, html): (String, String, Option<String>) =
+        sqlx::query_as("SELECT subject, text_body, html_body FROM outbox_emails")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        (subject.as_str(), text.as_str(), html.as_deref()),
+        ("", "", Some(""))
+    );
     // Stopped: another pass leaves it alone.
     run_once(&pool, &transport, app.clock.as_ref())
         .await
@@ -206,4 +224,30 @@ async fn worker_gives_up_after_max_attempts(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(attempts, MAX_ATTEMPTS);
+}
+
+#[sqlx::test]
+async fn concurrent_workers_send_each_mail_once(pool: PgPool) {
+    let app = test_app(pool.clone()).await;
+    let mut tx = pool.begin().await.unwrap();
+    for to in ["a@example.com", "b@example.com"] {
+        let mail = Mail::SignInCode {
+            to: to.into(),
+            code: "123456".into(),
+            link: "https://cloud.example.com/x".into(),
+        };
+        app.state.mailer.enqueue(&mut tx, mail).await.unwrap();
+    }
+    tx.commit().await.unwrap();
+
+    let transport = FakeTransport::new(0);
+    let clock = app.clock.as_ref();
+    let (a, b) = tokio::join!(
+        run_once(&pool, &transport, clock),
+        run_once(&pool, &transport, clock)
+    );
+    assert_eq!(a.unwrap() + b.unwrap(), 2);
+    let mut to: Vec<String> = transport.sent().into_iter().map(|(to, _)| to).collect();
+    to.sort();
+    assert_eq!(to, ["a@example.com", "b@example.com"]);
 }
