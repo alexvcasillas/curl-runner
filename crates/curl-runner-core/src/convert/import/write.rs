@@ -86,6 +86,17 @@ pub fn write_import(
     import: &Import,
     secret_note: &str,
 ) -> io::Result<WriteOutcome> {
+    write_import_noting(root, folder, import, &|_| secret_note.to_string())
+}
+
+/// [`write_import`] with a note per secret: `secret_note` says where each
+/// one's value is set, after `NAME is a secret: `.
+pub fn write_import_noting(
+    root: &Path,
+    folder: &Path,
+    import: &Import,
+    secret_note: &dyn Fn(&ImportedVar) -> String,
+) -> io::Result<WriteOutcome> {
     let folder = safe_folder(folder)?;
     // Checked before the first write, so a bad entry writes nothing.
     if let Some(bad) = import.files.iter().find(|f| !plain_relative(&f.rel_path)) {
@@ -163,7 +174,7 @@ fn safe_folder(folder: &Path) -> io::Result<PathBuf> {
 fn append_env(
     path: &Path,
     import: &Import,
-    secret_note: &str,
+    secret_note: &dyn Fn(&ImportedVar) -> String,
 ) -> io::Result<(Vec<String>, Vec<String>)> {
     let existing = match std::fs::read_to_string(path) {
         Ok(s) => s,
@@ -192,7 +203,11 @@ fn append_env(
         } else if v.secret {
             if !placeholders.contains(v.name.as_str()) {
                 lines.extend(notes);
-                lines.extend(comment(&format!("{} is a secret: {secret_note}", v.name)));
+                lines.extend(comment(&format!(
+                    "{} is a secret: {}",
+                    v.name,
+                    secret_note(v)
+                )));
                 lines.push(format!("# {}=", v.name));
             }
         } else {
