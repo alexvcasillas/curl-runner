@@ -116,7 +116,7 @@ Media type preference when a request body lists several: `application/json` or a
 
 An operation's `security` overrides the document's. `security: []` means no auth.
 
-`security` lists alternatives. Use the first requirement object, and within it every scheme it lists (they apply together). When an operation offers more than one alternative, the report says which was used, once per distinct set of choices in the document, never once per operation.
+`security` lists alternatives. Use the first requirement object. Every API key scheme in it applies. Only one `auth:` block exists, so a second bearer, basic or OAuth scheme in the same requirement is reported as skipped. When an operation offers more than one alternative, the report says which was used, once per distinct set of choices in the document, never once per operation.
 
 | Scheme | curl-runner |
 | --- | --- |
