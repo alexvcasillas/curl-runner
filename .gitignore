@@ -57,3 +57,6 @@ packages/docs/.source/
 # playwright
 test-results/
 playwright-report/
+
+# Internal specs, plans and mockups (kept local, never published)
+/docs/
