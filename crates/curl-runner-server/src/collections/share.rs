@@ -154,17 +154,22 @@ pub(super) async fn patch(
     let found = team_access(&state.db, auth.user_id, &team).await?;
     let mut tx = state.db.begin().await?;
     let (plan, _) = lock_as(&mut tx, found.team_id, auth.user_id).await?;
-    if req.access == Some(Access::Restricted) && !limits(plan).restricted {
-        return Err(restricted_needs_team(&slug));
-    }
-    let id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM collections WHERE team_id = $1 AND slug = $2 FOR UPDATE",
+    let row: Option<(Uuid, String)> = sqlx::query_as(
+        "SELECT id, access FROM collections WHERE team_id = $1 AND slug = $2 FOR UPDATE",
     )
     .bind(found.team_id)
     .bind(&slug)
     .fetch_optional(&mut *tx)
     .await?;
-    let id = id.ok_or_else(ApiError::not_found)?;
+    let (id, current) = row.ok_or_else(ApiError::not_found)?;
+    // Re-sending the access it already has is not a change, so no plan check.
+    if let Some(access) = req.access
+        && access == Access::Restricted
+        && current != access_str(access)
+        && !limits(plan).restricted
+    {
+        return Err(restricted_needs_team(&slug));
+    }
 
     if let Some(access) = req.access {
         sqlx::query("UPDATE collections SET access = $2 WHERE id = $1")
@@ -299,19 +304,30 @@ pub(super) async fn add_entry(
     if !limits(plan).restricted {
         return Err(restricted_needs_team(&slug));
     }
-    let invited_at: DateTime<Utc> = sqlx::query_scalar(
+    let inserted: Option<DateTime<Utc>> = sqlx::query_scalar(
         "INSERT INTO access_entries (collection_id, entry, kind, invited_at) \
-         VALUES ($1, $2, $3, $4) \
-         ON CONFLICT (collection_id, entry) DO UPDATE SET kind = access_entries.kind \
+         VALUES ($1, $2, $3, $4) ON CONFLICT (collection_id, entry) DO NOTHING \
          RETURNING invited_at",
     )
     .bind(id)
     .bind(&entry)
     .bind(kind)
     .bind(now)
-    .fetch_one(&mut *tx)
+    .fetch_optional(&mut *tx)
     .await?;
-    if req.notify && kind == "email" {
+    let invited_at = match inserted {
+        Some(at) => at,
+        None => {
+            sqlx::query_scalar(
+                "SELECT invited_at FROM access_entries WHERE collection_id = $1 AND entry = $2",
+            )
+            .bind(id)
+            .bind(&entry)
+            .fetch_one(&mut *tx)
+            .await?
+        }
+    };
+    if inserted.is_some() && req.notify && kind == "email" {
         let (team_name, enc): (String, Option<String>) = sqlx::query_as(
             "SELECT t.name, c.link_token_enc FROM collections c \
              JOIN teams t ON t.id = c.team_id WHERE c.id = $1",
@@ -322,7 +338,10 @@ pub(super) async fn add_entry(
         let token = enc
             .as_deref()
             .and_then(|enc| decrypt_link_token(state.config.secret_key.as_bytes(), enc))
-            .ok_or_else(ApiError::unavailable)?;
+            .ok_or_else(|| {
+                tracing::error!("collection {id} has no readable share link token");
+                ApiError::unavailable()
+            })?;
         state
             .mailer
             .enqueue(

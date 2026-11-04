@@ -23,8 +23,8 @@ use axum::{Json, Router};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tower_http::cors::CorsLayer;
-use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
-use tracing::Level;
+use tower_http::trace::{DefaultOnResponse, TraceLayer};
+use tracing::{Level, Span};
 
 pub use error::ApiError;
 pub use state::AppState;
@@ -46,9 +46,20 @@ pub fn app(state: AppState) -> Router {
         .layer(CorsLayer::permissive())
         .layer(
             TraceLayer::new_for_http()
-                .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+                .make_span_with(make_span)
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
+}
+
+/// The request span. Share-link and invite tokens travel in the path, so it
+/// records the method and the matched route (`/v1/shared/{token}`), never the
+/// raw URI or query. Unmatched requests are a fixed `unmatched`.
+fn make_span<B>(req: &axum::http::Request<B>) -> Span {
+    let route = req
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .map_or("unmatched", axum::extract::MatchedPath::as_str);
+    tracing::span!(Level::INFO, "request", method = %req.method(), route = %route)
 }
 
 async fn health() -> Json<serde_json::Value> {
@@ -122,6 +133,8 @@ mod tests {
     use std::time::Duration;
     use tokio::net::TcpListener;
     use tower::ServiceExt;
+
+    use std::sync::{Arc, Mutex};
 
     use crate::clock::SystemClock;
     use crate::config::Config;
@@ -253,5 +266,47 @@ mod tests {
         tx.send(()).unwrap();
         assert_eq!(request.await.unwrap(), Some(200));
         server.await.unwrap().unwrap();
+    }
+
+    #[derive(Clone, Default)]
+    struct Capture(Arc<Mutex<Vec<u8>>>);
+
+    impl std::io::Write for Capture {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn request_logs_carry_the_route_not_the_token() {
+        let capture = Capture::default();
+        let sink = capture.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(move || sink.clone())
+            .with_ansi(false)
+            .finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+        let router = Router::new()
+            .route("/v1/shared/{token}", get(|| async { "ok" }))
+            .layer(
+                TraceLayer::new_for_http()
+                    .make_span_with(make_span)
+                    .on_response(DefaultOnResponse::new().level(Level::INFO)),
+            );
+        for uri in ["/v1/shared/crsl_SECRET?k=crsl_SECRET", "/nope/crsl_SECRET"] {
+            router
+                .clone()
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+        }
+        let out = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
+        assert!(!out.contains("crsl_SECRET"), "{out}");
+        assert!(out.contains("route=/v1/shared/{token}"), "{out}");
+        assert!(out.contains("route=unmatched"), "{out}");
     }
 }

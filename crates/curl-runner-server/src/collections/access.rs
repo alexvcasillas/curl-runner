@@ -22,7 +22,8 @@ use crate::state::AppState;
 /// Requests per IP per minute across the three `/v1/shared/{token}` routes.
 const SHARED_PER_MINUTE: u32 = 120;
 
-/// Collection config files at the version root. They are not requests.
+/// Collection config files at the version root. They are not requests. Keep
+/// in step with `curl_runner_core::config::CONFIG_FILE_PATHS`, the source of truth.
 const CONFIG_FILES: [&str; 4] = [
     "curl-runner.yaml",
     "curl-runner.yml",

@@ -418,3 +418,76 @@ async fn non_members_get_404_on_team_endpoints(pool: PgPool) {
     let (status, _) = add_entry(&app, &eve, "x@y.com", false).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test]
+async fn switching_public_to_restricted_locks_out_anonymous(pool: PgPool) {
+    let (app, s) = setup(pool).await;
+    patch(&app, &s, json!({"access": "public"})).await;
+    let t = token(&app, &s).await;
+    let (status, _) = fetch(&app, &format!("/v1/shared/{t}"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    patch(&app, &s, json!({"access": "restricted"})).await;
+    let (status, _) = fetch(&app, &format!("/v1/shared/{t}"), None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[sqlx::test]
+async fn lookalike_domain_is_forbidden(pool: PgPool) {
+    let (app, s) = setup(pool).await;
+    patch(&app, &s, json!({"access": "restricted"})).await;
+    add_entry(&app, &s, "*@client.com", false).await;
+    let t = token(&app, &s).await;
+    let x = app.sign_in("x@evilclient.com").await;
+    let (status, _) = fetch(&app, &format!("/v1/shared/{t}"), Some(&x)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test]
+async fn corrupted_link_token_is_503_until_reset(pool: PgPool) {
+    let (app, s) = setup(pool).await;
+    sqlx::query("UPDATE collections SET link_token_enc = 'garbage'")
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    let (status, body) = app.request(Method::GET, SHARE, None, Some(&s)).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+    let (status, body) = patch(&app, &s, json!({"reset_link": true})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, _) = app.request(Method::GET, SHARE, None, Some(&s)).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[sqlx::test]
+async fn re_adding_an_entry_does_not_resend_mail(pool: PgPool) {
+    let (app, s) = setup(pool).await;
+    patch(&app, &s, json!({"access": "restricted"})).await;
+    let (_, first) = add_entry(&app, &s, "bob@client.com", true).await;
+    app.clock.advance(Duration::hours(1));
+    let (status, again) = add_entry(&app, &s, "Bob@client.com", true).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(again["invited_at"], first["invited_at"]);
+    let n: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM outbox_emails WHERE subject LIKE '%shared%'")
+            .fetch_one(&app.state.db)
+            .await
+            .unwrap();
+    assert_eq!(n, 1);
+}
+
+#[sqlx::test]
+async fn patch_share_missing_collection_404_and_same_access_is_not_a_change(pool: PgPool) {
+    let (app, s) = setup(pool).await;
+    let (status, _) = app
+        .request(
+            Method::PATCH,
+            "/v1/teams/acme/collections/nope/share",
+            Some(json!({"access": "public"})),
+            Some(&s),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    patch(&app, &s, json!({"access": "restricted"})).await;
+    set_plan(&app, &s, "free").await;
+    let (status, body) = patch(&app, &s, json!({"access": "restricted"})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
