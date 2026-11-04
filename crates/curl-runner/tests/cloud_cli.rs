@@ -187,3 +187,85 @@ fn help_lists_cloud_commands() {
     assert!(text.contains("curl-runner login"));
     assert!(text.contains("curl-runner logout"));
 }
+
+#[test]
+fn flag_errors_and_equals_form() {
+    let (srv, _) = fake_api(true);
+    let home = tempfile::tempdir().unwrap();
+    for args in [
+        vec!["login", "--server"],
+        vec!["login", "--email", "--server=x"],
+        vec!["logout", "--server", "--email"],
+    ] {
+        let o = cmd(home.path(), &srv.base_url)
+            .args(&args)
+            .write_stdin("")
+            .output()
+            .unwrap();
+        assert_eq!(o.status.code(), Some(2), "{args:?}");
+        assert!(stderr(&o).contains("needs a value"), "{args:?}");
+    }
+    let o = cmd(home.path(), &srv.base_url)
+        .args([
+            "login",
+            "--email=dev@example.com",
+            &format!("--server={}", srv.base_url),
+        ])
+        .write_stdin("123456\n")
+        .output()
+        .unwrap();
+    assert!(o.status.success());
+}
+
+#[test]
+fn plain_http_server_is_refused() {
+    let home = tempfile::tempdir().unwrap();
+    let o = cmd(home.path(), "http://127.0.0.1:1")
+        .args([
+            "login",
+            "--email",
+            "a@example.com",
+            "--server",
+            "http://api.example.com",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(2));
+    assert!(
+        stderr(&o).contains("Use an https:// server. Plain http is only allowed for localhost.")
+    );
+}
+
+#[test]
+fn redirecting_server_gets_no_follow_up_request() {
+    let (target, seen) = fake_api(true);
+    let to = target.base_url.clone();
+    let redirector = TestServer::with_handler(move |r: Request| {
+        Response::from_data(Vec::new())
+            .with_status_code(302)
+            .with_header("Location", &format!("{to}{}", r.url))
+    });
+    let home = tempfile::tempdir().unwrap();
+    let o = cmd(home.path(), &redirector.base_url)
+        .args(["login", "--email", "dev@example.com"])
+        .write_stdin("123456\n")
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(1));
+    assert!(stderr(&o).contains("redirect"));
+    assert!(seen.lock().unwrap().is_empty());
+}
+
+#[test]
+fn login_to_a_second_server_keeps_the_first_entry() {
+    let (a, _) = fake_api(true);
+    let (b, _) = fake_api(true);
+    let home = tempfile::tempdir().unwrap();
+    login_ok(home.path(), &a.base_url);
+    login_ok(home.path(), &b.base_url);
+    let saved: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(creds_path(home.path())).unwrap()).unwrap();
+    assert_eq!(saved["servers"].as_object().unwrap().len(), 2);
+    assert_eq!(saved["servers"][&a.base_url]["email"], "dev@example.com");
+    assert_eq!(saved["servers"][&b.base_url]["email"], "dev@example.com");
+}

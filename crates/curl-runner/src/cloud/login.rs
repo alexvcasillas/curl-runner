@@ -3,7 +3,7 @@
 
 use super::client::{self, Client, CloudError};
 use super::credentials::{self, Credentials, Entry};
-use super::{Env, flag_value};
+use super::{Env, flag_value, server_from_args};
 use crate::output::Console;
 use std::io::{BufRead, IsTerminal};
 
@@ -28,9 +28,15 @@ fn prompt(message: &str, tty: bool) -> Option<String> {
 }
 
 pub fn login(args: &[String], env: Env, console: &mut Console) -> i32 {
-    let server = client::resolve_server(flag_value(args, "--server"), env);
+    let (server, email_flag) = match (flag_value(args, "--email"), server_from_args(args, env)) {
+        (Ok(e), Ok(s)) => (s, e),
+        (Err(m), _) | (_, Err(m)) => {
+            console.err(&m);
+            return 2;
+        }
+    };
     let tty = std::io::stdin().is_terminal();
-    let email = match flag_value(args, "--email") {
+    let email = match email_flag {
         Some(e) => e.trim().to_string(),
         None if tty => match prompt("Email address", true) {
             Some(e) => e.trim().to_string(),
@@ -91,7 +97,13 @@ pub fn login(args: &[String], env: Env, console: &mut Console) -> i32 {
 }
 
 pub fn logout(args: &[String], env: Env, console: &mut Console) -> i32 {
-    let server = client::resolve_server(flag_value(args, "--server"), env);
+    let server = match server_from_args(args, env) {
+        Ok(s) => s,
+        Err(m) => {
+            console.err(&m);
+            return 2;
+        }
+    };
     let Some(path) = credentials::path(env) else {
         console.out(&format!("Not signed in to {server}."));
         return 0;

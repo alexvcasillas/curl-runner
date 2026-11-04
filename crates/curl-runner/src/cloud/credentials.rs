@@ -63,7 +63,16 @@ impl Credentials {
     pub fn save(&self, path: &Path) -> Result<(), String> {
         let err = |e: std::io::Error| format!("Cannot write {}: {e}.", path.display());
         let dir = path.parent().ok_or("Bad credentials path.")?;
-        std::fs::create_dir_all(dir).map_err(err)?;
+        if !dir.exists() {
+            let mut b = std::fs::DirBuilder::new();
+            b.recursive(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                b.mode(0o700);
+            }
+            b.create(dir).map_err(err)?;
+        }
         let tmp = path.with_extension("json.tmp");
         let bytes = serde_json::to_vec_pretty(self).map_err(|e| e.to_string())?;
         let mut opts = std::fs::OpenOptions::new();
@@ -89,13 +98,20 @@ impl Credentials {
 
 /// The token to call `server` with: `CURL_RUNNER_TOKEN` (a `crt_` or `crs_`
 /// token) wins over the saved session.
+/// A corrupt credentials file is an error, not a silent sign-out.
 #[allow(dead_code)] // used by publish and pull
-pub fn token_for(env: Env, server: &str) -> Option<String> {
+pub fn token_for(env: Env, server: &str) -> Result<Option<String>, String> {
     if let Some(t) = env(TOKEN_ENV).filter(|t| !t.is_empty()) {
-        return Some(t);
+        return Ok(Some(t));
     }
-    let creds = Credentials::load(&path(env)?).ok()?;
-    creds.servers.get(server).map(|e| e.session.clone())
+    let Some(p) = path(env) else { return Ok(None) };
+    let creds = Credentials::load(&p).map_err(|_| {
+        format!(
+            "Can't read {}. Fix or delete it, then run curl-runner login.",
+            p.display()
+        )
+    })?;
+    Ok(creds.servers.get(server).map(|e| e.session.clone()))
 }
 
 #[cfg(test)]
@@ -142,6 +158,20 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn new_directory_is_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("curl-runner/credentials.json");
+        Credentials::default().save(&p).unwrap();
+        let mode = std::fs::metadata(p.parent().unwrap())
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o700);
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn saved_file_is_private() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
@@ -172,12 +202,24 @@ mod tests {
         c.servers.insert("https://s".into(), entry());
         c.save(&p).unwrap();
         let file = |k: &str| (k == "XDG_CONFIG_HOME" || k == "APPDATA").then(|| home.clone());
-        assert_eq!(token_for(&file, "https://s").as_deref(), Some("crs_secret"));
-        assert_eq!(token_for(&file, "https://other"), None);
+        assert_eq!(
+            token_for(&file, "https://s").unwrap().as_deref(),
+            Some("crs_secret")
+        );
+        assert_eq!(token_for(&file, "https://other").unwrap(), None);
         let both = |k: &str| match k {
             TOKEN_ENV => Some("crt_pub".to_string()),
             _ => file(k),
         };
-        assert_eq!(token_for(&both, "https://s").as_deref(), Some("crt_pub"));
+        assert_eq!(
+            token_for(&both, "https://s").unwrap().as_deref(),
+            Some("crt_pub")
+        );
+        std::fs::write(&p, "nope").unwrap();
+        assert!(
+            token_for(&file, "https://s")
+                .unwrap_err()
+                .contains("Fix or delete it")
+        );
     }
 }

@@ -24,8 +24,31 @@ pub fn run(argv: &[String], env: Env, console: &mut Console) -> i32 {
     }
 }
 
-/// Value of `--flag <value>` in `args`.
-pub fn flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
-    let i = args.iter().position(|a| a == flag)?;
-    args.get(i + 1).map(String::as_str)
+/// Value of `--flag value` or `--flag=value`. A missing value, or one that
+/// looks like another flag, is an error.
+pub fn flag_value(args: &[String], flag: &str) -> Result<Option<String>, String> {
+    let prefix = format!("{flag}=");
+    for (i, a) in args.iter().enumerate() {
+        let value = if a == flag {
+            args.get(i + 1).map(String::as_str)
+        } else if let Some(v) = a.strip_prefix(&prefix) {
+            Some(v)
+        } else {
+            continue;
+        };
+        return match value {
+            Some(v) if !v.is_empty() && !v.starts_with("--") => Ok(Some(v.to_string())),
+            _ => Err(format!("{flag} needs a value.")),
+        };
+    }
+    Ok(None)
+}
+
+/// The API base URL from `--server`, the environment or the default; plain
+/// http is refused unless it is loopback.
+pub fn server_from_args(args: &[String], env: Env) -> Result<String, String> {
+    let flag = flag_value(args, "--server")?;
+    let server = client::resolve_server(flag.as_deref(), env);
+    client::check_server(&server)?;
+    Ok(server)
 }

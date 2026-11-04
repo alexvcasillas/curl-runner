@@ -54,10 +54,35 @@ pub struct User {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct Verified {
     pub session: String,
     pub user: User,
+}
+
+impl std::fmt::Debug for Verified {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Verified")
+            .field("session", &"<redacted>")
+            .field("user", &self.user)
+            .finish()
+    }
+}
+
+/// Plain http is only for a loopback host.
+pub fn check_server(url: &str) -> Result<(), String> {
+    const MSG: &str = "Use an https:// server. Plain http is only allowed for localhost.";
+    let u = url::Url::parse(url).map_err(|_| format!("{url} is not a valid server URL."))?;
+    match u.scheme() {
+        "https" => Ok(()),
+        "http" => match u.host() {
+            Some(url::Host::Domain("localhost")) => Ok(()),
+            Some(url::Host::Ipv4(a)) if a.is_loopback() => Ok(()),
+            Some(url::Host::Ipv6(a)) if a.is_loopback() => Ok(()),
+            _ => Err(MSG.into()),
+        },
+        _ => Err(MSG.into()),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -101,6 +126,8 @@ impl Client {
         let url = format!("{}{}", self.base, path);
         let e = |e: curl::Error| NetError(e.to_string());
         let mut easy = net::easy_for(&url, TIMEOUT).map_err(e)?;
+        // Never follow a redirect: it would replay the body and the token.
+        easy.follow_location(false).map_err(e)?;
         easy.custom_request(method).map_err(e)?;
         let mut headers = List::new();
         headers.append("Accept: application/json").map_err(e)?;
@@ -178,6 +205,9 @@ impl Client {
         if (200..300).contains(&status) {
             return Ok((status, resp));
         }
+        if (300..400).contains(&status) {
+            return Err(CloudError::Unreachable(REDIRECT.into()));
+        }
         match serde_json::from_slice::<ErrorBody>(&resp) {
             Ok(b) => Err(CloudError::Api(b, status)),
             Err(_) => Err(not_the_api(status)),
@@ -207,6 +237,8 @@ impl Client {
         self.json("GET", "/v1/me", None::<&()>)
     }
 }
+
+const REDIRECT: &str = "The server answered with a redirect. Check the --server URL";
 
 fn not_the_api(status: u16) -> CloudError {
     CloudError::Unreachable(format!("unexpected reply (HTTP {status})"))
@@ -291,6 +323,56 @@ mod tests {
         assert_eq!(seen[0].0.as_deref(), Some("Bearer crs_x"));
         assert_eq!(seen[0].1.as_deref(), Some("gzip"));
         assert_eq!(&seen[0].2[..2], &[0x1f, 0x8b]);
+    }
+
+    #[test]
+    fn plain_http_only_for_loopback() {
+        for ok in [
+            "https://api.example.com",
+            "http://localhost:8080",
+            "http://127.0.0.1:1",
+            "http://[::1]:3000",
+        ] {
+            assert!(check_server(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "http://api.example.com",
+            "ftp://x",
+            "http://127.0.0.1.example.com",
+        ] {
+            assert!(check_server(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn redirects_are_not_followed() {
+        let hits = std::sync::Arc::new(std::sync::Mutex::new(0));
+        let h2 = hits.clone();
+        let target = TestServer::with_handler(move |_| {
+            *h2.lock().unwrap() += 1;
+            Response::from_data(b"{}".to_vec())
+        });
+        let t2 = target.base_url.clone();
+        let first = TestServer::with_handler(move |_| {
+            Response::from_data(Vec::new())
+                .with_status_code(302)
+                .with_header("Location", &format!("{t2}/v1/auth/sign-out"))
+        });
+        let c = Client::new(&first.base_url, Some("crs_x".into()));
+        match c.sign_out() {
+            Err(CloudError::Unreachable(m)) => assert!(m.contains("redirect")),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(*hits.lock().unwrap(), 0);
+    }
+
+    #[test]
+    fn verified_debug_hides_the_session() {
+        let v: Verified = serde_json::from_str(
+            r#"{"session":"crs_secret","user":{"id":"1","email":"a@example.com","name":null}}"#,
+        )
+        .unwrap();
+        assert!(!format!("{v:?}").contains("crs_secret"));
     }
 
     #[test]
