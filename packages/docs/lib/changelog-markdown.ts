@@ -1,7 +1,7 @@
 import { Marked, type Token, type Tokens } from 'marked';
 import { bundledLanguages, codeToHtml } from 'shiki';
 import { YAML_THEME } from '@/components/site/Yaml';
-import type { ChangeEntry, ChangeTag } from '@/lib/changelog';
+import { type ChangeEntry, type ChangeTag, TAG_LABEL } from '@/lib/changelog';
 
 /** Entries whose body is longer than this collapse behind a native `<details>`. */
 export const COLLAPSE_THRESHOLD = 1200;
@@ -159,13 +159,32 @@ export async function renderEntry(entry: ChangeEntry): Promise<RenderedEntry> {
   };
 }
 
-/** Plain-text summary of an entry for feeds: the headline, else the first paragraph. */
-export function entrySummary(entry: ChangeEntry, max = 280): string {
-  const source = entry.headline ?? entry.body.split(/\n\s*\n/)[0] ?? '';
-  const text = source
+/** Inline Markdown as plain text for feeds: links, code ticks and bold removed, whitespace collapsed. */
+export function plainText(markdown: string, max = 280): string {
+  const text = markdown
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/`|\*\*/g, '')
     .replace(/\s+/g, ' ')
     .trim();
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+}
+
+/** Plain-text summary of an entry for feeds: the headline, else the first paragraph. */
+export function entrySummary(entry: ChangeEntry, max = 280): string {
+  return plainText(entry.headline ?? entry.body.split(/\n\s*\n/)[0] ?? '', max);
+}
+
+/**
+ * An entry's feed description. Untagged entries keep their summary; tagged
+ * ones get the lead's first paragraph (else the headline), then one
+ * `Label: text` line per item.
+ */
+export function entryFeedText(entry: ChangeEntry): string {
+  if (entry.items.length === 0) {
+    return entrySummary({ ...entry, headline: null });
+  }
+  const lead = entry.lead.split(/\n\s*\n/)[0] ?? '';
+  const summary = plainText(lead || (entry.headline ?? ''));
+  const lines = entry.items.map((item) => `${TAG_LABEL[item.tag]}: ${plainText(item.text)}`);
+  return (summary ? [summary, ...lines] : lines).join('\n');
 }

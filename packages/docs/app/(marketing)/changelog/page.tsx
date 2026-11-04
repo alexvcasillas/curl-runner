@@ -1,7 +1,16 @@
 import type { Metadata } from 'next';
+import { ChangelogFilter } from '@/components/site/ChangelogFilter';
 import { Eyebrow } from '@/components/site/Eyebrow';
 import { SiteHeader } from '@/components/site/SiteHeader';
-import { type Bump, getReleaseDates, getReleases, REPO_URL } from '@/lib/changelog';
+import {
+  type Bump,
+  CHANGE_TAGS,
+  type ChangeTag,
+  getReleaseDates,
+  getReleases,
+  REPO_URL,
+  TAG_LABEL,
+} from '@/lib/changelog';
 import { renderEntry } from '@/lib/changelog-markdown';
 import { pageMetadata } from '@/lib/site';
 
@@ -9,7 +18,8 @@ import { pageMetadata } from '@/lib/site';
 // changelog is traced into the function by next.config.ts for those regenerations.
 export const dynamic = 'force-static';
 
-const SHOWN_RELEASES = 10;
+/** Releases shown before "Load older releases"; the rest are rendered but hidden. */
+const PAGE_SIZE = 10;
 const RELEASES_URL = `${REPO_URL}/releases`;
 
 const changelogMeta = pageMetadata({
@@ -22,6 +32,15 @@ const changelogMeta = pageMetadata({
 export const metadata: Metadata = {
   ...changelogMeta,
   alternates: { ...changelogMeta.alternates, types: { 'application/rss+xml': '/rss.xml' } },
+};
+
+const TAG_OPTIONS = CHANGE_TAGS.map((tag) => ({ value: tag, label: TAG_LABEL[tag] }));
+
+const TAG_COLOR: Record<ChangeTag, string> = {
+  new: 'text-brand',
+  improved: 'text-fg-secondary',
+  fixed: 'text-yaml-string',
+  breaking: 'text-error',
 };
 
 const BUMP_LABEL: Record<Bump, string> = { major: 'Major', minor: 'Minor', patch: 'Patch' };
@@ -56,6 +75,31 @@ function BumpBadge({ bump }: { bump: Bump }) {
   );
 }
 
+function Items({ items }: { items: { tag: ChangeTag; html: string }[] }) {
+  return (
+    <ul className="m-0 mt-2 flex list-none flex-col border-t border-hairline p-0">
+      {items.map((item, index) => (
+        <li
+          key={index}
+          data-tag={item.tag}
+          className="flex items-baseline gap-4 border-b border-hairline py-3.5"
+        >
+          <span
+            className={`w-[76px] shrink-0 font-mono text-xs tracking-[0.02em] uppercase sm:w-[88px] ${TAG_COLOR[item.tag]}`}
+          >
+            {TAG_LABEL[item.tag]}
+          </span>
+          <span
+            className="release-item min-w-0"
+            // biome-ignore lint/security/noDangerouslySetInnerHtml: inline Markdown from the repo's CHANGELOG.md, raw HTML escaped
+            dangerouslySetInnerHTML={{ __html: item.html }}
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function Notes({ html }: { html: string }) {
   return (
     <div
@@ -67,13 +111,16 @@ function Notes({ html }: { html: string }) {
 }
 
 export default async function ChangelogPage() {
-  const releases = getReleases().slice(0, SHOWN_RELEASES);
+  const releases = getReleases();
   const dates = await getReleaseDates();
   const rendered = await Promise.all(
     releases.map(async (release) => ({
       ...release,
       date: dates[release.version] ? formatDate(dates[release.version]) : null,
       iso: dates[release.version],
+      tags: CHANGE_TAGS.filter((tag) =>
+        release.entries.some((entry) => entry.items.some((item) => item.tag === tag)),
+      ),
       entries: await Promise.all(
         release.entries.map(async (entry) => ({ entry, html: await renderEntry(entry) })),
       ),
@@ -84,7 +131,7 @@ export default async function ChangelogPage() {
     <>
       <SiteHeader active="changelog" />
       <main id="main-content">
-        <section className="mx-auto flex max-w-[1200px] flex-wrap items-end justify-between gap-6 px-6 pt-24 pb-14">
+        <section className="mx-auto flex max-w-[1200px] flex-wrap items-end justify-between gap-6 px-6 pt-24 pb-6">
           <div>
             <Eyebrow>Changelog</Eyebrow>
             <h1 className="mt-4 mb-0 text-[clamp(40px,6vw,72px)] leading-[1.02] font-bold tracking-[-0.045em] text-fg">
@@ -118,93 +165,104 @@ export default async function ChangelogPage() {
           </a>
         </section>
 
-        <section aria-label="Releases" className="mx-auto max-w-[1200px] px-6 pb-24">
-          {rendered.map((release) => (
-            <article
-              key={release.version}
-              id={release.version}
-              aria-labelledby={`v-${release.version}`}
-              className="flex scroll-mt-6 flex-wrap gap-x-12 gap-y-4 border-t border-hairline py-12 last-of-type:border-b"
-            >
-              <div className="flex flex-[0_0_220px] flex-col gap-2.5">
-                <h2 id={`v-${release.version}`} className="m-0 font-mono text-[22px] font-medium">
-                  <a href={`#${release.version}`} className={`text-fg hover:text-white ${FOCUS}`}>
-                    {release.version}
-                  </a>
-                </h2>
-                {release.date && release.iso ? (
-                  <time dateTime={release.iso} className="text-sm text-fg-tertiary">
-                    {release.date}
-                  </time>
-                ) : null}
-                <BumpBadge bump={release.bump} />
-              </div>
+        <div className="mx-auto max-w-[1200px] px-6 pb-24">
+          <ChangelogFilter tags={TAG_OPTIONS} pageSize={PAGE_SIZE}>
+            {rendered.map((release, index) => (
+              <article
+                key={release.version}
+                id={release.version}
+                data-older={index >= PAGE_SIZE ? '' : undefined}
+                data-release=""
+                data-tags={release.tags.join(' ')}
+                aria-labelledby={`v-${release.version}`}
+                className="flex scroll-mt-6 flex-wrap gap-x-12 gap-y-4 border-b border-hairline py-12"
+              >
+                <div className="flex flex-[0_0_220px] flex-col gap-2.5">
+                  <h2 id={`v-${release.version}`} className="m-0 font-mono text-[22px] font-medium">
+                    <a href={`#${release.version}`} className={`text-fg hover:text-white ${FOCUS}`}>
+                      {release.version}
+                    </a>
+                  </h2>
+                  {release.date && release.iso ? (
+                    <time dateTime={release.iso} className="text-sm text-fg-tertiary">
+                      {release.date}
+                    </time>
+                  ) : null}
+                  <BumpBadge bump={release.bump} />
+                </div>
 
-              <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-10">
-                {release.entries.map(({ entry, html }, index) => (
-                  <div
-                    key={`${entry.commit ?? ''}-${index}`}
-                    className="flex min-w-0 flex-col gap-4"
-                  >
-                    {html.headlineHtml ? (
-                      <h3
-                        className="m-0 text-[26px] leading-tight font-bold tracking-[-0.02em] text-fg [&_code]:font-mono"
-                        // biome-ignore lint/security/noDangerouslySetInnerHtml: inline Markdown from the repo's CHANGELOG.md, raw HTML escaped
-                        dangerouslySetInnerHTML={{ __html: html.headlineHtml }}
-                      />
-                    ) : null}
-                    <Notes html={html.previewHtml} />
-                    {html.restHtml ? (
-                      <details className="group">
-                        <summary
-                          className={`inline-flex h-10 cursor-pointer list-none items-center gap-2 self-start rounded-[10px] border border-line px-4 text-sm text-fg transition-colors hover:bg-hover [&::-webkit-details-marker]:hidden ${FOCUS}`}
-                        >
-                          <span className="group-open:hidden">{`Show all ${release.version} changes`}</span>
-                          <span className="hidden group-open:inline">Show fewer changes</span>
-                        </summary>
-                        <div className="mt-4">
-                          <Notes html={html.restHtml} />
-                        </div>
-                      </details>
-                    ) : null}
-                    {entry.pr !== null || entry.commit !== null ? (
-                      <p className="m-0 font-mono text-xs text-fg-tertiary">
-                        {entry.pr !== null ? (
-                          <a
-                            href={`${REPO_URL}/pull/${entry.pr}`}
-                            aria-label={`Pull request #${entry.pr}`}
-                            className={LINK}
+                <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-10">
+                  {release.entries.map(({ entry, html }, index) => (
+                    <div
+                      key={`${entry.commit ?? ''}-${index}`}
+                      data-entry=""
+                      className="flex min-w-0 flex-col gap-4"
+                    >
+                      {html.headlineHtml ? (
+                        <h3
+                          className="m-0 text-[26px] leading-tight font-bold tracking-[-0.02em] text-fg [&_code]:font-mono"
+                          // biome-ignore lint/security/noDangerouslySetInnerHtml: inline Markdown from the repo's CHANGELOG.md, raw HTML escaped
+                          dangerouslySetInnerHTML={{ __html: html.headlineHtml }}
+                        />
+                      ) : null}
+                      {html.leadHtml ? (
+                        <div
+                          className="release-lead"
+                          // biome-ignore lint/security/noDangerouslySetInnerHtml: Markdown from the repo's CHANGELOG.md, raw HTML escaped
+                          dangerouslySetInnerHTML={{ __html: html.leadHtml }}
+                        />
+                      ) : null}
+                      {html.items.length > 0 ? <Items items={html.items} /> : null}
+                      {html.previewHtml ? <Notes html={html.previewHtml} /> : null}
+                      {html.restHtml ? (
+                        <details className="group">
+                          <summary
+                            className={`inline-flex h-10 cursor-pointer list-none items-center gap-2 self-start rounded-[10px] border border-line px-4 text-sm text-fg transition-colors hover:bg-hover [&::-webkit-details-marker]:hidden ${FOCUS}`}
                           >
-                            #{entry.pr}
-                          </a>
-                        ) : null}
-                        {entry.pr !== null && entry.commit !== null ? ' · ' : null}
-                        {entry.commit !== null ? (
-                          <a
-                            href={`${REPO_URL}/commit/${entry.commit}`}
-                            aria-label={`Commit ${entry.commit}`}
-                            className={LINK}
-                          >
-                            {entry.commit}
-                          </a>
-                        ) : null}
-                      </p>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </article>
-          ))}
+                            <span className="group-open:hidden">{`Show all ${release.version} changes`}</span>
+                            <span className="hidden group-open:inline">Show fewer changes</span>
+                          </summary>
+                          <div className="mt-4">
+                            <Notes html={html.restHtml} />
+                          </div>
+                        </details>
+                      ) : null}
+                      {entry.pr !== null || entry.commit !== null ? (
+                        <p className="m-0 font-mono text-xs text-fg-tertiary">
+                          {entry.pr !== null ? (
+                            <a
+                              href={`${REPO_URL}/pull/${entry.pr}`}
+                              aria-label={`Pull request #${entry.pr}`}
+                              className={LINK}
+                            >
+                              #{entry.pr}
+                            </a>
+                          ) : null}
+                          {entry.pr !== null && entry.commit !== null ? ' · ' : null}
+                          {entry.commit !== null ? (
+                            <a
+                              href={`${REPO_URL}/commit/${entry.commit}`}
+                              aria-label={`Commit ${entry.commit}`}
+                              className={LINK}
+                            >
+                              {entry.commit}
+                            </a>
+                          ) : null}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </ChangelogFilter>
 
-          <div className="flex justify-center pt-10">
-            <a
-              href={RELEASES_URL}
-              className={`inline-flex h-11 items-center rounded-[10px] border border-line px-5 text-[15px] text-fg transition-colors hover:bg-hover ${FOCUS}`}
-            >
-              Older releases
+          <p className="m-0 pt-10 text-center text-sm">
+            <a href={RELEASES_URL} className={LINK}>
+              Older releases on GitHub
             </a>
-          </div>
-        </section>
+          </p>
+        </div>
       </main>
     </>
   );

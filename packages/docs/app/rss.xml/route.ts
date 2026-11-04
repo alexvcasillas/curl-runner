@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getReleaseDates, getReleases } from '@/lib/changelog';
-import { entrySummary } from '@/lib/changelog-markdown';
+import { entryFeedText, entrySummary } from '@/lib/changelog-markdown';
 import { escapeXml } from '@/lib/xml';
 
 // Prerendered from packages/cli/CHANGELOG.md like /changelog (see next.config.ts).
@@ -21,9 +21,9 @@ export async function GET() {
       const title = headline
         ? `curl-runner ${release.version}: ${headline}`
         : `curl-runner ${release.version}`;
-      const description = release.entries
-        .map((entry) => entrySummary({ ...entry, headline: null }))
-        .join(' ');
+      // Untagged releases keep one line; tagged ones put each item on its own line.
+      const tagged = release.entries.some((entry) => entry.items.length > 0);
+      const description = release.entries.map(entryFeedText).join(tagged ? '\n' : ' ');
       const date = dates[release.version] ? new Date(dates[release.version]) : null;
       const pubDate =
         date && !Number.isNaN(date.getTime())

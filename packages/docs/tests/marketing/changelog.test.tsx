@@ -1,15 +1,22 @@
+import { act, fireEvent, render as renderDom, screen, within } from '@testing-library/react';
 import { prerenderToNodeStream } from 'react-dom/static.node';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getReleaseDates = vi.fn();
-vi.mock('@/lib/changelog', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/changelog')>()),
-  getReleaseDates: () => getReleaseDates(),
-}));
+// Returns a Release[] to replace the real CHANGELOG, or undefined to read it.
+const releasesOverride = vi.fn();
+vi.mock('@/lib/changelog', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/changelog')>();
+  return {
+    ...actual,
+    getReleaseDates: () => getReleaseDates(),
+    getReleases: () => releasesOverride() ?? actual.getReleases(),
+  };
+});
 
 import ChangelogPage, { metadata } from '@/app/(marketing)/changelog/page';
 import { GET } from '@/app/rss.xml/route';
-import { getReleases } from '@/lib/changelog';
+import { getReleases, parseChangelog } from '@/lib/changelog';
 import { entrySummary, renderEntry } from '@/lib/changelog-markdown';
 
 async function render(): Promise<string> {
@@ -33,15 +40,16 @@ describe('changelog page', () => {
     getReleaseDates.mockResolvedValue(DATES);
   });
 
-  it('renders the newest ten releases with exact anchors, then links older releases', async () => {
+  it('renders every release with exact anchors, marks those past ten as older, then links GitHub', async () => {
     const html = await render();
     const releases = getReleases();
-    for (const release of releases.slice(0, 10)) {
+    for (const release of releases) {
       expect(html).toContain(`id="${release.version}"`);
       expect(html).toContain(`href="#${release.version}"`);
     }
-    expect(html).not.toContain(`id="${releases[10].version}"`);
-    expect(html).toContain('Older releases');
+    expect(html).not.toMatch(new RegExp(`id="${releases[9].version}"[^>]*data-older`));
+    expect(html).toMatch(new RegExp(`id="${releases[10].version}"[^>]*data-older`));
+    expect(html).toContain('Older releases on GitHub');
     expect(html).toContain('href="https://github.com/alexvcasillas/curl-runner/releases"');
   });
 
@@ -86,6 +94,182 @@ describe('changelog page', () => {
   it('exports metadata', () => {
     expect(metadata.title).toEqual({ absolute: 'Changelog — curl-runner' });
     expect(metadata.alternates?.canonical).toBe('https://www.curl-runner.com/changelog');
+  });
+});
+
+const PREFIX = (pr: number, sha: string) =>
+  `[#${pr}](https://github.com/alexvcasillas/curl-runner/pull/${pr}) [\`${sha}\`](https://github.com/alexvcasillas/curl-runner/commit/${sha}) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - `;
+
+// 3 hand-written releases, then 20 generated ones (2.19.0 down to 2.0.0): 23 in all.
+const TAGGED_CHANGELOG = [
+  '# @curl-runner/cli',
+  '',
+  '## 3.2.0',
+  '',
+  '### Minor Changes',
+  '',
+  `- ${PREFIX(200, 'abc1234')}**Tagged headline**`,
+  '',
+  '  The tagged lead paragraph.',
+  '',
+  '  - **New:** A `--thing` flag.',
+  '  - **Improved:** Faster runs.',
+  '  - **Fixed:** A crash on empty files.',
+  '',
+  '  ```yaml',
+  '  retry: 3',
+  '  ```',
+  '',
+  '## 3.1.1',
+  '',
+  '### Patch Changes',
+  '',
+  `- ${PREFIX(199, 'def5678')}**Retry fix**`,
+  '',
+  '  Lead two.',
+  '',
+  '  - **Fixed:** Retry counts start at one.',
+  '',
+  '## 3.1.0',
+  '',
+  '### Minor Changes',
+  '',
+  `- ${PREFIX(198, 'aaa1111')}An untagged entry body.`,
+  '',
+  ...Array.from({ length: 20 }, (_, n) => {
+    const minor = 19 - n;
+    const tag = minor % 2 === 0 ? 'New' : 'Improved';
+    return [
+      `## 2.${minor}.0`,
+      '',
+      '### Minor Changes',
+      '',
+      `- ${PREFIX(100 + minor, `b${String(minor).padStart(6, '0')}`)}**Release ${minor}**`,
+      '',
+      `  - **${tag}:** Change ${minor}.`,
+      '',
+    ].join('\n');
+  }),
+].join('\n');
+
+const TAGGED_RELEASES = parseChangelog(TAGGED_CHANGELOG);
+
+function release(version: string): HTMLElement {
+  const el = document.getElementById(version);
+  if (!el) {
+    throw new Error(`No release ${version}`);
+  }
+  return el;
+}
+
+describe('changelog page with tagged entries', () => {
+  beforeEach(() => {
+    getReleaseDates.mockReset();
+    getReleaseDates.mockResolvedValue({});
+    releasesOverride.mockReturnValue(TAGGED_RELEASES);
+    window.history.replaceState(null, '', '/changelog');
+  });
+
+  afterEach(() => {
+    releasesOverride.mockReset();
+  });
+
+  it('renders tagged rows with their label and per-tag color, and the lead', async () => {
+    const html = await render();
+    expect(html).toContain('The tagged lead paragraph.');
+    expect(html).toMatch(/data-tags="new improved fixed"/);
+    expect(html).toMatch(/<li[^>]*data-tag="new"[^>]*>.*?<span[^>]*text-brand[^>]*>New<\/span>/);
+    expect(html).toMatch(
+      /<li[^>]*data-tag="improved"[^>]*>.*?<span[^>]*text-fg-secondary[^>]*>Improved<\/span>/,
+    );
+    expect(html).toMatch(
+      /<li[^>]*data-tag="fixed"[^>]*>.*?<span[^>]*text-yaml-string[^>]*>Fixed<\/span>/,
+    );
+    expect(html).toContain('A <code>--thing</code> flag.');
+    // The notes after the items still render, with Shiki.
+    const article = html.slice(html.indexOf('id="3.2.0"'), html.indexOf('id="3.1.1"'));
+    expect(article).toContain('class="shiki');
+  });
+
+  it('renders an untagged entry as before', async () => {
+    const html = await render();
+    const article = html.slice(html.indexOf('id="3.1.0"'), html.indexOf('id="2.19.0"'));
+    expect(article).toContain('data-tags=""');
+    expect(article).toContain('<div class="release-notes"><p>An untagged entry body.</p>');
+    expect(article).not.toContain('data-tag=');
+  });
+
+  it('shows ten releases, then loads ten more at a time', async () => {
+    renderDom(await ChangelogPage());
+    expect(release('3.2.0')).toBeVisible();
+    expect(release('2.13.0')).toBeVisible(); // 10th
+    expect(release('2.12.0')).not.toBeVisible(); // 11th
+    fireEvent.click(screen.getByRole('button', { name: 'Load older releases' }));
+    expect(release('2.12.0')).toBeVisible();
+    expect(release('2.3.0')).toBeVisible(); // 20th
+    expect(release('2.2.0')).not.toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Load older releases' }));
+    expect(release('2.0.0')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Load older releases' })).toBeNull();
+  });
+
+  it('filters rows, entries and releases by tag and keeps it in the URL', async () => {
+    renderDom(await ChangelogPage());
+    const filters = screen.getByRole('group', { name: 'Filter changes by tag' });
+    fireEvent.click(within(filters).getByRole('button', { name: 'Fixed' }));
+    expect(within(filters).getByRole('button', { name: 'Fixed' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(window.location.search).toBe('?tag=fixed');
+    const tagged = release('3.2.0');
+    expect(tagged).toBeVisible();
+    expect(within(tagged).getByText('A crash on empty files.')).toBeVisible();
+    expect(within(tagged).getByText('Faster runs.')).not.toBeVisible();
+    expect(within(tagged).getByText('The tagged lead paragraph.')).toBeVisible();
+    expect(release('3.1.1')).toBeVisible();
+    expect(release('3.1.0')).not.toBeVisible();
+    expect(release('2.19.0')).not.toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Load older releases' })).toBeNull();
+
+    fireEvent.click(within(filters).getByRole('button', { name: 'All' }));
+    expect(window.location.search).toBe('');
+    expect(within(tagged).getByText('Faster runs.')).toBeVisible();
+    expect(release('3.1.0')).toBeVisible();
+  });
+
+  it('reads ?tag= on load and says when no change has the tag', async () => {
+    window.history.replaceState(null, '', '/changelog?tag=breaking');
+    renderDom(await ChangelogPage());
+    expect(screen.getByText('No changes with this tag yet.')).toBeVisible();
+    expect(release('3.2.0')).not.toBeVisible();
+    expect(
+      within(screen.getByRole('group', { name: 'Filter changes by tag' })).getByRole('button', {
+        name: 'Breaking',
+      }),
+    ).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('reveals an older release targeted by the hash, on load and on hashchange', async () => {
+    window.history.replaceState(null, '', '/changelog#2.5.0');
+    const { unmount } = renderDom(await ChangelogPage());
+    expect(release('2.5.0')).toBeVisible();
+    unmount();
+
+    window.history.replaceState(null, '', '/changelog');
+    renderDom(await ChangelogPage());
+    expect(release('2.0.0')).not.toBeVisible();
+    act(() => {
+      window.history.replaceState(null, '', '/changelog#2.0.0');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    expect(release('2.0.0')).toBeVisible();
+  });
+
+  it('shows the filter as unavailable and every release without JS', async () => {
+    const html = await render();
+    expect(html).not.toMatch(/\shidden=""/);
+    expect(html).not.toContain('Load older releases');
   });
 });
 
@@ -173,5 +357,20 @@ describe('rss.xml', () => {
       '<description>Homebrew: install with brew install alexvcasillas/tap/curl-runner (prebuilt binaries',
     );
     expect(xml).not.toContain('blazing');
+  });
+
+  it('lists tagged items as Tag: text lines after the lead', async () => {
+    releasesOverride.mockReturnValue(TAGGED_RELEASES);
+    try {
+      const xml = await (await GET()).text();
+      expect(xml).toContain('<title>curl-runner 3.2.0: Tagged headline</title>');
+      expect(xml).toContain(
+        '<description>The tagged lead paragraph.\nNew: A --thing flag.\nImproved: Faster runs.\nFixed: A crash on empty files.</description>',
+      );
+      expect(xml).toContain('<description>An untagged entry body.</description>');
+      expect(xml).toContain('<description>Release 18\nNew: Change 18.</description>');
+    } finally {
+      releasesOverride.mockReset();
+    }
   });
 });
