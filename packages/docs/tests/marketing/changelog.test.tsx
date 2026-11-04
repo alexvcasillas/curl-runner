@@ -90,7 +90,15 @@ describe('changelog page', () => {
 });
 
 describe('renderEntry', () => {
-  const base = { bump: 'patch' as const, headline: null, pr: null, commit: null };
+  const base = {
+    bump: 'patch' as const,
+    headline: null,
+    lead: '',
+    items: [],
+    notes: '',
+    pr: null,
+    commit: null,
+  };
 
   it('escapes raw HTML instead of rendering it', async () => {
     const out = await renderEntry({ ...base, body: 'Hi <script>alert(1)</script> <b>x</b>' });
@@ -112,6 +120,30 @@ describe('renderEntry', () => {
   it('does not collapse short entries', async () => {
     const out = await renderEntry({ ...base, body: 'Short.' });
     expect(out.restHtml).toBeNull();
+  });
+
+  it('renders tagged items inline and only the notes as preview', async () => {
+    const out = await renderEntry({
+      ...base,
+      body: 'Intro **x**\n\n- **New:** use `a:b` <b>y</b>\n\n```yaml\na: 1\n```',
+      lead: 'Intro **x**',
+      items: [{ tag: 'new', text: 'use `a:b` <b>y</b>' }],
+      notes: '```yaml\na: 1\n```',
+    });
+    expect(out.leadHtml).toContain('<strong>x</strong>');
+    expect(out.items).toHaveLength(1);
+    expect(out.items[0].tag).toBe('new');
+    expect(out.items[0].html).toContain('<code>a:b</code>');
+    expect(out.items[0].html).not.toContain('<b>');
+    expect(out.items[0].html).toContain('&lt;b&gt;');
+    expect(out.previewHtml).toContain('class="shiki');
+    expect(out.previewHtml).not.toContain('Intro');
+  });
+
+  it('leaves leadHtml and items empty for untagged entries', async () => {
+    const out = await renderEntry({ ...base, body: 'Short.' });
+    expect(out.leadHtml).toBe('');
+    expect(out.items).toEqual([]);
   });
 
   it('summarises entries as plain text', () => {

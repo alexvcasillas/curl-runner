@@ -5,11 +5,32 @@ import { unstable_cache } from 'next/cache';
 
 export type Bump = 'major' | 'minor' | 'patch';
 
+export type ChangeTag = 'new' | 'improved' | 'fixed' | 'breaking';
+
+export const CHANGE_TAGS: readonly ChangeTag[] = ['new', 'improved', 'fixed', 'breaking'];
+
+export const TAG_LABEL: Record<ChangeTag, string> = {
+  new: 'New',
+  improved: 'Improved',
+  fixed: 'Fixed',
+  breaking: 'Breaking',
+};
+
+export interface ChangeItem {
+  tag: ChangeTag;
+  text: string;
+}
+
 export interface ChangeEntry {
   bump: Bump;
   headline: string | null;
   /** Markdown, dedented, without the changesets prefix or the headline. */
   body: string;
+  /** Markdown before the first tagged item (the whole body when there are none). */
+  lead: string;
+  items: ChangeItem[];
+  /** Markdown after the tagged items, such as code blocks and migration sections. */
+  notes: string;
   pr: number | null;
   /** Short (7-character) commit SHA. */
   commit: string | null;
@@ -40,6 +61,60 @@ const PREFIX =
   /^(?:\[#(\d+)\]\([^)]*\)\s*)?(?:\[`([0-9a-f]{7,40})`\]\([^)]*\)\s*)?(?:Thanks [^!]*!\s*)?- /;
 const HEADLINE = /^\*\*(.+?)\*\*[ \t]*(?:\n|$)/;
 
+const TAGGED_ITEM = /^[-*] \*\*(new|improved|fixed|breaking):\*\*[ \t]*(.*)$/i;
+
+/**
+ * Splits an entry body into a lead, the contiguous run of `- **Tag:** text`
+ * items, and the notes after it. Blank lines and untagged bullets between
+ * tagged items do not end the run; the first non-list block after it starts
+ * the notes. Without tagged items the whole body is the lead.
+ */
+export function splitEntry(body: string): { lead: string; items: ChangeItem[]; notes: string } {
+  const lines = body.split('\n');
+  const first = lines.findIndex((line) => TAGGED_ITEM.test(line));
+  if (first === -1) {
+    return { lead: body.trim(), items: [], notes: '' };
+  }
+
+  const items: ChangeItem[] = [];
+  const parts: string[][] = [];
+  let i = first;
+  let sawBlank = false;
+  for (; i < lines.length; i++) {
+    const line = lines[i];
+    const tagged = line.match(TAGGED_ITEM);
+    if (tagged) {
+      items.push({ tag: tagged[1].toLowerCase() as ChangeTag, text: '' });
+      parts.push([tagged[2].trim()]);
+      sawBlank = false;
+    } else if (line.trim() === '') {
+      sawBlank = true;
+    } else if (/^[-*] /.test(line)) {
+      // An untagged bullet inside the run: part of the previous item.
+      parts[parts.length - 1].push(line.replace(/^[-*] /, '').trim());
+      sawBlank = false;
+    } else if (/^\s/.test(line) || !sawBlank) {
+      // Indented, or a lazy continuation of the previous line. An unindented
+      // fence opener is a note.
+      if (/^(```|~~~)/.test(line)) {
+        break;
+      }
+      parts[parts.length - 1].push(line.trim());
+    } else {
+      break;
+    }
+  }
+
+  for (const [n, item] of items.entries()) {
+    item.text = parts[n].filter(Boolean).join(' ');
+  }
+  return {
+    lead: lines.slice(0, first).join('\n').trim(),
+    items,
+    notes: lines.slice(i).join('\n').trim(),
+  };
+}
+
 interface Draft {
   bump: Bump;
   lines: string[];
@@ -64,7 +139,8 @@ function finishEntry(draft: Draft): ChangeEntry {
     text = text.slice(bold[0].length);
   }
 
-  return { bump: draft.bump, headline, body: text.trim(), pr, commit };
+  const body = text.trim();
+  return { bump: draft.bump, headline, body, ...splitEntry(body), pr, commit };
 }
 
 /**

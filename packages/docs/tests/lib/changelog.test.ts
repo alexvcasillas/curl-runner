@@ -20,7 +20,7 @@ vi.mock('node:child_process', async (importOriginal) => {
   };
 });
 
-import { CHANGELOG_PATH, getReleaseDates, parseChangelog } from '@/lib/changelog';
+import { CHANGELOG_PATH, getReleaseDates, parseChangelog, splitEntry } from '@/lib/changelog';
 
 const real = readFileSync(CHANGELOG_PATH, 'utf8');
 const headingCount = real.match(/^## \d+\.\d+\.\d+\s*$/gm)?.length ?? 0;
@@ -124,6 +124,9 @@ describe('parseChangelog on inline fixtures', () => {
       bump: 'patch',
       headline: null,
       body: 'Fix something small without a PR prefix',
+      lead: 'Fix something small without a PR prefix',
+      items: [],
+      notes: '',
       pr: null,
       commit: null,
     });
@@ -193,5 +196,93 @@ describe('getReleaseDates', () => {
     const before = Date.now();
     const dates = await getReleaseDates();
     expect(Date.parse(dates[newest])).toBeGreaterThanOrEqual(before - 1000);
+  });
+});
+
+describe('splitEntry', () => {
+  it('splits lead, tagged items and notes', () => {
+    const body = [
+      'Intro line.',
+      '',
+      '- **New:** one',
+      '- **Improved:** two',
+      '- **Fixed:** three',
+      '',
+      '```yaml',
+      'a: 1',
+      '```',
+    ].join('\n');
+    const result = splitEntry(body);
+    expect(result.lead).toBe('Intro line.');
+    expect(result.items).toEqual([
+      { tag: 'new', text: 'one' },
+      { tag: 'improved', text: 'two' },
+      { tag: 'fixed', text: 'three' },
+    ]);
+    expect(result.notes).toBe('```yaml\na: 1\n```');
+  });
+
+  it('joins a wrapped item continuation into one item', () => {
+    const result = splitEntry('- **New:** first line\n  second line\n- **Fixed:** other');
+    expect(result.items).toEqual([
+      { tag: 'new', text: 'first line second line' },
+      { tag: 'fixed', text: 'other' },
+    ]);
+  });
+
+  it('keeps colons inside the item text', () => {
+    expect(splitEntry('- **New:** use `a:b` here').items[0].text).toBe('use `a:b` here');
+  });
+
+  it('reads a lowercase label', () => {
+    expect(splitEntry('- **fixed:** x').items[0].tag).toBe('fixed');
+  });
+
+  it('returns the whole body as the lead when there are no items', () => {
+    expect(splitEntry('Just text.\n\n- plain bullet')).toEqual({
+      lead: 'Just text.\n\n- plain bullet',
+      items: [],
+      notes: '',
+    });
+  });
+
+  it('keeps an untagged bullet before the first tagged item in the lead', () => {
+    const result = splitEntry('Intro\n\n- plain bullet\n\n- **New:** x');
+    expect(result.lead).toBe('Intro\n\n- plain bullet');
+    expect(result.items).toEqual([{ tag: 'new', text: 'x' }]);
+  });
+
+  it('does not end the run on blank lines or untagged items between tagged ones', () => {
+    const result = splitEntry('- **New:** a\n\n- plain\n\n- **Fixed:** b\n\nNotes here.');
+    expect(result.items.map((i) => i.tag)).toEqual(['new', 'fixed']);
+    expect(result.notes).toBe('Notes here.');
+  });
+
+  it('populates items per entry in parseChangelog', () => {
+    const releases = parseChangelog(`## 2.0.0
+
+### Minor Changes
+
+- [#1](https://x/1) Thanks [@u](https://x)! - **Head**
+
+  Lead text.
+
+  - **New:** a
+  - **Breaking:** b
+
+## 1.0.0
+
+### Patch Changes
+
+- Thanks [@u](https://x)! - **Other**
+
+  - **Fixed:** c
+`);
+    expect(releases[0].entries[0].lead).toBe('Lead text.');
+    expect(releases[0].entries[0].items).toEqual([
+      { tag: 'new', text: 'a' },
+      { tag: 'breaking', text: 'b' },
+    ]);
+    expect(releases[1].entries[0].items).toEqual([{ tag: 'fixed', text: 'c' }]);
   });
 });

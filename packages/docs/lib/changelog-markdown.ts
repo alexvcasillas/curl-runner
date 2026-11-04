@@ -1,7 +1,7 @@
 import { Marked, type Token, type Tokens } from 'marked';
 import { bundledLanguages, codeToHtml } from 'shiki';
 import { YAML_THEME } from '@/components/site/Yaml';
-import type { ChangeEntry } from '@/lib/changelog';
+import type { ChangeEntry, ChangeTag } from '@/lib/changelog';
 
 /** Entries whose body is longer than this collapse behind a native `<details>`. */
 export const COLLAPSE_THRESHOLD = 1200;
@@ -12,6 +12,10 @@ const MIN_HIDDEN_LENGTH = 300;
 
 export interface RenderedEntry {
   headlineHtml: string | null;
+  /** The lead paragraph(s) of an entry with tagged items; '' otherwise. */
+  leadHtml: string;
+  /** Tagged items with inline-rendered text; empty for untagged entries. */
+  items: { tag: ChangeTag; html: string }[];
   previewHtml: string;
   /** The rest of a long entry, or null when the whole entry is shown. */
   restHtml: string | null;
@@ -111,15 +115,25 @@ function renderGroups(groups: Group[]): string {
 
 /** Renders one entry's Markdown, splitting long entries into a preview and the rest. */
 export async function renderEntry(entry: ChangeEntry): Promise<RenderedEntry> {
-  const tokens = markdown.lexer(entry.body);
+  const tagged = entry.items.length > 0;
+  // Untagged entries render their whole body as the preview, as before.
+  const source = tagged ? entry.notes : entry.body;
+  const tokens = markdown.lexer(source);
   await highlightCode(tokens);
+  const leadTokens = tagged ? markdown.lexer(entry.lead) : [];
+  await highlightCode(leadTokens);
+  const leadHtml = markdown.parser(leadTokens);
+  const items = entry.items.map((item) => ({
+    tag: item.tag,
+    html: markdown.parseInline(item.text, { async: false }),
+  }));
   const groups = groupTokens(tokens);
   const headlineHtml = entry.headline
     ? markdown.parseInline(entry.headline, { async: false })
     : null;
 
   let shown = groups.length;
-  if (entry.body.length > COLLAPSE_THRESHOLD) {
+  if (source.length > COLLAPSE_THRESHOLD) {
     // Never hide a migration box; then fill the preview up to about PREVIEW_LENGTH.
     let visible = 0;
     shown = 0;
@@ -138,6 +152,8 @@ export async function renderEntry(entry: ChangeEntry): Promise<RenderedEntry> {
 
   return {
     headlineHtml,
+    leadHtml,
+    items,
     previewHtml: renderGroups(groups.slice(0, shown)),
     restHtml: shown < groups.length ? renderGroups(groups.slice(shown)) : null,
   };
