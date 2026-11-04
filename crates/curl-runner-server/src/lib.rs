@@ -2,7 +2,9 @@
 
 pub mod auth;
 pub mod clock;
+pub mod collections;
 pub mod config;
+pub mod crypto;
 pub mod error;
 pub mod extract;
 pub mod hash;
@@ -38,6 +40,7 @@ pub fn app(state: AppState) -> Router {
         .merge(auth::routes())
         .merge(teams::routes())
         .merge(tokens::routes())
+        .merge(collections::routes())
         .fallback(not_found)
         .with_state(state)
         .layer(CorsLayer::permissive())

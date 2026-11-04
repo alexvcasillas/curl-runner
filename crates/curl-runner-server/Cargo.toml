@@ -12,8 +12,11 @@ db-tests = []
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
 base64 = "0.22.1"
+chacha20poly1305 = "0.10"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
 curl-runner-cloud-proto.workspace = true
+flate2 = "1.1.10"
+hkdf = "0.12"
 # TLS for OAuth (reqwest) and SMTP (lettre) is rustls on ring, never aws-lc-rs,
 # so the static musl image cross-compiles with zig alone.
 lettre = { version = "0.11.23", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls"] }
