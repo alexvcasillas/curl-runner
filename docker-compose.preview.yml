@@ -20,6 +20,7 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:-preview-password}
       SECRET_KEY: ${SECRET_KEY:-preview-secret-key-not-for-production}
       SIGNUP: ${SIGNUP:-open}
+      TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-}
     networks:
       - internal
     ports:
