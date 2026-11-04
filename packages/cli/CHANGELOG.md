@@ -1,5 +1,18 @@
 # @curl-runner/cli
 
+## 2.6.0
+
+### Minor Changes
+
+- [#176](https://github.com/alexvcasillas/curl-runner/pull/176) [`52350b9`](https://github.com/alexvcasillas/curl-runner/commit/52350b9c427cb2a52665b11adaa189c76fb01815) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **Cloud publishing from the CLI**
+  
+  Publish a collection to curl-runner Cloud from CI, and pull a shared one onto your machine. Cloud is in private preview.
+  
+  - **New:** `curl-runner publish` sends a folder to Cloud as a new version. It checks every file first, and `--dry-run` shows what would change.
+  - **New:** `curl-runner pull <link>` downloads a shared collection, and `curl-runner pull <dir>` updates it.
+  - **New:** `curl-runner login` and `curl-runner logout` sign in with an emailed code and sign out.
+  - **New:** a GitHub Action, `alexvcasillas/curl-runner/actions/publish`, installs the CLI and publishes on every push.
+
 ## 2.5.0
 
 ### Minor Changes
