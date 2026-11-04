@@ -923,7 +923,7 @@ mod map {
         );
         assert_eq!(
             choices[0].to_string(),
-            "Used k auth in 5 requests that also accept o"
+            "Used k in 5 requests that also accept o"
         );
     }
 
@@ -1609,7 +1609,7 @@ mod convert {
             lines(&imp),
             [
                 "Used the first of several body shapes in 1 request, like orders/Place order",
-                "Used bearer_auth auth in 1 request that also accept key_auth",
+                "Used bearer_auth in 1 request that also accepts key_auth",
                 "Skipped 1 webhook",
                 "Set the secret INVENTORY_SERVICE_BEARER_AUTH_TOKEN",
                 "Set the secret INVENTORY_SERVICE_KEY_AUTH"
@@ -1692,6 +1692,8 @@ mod convert {
         }
     }
 
+    /// About 1.2 MB at 3000 operations: a scaling check, not the spec's 10 MB figure.
+    ///
     /// `n` operations over `schemas` schemas, each schema reaching the next
     /// through a 5-deep `$ref` chain.
     fn synthetic(n: usize, schemas: usize) -> String {

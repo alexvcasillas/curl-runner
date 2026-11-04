@@ -252,8 +252,9 @@ impl fmt::Display for Attention {
                 count,
             } => write!(
                 f,
-                "Used {used} auth in {} that also accept {others}",
-                Count(*count, "request")
+                "Used {used} in {} that also accept{} {others}",
+                Count(*count, "request"),
+                if *count == 1 { "s" } else { "" }
             ),
             Attention::AccessToken { var, kind } => {
                 write!(f, "Put an {kind} access token in {var}")
