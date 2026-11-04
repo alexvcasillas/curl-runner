@@ -6,6 +6,8 @@ mod publish;
 mod share;
 mod versions;
 
+pub(crate) use share::parse_email;
+
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{get, put};

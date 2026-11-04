@@ -5,8 +5,21 @@ use super::Mail;
 const SIGN_IN_FOOTER: &str =
     "It expires in 10 minutes. If you didn't ask for it, ignore this email.";
 
-/// Subject, plain text and HTML for `mail`.
+/// Subject, plain text and HTML for `mail`. The subject is one line: user
+/// text in it (team and collection names) cannot add a header.
 pub fn render(mail: &Mail) -> (String, String, String) {
+    let (subject, text, html) = render_parts(mail);
+    (one_line(&subject), text, html)
+}
+
+/// `s` with CR, LF and other control characters replaced by spaces.
+fn one_line(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect()
+}
+
+fn render_parts(mail: &Mail) -> (String, String, String) {
     match mail {
         Mail::SignInCode {
             code,
@@ -162,6 +175,21 @@ mod tests {
         for s in [&text, &html] {
             assert!(!s.contains('\u{2014}'));
         }
+    }
+
+    #[test]
+    fn subject_has_no_line_breaks() {
+        let (subject, _, _) = render(&Mail::CustomerInvite {
+            to: "b@example.com".into(),
+            team_name: "Acme\r\nBcc: x@example.com".into(),
+            collection_name: "pay\nments".into(),
+            link: "https://x.example.com/c".into(),
+        });
+        assert_eq!(
+            subject,
+            "Acme  Bcc: x@example.com shared pay ments with you"
+        );
+        assert!(!subject.contains(['\r', '\n']));
     }
 
     #[test]

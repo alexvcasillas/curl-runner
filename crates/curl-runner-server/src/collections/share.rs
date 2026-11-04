@@ -206,6 +206,15 @@ pub(super) async fn patch(
     Ok(Json(share_body(&state, row).await?))
 }
 
+/// `raw` as a lower-cased email address under the same rules as an email
+/// entry, or `None`. Also used for member invites.
+pub(crate) fn parse_email(raw: &str) -> Option<String> {
+    match parse_entry(raw) {
+        Ok((email, "email")) => Some(email),
+        _ => None,
+    }
+}
+
 /// Lower-case `raw` and return it with its kind: an email (one `@`, both sides
 /// non-empty) or a domain entry `*@domain.tld` (the domain has a dot, no
 /// empty labels).
@@ -406,6 +415,17 @@ mod tests {
     #[test]
     fn emails_are_lowercased_and_typed() {
         assert_eq!(ok(" Ada@Example.COM "), ("ada@example.com".into(), "email"));
+    }
+
+    #[test]
+    fn parse_email_takes_emails_only() {
+        assert_eq!(
+            parse_email(" Ada@Example.COM ").as_deref(),
+            Some("ada@example.com")
+        );
+        for bad in ["*@example.com", "a@b@c.com", "@example.com", "ada@", "ada"] {
+            assert_eq!(parse_email(bad), None, "{bad}");
+        }
     }
 
     #[test]

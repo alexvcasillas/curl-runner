@@ -518,3 +518,46 @@ async fn invite_to_member_or_pending_email_conflicts(pool: PgPool) {
         StatusCode::CONFLICT
     );
 }
+
+#[sqlx::test]
+async fn team_name_is_at_most_100_characters(pool: PgPool) {
+    let app = test_app(pool).await;
+    let s = app.sign_in("ada@example.com").await;
+    let create = |slug: &'static str, name: String| {
+        app.request(
+            Method::POST,
+            "/v1/teams",
+            Some(json!({"slug": slug, "name": name})),
+            Some(&s),
+        )
+    };
+    let (status, body) = create("long", "x".repeat(101)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"], "invalid_request");
+    let (status, body) = create("blank", "   ".into()).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let (status, body) = create("ok", "é".repeat(100)).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+}
+
+#[sqlx::test]
+async fn invite_email_is_validated_like_share_entries(pool: PgPool) {
+    let app = test_app(pool).await;
+    let owner = app.sign_in("ada@example.com").await;
+    app.create_team(&owner, "acme").await;
+    for bad in [
+        "a@b@example.com",
+        "@example.com",
+        "bob@",
+        "*@example.com",
+        "bob smith@example.com",
+        "bob\r\n@example.com",
+    ] {
+        let (status, body) = invite(&app, &owner, "acme", bad).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}: {body}");
+        assert_eq!(body["error"], "invalid_request");
+    }
+    let (status, body) = invite(&app, &owner, "acme", " Bob@Example.com ").await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(body["email"], "bob@example.com");
+}

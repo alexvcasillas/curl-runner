@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::auth::UserAuth;
 use crate::auth::session::column_enum;
+use crate::collections::parse_email;
 use crate::config::Config;
 use crate::error::ApiError;
 use crate::extract::ApiJson;
@@ -24,6 +25,7 @@ use crate::state::AppState;
 pub const INVITE_TTL: Duration = Duration::days(7);
 
 const FIRST_OPERATOR: &str = "first_operator";
+const MAX_TEAM_NAME_CHARS: usize = 100;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -184,6 +186,9 @@ async fn create_team(
     }
     if name.is_empty() {
         return Err(invalid("The team needs a name."));
+    }
+    if name.chars().count() > MAX_TEAM_NAME_CHARS {
+        return Err(invalid("The team name must be at most 100 characters."));
     }
     if !can_create_team(&state.db, &state.config, &auth.email).await? {
         return Err(ApiError::new(
@@ -385,10 +390,9 @@ async fn invite(
 ) -> Result<(StatusCode, Json<InviteCreated>), ApiError> {
     let access = team_access(&state.db, auth.user_id, &slug).await?;
     access.require_owner()?;
-    let email = req.email.trim().to_lowercase();
-    if !email.contains('@') || email.len() > 254 {
-        return Err(invalid("Enter a valid email address."));
-    }
+    let email = parse_email(&req.email)
+        .filter(|e| e.len() <= 254)
+        .ok_or_else(|| invalid("Enter a valid email address."))?;
     let now = state.clock.now();
     let expires_at = now + INVITE_TTL;
     let token = new_token("cri_");
