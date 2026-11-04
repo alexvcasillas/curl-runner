@@ -6,6 +6,7 @@
   curl-runner convert file <script.sh>         Convert shell script → YAML
   curl-runner convert yaml <test.yaml>         Convert YAML → curl
   curl-runner convert postman <collection>     Convert Postman collection → YAML files
+  curl-runner convert openapi <spec>           Convert OpenAPI/Swagger spec → YAML files
 
 [33mOPTIONS:[0m
   -o, --output <file>   Write output to file

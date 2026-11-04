@@ -170,6 +170,7 @@ Each item names the request, folder or variable it's about:
 - **Kept `{{$…}}`**: a dynamic variable with no curl-runner match.
 - **Skipped saved examples**: Postman's saved responses aren't imported.
 - **Kept the value of … already in .env**: `.env` already had the variable with another value, so the import left it.
+- **Removed line breaks and control characters from … in .env**: a value would have broken its `.env` line.
 
 ## What's skipped [#skipped]
 
@@ -183,7 +184,7 @@ Each one shows up in the report with the request it came from.
 
 ## Limits [#limits]
 
-- Only Postman collections, v2.0 and v2.1. OpenAPI import isn't available yet.
+- Only Postman collections, v2.0 and v2.1. For an OpenAPI or Swagger spec, see [OpenAPI Import](/docs/features/openapi-import).
 - Postman environment files aren't imported. Copy their values into `.env` or `.env.local` yourself.
 - Scripts aren't translated. Rewrite their checks as `expect` blocks.
 - A secret inside a raw JSON body is kept as written. Replace it with a variable by hand.

@@ -67,6 +67,16 @@ curl-runner convert postman my-api.postman_collection.json
 
 See [Postman Import](/docs/features/postman-import) for the output, what's converted and what needs your attention.
 
+## OpenAPI to YAML [#openapi]
+
+Turn an OpenAPI or Swagger spec into curl-runner files, one per operation, with a `.env` for the base URL and secrets:
+
+```bash title="Command"
+curl-runner convert openapi openapi.yaml
+```
+
+See [OpenAPI Import](/docs/features/openapi-import) for the output, what's converted and what needs your attention.
+
 ## Batch Script Conversion [#batch-conversion]
 
 Extract and convert all curl commands from a shell script into a single YAML collection. The parser handles multiline commands, ignores non-curl lines, and strips piped output.
@@ -229,10 +239,11 @@ request:
 | `convert file <script.sh>` | Convert shell script to YAML (batch) |
 | `convert yaml <file.yaml>` | Convert YAML to curl command(s) |
 | `convert postman <collection.json>` | Convert a Postman collection to YAML files and a `.env` |
+| `convert openapi <spec.json\|spec.yaml>` | Convert an OpenAPI or Swagger spec to YAML files and a `.env` |
 
 | Flag | Description |
 | --- | --- |
-| `-o, --output <file>` | Write output to file. For `convert postman`, a directory |
+| `-o, --output <file>` | Write output to file. For `convert postman` and `convert openapi`, a directory |
 | `--pretty` | Pretty-print output (default) |
 | `--loss-report` | Include warnings for unsupported features (default) |
 | `--debug` | Show token stream, AST, and IR |

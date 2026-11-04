@@ -1,0 +1,37 @@
+{
+  "swagger": "2.0",
+  "info": { "title": "Petstore v2", "version": "1.0.0" },
+  "host": "api.example.com",
+  "basePath": "/v2",
+  "schemes": ["https"],
+  "consumes": ["application/json"],
+  "securityDefinitions": {
+    "basic_auth": { "type": "basic" }
+  },
+  "security": [{ "basic_auth": [] }],
+  "paths": {
+    "/pets/{petId}": {
+      "get": {
+        "tags": ["pets"],
+        "summary": "Get pet",
+        "parameters": [
+          { "name": "petId", "in": "path", "required": true, "type": "integer" }
+        ],
+        "responses": { "200": { "description": "A pet." } }
+      }
+    },
+    "/pets/{petId}/image": {
+      "post": {
+        "tags": ["pets"],
+        "summary": "Upload image",
+        "consumes": ["multipart/form-data"],
+        "parameters": [
+          { "name": "petId", "in": "path", "required": true, "type": "integer" },
+          { "name": "file", "in": "formData", "required": true, "type": "file" },
+          { "name": "note", "in": "formData", "type": "string" }
+        ],
+        "responses": { "200": { "description": "Uploaded." } }
+      }
+    }
+  }
+}

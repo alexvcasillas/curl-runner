@@ -706,7 +706,13 @@ impl ImportDialog {
                 let kept = outcome
                     .kept_env
                     .iter()
-                    .map(|var| Attention::KeptEnv { var: var.clone() });
+                    .map(|var| Attention::KeptEnv { var: var.clone() })
+                    .chain(
+                        outcome
+                            .cleaned_env
+                            .iter()
+                            .map(|var| Attention::CleanedEnv { var: var.clone() }),
+                    );
                 let mut attention: Vec<(Attention, Option<PathBuf>)> = import
                     .report
                     .attention

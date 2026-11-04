@@ -1,0 +1,197 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Inventory Service",
+    "description": "Stock, orders and shipments for the example warehouse.",
+    "version": "2.0.0"
+  },
+  "servers": [{ "url": "https://api.example.com/inventory/v2" }],
+  "security": [{ "bearer_auth": [] }],
+  "tags": [{ "name": "items" }, { "name": "orders" }, { "name": "shipments" }],
+  "paths": {
+    "/items": {
+      "get": {
+        "tags": ["items"],
+        "summary": "List items",
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } },
+          { "name": "category", "in": "query", "required": true, "schema": { "type": "string", "enum": ["tools", "toys"] } }
+        ],
+        "responses": { "200": { "description": "Items." } }
+      },
+      "post": {
+        "tags": ["items"],
+        "summary": "Create item",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NewItem" } } }
+        },
+        "responses": { "201": { "description": "Created." } }
+      }
+    },
+    "/items/{itemId}": {
+      "parameters": [{ "name": "itemId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+      "get": { "tags": ["items"], "summary": "Get item", "responses": { "200": { "description": "Item." } } },
+      "put": {
+        "tags": ["items"],
+        "summary": "Replace item",
+        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NewItem" } } } },
+        "responses": { "204": { "description": "Replaced." } }
+      },
+      "delete": { "tags": ["items"], "summary": "Delete item", "responses": { "204": { "description": "Gone." } } }
+    },
+    "/items/{itemId}/tree": {
+      "post": {
+        "tags": ["items"],
+        "summary": "Set item tree",
+        "parameters": [{ "name": "itemId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Node" } } } },
+        "responses": { "200": { "description": "Saved." } }
+      }
+    },
+    "/orders": {
+      "post": {
+        "tags": ["orders"],
+        "summary": "Place order",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  { "$ref": "#/components/schemas/PickupOrder" },
+                  { "$ref": "#/components/schemas/DeliveryOrder" }
+                ]
+              }
+            }
+          }
+        },
+        "responses": { "202": { "description": "Accepted." } }
+      }
+    },
+    "/orders/{orderId}": {
+      "get": {
+        "tags": ["orders"],
+        "summary": "Get order",
+        "parameters": [{ "name": "orderId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "security": [{ "bearer_auth": [] }, { "key_auth": [] }],
+        "responses": { "200": { "description": "Order." } }
+      }
+    },
+    "/orders/{orderId}/pay": {
+      "post": {
+        "tags": ["orders"],
+        "summary": "Pay order",
+        "parameters": [{ "name": "orderId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": ["card_token"],
+                "properties": {
+                  "card_token": { "type": "string" },
+                  "save_card": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Paid." } }
+      }
+    },
+    "/shipments": {
+      "get": {
+        "tags": ["shipments"],
+        "summary": "List shipments",
+        "security": [{ "key_auth": [] }],
+        "responses": { "200": { "description": "Shipments." } }
+      },
+      "post": {
+        "tags": ["shipments"],
+        "summary": "Create shipment",
+        "requestBody": {
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Shipment" } } }
+        },
+        "responses": { "201": { "description": "Created." } }
+      }
+    },
+    "/shipments/{shipmentId}": {
+      "get": {
+        "tags": ["shipments"],
+        "summary": "Get shipment",
+        "parameters": [{ "name": "shipmentId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Shipment." } }
+      },
+      "patch": {
+        "tags": ["shipments"],
+        "summary": "Update shipment",
+        "parameters": [{ "name": "shipmentId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "content": { "application/json": { "schema": { "type": "object", "properties": { "status": { "type": "string", "enum": ["packed", "sent"] } } } } }
+        },
+        "responses": { "200": { "description": "Updated." } }
+      }
+    },
+    "/health": {
+      "get": { "summary": "Health", "security": [], "responses": { "200": { "description": "Fine." } } }
+    }
+  },
+  "webhooks": {
+    "stockLow": {
+      "post": {
+        "summary": "Stock is low",
+        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NewItem" } } } },
+        "responses": { "200": { "description": "Got it." } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearer_auth": { "type": "http", "scheme": "bearer" },
+      "key_auth": { "type": "apiKey", "in": "header", "name": "X-Inventory-Key" }
+    },
+    "schemas": {
+      "Base": {
+        "type": "object",
+        "required": ["name"],
+        "properties": { "name": { "type": "string", "examples": ["Hammer"] } }
+      },
+      "NewItem": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Base" },
+          {
+            "type": "object",
+            "properties": {
+              "quantity": { "type": "integer", "minimum": 0 },
+              "tags": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        ]
+      },
+      "Node": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string" },
+          "children": { "type": "array", "items": { "$ref": "#/components/schemas/Node" } }
+        }
+      },
+      "PickupOrder": {
+        "type": "object",
+        "required": ["itemId"],
+        "properties": { "itemId": { "type": "string" }, "store": { "type": "string" } }
+      },
+      "DeliveryOrder": {
+        "type": "object",
+        "required": ["itemId", "address"],
+        "properties": { "itemId": { "type": "string" }, "address": { "type": "string" } }
+      },
+      "Shipment": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "integer" },
+          "note": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

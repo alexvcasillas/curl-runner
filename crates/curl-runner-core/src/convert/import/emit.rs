@@ -1,8 +1,8 @@
-//! A mapped Postman request written as one curl-runner YAML file. Disabled
+//! A mapped request written as one curl-runner YAML file. Disabled
 //! fields stay in place as commented-out lines: removing the leading `# `
 //! of one gives valid YAML with that field added.
 
-use super::map::{Field, FieldValue, MappedAuth, MappedBody, MappedRequest};
+use super::{Field, FieldValue, MappedAuth, MappedBody, MappedRequest};
 use crate::model::Json;
 use crate::snapshot::js_stringify;
 use crate::yaml_text::{needs_quoting, quote_escaped, reads_back, scalar_text, yaml_key, yaml_str};
@@ -10,10 +10,11 @@ use crate::yaml_text::{needs_quoting, quote_escaped, reads_back, scalar_text, ya
 /// Field keys sit under `request:`'s maps, four spaces deep.
 const ENTRY: &str = "    ";
 
-/// The YAML file for `r`, headed with the collection's name.
-pub fn emit_request(r: &MappedRequest, collection: &str) -> String {
+/// The YAML file for `r`, headed with the source format and the
+/// collection's name.
+pub fn emit_request(r: &MappedRequest, source: &str, collection: &str) -> String {
     let mut out = vec![format!(
-        "# Imported from Postman: {}",
+        "# Imported from {source}: {}",
         text_lines(collection).join(" ")
     )];
     for c in &r.comments {
@@ -55,6 +56,10 @@ pub fn emit_request(r: &MappedRequest, collection: &str) -> String {
         MappedBody::Json(v) => json_body(&mut out, v),
         MappedBody::Text(t) => out.push(format!("  body: {}", text_body(t))),
         MappedBody::Form(f) => fields(&mut out, "formData", f),
+    }
+    if let Some(status) = r.expect_status {
+        out.push("  expect:".into());
+        out.push(format!("{ENTRY}status: {status}"));
     }
     format!("{}\n", out.join("\n"))
 }

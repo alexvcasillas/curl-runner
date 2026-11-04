@@ -7,9 +7,11 @@ mod batch;
 mod curl_parser;
 mod debug;
 mod generator;
+pub mod import;
 mod jsjson;
 mod jsutil;
 mod normalizer;
+pub mod openapi;
 pub mod postman;
 mod secrets;
 mod tokenizer;
@@ -269,6 +271,7 @@ pub fn parse_convert_args(args: &[String]) -> Option<ConvertArgs> {
         "file" => Subcommand::File,
         "yaml" => Subcommand::Yaml,
         "postman" => Subcommand::Postman,
+        "openapi" => Subcommand::OpenApi,
         _ => return None,
     };
     let mut options = ConvertOptions::default();

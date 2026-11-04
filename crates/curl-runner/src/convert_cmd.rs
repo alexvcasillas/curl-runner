@@ -1,10 +1,12 @@
-//! `curl-runner convert curl|file|yaml` (`cli.ts` `executeConvert`): reads the
+//! `curl-runner convert curl|file|yaml|postman|openapi` (`cli.ts` `executeConvert`): reads the
 //! input, runs the pure conversion from `curl_runner_core::convert`, prints
 //! the YAML or curl command, the warnings and the `--debug` dump.
 
 use crate::colors::Color;
 use crate::output::{Console, Logger, OutCfg};
-use curl_runner_core::convert::postman::{Attention, convert_postman, slug, write_postman};
+use curl_runner_core::convert::import::{Attention, Import, slug, write_import};
+use curl_runner_core::convert::openapi::convert_openapi;
+use curl_runner_core::convert::postman::convert_postman;
 use curl_runner_core::convert::{
     ConvertArgs, ConvertError, ConvertResult, Subcommand, convert_curl_to_yaml,
     convert_script_to_yaml, convert_yaml_to_curl, parse_convert_args,
@@ -19,9 +21,16 @@ pub fn run(argv: &[String], color: bool, console: &mut Console) -> i32 {
     let log = Logger::new(OutCfg::from_config(None), color, None);
 
     if argv.iter().any(|a| a == "--help" || a == "-h") {
-        if argv.get(1).is_some_and(|a| a == "postman") {
-            console.out(&postman_help(&log));
-            return 0;
+        match argv.get(1).map(String::as_str) {
+            Some("postman") => {
+                console.out(&postman_help(&log));
+                return 0;
+            }
+            Some("openapi") => {
+                console.out(&openapi_help(&log));
+                return 0;
+            }
+            _ => {}
         }
         console.out(&help(&log));
         return 0;
@@ -31,8 +40,14 @@ pub fn run(argv: &[String], color: bool, console: &mut Console) -> i32 {
         return 1;
     };
 
-    if parsed.subcommand == Subcommand::Postman {
-        return run_postman(&parsed, &log, console);
+    match parsed.subcommand {
+        Subcommand::Postman => {
+            return run_import(&parsed, ImportKind::POSTMAN, &log, console);
+        }
+        Subcommand::OpenApi => {
+            return run_import(&parsed, ImportKind::OPENAPI, &log, console);
+        }
+        _ => {}
     }
 
     let result = match convert(&parsed) {
@@ -71,11 +86,29 @@ pub fn run(argv: &[String], color: bool, console: &mut Console) -> i32 {
     0
 }
 
-/// `convert postman <file> [-o <dir>]`: writes request files and a `.env`
-/// into the directory and reports what needs the user's attention.
-fn run_postman(parsed: &ConvertArgs, log: &Logger, console: &mut Console) -> i32 {
+/// What differs between the import subcommands: the converter and the folder
+/// used when the document has no usable name.
+struct ImportKind {
+    convert: fn(&str) -> Result<Import, ConvertError>,
+    fallback_dir: &'static str,
+}
+
+impl ImportKind {
+    const POSTMAN: Self = Self {
+        convert: convert_postman,
+        fallback_dir: "postman-import",
+    };
+    const OPENAPI: Self = Self {
+        convert: convert_openapi,
+        fallback_dir: "openapi-import",
+    };
+}
+
+/// `convert postman|openapi <file> [-o <dir>]`: writes request files and a
+/// `.env` into the directory and reports what needs the user's attention.
+fn run_import(parsed: &ConvertArgs, kind: ImportKind, log: &Logger, console: &mut Console) -> i32 {
     let import =
-        match read_text(&parsed.input).and_then(|text| convert_postman(&text).map_err(|e| e.0)) {
+        match read_text(&parsed.input).and_then(|text| (kind.convert)(&text).map_err(|e| e.0)) {
             Ok(i) => i,
             Err(msg) => {
                 log.log_error(console, &msg);
@@ -84,9 +117,9 @@ fn run_postman(parsed: &ConvertArgs, log: &Logger, console: &mut Console) -> i32
         };
     let dir = match parsed.options.output.as_deref().filter(|o| !o.is_empty()) {
         Some(o) => o.to_string(),
-        None => slug(&import.name, "postman-import"),
+        None => slug(&import.name, kind.fallback_dir),
     };
-    let outcome = match write_postman(
+    let outcome = match write_import(
         Path::new(&dir),
         Path::new(""),
         &import,
@@ -109,12 +142,14 @@ fn run_postman(parsed: &ConvertArgs, log: &Logger, console: &mut Console) -> i32
         plural(folders),
     ));
     // The CLI never writes a secret's value, so every secret is listed, not
-    // only the ones the import found empty.
+    // only the ones the import found empty. An access token entry already
+    // asks for its secret.
     let mut items: Vec<Attention> = import.report.attention.clone();
     for v in import.variables.iter().filter(|v| v.secret) {
-        let covered = items
-            .iter()
-            .any(|a| matches!(a, Attention::SetSecret { var } if *var == v.name));
+        let covered = items.iter().any(|a| match a {
+            Attention::SetSecret { var } | Attention::AccessToken { var, .. } => *var == v.name,
+            _ => false,
+        });
         if !covered {
             items.push(Attention::SetSecret {
                 var: v.name.clone(),
@@ -127,6 +162,12 @@ fn run_postman(parsed: &ConvertArgs, log: &Logger, console: &mut Console) -> i32
             .iter()
             .map(|var| Attention::KeptEnv { var: var.clone() }),
     );
+    items.extend(
+        outcome
+            .cleaned_env
+            .iter()
+            .map(|var| Attention::CleanedEnv { var: var.clone() }),
+    );
     let rank = |a: &Attention| match a {
         Attention::PickFile { .. } => 0,
         Attention::SetSecret { .. } => 1,
@@ -134,7 +175,7 @@ fn run_postman(parsed: &ConvertArgs, log: &Logger, console: &mut Console) -> i32
     };
     items.sort_by_key(rank);
     let first_secret = items.iter().find_map(|a| match a {
-        Attention::SetSecret { var } => Some(var.clone()),
+        Attention::SetSecret { var } | Attention::AccessToken { var, .. } => Some(var.clone()),
         _ => None,
     });
     if !items.is_empty() {
@@ -167,7 +208,7 @@ fn convert(parsed: &ConvertArgs) -> Result<ConvertResult, String> {
             convert_script_to_yaml(&read_text(&parsed.input)?, &parsed.options).map_err(to_msg)
         }
         Subcommand::Yaml => convert_yaml_to_curl(&read_text(&parsed.input)?).map_err(to_msg),
-        Subcommand::Postman => unreachable!("handled by run_postman"),
+        Subcommand::Postman | Subcommand::OpenApi => unreachable!("handled by run_import"),
     }
 }
 
@@ -207,7 +248,7 @@ fn fs_message(e: &io::Error, path: &str, op: &str) -> String {
 fn help(log: &Logger) -> String {
     let y = |s: &str| log.color(s, Color::Yellow);
     format!(
-        "\n{}\n\n{}\n  curl-runner convert curl \"<curl command>\"    Convert curl → YAML\n  curl-runner convert file <script.sh>         Convert shell script → YAML\n  curl-runner convert yaml <test.yaml>         Convert YAML → curl\n  curl-runner convert postman <collection>     Convert Postman collection → YAML files\n\n{}\n  -o, --output <file>   Write output to file\n  --pretty              Pretty-print output (default for YAML)\n  --loss-report         Show warnings for unsupported features (default)\n  --debug               Show token stream, AST, and IR\n  -h, --help            Show this help\n\n{}\n  # Convert inline curl to YAML\n  curl-runner convert curl \"curl -X POST https://api.example.com -d '{{\"name\":\"Alex\"}}'\"\n\n  # Convert and save to file\n  curl-runner convert curl \"curl https://api.example.com\" -o test.yaml\n\n  # Convert shell script (batch)\n  curl-runner convert file scripts/api-tests.sh\n\n  # Convert YAML back to curl\n  curl-runner convert yaml test.yaml\n\n  # Debug mode\n  curl-runner convert curl \"curl https://example.com\" --debug\n",
+        "\n{}\n\n{}\n  curl-runner convert curl \"<curl command>\"    Convert curl → YAML\n  curl-runner convert file <script.sh>         Convert shell script → YAML\n  curl-runner convert yaml <test.yaml>         Convert YAML → curl\n  curl-runner convert postman <collection>     Convert Postman collection → YAML files\n  curl-runner convert openapi <spec>           Convert OpenAPI/Swagger spec → YAML files\n\n{}\n  -o, --output <file>   Write output to file\n  --pretty              Pretty-print output (default for YAML)\n  --loss-report         Show warnings for unsupported features (default)\n  --debug               Show token stream, AST, and IR\n  -h, --help            Show this help\n\n{}\n  # Convert inline curl to YAML\n  curl-runner convert curl \"curl -X POST https://api.example.com -d '{{\"name\":\"Alex\"}}'\"\n\n  # Convert and save to file\n  curl-runner convert curl \"curl https://api.example.com\" -o test.yaml\n\n  # Convert shell script (batch)\n  curl-runner convert file scripts/api-tests.sh\n\n  # Convert YAML back to curl\n  curl-runner convert yaml test.yaml\n\n  # Debug mode\n  curl-runner convert curl \"curl https://example.com\" --debug\n",
         log.color("CURL RUNNER - CONVERT", Color::Bright),
         y("USAGE:"),
         y("OPTIONS:"),
@@ -222,6 +263,17 @@ fn postman_help(log: &Logger) -> String {
     format!(
         "\n{}\n\n{}\n  curl-runner convert postman <collection.json> [-o <dir>]\n\n{}\n  -o, --output <dir>   Write the files into this directory (default: the collection's name)\n  -h, --help           Show this help\n",
         log.color("CURL RUNNER - CONVERT POSTMAN", Color::Bright),
+        y("USAGE:"),
+        y("OPTIONS:"),
+    )
+}
+
+/// Help for `convert openapi --help`.
+fn openapi_help(log: &Logger) -> String {
+    let y = |s: &str| log.color(s, Color::Yellow);
+    format!(
+        "\n{}\n\n{}\n  curl-runner convert openapi <spec.json|spec.yaml> [-o <dir>]\n\n{}\n  -o, --output <dir>   Write the files into this directory (default: the API's title)\n  -h, --help           Show this help\n",
+        log.color("CURL RUNNER - CONVERT OPENAPI", Color::Bright),
         y("USAGE:"),
         y("OPTIONS:"),
     )
