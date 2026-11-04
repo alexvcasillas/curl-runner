@@ -155,7 +155,7 @@
   - **New:** Filesystem path confinement: `output`, `saveToFile`, and `formData` file paths are confined to the working directory by default. Opt out with `--allow-path` or `CURL_RUNNER_ALLOW_PATHS`. SSL `ca`/`cert`/`key` paths are exempt: they are TLS handshake material and are never transmitted to the server.
   - **Improved:** Secret redaction: inline credentials (`auth.token`, `auth.password`, and sensitive request headers) are now auto-registered for redaction, the saved results summary is redacted before being written to disk, and detection patterns were extended (JWT, Google API keys, `api_key=`/`token=`/`secret=` assignments).
   - **Fixed:** ReDoS and prototype pollution: user/server-controlled regex matching now caps input length, and `__proto__`/`prototype`/`constructor` keys are rejected during variable interpolation and response-path traversal.
-  - **Breaking:** Potentially breaking: configs that rely on non-`http(s)` URLs, or that read/write files outside the working directory, must now opt in with `--allow-protocol` or `--allow-path` (or `CURL_RUNNER_ALLOWED_PROTOCOLS` / `CURL_RUNNER_ALLOW_PATHS`).
+  - **Breaking:** Configs that rely on non-`http(s)` URLs, or that read/write files outside the working directory, may need to opt in with `--allow-protocol` or `--allow-path` (or `CURL_RUNNER_ALLOWED_PROTOCOLS` / `CURL_RUNNER_ALLOW_PATHS`).
 
 ## 1.24.0
 
