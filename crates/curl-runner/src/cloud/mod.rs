@@ -6,6 +6,7 @@ pub mod client;
 pub mod credentials;
 mod login;
 mod publish;
+mod pull;
 
 use crate::output::Console;
 
@@ -19,6 +20,7 @@ pub fn run(argv: &[String], env: Env, console: &mut Console) -> i32 {
         "login" => login::login(rest, env, console),
         "logout" => login::logout(rest, env, console),
         "publish" => publish::publish(rest, env, console),
+        "pull" => pull::pull(rest, env, console),
         other => {
             console.err(&format!("curl-runner {other} is not available yet."));
             1

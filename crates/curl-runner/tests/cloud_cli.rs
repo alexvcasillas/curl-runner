@@ -817,3 +817,440 @@ fn publish_dry_run_lists_collections_once() {
     assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
     assert_eq!(calls.lock().unwrap().len(), 1);
 }
+
+// ---- pull ----
+
+use curl_runner_cloud_proto::file_hash;
+
+fn snap_json(version: u32, files: &[(&str, &str)], inputs: &str) -> String {
+    let files: Vec<serde_json::Value> = files
+        .iter()
+        .map(|(p, t)| serde_json::json!({"path": p, "text": t}))
+        .collect();
+    format!(
+        r#"{{"info":{{"team":"acme","collection":"payments-api","name":"Payments API","description":null,"version":{version},"updated_at":"2026-01-01T00:00:00Z","request_count":{n},"access":"public"}},"files":{files},"inputs":{inputs}}}"#,
+        n = files.len(),
+        files = serde_json::Value::Array(files),
+    )
+}
+
+/// Serves one snapshot at a mutable version.
+fn shared_api(current: Arc<Mutex<(u32, String)>>) -> (TestServer, Calls) {
+    fake(move |r, _| {
+        let g = current.lock().unwrap();
+        match r.url.as_str() {
+            "/v1/shared/tok123/snapshot" => json(200, &g.1),
+            "/v1/shared/tok123/versions/latest" => {
+                json(200, &format!(r#"{{"version":{},"hash":"h"}}"#, g.0))
+            }
+            _ => json(404, r#"{"error":"not_found","message":"Nope."}"#),
+        }
+    })
+}
+
+fn pull_cmd(home: &std::path::Path, server: &str, cwd: &std::path::Path) -> Command {
+    let mut c = cmd(home, server);
+    c.env("CURL_RUNNER_TEST_NO_SLEEP", "1")
+        .current_dir(cwd)
+        .arg("pull");
+    c
+}
+
+const INPUTS: &str = r#"[{"name":"BASE_URL","description":"Where the API lives","secret":false,"required":true,"locked":false,"default":"https://api.example.com"},{"name":"API_KEY","description":null,"secret":true,"required":true,"locked":false,"default":null}]"#;
+
+fn state_of(dir: &std::path::Path) -> serde_json::Value {
+    serde_json::from_str(&std::fs::read_to_string(dir.join(".curl-runner/pull.json")).unwrap())
+        .unwrap()
+}
+
+fn pulled_v1() -> (TestServer, Arc<Mutex<(u32, String)>>, tempfile::TempDir) {
+    let cur = Arc::new(Mutex::new((
+        1,
+        snap_json(1, &[("a.yaml", "a1"), ("sub/b.yaml", "b1")], INPUTS),
+    )));
+    let (srv, _) = shared_api(cur.clone());
+    let cwd = tempfile::tempdir().unwrap();
+    pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .args([&format!("{}/s/tok123", srv.base_url), "out"])
+        .assert()
+        .success();
+    (srv, cur, cwd)
+}
+
+#[test]
+fn pull_public_writes_files_env_example_and_state() {
+    let (srv, calls) = shared_api(Arc::new(Mutex::new((
+        3,
+        snap_json(3, &[("a.yaml", "a1"), ("sub/b.yaml", "b1")], INPUTS),
+    ))));
+    let cwd = tempfile::tempdir().unwrap();
+    let out = pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .arg(format!("{}/s/tok123", srv.base_url))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let out = String::from_utf8(out).unwrap();
+    assert!(
+        out.contains("Pulled Payments API v3 into payments-api. Fill in .env (see .env.example), then run curl-runner payments-api."),
+        "{out}"
+    );
+    let d = cwd.path().join("payments-api");
+    assert_eq!(std::fs::read_to_string(d.join("a.yaml")).unwrap(), "a1");
+    assert_eq!(std::fs::read_to_string(d.join("sub/b.yaml")).unwrap(), "b1");
+    assert_eq!(
+        std::fs::read_to_string(d.join(".env.example")).unwrap(),
+        "# Where the API lives\nBASE_URL=https://api.example.com\nAPI_KEY=\n"
+    );
+    let st = state_of(&d);
+    assert_eq!(st["server"], srv.base_url);
+    assert_eq!(st["token"], "tok123");
+    assert_eq!(st["version"], 3);
+    assert_eq!(st["files"]["a.yaml"], file_hash("a1"));
+    assert_eq!(st["files"]["sub/b.yaml"], file_hash("b1"));
+    assert!(!d.join(".curl-runner/staging").exists());
+    assert_eq!(calls.lock().unwrap()[0].2, None);
+}
+
+#[test]
+fn pull_into_nonempty_dir_refuses() {
+    let (srv, calls) = shared_api(Arc::new(Mutex::new((
+        1,
+        snap_json(1, &[("a.yaml", "x")], "[]"),
+    ))));
+    let cwd = tempfile::tempdir().unwrap();
+    std::fs::create_dir(cwd.path().join("out")).unwrap();
+    std::fs::write(cwd.path().join("out/mine.txt"), "mine").unwrap();
+    let o = pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .args([&format!("{}/s/tok123", srv.base_url), "out"])
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    assert!(stderr(&o).contains("out isn't empty. Pass an empty folder."));
+    assert!(calls.lock().unwrap().is_empty());
+    assert!(!cwd.path().join("out/a.yaml").exists());
+    // The default folder is checked after the snapshot names it.
+    std::fs::create_dir(cwd.path().join("payments-api")).unwrap();
+    std::fs::write(cwd.path().join("payments-api/mine.txt"), "mine").unwrap();
+    let o = pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .arg(format!("{}/s/tok123", srv.base_url))
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    assert!(stderr(&o).contains("payments-api isn't empty."));
+}
+
+#[test]
+fn pull_update_same_version_up_to_date() {
+    let (srv, cur, cwd) = pulled_v1();
+    let before = std::fs::read(cwd.path().join("out/.curl-runner/pull.json")).unwrap();
+    let _ = cur;
+    let out = pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .arg("out")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert!(String::from_utf8(out).unwrap().contains("Up to date (v1)."));
+    assert_eq!(
+        std::fs::read(cwd.path().join("out/.curl-runner/pull.json")).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn pull_update_replaces_and_removes() {
+    let (srv, cur, cwd) = pulled_v1();
+    *cur.lock().unwrap() = (
+        2,
+        snap_json(2, &[("a.yaml", "a2"), ("c.yaml", "c2")], INPUTS),
+    );
+    // No local edits: updating inside the folder needs no link.
+    let out = pull_cmd(
+        &cwd.path().join("h"),
+        &srv.base_url,
+        &cwd.path().join("out"),
+    )
+    .assert()
+    .success()
+    .get_output()
+    .stdout
+    .clone();
+    assert!(
+        String::from_utf8(out)
+            .unwrap()
+            .contains("Updated Payments API to v2")
+    );
+    let d = cwd.path().join("out");
+    assert_eq!(std::fs::read_to_string(d.join("a.yaml")).unwrap(), "a2");
+    assert_eq!(std::fs::read_to_string(d.join("c.yaml")).unwrap(), "c2");
+    assert!(!d.join("sub/b.yaml").exists());
+    assert!(!d.join("sub").exists());
+    let st = state_of(&d);
+    assert_eq!(st["version"], 2);
+    assert!(st["files"].get("sub/b.yaml").is_none());
+}
+
+#[test]
+fn pull_with_local_edits_refuses_without_force() {
+    let (srv, cur, cwd) = pulled_v1();
+    std::fs::write(cwd.path().join("out/a.yaml"), "my edit").unwrap();
+    *cur.lock().unwrap() = (2, snap_json(2, &[("a.yaml", "a2")], INPUTS));
+    let o = pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .arg("out")
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    let err = stderr(&o);
+    assert!(err.contains("a.yaml"), "{err}");
+    assert!(err.contains("--force"));
+    assert_eq!(
+        std::fs::read_to_string(cwd.path().join("out/a.yaml")).unwrap(),
+        "my edit"
+    );
+    assert_eq!(state_of(&cwd.path().join("out"))["version"], 1);
+}
+
+#[test]
+fn pull_deleted_file_counts_as_an_edit() {
+    let (srv, cur, cwd) = pulled_v1();
+    std::fs::remove_file(cwd.path().join("out/a.yaml")).unwrap();
+    *cur.lock().unwrap() = (2, snap_json(2, &[("a.yaml", "a2")], INPUTS));
+    let o = pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .arg("out")
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    assert!(stderr(&o).contains("a.yaml"));
+}
+
+#[test]
+fn pull_force_overwrites() {
+    let (srv, cur, cwd) = pulled_v1();
+    std::fs::write(cwd.path().join("out/a.yaml"), "my edit").unwrap();
+    *cur.lock().unwrap() = (2, snap_json(2, &[("a.yaml", "a2")], INPUTS));
+    pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .args(["out", "--force"])
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read_to_string(cwd.path().join("out/a.yaml")).unwrap(),
+        "a2"
+    );
+}
+
+#[test]
+fn pull_never_touches_dotenv() {
+    let (srv, cur, cwd) = pulled_v1();
+    std::fs::write(cwd.path().join("out/.env"), "API_KEY=secret").unwrap();
+    std::fs::write(cwd.path().join("out/notes.txt"), "mine").unwrap();
+    *cur.lock().unwrap() = (2, snap_json(2, &[("a.yaml", "a2")], INPUTS));
+    pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .arg("out")
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read_to_string(cwd.path().join("out/.env")).unwrap(),
+        "API_KEY=secret"
+    );
+    assert_eq!(
+        std::fs::read_to_string(cwd.path().join("out/notes.txt")).unwrap(),
+        "mine"
+    );
+}
+
+#[test]
+fn pull_restricted_403_prints_team_message() {
+    let (srv, _) = fake(|_, _| {
+        json(
+            403,
+            r#"{"error":"forbidden","message":"This collection is only for members of acme."}"#,
+        )
+    });
+    let cwd = tempfile::tempdir().unwrap();
+    let o = pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .arg(format!("{}/s/tok123", srv.base_url))
+        .assert()
+        .code(2)
+        .get_output()
+        .clone();
+    assert!(stderr(&o).contains("This collection is only for members of acme."));
+    assert!(!cwd.path().join("payments-api").exists());
+}
+
+#[test]
+fn pull_restricted_401_without_tty_exits_2() {
+    let (srv, calls) = fake(|_, _| json(401, r#"{"error":"unauthorized","message":"Sign in."}"#));
+    let cwd = tempfile::tempdir().unwrap();
+    let o = pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .arg(format!("{}/s/tok123", srv.base_url))
+        .assert()
+        .code(2)
+        .get_output()
+        .clone();
+    assert!(stderr(&o).contains("curl-runner login"));
+    assert_eq!(calls.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn pull_parses_deep_link() {
+    let cur = Arc::new(Mutex::new((1, snap_json(1, &[("a.yaml", "a1")], "[]"))));
+    let (srv, calls) = shared_api(cur);
+    let cwd = tempfile::tempdir().unwrap();
+    let link = format!(
+        "curl-runner://open?server={}&share=tok123",
+        srv.base_url.replace(':', "%3A").replace('/', "%2F")
+    );
+    // The configured server is somewhere else: the link's server is used.
+    pull_cmd(&cwd.path().join("h"), "http://127.0.0.1:1", cwd.path())
+        .arg(link)
+        .assert()
+        .success();
+    assert!(cwd.path().join("payments-api/a.yaml").exists());
+    assert_eq!(calls.lock().unwrap()[0].1, "/v1/shared/tok123/snapshot");
+}
+
+#[test]
+fn pull_sends_the_token_only_to_the_server_it_belongs_to() {
+    let cur = Arc::new(Mutex::new((1, snap_json(1, &[("a.yaml", "a1")], "[]"))));
+    let (srv, calls) = shared_api(cur);
+    let cwd = tempfile::tempdir().unwrap();
+    let home = cwd.path().join("h");
+    let link = format!(
+        "curl-runner://open?server={}&share=tok123",
+        srv.base_url.replace(':', "%3A").replace('/', "%2F")
+    );
+    // An env token and a saved session for another server are not sent.
+    let (other, _) = fake_api(true);
+    login_ok(&home, &other.base_url);
+    let creds: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(creds_path(&home)).unwrap()).unwrap();
+    pull_cmd(&home, &other.base_url, cwd.path())
+        .env("CURL_RUNNER_TOKEN", "crt_other")
+        .arg(&link)
+        .assert()
+        .success();
+    assert_eq!(calls.lock().unwrap()[0].2, None);
+    // A saved session for the link's own server is.
+    let mut creds = creds;
+    creds["servers"][&srv.base_url] =
+        serde_json::json!({"session": "crs_for_link", "email": "dev@example.com"});
+    std::fs::write(creds_path(&home), creds.to_string()).unwrap();
+    let out = tempfile::tempdir().unwrap();
+    pull_cmd(&home, &other.base_url, out.path())
+        .arg(&link)
+        .assert()
+        .success();
+    let seen = calls.lock().unwrap();
+    assert_eq!(
+        seen.last().unwrap().2.as_deref(),
+        Some("Bearer crs_for_link")
+    );
+}
+
+#[test]
+fn pull_unsafe_path_writes_nothing() {
+    let (srv, _) = shared_api(Arc::new(Mutex::new((
+        1,
+        snap_json(1, &[("a.yaml", "ok"), ("../evil.yaml", "x")], "[]"),
+    ))));
+    let cwd = tempfile::tempdir().unwrap();
+    let o = pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .arg(format!("{}/s/tok123", srv.base_url))
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    assert!(
+        stderr(&o)
+            .contains("The server sent an unsafe file path: ../evil.yaml. Nothing was written.")
+    );
+    assert!(!cwd.path().join("payments-api").exists());
+    assert!(!cwd.path().join("evil.yaml").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn pull_update_never_writes_through_a_symlink() {
+    let (srv, cur, cwd) = pulled_v1();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::remove_dir_all(cwd.path().join("out/sub")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), cwd.path().join("out/sub")).unwrap();
+    *cur.lock().unwrap() = (
+        2,
+        snap_json(2, &[("a.yaml", "a2"), ("sub/b.yaml", "b2")], INPUTS),
+    );
+    pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .args(["out", "--force"])
+        .assert()
+        .code(1);
+    assert!(std::fs::read_dir(outside.path()).unwrap().next().is_none());
+    // Nothing half-applied: a.yaml is still v1 and the state is v1.
+    assert_eq!(
+        std::fs::read_to_string(cwd.path().join("out/a.yaml")).unwrap(),
+        "a1"
+    );
+    assert_eq!(state_of(&cwd.path().join("out"))["version"], 1);
+}
+
+#[test]
+fn pull_dead_link_says_so() {
+    let (srv, _) = fake(|_, _| json(404, r#"{"error":"not_found","message":"Nope."}"#));
+    let cwd = tempfile::tempdir().unwrap();
+    let o = pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .arg(format!("{}/s/tok123", srv.base_url))
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    assert!(stderr(&o).contains("This link doesn't work. It may have been reset or expired."));
+}
+
+#[test]
+fn pull_unreachable_exits_5_after_retries() {
+    let cwd = tempfile::tempdir().unwrap();
+    let o = pull_cmd(&cwd.path().join("h"), "http://127.0.0.1:1", cwd.path())
+        .arg("curl-runner://open?server=http%3A%2F%2F127.0.0.1%3A1&share=tok123")
+        .assert()
+        .code(5)
+        .get_output()
+        .clone();
+    assert!(stderr(&o).contains("Retrying"));
+}
+
+#[test]
+fn pull_landing_link_finds_the_api_through_well_known() {
+    let cur = Arc::new(Mutex::new((1, snap_json(1, &[("a.yaml", "a1")], "[]"))));
+    let (api, _) = shared_api(cur);
+    let api_url = api.base_url.clone();
+    let (landing, calls) = fake(move |_, _| json(200, &format!(r#"{{"api":"{api_url}"}}"#)));
+    let cwd = tempfile::tempdir().unwrap();
+    // Without the test hook, the landing host is asked.
+    pull_cmd(&cwd.path().join("h"), &api.base_url, cwd.path())
+        .env_remove("CURL_RUNNER_TEST_SERVER")
+        .arg(format!("{}/s/tok123", landing.base_url))
+        .assert()
+        .success();
+    assert_eq!(calls.lock().unwrap()[0].1, "/.well-known/curl-runner.json");
+    assert!(cwd.path().join("payments-api/a.yaml").exists());
+}
+
+#[test]
+fn pull_landing_without_well_known_exits_1() {
+    let (landing, _) = fake(|_, _| json(404, "{}"));
+    let cwd = tempfile::tempdir().unwrap();
+    let o = pull_cmd(&cwd.path().join("h"), "http://127.0.0.1:1", cwd.path())
+        .env_remove("CURL_RUNNER_TEST_SERVER")
+        .arg(format!("{}/s/tok123", landing.base_url))
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    assert!(stderr(&o).contains("Couldn't find the curl-runner server for 127.0.0.1."));
+}

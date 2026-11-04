@@ -25,11 +25,11 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 
-const EXIT_INVALID: i32 = 1;
-const EXIT_AUTH: i32 = 2;
+pub(super) const EXIT_INVALID: i32 = 1;
+pub(super) const EXIT_AUTH: i32 = 2;
 const EXIT_PLAN_LIMIT: i32 = 3;
 const EXIT_WRONG_SOURCE: i32 = 4;
-const EXIT_UNREACHABLE: i32 = 5;
+pub(super) const EXIT_UNREACHABLE: i32 = 5;
 
 const ATTEMPTS: usize = 5;
 const BASE_DELAYS: [u64; ATTEMPTS - 1] = [1, 2, 4, 8];
@@ -39,12 +39,12 @@ const TEAM_ENV: &str = "CURL_RUNNER_TEAM";
 
 /// A failed publish: what to print and the exit code.
 #[derive(Debug, PartialEq)]
-struct Fail {
-    code: i32,
-    message: String,
+pub(super) struct Fail {
+    pub(super) code: i32,
+    pub(super) message: String,
 }
 
-fn fail(code: i32, message: impl Into<String>) -> Fail {
+pub(super) fn fail(code: i32, message: impl Into<String>) -> Fail {
     Fail {
         code,
         message: message.into(),
@@ -214,16 +214,24 @@ fn jitter_unit() -> f64 {
 }
 
 /// A client that retries transport errors, 5xx and 429.
-struct Api<'a> {
+pub(super) struct Api<'a> {
     client: Client,
     server: &'a str,
     sleep: bool,
 }
 
-impl Api<'_> {
+impl<'a> Api<'a> {
+    pub(super) fn new(server: &'a str, token: Option<String>, env: Env) -> Api<'a> {
+        Api {
+            client: Client::new(server, token),
+            server,
+            sleep: hook(env, NO_SLEEP_ENV, HOOKS_ENABLED).is_none(),
+        }
+    }
+
     /// One logical request. Any non-retryable HTTP status comes back as
     /// `Ok`; running out of attempts is exit 5.
-    fn request(
+    pub(super) fn request(
         &self,
         c: &mut Console,
         method: &str,
@@ -307,7 +315,7 @@ fn decode<T: DeserializeOwned>(status: u16, body: &[u8]) -> Result<T, Fail> {
 }
 
 /// The exit code for an error answer, with the server's message as-is.
-fn api_failure(status: u16, body: &[u8]) -> Fail {
+pub(super) fn api_failure(status: u16, body: &[u8]) -> Fail {
     if (300..400).contains(&status) {
         return fail(
             EXIT_UNREACHABLE,
@@ -561,11 +569,7 @@ pub fn publish(args: &[String], env: Env, console: &mut Console) -> i32 {
             return EXIT_AUTH;
         }
     };
-    let api = Api {
-        client: Client::new(&server, Some(token.clone())),
-        server: &server,
-        sleep: hook(env, NO_SLEEP_ENV, HOOKS_ENABLED).is_none(),
-    };
+    let api = Api::new(&server, Some(token.clone()), env);
     let run = |console: &mut Console| -> Result<(), Fail> {
         let team = resolve_team(opts.team.clone(), env, &token, &api, console)?;
         let git = git_meta(env);

@@ -27,7 +27,7 @@ fn prompt(message: &str, tty: bool) -> Option<String> {
     Some(line)
 }
 
-pub fn login(args: &[String], env: Env, console: &mut Console) -> i32 {
+pub(super) fn login(args: &[String], env: Env, console: &mut Console) -> i32 {
     let (server, email_flag) = match (flag_value(args, "--email"), server_from_args(args, env)) {
         (Ok(e), Ok(s)) => (s, e),
         (Err(m), _) | (_, Err(m)) => {
