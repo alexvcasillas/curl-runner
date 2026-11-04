@@ -8,7 +8,9 @@ pub mod extract;
 pub mod hash;
 pub mod info;
 pub mod mail;
+pub mod plans;
 pub mod state;
+pub mod teams;
 
 use std::future::Future;
 use std::time::Duration;
@@ -33,6 +35,7 @@ pub fn app(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/v1/info", get(info::info))
         .merge(auth::routes())
+        .merge(teams::routes())
         .fallback(not_found)
         .with_state(state)
         .layer(CorsLayer::permissive())

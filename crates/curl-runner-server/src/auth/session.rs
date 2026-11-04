@@ -117,7 +117,7 @@ struct TeamBody {
 }
 
 /// A role or plan column (checked by the schema) as its proto enum.
-fn column_enum<T: serde::de::DeserializeOwned>(value: String) -> Result<T, ApiError> {
+pub(crate) fn column_enum<T: serde::de::DeserializeOwned>(value: String) -> Result<T, ApiError> {
     serde_json::from_value(serde_json::Value::String(value)).map_err(|err| {
         tracing::error!("unexpected role or plan in the database: {err}");
         ApiError::unavailable()

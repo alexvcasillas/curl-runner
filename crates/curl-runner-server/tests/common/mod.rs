@@ -34,6 +34,8 @@ pub fn test_config(overrides: &[(&str, &str)]) -> Config {
     let mut env: HashMap<&str, &str> = HashMap::from([
         ("DATABASE_URL", "postgres://test@localhost/test"),
         ("SECRET_KEY", "test-secret-key-test-secret-key-0123"),
+        // Open by default so any signed-in test user can create a team.
+        ("SIGNUP", "open"),
     ]);
     env.extend(overrides.iter().copied());
     Config::from_env(|k| env.get(k).map(|v| (*v).to_owned())).expect("test config")
@@ -196,5 +198,19 @@ impl TestApp {
             .body(Body::empty())
             .unwrap();
         self.send(req).await
+    }
+
+    /// Create team `slug` (named after it) as the user behind `session`.
+    /// Needs a config under which that user may create teams (the default).
+    pub async fn create_team(&self, session: &str, slug: &str) {
+        let (status, body) = self
+            .request(
+                Method::POST,
+                "/v1/teams",
+                Some(serde_json::json!({"slug": slug, "name": slug})),
+                Some(session),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
     }
 }

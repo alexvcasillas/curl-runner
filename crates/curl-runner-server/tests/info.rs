@@ -9,7 +9,7 @@ use sqlx::PgPool;
 
 #[sqlx::test]
 async fn info_lists_email_only_without_oauth(pool: PgPool) {
-    let app = test_app(pool).await;
+    let app = test_app_with(pool, test_config(&[("SIGNUP", "domains")])).await;
     let (status, body) = app.request(Method::GET, "/v1/info", None, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
@@ -82,6 +82,7 @@ async fn migrations_create_every_table(pool: PgPool) {
             "oauth_states",
             "outbox_emails",
             "sessions",
+            "settings",
             "share_opens",
             "teams",
             "tokens",
