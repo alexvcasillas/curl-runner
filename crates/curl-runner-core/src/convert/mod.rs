@@ -11,6 +11,7 @@ pub mod import;
 mod jsjson;
 mod jsutil;
 mod normalizer;
+pub mod openapi;
 pub mod postman;
 mod secrets;
 mod tokenizer;
