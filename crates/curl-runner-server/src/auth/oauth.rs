@@ -53,6 +53,9 @@ pub struct StartRequest {
 #[derive(Serialize)]
 pub struct StartBody {
     url: String,
+    /// Secret for the starting browser to keep (an HttpOnly cookie) and send
+    /// back at callback, so a forged callback link cannot sign a victim in.
+    binding: String,
 }
 
 pub async fn start(
@@ -78,6 +81,7 @@ pub async fn start(
     let pepper = state.config.secret_key.as_bytes();
     let oauth_state = new_token("");
     let verifier = new_token("");
+    let binding = new_token("crb_");
     let url = state
         .oauth
         .authorize_url(
@@ -93,8 +97,8 @@ pub async fn start(
         .execute(&state.db)
         .await?;
     sqlx::query(
-        "INSERT INTO oauth_states (state_hash, provider, verifier, return_to, expires_at, client) \
-         VALUES ($1, $2, $3, $4, $5, $6)",
+        "INSERT INTO oauth_states (state_hash, provider, verifier, return_to, expires_at, client, binding_hash) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
     )
     .bind(secret_hash(pepper, &oauth_state))
     .bind(provider.as_str())
@@ -102,15 +106,18 @@ pub async fn start(
     .bind(&req.return_to)
     .bind(now + STATE_TTL)
     .bind(req.client.as_str())
+    .bind(secret_hash(pepper, &binding))
     .execute(&state.db)
     .await?;
-    Ok(Json(StartBody { url }))
+    Ok(Json(StartBody { url, binding }))
 }
 
 #[derive(Deserialize)]
 pub struct CallbackRequest {
     code: String,
     state: String,
+    /// Optional on the wire so a missing one is rejected after the state is spent.
+    binding: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -118,6 +125,8 @@ pub struct CallbackBody {
     session: String,
     user: UserBody,
     return_to: Option<String>,
+    /// `web` or `device`: for `device` the dashboard now calls `/v1/auth/handoff`.
+    client: String,
 }
 
 #[derive(sqlx::FromRow)]
@@ -125,6 +134,7 @@ struct StateRow {
     verifier: String,
     return_to: Option<String>,
     client: String,
+    binding_hash: String,
     expires_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -144,18 +154,24 @@ pub async fn callback(
     // Consume the state first: a replay, or a failed exchange, cannot retry it.
     let row: Option<StateRow> = sqlx::query_as(
         "DELETE FROM oauth_states WHERE state_hash = $1 AND provider = $2 \
-         RETURNING verifier, return_to, client, expires_at",
+         RETURNING verifier, return_to, client, binding_hash, expires_at",
     )
     .bind(secret_hash(pepper, req.state.trim()))
     .bind(provider.as_str())
     .fetch_optional(&state.db)
     .await?;
-    let row = row.filter(|r| r.expires_at > now).ok_or_else(|| {
-        ApiError::new(
-            ErrorCode::InvalidRequest,
-            "That sign-in has expired. Start again.",
-        )
-    })?;
+    let row = row
+        .filter(|r| {
+            r.expires_at > now
+                && r.binding_hash
+                    == secret_hash(pepper, req.binding.as_deref().unwrap_or_default().trim())
+        })
+        .ok_or_else(|| {
+            ApiError::new(
+                ErrorCode::InvalidRequest,
+                "That sign-in has expired. Start again.",
+            )
+        })?;
 
     let identity = state
         .oauth
@@ -185,7 +201,15 @@ pub async fn callback(
     .fetch_optional(&mut *tx)
     .await?;
     let user = match existing {
-        Some(user) => user,
+        Some(user) => {
+            sqlx::query("UPDATE identities SET email = $3 WHERE provider = $1 AND subject = $2")
+                .bind(provider.as_str())
+                .bind(&identity.subject)
+                .bind(&email)
+                .execute(&mut *tx)
+                .await?;
+            user
+        }
         None => {
             // Link to the user with this (provider-verified) email, or create one.
             let user: UserBody = sqlx::query_as(
@@ -211,12 +235,13 @@ pub async fn callback(
             user
         }
     };
-    let session = create_session(&mut tx, &state, user.id, &row.client, None).await?;
+    let session = create_session(&mut tx, &state, user.id, "web", None).await?;
     tx.commit().await?;
     Ok(Json(CallbackBody {
         session,
         user,
         return_to: row.return_to,
+        client: row.client,
     }))
 }
 

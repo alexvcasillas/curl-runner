@@ -16,6 +16,12 @@ async fn post(app: &TestApp, path: &str, body: Value, bearer: Option<&str>) -> (
 
 /// Start sign-in and return (state, consent url).
 async fn start(app: &TestApp, provider: &str, client: &str) -> (String, String) {
+    let (state, url, _) = start_bound(app, provider, client).await;
+    (state, url)
+}
+
+/// Like [`start`], also returning the binding.
+async fn start_bound(app: &TestApp, provider: &str, client: &str) -> (String, String, String) {
     let (status, body) = post(
         app,
         &format!("/v1/auth/oauth/{provider}/start"),
@@ -25,7 +31,18 @@ async fn start(app: &TestApp, provider: &str, client: &str) -> (String, String) 
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let url = body["url"].as_str().unwrap().to_owned();
-    (query_param(&url, "state"), url)
+    let binding = body["binding"].as_str().unwrap().to_owned();
+    assert!(binding.starts_with("crb_"));
+    BINDINGS.with(|b| {
+        b.borrow_mut()
+            .insert(query_param(&url, "state"), binding.clone())
+    });
+    (query_param(&url, "state"), url, binding)
+}
+
+thread_local! {
+    static BINDINGS: std::cell::RefCell<std::collections::HashMap<String, String>> =
+        Default::default();
 }
 
 fn query_param(url: &str, name: &str) -> String {
@@ -37,11 +54,15 @@ fn query_param(url: &str, name: &str) -> String {
         .unwrap_or_else(|| panic!("no {name} in {url}"))
 }
 
+fn binding_for(state: &str) -> String {
+    BINDINGS.with(|b| b.borrow().get(state).cloned().unwrap_or_default())
+}
+
 async fn callback(app: &TestApp, provider: &str, state: &str) -> (StatusCode, Value) {
     post(
         app,
         &format!("/v1/auth/oauth/{provider}/callback"),
-        json!({"code": "provider-code", "state": state}),
+        json!({"code": "provider-code", "state": state, "binding": binding_for(state)}),
         None,
     )
     .await
@@ -169,22 +190,26 @@ async fn callback_creates_user_and_identity(pool: PgPool) {
     let app = test_app(pool).await;
     app.providers
         .set_identity("583231", "Jane@Example.com", Some("Jane Doe"));
-    let (state, url) = post(
+    let body = post(
         &app,
         "/v1/auth/oauth/github/start",
         json!({"client": "web", "return_to": "/teams/acme"}),
         None,
     )
     .await
-    .1["url"]
-        .as_str()
-        .map(|u| (query_param(u, "state"), u.to_owned()))
-        .unwrap();
+    .1;
+    let url = body["url"].as_str().unwrap().to_owned();
+    let state = query_param(&url, "state");
+    BINDINGS.with(|b| {
+        b.borrow_mut()
+            .insert(state.clone(), body["binding"].as_str().unwrap().to_owned())
+    });
     let (status, body) = callback(&app, "github", &state).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["user"]["email"], "jane@example.com");
     assert_eq!(body["user"]["name"], "Jane Doe");
     assert_eq!(body["return_to"], "/teams/acme");
+    assert_eq!(body["client"], "web");
     let token = body["session"].as_str().unwrap();
     assert!(token.starts_with("crs_"));
 
@@ -217,18 +242,96 @@ async fn callback_creates_user_and_identity(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn device_client_gets_a_device_session(pool: PgPool) {
+async fn device_flow_ends_in_a_device_session(pool: PgPool) {
     let app = test_app(pool).await;
     app.providers.set_identity("1088", "jane@example.com", None);
     let (state, _) = start(&app, "google", "device").await;
     let (status, body) = callback(&app, "google", &state).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["return_to"], Value::Null);
-    let kind: String = sqlx::query_scalar("SELECT kind FROM sessions")
-        .fetch_one(&app.state.db)
-        .await
-        .unwrap();
-    assert_eq!(kind, "device");
+    assert_eq!(body["client"], "device");
+    let web = body["session"].as_str().unwrap();
+    let (status, body) = post(
+        &app,
+        "/v1/auth/handoff",
+        json!({"session_label": "CLI"}),
+        Some(web),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = post(
+        &app,
+        "/v1/auth/handoff/redeem",
+        json!({"code": body["code"]}),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let device = body["session"].as_str().unwrap();
+    let label: Option<String> =
+        sqlx::query_scalar("SELECT label FROM sessions WHERE kind = 'device'")
+            .fetch_one(&app.state.db)
+            .await
+            .unwrap();
+    assert_eq!(label.as_deref(), Some("CLI"));
+    let (status, _) = app.request(Method::GET, "/v1/me", None, Some(device)).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[sqlx::test]
+async fn wrong_or_missing_binding_rejected_and_state_consumed(pool: PgPool) {
+    let app = test_app(pool).await;
+    app.providers.set_identity("1", "jane@example.com", None);
+    let (state, _, binding) = start_bound(&app, "github", "web").await;
+    let path = "/v1/auth/oauth/github/callback";
+    let (status, body) = post(
+        &app,
+        path,
+        json!({"code": "c", "state": state, "binding": "crb_wrong"}),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
+    assert_eq!(count(&app, "oauth_states").await, 0);
+    // The right binding is too late: the state is gone.
+    let (status, _) = post(
+        &app,
+        path,
+        json!({"code": "c", "state": state, "binding": binding}),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(count(&app, "users").await, 0);
+
+    let (state, _, _) = start_bound(&app, "github", "web").await;
+    let (status, _) = post(&app, path, json!({"code": "c", "state": state}), None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(count(&app, "oauth_states").await, 0);
+}
+
+#[sqlx::test]
+async fn handoff_redeem_is_rate_limited_per_ip(pool: PgPool) {
+    let app = test_app(pool).await;
+    for _ in 0..20 {
+        let (status, _) = app
+            .request_with_ip(
+                "/v1/auth/handoff/redeem",
+                json!({"code": "crh_x"}),
+                "7.7.7.7",
+            )
+            .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+    let (status, _) = app
+        .request_with_ip(
+            "/v1/auth/handoff/redeem",
+            json!({"code": "crh_x"}),
+            "7.7.7.7",
+        )
+        .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
 }
 
 #[sqlx::test]
@@ -266,6 +369,11 @@ async fn known_identity_signs_in_even_if_its_email_changed(pool: PgPool) {
     assert_eq!(second["user"]["id"], first["user"]["id"]);
     assert_eq!(count(&app, "users").await, 1);
     assert_eq!(count(&app, "identities").await, 1);
+    let email: String = sqlx::query_scalar("SELECT email::text FROM identities")
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(email, "jane@new.example.com");
 }
 
 #[sqlx::test]

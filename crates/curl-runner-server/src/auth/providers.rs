@@ -5,7 +5,6 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Mutex;
 use std::time::Duration;
 
 use reqwest::Url;
@@ -293,111 +292,120 @@ impl OAuthProviders for RealProviders {
     }
 }
 
-/// What a [`FakeProviders`] exchange saw last.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SeenExchange {
-    pub provider: Provider,
-    pub code: String,
-    pub verifier: String,
-    pub redirect_uri: String,
-}
+#[cfg(any(test, feature = "db-tests"))]
+mod fake {
+    use super::*;
+    use std::sync::Mutex;
 
-struct FakeState {
-    configured: Vec<Provider>,
-    result: Result<VerifiedIdentity, String>,
-    seen: Option<SeenExchange>,
-}
-
-/// Test double: every code exchanges to the identity set by the test, or to an
-/// error. Both providers are configured until [`only_configured`] says otherwise.
-///
-/// [`only_configured`]: FakeProviders::only_configured
-pub struct FakeProviders {
-    inner: Mutex<FakeState>,
-}
-
-impl Default for FakeProviders {
-    fn default() -> Self {
-        Self::new()
+    /// What a [`FakeProviders`] exchange saw last.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct SeenExchange {
+        pub provider: Provider,
+        pub code: String,
+        pub verifier: String,
+        pub redirect_uri: String,
     }
-}
 
-impl FakeProviders {
-    pub fn new() -> Self {
-        Self {
-            inner: Mutex::new(FakeState {
-                configured: vec![Provider::Github, Provider::Google],
-                result: Err("no identity set".to_owned()),
-                seen: None,
-            }),
+    struct FakeState {
+        configured: Vec<Provider>,
+        result: Result<VerifiedIdentity, String>,
+        seen: Option<SeenExchange>,
+    }
+
+    /// Test double: every code exchanges to the identity set by the test, or to an
+    /// error. Both providers are configured until [`only_configured`] says otherwise.
+    ///
+    /// [`only_configured`]: FakeProviders::only_configured
+    pub struct FakeProviders {
+        inner: Mutex<FakeState>,
+    }
+
+    impl Default for FakeProviders {
+        fn default() -> Self {
+            Self::new()
         }
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, FakeState> {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    pub fn only_configured(&self, providers: &[Provider]) {
-        self.lock().configured = providers.to_vec();
-    }
-
-    pub fn set_identity(&self, subject: &str, email: &str, name: Option<&str>) {
-        self.lock().result = Ok(VerifiedIdentity {
-            subject: subject.to_owned(),
-            email: email.to_owned(),
-            name: name.map(str::to_owned),
-        });
-    }
-
-    pub fn set_error(&self, message: &str) {
-        self.lock().result = Err(message.to_owned());
-    }
-
-    pub fn last_exchange(&self) -> Option<SeenExchange> {
-        self.lock().seen.clone()
-    }
-}
-
-impl OAuthProviders for FakeProviders {
-    fn authorize_url(
-        &self,
-        provider: Provider,
-        state: &str,
-        challenge: &str,
-        redirect_uri: &str,
-    ) -> Option<String> {
-        if !self.lock().configured.contains(&provider) {
-            return None;
+    impl FakeProviders {
+        pub fn new() -> Self {
+            Self {
+                inner: Mutex::new(FakeState {
+                    configured: vec![Provider::Github, Provider::Google],
+                    result: Err("no identity set".to_owned()),
+                    seen: None,
+                }),
+            }
         }
-        Some(authorize_url(
-            &format!("https://{}.example.com/authorize", provider.as_str()),
-            "fake",
-            "fake-client",
-            state,
-            challenge,
-            redirect_uri,
-        ))
-    }
 
-    fn exchange<'a>(
-        &'a self,
-        provider: Provider,
-        code: &'a str,
-        verifier: &'a str,
-        redirect_uri: &'a str,
-    ) -> ExchangeFuture<'a> {
-        Box::pin(async move {
-            let mut inner = self.lock();
-            inner.seen = Some(SeenExchange {
-                provider,
-                code: code.to_owned(),
-                verifier: verifier.to_owned(),
-                redirect_uri: redirect_uri.to_owned(),
+        fn lock(&self) -> std::sync::MutexGuard<'_, FakeState> {
+            self.inner.lock().unwrap_or_else(|e| e.into_inner())
+        }
+
+        pub fn only_configured(&self, providers: &[Provider]) {
+            self.lock().configured = providers.to_vec();
+        }
+
+        pub fn set_identity(&self, subject: &str, email: &str, name: Option<&str>) {
+            self.lock().result = Ok(VerifiedIdentity {
+                subject: subject.to_owned(),
+                email: email.to_owned(),
+                name: name.map(str::to_owned),
             });
-            inner.result.clone()
-        })
+        }
+
+        pub fn set_error(&self, message: &str) {
+            self.lock().result = Err(message.to_owned());
+        }
+
+        pub fn last_exchange(&self) -> Option<SeenExchange> {
+            self.lock().seen.clone()
+        }
+    }
+
+    impl OAuthProviders for FakeProviders {
+        fn authorize_url(
+            &self,
+            provider: Provider,
+            state: &str,
+            challenge: &str,
+            redirect_uri: &str,
+        ) -> Option<String> {
+            if !self.lock().configured.contains(&provider) {
+                return None;
+            }
+            Some(authorize_url(
+                &format!("https://{}.example.com/authorize", provider.as_str()),
+                "fake",
+                "fake-client",
+                state,
+                challenge,
+                redirect_uri,
+            ))
+        }
+
+        fn exchange<'a>(
+            &'a self,
+            provider: Provider,
+            code: &'a str,
+            verifier: &'a str,
+            redirect_uri: &'a str,
+        ) -> ExchangeFuture<'a> {
+            Box::pin(async move {
+                let mut inner = self.lock();
+                inner.seen = Some(SeenExchange {
+                    provider,
+                    code: code.to_owned(),
+                    verifier: verifier.to_owned(),
+                    redirect_uri: redirect_uri.to_owned(),
+                });
+                inner.result.clone()
+            })
+        }
     }
 }
+
+#[cfg(any(test, feature = "db-tests"))]
+pub use fake::{FakeProviders, SeenExchange};
 
 #[cfg(test)]
 mod tests {

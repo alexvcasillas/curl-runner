@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::auth::session::{UserAuth, UserBody, create_session};
 use crate::error::ApiError;
-use crate::extract::ApiJson;
+use crate::extract::{ApiJson, ClientIp};
 use crate::hash::{new_token, secret_hash};
 use crate::state::AppState;
 
@@ -89,8 +89,14 @@ pub struct RedeemBody {
 
 pub async fn redeem(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     ApiJson(req): ApiJson<RedeemRequest>,
 ) -> Result<Json<RedeemBody>, ApiError> {
+    state.limiter.check(
+        &format!("handoff-redeem:ip:{ip}"),
+        20,
+        Duration::minutes(15),
+    )?;
     let now = state.clock.now();
     let mut tx = state.db.begin().await?;
     // Deleting is the single-use guarantee: only one caller gets the row.
