@@ -1,3 +1,4 @@
+pub mod cloud;
 pub mod condition;
 pub mod config;
 pub mod convert;

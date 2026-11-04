@@ -1,14 +1,48 @@
-# Runs the curl-runner server from the prebuilt image on GHCR.
+# Runs the curl-runner server from the prebuilt image on GHCR, with Postgres.
 # Coolify deploys this file; the image is built by .github/workflows/server.yml.
 # Without Coolify, create the network first with `docker network create coolify`
-# or remove the `networks` keys below.
+# or remove the `coolify` entries below. Postgres sits only on the private
+# `internal` network.
+#
+# Required: POSTGRES_PASSWORD and SECRET_KEY (32+ bytes). Everything else is
+# optional; an unset value falls back to the server's default.
 services:
   server:
     image: ghcr.io/alexvcasillas/curl-runner-server:${SERVER_IMAGE_TAG:-latest}
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
       PORT: ${PORT:-8080}
       RUST_LOG: ${RUST_LOG:-info}
+      # Postgres parts, not a URL, so the password needs no escaping.
+      # A distinctive alias on the private network, so no other stack's `db`
+      # on the shared coolify network can answer.
+      DB_HOST: curl-runner-db
+      DB_USER: curl_runner
+      DB_NAME: curl_runner
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      # Set only to use an external Postgres instead of `db`.
+      DATABASE_URL: ${DATABASE_URL:-}
+      SECRET_KEY: ${SECRET_KEY:?}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      SIGNUP: ${SIGNUP:-}
+      SIGNUP_DOMAINS: ${SIGNUP_DOMAINS:-}
+      OPERATOR_EMAILS: ${OPERATOR_EMAILS:-}
+      TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-}
     networks:
+      - internal
       - coolify
     healthcheck:
       test: ["CMD", "/curl-runner-server", "healthcheck"]
@@ -18,6 +52,31 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: curl_runner
+      POSTGRES_USER: curl_runner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    # Private: only the server reaches Postgres. Not on the shared network.
+    networks:
+      internal:
+        aliases:
+          - curl-runner-db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U curl_runner -d curl_runner"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  db-data:
+
 networks:
+  internal:
   coolify:
     external: true
