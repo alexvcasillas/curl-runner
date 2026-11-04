@@ -62,16 +62,33 @@ const PREFIX =
 const HEADLINE = /^\*\*(.+?)\*\*[ \t]*(?:\n|$)/;
 
 const TAGGED_ITEM = /^[-*] \*\*(new|improved|fixed|breaking):\*\*[ \t]*(.*)$/i;
+const BLOCK_START = /^\s*(?:```|~~~|#{1,6}\s|[-*+] |\d+[.)] )/;
+const FENCE_LINE = /^\s*(```|~~~)/;
 
 /**
- * Splits an entry body into a lead, the contiguous run of `- **Tag:** text`
- * items, and the notes after it. Blank lines and untagged bullets between
- * tagged items do not end the run; the first non-list block after it starts
- * the notes. Without tagged items the whole body is the lead.
+ * Splits an entry body into a lead, the run of `- **Tag:** text` items, and
+ * the notes after it. The run is only consecutive tagged items with their
+ * indented or wrapped continuation lines and the blank lines between them.
+ * Anything else (an untagged bullet, a fence, a heading, a paragraph) ends the
+ * run, and it plus everything after it is the notes. Tagged-looking lines
+ * inside fenced code are ignored. Without tagged items the whole body is the lead.
  */
 export function splitEntry(body: string): { lead: string; items: ChangeItem[]; notes: string } {
   const lines = body.split('\n');
-  const first = lines.findIndex((line) => TAGGED_ITEM.test(line));
+  let first = -1;
+  let fence: string | null = null;
+  for (let n = 0; n < lines.length && first === -1; n++) {
+    const marker = lines[n].match(FENCE_LINE)?.[1];
+    if (fence) {
+      if (marker === fence) {
+        fence = null;
+      }
+    } else if (marker) {
+      fence = marker;
+    } else if (TAGGED_ITEM.test(lines[n])) {
+      first = n;
+    }
+  }
   if (first === -1) {
     return { lead: body.trim(), items: [], notes: '' };
   }
@@ -89,17 +106,11 @@ export function splitEntry(body: string): { lead: string; items: ChangeItem[]; n
       sawBlank = false;
     } else if (line.trim() === '') {
       sawBlank = true;
-    } else if (/^[-*] /.test(line)) {
-      // An untagged bullet inside the run: part of the previous item.
-      parts[parts.length - 1].push(line.replace(/^[-*] /, '').trim());
-      sawBlank = false;
+    } else if (BLOCK_START.test(line)) {
+      break;
     } else if (/^\s/.test(line) || !sawBlank) {
-      // Indented, or a lazy continuation of the previous line. An unindented
-      // fence opener is a note.
-      if (/^(```|~~~)/.test(line)) {
-        break;
-      }
       parts[parts.length - 1].push(line.trim());
+      sawBlank = false;
     } else {
       break;
     }

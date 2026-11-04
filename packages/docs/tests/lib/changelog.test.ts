@@ -252,10 +252,45 @@ describe('splitEntry', () => {
     expect(result.items).toEqual([{ tag: 'new', text: 'x' }]);
   });
 
-  it('does not end the run on blank lines or untagged items between tagged ones', () => {
-    const result = splitEntry('- **New:** a\n\n- plain\n\n- **Fixed:** b\n\nNotes here.');
+  it('keeps blank lines between tagged items inside the run', () => {
+    const result = splitEntry('- **New:** a\n\n- **Fixed:** b\n\nNotes here.');
     expect(result.items.map((i) => i.tag)).toEqual(['new', 'fixed']);
     expect(result.notes).toBe('Notes here.');
+  });
+
+  it('sends a trailing untagged list to the notes', () => {
+    const result = splitEntry('- **New:** a\n\n- step 1\n- step 2');
+    expect(result.items).toEqual([{ tag: 'new', text: 'a' }]);
+    expect(result.notes).toBe('- step 1\n- step 2');
+  });
+
+  it('ends the run at an untagged bullet between tagged items', () => {
+    const result = splitEntry('- **New:** a\n- plain\n- **Fixed:** b');
+    expect(result.items).toEqual([{ tag: 'new', text: 'a' }]);
+    expect(result.notes).toBe('- plain\n- **Fixed:** b');
+  });
+
+  it('ends the run at an unindented or indented fence', () => {
+    expect(splitEntry('- **New:** a\n```sh\nx\n```').notes).toBe('```sh\nx\n```');
+    const indented = splitEntry('- **New:** a\n\n  ```sh\n  x\n  ```');
+    expect(indented.items).toEqual([{ tag: 'new', text: 'a' }]);
+    expect(indented.notes).toContain('```sh');
+  });
+
+  it('ends the run at a heading with no blank line before it', () => {
+    const result = splitEntry('- **New:** a\n### Migration: x\n\nDo this.');
+    expect(result.items).toEqual([{ tag: 'new', text: 'a' }]);
+    expect(result.notes).toBe('### Migration: x\n\nDo this.');
+  });
+
+  it('ignores tagged-looking lines inside a lead code fence', () => {
+    const result = splitEntry('```md\n- **New:** fake\n```\n\n- **Fixed:** real');
+    expect(result.items).toEqual([{ tag: 'fixed', text: 'real' }]);
+    expect(result.lead).toBe('```md\n- **New:** fake\n```');
+  });
+
+  it('accepts * bullets', () => {
+    expect(splitEntry('* **Fixed:** x').items).toEqual([{ tag: 'fixed', text: 'x' }]);
   });
 
   it('populates items per entry in parseChangelog', () => {
