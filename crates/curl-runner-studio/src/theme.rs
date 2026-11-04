@@ -3,8 +3,7 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-const TOKENS_JSON: &str =
-    include_str!("../../../docs/superpowers/specs/studio-design-system/tokens.json");
+const TOKENS_JSON: &str = include_str!("../assets/tokens.json");
 
 /// An sRGB color with straight alpha, each channel in `0.0..=1.0`.
 #[derive(Clone, Copy, Debug, PartialEq)]
