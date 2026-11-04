@@ -61,8 +61,8 @@ describe('parseChangelog on packages/cli/CHANGELOG.md', () => {
       }
     }
     const body = releases.find((r) => r.version === '2.0.0')?.entries[0].body ?? '';
-    expect(body).toMatch(/^### Runtime$/m);
-    expect(body).toMatch(/^- The CLI is now a native Rust binary/m);
+    expect(body).toMatch(/^### Migration: timeouts are now milliseconds$/m);
+    expect(body).toMatch(/^- \*\*Improved:\*\* The CLI is now a native Rust binary/m);
   });
 
   it('keeps every entry of a multi-entry release', () => {

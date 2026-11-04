@@ -87,7 +87,7 @@ describe('changelog page', () => {
     const details = article.indexOf('<details');
     expect(article.indexOf('release-migration')).toBeGreaterThan(-1);
     expect(article.indexOf('release-migration')).toBeLessThan(details);
-    expect(article.indexOf('Install changes')).toBeGreaterThan(details);
+    expect(article.indexOf('Behavior changes')).toBeGreaterThan(details);
     expect(html).not.toContain('<script');
   });
 
@@ -445,7 +445,7 @@ describe('rss.xml', () => {
     expect(xml).toContain('<title>curl-runner 2.1.0: Install with Homebrew</title>');
     expect(xml).toContain('<pubDate>Wed, 28 Oct 2026 13:42:19 GMT</pubDate>');
     expect(xml).toContain(
-      '<description>Homebrew: install with brew install alexvcasillas/tap/curl-runner (prebuilt binaries',
+      '<description>Install with Homebrew\nNew: Install with brew install alexvcasillas/tap/curl-runner (prebuilt binaries',
     );
     expect(xml).not.toContain('blazing');
   });
