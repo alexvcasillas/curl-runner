@@ -196,11 +196,7 @@ async fn create_team(
             "Creating teams is closed on this server.",
         ));
     }
-    let plan = if state.config.signup == SignupMode::Domains {
-        Plan::Team
-    } else {
-        Plan::Free
-    };
+    let plan = state.config.default_plan;
     let now = state.clock.now();
     let mut tx = state.db.begin().await?;
     let team_id: Option<Uuid> = sqlx::query_scalar(

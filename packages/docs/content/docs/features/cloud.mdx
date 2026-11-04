@@ -15,9 +15,9 @@ Cloud keeps a copy of your collection where your team and your customers can ope
 
 ## What leaves your machine [#privacy]
 
-Publishing sends the YAML files in the folder and the inputs you declare. That is all.
+Publishing sends the YAML files in the folder, the `cloud:` name, description and inputs, and the git commit, ref and repository when your CI provides them. That is all.
 
-Secret values never leave your machine. A secret input is declared by name only. Its value is set by whoever runs the collection, on their own machine. `publish` refuses to send a file that has a literal value for a secret input.
+Secret values never leave your machine. A secret input is declared by name only. Its value is set by whoever runs the collection, on their own machine. `publish` refuses to send a folder where a secret input has a literal value in a `variables` block (`global`, `collection` or top level).
 
 Files over 1 MiB, and folders over 2,000 files or 25 MiB, are refused.
 
@@ -100,10 +100,10 @@ Publishing records the commit, ref and repository from GitHub Actions or GitLab 
 | `1` | Invalid files, or a bad option. Nothing was sent. |
 | `2` | Not signed in, or the token can't publish to that team. |
 | `3` | Your plan's limit was reached. |
-| `4` | The collection is edited in Cloud, so it can't be published from git. |
+| `4` | The collection's source is the studio, not git. Switch its source to git, then publish again. |
 | `5` | The server could not be reached. |
 
-`publish` retries a failed request up to five times, waiting longer each time, before it exits with `5`.
+`publish` tries a request up to five times, waiting longer each time, before it exits with `5`.
 
 ### GitHub Action [#github-action]
 
@@ -120,13 +120,13 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: alexvcasillas/curl-runner/actions/publish@main
         with:
           token: ${{ secrets.CURL_RUNNER_TOKEN }}
           team: acme
           path: collections/*
-          version: 2.6.0
+          version: 2.5.0
 ```
 
 | Input | Default | What it does |
@@ -135,7 +135,7 @@ jobs:
 | `team` | none | The team slug. Required. |
 | `path` | `.` | Folders to publish, separated by spaces. Globs such as `collections/*` expand. |
 | `server` | `https://api.curl-runner.com` | The API URL. Set it for a self-hosted server. |
-| `version` | `latest` | The `@curl-runner/cli` version to install. |
+| `version` | `latest` | The `@curl-runner/cli` version to install. Pin the current release, as in the example. |
 
 <Callout type="warn" title="Pin it">
 `@main` moves with every commit. For a workflow that holds a token, pin the action to a commit SHA, such as `alexvcasillas/curl-runner/actions/publish@<full-commit-sha>`, and pin `version` too.
@@ -151,18 +151,18 @@ The dashboard is not out yet. Until it is, you share a collection with the API. 
 
 Each collection has a share link and an access mode: `off`, `public` or `restricted`. In `restricted` mode only the people on the access list can open the link. Restricted sharing needs the Team plan.
 
-```bash title="Make it public"
+```bash title="Restrict it"
 curl -X PATCH https://api.curl-runner.com/v1/teams/acme/collections/payments-api/share \
   -H "Authorization: Bearer $SESSION" \
   -H "Content-Type: application/json" \
-  -d '{"access": "public"}'
+  -d '{"access": "restricted"}'
 ```
 
-The reply has the link:
+Use `"public"` instead to let anyone with the link open it. The reply has the link:
 
 ```json title="Reply"
 {
-  "access": "public",
+  "access": "restricted",
   "link": "https://cloud.curl-runner.com/s/<token>",
   "expires_at": null,
   "entries": []
@@ -171,7 +171,7 @@ The reply has the link:
 
 `PATCH` also takes `expires_in_days` (`null` removes the expiry) and `reset_link: true`, which replaces the link and stops the old one working.
 
-To invite a person, add them to the access list. `notify` sends them the link by email:
+Then add people to the access list. An entry is an email, or `*@example.com` for everyone on a domain. `notify` sends an invite email, and only to email entries that are new:
 
 ```bash title="Invite someone"
 curl -X POST https://api.curl-runner.com/v1/teams/acme/collections/payments-api/share/entries \
@@ -228,6 +228,8 @@ If you changed a pulled file, `pull` asks before replacing it. Without a termina
 ```bash
 curl-runner pull [LINK] [DIR] [--force]
 ```
+
+A share link can also look like `curl-runner://open?server=<api-url>&share=<token>`. It names the server itself, so `pull` doesn't have to look it up. Use it for a self-hosted server.
 
 A collection that isn't public asks you to sign in. Run `curl-runner login --server <url>` first, or let `pull` offer it in a terminal. A `pull` writes nothing until every file passes the same path checks `publish` uses, so a bad bundle can't write outside the folder. Exit codes: `0` ok, `1` a problem with the link or the data, `2` sign-in, `5` the server can't be reached.
 

@@ -49,7 +49,7 @@ The compose file attaches the service to an external network named `coolify`, be
 docker network create coolify
 ```
 
-Or delete the two `networks` keys from `docker-compose.yaml`.
+Or remove the `coolify` entries from `docker-compose.yaml`: the top-level `coolify` network and the `coolify` line under `server`'s `networks`. Keep `internal`.
 
 ## Check it's up [#health]
 
@@ -118,19 +118,34 @@ Email codes always work. To add a provider, create an OAuth app with it and set 
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Enables sign-in with GitHub. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Enables sign-in with Google. |
 
-### Who can sign up [#signup]
+### Who can create a team [#signup]
+
+Anyone can sign in with an email code. A signed-in person who isn't in a team can still open a collection that was shared with them. `SIGNUP` decides who can create a team:
 
 | `SIGNUP` | What it does |
 | --- | --- |
-| `domains` | The default. Only emails on a domain in `SIGNUP_DOMAINS` can sign up. |
-| `open` | Anyone can sign up. |
-| `closed` | Nobody new can sign up. People who already have an account can still sign in. |
+| `domains` | The default. Only emails on a domain in `SIGNUP_DOMAINS` can create a team. |
+| `open` | Anyone who signs in can create a team. |
+| `closed` | Nobody can create a team, except operators. |
 
 `SIGNUP_DOMAINS` is a comma-separated list, such as `example.com,acme.dev`.
 
-With `SIGNUP=domains` and an empty list, the first account to sign up becomes the operator. Sign up yourself right after the first start, before you share the address.
+With `SIGNUP=domains` and an empty list, the first account becomes the operator and can create teams. Sign in yourself right after the first start, before you share the address.
 
-`OPERATOR_EMAILS` is a comma-separated list of accounts that can run operator tasks, such as changing a team's plan.
+`OPERATOR_EMAILS` is a comma-separated list of operators. Operators can always create teams and can change a team's plan.
+
+### Plans [#plans]
+
+`DEFAULT_PLAN` sets the plan of a new team: `team` or `free`. The default is `team`, which has no member limits and allows restricted sharing. Leave it unset when you self-host. The managed service sets `DEFAULT_PLAN=free`.
+
+An operator can change a team's plan later:
+
+```bash
+curl -X PUT https://api.example.com/v1/admin/teams/acme/plan \
+  -H "Authorization: Bearer $SESSION" \
+  -H "Content-Type: application/json" \
+  -d '{"plan": "team"}'
+```
 
 ```bash title="Example .env"
 POSTGRES_PASSWORD=<password>

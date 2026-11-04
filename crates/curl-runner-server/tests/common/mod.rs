@@ -36,6 +36,8 @@ pub fn test_config(overrides: &[(&str, &str)]) -> Config {
         ("SECRET_KEY", "test-secret-key-test-secret-key-0123"),
         // Open by default so any signed-in test user can create a team.
         ("SIGNUP", "open"),
+        // Free limits by default, since most tests exercise them.
+        ("DEFAULT_PLAN", "free"),
     ]);
     env.extend(overrides.iter().copied());
     Config::from_env(|k| env.get(k).map(|v| (*v).to_owned())).expect("test config")
