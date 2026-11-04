@@ -332,7 +332,7 @@ async fn lock_team(conn: &mut PgConnection, team_id: Uuid) -> Result<Plan, ApiEr
 /// Lock the team row, then read the caller's current role under the lock, so
 /// a just-removed or demoted caller cannot finish another action. A caller
 /// who is no longer a member gets `404`.
-async fn lock_as(
+pub(crate) async fn lock_as(
     conn: &mut PgConnection,
     team_id: Uuid,
     user_id: Uuid,

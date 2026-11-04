@@ -1,7 +1,9 @@
 //! Collections: listing, source switching, deletion. Publishing lives in
 //! [`publish`], version reads in [`versions`].
 
+mod access;
 mod publish;
+mod share;
 mod versions;
 
 use axum::extract::{Path, State};
@@ -37,6 +39,21 @@ pub fn routes() -> Router<AppState> {
             "/v1/teams/{team}/collections/{slug}/versions/{n}/files",
             get(versions::files),
         )
+        .route(
+            "/v1/teams/{team}/collections/{slug}/share",
+            get(share::get).patch(share::patch),
+        )
+        .route(
+            "/v1/teams/{team}/collections/{slug}/share/entries",
+            axum::routing::post(share::add_entry),
+        )
+        .route(
+            "/v1/teams/{team}/collections/{slug}/share/entries/{entry}",
+            axum::routing::delete(share::remove_entry),
+        )
+        .route("/v1/shared/{token}", get(access::info))
+        .route("/v1/shared/{token}/snapshot", get(access::snapshot))
+        .route("/v1/shared/{token}/versions/latest", get(access::latest))
 }
 
 /// The wire form of a `source` column value.

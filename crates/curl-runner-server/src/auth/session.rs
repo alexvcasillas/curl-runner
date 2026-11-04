@@ -57,6 +57,28 @@ impl FromRequestParts<AppState> for UserAuth {
     }
 }
 
+/// Like [`UserAuth`], but a missing `Authorization` header is `None`. A header
+/// that is present yet invalid is still `401`: a stale session must not
+/// silently read as an anonymous visitor.
+#[derive(Debug, Clone)]
+pub struct OptionalUserAuth(pub Option<UserAuth>);
+
+impl FromRequestParts<AppState> for OptionalUserAuth {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        if !parts.headers.contains_key(AUTHORIZATION) {
+            return Ok(Self(None));
+        }
+        UserAuth::from_request_parts(parts, state)
+            .await
+            .map(|auth| Self(Some(auth)))
+    }
+}
+
 /// The user behind the live `crs_...` session `token`, sliding its expiry.
 pub(crate) async fn validate_session(state: &AppState, token: &str) -> Result<UserAuth, ApiError> {
     let hash = secret_hash(state.config.secret_key.as_bytes(), token);

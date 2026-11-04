@@ -11,7 +11,7 @@ use axum::routing::{delete, get, post};
 
 use crate::state::AppState;
 
-pub use session::UserAuth;
+pub use session::{OptionalUserAuth, UserAuth};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
