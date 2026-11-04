@@ -1066,7 +1066,7 @@ request:
     seoTitle: 'Import OpenAPI and Swagger specs to YAML',
     headline: 'Turn an OpenAPI spec into runnable YAML files.',
     description:
-      'Turn an OpenAPI or Swagger spec into curl-runner YAML with one command or in the studio. One file per operation, a .env, and no secrets in files.',
+      'Turn an OpenAPI or Swagger spec into curl-runner YAML with one command or in the studio. One file per operation, a .env, and auth credentials stay out of files.',
     example: {
       filename: 'pets/list-pets.yaml',
       yaml: yaml(`
@@ -1093,7 +1093,7 @@ request:
       {
         title: 'One file per operation',
         description:
-          'Each tag becomes a folder and each operation its own YAML file, with sample values taken from the spec. A change shows up as a small diff.',
+          'Each tag becomes a folder and each operation its own YAML file, with sample values taken from the spec.',
       },
       {
         title: 'A smoke test from the start',
@@ -1103,14 +1103,14 @@ request:
       {
         title: 'Secrets stay out of files',
         description:
-          'Secrets are listed by name in .env and set in .env.local. The studio saves them to the macOS Keychain. A short list shows what still needs your attention.',
+          'Secrets are listed by name in .env and set in .env.local. Set them in Environments in the studio and they go to the macOS Keychain. A short list shows what still needs your attention.',
       },
     ],
     goodFor: [
       'Smoke-testing an API from its spec',
       'Starting a test suite for an API you did not write',
-      'Reviewing API changes in pull requests',
-      'Regenerating YAML from a spec your build generates',
+      'Keeping API requests in your repo, next to the code',
+      'Regenerating into a fresh folder when the spec changes',
     ],
     keywords: [
       'openapi to yaml',

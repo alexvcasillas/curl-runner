@@ -19,7 +19,7 @@ describe('alternatives data', () => {
     const row = COMPARISON_ROWS.find((r) => r.label === 'Primary interface');
     expect(row?.curlRunner).toBe('CLI, plus a macOS app (preview)');
   });
-  it('compares importing from Postman and curl', () => {
+  it('compares importing from Postman, OpenAPI and curl', () => {
     const row = COMPARISON_ROWS.find((r) => r.label === 'Import from Postman / OpenAPI / curl');
     expect(row).toEqual({
       label: 'Import from Postman / OpenAPI / curl',

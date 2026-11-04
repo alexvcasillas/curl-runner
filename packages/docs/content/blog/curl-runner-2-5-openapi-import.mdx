@@ -90,11 +90,11 @@ After the import, the dialog keeps a short list of what's left. **Open** next to
 
 ## Secrets stay out of your files
 
-A spec has no secret values, so there is nothing to leak. The importer still treats auth with care.
+The importer never copies a credential from an auth scheme or a secret-named parameter into a file. A key inside a body example is kept as written, so check those.
 
 - **In the CLI**, each secret goes into `.env` by name only, as a comment. You set the value in `.env.local`, which you keep out of git.
 - **In the studio**, you set secret values in Environments, and they go to your macOS Keychain.
-- **A literal key in a parameter's `example`** is replaced with a variable too, so a spec with a pasted key doesn't end up in your files.
+- **Parameters with secret names**, like `token`, `api_key` or `password`, get a variable too. The [Limits section](/docs/features/openapi-import#limits) lists what is still kept as written.
 
 ## Sample values and checks
 
@@ -104,12 +104,12 @@ Each request gets `expect.status` set to the lowest documented 2xx status. With 
 
 ## What's skipped
 
-The importer reports everything it skips. Nothing disappears without a line in the report. Today that covers:
+The report lists what it couldn't convert. A few things are skipped quietly: response body checks, OAuth flows, `x-` extensions, `Accept` and `Content-Type` header parameters, explicitly empty form schemas, styles on optional parameters, and extra tags (an operation is written once, under its first tag). The report lists these:
 
 - **External `$ref`s** to another file or a URL.
 - **Webhooks, callbacks and links.** They're counted, not converted.
 - **Auth schemes** other than API key, bearer, basic, OAuth 2.0 and OpenID Connect. OAuth flows don't run. You put an access token in the variable.
-- **Body types** such as a binary file. JSON, multipart, form and text bodies come in.
+- **Body types** such as a binary file. JSON, multipart, form, text and XML bodies come in.
 
 The CLI takes a local file. To import a spec from a URL, download it first with `curl -o openapi.json <url>`.
 

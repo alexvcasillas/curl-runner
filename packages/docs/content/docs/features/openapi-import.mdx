@@ -1,6 +1,6 @@
 ---
 title: "OpenAPI Import"
-description: "Import an OpenAPI or Swagger spec as curl-runner YAML from the CLI or the studio. One file per operation, a .env with the variables, no secrets in files."
+description: "Import an OpenAPI or Swagger spec as curl-runner YAML from the CLI or the studio. One file per operation, a .env with the variables, auth credentials kept out."
 ---
 
 Turn an OpenAPI or Swagger document into curl-runner files. You get:
@@ -12,7 +12,7 @@ Turn an OpenAPI or Swagger document into curl-runner files. You get:
 - A check on the documented success status, so the folder works as a smoke test from the start.
 - A short list of what still needs your attention, such as a file to pick or a secret to set.
 
-Secret values never land in a file. Existing files are never overwritten: a name that is taken gets `-2`, `-3` and so on.
+The importer never copies a credential from an auth scheme or a secret-named parameter into a file. Existing files are never overwritten: a name that is taken gets `-2`, `-3` and so on.
 
 curl-runner reads OpenAPI 3.0, OpenAPI 3.1 and Swagger 2.0, as JSON or YAML. It detects the format from the content, not the file name. It converts what it can read, so one odd operation doesn't block the rest.
 
@@ -103,7 +103,7 @@ Press ⌘I, or choose **File › Import Requests…**, then open the **OpenAPI**
 
 <StudioScreenshot name="openapi-import">Six operations in three tags. Two things need you before they run.</StudioScreenshot>
 
-Choose **Import** to add the files to the folder in **Add to**. The base URL goes to the collection's `.env`, and each secret is listed there by name only. A spec has no secret values, so the summary lists each secret for you to set in **Environments**, where the studio keeps it in the macOS Keychain.
+Choose **Import** to add the files to the folder in **Add to**. The base URL goes to the collection's `.env`, and each secret is listed there by name only. The importer never copies a secret's value, so the summary lists each secret for you to set in **Environments**, where the studio keeps it in the macOS Keychain.
 
 After the import, the dialog lists what still needs your attention. Choose **Open** next to a "Pick a file" item to open that request and set the file.
 
