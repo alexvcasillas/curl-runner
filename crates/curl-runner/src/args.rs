@@ -19,6 +19,11 @@ pub enum Command {
     Validate,
     Convert,
     Upgrade,
+    /// Cloud commands (see `cloud`).
+    Login,
+    Logout,
+    Publish,
+    Pull,
     /// `init` and `edit` (see `ParsedArgs::rest`, `parse_init_args`, `parse_edit_args`).
     Wizard,
     /// `diff <label1> <label2> [file]` (needs 3+ args, else `diff` is a file).
@@ -50,6 +55,10 @@ fn detect_subcommand(args: &[String]) -> Option<Command> {
         Some("upgrade") => Some(Command::Upgrade),
         Some("validate") => Some(Command::Validate),
         Some("convert") => Some(Command::Convert),
+        Some("login") => Some(Command::Login),
+        Some("logout") => Some(Command::Logout),
+        Some("publish") => Some(Command::Publish),
+        Some("pull") => Some(Command::Pull),
         Some("diff") if args.len() >= 3 => Some(Command::Diff),
         Some("init") | Some("edit") => Some(Command::Wizard),
         _ => None,
@@ -658,6 +667,10 @@ mod tests {
         );
         assert_eq!(pa(&["validate", "-q"]).command, Command::Validate);
         assert_eq!(pa(&["convert", "curl", "x"]).command, Command::Convert);
+        assert_eq!(pa(&["login", "--email", "a@b.c"]).command, Command::Login);
+        assert_eq!(pa(&["logout"]).command, Command::Logout);
+        assert_eq!(pa(&["publish"]).command, Command::Publish);
+        assert_eq!(pa(&["pull", "x"]).command, Command::Pull);
         assert_eq!(pa(&["init"]).command, Command::Wizard);
         assert_eq!(pa(&["edit", "a.yaml"]).command, Command::Wizard);
         assert_eq!(pa(&["--help"]).command, Command::Help);

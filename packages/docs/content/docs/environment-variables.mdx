@@ -65,6 +65,8 @@ All curl-runner environment variables follow the `CURL_RUNNER_*` naming conventi
 | `CURL_RUNNER_WATCH_CLEAR` | boolean | `true` | Clear screen between watch mode runs | `false` |
 | `CURL_RUNNER_ALLOWED_PROTOCOLS` | string | `http,https` | Comma-separated URL protocols to allow. Requests using any other protocol (e.g. file, ftp, gopher) are blocked before curl runs. | `http,https,ftp` |
 | `CURL_RUNNER_ALLOW_PATHS` | boolean | `false` | Allow output/saveToFile/formData file paths outside the working directory. Defaults to false (paths confined to the current directory). | `true` |
+| `CURL_RUNNER_SERVER` | string | `https://api.curl-runner.com` | Cloud API URL for `login` and `logout` (`--server` wins) | `https://api.example.com` |
+| `CURL_RUNNER_TOKEN` | string | `undefined` | Cloud token (`crt_` or `crs_`) used instead of the saved session | `crt_...` |
 
 ## Output Configuration
 

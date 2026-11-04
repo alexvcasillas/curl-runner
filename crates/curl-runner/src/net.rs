@@ -3,6 +3,23 @@
 use curl::easy::{Easy, List};
 use std::time::Duration;
 
+/// An easy handle for `url` with the shared TLS trust (OS store; no bundled
+/// CA), bounded redirects (never https down to http), timeouts and user agent.
+pub fn easy_for(url: &str, timeout: Duration) -> Result<Easy, curl::Error> {
+    let mut easy = Easy::new();
+    easy.url(url)?;
+    easy.ssl_options(&curl_runner_core::transport::easy::native_ca_options())?;
+    easy.follow_location(true)?;
+    easy.max_redirections(5)?;
+    if url.to_ascii_lowercase().starts_with("https://") {
+        curl_runner_core::transport::easy::set_redirect_protocols(&easy, &["https"])?;
+    }
+    easy.timeout(timeout)?;
+    easy.connect_timeout(Duration::from_secs(10).min(timeout))?;
+    easy.useragent(&format!("curl-runner/{}", curl_runner_core::VERSION))?;
+    Ok(easy)
+}
+
 /// GET `url` (following redirects), failing on HTTP >= 400 and on bodies
 /// larger than `max_bytes`.
 pub fn get(
@@ -11,23 +28,7 @@ pub fn get(
     max_bytes: usize,
     headers: &[&str],
 ) -> Result<Vec<u8>, String> {
-    let mut easy = Easy::new();
-    easy.url(url).map_err(|e| e.to_string())?;
-    // Same TLS trust as request transfers (OS store; no bundled CA).
-    easy.ssl_options(&curl_runner_core::transport::easy::native_ca_options())
-        .map_err(|e| e.to_string())?;
-    easy.follow_location(true).map_err(|e| e.to_string())?;
-    easy.max_redirections(5).map_err(|e| e.to_string())?;
-    if url.to_ascii_lowercase().starts_with("https://") {
-        // An https download never follows a redirect down to http.
-        curl_runner_core::transport::easy::set_redirect_protocols(&easy, &["https"])
-            .map_err(|e| e.to_string())?;
-    }
-    easy.timeout(timeout).map_err(|e| e.to_string())?;
-    easy.connect_timeout(Duration::from_secs(10).min(timeout))
-        .map_err(|e| e.to_string())?;
-    easy.useragent(&format!("curl-runner/{}", curl_runner_core::VERSION))
-        .map_err(|e| e.to_string())?;
+    let mut easy = easy_for(url, timeout).map_err(|e| e.to_string())?;
     let mut list = List::new();
     for h in headers {
         list.append(h).map_err(|e| e.to_string())?;

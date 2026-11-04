@@ -75,6 +75,10 @@ UPGRADE:
   curl-runner upgrade --dry-run Preview upgrade command without executing
   curl-runner upgrade --force   Force reinstall even if up to date
 
+CLOUD:
+  curl-runner login             Sign in with an emailed code (--server, --email)
+  curl-runner logout            Sign out and forget the saved session (--server)
+
 VALIDATE:
   curl-runner validate          Validate YAML files against curl-runner schema
   curl-runner validate --fix    Validate and auto-fix issues where possible

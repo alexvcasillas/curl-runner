@@ -1,6 +1,7 @@
 // Some parsed options are consumed only by later ports (watch, profile, ...).
 #[allow(dead_code)]
 mod args;
+mod cloud;
 mod colors;
 mod convert_cmd;
 mod diff_mode;

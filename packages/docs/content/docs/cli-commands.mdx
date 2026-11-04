@@ -213,6 +213,19 @@ curl-runner tests/ \
 
 For CI/CD, `--strict-exit`, `--fail-on <count>` and `--fail-on-percentage <pct>` control when a run exits with `1`. See [CI/CD Integration](/docs/features/ci-integration).
 
+## Cloud Commands
+
+Sign in to a curl-runner Cloud server with an emailed code.
+
+```bash
+curl-runner login [--server <url>] [--email <address>]
+curl-runner logout [--server <url>]
+```
+
+`login` asks for your email address, sends a 6-digit code and saves the session on this computer. Without a terminal, pass `--email` and send the code on standard input. If neither is possible, set `CURL_RUNNER_TOKEN`. `logout` signs out on the server and removes the saved session, even if the server cannot be reached.
+
+The server is `--server`, else `CURL_RUNNER_SERVER`, else `https://api.curl-runner.com`. Sessions are saved in `~/.config/curl-runner/credentials.json` (`$XDG_CONFIG_HOME` is honored, `%APPDATA%\curl-runner` on Windows) with owner-only permissions. `CURL_RUNNER_TOKEN` overrides the saved session.
+
 ## Configuration Alternatives
 
 Many CLI options can also be configured using files or environment variables.
