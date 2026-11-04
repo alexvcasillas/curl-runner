@@ -252,7 +252,7 @@ impl<'a> Api<'a> {
                     }
                     if last {
                         return Err(match serde_json::from_slice::<ErrorBody>(&body) {
-                            Ok(b) => fail(EXIT_UNREACHABLE, b.message),
+                            Ok(b) => fail(EXIT_UNREACHABLE, super::escape_control(&b.message)),
                             Err(_) => fail(
                                 EXIT_UNREACHABLE,
                                 format!(
@@ -338,7 +338,7 @@ pub(super) fn api_failure(status: u16, body: &[u8]) -> Fail {
         ErrorCode::Unavailable | ErrorCode::RateLimited => EXIT_UNREACHABLE,
         _ => EXIT_INVALID,
     };
-    fail(code, b.message)
+    fail(code, super::escape_control(&b.message))
 }
 
 #[derive(Deserialize)]

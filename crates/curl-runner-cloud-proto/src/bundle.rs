@@ -56,6 +56,9 @@ pub enum BundleError {
     /// Two paths that differ only in letter case, which collide on
     /// case-insensitive file systems.
     CaseCollision(String, String),
+    /// A path that is a file in one entry and a folder in another
+    /// (`a.yaml` and `a.yaml/b.yaml`), compared case-insensitively.
+    FileFolderConflict(String, String),
     Path {
         path: String,
         error: PathError,
@@ -70,6 +73,9 @@ impl fmt::Display for BundleError {
             Self::BundleTooLarge => write!(f, "bundle is larger than {MAX_BUNDLE_BYTES} bytes"),
             Self::DuplicatePath(p) => write!(f, "{p} appears more than once"),
             Self::CaseCollision(a, b) => write!(f, "{a} and {b} differ only in letter case"),
+            Self::FileFolderConflict(a, b) => {
+                write!(f, "{a} is a file and {b} needs it to be a folder")
+            }
             Self::Path { path, error } => write!(f, "{path}: {error}"),
         }
     }
@@ -204,6 +210,17 @@ pub fn validate_bundle(files: &[BundleFile]) -> Result<(), BundleError> {
             return Err(BundleError::BundleTooLarge);
         }
     }
+    for f in files {
+        let lower = f.path.to_lowercase();
+        for (i, _) in lower.match_indices('/') {
+            if let Some(file) = folded.get(&lower[..i]) {
+                return Err(BundleError::FileFolderConflict(
+                    file.to_string(),
+                    f.path.clone(),
+                ));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -250,6 +267,23 @@ mod tests {
         let base = bundle_hash(&[f("a.yaml", "1")]);
         assert_ne!(base, bundle_hash(&[f("b.yaml", "1")]));
         assert_ne!(base, bundle_hash(&[f("a.yaml", "2")]));
+    }
+
+    #[test]
+    fn file_and_folder_with_the_same_name_conflict() {
+        for (a, b) in [("a.yaml", "a.yaml/b.yaml"), ("X/a.yml", "x/A.yml/c.yml")] {
+            let r = validate_bundle(&[f(a, "1"), f(b, "2")]);
+            assert!(
+                matches!(r, Err(BundleError::FileFolderConflict(_, _))),
+                "{a} {b}"
+            );
+            let r = validate_bundle(&[f(b, "2"), f(a, "1")]);
+            assert!(
+                matches!(r, Err(BundleError::FileFolderConflict(_, _))),
+                "{b} {a}"
+            );
+        }
+        assert!(validate_bundle(&[f("a.yaml", "1"), f("a/b.yaml", "2")]).is_ok());
     }
 
     #[test]

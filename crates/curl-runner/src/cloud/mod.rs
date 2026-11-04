@@ -56,3 +56,29 @@ pub fn server_from_args(args: &[String], env: Env) -> Result<String, String> {
     client::check_server(&server)?;
     Ok(server)
 }
+
+/// Text from a server, safe to print: control characters (a terminal reads
+/// escape sequences from them) become `\u{..}` escapes.
+pub(crate) fn escape_control(s: &str) -> String {
+    use std::fmt::Write;
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if c.is_control() {
+            let _ = write!(out, "\\u{{{:x}}}", c as u32);
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::escape_control;
+
+    #[test]
+    fn control_characters_are_escaped() {
+        assert_eq!(escape_control("a\u{1b}[31mb\n"), "a\\u{1b}[31mb\\u{a}");
+        assert_eq!(escape_control("plain text, ünï"), "plain text, ünï");
+    }
+}

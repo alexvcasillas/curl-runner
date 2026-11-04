@@ -298,7 +298,7 @@ pub fn describe(err: &CloudError, server: &str) -> String {
                 "That code has expired. Run curl-runner login to get a new one.".into()
             }
             ErrorCode::Unauthorized => "You are not signed in. Run curl-runner login.".into(),
-            _ => b.message.clone(),
+            _ => super::escape_control(&b.message),
         },
     }
 }

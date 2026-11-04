@@ -945,9 +945,8 @@ fn pull_into_nonempty_dir_refuses() {
 
 #[test]
 fn pull_update_same_version_up_to_date() {
-    let (srv, cur, cwd) = pulled_v1();
+    let (srv, _cur, cwd) = pulled_v1();
     let before = std::fs::read(cwd.path().join("out/.curl-runner/pull.json")).unwrap();
-    let _ = cur;
     let out = pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
         .arg("out")
         .assert()
@@ -1253,4 +1252,129 @@ fn pull_landing_without_well_known_exits_1() {
         .get_output()
         .clone();
     assert!(stderr(&o).contains("Couldn't find the curl-runner server for 127.0.0.1."));
+}
+
+#[test]
+fn pull_update_refuses_a_file_where_a_folder_belongs_and_changes_nothing() {
+    let (srv, cur, cwd) = pulled_v1();
+    std::fs::write(cwd.path().join("out/x"), "mine").unwrap();
+    *cur.lock().unwrap() = (
+        2,
+        snap_json(2, &[("a.yaml", "a2"), ("x/y.yaml", "y")], INPUTS),
+    );
+    let o = pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .args(["out", "--force"])
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    assert!(stderr(&o).contains("unsafe file path: x/y.yaml"));
+    assert_eq!(
+        std::fs::read_to_string(cwd.path().join("out/a.yaml")).unwrap(),
+        "a1"
+    );
+    assert_eq!(
+        std::fs::read_to_string(cwd.path().join("out/x")).unwrap(),
+        "mine"
+    );
+    assert_eq!(state_of(&cwd.path().join("out"))["version"], 1);
+}
+
+#[test]
+fn pull_rejects_a_snapshot_with_a_file_and_a_folder_of_one_name() {
+    let (srv, _) = shared_api(Arc::new(Mutex::new((
+        1,
+        snap_json(1, &[("a.yaml", "x"), ("a.yaml/b.yaml", "y")], "[]"),
+    ))));
+    let cwd = tempfile::tempdir().unwrap();
+    let o = pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .arg(format!("{}/s/tok123", srv.base_url))
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    assert!(stderr(&o).contains("unsafe file path"));
+    assert!(!cwd.path().join("payments-api").exists());
+}
+
+#[test]
+fn pull_retry_after_a_partial_update_succeeds() {
+    let (srv, cur, cwd) = pulled_v1();
+    // As if an earlier pull moved a.yaml to v2 and then stopped.
+    std::fs::write(cwd.path().join("out/a.yaml"), "a2").unwrap();
+    *cur.lock().unwrap() = (
+        2,
+        snap_json(2, &[("a.yaml", "a2"), ("sub/b.yaml", "b1")], INPUTS),
+    );
+    pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .arg("out")
+        .assert()
+        .success();
+    assert_eq!(state_of(&cwd.path().join("out"))["version"], 2);
+}
+
+#[test]
+fn pull_escapes_control_characters_from_the_server() {
+    let (srv, _) = fake(|_, _| {
+        json(
+            403,
+            r#"{"error":"forbidden","message":"Members only \u001b[31mred"}"#,
+        )
+    });
+    let cwd = tempfile::tempdir().unwrap();
+    let o = pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .arg(format!("{}/s/tok123", srv.base_url))
+        .assert()
+        .code(2)
+        .get_output()
+        .clone();
+    let err = stderr(&o);
+    assert!(!err.contains('\u{1b}'), "{err:?}");
+    assert!(err.contains("Members only \\u{1b}[31mred"), "{err:?}");
+}
+
+#[test]
+fn pull_plan_and_source_errors_exit_1() {
+    for code in ["plan_limit", "wrong_source"] {
+        let (srv, _) =
+            fake(move |_, _| json(409, &format!(r#"{{"error":"{code}","message":"No."}}"#)));
+        let cwd = tempfile::tempdir().unwrap();
+        pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+            .arg(format!("{}/s/tok123", srv.base_url))
+            .assert()
+            .code(1);
+    }
+}
+
+#[test]
+fn pull_force_with_a_link_is_a_usage_error() {
+    let cwd = tempfile::tempdir().unwrap();
+    let o = pull_cmd(&cwd.path().join("h"), "http://127.0.0.1:1", cwd.path())
+        .args(["https://cloud.example.com/s/tok123", "--force"])
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    assert!(stderr(&o).contains("--force only applies when updating a folder."));
+}
+
+#[cfg(unix)]
+#[test]
+fn pull_reports_a_removal_that_failed_and_keeps_it_recorded() {
+    use std::os::unix::fs::PermissionsExt;
+    let (srv, cur, cwd) = pulled_v1();
+    let sub = cwd.path().join("out/sub");
+    std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o555)).unwrap();
+    *cur.lock().unwrap() = (2, snap_json(2, &[("a.yaml", "a2")], INPUTS));
+    let o = pull_cmd(&cwd.path().join("h"), &srv.base_url, cwd.path())
+        .arg("out")
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(stderr(&o).contains("Couldn't remove sub/b.yaml"));
+    let st = state_of(&cwd.path().join("out"));
+    assert_eq!(st["version"], 2);
+    assert_eq!(st["files"]["sub/b.yaml"], file_hash("b1"));
 }

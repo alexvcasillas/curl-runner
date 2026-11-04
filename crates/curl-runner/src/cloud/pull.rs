@@ -12,7 +12,7 @@
 use super::client::{self, Client};
 use super::credentials::Credentials;
 use super::publish::{Api, EXIT_AUTH, EXIT_INVALID, Fail, api_failure, fail};
-use super::{Env, credentials, login};
+use super::{Env, credentials, escape_control, login};
 use crate::output::Console;
 use crate::version_check::{HOOKS_ENABLED, hook};
 use curl_runner_cloud_proto::{
@@ -21,7 +21,7 @@ use curl_runner_cloud_proto::{
 };
 use curl_runner_core::cloud::valid_slug;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
@@ -88,6 +88,9 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
         }
         _ => return Err("Too many arguments. Use curl-runner pull [LINK] [DIR].".into()),
     };
+    if force && matches!(target, Target::Link { .. }) {
+        return Err("--force only applies when updating a folder.".into());
+    }
     Ok(Options { target, force })
 }
 
@@ -250,7 +253,11 @@ fn get_authed(
                 ),
             ));
         }
-        c.out("This collection needs you to sign in.");
+        let host = url::Url::parse(server)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_string))
+            .unwrap_or_else(|| server.to_string());
+        c.out(&format!("This collection needs you to sign in to {host}."));
         let args = ["--server".to_string(), server.to_string()];
         if login::login(&args, env, c) != 0 {
             return Err(fail(
@@ -268,7 +275,13 @@ fn decode_ok<T: serde::de::DeserializeOwned>(status: u16, body: &[u8]) -> Result
         return Err(fail(EXIT_INVALID, LINK_BROKEN));
     }
     if !(200..300).contains(&status) {
-        return Err(api_failure(status, body));
+        // Plan and source errors are publish concerns: for a pull they are
+        // plain failures.
+        let mut f = api_failure(status, body);
+        if f.code == 3 || f.code == 4 {
+            f.code = EXIT_INVALID;
+        }
+        return Err(f);
     }
     serde_json::from_slice(body).map_err(|_| {
         fail(
@@ -298,7 +311,10 @@ fn fetch_snapshot(
 fn unsafe_path(p: &str) -> Fail {
     fail(
         EXIT_INVALID,
-        format!("The server sent an unsafe file path: {p}. Nothing was written."),
+        format!(
+            "The server sent an unsafe file path: {}. Nothing was written.",
+            escape_control(p)
+        ),
     )
 }
 
@@ -315,18 +331,26 @@ fn check_snapshot(s: &Snapshot) -> Result<(), Fail> {
         Err(BundleError::Path { path, .. } | BundleError::DuplicatePath(path)) => {
             return Err(unsafe_path(&path));
         }
-        Err(BundleError::CaseCollision(_, path)) => return Err(unsafe_path(&path)),
+        Err(BundleError::CaseCollision(_, path) | BundleError::FileFolderConflict(_, path)) => {
+            return Err(unsafe_path(&path));
+        }
         Err(e) => {
             return Err(fail(
                 EXIT_INVALID,
-                format!("The server sent an invalid collection ({e}). Nothing was written."),
+                format!(
+                    "The server sent an invalid collection ({}). Nothing was written.",
+                    escape_control(&e.to_string())
+                ),
             ));
         }
     }
     validate_inputs(&s.inputs).map_err(|e| {
         fail(
             EXIT_INVALID,
-            format!("The server sent invalid inputs ({e}). Nothing was written."),
+            format!(
+                "The server sent invalid inputs ({}). Nothing was written.",
+                escape_control(&e.to_string())
+            ),
         )
     })
 }
@@ -371,23 +395,57 @@ fn disk_hash(root: &Path, rel: &str) -> Option<String> {
 
 /// Files the user changed since the last pull, or would lose to this one:
 /// recorded files whose hash differs or that are missing, and files the new
-/// snapshot adds over something already on disk.
+/// snapshot adds over something already on disk. A file that already holds
+/// the new content is clean, so a retry after a partial update succeeds.
+/// Paths are matched case-insensitively: `A.yaml` and `a.yaml` are one file
+/// on some systems.
 fn local_edits(root: &Path, old: &State, new: &[BundleFile]) -> Vec<String> {
+    let new_by_lower: HashMap<String, &BundleFile> =
+        new.iter().map(|f| (f.path.to_lowercase(), f)).collect();
+    let old_lower: std::collections::HashSet<String> =
+        old.files.keys().map(|p| p.to_lowercase()).collect();
     let mut out: Vec<String> = old
         .files
         .iter()
         .filter(|(path, hash)| {
-            validate_path(path).is_ok() && disk_hash(root, path).as_deref() != Some(hash.as_str())
+            if validate_path(path).is_err() {
+                return false;
+            }
+            if disk_hash(root, path).as_deref() == Some(hash.as_str()) {
+                return false;
+            }
+            let Some(twin) = new_by_lower.get(&path.to_lowercase()) else {
+                return true;
+            };
+            let want = file_hash(&twin.text);
+            disk_hash(root, path).as_deref() != Some(want.as_str())
+                && disk_hash(root, &twin.path).as_deref() != Some(want.as_str())
         })
         .map(|(path, _)| path.clone())
         .collect();
     for f in new {
-        if !old.files.contains_key(&f.path)
-            && let Some(h) = disk_hash(root, &f.path)
-            && h != file_hash(&f.text)
-        {
-            out.push(f.path.clone());
+        if old.files.contains_key(&f.path) {
+            continue;
         }
+        let Some(h) = disk_hash(root, &f.path) else {
+            continue;
+        };
+        if h == file_hash(&f.text) {
+            continue;
+        }
+        if old_lower.contains(&f.path.to_lowercase()) {
+            // A case-only rename. Where the two names are one file, it is
+            // covered by the recorded path above. Where they are two
+            // files, the new name is the user's.
+            let twin = old
+                .files
+                .keys()
+                .find(|p| p.to_lowercase() == f.path.to_lowercase());
+            if twin.is_none_or(|p| disk_hash(root, p).as_deref() == Some(h.as_str())) {
+                continue;
+            }
+        }
+        out.push(f.path.clone());
     }
     out.sort();
     out
@@ -430,10 +488,33 @@ fn io_fail(what: &str, e: std::io::Error) -> Fail {
     )
 }
 
-fn write_atomic(dir: &Path, name: &str, data: &[u8]) -> Result<(), Fail> {
+/// The temp path for `name` in `dir`. A stale regular file is removed;
+/// anything else there (a planted symlink, a folder) is refused, and the
+/// path is never followed.
+fn temp_path(dir: &Path, name: &str) -> Result<PathBuf, Fail> {
     let tmp = dir.join(format!("{name}.tmp"));
-    std::fs::write(&tmp, data).map_err(|e| io_fail("write the state file", e))?;
-    std::fs::rename(&tmp, dir.join(name)).map_err(|e| io_fail("write the state file", e))
+    match std::fs::symlink_metadata(&tmp) {
+        Ok(m) if m.file_type().is_file() => {
+            std::fs::remove_file(&tmp).map_err(|e| io_fail("replace a stale temp file", e))?;
+        }
+        Ok(_) => return Err(unsafe_path(&format!("{STATE_DIR}/{name}.tmp"))),
+        Err(_) => {}
+    }
+    Ok(tmp)
+}
+
+fn write_atomic(dir: &Path, name: &str, data: &[u8]) -> Result<(), Fail> {
+    use std::io::Write;
+    let tmp = temp_path(dir, name)?;
+    let err = |e| io_fail("write the state file", e);
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
+        .map_err(err)?;
+    f.write_all(data).map_err(err)?;
+    drop(f);
+    std::fs::rename(&tmp, dir.join(name)).map_err(err)
 }
 
 /// Stage the new files, move them into place, drop what left the snapshot,
@@ -444,13 +525,14 @@ fn apply(
     old: Option<&State>,
     server: &str,
     token: &str,
-) -> Result<(), Fail> {
+) -> Result<Vec<String>, Fail> {
     let state_dir = root.join(STATE_DIR);
     match std::fs::symlink_metadata(&state_dir) {
         Ok(m) if !m.is_dir() => return Err(unsafe_path(STATE_DIR)),
         Ok(_) => {}
         Err(_) => std::fs::create_dir(&state_dir).map_err(|e| io_fail("create .curl-runner", e))?,
     }
+    temp_path(&state_dir, STATE_FILE)?;
     // Stage everything first: a failure here leaves the folder untouched.
     let staging = state_dir.join(STAGING_DIR);
     let _ = std::fs::remove_dir_all(&staging);
@@ -467,10 +549,12 @@ fn place(
     old: Option<&State>,
     server: &str,
     token: &str,
-) -> Result<(), Fail> {
+) -> Result<Vec<String>, Fail> {
     let mut staged = Vec::new();
     for (i, f) in snap.files.iter().enumerate() {
-        let target = safe_path(root, &f.path, false).map_err(|_| unsafe_path(&f.path))?;
+        // Every target is resolved (folders made) before anything moves, so
+        // a file where a folder belongs, or the reverse, fails here.
+        let target = safe_path(root, &f.path, true).map_err(|_| unsafe_path(&f.path))?;
         if target.exists() && disk_hash(root, &f.path) == Some(file_hash(&f.text)) {
             continue;
         }
@@ -481,6 +565,25 @@ fn place(
     let example = staging.join("env-example.tmp");
     std::fs::write(&example, env_example(&snap.inputs)).map_err(|e| io_fail("stage files", e))?;
 
+    // Case-only renames first, so the file ends up with the new spelling.
+    let kept: HashMap<String, &str> = snap
+        .files
+        .iter()
+        .map(|f| (f.path.to_lowercase(), f.path.as_str()))
+        .collect();
+    if let Some(old) = old {
+        for p in old.files.keys() {
+            let Some(q) = kept.get(&p.to_lowercase()).filter(|q| **q != p.as_str()) else {
+                continue;
+            };
+            let (Ok(from), Ok(to)) = (safe_path(root, p, false), safe_path(root, q, true)) else {
+                continue;
+            };
+            if from.exists() {
+                std::fs::rename(&from, &to).map_err(|e| io_fail(&format!("rename {p}"), e))?;
+            }
+        }
+    }
     for (f, tmp) in &staged {
         let target = safe_path(root, &f.path, true).map_err(|_| unsafe_path(&f.path))?;
         std::fs::rename(tmp, target).map_err(|e| io_fail(&format!("write {}", f.path), e))?;
@@ -488,15 +591,21 @@ fn place(
     std::fs::rename(&example, root.join(ENV_EXAMPLE))
         .map_err(|e| io_fail("write .env.example", e))?;
 
+    let mut failed = Vec::new();
     if let Some(old) = old {
-        let keep: std::collections::HashSet<&str> =
-            snap.files.iter().map(|f| f.path.as_str()).collect();
-        for path in old.files.keys().filter(|p| !keep.contains(p.as_str())) {
+        for path in old
+            .files
+            .keys()
+            .filter(|p| !kept.contains_key(&p.to_lowercase()))
+        {
             // pull.json is editable by hand: only validated paths are removed.
-            if let Ok(target) = safe_path(root, path, false)
-                && std::fs::remove_file(&target).is_ok()
-            {
-                prune_empty_parents(root, &target);
+            let Ok(target) = safe_path(root, path, false) else {
+                continue;
+            };
+            match std::fs::remove_file(&target) {
+                Ok(()) => prune_empty_parents(root, &target),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => failed.push(path.clone()),
             }
         }
     }
@@ -509,10 +618,16 @@ fn place(
             .files
             .iter()
             .map(|f| (f.path.clone(), file_hash(&f.text)))
+            // A file that could not be removed stays recorded.
+            .chain(failed.iter().filter_map(|p| {
+                old.and_then(|o| o.files.get(p))
+                    .map(|h| (p.clone(), h.clone()))
+            }))
             .collect(),
     };
     let json = serde_json::to_vec_pretty(&state).map_err(|e| fail(EXIT_INVALID, e.to_string()))?;
-    write_atomic(&root.join(STATE_DIR), STATE_FILE, &json)
+    write_atomic(&root.join(STATE_DIR), STATE_FILE, &json)?;
+    Ok(failed)
 }
 
 /// Remove folders emptied by a removal, never `root` itself.
@@ -541,11 +656,6 @@ fn check_empty(dir: &str) -> Result<(), Fail> {
     Ok(())
 }
 
-/// Printable name: the server chooses it, a terminal must not obey it.
-fn clean(s: &str) -> String {
-    s.chars().filter(|c| !c.is_control()).collect()
-}
-
 fn first_pull(c: &mut Console, env: Env, link: &str, dir: Option<String>) -> Result<(), Fail> {
     let (server, token) = resolve_link(link, env)?;
     if let Some(d) = &dir {
@@ -558,16 +668,23 @@ fn first_pull(c: &mut Console, env: Env, link: &str, dir: Option<String>) -> Res
     check_empty(&dir)?;
 
     let root = Path::new(&dir);
-    let created = !root.exists();
+    // The topmost folder this pull makes, to take away again on failure.
+    let mut created = None;
+    for a in root.ancestors() {
+        if a.as_os_str().is_empty() || a.exists() {
+            break;
+        }
+        created = Some(a.to_path_buf());
+    }
     std::fs::create_dir_all(root).map_err(|e| io_fail(&format!("create {dir}"), e))?;
     let result = root
         .canonicalize()
         .map_err(|e| io_fail(&format!("open {dir}"), e))
-        .and_then(|canon| apply(&canon, &snap, None, &server, &token));
+        .and_then(|canon| apply(&canon, &snap, None, &server, &token).map(drop));
     if let Err(e) = result {
         // The folder was empty or new: put it back the way it was.
-        if created {
-            let _ = std::fs::remove_dir_all(root);
+        if let Some(top) = created {
+            let _ = std::fs::remove_dir_all(top);
         } else if let Ok(entries) = std::fs::read_dir(root) {
             for entry in entries.flatten() {
                 let p = entry.path();
@@ -582,7 +699,7 @@ fn first_pull(c: &mut Console, env: Env, link: &str, dir: Option<String>) -> Res
     }
     c.out(&format!(
         "Pulled {} v{} into {dir}. Fill in .env (see .env.example), then run curl-runner {dir}.",
-        clean(&snap.info.name),
+        escape_control(&snap.info.name),
         snap.info.version
     ));
     Ok(())
@@ -640,7 +757,7 @@ fn update(c: &mut Console, env: Env, dir: &str, force: bool) -> Result<(), Fail>
         .map_err(|e| io_fail(&format!("open {dir}"), e))?;
     let edits = local_edits(&root, &old, &snap.files);
     if !edits.is_empty() && !force {
-        let list = edits.join(", ");
+        let list = escape_control(&edits.join(", "));
         if !std::io::stdin().is_terminal() {
             return Err(fail(
                 EXIT_INVALID,
@@ -654,12 +771,19 @@ fn update(c: &mut Console, env: Env, dir: &str, force: bool) -> Result<(), Fail>
             ));
         }
     }
-    apply(&root, &snap, Some(&old), &old.server, &old.token)?;
+    let failed = apply(&root, &snap, Some(&old), &old.server, &old.token)?;
     c.out(&format!(
         "Updated {} to v{} in {dir}.",
-        clean(&snap.info.name),
+        escape_control(&snap.info.name),
         snap.info.version
     ));
+    if !failed.is_empty() {
+        let list = escape_control(&failed.join(", "));
+        return Err(fail(
+            EXIT_INVALID,
+            format!("Couldn't remove {list}. Remove it yourself, or pull again."),
+        ));
+    }
     Ok(())
 }
 
@@ -711,8 +835,8 @@ mod tests {
             parse_options(&a(&["out"])).unwrap().target,
             Target::Dir("out".into())
         );
-        let o = parse_options(&a(&["--force", "https://h/s/t", "out"])).unwrap();
-        assert!(o.force);
+        let o = parse_options(&a(&["https://h/s/t", "out"])).unwrap();
+        assert!(!o.force);
         assert_eq!(
             o.target,
             Target::Link {
@@ -720,6 +844,8 @@ mod tests {
                 dir: Some("out".into())
             }
         );
+        assert!(parse_options(&a(&["--force", "out"])).unwrap().force);
+        assert!(parse_options(&a(&["--force", "https://h/s/t"])).is_err());
         assert!(parse_options(&a(&["--bogus"])).is_err());
         assert!(parse_options(&a(&["a", "b"])).is_err());
     }
@@ -866,6 +992,7 @@ mod tests {
             &["/abs.yaml"],
             &["con.yaml"],
             &["A.yaml", "a.yaml"],
+            &["a.yaml", "a.yaml/b.yaml"],
         ] {
             let f = check_snapshot(&snap(bad)).unwrap_err();
             assert_eq!(f.code, 1);
@@ -874,6 +1001,144 @@ mod tests {
                     .starts_with("The server sent an unsafe file path: ")
             );
             assert!(f.message.ends_with("Nothing was written."));
+        }
+    }
+
+    fn snap_of(files: &[(&str, &str)]) -> Snapshot {
+        Snapshot {
+            info: serde_json::from_value(serde_json::json!({
+                "team":"acme","collection":"c","name":"C","description":null,"version":2,
+                "updated_at":"2026-01-01T00:00:00Z","request_count":0,"access":"public"
+            }))
+            .unwrap(),
+            files: files
+                .iter()
+                .map(|(p, t)| BundleFile {
+                    path: p.to_string(),
+                    text: t.to_string(),
+                })
+                .collect(),
+            inputs: vec![],
+        }
+    }
+
+    fn state_of(files: &[(&str, &str)]) -> State {
+        State {
+            server: "https://api.example.com".into(),
+            token: "t".into(),
+            version: 1,
+            files: files
+                .iter()
+                .map(|(p, t)| (p.to_string(), file_hash(t)))
+                .collect(),
+        }
+    }
+
+    fn canon_root() -> (tempfile::TempDir, PathBuf) {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().canonicalize().unwrap();
+        (d, root)
+    }
+
+    #[test]
+    fn a_file_already_at_the_new_content_is_not_a_local_edit() {
+        let (_d, root) = canon_root();
+        std::fs::write(root.join("a.yaml"), "new").unwrap();
+        let old = state_of(&[("a.yaml", "old"), ("b.yaml", "b")]);
+        let new = snap_of(&[("a.yaml", "new")]);
+        // b.yaml is missing, so it is an edit; a.yaml is already updated.
+        assert_eq!(local_edits(&root, &old, &new.files), ["b.yaml"]);
+    }
+
+    #[test]
+    fn case_only_rename_keeps_the_file_under_the_new_name() {
+        let (_d, root) = canon_root();
+        std::fs::write(root.join("A.yaml"), "old").unwrap();
+        let old = state_of(&[("A.yaml", "old")]);
+        let new = snap_of(&[("a.yaml", "new")]);
+        assert!(local_edits(&root, &old, &new.files).is_empty());
+        apply(&root, &new, Some(&old), "https://api.example.com", "t").unwrap();
+        let names: Vec<String> = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(names.contains(&"a.yaml".to_string()), "{names:?}");
+        assert!(!names.contains(&"A.yaml".to_string()), "{names:?}");
+        assert_eq!(std::fs::read_to_string(root.join("a.yaml")).unwrap(), "new");
+        // Same content under the new name works too.
+        let (_d2, root2) = canon_root();
+        std::fs::write(root2.join("A.yaml"), "same").unwrap();
+        let old = state_of(&[("A.yaml", "same")]);
+        apply(
+            &root2,
+            &snap_of(&[("a.yaml", "same")]),
+            Some(&old),
+            "https://api.example.com",
+            "t",
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root2.join("a.yaml")).unwrap(),
+            "same"
+        );
+        let st: State = serde_json::from_str(
+            &std::fs::read_to_string(root2.join(".curl-runner/pull.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(st.files.contains_key("a.yaml") && !st.files.contains_key("A.yaml"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_planted_temp_symlink_is_not_followed() {
+        let (_d, root) = canon_root();
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("victim");
+        std::fs::write(&target, "keep").unwrap();
+        std::fs::create_dir(root.join(".curl-runner")).unwrap();
+        std::os::unix::fs::symlink(&target, root.join(".curl-runner/pull.json.tmp")).unwrap();
+        let r = apply(
+            &root,
+            &snap_of(&[("a.yaml", "x")]),
+            None,
+            "https://api.example.com",
+            "t",
+        );
+        assert!(r.is_err());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep");
+        // Refused before anything moved.
+        assert!(!root.join("a.yaml").exists());
+    }
+
+    #[test]
+    fn a_stale_regular_temp_file_is_replaced() {
+        let (_d, root) = canon_root();
+        std::fs::create_dir(root.join(".curl-runner")).unwrap();
+        std::fs::write(root.join(".curl-runner/pull.json.tmp"), "stale").unwrap();
+        apply(
+            &root,
+            &snap_of(&[("a.yaml", "x")]),
+            None,
+            "https://api.example.com",
+            "t",
+        )
+        .unwrap();
+        assert!(root.join(".curl-runner/pull.json").exists());
+    }
+
+    #[test]
+    fn unsafe_path_text_is_escaped() {
+        let f = unsafe_path("a\u{1b}[2J.yaml");
+        assert!(!f.message.contains('\u{1b}'));
+        assert!(f.message.contains("\\u{1b}"));
+    }
+
+    #[test]
+    fn plan_and_source_errors_are_plain_failures() {
+        for code in ["plan_limit", "wrong_source"] {
+            let body = format!(r#"{{"error":"{code}","message":"No."}}"#);
+            let r = decode_ok::<Latest>(409, body.as_bytes());
+            assert_eq!(r.err().unwrap().code, 1);
         }
     }
 }
