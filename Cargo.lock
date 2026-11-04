@@ -1435,6 +1435,7 @@ version = "2.5.0"
 dependencies = [
  "chrono",
  "curl",
+ "curl-runner-cloud-proto",
  "curl-sys",
  "fancy-regex",
  "form_urlencoded",
