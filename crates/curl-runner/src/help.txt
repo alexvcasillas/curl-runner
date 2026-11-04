@@ -78,6 +78,8 @@ UPGRADE:
 CLOUD:
   curl-runner login             Sign in with an emailed code (--server, --email)
   curl-runner logout            Sign out and forget the saved session (--server)
+  curl-runner publish [DIR...]  Publish collections to Cloud (--collection, --team, --server, --dry-run)
+  curl-runner pull [LINK] [DIR] Pull a shared collection, or update a pulled one (--force)
 
 VALIDATE:
   curl-runner validate          Validate YAML files against curl-runner schema

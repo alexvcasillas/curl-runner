@@ -1,0 +1,243 @@
+---
+title: "Cloud"
+description: "Publish a curl-runner collection to curl-runner Cloud from CI, share it with a link, and pull a shared collection to your machine. Private preview."
+---
+
+<Callout type="warn" title="Private preview">
+curl-runner Cloud is in private preview. Sign-ups open at launch. Until then the commands on this page talk to a server that only accepts people we have invited. You can also [run the server yourself](/docs/self-hosting).
+</Callout>
+
+Cloud keeps a copy of your collection where your team and your customers can open it. Git stays the source of truth. Your CI publishes the folder on every push, and Cloud shows the latest version.
+
+- **Publish** a folder of YAML files from CI with `curl-runner publish`.
+- **Share** it with a link, or with named people.
+- **Pull** a shared collection onto your machine with `curl-runner pull`.
+
+## What leaves your machine [#privacy]
+
+Publishing sends the YAML files in the folder and the inputs you declare. That is all.
+
+Secret values never leave your machine. A secret input is declared by name only. Its value is set by whoever runs the collection, on their own machine. `publish` refuses to send a file that has a literal value for a secret input.
+
+Files over 1 MiB, and folders over 2,000 files or 25 MiB, are refused.
+
+## Declare the collection [#config]
+
+Add a `cloud:` block to `curl-runner.yaml` in the collection folder:
+
+```yaml title="curl-runner.yaml"
+cloud:
+  collection: payments-api
+  name: Payments API
+  description: Smoke tests for the payments service.
+  inputs:
+    - name: BASE_URL
+      description: Where the API runs.
+      default: https://api.example.com
+    - name: API_TOKEN
+      description: A token for the staging API.
+      secret: true
+      required: true
+```
+
+| Key | What it does |
+| --- | --- |
+| `collection` | The collection's slug. Lowercase letters, digits and dashes, up to 63 characters. Required. |
+| `name` | A display name, 1 to 100 characters. |
+| `description` | Up to 500 characters. |
+| `inputs` | The values a person fills in before running the collection. |
+
+Each input has these keys:
+
+| Key | What it does |
+| --- | --- |
+| `name` | Letters, digits and underscores, not starting with a digit. Required. |
+| `description` | Shown next to the input. |
+| `secret` | Hides the value. Defaults to `true` for names that start with `SECRET_`, else `false`. |
+| `required` | The collection can't run until it is set. Defaults to `false`. |
+| `locked` | The person running the collection can't change it. Defaults to `false`. |
+| `default` | A starting value. A secret input can't have one. |
+
+If a non-secret input has no `default`, the value of the variable with the same name in `collection.variables` or `global.variables` is used.
+
+## Publish from CI [#publish]
+
+```bash title="Command"
+curl-runner publish
+```
+
+```text title="Output"
+payments-api: published v3 (1 added, 2 changed, 0 removed)
+```
+
+`publish` checks every file on your machine first and sends nothing if anything is wrong. An unchanged folder is not published again:
+
+```text title="Output"
+payments-api: unchanged (v3)
+```
+
+```bash title="Options"
+curl-runner publish [DIR...] [--collection <slug>] [--team <slug>] [--server <url>] [--dry-run]
+```
+
+| Option | What it does |
+| --- | --- |
+| `DIR...` | Folders to publish. Defaults to the current folder. Each folder is one collection. |
+| `--collection` | Overrides `cloud.collection`. Works with one folder. |
+| `--team` | The team to publish to. Falls back to `CURL_RUNNER_TEAM`. |
+| `--server` | The API URL. Falls back to `CURL_RUNNER_SERVER`, then `https://api.curl-runner.com`. |
+| `--dry-run` | Checks the files and shows what would change. Sends nothing. |
+
+The token comes from `CURL_RUNNER_TOKEN`, or from the session that `curl-runner login` saved. A publish token (`crt_...`) belongs to one team, so you must give it a team. A signed-in account that is in one team needs no `--team`.
+
+Publishing records the commit, ref and repository from GitHub Actions or GitLab CI, so each version links back to git.
+
+### Exit codes [#exit-codes]
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Published, or nothing to change. |
+| `1` | Invalid files, or a bad option. Nothing was sent. |
+| `2` | Not signed in, or the token can't publish to that team. |
+| `3` | Your plan's limit was reached. |
+| `4` | The collection is edited in Cloud, so it can't be published from git. |
+| `5` | The server could not be reached. |
+
+`publish` retries a failed request up to five times, waiting longer each time, before it exits with `5`.
+
+### GitHub Action [#github-action]
+
+The repo ships a composite action that installs the CLI and runs `publish`.
+
+```yaml title=".github/workflows/publish.yml"
+name: Publish to curl-runner Cloud
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: alexvcasillas/curl-runner/actions/publish@main
+        with:
+          token: ${{ secrets.CURL_RUNNER_TOKEN }}
+          team: acme
+          path: collections/*
+          version: 2.6.0
+```
+
+| Input | Default | What it does |
+| --- | --- | --- |
+| `token` | none | The publish token. Required. Keep it in a repository secret. |
+| `team` | none | The team slug. Required. |
+| `path` | `.` | Folders to publish, separated by spaces. Globs such as `collections/*` expand. |
+| `server` | `https://api.curl-runner.com` | The API URL. Set it for a self-hosted server. |
+| `version` | `latest` | The `@curl-runner/cli` version to install. |
+
+<Callout type="warn" title="Pin it">
+`@main` moves with every commit. For a workflow that holds a token, pin the action to a commit SHA, such as `alexvcasillas/curl-runner/actions/publish@<full-commit-sha>`, and pin `version` too.
+</Callout>
+
+Any other CI works the same way. Install the CLI, set `CURL_RUNNER_TOKEN` and `CURL_RUNNER_TEAM`, and run `curl-runner publish`.
+
+## Share a collection [#share]
+
+<Callout type="info" title="API only for now">
+The dashboard is not out yet. Until it is, you share a collection with the API. These calls need a signed-in session as a team member, sent as `Authorization: Bearer crs_...`. `curl-runner login` saves one in `~/.config/curl-runner/credentials.json`.
+</Callout>
+
+Each collection has a share link and an access mode: `off`, `public` or `restricted`. In `restricted` mode only the people on the access list can open the link. Restricted sharing needs the Team plan.
+
+```bash title="Make it public"
+curl -X PATCH https://api.curl-runner.com/v1/teams/acme/collections/payments-api/share \
+  -H "Authorization: Bearer $SESSION" \
+  -H "Content-Type: application/json" \
+  -d '{"access": "public"}'
+```
+
+The reply has the link:
+
+```json title="Reply"
+{
+  "access": "public",
+  "link": "https://cloud.curl-runner.com/s/<token>",
+  "expires_at": null,
+  "entries": []
+}
+```
+
+`PATCH` also takes `expires_in_days` (`null` removes the expiry) and `reset_link: true`, which replaces the link and stops the old one working.
+
+To invite a person, add them to the access list. `notify` sends them the link by email:
+
+```bash title="Invite someone"
+curl -X POST https://api.curl-runner.com/v1/teams/acme/collections/payments-api/share/entries \
+  -H "Authorization: Bearer $SESSION" \
+  -H "Content-Type: application/json" \
+  -d '{"entry": "dev@example.com", "notify": true}'
+```
+
+`GET` on the same `/share` path shows the link and the list. `DELETE` on `/share/entries/<entry>` removes someone.
+
+<Callout type="warn" title="A link is a credential">
+Whoever holds a share link can use it. In `public` mode that means anyone. Don't paste it where you wouldn't paste a password. If a link leaks, reset it.
+</Callout>
+
+## Publish tokens [#tokens]
+
+A publish token belongs to one team and can only publish. Create one as a signed-in member:
+
+```bash
+curl -X POST https://api.curl-runner.com/v1/teams/acme/tokens \
+  -H "Authorization: Bearer $SESSION" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "github-actions"}'
+```
+
+The reply shows the token once. Copy it into your CI's secrets. Add `expires_in_days` to make it expire, and `DELETE /v1/teams/acme/tokens/<id>` to revoke it.
+
+## Pull a shared collection [#pull]
+
+If someone shared a collection with you, pull it:
+
+```bash title="Command"
+curl-runner pull https://cloud.curl-runner.com/s/<token> payments-api
+```
+
+```text title="Output"
+Pulled Payments API v3 into payments-api. Fill in .env (see .env.example), then run curl-runner payments-api.
+```
+
+The files are written into the folder. Pulled secret inputs are listed in `.env.example` without values. Copy it to `.env` and fill them in.
+
+To get the latest version later, run `pull` in that folder:
+
+```bash
+curl-runner pull payments-api
+```
+
+```text title="Output"
+Updated Payments API to v4 in payments-api.
+```
+
+If you changed a pulled file, `pull` asks before replacing it. Without a terminal, it stops and tells you to pass `--force`.
+
+```bash
+curl-runner pull [LINK] [DIR] [--force]
+```
+
+A collection that isn't public asks you to sign in. Run `curl-runner login --server <url>` first, or let `pull` offer it in a terminal. A `pull` writes nothing until every file passes the same path checks `publish` uses, so a bad bundle can't write outside the folder. Exit codes: `0` ok, `1` a problem with the link or the data, `2` sign-in, `5` the server can't be reached.
+
+## Next steps [#next]
+
+<Cards>
+  <Card title="Self-hosting" href="/docs/self-hosting">
+    Run the Cloud server on your own machine.
+  </Card>
+  <Card title="CLI commands" href="/docs/cli-commands#cloud-commands">
+    Every Cloud command and its options.
+  </Card>
+</Cards>
