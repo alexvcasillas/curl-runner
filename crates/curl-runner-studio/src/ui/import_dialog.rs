@@ -1,6 +1,6 @@
 //! The Import dialog (`Import.dc.html`, ⌘I): request files from pasted curl
-//! commands, a Postman collection, or the YAML files of another folder
-//! copied into the collection. The OpenAPI tab comes in a later build.
+//! commands, a Postman collection, an OpenAPI or Swagger spec, or the YAML
+//! files of another folder copied into the collection.
 
 use super::app::{CreateNew, mono_font};
 use super::icons::{self, glyph};
@@ -17,9 +17,10 @@ use crate::model::import::{
     plan_yaml_copy, reads_as_yaml, replaced_note, write_new,
 };
 use crate::model::secrets::SecretStore;
-use curl_runner_core::convert::postman::{
-    Attention, PostmanImport, convert_postman, write_postman,
-};
+use curl_runner_core::convert::ConvertError;
+use curl_runner_core::convert::import::{Attention, Import, write_import};
+use curl_runner_core::convert::openapi::convert_openapi;
+use curl_runner_core::convert::postman::convert_postman;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::dialog::DialogEntrance;
@@ -44,7 +45,7 @@ const PREVIEW_PAD: f32 = 8.;
 const BODY_H: f32 = PANE_H + 86.;
 /// A folded command's header row in the preview list.
 const SECTION_H: f32 = 32.;
-/// The Postman tab's attention pane, so it ends with the preview beside
+/// A file tab's attention pane, so it ends with the preview beside
 /// it: the pane, less the picker (32), its status line (18), the pane's
 /// label (about 19.5 on the dialog's default line height) and three 10px
 /// gaps.
@@ -57,6 +58,73 @@ pub enum ImportTab {
     OpenApi,
     Folder,
 }
+
+/// What sets the Postman and OpenAPI tabs apart: their source and copy.
+struct FileSource {
+    convert: fn(&str) -> Result<Import, ConvertError>,
+    /// Extensions the tab takes; `None`: any file.
+    extensions: Option<&'static [&'static str]>,
+    /// The picker's label.
+    label: &'static str,
+    /// What the file is, in errors: `Couldn't import the {noun}: …`.
+    noun: &'static str,
+    /// The status line before a pick.
+    empty: &'static str,
+    /// Import's error before a pick.
+    choose: &'static str,
+    /// The note under the preview.
+    hint: &'static str,
+    /// The summary's note on `.env`.
+    env_note: &'static str,
+    /// Where a secret value came from.
+    place: &'static str,
+    pick_id: &'static str,
+    files_id: &'static str,
+}
+
+const POSTMAN: FileSource = FileSource {
+    convert: convert_postman,
+    extensions: None,
+    label: "Postman collection",
+    noun: "collection",
+    empty: "Pick a collection exported from Postman, or drop it here.",
+    choose: "Choose a Postman collection to import.",
+    hint: "Each request gets its own file, in a folder per Postman folder. Variables go to .env. \
+           Nothing is overwritten: a name that is taken gets -2, -3, … .",
+    env_note: "The collection's variables are in .env. Secrets are listed there by name only.",
+    place: "Postman variable",
+    pick_id: "import-pick-postman",
+    files_id: "import-postman-files",
+};
+
+const OPENAPI: FileSource = FileSource {
+    convert: convert_openapi,
+    extensions: Some(&["json", "yaml", "yml"]),
+    label: "OpenAPI spec",
+    noun: "spec",
+    empty: "Pick an OpenAPI or Swagger file, or drop it here.",
+    choose: "Choose an OpenAPI spec to import.",
+    hint: "Each operation gets its own file, in a folder per tag. The base URL and secrets go to \
+           .env.",
+    env_note: "The base URL and secrets are in .env. Secrets are listed there by name only.",
+    place: "OpenAPI security scheme",
+    pick_id: "import-pick-openapi",
+    files_id: "import-openapi-files",
+};
+
+impl ImportTab {
+    /// The source of a tab that imports one file.
+    fn file_source(self) -> Option<&'static FileSource> {
+        match self {
+            ImportTab::Postman => Some(&POSTMAN),
+            ImportTab::OpenApi => Some(&OPENAPI),
+            ImportTab::Curl | ImportTab::Folder => None,
+        }
+    }
+}
+
+/// A file tab's pick: the file, and what it converts to.
+pub(super) type FilePick = Option<(PathBuf, Result<Import, String>)>;
 
 const TABS: [(ImportTab, &str, &str); 4] = [
     (ImportTab::Curl, "import-tab-curl", "curl"),
@@ -93,9 +161,13 @@ pub struct ImportDialog {
     pub(super) source: Option<PathBuf>,
     plan: Result<Vec<CopyPlan>, String>,
     /// Postman: the collection file picked, and what it converts to.
-    pub(super) postman: Option<(PathBuf, Result<PostmanImport, String>)>,
+    pub(super) postman: FilePick,
     /// Postman: what the import wrote and left to do, shown in its place.
-    pub(super) postman_done: Option<PostmanDone>,
+    pub(super) postman_done: Option<FileImportDone>,
+    /// OpenAPI: the spec picked, and what it converts to.
+    pub(super) openapi: FilePick,
+    /// OpenAPI: what the import wrote and left to do.
+    pub(super) openapi_done: Option<FileImportDone>,
     pub(super) error: Option<String>,
     /// The environment the import resolves `BASE_URL` and variables in.
     env: ImportContext,
@@ -228,6 +300,8 @@ impl ImportDialog {
             plan: Ok(Vec::new()),
             postman: None,
             postman_done: None,
+            openapi: None,
+            openapi_done: None,
             error: None,
             env,
             held: HashMap::new(),
@@ -364,24 +438,71 @@ impl ImportDialog {
         match self.tab {
             ImportTab::Curl => self.targets.iter().flatten().count(),
             ImportTab::Folder => self.plan.as_ref().map_or(0, Vec::len),
-            ImportTab::Postman => match &self.postman {
+            ImportTab::Postman | ImportTab::OpenApi => match self.picked(self.tab) {
                 Some((_, Ok(import))) => import.files.len(),
                 _ => 0,
             },
-            ImportTab::OpenApi => 0,
         }
     }
 
-    /// Reads and converts the Postman collection at `path`; the file
+    /// A file tab's pick and summary.
+    fn file_slots(&mut self, tab: ImportTab) -> (&mut FilePick, &mut Option<FileImportDone>) {
+        match tab {
+            ImportTab::OpenApi => (&mut self.openapi, &mut self.openapi_done),
+            _ => (&mut self.postman, &mut self.postman_done),
+        }
+    }
+
+    fn picked(&self, tab: ImportTab) -> Option<&(PathBuf, Result<Import, String>)> {
+        match tab {
+            ImportTab::Postman => self.postman.as_ref(),
+            ImportTab::OpenApi => self.openapi.as_ref(),
+            ImportTab::Curl | ImportTab::Folder => None,
+        }
+    }
+
+    /// The current tab's summary, after a file import.
+    fn file_done(&self) -> Option<&FileImportDone> {
+        match self.tab {
+            ImportTab::Postman => self.postman_done.as_ref(),
+            ImportTab::OpenApi => self.openapi_done.as_ref(),
+            ImportTab::Curl | ImportTab::Folder => None,
+        }
+    }
+
+    /// Reads and converts the file at `path` for a file tab; the file
     /// picker and a dropped file both land here.
-    pub(super) fn set_postman(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        let import = std::fs::read_to_string(&path)
-            .map_err(|e| e.to_string())
-            .and_then(|json| convert_postman(&json).map_err(|e| e.0));
-        self.postman = Some((path, import));
-        self.postman_done = None;
+    pub(super) fn set_file_import(
+        &mut self,
+        tab: ImportTab,
+        path: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(src) = tab.file_source() else {
+            return;
+        };
+        let accepted = src.extensions.is_none_or(|exts| {
+            path.extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| exts.iter().any(|x| e.eq_ignore_ascii_case(x)))
+        });
+        let import = if accepted {
+            std::fs::read_to_string(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|text| (src.convert)(&text).map_err(|e| e.0))
+        } else {
+            Err("Pick a .json, .yaml or .yml file.".into())
+        };
+        let (picked, done) = self.file_slots(tab);
+        *picked = Some((path, import));
+        *done = None;
         self.error = None;
         cx.notify();
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_postman(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.set_file_import(ImportTab::Postman, path, cx);
     }
 
     /// Opens the file a summary item points at (a Pick a file item's
@@ -393,8 +514,7 @@ impl ImportDialog {
         cx: &mut Context<Self>,
     ) {
         let Some(rel) = self
-            .postman_done
-            .as_ref()
+            .file_done()
             .and_then(|d| d.attention.get(ix))
             .and_then(|(_, opens)| opens.clone())
         else {
@@ -423,8 +543,8 @@ impl ImportDialog {
     /// When only some were written, those are followed up on (tree,
     /// secrets) and the dialog stays open on the error.
     pub(super) fn import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // On the Postman summary, ⌘↵ is Done.
-        if self.tab == ImportTab::Postman && self.postman_done.is_some() {
+        // On a file import's summary, ⌘↵ is Done.
+        if self.file_done().is_some() {
             window.close_dialog(cx);
             return;
         }
@@ -439,8 +559,8 @@ impl ImportDialog {
         let opened = self.root.is_none();
         let wrote_any = written.first.is_some();
         match &written.error {
-            // The Postman summary stays up in the dialog.
-            None if self.tab == ImportTab::Postman => cx.notify(),
+            // A file import's summary stays up in the dialog.
+            None if self.tab.file_source().is_some() => cx.notify(),
             None => window.close_dialog(cx),
             Some(e) => {
                 self.error = Some(e.clone());
@@ -561,11 +681,13 @@ impl ImportDialog {
             return Err(match self.tab {
                 ImportTab::Curl => "Paste a curl command to import.".into(),
                 ImportTab::Folder => "Choose a folder with YAML files.".into(),
-                ImportTab::Postman => match &self.postman {
-                    Some((_, Err(e))) => format!("Couldn't import the collection: {e}"),
-                    _ => "Choose a Postman collection to import.".into(),
-                },
-                ImportTab::OpenApi => "This import comes in a later build.".into(),
+                tab @ (ImportTab::Postman | ImportTab::OpenApi) => {
+                    let src = tab.file_source().expect("a file tab");
+                    match self.picked(tab) {
+                        Some((_, Err(e))) => format!("Couldn't import the {}: {e}", src.noun),
+                        _ => src.choose.into(),
+                    }
+                }
             });
         }
         let root = self
@@ -651,9 +773,10 @@ impl ImportDialog {
                     done: Vec::new(),
                 })
             }
-            ImportTab::Postman => {
+            tab @ (ImportTab::Postman | ImportTab::OpenApi) => {
+                let src = tab.file_source().expect("a file tab");
                 let folder = self.target_folder(cx);
-                let Some((_, Ok(import))) = &self.postman else {
+                let Some((_, Ok(import))) = self.picked(tab) else {
                     unreachable!("count is 0");
                 };
                 if let Some(f) = import.files.iter().find(|f| !reads_as_yaml(&f.yaml)) {
@@ -681,7 +804,7 @@ impl ImportDialog {
                         secrets.push(Extracted {
                             var: v.name.clone(),
                             value: v.value.clone(),
-                            place: "Postman variable".into(),
+                            place: src.place.into(),
                         });
                     }
                 }
@@ -690,7 +813,7 @@ impl ImportDialog {
                 } else {
                     "set it in the studio's Environments"
                 };
-                let outcome = match write_postman(&root, &folder, import, note) {
+                let outcome = match write_import(&root, &folder, import, note) {
                     Ok(o) => o,
                     Err(e) => {
                         return Ok(Written {
@@ -698,7 +821,7 @@ impl ImportDialog {
                             first: None,
                             secrets: Vec::new(),
                             secret_names: Vec::new(),
-                            error: Some(format!("Couldn't import the collection: {e}")),
+                            error: Some(format!("Couldn't import the {}: {e}", src.noun)),
                             done: Vec::new(),
                         });
                     }
@@ -745,30 +868,32 @@ impl ImportDialog {
                     .map(|v| v.name.clone())
                     .collect();
                 let saved = if self.save_secrets { secrets.len() } else { 0 };
-                self.postman_done = Some(PostmanDone {
+                let first = outcome.written.first().cloned();
+                let (picked, done) = self.file_slots(tab);
+                *done = Some(FileImportDone {
                     written: outcome.written.len(),
                     folder,
                     saved,
                     attention,
                 });
-                self.postman = None;
+                *picked = None;
                 Ok(Written {
                     root,
-                    first: outcome.written.first().cloned(),
+                    first,
                     secrets,
                     secret_names,
                     error: None,
                     done: Vec::new(),
                 })
             }
-            ImportTab::OpenApi => unreachable!("count is 0"),
         }
     }
 
-    /// Picks the tab's source (`source`: a folder, or the Postman tab's
-    /// collection file) or the target folder.
+    /// Picks the tab's source (`source`: a folder, or a file tab's file)
+    /// or the target folder.
     fn pick(&mut self, source: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let file = source && self.tab == ImportTab::Postman;
+        let tab = self.tab;
+        let file = source && tab.file_source().is_some();
         let picked = cx.prompt_for_paths(PathPromptOptions {
             files: file,
             directories: !file,
@@ -784,7 +909,7 @@ impl ImportDialog {
                 this.error = None;
                 if file {
                     if let Some(path) = dir {
-                        this.set_postman(path, cx);
+                        this.set_file_import(tab, path, cx);
                     }
                 } else if source {
                     this.source = dir;
@@ -798,9 +923,18 @@ impl ImportDialog {
         .detach();
     }
 
+    /// A file dropped on a file tab: read, routed by content and shown on
+    /// its tab.
+    fn drop_file(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        let tab = route_dropped(&path);
+        self.set_file_import(tab, path, cx);
+        self.set_tab(tab, cx);
+    }
+
     /// Development aid (`CURL_RUNNER_STUDIO_FILL`): pastes `text`, with
     /// `folder` set picks it as the Folder of YAML source, and a path to a
-    /// `.json` file fills the Postman tab.
+    /// `.json`, `.yaml` or `.yml` file fills the Postman or OpenAPI tab, as
+    /// a drop would.
     pub(super) fn dev_fill(
         &mut self,
         text: &str,
@@ -808,13 +942,16 @@ impl ImportDialog {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let json = Path::new(text);
+        let file = Path::new(text);
         if let Some(folder) = folder {
             self.source = Some(folder);
             self.set_tab(ImportTab::Folder, cx);
-        } else if json.extension().is_some_and(|e| e == "json") && json.is_file() {
-            self.set_postman(json.to_path_buf(), cx);
-            self.set_tab(ImportTab::Postman, cx);
+        } else if file
+            .extension()
+            .is_some_and(|e| e == "json" || e == "yaml" || e == "yml")
+            && file.is_file()
+        {
+            self.drop_file(file.to_path_buf(), cx);
         } else {
             let text = text.replace("\\n", "\n");
             self.curl.update(cx, |s, cx| s.set_value(text, window, cx));
@@ -1248,24 +1385,25 @@ impl ImportDialog {
         left_right(left, right)
     }
 
-    /// Postman: the collection's file, what it converts to and what
-    /// needs attention; after the import, the summary in its place.
-    fn render_postman(&self, cx: &mut Context<Self>) -> Div {
-        if let Some(done) = &self.postman_done {
-            return self.render_postman_done(done, cx);
+    /// A file tab (Postman, OpenAPI): the file, what it converts to and
+    /// what needs attention; after the import, the summary in its place.
+    fn render_file_import(&self, src: &'static FileSource, cx: &mut Context<Self>) -> Div {
+        if let Some(done) = self.file_done() {
+            return self.render_file_done(src, done, cx);
         }
-        let (path, import) = match &self.postman {
+        let picked = self.picked(self.tab);
+        let (path, import) = match picked {
             Some((path, Ok(import))) => (Some(path), Some(import)),
             Some((path, Err(_))) => (Some(path), None),
             None => (None, None),
         };
-        let status = match &self.postman {
+        let status = match picked {
             None => div()
                 .h(px(18.))
                 .text_size(px(12.))
                 .line_height(px(18.))
                 .text_color(color("text-tertiary"))
-                .child("Pick a collection exported from Postman, or drop it here."),
+                .child(src.empty),
             Some((path, Err(e))) => note(
                 icons::ERROR,
                 "danger",
@@ -1303,9 +1441,9 @@ impl ImportDialog {
             )
         };
         let left = column(true)
-            .child(label_text("Postman collection"))
+            .child(label_text(src.label))
             .child(picker(
-                "import-pick-postman",
+                src.pick_id,
                 path.map(PathBuf::as_path),
                 "No file chosen",
                 cx.listener(|this, _, window, cx| this.pick(true, window, cx)),
@@ -1336,14 +1474,8 @@ impl ImportDialog {
         let save = self.save_secrets;
         let right = column(false)
             .child(pane_header("Preview", aside))
-            .child(pane("import-postman-files", PANE_H).child(files))
-            .child(note(
-                icons::INFO,
-                "accent-blue",
-                "Each request gets its own file, in a folder per Postman folder. Variables go \
-                 to .env. Nothing is overwritten: a name that is taken gets -2, -3, … ."
-                    .into(),
-            ))
+            .child(pane(src.files_id, PANE_H).child(files))
+            .child(note(icons::INFO, "accent-blue", src.hint.into()))
             .when(secrets > 0, |d| {
                 d.child(
                     div().pl(px(21.)).text_size(px(12.)).child(
@@ -1359,14 +1491,19 @@ impl ImportDialog {
             });
         left_right(left, right).on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
             if let Some(path) = paths.paths().iter().find(|p| p.is_file()) {
-                this.set_postman(path.clone(), cx);
+                this.drop_file(path.clone(), cx);
             }
         }))
     }
 
-    /// After a Postman import: what was written, and the items left, each
+    /// After a file import: what was written, and the items left, each
     /// Pick a file one opening its request.
-    fn render_postman_done(&self, done: &PostmanDone, cx: &mut Context<Self>) -> Div {
+    fn render_file_done(
+        &self,
+        src: &'static FileSource,
+        done: &FileImportDone,
+        cx: &mut Context<Self>,
+    ) -> Div {
         let mut what = format!("Imported {}", plural(done.written, "request"));
         if !done.folder.as_os_str().is_empty() {
             what.push_str(&format!(" into {}/", done.folder.display()));
@@ -1376,13 +1513,7 @@ impl ImportDialog {
         let left = column(true)
             .child(label_text("Imported"))
             .child(note(icons::CHECK, "success", what))
-            .child(note(
-                icons::INFO,
-                "accent-blue",
-                "The collection's variables are in .env. Secrets are listed there by name \
-                 only."
-                    .into(),
-            ))
+            .child(note(icons::INFO, "accent-blue", src.env_note.into()))
             .when(done.saved > 0, |d| {
                 d.child(note(
                     icons::KEY,
@@ -1427,45 +1558,6 @@ impl ImportDialog {
         left_right(left, right)
     }
 
-    fn render_coming_soon(&self) -> Div {
-        div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .gap(px(10.))
-            .h(px(BODY_H))
-            .text_center()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .size(px(40.))
-                    .rounded(px(8.))
-                    .border_1()
-                    .border_dashed()
-                    .border_color(color("border-200"))
-                    .child(
-                        glyph(icons::IMPORT)
-                            .size(px(16.))
-                            .text_color(color("text-tertiary")),
-                    ),
-            )
-            .child(div().font_weight(FontWeight::MEDIUM).child("Coming soon"))
-            .child(
-                div()
-                    .w(px(360.))
-                    .text_size(px(12.))
-                    .line_height(relative(1.5))
-                    .text_color(color("text-secondary"))
-                    .child(
-                        "Importing OpenAPI files comes in a later build. For now, paste \
-                         curl commands, pick a Postman collection or copy a folder of YAML.",
-                    ),
-            )
-    }
-
     fn render_footer(&self, cx: &mut Context<Self>) -> Div {
         let target = match &self.folder {
             Some(select) => div()
@@ -1483,7 +1575,7 @@ impl ImportDialog {
                 .into_any_element(),
         };
         let enabled = self.count() > 0;
-        let done = self.tab == ImportTab::Postman && self.postman_done.is_some();
+        let done = self.file_done().is_some();
         let buttons: Vec<AnyElement> = if done {
             vec![
                 Button::new("import-done")
@@ -1538,8 +1630,8 @@ impl Render for ImportDialog {
         let body = match self.tab {
             ImportTab::Curl => self.render_curl(cx),
             ImportTab::Folder => self.render_folder(cx),
-            ImportTab::Postman => self.render_postman(cx),
-            ImportTab::OpenApi => self.render_coming_soon(),
+            ImportTab::Postman => self.render_file_import(&POSTMAN, cx),
+            ImportTab::OpenApi => self.render_file_import(&OPENAPI, cx),
         };
         div()
             .id("import-dialog")
@@ -1704,16 +1796,40 @@ fn file_name(path: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// One item a Postman import couldn't finish, with its icon: a warning
-/// for what the user must do, info for what was left out or changed.
+/// One item a file import couldn't finish, with its icon: a warning for
+/// what the user must do or check, info for what was left out or changed.
 fn attention_row(ix: usize, a: &Attention) -> Stateful<Div> {
     let (icon, tone) = match a {
         Attention::PickFile { .. }
         | Attention::ExtraFiles { .. }
         | Attention::SetSecret { .. }
         | Attention::SetVariable { .. }
-        | Attention::UnsupportedAuth { .. } => (icons::WARNING, "warning"),
-        _ => (icons::INFO, "accent-blue"),
+        | Attention::UnsupportedAuth { .. }
+        | Attention::UnresolvedRef { .. }
+        | Attention::SkippedBody { .. }
+        | Attention::UnsupportedScheme { .. }
+        | Attention::ServerVariable { .. }
+        | Attention::AccessToken { .. }
+        | Attention::BadOperation { .. }
+        | Attention::DocumentVars { .. }
+        | Attention::ServerCredentials
+        | Attention::AuthHeaderParam { .. }
+        | Attention::CleanedEnv { .. }
+        | Attention::ParamStyle { .. }
+        | Attention::UndeclaredPathVars { .. } => (icons::WARNING, "warning"),
+        Attention::Renamed { .. }
+        | Attention::SkippedVariable { .. }
+        | Attention::Script { .. }
+        | Attention::UnsupportedBody { .. }
+        | Attention::DynamicVar { .. }
+        | Attention::Examples { .. }
+        | Attention::KeptEnv { .. }
+        | Attention::AuthChoice { .. }
+        | Attention::OwnServer { .. }
+        | Attention::CookieParams { .. }
+        | Attention::BodyShapes { .. }
+        | Attention::NotConverted { .. }
+        | Attention::BadParams { .. } => (icons::INFO, "accent-blue"),
     };
     div()
         .id(("import-attention-item", ix))
@@ -1733,7 +1849,7 @@ fn attention_row(ix: usize, a: &Attention) -> Stateful<Div> {
         .child(div().flex_1().min_w_0().child(a.to_string()))
 }
 
-/// A Postman request file in the preview: its method and path.
+/// A request file in a file tab's preview: its method and path.
 fn file_row(rel: &Path, yaml: &str) -> Div {
     let method = method_of(yaml);
     div()
@@ -1861,6 +1977,29 @@ fn method_of(yaml: &str) -> SharedString {
         .map_or("GET", str::trim)
         .to_string()
         .into()
+}
+
+/// The tab a dropped file goes to: OpenAPI when its top level (JSON or
+/// YAML) has `openapi` or `swagger`, Postman otherwise.
+pub(super) fn route_dropped(path: &Path) -> ImportTab {
+    /// Only the two keys; the rest of the document is skipped unread.
+    #[derive(serde::Deserialize)]
+    struct Top {
+        openapi: Option<serde::de::IgnoredAny>,
+        swagger: Option<serde::de::IgnoredAny>,
+    }
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return ImportTab::Postman;
+    };
+    let top = if text.trim_start().starts_with('{') {
+        serde_json::from_str::<Top>(&text).ok()
+    } else {
+        serde_yaml_ng::from_str::<Top>(&text).ok()
+    };
+    match top {
+        Some(t) if t.openapi.is_some() || t.swagger.is_some() => ImportTab::OpenApi,
+        _ => ImportTab::Postman,
+    }
 }
 
 impl Workspace {
@@ -2039,8 +2178,8 @@ fn context_for(
     }
 }
 
-/// What a Postman import wrote and left for the user.
-pub(super) struct PostmanDone {
+/// What a file import (Postman, OpenAPI) wrote and left for the user.
+pub(super) struct FileImportDone {
     /// How many request files were written.
     pub written: usize,
     /// The folder they went into, under the target root.
@@ -2200,24 +2339,6 @@ mod tests {
             let c = ws.state.collection.as_ref().unwrap();
             assert!(c.tree.len() >= 3, "{:?}", c.tree);
         });
-    }
-
-    #[gpui_kit::test]
-    fn openapi_tab_imports_nothing(cx: &mut TestAppContext) {
-        let dir = collection();
-        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
-        let cx = &mut VisualTestContext::from_window(window, cx);
-        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
-        cx.update(|window, cx| dialog.update(cx, |d, cx| d.dev_fill(TWO, None, window, cx)));
-        dialog.update(cx, |d, cx| d.set_tab(ImportTab::OpenApi, cx));
-        cx.update(|window, cx| window.render_frame(cx));
-        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
-        dialog.read_with(cx, |d, _| {
-            assert_eq!(d.count(), 0);
-            assert!(d.error.is_some());
-        });
-        assert!(!dir.path().join("customers/create-customer.yaml").exists());
-        cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
     }
 
     #[gpui_kit::test]
@@ -2785,5 +2906,191 @@ mod tests {
             assert!(d.error.is_none(), "{:?}", d.error);
             assert_eq!(d.postman_done.as_ref().unwrap().written, 5);
         });
+    }
+
+    const PETS: &str =
+        include_str!("../../../curl-runner-core/tests/fixtures/openapi/small_v30.yaml");
+
+    /// `text` in a temp file named `name`; the dir keeps it alive.
+    fn temp_file(name: &str, text: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(name);
+        std::fs::write(&path, text).unwrap();
+        (dir, path)
+    }
+
+    #[gpui_kit::test]
+    fn openapi_tab_previews_spec(cx: &mut TestAppContext) {
+        let dir = collection();
+        let (_src, file) = temp_file("pets.yaml", PETS);
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
+        dialog.update(cx, |d, cx| {
+            d.set_file_import(ImportTab::OpenApi, file, cx);
+            d.set_tab(ImportTab::OpenApi, cx);
+        });
+        dialog.read_with(cx, |d, _| {
+            assert_eq!(d.count(), 6);
+            assert_eq!(d.import_label(), "Import 6 requests");
+            let Some((_, Ok(import))) = &d.openapi else {
+                panic!("{:?}", d.openapi.as_ref().map(|(_, r)| r.as_ref().err()));
+            };
+            assert_eq!(import.files[0].rel_path, Path::new("pets/list-pets.yaml"));
+            // The Postman tab keeps its own pick.
+            assert!(d.postman.is_none());
+        });
+        cx.update(|window, cx| {
+            window.render_frame(cx);
+            window.find("import-pick-openapi");
+        });
+    }
+
+    #[gpui_kit::test]
+    fn openapi_import_writes_and_summarizes(cx: &mut TestAppContext) {
+        let dir = collection();
+        let (_src, file) = temp_file("pets.yaml", PETS);
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
+        cx.update(|window, cx| {
+            dialog.update(cx, |d, cx| {
+                // The dev hook: a spec path fills the OpenAPI tab.
+                d.dev_fill(&file.to_string_lossy(), None, window, cx)
+            })
+        });
+        dialog.read_with(cx, |d, _| assert_eq!(d.tab, ImportTab::OpenApi));
+        cx.update(|window, cx| window.render_frame(cx));
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        cx.run_until_parked();
+        for rel in [
+            "pets/list-pets.yaml",
+            "pets/create-pet.yaml",
+            "pets/get-pet.yaml",
+            "pets/upload-photo.yaml",
+            "store/place-order.yaml",
+            "users/get-user.yaml",
+        ] {
+            assert!(dir.path().join(rel).is_file(), "{rel}");
+        }
+        let env = std::fs::read_to_string(dir.path().join(".env")).unwrap();
+        assert!(env.contains("PETS_BASE_URL="), "{env}");
+        assert!(env.contains("# PETS_API_KEY="), "{env}");
+        // No line sets the secret.
+        assert!(
+            !env.lines().any(|l| l.starts_with("PETS_API_KEY=")),
+            "{env}"
+        );
+        cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
+        dialog.read_with(cx, |d, _| {
+            assert!(d.error.is_none(), "{:?}", d.error);
+            assert_eq!(d.count(), 0);
+            assert!(d.postman_done.is_none());
+            let done = d.openapi_done.as_ref().unwrap();
+            assert_eq!(done.written, 6);
+            let lines: Vec<String> = done.attention.iter().map(|(a, _)| a.to_string()).collect();
+            assert!(
+                lines.contains(&"Set the secret PETS_API_KEY".to_string()),
+                "{lines:?}"
+            );
+            // Pick a file first, opening its request.
+            let (first, opens) = &done.attention[0];
+            assert!(matches!(first, Attention::PickFile { .. }), "{first}");
+            assert_eq!(opens.as_deref(), Some(Path::new("pets/upload-photo.yaml")));
+        });
+        ws.read_with(cx, |ws, cx| {
+            let marked = &ws.meta(cx).secret_names;
+            assert!(marked.iter().any(|n| n == "PETS_API_KEY"), "{marked:?}");
+        });
+        cx.update(|window, cx| {
+            window.render_frame(cx);
+            window.find("import-done");
+        });
+        // ⌘↵ on the summary is Done.
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        cx.run_until_parked();
+        cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
+    }
+
+    #[test]
+    fn drop_routes_by_content() {
+        use super::route_dropped;
+        let (_a, spec) = temp_file("openapi.json", r#"{"openapi":"3.1.0","info":{}}"#);
+        assert_eq!(route_dropped(&spec), ImportTab::OpenApi);
+        let (_b, collection) = temp_file("collection.json", SAMPLE);
+        assert_eq!(route_dropped(&collection), ImportTab::Postman);
+        let (_c, swagger) = temp_file("spec.yaml", "swagger: \"2.0\"\ninfo:\n  title: X\n");
+        assert_eq!(route_dropped(&swagger), ImportTab::OpenApi);
+        let (_d, v30) = temp_file("pets.yml", PETS);
+        assert_eq!(route_dropped(&v30), ImportTab::OpenApi);
+        // Nested keys and unreadable text stay with Postman, as today.
+        let (_e, nested) = temp_file("nested.yaml", "info:\n  openapi: 3.0.0\n");
+        assert_eq!(route_dropped(&nested), ImportTab::Postman);
+        let (_f, junk) = temp_file("junk.json", "{ not json");
+        assert_eq!(route_dropped(&junk), ImportTab::Postman);
+        assert_eq!(
+            route_dropped(Path::new("/nonexistent/x.json")),
+            ImportTab::Postman
+        );
+    }
+
+    #[gpui_kit::test]
+    fn a_spec_on_the_postman_tab_switches_to_openapi(cx: &mut TestAppContext) {
+        let dir = collection();
+        let (_src, file) = temp_file("pets.yaml", PETS);
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
+        dialog.update(cx, |d, cx| {
+            d.set_tab(ImportTab::Postman, cx);
+            d.drop_file(file, cx);
+        });
+        dialog.read_with(cx, |d, _| {
+            assert_eq!(d.tab, ImportTab::OpenApi);
+            assert_eq!(d.count(), 6);
+            assert!(d.postman.is_none());
+        });
+        // And a collection dropped on the OpenAPI tab goes back to Postman.
+        let (_c, collection) = postman_file(SAMPLE);
+        dialog.update(cx, |d, cx| d.drop_file(collection, cx));
+        dialog.read_with(cx, |d, _| {
+            assert_eq!(d.tab, ImportTab::Postman);
+            assert_eq!(d.count(), 5);
+        });
+    }
+
+    #[gpui_kit::test]
+    fn openapi_tab_refuses_other_files_and_bad_specs(cx: &mut TestAppContext) {
+        let dir = collection();
+        let before = all_text(dir.path());
+        let (_a, txt) = temp_file("pets.txt", PETS);
+        let (_b, bad) = temp_file("bad.yaml", "openapi: 9.9.9\n");
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
+        dialog.update(cx, |d, cx| d.set_tab(ImportTab::OpenApi, cx));
+        // Before a pick.
+        cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+        dialog.read_with(cx, |d, _| {
+            assert_eq!(
+                d.error.as_deref(),
+                Some("Choose an OpenAPI spec to import.")
+            );
+        });
+        for file in [txt, bad] {
+            dialog.update(cx, |d, cx| d.set_file_import(ImportTab::OpenApi, file, cx));
+            dialog.read_with(cx, |d, _| {
+                assert_eq!(d.count(), 0);
+                assert!(matches!(&d.openapi, Some((_, Err(_)))));
+            });
+            cx.update(|window, cx| window.render_frame(cx));
+            cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
+            dialog.read_with(cx, |d, _| {
+                let e = d.error.as_deref().unwrap();
+                assert!(e.starts_with("Couldn't import the spec: "), "{e}");
+            });
+        }
+        assert_eq!(all_text(dir.path()), before);
+        cx.update(|window, cx| assert!(window.has_active_dialog(cx)));
     }
 }
