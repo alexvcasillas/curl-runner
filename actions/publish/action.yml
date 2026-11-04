@@ -1,0 +1,43 @@
+name: curl-runner publish
+description: Publish a curl-runner collection to curl-runner Cloud. Git stays the source of truth and CI publishes.
+author: alexvcasillas
+
+inputs:
+  token:
+    description: Publish token (crt_...) from your Cloud team. Keep it in a repository secret.
+    required: true
+  team:
+    description: Slug of the Cloud team to publish to.
+    required: true
+  path:
+    description: Collection folder or folders to publish, separated by spaces. Globs such as collections/* are expanded.
+    required: false
+    default: "."
+  server:
+    description: Cloud API URL. Set it only for a self-hosted server.
+    required: false
+    default: https://api.curl-runner.com
+  version:
+    description: Version of @curl-runner/cli to install. Pin one, such as 2.6.0, for repeatable runs.
+    required: false
+    default: latest
+
+runs:
+  using: composite
+  steps:
+    - name: Install curl-runner
+      shell: bash
+      env:
+        CLI_VERSION: ${{ inputs.version }}
+      run: npm install --global "@curl-runner/cli@${CLI_VERSION}"
+
+    - name: Publish
+      shell: bash
+      env:
+        CURL_RUNNER_TOKEN: ${{ inputs.token }}
+        CURL_RUNNER_TEAM: ${{ inputs.team }}
+        CURL_RUNNER_SERVER: ${{ inputs.server }}
+        PUBLISH_PATH: ${{ inputs.path }}
+      # PUBLISH_PATH is deliberately unquoted: the shell splits it into folders
+      # and expands globs.
+      run: curl-runner publish $PUBLISH_PATH
