@@ -1,4 +1,5 @@
 import {
+  openapiScreenshots,
   postmanScreenshots,
   type Screenshot,
   STUDIO_CHANGELOG_HREF,
@@ -1058,6 +1059,68 @@ request:
       'postman cli alternative',
     ],
     screenshots: postmanScreenshots(),
+  },
+  {
+    slug: 'openapi-import',
+    title: 'OpenAPI Import',
+    seoTitle: 'Import OpenAPI and Swagger specs to YAML',
+    headline: 'Turn an OpenAPI spec into runnable YAML files.',
+    description:
+      'Turn an OpenAPI or Swagger spec into curl-runner YAML with one command or in the studio. One file per operation, a .env, and no secrets in files.',
+    example: {
+      filename: 'pets/list-pets.yaml',
+      yaml: yaml(`
+# Imported from OpenAPI: Pets
+# operationId: listPets
+# Everything about pets.
+
+request:
+  name: List pets
+  method: GET
+  url: \${PETS_BASE_URL}/pets
+  headers:
+    X-API-Key: \${PETS_API_KEY}
+  params:
+    # # How many pets to return.
+    # limit: "1"
+  expect:
+    status: 200
+`),
+    },
+    exampleIntro:
+      'Each operation becomes a file like this one. The CLI, CI and the studio run it as it is.',
+    benefits: [
+      {
+        title: 'One file per operation',
+        description:
+          'Each tag becomes a folder and each operation its own YAML file, with sample values taken from the spec. A change shows up as a small diff.',
+      },
+      {
+        title: 'A smoke test from the start',
+        description:
+          'Each request checks the lowest documented 2xx status, so the folder works as a smoke test before you change anything.',
+      },
+      {
+        title: 'Secrets stay out of files',
+        description:
+          'Secrets are listed by name in .env and set in .env.local. The studio saves them to the macOS Keychain. A short list shows what still needs your attention.',
+      },
+    ],
+    goodFor: [
+      'Smoke-testing an API from its spec',
+      'Starting a test suite for an API you did not write',
+      'Reviewing API changes in pull requests',
+      'Regenerating YAML from a spec your build generates',
+    ],
+    keywords: [
+      'openapi to yaml',
+      'import openapi spec',
+      'swagger to yaml',
+      'convert openapi to curl',
+      'openapi cli',
+      'openapi smoke test',
+    ],
+    screenshots: openapiScreenshots(),
   },
   {
     slug: 'env-files',

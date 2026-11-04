@@ -76,8 +76,8 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
     httpie: 'Not documented',
   },
   {
-    label: 'Import from Postman / curl',
-    curlRunner: 'Postman collections and curl (CLI and app)',
+    label: 'Import from Postman / OpenAPI / curl',
+    curlRunner: 'Postman collections, OpenAPI/Swagger specs and curl (CLI and app)',
     // https://learning.postman.com/docs/getting-started/importing-and-exporting/importing-data/ (cURL, OpenAPI, Insomnia and other clients)
     postman: 'curl, OpenAPI, Insomnia and more',
     // https://developer.konghq.com/insomnia/import-export/ (Postman v2.0/v2.1, HAR, OpenAPI, cURL)
