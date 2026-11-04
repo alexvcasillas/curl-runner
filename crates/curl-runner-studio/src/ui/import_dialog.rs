@@ -18,7 +18,7 @@ use crate::model::import::{
 };
 use crate::model::secrets::SecretStore;
 use curl_runner_core::convert::ConvertError;
-use curl_runner_core::convert::import::{Attention, Import, write_import};
+use curl_runner_core::convert::import::{Attention, Import, ImportedVar, write_import_noting};
 use curl_runner_core::convert::openapi::convert_openapi;
 use curl_runner_core::convert::postman::convert_postman;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -104,13 +104,57 @@ const OPENAPI: FileSource = FileSource {
     noun: "spec",
     empty: "Pick an OpenAPI or Swagger file, or drop it here.",
     choose: "Choose an OpenAPI spec to import.",
-    hint: "Each operation gets its own file, in a folder per tag. The base URL and secrets go to \
-           .env.",
+    hint: "One file per operation, in a folder per tag. The base URL and secrets go to .env.",
     env_note: "The base URL and secrets are in .env. Secrets are listed there by name only.",
     place: "OpenAPI security scheme",
     pick_id: "import-pick-openapi",
     files_id: "import-openapi-files",
 };
+
+impl FileSource {
+    /// Whether the tab takes a file with `path`'s extension.
+    fn accepts(&self, path: &Path) -> bool {
+        self.extensions.is_none_or(|exts| has_extension(path, exts))
+    }
+}
+
+/// `path` ends in one of `exts`, in any case.
+fn has_extension(path: &Path, exts: &[&str]) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| exts.iter().any(|x| e.eq_ignore_ascii_case(x)))
+}
+
+/// Why a file tab's pick doesn't import.
+#[derive(Debug)]
+pub(super) enum PickError {
+    /// The file couldn't be read or converted.
+    Failed(String),
+    /// Not a file the tab takes (its extension).
+    Kind,
+}
+
+impl PickError {
+    /// The status line under the picker.
+    fn status(&self, path: &Path) -> String {
+        match self {
+            PickError::Failed(e) => format!("Couldn't read {}: {e}", file_name(path)),
+            PickError::Kind => kind_error(path),
+        }
+    }
+
+    /// Import's error.
+    fn import_error(&self, src: &FileSource, path: &Path) -> String {
+        match self {
+            PickError::Failed(e) => format!("Couldn't import the {}: {e}", src.noun),
+            PickError::Kind => kind_error(path),
+        }
+    }
+}
+
+fn kind_error(path: &Path) -> String {
+    format!("{} isn't a .json, .yaml or .yml file.", file_name(path))
+}
 
 impl ImportTab {
     /// The source of a tab that imports one file.
@@ -124,7 +168,7 @@ impl ImportTab {
 }
 
 /// A file tab's pick: the file, and what it converts to.
-pub(super) type FilePick = Option<(PathBuf, Result<Import, String>)>;
+pub(super) type FilePick = Option<(PathBuf, Result<Import, PickError>)>;
 
 const TABS: [(ImportTab, &str, &str); 4] = [
     (ImportTab::Curl, "import-tab-curl", "curl"),
@@ -168,6 +212,8 @@ pub struct ImportDialog {
     pub(super) openapi: FilePick,
     /// OpenAPI: what the import wrote and left to do.
     pub(super) openapi_done: Option<FileImportDone>,
+    /// A file tab's file being read and converted off the UI thread.
+    reading: Option<(PathBuf, Task<()>)>,
     pub(super) error: Option<String>,
     /// The environment the import resolves `BASE_URL` and variables in.
     env: ImportContext,
@@ -302,6 +348,7 @@ impl ImportDialog {
             postman_done: None,
             openapi: None,
             openapi_done: None,
+            reading: None,
             error: None,
             env,
             held: HashMap::new(),
@@ -439,7 +486,7 @@ impl ImportDialog {
             ImportTab::Curl => self.targets.iter().flatten().count(),
             ImportTab::Folder => self.plan.as_ref().map_or(0, Vec::len),
             ImportTab::Postman | ImportTab::OpenApi => match self.picked(self.tab) {
-                Some((_, Ok(import))) => import.files.len(),
+                Some((_, Ok(import))) if self.reading.is_none() => import.files.len(),
                 _ => 0,
             },
         }
@@ -448,12 +495,13 @@ impl ImportDialog {
     /// A file tab's pick and summary.
     fn file_slots(&mut self, tab: ImportTab) -> (&mut FilePick, &mut Option<FileImportDone>) {
         match tab {
+            ImportTab::Postman => (&mut self.postman, &mut self.postman_done),
             ImportTab::OpenApi => (&mut self.openapi, &mut self.openapi_done),
-            _ => (&mut self.postman, &mut self.postman_done),
+            ImportTab::Curl | ImportTab::Folder => unreachable!("{tab:?} imports no file"),
         }
     }
 
-    fn picked(&self, tab: ImportTab) -> Option<&(PathBuf, Result<Import, String>)> {
+    fn picked(&self, tab: ImportTab) -> Option<&(PathBuf, Result<Import, PickError>)> {
         match tab {
             ImportTab::Postman => self.postman.as_ref(),
             ImportTab::OpenApi => self.openapi.as_ref(),
@@ -470,29 +518,52 @@ impl ImportDialog {
         }
     }
 
-    /// Reads and converts the file at `path` for a file tab; the file
-    /// picker and a dropped file both land here.
+    /// Reads and converts the file at `path` for a file tab, on the UI
+    /// thread, so a test sees it at once.
+    #[cfg(test)]
     pub(super) fn set_file_import(
         &mut self,
         tab: ImportTab,
         path: PathBuf,
         cx: &mut Context<Self>,
     ) {
-        let Some(src) = tab.file_source() else {
-            return;
-        };
-        let accepted = src.extensions.is_none_or(|exts| {
-            path.extension()
-                .and_then(|e| e.to_str())
-                .is_some_and(|e| exts.iter().any(|x| e.eq_ignore_ascii_case(x)))
+        let (tab, import) = read_pick(&path, tab, false);
+        self.apply_pick(tab, path, import, cx);
+    }
+
+    /// Reads, converts and (`route`) routes `path` off the UI thread, for
+    /// the picker and drops; the status line says so meanwhile. A newer
+    /// pick drops this one.
+    fn load_file(&mut self, tab: ImportTab, path: PathBuf, route: bool, cx: &mut Context<Self>) {
+        let read = path.clone();
+        let work = cx.background_spawn(async move { read_pick(&read, tab, route) });
+        let picked = path.clone();
+        let task = cx.spawn(async move |this, cx| {
+            let (tab, import) = work.await;
+            this.update(cx, |this, cx| {
+                // Detached, not dropped: this is the task running.
+                if let Some((_, task)) = this.reading.take() {
+                    task.detach();
+                }
+                this.apply_pick(tab, picked, import, cx);
+                if route {
+                    this.set_tab(tab, cx);
+                }
+            })
+            .ok();
         });
-        let import = if accepted {
-            std::fs::read_to_string(&path)
-                .map_err(|e| e.to_string())
-                .and_then(|text| (src.convert)(&text).map_err(|e| e.0))
-        } else {
-            Err("Pick a .json, .yaml or .yml file.".into())
-        };
+        self.reading = Some((path, task));
+        self.error = None;
+        cx.notify();
+    }
+
+    fn apply_pick(
+        &mut self,
+        tab: ImportTab,
+        path: PathBuf,
+        import: Result<Import, PickError>,
+        cx: &mut Context<Self>,
+    ) {
         let (picked, done) = self.file_slots(tab);
         *picked = Some((path, import));
         *done = None;
@@ -684,7 +755,10 @@ impl ImportDialog {
                 tab @ (ImportTab::Postman | ImportTab::OpenApi) => {
                     let src = tab.file_source().expect("a file tab");
                     match self.picked(tab) {
-                        Some((_, Err(e))) => format!("Couldn't import the {}: {e}", src.noun),
+                        _ if self.reading.is_some() => {
+                            "Wait until the file is read, then import it.".into()
+                        }
+                        Some((path, Err(e))) => e.import_error(src, path),
                         _ => src.choose.into(),
                     }
                 }
@@ -808,12 +882,21 @@ impl ImportDialog {
                         });
                     }
                 }
-                let note = if self.save_secrets {
-                    "the studio keeps it in your Keychain"
+                // Only a value saved now is in the Keychain; the rest the
+                // user sets.
+                let saved_now: HashSet<&str> = if self.save_secrets {
+                    secrets.iter().map(|e| e.var.as_str()).collect()
                 } else {
-                    "set it in the studio's Environments"
+                    HashSet::new()
                 };
-                let outcome = match write_import(&root, &folder, import, note) {
+                let note = |v: &ImportedVar| {
+                    if saved_now.contains(v.name.as_str()) {
+                        "the studio keeps it in your Keychain".to_string()
+                    } else {
+                        "set it in the studio's Environments".to_string()
+                    }
+                };
+                let outcome = match write_import_noting(&root, &folder, import, &note) {
                     Ok(o) => o,
                     Err(e) => {
                         return Ok(Written {
@@ -909,7 +992,7 @@ impl ImportDialog {
                 this.error = None;
                 if file {
                     if let Some(path) = dir {
-                        this.set_file_import(tab, path, cx);
+                        this.load_file(tab, path, false, cx);
                     }
                 } else if source {
                     this.source = dir;
@@ -926,9 +1009,8 @@ impl ImportDialog {
     /// A file dropped on a file tab: read, routed by content and shown on
     /// its tab.
     fn drop_file(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        let tab = route_dropped(&path);
-        self.set_file_import(tab, path, cx);
-        self.set_tab(tab, cx);
+        let tab = self.tab;
+        self.load_file(tab, path, true, cx);
     }
 
     /// Development aid (`CURL_RUNNER_STUDIO_FILL`): pastes `text`, with
@@ -946,12 +1028,11 @@ impl ImportDialog {
         if let Some(folder) = folder {
             self.source = Some(folder);
             self.set_tab(ImportTab::Folder, cx);
-        } else if file
-            .extension()
-            .is_some_and(|e| e == "json" || e == "yaml" || e == "yml")
-            && file.is_file()
-        {
-            self.drop_file(file.to_path_buf(), cx);
+        } else if has_extension(file, &["json", "yaml", "yml"]) && file.is_file() {
+            // On the UI thread, so a screenshot or test sees it at once.
+            let (tab, import) = read_pick(file, ImportTab::Postman, true);
+            self.apply_pick(tab, file.to_path_buf(), import, cx);
+            self.set_tab(tab, cx);
         } else {
             let text = text.replace("\\n", "\n");
             self.curl.update(cx, |s, cx| s.set_value(text, window, cx));
@@ -1392,34 +1473,31 @@ impl ImportDialog {
             return self.render_file_done(src, done, cx);
         }
         let picked = self.picked(self.tab);
-        let (path, import) = match picked {
-            Some((path, Ok(import))) => (Some(path), Some(import)),
-            Some((path, Err(_))) => (Some(path), None),
-            None => (None, None),
+        let (path, import) = match (&self.reading, picked) {
+            (Some((path, _)), _) => (Some(path), None),
+            (None, Some((path, Ok(import)))) => (Some(path), Some(import)),
+            (None, Some((path, Err(_)))) => (Some(path), None),
+            (None, None) => (None, None),
         };
-        let status = match picked {
-            None => div()
+        let line = |tone: &'static str| {
+            div()
                 .h(px(18.))
                 .text_size(px(12.))
                 .line_height(px(18.))
-                .text_color(color("text-tertiary"))
-                .child(src.empty),
-            Some((path, Err(e))) => note(
-                icons::ERROR,
-                "danger",
-                format!("Couldn't read {}: {e}", file_name(path)),
-            ),
-            Some((path, Ok(import))) => div()
-                .h(px(18.))
-                .text_size(px(12.))
-                .line_height(px(18.))
-                .text_color(color("text-secondary"))
-                .child(format!(
-                    "{}: {} in {}",
-                    file_name(path),
-                    plural(import.report.requests, "request"),
-                    plural(import.report.folders, "folder"),
-                )),
+                .text_color(color(tone))
+        };
+        let status = match (&self.reading, picked) {
+            (Some((path, _)), _) => {
+                line("text-secondary").child(format!("Reading {}…", file_name(path)))
+            }
+            (None, None) => line("text-tertiary").child(src.empty),
+            (None, Some((path, Err(e)))) => note(icons::ERROR, "danger", e.status(path)),
+            (None, Some((path, Ok(import)))) => line("text-secondary").child(format!(
+                "{}: {} in {}",
+                file_name(path),
+                plural(import.report.requests, "request"),
+                plural(import.report.folders, "folder"),
+            )),
         };
         let attention: Vec<&Attention> = import
             .map(|i| {
@@ -1979,27 +2057,72 @@ fn method_of(yaml: &str) -> SharedString {
         .into()
 }
 
-/// The tab a dropped file goes to: OpenAPI when its top level (JSON or
-/// YAML) has `openapi` or `swagger`, Postman otherwise.
-pub(super) fn route_dropped(path: &Path) -> ImportTab {
-    /// Only the two keys; the rest of the document is skipped unread.
+/// A file tab's file, read once: the tab it goes to (by its content when
+/// `route`, else `tab`) and what it converts to. An unreadable file stays
+/// on `tab`.
+fn read_pick(path: &Path, tab: ImportTab, route: bool) -> (ImportTab, Result<Import, PickError>) {
+    let kind = |tab: ImportTab| tab.file_source().expect("a file tab");
+    if !route && !kind(tab).accepts(path) {
+        return (tab, Err(PickError::Kind));
+    }
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) => return (tab, Err(PickError::Failed(e.to_string()))),
+    };
+    let tab = if route { route_text(&text) } else { tab };
+    let src = kind(tab);
+    if !src.accepts(path) {
+        return (tab, Err(PickError::Kind));
+    }
+    let import = (src.convert)(&text).map_err(|e| PickError::Failed(e.0));
+    (tab, import)
+}
+
+/// The tab a dropped file's text goes to: OpenAPI when its top level has
+/// `openapi` or `swagger`, Postman otherwise. JSON is read for its top
+/// level keys only; YAML isn't parsed, its lines are scanned for the key at
+/// column 0.
+pub(super) fn route_text(text: &str) -> ImportTab {
     #[derive(serde::Deserialize)]
     struct Top {
         openapi: Option<serde::de::IgnoredAny>,
         swagger: Option<serde::de::IgnoredAny>,
     }
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return ImportTab::Postman;
-    };
-    let top = if text.trim_start().starts_with('{') {
-        serde_json::from_str::<Top>(&text).ok()
+    let text = text.trim_start_matches('\u{feff}');
+    let spec = if text.trim_start().starts_with('{') {
+        serde_json::from_str::<Top>(text).is_ok_and(|t| t.openapi.is_some() || t.swagger.is_some())
     } else {
-        serde_yaml_ng::from_str::<Top>(&text).ok()
+        text.lines().any(spec_key)
     };
-    match top {
-        Some(t) if t.openapi.is_some() || t.swagger.is_some() => ImportTab::OpenApi,
-        _ => ImportTab::Postman,
+    if spec {
+        ImportTab::OpenApi
+    } else {
+        ImportTab::Postman
     }
+}
+
+/// A YAML line at column 0 that is the `openapi` or `swagger` key, bare
+/// or quoted.
+fn spec_key(line: &str) -> bool {
+    let (quote, body) = match line.chars().next() {
+        Some(q @ ('"' | '\'')) => (Some(q), &line[1..]),
+        _ => (None, line),
+    };
+    ["openapi", "swagger"].iter().any(|key| {
+        let Some(rest) = body.strip_prefix(key) else {
+            return false;
+        };
+        let rest = match quote {
+            Some(q) => match rest.strip_prefix(q) {
+                Some(rest) => rest,
+                None => return false,
+            },
+            None => rest,
+        };
+        rest.trim_start_matches([' ', '\t'])
+            .strip_prefix(':')
+            .is_some_and(|v| v.is_empty() || v.starts_with([' ', '\t']))
+    })
 }
 
 impl Workspace {
@@ -2976,6 +3099,12 @@ mod tests {
         let env = std::fs::read_to_string(dir.path().join(".env")).unwrap();
         assert!(env.contains("PETS_BASE_URL="), "{env}");
         assert!(env.contains("# PETS_API_KEY="), "{env}");
+        // A spec has no secret values: none is in the Keychain yet.
+        assert!(
+            env.contains("# PETS_API_KEY is a secret: set it in the studio's Environments"),
+            "{env}"
+        );
+        assert!(!env.contains("Keychain"), "{env}");
         // No line sets the secret.
         assert!(
             !env.lines().any(|l| l.starts_with("PETS_API_KEY=")),
@@ -3014,24 +3143,57 @@ mod tests {
 
     #[test]
     fn drop_routes_by_content() {
-        use super::route_dropped;
-        let (_a, spec) = temp_file("openapi.json", r#"{"openapi":"3.1.0","info":{}}"#);
-        assert_eq!(route_dropped(&spec), ImportTab::OpenApi);
-        let (_b, collection) = temp_file("collection.json", SAMPLE);
-        assert_eq!(route_dropped(&collection), ImportTab::Postman);
-        let (_c, swagger) = temp_file("spec.yaml", "swagger: \"2.0\"\ninfo:\n  title: X\n");
-        assert_eq!(route_dropped(&swagger), ImportTab::OpenApi);
-        let (_d, v30) = temp_file("pets.yml", PETS);
-        assert_eq!(route_dropped(&v30), ImportTab::OpenApi);
-        // Nested keys and unreadable text stay with Postman, as today.
-        let (_e, nested) = temp_file("nested.yaml", "info:\n  openapi: 3.0.0\n");
-        assert_eq!(route_dropped(&nested), ImportTab::Postman);
-        let (_f, junk) = temp_file("junk.json", "{ not json");
-        assert_eq!(route_dropped(&junk), ImportTab::Postman);
+        use super::route_text;
         assert_eq!(
-            route_dropped(Path::new("/nonexistent/x.json")),
-            ImportTab::Postman
+            route_text(r#"{"openapi":"3.1.0","info":{}}"#),
+            ImportTab::OpenApi
         );
+        assert_eq!(route_text(SAMPLE), ImportTab::Postman);
+        assert_eq!(
+            route_text("swagger: \"2.0\"\ninfo:\n  title: X\n"),
+            ImportTab::OpenApi
+        );
+        assert_eq!(route_text(PETS), ImportTab::OpenApi);
+        assert_eq!(route_text("{ not json"), ImportTab::Postman);
+        assert_eq!(route_text(""), ImportTab::Postman);
+    }
+
+    #[test]
+    fn yaml_routes_by_a_key_at_column_0() {
+        use super::route_text;
+        for spec in [
+            "\"openapi\": 3.0.0\n",
+            "'swagger': '2.0'\n",
+            "info:\n  title: X\nopenapi : 3.1.0\n",
+            "openapi:\n  3.1.0\n",
+            "\u{feff}openapi: 3.0.0\n",
+        ] {
+            assert_eq!(route_text(spec), ImportTab::OpenApi, "{spec:?}");
+        }
+        for other in [
+            "info:\n  openapi: 3.0.0\n",
+            " openapi: 3.0.0\n",
+            "# openapi: 3.0.0\nitem: []\n",
+            "openapis: 1\n",
+            "openapi_version: 3\n",
+            "\"openapi: 3\n",
+            "openapi:x\n",
+        ] {
+            assert_eq!(route_text(other), ImportTab::Postman, "{other:?}");
+        }
+    }
+
+    #[test]
+    fn an_unreadable_drop_stays_on_its_tab() {
+        use super::read_pick;
+        let (tab, import) = read_pick(Path::new("/nonexistent/x.yaml"), ImportTab::OpenApi, true);
+        assert_eq!(tab, ImportTab::OpenApi);
+        assert!(matches!(import, Err(super::PickError::Failed(_))));
+        let (_a, binary) = temp_file("bin.json", "");
+        std::fs::write(&binary, [0xff, 0xfe, 0x00, 0x81]).unwrap();
+        let (tab, import) = read_pick(&binary, ImportTab::OpenApi, true);
+        assert_eq!(tab, ImportTab::OpenApi);
+        assert!(import.is_err());
     }
 
     #[gpui_kit::test]
@@ -3045,7 +3207,16 @@ mod tests {
             d.set_tab(ImportTab::Postman, cx);
             d.drop_file(file, cx);
         });
+        // Read off the UI thread: nothing to import meanwhile.
         dialog.read_with(cx, |d, _| {
+            assert!(d.reading.is_some());
+            assert_eq!(d.tab, ImportTab::Postman);
+            assert_eq!(d.count(), 0);
+        });
+        cx.update(|window, cx| window.render_frame(cx));
+        cx.run_until_parked();
+        dialog.read_with(cx, |d, _| {
+            assert!(d.reading.is_none());
             assert_eq!(d.tab, ImportTab::OpenApi);
             assert_eq!(d.count(), 6);
             assert!(d.postman.is_none());
@@ -3053,9 +3224,20 @@ mod tests {
         // And a collection dropped on the OpenAPI tab goes back to Postman.
         let (_c, collection) = postman_file(SAMPLE);
         dialog.update(cx, |d, cx| d.drop_file(collection, cx));
+        cx.run_until_parked();
         dialog.read_with(cx, |d, _| {
             assert_eq!(d.tab, ImportTab::Postman);
             assert_eq!(d.count(), 5);
+        });
+        // A file that can't be read stays on the tab, with its error.
+        dialog.update(cx, |d, cx| {
+            d.set_tab(ImportTab::OpenApi, cx);
+            d.drop_file(PathBuf::from("/nonexistent/spec.yaml"), cx);
+        });
+        cx.run_until_parked();
+        dialog.read_with(cx, |d, _| {
+            assert_eq!(d.tab, ImportTab::OpenApi);
+            assert!(matches!(&d.openapi, Some((_, Err(_)))));
         });
     }
 
@@ -3077,7 +3259,10 @@ mod tests {
                 Some("Choose an OpenAPI spec to import.")
             );
         });
-        for file in [txt, bad] {
+        for (file, want) in [
+            (txt, "pets.txt isn't a .json, .yaml or .yml file."),
+            (bad, "Couldn't import the spec: "),
+        ] {
             dialog.update(cx, |d, cx| d.set_file_import(ImportTab::OpenApi, file, cx));
             dialog.read_with(cx, |d, _| {
                 assert_eq!(d.count(), 0);
@@ -3087,7 +3272,7 @@ mod tests {
             cx.update(|window, cx| dialog.update(cx, |d, cx| d.import(window, cx)));
             dialog.read_with(cx, |d, _| {
                 let e = d.error.as_deref().unwrap();
-                assert!(e.starts_with("Couldn't import the spec: "), "{e}");
+                assert!(e.starts_with(want), "{e}");
             });
         }
         assert_eq!(all_text(dir.path()), before);
