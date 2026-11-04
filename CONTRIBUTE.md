@@ -477,24 +477,41 @@ packages. The version PR bumps `packages/cli/package.json` and, through
 
 ### Writing a changeset
 
-`packages/cli/CHANGELOG.md` is generated from changesets, and the website's
+`packages/cli/CHANGELOG.md` is generated from changesets. The website's
 [/changelog](https://www.curl-runner.com/changelog) page and `/rss.xml` feed are
-built from it. Start each changeset summary with a short bold headline on its own
-line, then a blank line, then the details in Markdown:
+built from it. Write each summary as a bold headline, a short lead, then tagged items:
 
 ```markdown
 ---
 "@curl-runner/cli": minor
 ---
 
-**Install with Homebrew**
+**Import OpenAPI specs**
 
-Homebrew: install with `brew install alexvcasillas/tap/curl-runner` ...
+`curl-runner convert openapi` turns a spec into YAML files and a `.env`.
+
+- **New:** `convert openapi <spec>` writes one file per operation.
+- **Improved:** variables are prefixed per API, so two APIs can share one `.env`.
+- **Fixed:** the cleaned `.env` report line says what actually changed.
 ```
 
-The headline becomes the release title on the site and in the feed; without it
-the entry shows only its text. A `### Migration: ...` heading in the details is
-shown as a highlighted box that is never collapsed.
+- **Headline:** a bold line on its own. It is the release title.
+- **Lead:** one or two sentences. Optional.
+- **Items:** `- **Tag:** text`, one change each. Wrap long ones on indented lines.
+- **Notes:** anything after the items, such as code blocks. A `### Migration: ...` heading is shown as a highlighted box.
+
+The four tags:
+
+- **New:** something you could not do before.
+- **Improved:** something that already worked now works better.
+- **Fixed:** a bug fix.
+- **Breaking:** you must change something to upgrade. Major releases only, or a documented behaviour change.
+
+Tagged items must be consecutive. A plain bullet, a heading or a code block ends
+the list, and everything after it is notes.
+
+CI checks this. A changeset without a headline or a tagged item fails the docs
+tests, and so does a release in `CHANGELOG.md` without one.
 
 ## 🐛 Issue Guidelines
 
