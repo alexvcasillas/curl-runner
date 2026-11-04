@@ -72,6 +72,8 @@ impl Mapper<'_> {
     fn scheme(&mut self, key: &str, s: &Value, r: &mut MappedRequest, cookies: &mut Vec<String>) {
         let base = format!("{}_{}", self.prefix, key.to_ascii_uppercase());
         let var = |suffix: &str| format!("{base}{suffix}");
+        // Only one scheme can fill `auth`; a later one is reported before
+        // it registers anything.
         let kind = s.get("type").and_then(Value::as_str).unwrap_or("");
         match kind {
             "apiKey" => {
@@ -93,7 +95,10 @@ impl Mapper<'_> {
                     .and_then(Value::as_str)
                     .unwrap_or("")
                     .to_ascii_lowercase();
-                let auth = match http.as_str() {
+                if r.auth.is_some() && matches!(http.as_str(), "bearer" | "basic") {
+                    return self.unsupported(key, &http);
+                }
+                r.auth = Some(match http.as_str() {
                     "bearer" => {
                         let token = self.secret_var(&var("_TOKEN"));
                         MappedAuth::Bearer(format!("${{{token}}}"))
@@ -107,10 +112,12 @@ impl Mapper<'_> {
                         }
                     }
                     other => return self.unsupported(key, other),
-                };
-                self.set_auth(key, &http, auth, r);
+                });
             }
             "oauth2" | "openIdConnect" => {
+                if r.auth.is_some() {
+                    return self.unsupported(key, kind);
+                }
                 let token = self.secret_var(&var(""));
                 self.tally.push(Attention::AccessToken {
                     var: token.clone(),
@@ -124,19 +131,9 @@ impl Mapper<'_> {
                 if !self.tokens.contains(&token) {
                     self.tokens.push(token.clone());
                 }
-                self.set_auth(key, kind, MappedAuth::Bearer(format!("${{{token}}}")), r);
+                r.auth = Some(MappedAuth::Bearer(format!("${{{token}}}")));
             }
             other => self.unsupported(key, other),
-        }
-    }
-
-    /// `auth` as the request's auth, or reported when another scheme of
-    /// the same requirement already took that place.
-    fn set_auth(&mut self, key: &str, kind: &str, auth: MappedAuth, r: &mut MappedRequest) {
-        if r.auth.is_some() {
-            self.unsupported(key, kind);
-        } else {
-            r.auth = Some(auth);
         }
     }
 

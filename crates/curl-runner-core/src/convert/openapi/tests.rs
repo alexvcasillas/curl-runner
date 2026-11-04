@@ -1002,7 +1002,7 @@ mod map {
         );
         assert_eq!(
             lines(&m),
-            ["The server variable version has no default. Edit the base URL."]
+            ["The server variable version has no default. Edit the URLs that use it."]
         );
     }
 
@@ -1134,7 +1134,10 @@ mod map {
             ]
         );
         let c = &m.requests[3];
-        assert_eq!(c.headers, [field("Cookie", "session=string", false, None)]);
+        assert_eq!(
+            c.headers,
+            [field("Cookie", "session=${PETS_SESSION}", false, None)]
+        );
         assert_eq!(
             c.params,
             [
@@ -1153,6 +1156,7 @@ mod map {
                 "Skipped 2 links",
                 "Used the first of several body shapes in 1 request, like POST /shapes",
                 "Skipped 2 webhooks",
+                "Set the secret PETS_SESSION",
             ]
         );
     }
@@ -1289,5 +1293,221 @@ mod map {
             request: "pets/Upload image".into(),
             field: "file".into()
         }));
+    }
+
+    /// Everything a mapping could write or show, values included.
+    fn everything(m: &Mapped) -> String {
+        format!(
+            "{:?}{:?}{:?}{}",
+            m.requests,
+            m.variables.iter().map(|v| &v.value).collect::<Vec<_>>(),
+            m.env_comments,
+            lines(m).join("\n")
+        )
+    }
+
+    #[test]
+    fn cookie_values_scrubbed() {
+        let mut v = spec(json!({ "/me": { "get": {
+            "parameters": [
+                { "name": "session", "in": "cookie", "required": true,
+                  "schema": { "type": "string" }, "example": "s3cr3t_cookie" },
+                { "name": "sid", "in": "cookie", "required": true,
+                  "schema": { "type": "string" }, "example": "leak_sid" }
+            ],
+            "responses": {}
+        } } }));
+        v["security"] = json!([{ "ck": [] }]);
+        v["components"] = json!({ "securitySchemes": {
+            "ck": { "type": "apiKey", "in": "cookie", "name": "sid" }
+        } });
+        let m = map(v);
+        assert_eq!(
+            m.requests[0].headers,
+            [field(
+                "Cookie",
+                "sid=${PETS_CK}; session=${PETS_SESSION}",
+                false,
+                None
+            )]
+        );
+        let s = var(&m, "PETS_SESSION");
+        assert_eq!((s.secret, s.value.as_str()), (true, ""));
+        let all = everything(&m);
+        for secret in ["s3cr3t_cookie", "leak_sid"] {
+            assert!(!all.contains(secret), "{all}");
+        }
+    }
+
+    #[test]
+    fn only_known_schemes_stay_in_front_of_a_credential() {
+        let m = map(spec(json!({ "/me": { "get": {
+            "parameters": [{ "name": "Authorization", "in": "header", "required": true,
+                "schema": { "type": "string" }, "example": "sk_live_x extra" }],
+            "responses": {}
+        } } })));
+        assert_eq!(
+            m.requests[0].headers,
+            [field("Authorization", "${PETS_AUTHORIZATION}", false, None)]
+        );
+        assert!(!everything(&m).contains("sk_live_x"));
+
+        let m = map(spec(json!({ "/me": { "get": {
+            "parameters": [{ "name": "Authorization", "in": "header", "required": true,
+                "schema": { "type": "string" }, "example": "token abc123" }],
+            "responses": {}
+        } } })));
+        assert_eq!(
+            m.requests[0].headers,
+            [field(
+                "Authorization",
+                "token ${PETS_AUTHORIZATION}",
+                false,
+                None
+            )]
+        );
+        assert!(!everything(&m).contains("abc123"));
+    }
+
+    #[test]
+    fn path_param_secrets_scrubbed() {
+        let m = map(spec(json!({ "/keys/{api_key}/{x-api-key}": { "get": {
+            "parameters": [
+                { "name": "api_key", "in": "path", "required": true,
+                  "schema": { "type": "string" }, "example": "pk_live_z" },
+                { "name": "x-api-key", "in": "path", "required": true,
+                  "schema": { "type": "string", "example": "hk_live_w" } }
+            ],
+            "responses": {}
+        } } })));
+        assert_eq!(
+            m.requests[0].file_vars,
+            [
+                ("api_key".to_string(), "${PETS_API_KEY}".to_string()),
+                ("x_api_key".to_string(), "${PETS_X_API_KEY}".to_string())
+            ]
+        );
+        assert!(var(&m, "PETS_API_KEY").secret);
+        let all = everything(&m);
+        for secret in ["pk_live_z", "hk_live_w"] {
+            assert!(!all.contains(secret), "{all}");
+        }
+    }
+
+    #[test]
+    fn second_auth_scheme_registers_nothing() {
+        let mut v = spec(json!({ "/a": { "get": {
+            "security": [{ "first": [], "oauth": [], "basicAuth": [] }],
+            "responses": {}
+        } } }));
+        v["components"] = json!({ "securitySchemes": {
+            "first": { "type": "http", "scheme": "bearer" },
+            "oauth": { "type": "oauth2" },
+            "basicAuth": { "type": "http", "scheme": "basic" }
+        } });
+        let m = map(v);
+        assert_eq!(
+            m.requests[0].auth,
+            Some(MappedAuth::Bearer("${PETS_FIRST_TOKEN}".into()))
+        );
+        let names: Vec<_> = m.variables.iter().map(|v| v.name.as_str()).collect();
+        assert_eq!(names, ["PETS_BASE_URL", "PETS_FIRST_TOKEN"]);
+        assert_eq!(
+            lines(&m),
+            [
+                "Skipped oauth2 auth (oauth) in 1 request. Add it by hand.",
+                "Skipped basic auth (basicAuth) in 1 request. Add it by hand.",
+                "Set the secret PETS_FIRST_TOKEN"
+            ]
+        );
+    }
+
+    #[test]
+    fn form_schemas_merge_all_of() {
+        let mut v = spec(json!({
+            "/up": { "post": {
+                "requestBody": { "content": { "multipart/form-data": { "schema": {
+                    "allOf": [
+                        { "$ref": "#/components/schemas/Base" },
+                        { "properties": { "note": { "type": "string" } } }
+                    ]
+                } } } },
+                "responses": {}
+            } },
+            "/form": { "post": {
+                "requestBody": { "content": { "application/x-www-form-urlencoded": { "schema": {
+                    "allOf": [{ "$ref": "#/components/schemas/Base" }],
+                    "properties": { "extra": { "type": "integer" } }
+                } } } },
+                "responses": {}
+            } }
+        }));
+        v["components"] = json!({ "schemas": { "Base": {
+            "type": "object",
+            "required": ["file", "name"],
+            "properties": {
+                "file": { "type": "string", "format": "binary" },
+                "name": { "type": "string", "example": "Rex" }
+            }
+        } } });
+        let m = map(v);
+        let MappedBody::Form(f) = &m.requests[0].body else {
+            panic!("{:?}", m.requests[0].body)
+        };
+        let keys: Vec<_> = f.iter().map(|f| (f.key.as_str(), f.disabled)).collect();
+        assert_eq!(keys, [("file", false), ("name", false), ("note", true)]);
+        // `file` has no text form, so it isn't in the urlencoded body.
+        assert_eq!(
+            m.requests[1].body,
+            MappedBody::Text("file=.%2Fpick-a-file&name=Rex".into())
+        );
+        assert!(
+            m.requests[1]
+                .comments
+                .contains(&"Optional form fields: extra".to_string())
+        );
+    }
+
+    #[test]
+    fn empty_form_bodies_reported() {
+        let m = map(spec(json!({
+            "/up": { "post": {
+                "requestBody": { "content": { "multipart/form-data": { "schema": {
+                    "type": "object", "additionalProperties": { "type": "string" }
+                } } } },
+                "responses": {}
+            } },
+            "/form": { "post": {
+                "requestBody": { "content": { "application/x-www-form-urlencoded": {} } },
+                "responses": {}
+            } }
+        })));
+        assert!(m.requests.iter().all(|r| r.body == MappedBody::None));
+        assert!(m.requests.iter().all(|r| r.headers.is_empty()));
+        assert_eq!(
+            lines(&m),
+            [
+                "Skipped multipart/form-data bodies in 1 request, like POST /up. Add them by hand.",
+                "Skipped application/x-www-form-urlencoded bodies in 1 request, like POST /form. Add them by hand."
+            ]
+        );
+    }
+
+    #[test]
+    fn bad_params_aggregate() {
+        let op = json!({ "get": {
+            "parameters": [
+                { "in": "query", "schema": { "type": "string" } },
+                { "name": "x", "in": "body" },
+                { "name": "ok", "in": "query", "required": true, "schema": { "type": "string" } }
+            ],
+            "responses": {}
+        } });
+        let m = map(spec(json!({ "/a": op, "/b": op })));
+        assert_eq!(m.requests[0].params, [field("ok", "string", false, None)]);
+        assert_eq!(
+            lines(&m),
+            ["Skipped 4 parameters with no name or an unknown location, like in GET /a and GET /b"]
+        );
     }
 }

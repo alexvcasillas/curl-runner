@@ -9,15 +9,17 @@ use super::doc::{Doc, Resolved};
 use super::sample::{Sampler, UnresolvedRef};
 use crate::convert::import::{
     Attention, Field, FieldValue, ImportReport, ImportedVar, Mapped, MappedBody, MappedRequest,
-    PLACEHOLDER_FILE, var_name,
+    var_name,
 };
-use crate::convert::postman::map::form_encode;
 use crate::convert::{SECRET_PARAMS, header_var, param_var, secret_header};
 use crate::model::Json;
 
 const METHODS: [&str; 8] = [
     "get", "put", "post", "delete", "options", "head", "patch", "trace",
 ];
+
+/// `Authorization` schemes kept in front of a scrubbed credential.
+const AUTH_SCHEMES: [&str; 5] = ["Bearer", "Basic", "Token", "Digest", "ApiKey"];
 
 /// The longest API prefix.
 const MAX_PREFIX: usize = 24;
@@ -39,7 +41,10 @@ pub fn api_prefix(title: &str) -> String {
     }
     let mut out = out.trim_matches('_');
     if out.len() > MAX_PREFIX {
-        // ASCII only, so any byte index is a char boundary.
+        // ASCII only, so any byte index is a char boundary. The cut is at
+        // the last `_` within the first 24 characters, so a `_` right after
+        // them doesn't count: the spec pins "Swagger Petstore - OpenAPI
+        // 3.0" (a `_` at index 24) to `SWAGGER_PETSTORE`.
         let head = &out[..MAX_PREFIX];
         out = head.rfind('_').map_or(head, |i| &head[..i]);
     }
@@ -114,7 +119,8 @@ impl Tally {
 /// One more hit on an aggregated entry.
 fn bump(a: &mut Attention, at: &str) {
     match a {
-        Attention::UnresolvedRef {
+        Attention::BadParams { count, examples }
+        | Attention::UnresolvedRef {
             count, examples, ..
         }
         | Attention::SkippedBody {
@@ -138,7 +144,7 @@ fn bump(a: &mut Attention, at: &str) {
 
 pub(super) struct Mapper<'d> {
     pub(super) doc: &'d Doc,
-    sampler: Sampler<'d>,
+    pub(super) sampler: Sampler<'d>,
     pub(super) prefix: String,
     base_var: String,
     /// The base URL variable's value.
@@ -459,10 +465,19 @@ impl<'d> Mapper<'d> {
 
         let mut path_values = Vec::new();
         for p in merged {
-            let (Some(name), Some(place)) = (
-                p.get("name").and_then(Value::as_str),
+            let (Some(name), Some(place @ ("path" | "query" | "header" | "cookie"))) = (
+                p.get("name")
+                    .and_then(Value::as_str)
+                    .filter(|n| !n.is_empty()),
                 p.get("in").and_then(Value::as_str),
             ) else {
+                self.tally
+                    .hit("badparam".into(), self.req, &self.at, false, || {
+                        Attention::BadParams {
+                            count: 1,
+                            examples: vec![self.at.clone()],
+                        }
+                    });
                 continue;
             };
             let required =
@@ -480,7 +495,14 @@ impl<'d> Mapper<'d> {
             let value = to_text(&sample);
             let note = note(p.get("description"));
             match place {
-                "path" => path_values.push((name.to_string(), value)),
+                "path" => {
+                    let value = if is_secret_param(name) || secret_header(name) {
+                        self.credential(&param_var(name), &value, false)
+                    } else {
+                        value
+                    };
+                    path_values.push((name.to_string(), value));
+                }
                 "query" => {
                     if r.params.iter().any(|f| f.key == name) {
                         continue;
@@ -507,7 +529,16 @@ impl<'d> Mapper<'d> {
                     };
                     r.headers.push(text_field(name, value, !required, note));
                 }
-                "cookie" if required => cookies.push(format!("{name}={value}")),
+                "cookie" if required => {
+                    // An auth scheme may already send it.
+                    let set = format!("{name}=");
+                    if cookies.iter().any(|c| c.starts_with(&set)) {
+                        continue;
+                    }
+                    // A `Cookie` header is a secret, so every value is.
+                    let value = self.credential(&param_var(name), &value, false);
+                    cookies.push(format!("{name}={value}"));
+                }
                 "cookie" => {
                     self.tally
                         .hit("cookies".into(), self.req, &self.at, true, || {
@@ -517,7 +548,7 @@ impl<'d> Mapper<'d> {
                             }
                         });
                 }
-                _ => {}
+                _ => unreachable!("matched above"),
             }
         }
         path_values
@@ -549,11 +580,13 @@ impl<'d> Mapper<'d> {
 
     /// `${PREFIX_BASE}` as a new empty secret, for a value that names a
     /// credential. The value itself is never kept. With `scheme`, a
-    /// leading word like `Bearer ` stays.
-    fn credential(&mut self, base: &str, value: &str, scheme: bool) -> String {
+    /// leading auth scheme like `Bearer ` stays.
+    pub(super) fn credential(&mut self, base: &str, value: &str, scheme: bool) -> String {
         let var = self.secret_var(&format!("{}_{base}", self.prefix));
         match value.split_once(' ') {
-            Some((s, _)) if scheme && !s.is_empty() => format!("{s} ${{{var}}}"),
+            Some((s, _)) if scheme && AUTH_SCHEMES.iter().any(|k| k.eq_ignore_ascii_case(s)) => {
+                format!("{s} ${{{var}}}")
+            }
             _ => format!("${{{var}}}"),
         }
     }
@@ -576,187 +609,6 @@ impl<'d> Mapper<'d> {
             }),
         }
         name
-    }
-
-    fn body(&mut self, op: &'d Value, r: &mut MappedRequest) {
-        let Some(rb) = op.get("requestBody").and_then(|raw| self.resolve(raw)) else {
-            return;
-        };
-        let Some(content) = rb.get("content").and_then(Value::as_object) else {
-            return;
-        };
-        let find = |want: fn(&str) -> bool| {
-            content
-                .iter()
-                .find(|(k, _)| want(&essence(k)))
-                .map(|(k, v)| (k.as_str(), v))
-        };
-        let is_json = |m: &str| m == "application/json" || m.ends_with("+json");
-        let is_text =
-            |m: &str| m.starts_with("text/") || m == "application/xml" || m.ends_with("+xml");
-        let content_type = if let Some((media, m)) = find(is_json) {
-            let value = match self.sampler.example(m) {
-                Some(v) => v,
-                None => self.schema_sample(m.get("schema")),
-            };
-            r.body = MappedBody::Json(match value {
-                Json::Null => Json::Object(Map::new()),
-                v => v,
-            });
-            Some(media)
-        } else if let Some((_, m)) = find(|m| m == "multipart/form-data") {
-            self.multipart(m, r);
-            None
-        } else if let Some((media, m)) = find(|m| m == "application/x-www-form-urlencoded") {
-            self.urlencoded(m, r).then_some(media)
-        } else if let Some((media, m)) = find(is_text) {
-            let example = self.sampler.example(m).or_else(|| {
-                let schema = self.resolve(m.get("schema")?)?;
-                schema.get("example").cloned()
-            });
-            r.body = MappedBody::Text(match example {
-                Some(Json::String(s)) => s,
-                Some(Json::Null) | None => String::new(),
-                Some(other) => other.to_string(),
-            });
-            Some(media)
-        } else {
-            if let Some(first) = content.keys().next() {
-                let media = essence(first);
-                self.tally
-                    .hit(format!("body\0{media}"), self.req, &self.at, true, || {
-                        Attention::SkippedBody {
-                            media: media.clone(),
-                            count: 1,
-                            examples: vec![self.at.clone()],
-                        }
-                    });
-            }
-            None
-        };
-        if let Some(ct) = content_type {
-            r.headers
-                .push(text_field("Content-Type", ct.into(), false, None));
-        }
-    }
-
-    /// A body sample from `schema`, noting a top-level choice of shapes.
-    fn schema_sample(&mut self, schema: Option<&'d Value>) -> Json {
-        let Some(schema) = schema else {
-            return Json::Null;
-        };
-        if self.sampler.alternatives(schema) > 1 {
-            self.tally
-                .hit("shapes".into(), self.req, &self.at, true, || {
-                    Attention::BodyShapes {
-                        count: 1,
-                        examples: vec![self.at.clone()],
-                    }
-                });
-        }
-        self.sampler.value(schema)
-    }
-
-    /// The media type's object schema: its properties, which are required,
-    /// and the example's values when it has one.
-    fn form_parts(&mut self, m: &'d Value) -> Option<(&'d Map<String, Value>, Vec<&'d str>, Json)> {
-        let schema = self.resolve(m.get("schema")?)?;
-        let props = schema.get("properties")?.as_object()?;
-        let required = schema
-            .get("required")
-            .and_then(Value::as_array)
-            .map(|a| a.iter().filter_map(Value::as_str).collect())
-            .unwrap_or_default();
-        let example = self.sampler.example(m).unwrap_or(Json::Null);
-        Some((props, required, example))
-    }
-
-    /// A form field's text: from the example, else sampled, with a secret
-    /// name's value moved into a variable.
-    fn form_text(&mut self, name: &str, prop: &'d Value, example: &Json) -> String {
-        let value = match example.get(name) {
-            Some(v) => v.clone(),
-            None => self.sampler.value(prop),
-        };
-        let text = to_text(&value);
-        if is_secret_param(name) {
-            self.credential(&param_var(name), &text, false)
-        } else {
-            text
-        }
-    }
-
-    fn multipart(&mut self, m: &'d Value, r: &mut MappedRequest) {
-        let Some((props, required, example)) = self.form_parts(m) else {
-            return;
-        };
-        let mut fields = Vec::new();
-        for (name, raw) in props {
-            let disabled = !required.contains(&name.as_str());
-            let prop = self.resolve(raw);
-            let value = if prop.is_some_and(|p| self.is_file(p)) {
-                if !disabled {
-                    self.tally.push(Attention::PickFile {
-                        request: self.at.clone(),
-                        field: name.clone(),
-                    });
-                }
-                FieldValue::File {
-                    path: PLACEHOLDER_FILE.into(),
-                    placeholder: true,
-                }
-            } else {
-                FieldValue::Text(self.form_text(name, raw, &example))
-            };
-            fields.push(Field {
-                key: name.clone(),
-                value,
-                disabled,
-                note: note(prop.and_then(|p| p.get("description"))),
-            });
-        }
-        if !fields.is_empty() {
-            r.body = MappedBody::Form(fields);
-        }
-    }
-
-    /// A file field: `format: binary`, a 3.1 `contentMediaType`, or an
-    /// array of either.
-    fn is_file(&self, p: &Value) -> bool {
-        if p.get("format").and_then(Value::as_str) == Some("binary")
-            || p.get("contentMediaType").is_some()
-        {
-            return true;
-        }
-        let items = p.get("items").map(|i| self.doc.resolve(i));
-        matches!(items, Some(Resolved::Value(i)) if i.get("format").and_then(Value::as_str) == Some("binary") || i.get("contentMediaType").is_some())
-    }
-
-    /// The required properties as a urlencoded body; the optional ones by
-    /// name in a comment. False when there's no body to send.
-    fn urlencoded(&mut self, m: &'d Value, r: &mut MappedRequest) -> bool {
-        let Some((props, required, example)) = self.form_parts(m) else {
-            return false;
-        };
-        let mut parts = Vec::new();
-        let mut optional = Vec::new();
-        for (name, prop) in props {
-            if required.contains(&name.as_str()) {
-                let value = self.form_text(name, prop, &example);
-                parts.push(format!("{}={}", form_encode(name), form_encode(&value)));
-            } else {
-                optional.push(name.as_str());
-            }
-        }
-        if !optional.is_empty() {
-            r.comments
-                .push(format!("Optional form fields: {}", optional.join(", ")));
-        }
-        if parts.is_empty() {
-            return false;
-        }
-        r.body = MappedBody::Text(parts.join("&"));
-        true
     }
 
     /// Follow `v`'s `$ref`s. A reference that can't be followed is noted
@@ -896,12 +748,12 @@ fn needs_style(p: &Value, place: &str, sample: &Json) -> bool {
     }
 }
 
-fn is_secret_param(name: &str) -> bool {
+pub(super) fn is_secret_param(name: &str) -> bool {
     SECRET_PARAMS.iter().any(|p| p.eq_ignore_ascii_case(name))
 }
 
 /// A sample as a query, header or form value: arrays joined with `,`.
-fn to_text(v: &Json) -> String {
+pub(super) fn to_text(v: &Json) -> String {
     match v {
         Json::String(s) => s.clone(),
         Json::Null => String::new(),
@@ -911,7 +763,7 @@ fn to_text(v: &Json) -> String {
 }
 
 /// A media type without parameters, lowercased.
-fn essence(media: &str) -> String {
+pub(super) fn essence(media: &str) -> String {
     media
         .split(';')
         .next()
@@ -920,7 +772,7 @@ fn essence(media: &str) -> String {
         .to_ascii_lowercase()
 }
 
-fn text_field(key: &str, value: String, disabled: bool, note: Option<String>) -> Field {
+pub(super) fn text_field(key: &str, value: String, disabled: bool, note: Option<String>) -> Field {
     Field {
         key: key.into(),
         value: FieldValue::Text(value),
@@ -943,7 +795,7 @@ fn lines(d: Option<&Value>) -> Vec<String> {
 }
 
 /// A description on one line.
-fn note(d: Option<&Value>) -> Option<String> {
+pub(super) fn note(d: Option<&Value>) -> Option<String> {
     let text = d?
         .as_str()?
         .split_whitespace()

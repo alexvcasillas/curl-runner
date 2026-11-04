@@ -1,6 +1,7 @@
 //! OpenAPI 3.0/3.1 and Swagger 2.0 importer.
 
 mod auth;
+mod body;
 pub mod doc;
 pub mod map;
 pub mod sample;

@@ -123,6 +123,12 @@ pub enum Attention {
         at: String,
         reason: String,
     },
+    /// Parameters with no name or an unknown `in`; `count` counts
+    /// parameters, `examples` their requests.
+    BadParams {
+        count: usize,
+        examples: Vec<String>,
+    },
 }
 
 /// `1 request`, `2 requests`.
@@ -267,7 +273,7 @@ impl fmt::Display for Attention {
             }
             Attention::ServerVariable { name } => write!(
                 f,
-                "The server variable {name} has no default. Edit the base URL."
+                "The server variable {name} has no default. Edit the URLs that use it."
             ),
             Attention::ParamStyle { count, examples } => {
                 let (verb, check) = if *count == 1 {
@@ -298,6 +304,12 @@ impl fmt::Display for Attention {
                 write!(f, "Skipped {}", Count(*count, what))
             }
             Attention::BadOperation { at, reason } => write!(f, "Skipped {at}: {reason}"),
+            Attention::BadParams { count, examples } => write!(
+                f,
+                "Skipped {} with no name or an unknown location, like in {}",
+                Count(*count, "parameter"),
+                Examples(examples)
+            ),
         }
     }
 }
