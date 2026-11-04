@@ -1511,3 +1511,253 @@ mod map {
         );
     }
 }
+
+mod convert {
+    use std::path::Path;
+
+    use super::*;
+    use crate::convert::import::{Import, write_import};
+
+    const SMALL: &str = include_str!("../../../tests/fixtures/openapi/small_v30.yaml");
+    const LARGE: &str = include_str!("../../../tests/fixtures/openapi/large_v31.json");
+    const SMALL_EMITTED: &str =
+        include_str!("../../../tests/fixtures/openapi/small_v30.emitted.txt");
+    const LARGE_EMITTED: &str =
+        include_str!("../../../tests/fixtures/openapi/large_v31.emitted.txt");
+
+    /// Every file as `=== path`, then its YAML, in plan order.
+    fn dump(imp: &Import) -> String {
+        let mut out = String::new();
+        for f in &imp.files {
+            out.push_str(&format!("=== {}\n{}\n", f.rel_path.display(), f.yaml));
+        }
+        out
+    }
+
+    fn lines(imp: &Import) -> Vec<String> {
+        imp.report
+            .attention
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn emits_small_spec() {
+        let imp = convert_openapi(SMALL).unwrap();
+        assert_eq!(dump(&imp), SMALL_EMITTED);
+        assert_eq!(imp.name, "Pets");
+        assert_eq!(imp.source, "OpenAPI");
+        assert_eq!(
+            imp.readme.as_deref(),
+            Some("# Pets\n\nA small pet store API.\n")
+        );
+        assert_eq!(
+            imp.env_comments,
+            [(
+                "PETS_BASE_URL".to_string(),
+                "Other server: https://staging.example.com/v1".to_string()
+            )]
+        );
+        assert_eq!((imp.report.folders, imp.report.requests), (3, 6));
+        assert_eq!(
+            lines(&imp),
+            [
+                "Pick a file for \"file\" in pets/Upload photo",
+                "Set the secret PETS_API_KEY"
+            ]
+        );
+        for f in &imp.files {
+            assert!(f.yaml.contains("  expect:\n    status: "), "{}", f.request);
+        }
+    }
+
+    #[test]
+    fn disabled_limit_line_uncomments_into_a_request() {
+        let imp = convert_openapi(SMALL).unwrap();
+        let y = &imp.files[0].yaml;
+        assert!(y.contains("    # limit: \"1\"\n"));
+        let on = y.replacen("# limit", "limit", 1);
+        let v = crate::parser::parse_raw_stream(&on).unwrap();
+        assert_eq!(v["request"]["params"]["limit"], "1");
+        let raw = crate::parser::parse_raw(&on).unwrap();
+        let cfg = crate::parser::from_raw(raw, Path::new("emitted.yaml")).unwrap();
+        assert_eq!(cfg.requests.len(), 1);
+        // The doc comment line above it stays a comment.
+        assert!(on.contains("# # How many pets to return."));
+    }
+
+    #[test]
+    fn emitted_files_parse_as_requests() {
+        for src in [SMALL, LARGE] {
+            for f in &convert_openapi(src).unwrap().files {
+                let raw = crate::parser::parse_raw(&f.yaml)
+                    .unwrap_or_else(|e| panic!("{}: {e:?}\n{}", f.request, f.yaml));
+                crate::parser::from_raw(raw, Path::new("emitted.yaml"))
+                    .unwrap_or_else(|e| panic!("{}: {e:?}\n{}", f.request, f.yaml));
+            }
+        }
+    }
+
+    #[test]
+    fn emits_large_spec() {
+        let imp = convert_openapi(LARGE).unwrap();
+        assert_eq!(dump(&imp), LARGE_EMITTED);
+        assert_eq!(imp.name, "Inventory Service");
+        assert_eq!((imp.report.folders, imp.report.requests), (3, 14));
+        assert_eq!(
+            lines(&imp),
+            [
+                "Used the first of several body shapes in 1 request, like orders/Place order",
+                "Used bearer_auth auth in 1 request that also accept key_auth",
+                "Skipped 1 webhook",
+                "Set the secret INVENTORY_SERVICE_BEARER_AUTH_TOKEN",
+                "Set the secret INVENTORY_SERVICE_KEY_AUTH"
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_title_uses_a_default_name() {
+        let imp = convert_openapi(r#"{"openapi":"3.0.0","paths":{}}"#).unwrap();
+        assert_eq!(imp.name, "OpenAPI import");
+        assert!(imp.readme.is_none());
+    }
+
+    #[test]
+    fn two_apis_one_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let small = convert_openapi(SMALL).unwrap();
+        let large = convert_openapi(LARGE).unwrap();
+        let a = write_import(root, Path::new("pets"), &small, "note").unwrap();
+        let b = write_import(root, Path::new("inventory"), &large, "note").unwrap();
+        assert!(a.kept_env.is_empty() && b.kept_env.is_empty());
+        let again = write_import(root, Path::new("pets"), &small, "note").unwrap();
+        assert!(again.kept_env.is_empty());
+        assert_eq!(again.written.len(), 6);
+        assert!(
+            again
+                .written
+                .iter()
+                .all(|p| p.to_string_lossy().ends_with("-2.yaml"))
+        );
+        let env = std::fs::read_to_string(root.join(".env")).unwrap();
+        for key in [
+            "PETS_BASE_URL=https://api.example.com/v1",
+            "INVENTORY_SERVICE_BASE_URL=https://api.example.com/inventory/v2",
+            "# PETS_API_KEY=",
+            "# INVENTORY_SERVICE_BEARER_AUTH_TOKEN=",
+            "# INVENTORY_SERVICE_KEY_AUTH=",
+        ] {
+            assert_eq!(env.matches(key).count(), 1, "{key}\n{env}");
+        }
+        assert!(env.contains("# Imported from OpenAPI: Pets\n"));
+        assert!(env.contains("# Imported from OpenAPI: Inventory Service\n"));
+    }
+
+    #[test]
+    fn a_changed_base_url_is_reported_as_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(".env"),
+            "PETS_BASE_URL=https://mine.example.com\n",
+        )
+        .unwrap();
+        let imp = convert_openapi(SMALL).unwrap();
+        let out = write_import(dir.path(), Path::new("pets"), &imp, "note").unwrap();
+        assert_eq!(out.kept_env, ["PETS_BASE_URL"]);
+    }
+
+    #[test]
+    fn secrets_never_written() {
+        let spec = r#"{"openapi":"3.0.0","info":{"title":"Pets","version":"1"},
+            "servers":[{"url":"https://api.example.com"}],
+            "components":{"securitySchemes":{"api_key":{"type":"apiKey","in":"header","name":"X-API-Key","x-example":"sk-live-123"}}},
+            "security":[{"api_key":[]}],
+            "paths":{"/a":{"get":{"parameters":[
+                {"name":"X-API-Key","in":"header","example":"sk-live-123","schema":{"type":"string"}}],
+                "responses":{"200":{"description":"ok"}}}}}}"#;
+        let dir = tempfile::tempdir().unwrap();
+        for src in [SMALL, spec] {
+            let imp = convert_openapi(src).unwrap();
+            write_import(dir.path(), Path::new("api"), &imp, "note").unwrap();
+        }
+        let env = std::fs::read_to_string(dir.path().join(".env")).unwrap();
+        assert!(env.contains("# PETS_API_KEY=\n"));
+        assert!(!env.lines().any(|l| l.starts_with("PETS_API_KEY=")));
+        assert!(!env.contains("sk-live-123"));
+        for f in &convert_openapi(spec).unwrap().files {
+            assert!(!f.yaml.contains("sk-live-123"), "{}", f.yaml);
+        }
+    }
+
+    /// `n` operations over `schemas` schemas, each schema reaching the next
+    /// through a 5-deep `$ref` chain.
+    fn synthetic(n: usize, schemas: usize) -> String {
+        let mut schema_map = serde_json::Map::new();
+        for i in 0..schemas {
+            let mut props = serde_json::Map::new();
+            props.insert("id".into(), json!({ "type": "integer" }));
+            props.insert(
+                "next".into(),
+                json!({ "$ref": format!("#/components/schemas/S{}", (i + 1) % schemas) }),
+            );
+            props.insert(
+                "alias".into(),
+                json!({ "$ref": format!("#/components/schemas/A{i}_0") }),
+            );
+            schema_map.insert(
+                format!("S{i}"),
+                json!({ "type": "object", "properties": props }),
+            );
+            for d in 0..4 {
+                schema_map.insert(
+                    format!("A{i}_{d}"),
+                    json!({ "$ref": format!("#/components/schemas/A{i}_{}", d + 1) }),
+                );
+            }
+            schema_map.insert(format!("A{i}_4"), json!({ "type": "string" }));
+        }
+        let mut paths = serde_json::Map::new();
+        for i in 0..n {
+            let s = i % schemas;
+            paths.insert(
+                format!("/r{i}/{{id}}"),
+                json!({ "post": {
+                    "tags": [format!("t{}", i % 20)],
+                    "summary": format!("Op {i}"),
+                    "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+                    "requestBody": { "content": { "application/json": {
+                        "schema": { "$ref": format!("#/components/schemas/S{s}") } } } },
+                    "responses": { "200": { "description": "ok" } }
+                } }),
+            );
+        }
+        json!({
+            "openapi": "3.0.0",
+            "info": { "title": "Big", "version": "1" },
+            "servers": [{ "url": "https://api.example.com" }],
+            "paths": paths,
+            "components": { "schemas": schema_map }
+        })
+        .to_string()
+    }
+
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "run with --release")]
+    fn synthetic_speed() {
+        let text = synthetic(3000, 300);
+        let start = std::time::Instant::now();
+        let imp = convert_openapi(&text).unwrap();
+        let took = start.elapsed();
+        assert_eq!(imp.files.len(), 3000);
+        assert!(took < std::time::Duration::from_secs(2), "{took:?}");
+    }
+
+    #[test]
+    fn synthetic_small_shape_converts() {
+        let imp = convert_openapi(&synthetic(30, 10)).unwrap();
+        assert_eq!(imp.files.len(), 30);
+    }
+}

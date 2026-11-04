@@ -117,3 +117,23 @@ fn env_comments_go_above_new_keys_only() {
          # Sent as X-API-Key\n# PETS_API_KEY is a secret: note\n# PETS_API_KEY=\n"
     );
 }
+
+#[test]
+fn env_header_names_the_source_format() {
+    let mapped = Mapped {
+        requests: Vec::new(),
+        variables: vec![ImportedVar {
+            name: "A".into(),
+            value: "1".into(),
+            secret: false,
+        }],
+        description: None,
+        env_comments: Vec::new(),
+        report: ImportReport::default(),
+    };
+    let imp = plan_import("Pets".into(), mapped, "OpenAPI");
+    let dir = tempfile::tempdir().unwrap();
+    write_import(dir.path(), std::path::Path::new("pets"), &imp, "note").unwrap();
+    let env = std::fs::read_to_string(dir.path().join(".env")).unwrap();
+    assert_eq!(env, "# Imported from OpenAPI: Pets\nA=1\n");
+}

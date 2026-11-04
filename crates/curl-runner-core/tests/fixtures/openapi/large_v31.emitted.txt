@@ -1,0 +1,251 @@
+=== items/list-items.yaml
+# Imported from OpenAPI: Inventory Service
+
+request:
+  name: List items
+  method: GET
+  url: ${INVENTORY_SERVICE_BASE_URL}/items
+  params:
+    # limit: "1"
+    category: tools
+  auth:
+    type: bearer
+    token: ${INVENTORY_SERVICE_BEARER_AUTH_TOKEN}
+  expect:
+    status: 200
+
+=== items/create-item.yaml
+# Imported from OpenAPI: Inventory Service
+
+request:
+  name: Create item
+  method: POST
+  url: ${INVENTORY_SERVICE_BASE_URL}/items
+  headers:
+    Content-Type: application/json
+  auth:
+    type: bearer
+    token: ${INVENTORY_SERVICE_BEARER_AUTH_TOKEN}
+  body:
+    name: Hammer
+    quantity: 0
+    tags:
+      - string
+  expect:
+    status: 201
+
+=== items/get-item.yaml
+# Imported from OpenAPI: Inventory Service
+
+global:
+  variables:
+    itemId: 00000000-0000-4000-8000-000000000000
+
+request:
+  name: Get item
+  method: GET
+  url: ${INVENTORY_SERVICE_BASE_URL}/items/${itemId}
+  auth:
+    type: bearer
+    token: ${INVENTORY_SERVICE_BEARER_AUTH_TOKEN}
+  expect:
+    status: 200
+
+=== items/replace-item.yaml
+# Imported from OpenAPI: Inventory Service
+
+global:
+  variables:
+    itemId: 00000000-0000-4000-8000-000000000000
+
+request:
+  name: Replace item
+  method: PUT
+  url: ${INVENTORY_SERVICE_BASE_URL}/items/${itemId}
+  headers:
+    Content-Type: application/json
+  auth:
+    type: bearer
+    token: ${INVENTORY_SERVICE_BEARER_AUTH_TOKEN}
+  body:
+    name: Hammer
+    quantity: 0
+    tags:
+      - string
+  expect:
+    status: 204
+
+=== items/delete-item.yaml
+# Imported from OpenAPI: Inventory Service
+
+global:
+  variables:
+    itemId: 00000000-0000-4000-8000-000000000000
+
+request:
+  name: Delete item
+  method: DELETE
+  url: ${INVENTORY_SERVICE_BASE_URL}/items/${itemId}
+  auth:
+    type: bearer
+    token: ${INVENTORY_SERVICE_BEARER_AUTH_TOKEN}
+  expect:
+    status: 204
+
+=== items/set-item-tree.yaml
+# Imported from OpenAPI: Inventory Service
+
+global:
+  variables:
+    itemId: string
+
+request:
+  name: Set item tree
+  method: POST
+  url: ${INVENTORY_SERVICE_BASE_URL}/items/${itemId}/tree
+  headers:
+    Content-Type: application/json
+  auth:
+    type: bearer
+    token: ${INVENTORY_SERVICE_BEARER_AUTH_TOKEN}
+  body:
+    label: string
+    children:
+      - {}
+  expect:
+    status: 200
+
+=== orders/place-order.yaml
+# Imported from OpenAPI: Inventory Service
+
+request:
+  name: Place order
+  method: POST
+  url: ${INVENTORY_SERVICE_BASE_URL}/orders
+  headers:
+    Content-Type: application/json
+  auth:
+    type: bearer
+    token: ${INVENTORY_SERVICE_BEARER_AUTH_TOKEN}
+  body:
+    itemId: string
+    store: string
+  expect:
+    status: 202
+
+=== orders/get-order.yaml
+# Imported from OpenAPI: Inventory Service
+
+global:
+  variables:
+    orderId: "1"
+
+request:
+  name: Get order
+  method: GET
+  url: ${INVENTORY_SERVICE_BASE_URL}/orders/${orderId}
+  auth:
+    type: bearer
+    token: ${INVENTORY_SERVICE_BEARER_AUTH_TOKEN}
+  expect:
+    status: 200
+
+=== orders/pay-order.yaml
+# Imported from OpenAPI: Inventory Service
+# Optional form fields: save_card
+
+global:
+  variables:
+    orderId: "1"
+
+request:
+  name: Pay order
+  method: POST
+  url: ${INVENTORY_SERVICE_BASE_URL}/orders/${orderId}/pay
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  auth:
+    type: bearer
+    token: ${INVENTORY_SERVICE_BEARER_AUTH_TOKEN}
+  body: card_token=string
+  expect:
+    status: 200
+
+=== shipments/list-shipments.yaml
+# Imported from OpenAPI: Inventory Service
+
+request:
+  name: List shipments
+  method: GET
+  url: ${INVENTORY_SERVICE_BASE_URL}/shipments
+  headers:
+    X-Inventory-Key: ${INVENTORY_SERVICE_KEY_AUTH}
+  expect:
+    status: 200
+
+=== shipments/create-shipment.yaml
+# Imported from OpenAPI: Inventory Service
+
+request:
+  name: Create shipment
+  method: POST
+  url: ${INVENTORY_SERVICE_BASE_URL}/shipments
+  headers:
+    Content-Type: application/json
+  auth:
+    type: bearer
+    token: ${INVENTORY_SERVICE_BEARER_AUTH_TOKEN}
+  body:
+    orderId: 1
+    note: string
+  expect:
+    status: 201
+
+=== shipments/get-shipment.yaml
+# Imported from OpenAPI: Inventory Service
+
+global:
+  variables:
+    shipmentId: string
+
+request:
+  name: Get shipment
+  method: GET
+  url: ${INVENTORY_SERVICE_BASE_URL}/shipments/${shipmentId}
+  auth:
+    type: bearer
+    token: ${INVENTORY_SERVICE_BEARER_AUTH_TOKEN}
+  expect:
+    status: 200
+
+=== shipments/update-shipment.yaml
+# Imported from OpenAPI: Inventory Service
+
+global:
+  variables:
+    shipmentId: string
+
+request:
+  name: Update shipment
+  method: PATCH
+  url: ${INVENTORY_SERVICE_BASE_URL}/shipments/${shipmentId}
+  headers:
+    Content-Type: application/json
+  auth:
+    type: bearer
+    token: ${INVENTORY_SERVICE_BEARER_AUTH_TOKEN}
+  body:
+    status: packed
+  expect:
+    status: 200
+
+=== health.yaml
+# Imported from OpenAPI: Inventory Service
+
+request:
+  name: Health
+  method: GET
+  url: ${INVENTORY_SERVICE_BASE_URL}/health
+  expect:
+    status: 200
+

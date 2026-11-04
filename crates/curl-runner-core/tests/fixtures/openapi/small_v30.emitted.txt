@@ -1,0 +1,105 @@
+=== pets/list-pets.yaml
+# Imported from OpenAPI: Pets
+# operationId: listPets
+# Everything about pets.
+
+request:
+  name: List pets
+  method: GET
+  url: ${PETS_BASE_URL}/pets
+  headers:
+    X-API-Key: ${PETS_API_KEY}
+  params:
+    # # How many pets to return.
+    # limit: "1"
+  expect:
+    status: 200
+
+=== pets/create-pet.yaml
+# Imported from OpenAPI: Pets
+# Everything about pets.
+
+request:
+  name: Create pet
+  method: POST
+  url: ${PETS_BASE_URL}/pets
+  headers:
+    X-API-Key: ${PETS_API_KEY}
+    Content-Type: application/json
+  body:
+    id: 1
+    name: Rex
+    tag: string
+  expect:
+    status: 201
+
+=== store/place-order.yaml
+# Imported from OpenAPI: Pets
+
+request:
+  name: Place order
+  method: POST
+  url: ${PETS_BASE_URL}/store/orders
+  headers:
+    X-API-Key: ${PETS_API_KEY}
+    Content-Type: application/json
+  body:
+    petId: 1
+    quantity: 1
+  expect:
+    status: 200
+
+=== pets/get-pet.yaml
+# Imported from OpenAPI: Pets
+# Everything about pets.
+
+global:
+  variables:
+    petId: "1"
+
+request:
+  name: Get pet
+  method: GET
+  url: ${PETS_BASE_URL}/pets/${petId}
+  headers:
+    X-API-Key: ${PETS_API_KEY}
+  expect:
+    status: 200
+
+=== pets/upload-photo.yaml
+# Imported from OpenAPI: Pets
+# Everything about pets.
+
+global:
+  variables:
+    petId: "1"
+
+request:
+  name: Upload photo
+  method: POST
+  url: ${PETS_BASE_URL}/pets/${petId}/photo
+  headers:
+    X-API-Key: ${PETS_API_KEY}
+  formData:
+    file: { file: ./pick-a-file }
+    # # Shown under the photo.
+    # caption: string
+  expect:
+    status: 200
+
+=== users/get-user.yaml
+# Imported from OpenAPI: Pets
+
+global:
+  variables:
+    username: alice
+
+request:
+  name: Get user
+  method: GET
+  url: ${PETS_BASE_URL}/users/${username}
+  headers:
+    X-API-Key: ${PETS_API_KEY}
+  expect:
+    status: 200
+
