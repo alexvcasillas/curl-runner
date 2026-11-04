@@ -342,6 +342,119 @@ async fn start_rate_limited_per_ip(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn start_has_a_daily_cap_per_email(pool: PgPool) {
+    let app = test_app(pool).await;
+    let start = || {
+        app.request(
+            Method::POST,
+            "/v1/auth/email/start",
+            Some(json!({"email": "jane@example.com", "client": "web"})),
+            None,
+        )
+    };
+    // 5 per 15 minutes, so 4 windows reach the daily 20.
+    for _ in 0..4 {
+        for _ in 0..5 {
+            assert_eq!(start().await.0, StatusCode::ACCEPTED);
+        }
+        app.clock.advance(Duration::minutes(15));
+    }
+    let (status, body) = start().await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
+    assert_eq!(body["error"], "rate_limited");
+    app.clock.advance(Duration::hours(23));
+    assert_eq!(start().await.0, StatusCode::ACCEPTED);
+}
+
+#[sqlx::test]
+async fn verify_rate_limited_per_email(pool: PgPool) {
+    let app = test_app(pool).await;
+    let (code, _) = app.start_email("jane@example.com", "web").await;
+    // Fresh codes keep the attempt counter out of the way.
+    for i in 0..10 {
+        if i % 4 == 0 {
+            app.start_email("jane@example.com", "web").await;
+        }
+        let (status, body) = verify(
+            &app,
+            json!({"email": "jane@example.com", "code": wrong(&code)}),
+        )
+        .await;
+        assert_ne!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
+    }
+    let (status, body) = verify(
+        &app,
+        json!({"email": "Jane@Example.com", "code": wrong(&code)}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
+    assert_eq!(body["error"], "rate_limited");
+    // Another address is unaffected, and the window resets.
+    let (status, _) = verify(&app, json!({"email": "ada@example.com", "code": "123456"})).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    app.clock.advance(Duration::minutes(15));
+    let (code, _) = app.start_email("jane@example.com", "web").await;
+    let (status, body) = verify(&app, json!({"email": "jane@example.com", "code": code})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+#[sqlx::test]
+async fn verify_rate_limited_per_ip(pool: PgPool) {
+    let app = test_app(pool).await;
+    for i in 0..31 {
+        let (status, body) = app
+            .request_with_ip(
+                "/v1/auth/email/verify",
+                json!({"token": format!("crl_guess{i}")}),
+                "10.9.9.9, 203.0.113.7",
+            )
+            .await;
+        if i < 30 {
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+        } else {
+            assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
+        }
+    }
+    // Another IP is unaffected.
+    let (status, _) = app
+        .request_with_ip(
+            "/v1/auth/email/verify",
+            json!({"token": "crl_guess"}),
+            "203.0.113.8",
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[sqlx::test]
+async fn rate_limited_response_has_retry_after(pool: PgPool) {
+    use axum::body::Body;
+    use axum::http::{Request, header};
+    use tower::ServiceExt;
+
+    let app = test_app(pool).await;
+    let router = curl_runner_server::app(app.state.clone());
+    let start = || {
+        Request::builder()
+            .method(Method::POST)
+            .uri("/v1/auth/email/start")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({"email": "jane@example.com", "client": "web"}).to_string(),
+            ))
+            .unwrap()
+    };
+    for _ in 0..5 {
+        let res = router.clone().oneshot(start()).await.unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+    }
+    app.clock.advance(Duration::minutes(5));
+    let res = router.clone().oneshot(start()).await.unwrap();
+    assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(res.headers()[header::RETRY_AFTER], "600");
+}
+
+#[sqlx::test]
 async fn session_slides_and_expires_after_90_days_idle(pool: PgPool) {
     let app = test_app(pool).await;
     let token = app.sign_in("jane@example.com").await;

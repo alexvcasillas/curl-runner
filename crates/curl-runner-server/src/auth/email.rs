@@ -23,6 +23,12 @@ const MAX_ATTEMPTS: i32 = 5;
 const START_WINDOW: Duration = Duration::minutes(15);
 const START_PER_EMAIL: u32 = 5;
 const START_PER_IP: u32 = 20;
+/// A daily cap on mail to one address, on top of the 15 minute window.
+const START_DAY: Duration = Duration::hours(24);
+const START_PER_EMAIL_PER_DAY: u32 = 20;
+const VERIFY_WINDOW: Duration = Duration::minutes(15);
+const VERIFY_PER_IP: u32 = 30;
+const VERIFY_PER_EMAIL: u32 = 10;
 const MAX_LABEL: usize = 100;
 
 #[derive(Deserialize)]
@@ -95,6 +101,11 @@ pub async fn start(
         &format!("email-start:email:{email}"),
         START_PER_EMAIL,
         START_WINDOW,
+    )?;
+    state.limiter.check(
+        &format!("email-start:email-day:{email}"),
+        START_PER_EMAIL_PER_DAY,
+        START_DAY,
     )?;
 
     let pepper = state.config.secret_key.as_bytes();
@@ -185,8 +196,21 @@ fn code_expired() -> ApiError {
 
 pub async fn verify(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     ApiJson(req): ApiJson<VerifyRequest>,
 ) -> Result<Json<VerifyBody>, ApiError> {
+    state.limiter.check(
+        &format!("email-verify:ip:{ip}"),
+        VERIFY_PER_IP,
+        VERIFY_WINDOW,
+    )?;
+    if let Some(email) = &req.email {
+        state.limiter.check(
+            &format!("email-verify:email:{}", normalize_email(email)?),
+            VERIFY_PER_EMAIL,
+            VERIFY_WINDOW,
+        )?;
+    }
     let pepper = state.config.secret_key.as_bytes();
     let now = state.clock.now();
     let mut tx = state.db.begin().await?;

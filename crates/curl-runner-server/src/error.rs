@@ -4,7 +4,7 @@
 use std::fmt;
 
 use axum::Json;
-use axum::http::StatusCode;
+use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use curl_runner_cloud_proto::{ErrorBody, ErrorCode};
 
@@ -12,6 +12,8 @@ use curl_runner_cloud_proto::{ErrorBody, ErrorCode};
 pub struct ApiError {
     pub code: ErrorCode,
     pub message: String,
+    /// Seconds until a rate limit resets, sent as `Retry-After`.
+    pub retry_after: Option<u64>,
 }
 
 impl ApiError {
@@ -19,6 +21,18 @@ impl ApiError {
         Self {
             code,
             message: message.into(),
+            retry_after: None,
+        }
+    }
+
+    /// `429 rate_limited`, retryable after `seconds`.
+    pub fn rate_limited(seconds: u64) -> Self {
+        Self {
+            retry_after: Some(seconds),
+            ..Self::new(
+                ErrorCode::RateLimited,
+                "Too many requests. Try again in a few minutes.",
+            )
         }
     }
 
@@ -66,7 +80,12 @@ impl IntoResponse for ApiError {
             error: self.code,
             message: self.message,
         };
-        (status, Json(body)).into_response()
+        let mut res = (status, Json(body)).into_response();
+        if let Some(seconds) = self.retry_after {
+            res.headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from(seconds));
+        }
+        res
     }
 }
 
@@ -117,6 +136,15 @@ mod tests {
             body,
             r#"{"error":"wrong_source","message":"Edited in the cloud."}"#.as_bytes()
         );
+    }
+
+    #[test]
+    fn rate_limited_sets_retry_after() {
+        let res = ApiError::rate_limited(42).into_response();
+        assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(res.headers()[header::RETRY_AFTER], "42");
+        let res = ApiError::not_found().into_response();
+        assert!(res.headers().get(header::RETRY_AFTER).is_none());
     }
 
     #[test]

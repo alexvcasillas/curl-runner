@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, Utc};
-use curl_runner_cloud_proto::ErrorCode;
 use sqlx::PgPool;
 
 use crate::auth::providers::{OAuthProviders, RealProviders};
@@ -64,7 +63,8 @@ impl RateLimiter {
     }
 
     /// Count one hit for `key`. Fails with `429 rate_limited` once `key` has
-    /// had `limit` hits in the current `window`.
+    /// had `limit` hits in the current `window`, with `Retry-After` set to
+    /// the seconds left in it (at least 1).
     pub fn check(&self, key: &str, limit: u32, window: Duration) -> Result<(), ApiError> {
         let now = self.clock.now();
         let mut windows = self.windows.lock().unwrap_or_else(|e| e.into_inner());
@@ -83,10 +83,11 @@ impl RateLimiter {
             }
         };
         if entry.count >= limit {
-            return Err(ApiError::new(
-                ErrorCode::RateLimited,
-                "Too many requests. Try again in a few minutes.",
-            ));
+            let left_ms = (entry.ends_at - now)
+                .num_milliseconds()
+                .max(1)
+                .unsigned_abs();
+            return Err(ApiError::rate_limited(left_ms.div_ceil(1000)));
         }
         entry.count += 1;
         Ok(())
@@ -97,6 +98,7 @@ impl RateLimiter {
 mod tests {
     use super::*;
     use crate::clock::FixedClock;
+    use curl_runner_cloud_proto::ErrorCode;
 
     fn limiter() -> (Arc<FixedClock>, RateLimiter) {
         let clock = Arc::new(FixedClock::new("2026-11-04T10:00:00Z".parse().unwrap()));
@@ -113,6 +115,18 @@ mod tests {
         let err = rl.check("a", 5, w).unwrap_err();
         assert_eq!(err.code, ErrorCode::RateLimited);
         assert_eq!(err.status().as_u16(), 429);
+        assert_eq!(err.retry_after, Some(15 * 60));
+    }
+
+    #[test]
+    fn retry_after_counts_down_to_the_window_end() {
+        let (clock, rl) = limiter();
+        let w = Duration::minutes(15);
+        rl.check("a", 1, w).unwrap();
+        clock.advance(Duration::minutes(10));
+        assert_eq!(rl.check("a", 1, w).unwrap_err().retry_after, Some(5 * 60));
+        clock.advance(Duration::seconds(30) + Duration::milliseconds(200));
+        assert_eq!(rl.check("a", 1, w).unwrap_err().retry_after, Some(270));
     }
 
     #[test]
