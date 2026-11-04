@@ -787,13 +787,13 @@ mod map {
             [Attention::SkippedBody {
                 media: "application/octet-stream".into(),
                 count: 2,
-                examples: vec!["PUT /a".into(), "PUT /b".into()],
+                examples: vec!["a/PUT /a".into(), "b/PUT /b".into()],
             }]
         );
         assert_eq!(
             lines(&m),
             [
-                "Skipped application/octet-stream bodies in 2 requests, like PUT /a and PUT /b. Add them by hand."
+                "Skipped application/octet-stream bodies in 2 requests, like a/PUT /a and b/PUT /b. Add them by hand."
             ]
         );
     }
@@ -1032,13 +1032,13 @@ mod map {
                     target: "#/components/requestBodies/Nope".into(),
                     external: false,
                     count: 1,
-                    examples: vec!["POST /badref".into()]
+                    examples: vec!["badref/POST /badref".into()]
                 }
             ]
         );
         assert_eq!(
             lines(&m)[1],
-            "Couldn't resolve #/components/requestBodies/Nope in 1 request, like POST /badref. Used an empty value."
+            "Couldn't resolve #/components/requestBodies/Nope in 1 request, like badref/POST /badref. Used an empty value."
         );
     }
 
@@ -1066,23 +1066,23 @@ mod map {
                     target: "#/components/schemas/Gone".into(),
                     external: false,
                     count: 4,
-                    examples: vec!["POST /1".into(), "POST /2".into(), "POST /3".into()]
+                    examples: vec!["1/POST /1".into(), "2/POST /2".into(), "3/POST /3".into()]
                 },
                 Attention::UnresolvedRef {
                     target: "other.yaml#/P".into(),
                     external: true,
                     count: 1,
-                    examples: vec!["GET /x".into()]
+                    examples: vec!["x/GET /x".into()]
                 }
             ]
         );
         assert_eq!(
             lines(&m)[0],
-            "Couldn't resolve #/components/schemas/Gone in 4 requests, like POST /1, POST /2 and POST /3. Used an empty value."
+            "Couldn't resolve #/components/schemas/Gone in 4 requests, like 1/POST /1, 2/POST /2 and 3/POST /3. Used an empty value."
         );
         assert_eq!(
             lines(&m)[1],
-            "Can't follow the external reference other.yaml#/P in 1 request, like GET /x. Used an empty value."
+            "Can't follow the external reference other.yaml#/P in 1 request, like x/GET /x. Used an empty value."
         );
     }
 
@@ -1150,11 +1150,11 @@ mod map {
             lines(&m),
             [
                 "2 requests use their own server https://files.example.com",
-                "Left out optional cookies in 1 request, like GET /cookies",
-                "2 parameters use a style curl-runner doesn't model, like in GET /cookies. Check their values.",
+                "Left out optional cookies in 1 request, like cookies/GET /cookies",
+                "2 parameters use a style curl-runner doesn't model, like in cookies/GET /cookies. Check their values.",
                 "Skipped 1 callback",
                 "Skipped 2 links",
-                "Used the first of several body shapes in 1 request, like POST /shapes",
+                "Used the first of several body shapes in 1 request, like shapes/POST /shapes",
                 "Skipped 2 webhooks",
                 "Set the secret PETS_SESSION",
             ]
@@ -1165,7 +1165,8 @@ mod map {
     fn tsv_collection_format_is_a_param_style() {
         let d = doc(json!({ "swagger": "2.0", "info": { "title": "T" },
             "paths": { "/x": { "get": { "parameters": [{ "in": "query", "name": "q",
-                "type": "array", "items": { "type": "string" }, "collectionFormat": "tsv" }] } } } }));
+                "type": "array", "items": { "type": "string" }, "collectionFormat": "tsv",
+                "required": true }] } } } }));
         let m = map_document(&d);
         assert!(
             matches!(
@@ -1371,26 +1372,48 @@ mod map {
 
     #[test]
     fn path_param_secrets_scrubbed() {
-        let m = map(spec(json!({ "/keys/{api_key}/{x-api-key}": { "get": {
+        // Only a literal the document gives, under an exact secret name.
+        let m = map(spec(
+            json!({ "/keys/{api_key}/{token}/{x-api-key}/{secret_name}": { "get": {
             "parameters": [
                 { "name": "api_key", "in": "path", "required": true,
                   "schema": { "type": "string" }, "example": "pk_live_z" },
+                { "name": "token", "in": "path", "required": true,
+                  "schema": { "type": "string" } },
                 { "name": "x-api-key", "in": "path", "required": true,
-                  "schema": { "type": "string", "example": "hk_live_w" } }
+                  "schema": { "type": "string", "example": "hk_live_w" } },
+                { "name": "secret_name", "in": "path", "required": true,
+                  "schema": { "type": "string", "example": "deploy" } }
             ],
             "responses": {}
-        } } })));
+        } } }),
+        ));
         assert_eq!(
             m.requests[0].file_vars,
             [
                 ("api_key".to_string(), "${PETS_API_KEY}".to_string()),
-                ("x_api_key".to_string(), "${PETS_X_API_KEY}".to_string())
+                ("token".to_string(), "string".to_string()),
+                ("x_api_key".to_string(), "hk_live_w".to_string()),
+                ("secret_name".to_string(), "deploy".to_string())
             ]
         );
         assert!(var(&m, "PETS_API_KEY").secret);
-        let all = everything(&m);
-        for secret in ["pk_live_z", "hk_live_w"] {
-            assert!(!all.contains(secret), "{all}");
+        assert!(!m.variables.iter().any(|v| v.name == "PETS_TOKEN"));
+        assert!(!everything(&m).contains("pk_live_z"));
+
+        // A schema `default` or `enum` counts as a literal too.
+        for schema in [
+            json!({ "type": "string", "default": "d_live" }),
+            json!({ "type": "string", "enum": ["e_live"] }),
+        ] {
+            let m = map(spec(json!({ "/t/{token}": { "get": {
+                "parameters": [{ "name": "token", "in": "path", "required": true, "schema": schema }],
+                "responses": {}
+            } } })));
+            assert_eq!(
+                m.requests[0].file_vars,
+                [("token".to_string(), "${PETS_TOKEN}".to_string())]
+            );
         }
     }
 
@@ -1487,8 +1510,8 @@ mod map {
         assert_eq!(
             lines(&m),
             [
-                "Skipped multipart/form-data bodies in 1 request, like POST /up. Add them by hand.",
-                "Skipped application/x-www-form-urlencoded bodies in 1 request, like POST /form. Add them by hand."
+                "Skipped multipart/form-data bodies in 1 request, like up/POST /up. Add them by hand.",
+                "Skipped application/x-www-form-urlencoded bodies in 1 request, like form/POST /form. Add them by hand."
             ]
         );
     }
@@ -1507,7 +1530,134 @@ mod map {
         assert_eq!(m.requests[0].params, [field("ok", "string", false, None)]);
         assert_eq!(
             lines(&m),
-            ["Skipped 4 parameters with no name or an unknown location, like in GET /a and GET /b"]
+            [
+                "Skipped 4 parameters with no name or an unknown location, like in a/GET /a and b/GET /b"
+            ]
+        );
+    }
+
+    #[test]
+    fn untagged_operations_get_a_path_folder() {
+        let m = map(spec(json!({
+            "/v1/customers/{id}": { "get": { "responses": {} } },
+            "/api/V2.1/Charges": { "get": { "responses": {} } },
+            "/{tenant}/v3/apiary": { "get": { "responses": {} } },
+            "/v1/{id}": { "get": { "responses": {} } },
+            "/": { "get": { "responses": {} } },
+            "/v1/customers": { "post": { "tags": ["billing"], "responses": {} } }
+        })));
+        let folders: Vec<_> = m.requests.iter().map(|r| r.folders.clone()).collect();
+        assert_eq!(
+            folders,
+            [
+                vec!["customers".to_string()],
+                vec!["Charges".to_string()],
+                vec!["apiary".to_string()],
+                vec![],
+                vec![],
+                vec!["billing".to_string()]
+            ]
+        );
+        assert_eq!(m.report.folders, 4);
+    }
+
+    #[test]
+    fn empty_form_schema_means_no_body() {
+        let empty = json!({ "type": "object", "properties": {}, "additionalProperties": false });
+        let op = |media: &str, schema: Value| {
+            json!({ "get": {
+                "requestBody": { "content": { media: { "schema": schema } } },
+                "responses": {}
+            } })
+        };
+        let m = map(spec(json!({
+            "/a": op("application/x-www-form-urlencoded", empty.clone()),
+            "/b": op("multipart/form-data", json!({ "type": "object" })),
+            "/c": op("application/x-www-form-urlencoded", json!({ "type": "object", "additionalProperties": true })),
+            "/d": op("multipart/form-data", json!({ "type": "string" })),
+            "/e": op("application/x-www-form-urlencoded", json!({ "oneOf": [empty.clone(), empty] }))
+        })));
+        assert!(m.requests.iter().all(|r| r.body == MappedBody::None));
+        assert!(m.requests.iter().all(|r| r.headers.is_empty()));
+        assert_eq!(
+            lines(&m),
+            [
+                "Skipped application/x-www-form-urlencoded bodies in 2 requests, like c/GET /c and e/GET /e. Add them by hand.",
+                "Skipped multipart/form-data bodies in 1 request, like d/GET /d. Add them by hand."
+            ]
+        );
+    }
+
+    #[test]
+    fn param_style_counts_enabled_params_only() {
+        let m = map(spec(json!({ "/a": { "get": {
+            "parameters": [
+                { "name": "expand", "in": "query", "style": "deepObject",
+                  "schema": { "type": "object" } },
+                { "name": "ids", "in": "query", "style": "pipeDelimited", "required": true,
+                  "schema": { "type": "array", "items": { "type": "integer" } } }
+            ],
+            "responses": {}
+        } } })));
+        assert_eq!(
+            m.report.attention,
+            [Attention::ParamStyle {
+                count: 1,
+                examples: vec!["a/GET /a".into()]
+            }]
+        );
+    }
+
+    #[test]
+    fn html_is_stripped_from_comments_and_readme() {
+        let mut v = spec(json!({ "/a": { "get": {
+            "summary": "<b>Kept</b> as is",
+            "description": "<p>Lists <code>items</code> where a < b &amp; c &gt; d.</p>\n<p>See <a href=\"https://docs.example.com\">the docs</a>.<br/></p>\n<p></p>",
+            "parameters": [{ "name": "q", "in": "query", "description": "<p>Free &quot;text&quot; &#39;search&#39;</p>",
+                "schema": { "type": "string" } }],
+            "responses": {}
+        } } }));
+        v["info"]["description"] =
+            json!("<p></p>\n<h1>Inventory</h1>\n\n<p>Tracks <em>stock</em>.</p>\n<br/>");
+        let m = map(v);
+        let r = &m.requests[0];
+        assert_eq!(r.name, "<b>Kept</b> as is");
+        assert_eq!(
+            r.comments,
+            ["Lists items where a < b & c > d.", "See the docs."]
+        );
+        assert_eq!(r.params[0].note.as_deref(), Some("Free \"text\" 'search'"));
+        assert_eq!(m.description.as_deref(), Some("Inventory\n\nTracks stock."));
+    }
+
+    #[test]
+    fn examples_ending_in_a_period_end_the_sentence_once() {
+        let a = Attention::SkippedBody {
+            media: "application/octet-stream".into(),
+            count: 1,
+            examples: vec!["pet/Uploads an image.".into()],
+        };
+        assert_eq!(
+            a.to_string(),
+            "Skipped application/octet-stream bodies in 1 request, like pet/Uploads an image. Add them by hand."
+        );
+        let a = Attention::UnresolvedRef {
+            target: "#/x".into(),
+            external: false,
+            count: 2,
+            examples: vec!["a.".into(), "b".into()],
+        };
+        assert_eq!(
+            a.to_string(),
+            "Couldn't resolve #/x in 2 requests, like a. and b. Used an empty value."
+        );
+        let a = Attention::ParamStyle {
+            count: 1,
+            examples: vec!["Do it.".into()],
+        };
+        assert_eq!(
+            a.to_string(),
+            "1 parameter uses a style curl-runner doesn't model, like in Do it. Check its value."
         );
     }
 }
@@ -1604,7 +1754,7 @@ mod convert {
         let imp = convert_openapi(LARGE).unwrap();
         assert_eq!(dump(&imp), LARGE_EMITTED);
         assert_eq!(imp.name, "Inventory Service");
-        assert_eq!((imp.report.folders, imp.report.requests), (3, 14));
+        assert_eq!((imp.report.folders, imp.report.requests), (4, 14));
         assert_eq!(
             lines(&imp),
             [

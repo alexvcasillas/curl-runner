@@ -154,6 +154,21 @@ impl fmt::Display for Examples<'_> {
     }
 }
 
+/// [`Examples`] closing a sentence: a `.` follows unless the last example
+/// already ends with one.
+struct Ended<'a>(&'a [String]);
+
+impl fmt::Display for Ended<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Examples(self.0))?;
+        if self.0.last().is_some_and(|e| e.ends_with('.')) {
+            Ok(())
+        } else {
+            f.write_str(".")
+        }
+    }
+}
+
 struct Place<'a>(&'a str);
 
 impl fmt::Display for Place<'_> {
@@ -223,16 +238,16 @@ impl fmt::Display for Attention {
                 examples,
             } => {
                 let reqs = Count(*count, "request");
-                let like = Examples(examples);
+                let like = Ended(examples);
                 if *external {
                     write!(
                         f,
-                        "Can't follow the external reference {target} in {reqs}, like {like}. Used an empty value."
+                        "Can't follow the external reference {target} in {reqs}, like {like} Used an empty value."
                     )
                 } else {
                     write!(
                         f,
-                        "Couldn't resolve {target} in {reqs}, like {like}. Used an empty value."
+                        "Couldn't resolve {target} in {reqs}, like {like} Used an empty value."
                     )
                 }
             }
@@ -242,9 +257,9 @@ impl fmt::Display for Attention {
                 examples,
             } => write!(
                 f,
-                "Skipped {media} bodies in {}, like {}. Add them by hand.",
+                "Skipped {media} bodies in {}, like {} Add them by hand.",
                 Count(*count, "request"),
-                Examples(examples)
+                Ended(examples)
             ),
             Attention::AuthChoice {
                 used,
@@ -284,9 +299,9 @@ impl fmt::Display for Attention {
                 };
                 write!(
                     f,
-                    "{} {verb} a style curl-runner doesn't model, like in {}. Check {check}.",
+                    "{} {verb} a style curl-runner doesn't model, like in {} Check {check}.",
                     Count(*count, "parameter"),
-                    Examples(examples)
+                    Ended(examples)
                 )
             }
             Attention::CookieParams { count, examples } => write!(

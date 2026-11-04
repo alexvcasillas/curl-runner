@@ -22,6 +22,9 @@ struct FormParts<'d> {
     props: Vec<(&'d str, &'d Value)>,
     required: Vec<&'d str>,
     example: Json,
+    /// The schema declares an object with no fields at all, so there is
+    /// no body to send.
+    empty: bool,
 }
 
 impl<'d> Mapper<'d> {
@@ -105,9 +108,11 @@ impl<'d> Mapper<'d> {
             props: Vec::new(),
             required: Vec::new(),
             example: self.sampler.example(m).unwrap_or(Json::Null),
+            empty: false,
         };
         if let Some(raw) = m.get("schema") {
             let schema = self.resolve(raw)?;
+            parts.empty = no_fields(schema);
             self.collect_props(schema, 0, &mut parts);
         }
         Some(parts)
@@ -167,6 +172,7 @@ impl<'d> Mapper<'d> {
             props,
             required,
             example,
+            empty,
         }) = self.form_parts(m)
         else {
             return;
@@ -196,10 +202,10 @@ impl<'d> Mapper<'d> {
                 note: note(prop.and_then(|p| p.get("description"))),
             });
         }
-        if fields.is_empty() {
-            self.skip_body("multipart/form-data".into());
-        } else {
+        if !fields.is_empty() {
             r.body = MappedBody::Form(fields);
+        } else if !empty {
+            self.skip_body("multipart/form-data".into());
         }
     }
 
@@ -222,10 +228,14 @@ impl<'d> Mapper<'d> {
             props,
             required,
             example,
+            empty,
         }) = self.form_parts(m)
         else {
             return false;
         };
+        if empty {
+            return false;
+        }
         if props.is_empty() {
             self.skip_body("application/x-www-form-urlencoded".into());
             return false;
@@ -250,4 +260,22 @@ impl<'d> Mapper<'d> {
         r.body = MappedBody::Text(parts.join("&"));
         true
     }
+}
+
+/// An object schema with no fields: no or empty `properties`, no
+/// `allOf`/`oneOf`/`anyOf`, and `additionalProperties` false or absent.
+fn no_fields(s: &Value) -> bool {
+    let object = s.get("type").is_none_or(|t| t == "object");
+    let no_props = s
+        .get("properties")
+        .is_none_or(|p| p.as_object().is_some_and(Map::is_empty));
+    let closed = s
+        .get("additionalProperties")
+        .is_none_or(|a| *a == Value::Bool(false));
+    object
+        && no_props
+        && closed
+        && ["allOf", "oneOf", "anyOf"]
+            .iter()
+            .all(|k| s.get(*k).is_none())
 }

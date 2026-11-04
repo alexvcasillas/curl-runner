@@ -239,7 +239,7 @@ request:
   expect:
     status: 200
 
-=== health.yaml
+=== health/health.yaml
 # Imported from OpenAPI: Inventory Service
 
 request:

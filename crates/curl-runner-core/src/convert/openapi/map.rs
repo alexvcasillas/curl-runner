@@ -2,6 +2,9 @@
 //! operation, in `paths` order and then method order.
 
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
+
+use regex::Regex;
 
 use serde_json::{Map, Value};
 
@@ -311,8 +314,9 @@ impl<'d> Mapper<'d> {
             .and_then(|t| t.first())
             .and_then(Value::as_str)
             .filter(|t| !t.is_empty());
+        let folder = tag.or_else(|| path_folder(path));
         let mut r = MappedRequest {
-            folders: tag.map(|t| vec![t.to_string()]).unwrap_or_default(),
+            folders: folder.map(|t| vec![t.to_string()]).unwrap_or_default(),
             name,
             comments: Vec::new(),
             method,
@@ -324,7 +328,7 @@ impl<'d> Mapper<'d> {
             file_vars: Vec::new(),
             expect_status: expect_status(op),
         };
-        if let Some(t) = tag
+        if let Some(t) = folder
             && !self.folders.iter().any(|f| f == t)
         {
             self.folders.push(t.to_string());
@@ -332,7 +336,7 @@ impl<'d> Mapper<'d> {
         self.at = r.path();
         self.req = self.requests.len();
 
-        r.comments = lines(op.get("description"));
+        r.comments = comment_lines(op.get("description"));
         if let Some(id) = text(op, "operationId") {
             r.comments.push(format!("operationId: {id}"));
         }
@@ -349,7 +353,7 @@ impl<'d> Mapper<'d> {
                 .flatten()
                 .find(|x| x.get("name").and_then(Value::as_str) == Some(t));
             r.comments
-                .extend(lines(described.and_then(|x| x.get("description"))));
+                .extend(comment_lines(described.and_then(|x| x.get("description"))));
         }
 
         let own = [op, item]
@@ -483,7 +487,9 @@ impl<'d> Mapper<'d> {
             let required =
                 place == "path" || p.get("required").and_then(Value::as_bool) == Some(true);
             let sample = self.param_sample(p);
-            if needs_style(p, place, &sample) {
+            // A disabled param is a commented-out line; its style matters
+            // only once someone turns it on.
+            if required && needs_style(p, place, &sample) {
                 self.tally
                     .hit("style".into(), self.req, &self.at, false, || {
                         Attention::ParamStyle {
@@ -496,7 +502,9 @@ impl<'d> Mapper<'d> {
             let note = note(p.get("description"));
             match place {
                 "path" => {
-                    let value = if is_secret_param(name) || secret_header(name) {
+                    // Path segments are mostly ids, so only a literal the
+                    // document wrote counts as a credential.
+                    let value = if is_secret_param(name) && self.has_literal(p) {
                         self.credential(&param_var(name), &value, false)
                     } else {
                         value
@@ -552,6 +560,20 @@ impl<'d> Mapper<'d> {
             }
         }
         path_values
+    }
+
+    /// Whether the document itself gives `p` a value: an example, or a
+    /// schema `example`, `examples`, `default`, `enum` or `const`.
+    fn has_literal(&self, p: &Value) -> bool {
+        if p.get("example").is_some() || p.get("examples").is_some() {
+            return true;
+        }
+        let Some(Resolved::Value(s)) = p.get("schema").map(|s| self.doc.resolve(s)) else {
+            return false;
+        };
+        ["example", "examples", "default", "enum", "const"]
+            .iter()
+            .any(|k| s.get(*k).is_some())
     }
 
     /// A parameter's sample: its example, else one from its schema or its
@@ -688,9 +710,8 @@ impl<'d> Mapper<'d> {
         }
         let description = self.doc.root["info"]["description"]
             .as_str()
-            .map(str::trim)
-            .filter(|d| !d.is_empty())
-            .map(str::to_string);
+            .map(|d| lines(d).join("\n"))
+            .filter(|d| !d.is_empty());
         Mapped {
             report: ImportReport {
                 folders: self.folders.len(),
@@ -781,23 +802,59 @@ pub(super) fn text_field(key: &str, value: String, disabled: bool, note: Option<
     }
 }
 
-/// A description's non-blank lines.
-fn lines(d: Option<&Value>) -> Vec<String> {
-    d.and_then(Value::as_str)
-        .map(|d| {
-            d.lines()
-                .map(str::trim_end)
-                .filter(|l| !l.trim().is_empty())
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default()
+/// A description's non-blank lines, as plain text.
+fn comment_lines(d: Option<&Value>) -> Vec<String> {
+    let mut out = d.and_then(Value::as_str).map(lines).unwrap_or_default();
+    out.retain(|l| !l.trim().is_empty());
+    out
 }
 
-/// A description on one line.
+/// `text` as plain text, without blank lines at the edges. Inner blank
+/// lines stay, so a README keeps its paragraphs.
+fn lines(text: &str) -> Vec<String> {
+    let plain = plain_text(text);
+    let all: Vec<&str> = plain.lines().map(str::trim_end).collect();
+    let Some(first) = all.iter().position(|l| !l.trim().is_empty()) else {
+        return Vec::new();
+    };
+    let last = all
+        .iter()
+        .rposition(|l| !l.trim().is_empty())
+        .unwrap_or(first);
+    all[first..=last].iter().map(|l| l.to_string()).collect()
+}
+
+/// HTML tags removed, then the common entities decoded. Only tag-shaped
+/// text is removed, so `a < b` stays.
+fn plain_text(text: &str) -> String {
+    static TAG: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"</?[A-Za-z][A-Za-z0-9-]*(\s[^<>]*)?/?>").expect("a valid pattern")
+    });
+    TAG.replace_all(text, "")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&")
+}
+
+/// The folder for an untagged operation: the path's first segment that
+/// isn't a version (`v1`, `v2.1`), `api` or a `{template}`.
+fn path_folder(path: &str) -> Option<&str> {
+    let version = |s: &str| {
+        s.strip_prefix(['v', 'V']).is_some_and(|rest| {
+            rest.split('.')
+                .all(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        })
+    };
+    path.split('/').find(|s| {
+        !s.is_empty() && !version(s) && !s.eq_ignore_ascii_case("api") && !s.starts_with('{')
+    })
+}
+
+/// A description on one line, as plain text.
 pub(super) fn note(d: Option<&Value>) -> Option<String> {
-    let text = d?
-        .as_str()?
+    let text = plain_text(d?.as_str()?)
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
