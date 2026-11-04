@@ -270,6 +270,97 @@ describe('changelog page with tagged entries', () => {
     const html = await render();
     expect(html).not.toMatch(/\shidden=""/);
     expect(html).not.toContain('Load older releases');
+    expect(html).toMatch(/<div role="group" aria-label="Filter changes by tag" class="invisible /);
+  });
+
+  it('re-scrolls to a matching hash target once the filter hides releases above it', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      window.history.replaceState(null, '', '/changelog?tag=fixed#3.1.1');
+      renderDom(await ChangelogPage());
+      expect(release('3.1.0')).not.toBeVisible();
+      expect(scroll).toHaveBeenCalled();
+      expect(scroll.mock.contexts.at(-1)).toBe(release('3.1.1'));
+    } finally {
+      // biome-ignore lint/suspicious/noExplicitAny: jsdom has no scrollIntoView; remove the stub
+      delete (Element.prototype as any).scrollIntoView;
+    }
+  });
+
+  it('clears an active filter when the hash targets a release it hides', async () => {
+    window.history.replaceState(null, '', '/changelog?tag=fixed#2.0.0');
+    renderDom(await ChangelogPage());
+    expect(release('2.0.0')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+    expect(window.location.search).toBe('');
+    expect(window.location.hash).toBe('#2.0.0');
+  });
+
+  it('ignores an unknown ?tag= and removes it from the URL', async () => {
+    window.history.replaceState(null, '', '/changelog?tag=bogus');
+    renderDom(await ChangelogPage());
+    expect(window.location.search).toBe('');
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+    expect(release('3.1.0')).toBeVisible();
+  });
+
+  it('follows ?tag= on back and forward', async () => {
+    renderDom(await ChangelogPage());
+    act(() => {
+      window.history.replaceState(null, '', '/changelog?tag=fixed');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(screen.getByRole('button', { name: 'Fixed' })).toHaveAttribute('aria-pressed', 'true');
+    expect(release('3.1.0')).not.toBeVisible();
+    act(() => {
+      window.history.replaceState(null, '', '/changelog');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+    expect(release('3.1.0')).toBeVisible();
+    act(() => {
+      window.history.replaceState(null, '', '/changelog?tag=improved#3.2.0');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    expect(screen.getByRole('button', { name: 'Improved' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(release('3.1.1')).not.toBeVisible();
+  });
+
+  it('pages within the matching releases and resets the page when the tag changes', async () => {
+    renderDom(await ChangelogPage());
+    // New: 3.2.0 and 2.18.0 down to 2.0.0 (11 releases).
+    fireEvent.click(screen.getByRole('button', { name: 'New' }));
+    expect(release('2.2.0')).toBeVisible(); // 10th New release
+    expect(release('2.0.0')).not.toBeVisible();
+    expect(release('2.19.0')).not.toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Load older releases' }));
+    expect(release('2.0.0')).toBeVisible();
+    expect(release('2.1.0')).not.toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Load older releases' })).toBeNull();
+    // Improved: 3.2.0 and 2.19.0 down to 2.1.0 (11 releases), back to the first ten.
+    fireEvent.click(screen.getByRole('button', { name: 'Improved' }));
+    expect(release('2.3.0')).toBeVisible();
+    expect(release('2.1.0')).not.toBeVisible();
+    expect(screen.getByRole('button', { name: 'Load older releases' })).toBeInTheDocument();
+  });
+
+  it('moves focus to the first revealed release and announces the count', async () => {
+    renderDom(await ChangelogPage());
+    fireEvent.click(screen.getByRole('button', { name: 'Load older releases' }));
+    expect(document.activeElement).toBe(
+      within(release('2.12.0')).getByRole('link', { name: '2.12.0' }),
+    );
+    expect(screen.getByText('Showing 20 releases')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Load older releases' }));
+    expect(screen.queryByRole('button', { name: 'Load older releases' })).toBeNull();
+    expect(document.activeElement).toBe(
+      within(release('2.2.0')).getByRole('link', { name: '2.2.0' }),
+    );
+    expect(screen.getByText('Showing 23 releases')).toBeInTheDocument();
   });
 });
 

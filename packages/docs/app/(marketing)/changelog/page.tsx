@@ -258,7 +258,7 @@ export default async function ChangelogPage() {
           </ChangelogFilter>
 
           <p className="m-0 pt-10 text-center text-sm">
-            <a href={RELEASES_URL} className={LINK}>
+            <a href={RELEASES_URL} data-changelog-github="" className={LINK}>
               Older releases on GitHub
             </a>
           </p>

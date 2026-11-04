@@ -39,13 +39,25 @@ function hasTag(release: HTMLElement, tag: string | null): boolean {
 export function ChangelogFilter({ tags, pageSize, children }: ChangelogFilterProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollTarget = useRef<HTMLElement | null>(null);
+  // Index (among matching releases) of the first one a "Load older releases" click reveals.
+  const focusFrom = useRef<number | null>(null);
   // Null until the URL has been read after hydration, so the server HTML and the first render agree.
   const [view, setView] = useState<View | null>(null);
+  const viewRef = useRef<View | null>(null);
+  viewRef.current = view;
   const [matching, setMatching] = useState<number | null>(null);
+  const [status, setStatus] = useState('');
 
-  // Shows the release a `#version` hash points at, clearing a filter that hides it.
-  const revealHash = useCallback(
-    (current: View): View => {
+  /**
+   * The view the URL asks for: a valid `?tag=` (else none), widened to show the
+   * release a `#version` hash points at, with the filter cleared when it hides it.
+   * `base` keeps the current page limit while the tag is unchanged.
+   */
+  const fromLocation = useCallback(
+    (base: View | null): { view: View; target: HTMLElement | null } => {
+      const param = new URLSearchParams(window.location.search).get('tag');
+      let tag = tags.some((t) => t.value === param) ? param : null;
+      let limit = base && base.tag === tag ? base.limit : pageSize;
       const root = rootRef.current;
       let id = window.location.hash.slice(1);
       try {
@@ -53,33 +65,47 @@ export function ChangelogFilter({ tags, pageSize, children }: ChangelogFilterPro
       } catch {
         // A malformed escape: look the hash up as written.
       }
-      const target = id ? document.getElementById(id) : null;
-      const release = target?.closest<HTMLElement>('[data-release]');
+      const release = id
+        ? document.getElementById(id)?.closest<HTMLElement>('[data-release]')
+        : null;
       if (!root || !release || !root.contains(release)) {
-        return current;
+        return { view: { tag, limit }, target: null };
       }
-      const tag = hasTag(release, current.tag) ? current.tag : null;
+      if (!hasTag(release, tag)) {
+        tag = null;
+        limit = pageSize;
+      }
       const index = releasesOf(root)
         .filter((r) => hasTag(r, tag))
         .indexOf(release);
-      if (tag === current.tag && index < current.limit) {
-        return current;
-      }
-      scrollTarget.current = release;
-      return { tag, limit: Math.max(current.limit, Math.ceil((index + 1) / pageSize) * pageSize) };
+      limit = Math.max(limit, Math.ceil((index + 1) / pageSize) * pageSize);
+      return { view: { tag, limit }, target: release };
     },
-    [pageSize],
+    [tags, pageSize],
   );
 
   useEffect(() => {
-    const param = new URLSearchParams(window.location.search).get('tag');
-    const tag = tags.some((t) => t.value === param) ? param : null;
-    setView(revealHash({ tag, limit: pageSize }));
-    const onHashChange = () =>
-      setView((current) => revealHash(current ?? { tag: null, limit: pageSize }));
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
-  }, [tags, pageSize, revealHash]);
+    // On load the browser scrolled to the hash in the full list; hiding releases above it moves it, so always re-scroll.
+    const initial = fromLocation(null);
+    scrollTarget.current = initial.target;
+    setView(initial.view);
+
+    const onNavigate = () => {
+      const current = viewRef.current;
+      const next = fromLocation(current);
+      if (current && next.view.tag === current.tag && next.view.limit === current.limit) {
+        return;
+      }
+      scrollTarget.current = next.target;
+      setView(next.view);
+    };
+    window.addEventListener('hashchange', onNavigate);
+    window.addEventListener('popstate', onNavigate);
+    return () => {
+      window.removeEventListener('hashchange', onNavigate);
+      window.removeEventListener('popstate', onNavigate);
+    };
+  }, [fromLocation]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -97,6 +123,7 @@ export function ChangelogFilter({ tags, pageSize, children }: ChangelogFilterPro
       }
       window.history.replaceState(window.history.state, '', url);
     }
+    const shown: HTMLElement[] = [];
     let count = 0;
     for (const release of releasesOf(root)) {
       for (const entry of release.querySelectorAll<HTMLElement>('[data-entry]')) {
@@ -109,6 +136,9 @@ export function ChangelogFilter({ tags, pageSize, children }: ChangelogFilterPro
       }
       const matches = hasTag(release, tag);
       release.hidden = !matches || count >= limit;
+      if (!release.hidden) {
+        shown.push(release);
+      }
       count += matches ? 1 : 0;
     }
     setMatching(count);
@@ -116,10 +146,30 @@ export function ChangelogFilter({ tags, pageSize, children }: ChangelogFilterPro
       scrollTarget.current.scrollIntoView?.();
       scrollTarget.current = null;
     }
+    if (focusFrom.current !== null) {
+      const first = shown[focusFrom.current];
+      const link =
+        first?.querySelector<HTMLElement>('h2 a') ??
+        document.querySelector<HTMLElement>('[data-changelog-github]');
+      link?.focus();
+      focusFrom.current = null;
+    }
   }, [view]);
 
   const tag = view?.tag ?? null;
   const limit = view?.limit ?? pageSize;
+
+  function loadOlder() {
+    const next = limit + pageSize;
+    focusFrom.current = limit;
+    setStatus(`Showing ${Math.min(next, matching ?? next)} releases`);
+    setView({ tag, limit: next });
+  }
+
+  function selectTag(value: string | null) {
+    setStatus('');
+    setView({ tag: value, limit: pageSize });
+  }
 
   const options: { value: string | null; label: string }[] = [
     { value: null, label: 'All' },
@@ -138,7 +188,7 @@ export function ChangelogFilter({ tags, pageSize, children }: ChangelogFilterPro
             key={option.label}
             type="button"
             aria-pressed={tag === option.value}
-            onClick={() => setView({ tag: option.value, limit: pageSize })}
+            onClick={() => selectTag(option.value)}
             className={`h-8 cursor-pointer rounded-full border border-line px-3 text-[13px] text-fg-secondary transition-colors duration-[120ms] hover:bg-hover hover:text-fg aria-pressed:border-selected aria-pressed:bg-selected aria-pressed:text-fg ${FOCUS}`}
           >
             {option.label}
@@ -154,13 +204,14 @@ export function ChangelogFilter({ tags, pageSize, children }: ChangelogFilterPro
         {matching === 0 ? (
           <p className="m-0 py-14 text-[15px] text-fg-secondary">No changes with this tag yet.</p>
         ) : null}
+        {status ? <span className="sr-only">{status}</span> : null}
       </div>
 
       {matching !== null && matching > limit ? (
         <div className="flex justify-center pt-10">
           <button
             type="button"
-            onClick={() => setView({ tag, limit: limit + pageSize })}
+            onClick={loadOlder}
             className={`inline-flex h-10 cursor-pointer items-center rounded-[10px] border border-line px-[18px] text-sm text-fg transition-colors hover:bg-hover ${FOCUS}`}
           >
             Load older releases
