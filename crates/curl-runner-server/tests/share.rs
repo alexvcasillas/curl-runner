@@ -223,6 +223,40 @@ async fn restricted_domain_entry_matches(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn email_entry_wins_over_domain_entry(pool: PgPool) {
+    let (app, s) = setup(pool).await;
+    patch(&app, &s, json!({"access": "restricted"})).await;
+    add_entry(&app, &s, "*@client.com", false).await;
+    add_entry(&app, &s, "bob@client.com", false).await;
+    let t = token(&app, &s).await;
+    let bob = app.sign_in("bob@client.com").await;
+    let (status, _) = fetch(&app, &format!("/v1/shared/{t}"), Some(&bob)).await;
+    assert_eq!(status, StatusCode::OK);
+    let entry: Option<String> = sqlx::query_scalar("SELECT entry::text FROM share_opens")
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(entry.as_deref(), Some("bob@client.com"));
+}
+
+#[sqlx::test]
+async fn team_member_opens_own_restricted_link(pool: PgPool) {
+    let (app, s) = setup(pool).await;
+    patch(&app, &s, json!({"access": "restricted"})).await;
+    let t = token(&app, &s).await;
+    // The owner is on no access list, but is a member of the owning team.
+    for suffix in ["", "/snapshot", "/versions/latest"] {
+        let (status, body) = fetch(&app, &format!("/v1/shared/{t}{suffix}"), Some(&s)).await;
+        assert_eq!(status, StatusCode::OK, "{suffix}: {body}");
+    }
+    // A member of another team is still checked against the list.
+    let eve = app.sign_in("eve@example.com").await;
+    app.create_team(&eve, "other").await;
+    let (status, _) = fetch(&app, &format!("/v1/shared/{t}"), Some(&eve)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test]
 async fn reset_link_kills_old(pool: PgPool) {
     let (app, s) = setup(pool).await;
     patch(&app, &s, json!({"access": "public"})).await;

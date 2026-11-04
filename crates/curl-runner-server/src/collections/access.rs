@@ -1,7 +1,8 @@
 //! The customer side: fetching a shared collection by its link token.
 //!
 //! Access is decided per request from the collection's `access` mode and, for
-//! `restricted`, the signed-in user's email against the access list. A
+//! `restricted`, the signed-in user's email against the access list (members
+//! of the owning team are always let in). A
 //! restricted collection keeps serving after its team drops to Free; only
 //! publishing and list changes are plan-gated.
 
@@ -53,6 +54,7 @@ fn unauthorized() -> ApiError {
 
 type Row = (
     Uuid,
+    Uuid,
     String,
     String,
     String,
@@ -81,7 +83,7 @@ async fn resolve(
     }
     let hash = crate::hash::secret_hash(state.config.secret_key.as_bytes(), token);
     let row: Option<Row> = sqlx::query_as(
-        "SELECT c.id, t.name, c.slug::text, c.name, c.description, c.access, \
+        "SELECT c.id, c.team_id, t.name, c.slug::text, c.name, c.description, c.access, \
                 v.number, v.id, v.hash, v.created_at \
          FROM collections c \
          JOIN teams t ON t.id = c.team_id \
@@ -95,6 +97,7 @@ async fn resolve(
     .await?;
     let (
         collection_id,
+        team_id,
         team_name,
         slug,
         name,
@@ -108,8 +111,11 @@ async fn resolve(
     let access: Access = column_enum(access)?;
     let matched_entry = if access == Access::Restricted {
         let user = auth.ok_or_else(unauthorized)?;
-        let allowed = matching_entry(state, collection_id, &user.email).await?;
-        Some(allowed.ok_or_else(|| {
+        if is_member(state, team_id, user.user_id).await? {
+            None
+        } else {
+            let allowed = matching_entry(state, collection_id, &user.email).await?;
+            Some(allowed.ok_or_else(|| {
             ApiError::new(
                 ErrorCode::Forbidden,
                 format!(
@@ -117,6 +123,7 @@ async fn resolve(
                 ),
             )
         })?)
+        }
     } else {
         None
     };
@@ -135,6 +142,16 @@ async fn resolve(
     })
 }
 
+async fn is_member(state: &AppState, team_id: Uuid, user_id: Uuid) -> Result<bool, ApiError> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM memberships WHERE team_id = $1 AND user_id = $2)",
+    )
+    .bind(team_id)
+    .bind(user_id)
+    .fetch_one(&state.db)
+    .await?)
+}
+
 /// The access-list entry covering `email`: the email itself, else its domain.
 async fn matching_entry(
     state: &AppState,
@@ -146,7 +163,7 @@ async fn matching_entry(
     Ok(sqlx::query_scalar(
         "SELECT entry::text FROM access_entries WHERE collection_id = $1 \
            AND ((kind = 'email' AND entry = $2) OR (kind = 'domain' AND entry = $3)) \
-         ORDER BY kind LIMIT 1",
+         ORDER BY kind = 'email' DESC LIMIT 1",
     )
     .bind(collection_id)
     .bind(&email)
