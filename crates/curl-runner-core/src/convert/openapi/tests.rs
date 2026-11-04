@@ -320,3 +320,205 @@ fn yaml_merge_keys_apply() {
     assert_eq!(a["type"], "integer");
     assert!(a.get("<<").is_none());
 }
+
+mod sample {
+    use serde_json::{Value, json};
+
+    use super::doc;
+    use crate::convert::openapi::sample::{Sampler, UnresolvedRef};
+
+    fn empty_doc() -> crate::convert::openapi::Doc {
+        doc(json!({"openapi": "3.0.0", "info": {"title": "T", "version": "1"}, "paths": {}}))
+    }
+
+    fn sample(schema: Value) -> Value {
+        let d = empty_doc();
+        Sampler::new(&d).value(&schema)
+    }
+
+    fn leaves(v: &Value) -> usize {
+        match v {
+            Value::Object(m) if !m.is_empty() => m.values().map(leaves).sum(),
+            Value::Array(a) if !a.is_empty() => a.iter().map(leaves).sum(),
+            _ => 1,
+        }
+    }
+
+    #[test]
+    fn uses_example_before_schema() {
+        let d = empty_doc();
+        let mut s = Sampler::new(&d);
+        let media = json!({"example": {"a": 1}, "schema": {"type": "string", "example": "x"}});
+        assert_eq!(s.example(&media), Some(json!({"a": 1})));
+        let media = json!({"examples": {"one": {"value": 7}}, "schema": {"type": "string"}});
+        assert_eq!(s.example(&media), Some(json!(7)));
+        assert_eq!(s.example(&json!({"schema": {}})), None);
+        assert_eq!(
+            s.value(&json!({"type": "string", "example": "x"})),
+            json!("x")
+        );
+    }
+
+    #[test]
+    fn literal_order() {
+        assert_eq!(
+            sample(json!({"type": "string", "default": "d", "enum": ["e"]})),
+            json!("d")
+        );
+        assert_eq!(
+            sample(json!({"type": "string", "enum": ["e", "f"]})),
+            json!("e")
+        );
+        assert_eq!(sample(json!({"const": 3})), json!(3));
+        assert_eq!(
+            sample(json!({"type": "string", "examples": ["a", "b"]})),
+            json!("a")
+        );
+    }
+
+    #[test]
+    fn formats_are_fixed() {
+        let v = sample(json!({"type": "object", "properties": {
+            "id": {"type": "integer"},
+            "at": {"type": "string", "format": "date-time"},
+            "mail": {"type": "string", "format": "email"}
+        }}));
+        assert_eq!(
+            v,
+            json!({"id": 1, "at": "2024-01-01T00:00:00Z", "mail": "user@example.com"})
+        );
+        for (f, want) in [
+            ("date", "2024-01-01"),
+            ("uuid", "00000000-0000-4000-8000-000000000000"),
+            ("uri", "https://example.com"),
+            ("binary", "./pick-a-file"),
+            ("other", "string"),
+        ] {
+            assert_eq!(sample(json!({"type": "string", "format": f})), json!(want));
+        }
+        assert_eq!(sample(json!({"type": "boolean"})), json!(true));
+    }
+
+    #[test]
+    fn minimum_wins() {
+        assert_eq!(sample(json!({"type": "integer", "minimum": 5})), json!(5));
+    }
+
+    #[test]
+    fn nullable_31() {
+        assert_eq!(sample(json!({"type": ["string", "null"]})), json!("string"));
+    }
+
+    #[test]
+    fn all_of_merges() {
+        let v = sample(json!({"allOf": [
+            {"type": "object", "properties": {"a": {"type": "integer"}}},
+            {"type": "object", "properties": {"b": {"type": "boolean"}}}
+        ]}));
+        assert_eq!(v, json!({"a": 1, "b": true}));
+        assert_eq!(serde_json::to_string(&v).unwrap(), r#"{"a":1,"b":true}"#);
+    }
+
+    #[test]
+    fn one_of_first() {
+        let schema = json!({"oneOf": [{"type": "integer"}, {"type": "string"}]});
+        let d = empty_doc();
+        let mut s = Sampler::new(&d);
+        assert_eq!(s.value(&schema), json!(1));
+        assert_eq!(s.alternatives(&schema), 2);
+        assert_eq!(s.alternatives(&json!({"type": "string"})), 0);
+    }
+
+    fn with_schemas(schemas: Value) -> crate::convert::openapi::Doc {
+        doc(
+            json!({"openapi": "3.0.0", "info": {"title": "T", "version": "1"},
+            "paths": {}, "components": {"schemas": schemas}}),
+        )
+    }
+
+    #[test]
+    fn recursive_ref_stops() {
+        let d = with_schemas(json!({"Node": {"type": "object", "properties": {
+            "name": {"type": "string"},
+            "children": {"type": "array", "items": {"$ref": "#/components/schemas/Node"}}
+        }}}));
+        let v = Sampler::new(&d).value(&json!({"$ref": "#/components/schemas/Node"}));
+        assert_eq!(v, json!({"name": "string", "children": [{}]}));
+    }
+
+    #[test]
+    fn wide_graph_is_budgeted() {
+        let mut schemas = serde_json::Map::new();
+        for i in 0..40 {
+            let props: serde_json::Map<String, Value> = (0..10)
+                .map(|j| {
+                    (
+                        format!("p{j}"),
+                        json!({"$ref": format!("#/components/schemas/S{}", (i + j + 1) % 40)}),
+                    )
+                })
+                .collect();
+            schemas.insert(
+                format!("S{i}"),
+                json!({"type": "object", "properties": props}),
+            );
+        }
+        let d = with_schemas(Value::Object(schemas));
+        let start = std::time::Instant::now();
+        let v = Sampler::new(&d).value(&json!({"$ref": "#/components/schemas/S0"}));
+        assert!(start.elapsed() < std::time::Duration::from_millis(50));
+        assert!(leaves(&v) <= 400, "{} leaves", leaves(&v));
+    }
+
+    #[test]
+    fn wide_required_graph_is_capped() {
+        // Past the cap, open objects still give their remaining required
+        // siblings an empty value, so the bound is cap + fan-out * depth.
+        let mut schemas = serde_json::Map::new();
+        for i in 0..40 {
+            let props: serde_json::Map<String, Value> = (0..10)
+                .map(|j| {
+                    (
+                        format!("p{j}"),
+                        json!({"$ref": format!("#/components/schemas/S{}", (i + j + 1) % 40)}),
+                    )
+                })
+                .collect();
+            let required: Vec<String> = props.keys().cloned().collect();
+            schemas.insert(
+                format!("S{i}"),
+                json!({"type": "object", "properties": props, "required": required}),
+            );
+        }
+        let d = with_schemas(Value::Object(schemas));
+        let start = std::time::Instant::now();
+        let v = Sampler::new(&d).value(&json!({"$ref": "#/components/schemas/S0"}));
+        assert!(start.elapsed() < std::time::Duration::from_millis(50));
+        assert!(leaves(&v) <= 400 + 10 * 11, "{} leaves", leaves(&v));
+    }
+
+    #[test]
+    fn missing_ref_is_empty() {
+        let d = empty_doc();
+        let mut s = Sampler::new(&d);
+        assert_eq!(
+            s.value(&json!({"$ref": "#/components/schemas/Nope"})),
+            json!({})
+        );
+        assert_eq!(s.value(&json!({"$ref": "other.yaml#/X"})), json!({}));
+        s.value(&json!({"$ref": "#/components/schemas/Nope"}));
+        assert_eq!(
+            s.unresolved_refs(),
+            [
+                UnresolvedRef {
+                    target: "#/components/schemas/Nope".into(),
+                    external: false
+                },
+                UnresolvedRef {
+                    target: "other.yaml#/X".into(),
+                    external: true
+                },
+            ]
+        );
+    }
+}
