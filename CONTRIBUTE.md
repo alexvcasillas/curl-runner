@@ -495,7 +495,7 @@ built from it. Write each summary as a bold headline, a short lead, then tagged 
 - **Fixed:** the cleaned `.env` report line says what actually changed.
 ```
 
-- **Headline:** a bold line on its own. It is the release title.
+- **Headline:** a bold line on its own. It is the entry's title (the first entry's headline also titles the release in the RSS feed).
 - **Lead:** one or two sentences. Optional.
 - **Items:** `- **Tag:** text`, one change each. Wrap long ones on indented lines.
 - **Notes:** anything after the items, such as code blocks. A `### Migration: ...` heading is shown as a highlighted box.
@@ -507,7 +507,7 @@ The four tags:
 - **Fixed:** a bug fix.
 - **Breaking:** you must change something to upgrade. Major releases only, or a documented behaviour change.
 
-Tagged items must be consecutive. A plain bullet, a heading or a code block ends
+Tagged items must be consecutive. A plain bullet, a heading, a code block or an unindented paragraph ends
 the list, and everything after it is notes.
 
 CI checks this. A changeset without a headline or a tagged item fails the docs
