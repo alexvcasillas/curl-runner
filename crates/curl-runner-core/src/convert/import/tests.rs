@@ -119,6 +119,37 @@ fn env_comments_go_above_new_keys_only() {
 }
 
 #[test]
+fn each_secret_gets_its_own_note() {
+    let secret = |name: &str, value: &str| ImportedVar {
+        name: name.into(),
+        value: value.into(),
+        secret: true,
+    };
+    let mapped = Mapped {
+        requests: Vec::new(),
+        variables: vec![secret("SAVED", "s3cret"), secret("UNSET", "")],
+        description: None,
+        env_comments: Vec::new(),
+        report: ImportReport::default(),
+    };
+    let imp = plan_import("Pets".into(), mapped, "OpenAPI");
+    let dir = tempfile::tempdir().unwrap();
+    let note = |v: &ImportedVar| if v.value.is_empty() { "set it" } else { "kept" }.to_string();
+    write_import_noting(dir.path(), std::path::Path::new(""), &imp, &note).unwrap();
+    let env = std::fs::read_to_string(dir.path().join(".env")).unwrap();
+    assert_eq!(
+        env,
+        "# Imported from OpenAPI: Pets
+# SAVED is a secret: kept
+# SAVED=
+\
+         # UNSET is a secret: set it
+# UNSET=\n"
+    );
+    assert!(!env.contains("s3cret"));
+}
+
+#[test]
 fn env_header_names_the_source_format() {
     let mapped = Mapped {
         requests: Vec::new(),
@@ -174,4 +205,8 @@ fn env_comments_and_values_stay_on_one_line() {
     assert_eq!(loaded["OTHER"], "real");
     assert_eq!(loaded["C"], "one\ntwo");
     assert_eq!(out.cleaned_env, ["A", "B"]);
+    assert_eq!(
+        Attention::CleanedEnv { var: "A".into() }.to_string(),
+        "Made A one line in .env. Its value held a control character or a line separator."
+    );
 }

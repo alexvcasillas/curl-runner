@@ -19,11 +19,11 @@ describe('alternatives data', () => {
     const row = COMPARISON_ROWS.find((r) => r.label === 'Primary interface');
     expect(row?.curlRunner).toBe('CLI, plus a macOS app (preview)');
   });
-  it('compares importing from Postman and curl', () => {
-    const row = COMPARISON_ROWS.find((r) => r.label === 'Import from Postman / curl');
+  it('compares importing from Postman, OpenAPI and curl', () => {
+    const row = COMPARISON_ROWS.find((r) => r.label === 'Import from Postman / OpenAPI / curl');
     expect(row).toEqual({
-      label: 'Import from Postman / curl',
-      curlRunner: 'Postman collections and curl (CLI and app)',
+      label: 'Import from Postman / OpenAPI / curl',
+      curlRunner: 'Postman collections, OpenAPI/Swagger specs and curl (CLI and app)',
       postman: 'curl, OpenAPI, Insomnia and more',
       insomnia: 'Postman collections, curl, OpenAPI and more',
       curl: 'Not applicable',
@@ -71,7 +71,7 @@ describe('alternatives data', () => {
       expect(html).toMatch(new RegExp(`curl-runner vs (<!-- -->)?${c.tool}<`));
     }
     expect(html).toContain('A macOS app,');
-    expect(html).toContain('Import from Postman / curl');
+    expect(html).toContain('Import from Postman / OpenAPI / curl');
     expect(html).not.toContain('[VERIFY]');
   });
 });

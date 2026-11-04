@@ -113,6 +113,24 @@ const SCREENSHOTS = {
     description:
       'The summary lists what still needs you. Open goes straight to the request with a file to pick.',
   },
+  'openapi-import': {
+    src: '/studio/openapi-import.png',
+    width: 2400,
+    height: 1500,
+    alt: 'The Import dialog on the OpenAPI tab with pets.yaml picked: 6 requests in 3 folders. Two items need attention, a file to pick for the file field of Upload photo and the secret PETS_API_KEY to set. The preview lists the six request files in pets, store and users.',
+    title: 'Preview a spec before you import',
+    description:
+      'Pick an OpenAPI or Swagger file. The preview lists one file per operation and what needs your attention, before anything is written.',
+  },
+  'openapi-import-summary': {
+    src: '/studio/openapi-import-summary.png',
+    width: 2400,
+    height: 1500,
+    alt: 'The Import dialog after an OpenAPI import: Imported 6 requests, and the base URL and secrets are in .env. Needs your attention lists a file to pick for Upload photo, with an Open link, and the secret PETS_API_KEY to set.',
+    title: 'Finish what the import left',
+    description:
+      'The summary lists what still needs you. Open goes straight to the request with a file to pick.',
+  },
 } as const satisfies Record<string, Screenshot>;
 
 export type StudioScreenshotName = keyof typeof SCREENSHOTS;
@@ -135,6 +153,16 @@ export const POSTMAN_SCREENSHOT_NAMES: readonly StudioScreenshotName[] = [
 
 export function postmanScreenshots(): Screenshot[] {
   return POSTMAN_SCREENSHOT_NAMES.map((name) => SCREENSHOTS[name]);
+}
+
+/** The OpenAPI import, in the order you see it. */
+export const OPENAPI_SCREENSHOT_NAMES: readonly StudioScreenshotName[] = [
+  'openapi-import',
+  'openapi-import-summary',
+];
+
+export function openapiScreenshots(): Screenshot[] {
+  return OPENAPI_SCREENSHOT_NAMES.map((name) => SCREENSHOTS[name]);
 }
 
 export function studioScreenshot(name: StudioScreenshotName): Screenshot {

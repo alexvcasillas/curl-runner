@@ -170,7 +170,7 @@ Each item names the request, folder or variable it's about:
 - **Kept `{{$…}}`**: a dynamic variable with no curl-runner match.
 - **Skipped saved examples**: Postman's saved responses aren't imported.
 - **Kept the value of … already in .env**: `.env` already had the variable with another value, so the import left it.
-- **Removed line breaks and control characters from … in .env**: a value would have broken its `.env` line.
+- **Made … one line in .env**: the value held a control character, like a form feed, or a Unicode line separator. Either would break its `.env` line, so every control character and line break was removed from the value, newlines and tabs included. A value whose only special characters are newlines, carriage returns or tabs is kept whole: they're written escaped, as `\n`, `\r` and `\t`.
 
 ## What's skipped [#skipped]
 

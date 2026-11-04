@@ -648,7 +648,8 @@ fn toggle_dev(backend: &Arc<dyn Backend>, flip: fn(&dyn DevControls), cx: &mut A
 /// its path relative to the collection and `CURL_RUNNER_STUDIO_SHOW` opens
 /// a dialog: `new` or `duplicate` (fields from `CURL_RUNNER_STUDIO_FILL`,
 /// `name|METHOD|url`), `new-collection`, `import` (the curl text in
-/// `CURL_RUNNER_STUDIO_FILL`, `\n` for newlines), `import-folder` (the
+/// `CURL_RUNNER_STUDIO_FILL`, `\n` for newlines, or the path of a Postman
+/// collection or OpenAPI spec, which opens its tab), `import-folder` (the
 /// Folder of YAML tab on the folder in `CURL_RUNNER_STUDIO_FILL`) or
 /// `palette` (with the
 /// query in `CURL_RUNNER_STUDIO_QUERY` and the row in

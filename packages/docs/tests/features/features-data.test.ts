@@ -21,6 +21,7 @@ const SIDEBAR_ORDER = [
   'validate',
   'convert',
   'postman-import',
+  'openapi-import',
   'env-files',
   'studio',
 ];
@@ -30,7 +31,7 @@ const BANNED_CLAIMS = /\d+x faster|up to \d+x|blazing|dramatically faster/i;
 describe('features data', () => {
   const features = getAllFeatures();
 
-  it('has all 21 features in sidebar order', () => {
+  it('has all 22 features in sidebar order', () => {
     expect(features.map((f) => f.slug)).toEqual(SIDEBAR_ORDER);
   });
 
@@ -69,8 +70,9 @@ describe('features data', () => {
     expect(retry.prev?.slug).toBe('response-validation');
     expect(retry.next?.slug).toBe('watch-mode');
     expect(getAdjacentFeatures('env-files').next?.slug).toBe('studio');
-    expect(getAdjacentFeatures('env-files').prev?.slug).toBe('postman-import');
+    expect(getAdjacentFeatures('env-files').prev?.slug).toBe('openapi-import');
     expect(getAdjacentFeatures('postman-import').prev?.slug).toBe('convert');
+    expect(getAdjacentFeatures('openapi-import').prev?.slug).toBe('postman-import');
     expect(getAdjacentFeatures('studio').next).toBeNull();
   });
 

@@ -56,7 +56,7 @@ Environments come from the collection's [`.env` files](/docs/features/env-files)
 
 ## Import requests [#import]
 
-Choose **File › Import Requests…** or press ⌘I to bring in requests you already have. You can paste curl commands, pick a Postman collection or copy a folder of YAML. You see what will be added before anything is written, and no existing file is overwritten.
+Choose **File › Import Requests…** or press ⌘I to bring in requests you already have. You can paste curl commands, pick a Postman collection or an OpenAPI spec, or copy a folder of YAML. You see what will be added before anything is written, and no existing file is overwritten.
 
 ### Postman collections [#import-postman]
 
@@ -69,6 +69,18 @@ After the import, the dialog lists what still needs your attention. Choose **Ope
 <StudioScreenshot name="postman-import-summary" onStudioPage>After the import. **Open** goes to the request with a file to pick.</StudioScreenshot>
 
 See [Postman Import](/docs/features/postman-import) for what's converted and the full list of what can need your attention.
+
+### OpenAPI specs [#import-openapi]
+
+On the **OpenAPI** tab, choose an OpenAPI 3.0, 3.1 or Swagger 2.0 file as `.json`, `.yaml` or `.yml`, or drop it on the dialog. You get one request file per operation, in a folder per tag. The base URL and the secret names go to `.env`.
+
+<StudioScreenshot name="openapi-import" onStudioPage>Six operations in three tags. Two things need you before they run.</StudioScreenshot>
+
+The importer never copies a secret's value, so the summary lists each secret for you to set in **Environments**.
+
+<StudioScreenshot name="openapi-import-summary" onStudioPage>After the import. **Open** goes to the request with a file to pick.</StudioScreenshot>
+
+A file dropped on either tab is routed by its content: a spec opens the OpenAPI tab, anything else the Postman tab. See [OpenAPI Import](/docs/features/openapi-import) for what's converted and the full list of what can need your attention.
 
 ## Run history [#history]
 

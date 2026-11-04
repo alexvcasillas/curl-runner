@@ -149,7 +149,8 @@ pub enum Attention {
         count: usize,
         examples: Vec<String>,
     },
-    /// A `.env` value that lost line breaks or control characters.
+    /// A `.env` value made one line: it held a control character other than
+    /// `\n`, `\r` and `\t`, or a Unicode line separator.
     CleanedEnv {
         var: String,
     },
@@ -379,7 +380,7 @@ impl fmt::Display for Attention {
             ),
             Attention::CleanedEnv { var } => write!(
                 f,
-                "Removed line breaks and control characters from {var} in .env"
+                "Made {var} one line in .env. Its value held a control character or a line separator."
             ),
         }
     }

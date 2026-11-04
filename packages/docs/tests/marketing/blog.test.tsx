@@ -95,8 +95,8 @@ describe('studio preview post', () => {
 describe('2.4 Postman import post', () => {
   const SLUG = 'curl-runner-2-4-postman-import';
 
-  it('is the newest post', () => {
-    expect(getPosts()[0]?.slug).toBe(SLUG);
+  it('is listed', () => {
+    expect(getPosts().map((p) => p.slug)).toContain(SLUG);
   });
 
   it('shows the Postman screenshots and links to the docs, downloads and changelog', async () => {
@@ -110,6 +110,27 @@ describe('2.4 Postman import post', () => {
     const text = out.replace(/<[^>]+>/g, '');
     expect(text).toContain('curl-runner convert postman');
     expect(text).toContain('brew trust alexvcasillas/tap');
+    expect(out).not.toContain('—');
+  });
+});
+
+describe('2.5 OpenAPI import post', () => {
+  const SLUG = 'curl-runner-2-5-openapi-import';
+
+  it('is the newest post', () => {
+    expect(getPosts()[0]?.slug).toBe(SLUG);
+  });
+
+  it('shows the OpenAPI screenshots and links to the docs, downloads and changelog', async () => {
+    const out = await html(await postPage(SLUG));
+    for (const shot of ['openapi-import', 'openapi-import-summary']) {
+      expect(out, shot).toMatch(new RegExp(`studio(/|%2F)${shot}\\.png`));
+    }
+    expect(out).toContain('href="/docs/features/openapi-import"');
+    expect(out).toContain('href="/downloads"');
+    expect(out).toContain('href="/changelog#2.5.0"');
+    const text = out.replace(/<[^>]+>/g, '');
+    expect(text).toContain('curl-runner convert openapi');
     expect(out).not.toContain('—');
   });
 });
