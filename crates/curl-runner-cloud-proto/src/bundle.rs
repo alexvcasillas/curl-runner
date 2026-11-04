@@ -24,6 +24,8 @@ pub enum PathError {
     DotComponent,
     Hidden,
     BadChar,
+    TrailingDotOrSpace,
+    ReservedName,
     NotYaml,
 }
 
@@ -35,7 +37,9 @@ impl fmt::Display for PathError {
             Self::EmptyComponent => "path has an empty segment",
             Self::DotComponent => "path has a . or .. segment",
             Self::Hidden => "path has a segment starting with a dot",
-            Self::BadChar => "path has a backslash or NUL",
+            Self::BadChar => "path has a character not allowed in file names",
+            Self::TrailingDotOrSpace => "path has a segment ending in a dot or space",
+            Self::ReservedName => "path has a segment that is a reserved device name",
             Self::NotYaml => "path must end in .yaml or .yml",
         })
     }
@@ -49,7 +53,13 @@ pub enum BundleError {
     FileTooLarge(String),
     BundleTooLarge,
     DuplicatePath(String),
-    Path { path: String, error: PathError },
+    /// Two paths that differ only in letter case, which collide on
+    /// case-insensitive file systems.
+    CaseCollision(String, String),
+    Path {
+        path: String,
+        error: PathError,
+    },
 }
 
 impl fmt::Display for BundleError {
@@ -59,6 +69,7 @@ impl fmt::Display for BundleError {
             Self::FileTooLarge(p) => write!(f, "{p} is larger than {MAX_FILE_BYTES} bytes"),
             Self::BundleTooLarge => write!(f, "bundle is larger than {MAX_BUNDLE_BYTES} bytes"),
             Self::DuplicatePath(p) => write!(f, "{p} appears more than once"),
+            Self::CaseCollision(a, b) => write!(f, "{a} and {b} differ only in letter case"),
             Self::Path { path, error } => write!(f, "{path}: {error}"),
         }
     }
@@ -115,7 +126,9 @@ pub fn validate_path(p: &str) -> Result<(), PathError> {
     if p.len() > MAX_PATH_BYTES {
         return Err(PathError::TooLong);
     }
-    if p.contains(['\\', '\0']) {
+    if p.contains(['\\', '\0', ':', '<', '>', '"', '|', '?', '*'])
+        || p.chars().any(char::is_control)
+    {
         return Err(PathError::BadChar);
     }
     for c in p.split('/') {
@@ -128,6 +141,12 @@ pub fn validate_path(p: &str) -> Result<(), PathError> {
         if c.starts_with('.') {
             return Err(PathError::Hidden);
         }
+        if c.ends_with(['.', ' ']) {
+            return Err(PathError::TrailingDotOrSpace);
+        }
+        if is_reserved_device_name(c) {
+            return Err(PathError::ReservedName);
+        }
     }
     let lower = p.to_ascii_lowercase();
     if !(lower.ends_with(".yaml") || lower.ends_with(".yml")) {
@@ -136,11 +155,32 @@ pub fn validate_path(p: &str) -> Result<(), PathError> {
     Ok(())
 }
 
+/// Windows device names, which cannot be file names with or without an
+/// extension (`CON`, `con.yaml`, `COM1.tar.yml`).
+fn is_reserved_device_name(component: &str) -> bool {
+    let stem = component
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .trim_end_matches(' ');
+    let upper = stem.to_ascii_uppercase();
+    match upper.as_str() {
+        "CON" | "PRN" | "AUX" | "NUL" => true,
+        _ => {
+            let b = upper.as_bytes();
+            b.len() == 4
+                && (upper.starts_with("COM") || upper.starts_with("LPT"))
+                && (b'1'..=b'9').contains(&b[3])
+        }
+    }
+}
+
 pub fn validate_bundle(files: &[BundleFile]) -> Result<(), BundleError> {
     if files.len() > MAX_FILES {
         return Err(BundleError::TooManyFiles);
     }
     let mut seen = std::collections::HashSet::with_capacity(files.len());
+    let mut folded = std::collections::HashMap::with_capacity(files.len());
     let mut total = 0usize;
     for f in files {
         validate_path(&f.path).map_err(|error| BundleError::Path {
@@ -149,6 +189,12 @@ pub fn validate_bundle(files: &[BundleFile]) -> Result<(), BundleError> {
         })?;
         if !seen.insert(f.path.as_str()) {
             return Err(BundleError::DuplicatePath(f.path.clone()));
+        }
+        if let Some(other) = folded.insert(f.path.to_lowercase(), f.path.as_str()) {
+            return Err(BundleError::CaseCollision(
+                other.to_string(),
+                f.path.clone(),
+            ));
         }
         if f.text.len() > MAX_FILE_BYTES {
             return Err(BundleError::FileTooLarge(f.path.clone()));
@@ -218,6 +264,29 @@ mod tests {
             "a//b.yaml",
             "./a.yaml",
             "a/\0.yaml",
+            "a:b.yaml",
+            "c:/a.yaml",
+            "a<b.yaml",
+            "a>b.yaml",
+            "a\"b.yaml",
+            "a|b.yaml",
+            "a?b.yaml",
+            "a*b.yaml",
+            "a\tb.yaml",
+            "dir./a.yaml",
+            "dir /a.yaml",
+            "a.yaml ",
+            "a.yaml.",
+            "CON.yaml",
+            "con.yaml",
+            "dir/nul.yml",
+            "Aux/a.yaml",
+            "prn/a.yaml",
+            "com1.yaml",
+            "COM9.yaml",
+            "lpt1.yaml",
+            "LPT9/a.yaml",
+            "con.tar.yaml",
         ] {
             assert!(validate_path(p).is_err(), "{p:?} should be rejected");
         }
@@ -226,7 +295,16 @@ mod tests {
 
     #[test]
     fn validate_path_accepts() {
-        for p in ["a.yaml", "users/Get User.YML"] {
+        for p in [
+            "a.yaml",
+            "users/Get User.YML",
+            "console.yaml",
+            "com0.yaml",
+            "com10.yaml",
+            "lpt.yaml",
+            "nul-check/a.yaml",
+            "a.b.yaml",
+        ] {
             assert!(validate_path(p).is_ok(), "{p:?} should be accepted");
         }
     }
@@ -252,6 +330,15 @@ mod tests {
             validate_bundle(&dup),
             Err(BundleError::DuplicatePath(_))
         ));
+
+        let case = vec![f("Users/a.yaml", ""), f("users/A.yaml", "")];
+        assert_eq!(
+            validate_bundle(&case),
+            Err(BundleError::CaseCollision(
+                "Users/a.yaml".into(),
+                "users/A.yaml".into()
+            ))
+        );
 
         let bad = vec![f("a.txt", "")];
         assert!(matches!(
