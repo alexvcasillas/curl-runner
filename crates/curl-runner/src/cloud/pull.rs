@@ -186,13 +186,16 @@ fn api_for_landing(origin: &str, env: Env) -> Result<String, Fail> {
         .filter(|(status, _)| *status == 200)
         .and_then(|(_, body)| serde_json::from_slice::<WellKnown>(&body).ok())
         .map(|w| w.api.trim_end_matches('/').to_string())
-        .filter(|api| client::check_server(api).is_ok());
+        .filter(|api| !api.chars().any(char::is_control) && client::check_server(api).is_ok());
     match found {
         Some(api) => Ok(api),
         None if host == HOSTED_LANDING_HOST => Ok(HOSTED_API.to_string()),
         None => Err(fail(
             EXIT_INVALID,
-            format!("Couldn't find the curl-runner server for {host}."),
+            format!(
+                "Couldn't find the curl-runner server for {}.",
+                escape_control(&host)
+            ),
         )),
     }
 }
@@ -249,7 +252,8 @@ fn get_authed(
             return Err(fail(
                 EXIT_AUTH,
                 format!(
-                    "This collection needs you to sign in. Run curl-runner login --server {server}, then pull again."
+                    "This collection needs you to sign in. Run curl-runner login --server {}, then pull again.",
+                    escape_control(server)
                 ),
             ));
         }
@@ -257,7 +261,10 @@ fn get_authed(
             .ok()
             .and_then(|u| u.host_str().map(str::to_string))
             .unwrap_or_else(|| server.to_string());
-        c.out(&format!("This collection needs you to sign in to {host}."));
+        c.out(&format!(
+            "This collection needs you to sign in to {}.",
+            escape_control(&host)
+        ));
         let args = ["--server".to_string(), server.to_string()];
         if login::login(&args, env, c) != 0 {
             return Err(fail(
@@ -698,7 +705,7 @@ fn first_pull(c: &mut Console, env: Env, link: &str, dir: Option<String>) -> Res
         return Err(e);
     }
     c.out(&format!(
-        "Pulled {} v{} into {dir}. Fill in .env (see .env.example), then run curl-runner {dir}.",
+        "Pulled {} v{} into {dir}. Fill in {dir}/.env (see .env.example), then run: cd {dir} && curl-runner --all",
         escape_control(&snap.info.name),
         snap.info.version
     ));
@@ -773,7 +780,7 @@ fn update(c: &mut Console, env: Env, dir: &str, force: bool) -> Result<(), Fail>
     }
     let failed = apply(&root, &snap, Some(&old), &old.server, &old.token)?;
     c.out(&format!(
-        "Updated {} to v{} in {dir}.",
+        "Updated {} to v{}.",
         escape_control(&snap.info.name),
         snap.info.version
     ));

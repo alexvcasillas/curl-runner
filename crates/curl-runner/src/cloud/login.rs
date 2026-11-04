@@ -3,7 +3,7 @@
 
 use super::client::{self, Client, CloudError};
 use super::credentials::{self, Credentials, Entry};
-use super::{Env, flag_value, server_from_args};
+use super::{Env, escape_control, flag_value, server_from_args};
 use crate::output::Console;
 use std::io::{BufRead, IsTerminal};
 
@@ -32,7 +32,7 @@ pub(super) fn login(args: &[String], env: Env, console: &mut Console) -> i32 {
         (Ok(e), Ok(s)) => (s, e),
         (Err(m), _) | (_, Err(m)) => {
             console.err(&m);
-            return 2;
+            return 1;
         }
     };
     let tty = std::io::stdin().is_terminal();
@@ -44,12 +44,12 @@ pub(super) fn login(args: &[String], env: Env, console: &mut Console) -> i32 {
         },
         None => {
             console.err(NO_TTY);
-            return 2;
+            return 1;
         }
     };
     if email.is_empty() {
         console.err("An email address is required.");
-        return 2;
+        return 1;
     }
     let Some(path) = credentials::path(env) else {
         console.err("Cannot find a place to save your session.");
@@ -91,7 +91,7 @@ pub(super) fn login(args: &[String], env: Env, console: &mut Console) -> i32 {
     }
     console.out(&format!(
         "Signed in to {server} as {}.",
-        verified.user.email
+        escape_control(&verified.user.email)
     ));
     0
 }
@@ -101,7 +101,7 @@ pub fn logout(args: &[String], env: Env, console: &mut Console) -> i32 {
         Ok(s) => s,
         Err(m) => {
             console.err(&m);
-            return 2;
+            return 1;
         }
     };
     let Some(path) = credentials::path(env) else {

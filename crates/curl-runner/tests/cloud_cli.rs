@@ -113,7 +113,7 @@ fn login_without_email_and_no_tty_exits_2() {
         .write_stdin("")
         .output()
         .unwrap();
-    assert_eq!(o.status.code(), Some(2));
+    assert_eq!(o.status.code(), Some(1));
     assert!(stderr(&o).contains("Run curl-runner login in a terminal, or set CURL_RUNNER_TOKEN."));
 }
 
@@ -202,7 +202,7 @@ fn flag_errors_and_equals_form() {
             .write_stdin("")
             .output()
             .unwrap();
-        assert_eq!(o.status.code(), Some(2), "{args:?}");
+        assert_eq!(o.status.code(), Some(1), "{args:?}");
         assert!(stderr(&o).contains("needs a value"), "{args:?}");
     }
     let o = cmd(home.path(), &srv.base_url)
@@ -230,7 +230,7 @@ fn plain_http_server_is_refused() {
         ])
         .output()
         .unwrap();
-    assert_eq!(o.status.code(), Some(2));
+    assert_eq!(o.status.code(), Some(1));
     assert!(
         stderr(&o).contains("Use an https:// server. Plain http is only allowed for localhost.")
     );
@@ -893,7 +893,7 @@ fn pull_public_writes_files_env_example_and_state() {
         .clone();
     let out = String::from_utf8(out).unwrap();
     assert!(
-        out.contains("Pulled Payments API v3 into payments-api. Fill in .env (see .env.example), then run curl-runner payments-api."),
+        out.contains("Pulled Payments API v3 into payments-api. Fill in payments-api/.env (see .env.example), then run: cd payments-api && curl-runner --all"),
         "{out}"
     );
     let d = cwd.path().join("payments-api");
@@ -982,7 +982,7 @@ fn pull_update_replaces_and_removes() {
     assert!(
         String::from_utf8(out)
             .unwrap()
-            .contains("Updated Payments API to v2")
+            .contains("Updated Payments API to v2.\n")
     );
     let d = cwd.path().join("out");
     assert_eq!(std::fs::read_to_string(d.join("a.yaml")).unwrap(), "a2");
@@ -1377,4 +1377,137 @@ fn pull_reports_a_removal_that_failed_and_keeps_it_recorded() {
     let st = state_of(&cwd.path().join("out"));
     assert_eq!(st["version"], 2);
     assert_eq!(st["files"]["sub/b.yaml"], file_hash("b1"));
+}
+
+#[test]
+fn usage_errors_exit_1_in_every_cloud_command() {
+    let (srv, _) = fake_api(true);
+    let home = tempfile::tempdir().unwrap();
+    for args in [
+        vec!["logout", "--server", "http://api.example.com"],
+        vec!["publish", "--server"],
+        vec!["publish", "--server=http://api.example.com"],
+        vec!["pull", "--bogus"],
+    ] {
+        let o = cmd(home.path(), &srv.base_url)
+            .args(&args)
+            .write_stdin("")
+            .output()
+            .unwrap();
+        assert_eq!(o.status.code(), Some(1), "{args:?}: {}", stderr(&o));
+    }
+}
+
+#[test]
+fn login_escapes_the_email_the_server_sends() {
+    let srv = TestServer::with_handler(|r: Request| {
+        match r.url.as_str() {
+        "/v1/auth/email/start" => Response::from_data(b"{}".to_vec()).with_status_code(202),
+        "/v1/auth/email/verify" => Response::from_data(
+            br#"{"session":"crs_abc123","user":{"id":"u1","email":"a\u001b[31m@example.com","name":null}}"#.to_vec(),
+        ),
+        _ => Response::from_data(b"{}".to_vec()).with_status_code(404),
+    }
+    });
+    let home = tempfile::tempdir().unwrap();
+    let o = cmd(home.path(), &srv.base_url)
+        .args(["login", "--email", "dev@example.com"])
+        .write_stdin("123456\n")
+        .output()
+        .unwrap();
+    let out = String::from_utf8_lossy(&o.stdout);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(!out.contains('\u{1b}'), "{out:?}");
+    assert!(out.contains("a\\u{1b}[31m@example.com"), "{out:?}");
+}
+
+#[test]
+fn publish_dotted_config_fails_with_a_rename_hint() {
+    let (srv, calls) = fake(|_, _| created(1));
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join(".curl-runner.yaml"), CONFIG).unwrap();
+    std::fs::write(d.path().join("a.yaml"), VALID).unwrap();
+    let o = publish(&srv.base_url, d.path(), &[]).output().unwrap();
+    assert_eq!(o.status.code(), Some(1));
+    assert!(
+        stderr(&o).contains("rename .curl-runner.yaml to curl-runner.yaml to publish it."),
+        "{}",
+        stderr(&o)
+    );
+    assert!(calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn publish_continues_after_a_server_refusal_and_exits_with_the_worst_code() {
+    let (srv, calls) = fake(|r, _| {
+        if r.url.contains("/collections/payments-api/") {
+            json(
+                409,
+                r#"{"error":"wrong_source","message":"This collection is edited in the cloud."}"#,
+            )
+        } else {
+            json(
+                201,
+                r#"{"collection":"other","version":2,"status":"created","changed":{"added":["b.yaml"],"changed":[],"removed":[]}}"#,
+            )
+        }
+    });
+    let a = project(CONFIG, &[("a.yaml", VALID)]);
+    let b = project("cloud:\n  collection: other\n", &[("b.yaml", VALID)]);
+    let o = publish(&srv.base_url, a.path(), &[])
+        .arg(b.path())
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(4), "{}", stderr(&o));
+    assert!(stderr(&o).contains("payments-api: This collection is edited in the cloud."));
+    assert!(String::from_utf8_lossy(&o.stdout).contains("other: published v2"));
+    assert_eq!(calls.lock().unwrap().len(), 2);
+}
+
+#[test]
+fn publish_stops_at_once_when_the_server_is_unreachable() {
+    let (srv, calls) = fake(|_, _| json(503, "{}"));
+    let a = project(CONFIG, &[("a.yaml", VALID)]);
+    let b = project("cloud:\n  collection: other\n", &[("b.yaml", VALID)]);
+    let o = publish(&srv.base_url, a.path(), &[])
+        .arg(b.path())
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(5));
+    assert_eq!(
+        calls.lock().unwrap().len(),
+        5,
+        "five attempts, first dir only"
+    );
+}
+
+#[test]
+fn publish_account_without_a_team_mentions_the_preview() {
+    let (srv, _) = fake(|_, _| json(200, &me(&[])));
+    let a = project(CONFIG, &[("a.yaml", VALID)]);
+    let o = publish(&srv.base_url, a.path(), &[])
+        .env("CURL_RUNNER_TOKEN", "crs_sess")
+        .env_remove("CURL_RUNNER_TEAM")
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(2));
+    assert!(
+        stderr(&o).contains("Your account is not in any team. Cloud is in private preview."),
+        "{}",
+        stderr(&o)
+    );
+}
+
+#[test]
+fn pull_landing_ignores_a_well_known_api_with_control_characters() {
+    let (landing, _) = fake(|_, _| json(200, r#"{"api":"https://api.example.com\u001b[31m"}"#));
+    let cwd = tempfile::tempdir().unwrap();
+    let o = pull_cmd(&cwd.path().join("h"), &landing.base_url, cwd.path())
+        .env_remove("CURL_RUNNER_TEST_SERVER")
+        .arg(format!("{}/s/tok123", landing.base_url))
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    assert!(!stderr(&o).contains('\u{1b}'), "{:?}", stderr(&o));
 }

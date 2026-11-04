@@ -105,6 +105,17 @@ fn prepare(dir: &str, slug: Option<&str>, color: bool, c: &mut Console) -> Optio
         c.err(&format!("{dir}: {msg}"));
         ok.set(false);
     };
+    // Only the plain names are published: the bundle leaves dotfiles out, so a
+    // dotted config would go missing without a word.
+    if let Some(name) = CONFIG_FILE_PATHS
+        .iter()
+        .find(|n| root.join(n).is_file())
+        .filter(|n| n.starts_with('.'))
+    {
+        let plain = name.trim_start_matches('.');
+        error(c, format!("rename {name} to {plain} to publish it."));
+        return None;
+    }
     let config = match load_cloud_config(root) {
         Ok(cfg) => cfg,
         Err(e) => {
@@ -257,7 +268,7 @@ impl<'a> Api<'a> {
                                 EXIT_UNREACHABLE,
                                 format!(
                                     "Cannot reach {}: unexpected reply (HTTP {status}).",
-                                    self.server
+                                    super::escape_control(self.server)
                                 ),
                             ),
                         });
@@ -268,7 +279,7 @@ impl<'a> Api<'a> {
                     if last {
                         return Err(fail(
                             EXIT_UNREACHABLE,
-                            format!("Cannot reach {}: {e}.", self.server),
+                            format!("Cannot reach {}: {e}.", super::escape_control(self.server)),
                         ));
                     }
                     (e.to_string(), None)
@@ -379,7 +390,12 @@ fn resolve_team(
             })?;
             match me.teams.as_slice() {
                 [only] => only.slug.clone(),
-                [] => return Err(fail(EXIT_AUTH, "Your account is not in any team.")),
+                [] => {
+                    return Err(fail(
+                        EXIT_AUTH,
+                        "Your account is not in any team. Cloud is in private preview.",
+                    ));
+                }
                 many => {
                     return Err(fail(
                         EXIT_AUTH,
@@ -570,32 +586,63 @@ pub fn publish(args: &[String], env: Env, console: &mut Console) -> i32 {
         }
     };
     let api = Api::new(&server, Some(token.clone()), env);
-    let run = |console: &mut Console| -> Result<(), Fail> {
-        let team = resolve_team(opts.team.clone(), env, &token, &api, console)?;
-        let git = git_meta(env);
-        let rows: Vec<CollectionRow> = if opts.dry_run {
-            api.get(console, &format!("/v1/teams/{team}/collections"), || {
-                cannot_publish(&team)
-            })?
-        } else {
-            Vec::new()
-        };
-        for t in &targets {
-            if opts.dry_run {
-                dry_run_one(&api, console, &team, &rows, t)?;
-            } else {
-                publish_one(&api, console, &team, t, git.clone())?;
-            }
-        }
-        Ok(())
-    };
-    match run(console) {
-        Ok(()) => 0,
+    let team = match resolve_team(opts.team.clone(), env, &token, &api, console) {
+        Ok(t) => t,
         Err(f) => {
             console.err(&f.message);
-            f.code
+            return f.code;
+        }
+    };
+    let git = git_meta(env);
+    let rows: Vec<CollectionRow> = if opts.dry_run {
+        match api.get(console, &format!("/v1/teams/{team}/collections"), || {
+            cannot_publish(&team)
+        }) {
+            Ok(r) => r,
+            Err(f) => {
+                console.err(&f.message);
+                return f.code;
+            }
+        }
+    } else {
+        Vec::new()
+    };
+    // A server-side refusal of one collection does not stop the others; an
+    // unreachable server does, since the rest would fail the same way.
+    let mut worst = 0;
+    for t in &targets {
+        let result = if opts.dry_run {
+            dry_run_one(&api, console, &team, &rows, t)
+        } else {
+            publish_one(&api, console, &team, t, git.clone())
+        };
+        if let Err(f) = result {
+            if targets.len() > 1 {
+                console.err(&format!("{}: {}", t.collection, f.message));
+            } else {
+                console.err(&f.message);
+            }
+            worst = worse(worst, f.code);
+            if f.code == EXIT_UNREACHABLE {
+                break;
+            }
         }
     }
+    worst
+}
+
+/// The more severe of two exit codes: 5 unreachable, then 2 auth, 4 wrong
+/// source, 3 plan limit, 1 invalid, 0 ok.
+fn worse(a: i32, b: i32) -> i32 {
+    let rank = |c: i32| match c {
+        EXIT_UNREACHABLE => 5,
+        EXIT_AUTH => 4,
+        EXIT_WRONG_SOURCE => 3,
+        EXIT_PLAN_LIMIT => 2,
+        EXIT_INVALID => 1,
+        _ => 0,
+    };
+    if rank(b) > rank(a) { b } else { a }
 }
 
 #[cfg(test)]
@@ -706,6 +753,17 @@ mod tests {
         assert_eq!(api_failure(502, b"<html>").code, 5);
         assert_eq!(api_failure(403, b"<html>").code, 2);
         assert_eq!(api_failure(302, b"").code, 5);
+    }
+
+    #[test]
+    fn worst_exit_code_is_5_2_4_3_1() {
+        let order = [0, 1, 3, 4, 2, 5];
+        for (i, a) in order.iter().enumerate() {
+            for b in &order[..=i] {
+                assert_eq!(worse(*b, *a), *a);
+                assert_eq!(worse(*a, *b), *a);
+            }
+        }
     }
 
     #[test]

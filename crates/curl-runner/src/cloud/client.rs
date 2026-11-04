@@ -291,7 +291,9 @@ fn not_the_api(status: u16) -> CloudError {
 /// A one-sentence message for a failed call.
 pub fn describe(err: &CloudError, server: &str) -> String {
     match err {
-        CloudError::Unreachable(why) => format!("Cannot reach {server}: {why}."),
+        CloudError::Unreachable(why) => {
+            format!("Cannot reach {}: {why}.", super::escape_control(server))
+        }
         CloudError::Api(b, _) => match b.error {
             ErrorCode::CodeInvalid => "That code is not right. Check it and try again.".into(),
             ErrorCode::CodeExpired => {
