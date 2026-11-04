@@ -53,7 +53,7 @@ fn code_mail() -> Mail {
     Mail::SignInCode {
         to: "ada@example.com".into(),
         code: "123456".into(),
-        link: "https://cloud.example.com/auth/magic?token=abc".into(),
+        link: Some("https://cloud.example.com/auth/magic?token=abc".into()),
     }
 }
 
@@ -234,7 +234,7 @@ async fn concurrent_workers_send_each_mail_once(pool: PgPool) {
         let mail = Mail::SignInCode {
             to: to.into(),
             code: "123456".into(),
-            link: "https://cloud.example.com/x".into(),
+            link: Some("https://cloud.example.com/x".into()),
         };
         app.state.mailer.enqueue(&mut tx, mail).await.unwrap();
     }

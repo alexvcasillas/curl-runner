@@ -99,12 +99,18 @@ pub async fn start(
 
     let pepper = state.config.secret_key.as_bytes();
     let code = new_code();
-    let link_token = new_token("crl_");
-    let link = format!(
-        "{}/sign-in/email?token={link_token}&client={}",
-        state.config.app_url,
-        req.client.as_str()
-    );
+    // A device signs in with the code alone. A link opened in a browser
+    // would spend the code the terminal is waiting to use.
+    let link_token = match req.client {
+        Client::Web => Some(new_token("crl_")),
+        Client::Device => None,
+    };
+    let link = link_token.as_ref().map(|token| {
+        format!(
+            "{}/sign-in/email?token={token}&client=web",
+            state.config.app_url
+        )
+    });
     let mut tx = state.db.begin().await?;
     // Serialise starts for one address so concurrent ones leave a single live code.
     sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
@@ -121,7 +127,7 @@ pub async fn start(
     )
     .bind(&email)
     .bind(secret_hash(pepper, &code))
-    .bind(secret_hash(pepper, &link_token))
+    .bind(link_token.as_ref().map(|t| secret_hash(pepper, t)))
     .bind(state.clock.now() + CODE_TTL)
     .bind(req.client.as_str())
     .bind(&label)
@@ -212,6 +218,11 @@ pub async fn verify(
         _ => return Err(invalid("Send an email and code, or a token.")),
     };
     let row = row.ok_or_else(code_invalid)?;
+    if req.token.is_some() && row.client == Client::Device.as_str() {
+        // Device codes are made without a link. Refuse one found anyway, so a
+        // browser can never spend a code the terminal is waiting on.
+        return Err(invalid("Enter this code in your terminal."));
+    }
     if row.expires_at <= now || row.attempts >= MAX_ATTEMPTS {
         return Err(code_expired());
     }

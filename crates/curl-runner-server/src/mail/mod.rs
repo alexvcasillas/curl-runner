@@ -17,10 +17,12 @@ pub use transport::{LogTransport, SmtpTransport, Transport};
 /// An email the server can send. `Debug` hides codes and links.
 #[derive(Clone, PartialEq, Eq)]
 pub enum Mail {
+    /// `link` is `None` for a device sign-in: the code goes back to the
+    /// terminal, and a link opened in a browser would use it up.
     SignInCode {
         to: String,
         code: String,
-        link: String,
+        link: Option<String>,
     },
     MemberInvite {
         to: String,
@@ -128,7 +130,7 @@ mod tests {
             Mail::SignInCode {
                 to: "ada@example.com".into(),
                 code: "123456".into(),
-                link: "https://app.example.com/x?token=SECRET".into(),
+                link: Some("https://app.example.com/x?token=SECRET".into()),
             },
             Mail::MemberInvite {
                 to: "ada@example.com".into(),

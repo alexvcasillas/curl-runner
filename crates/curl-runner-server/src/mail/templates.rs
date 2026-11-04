@@ -2,14 +2,21 @@
 
 use super::Mail;
 
+const SIGN_IN_FOOTER: &str =
+    "It expires in 10 minutes. If you didn't ask for it, ignore this email.";
+
 /// Subject, plain text and HTML for `mail`.
 pub fn render(mail: &Mail) -> (String, String, String) {
     match mail {
-        Mail::SignInCode { code, link, .. } => (
+        Mail::SignInCode {
+            code,
+            link: Some(link),
+            ..
+        } => (
             format!("Your curl-runner sign-in code: {code}"),
             format!(
                 "Your curl-runner sign-in code is {code}.\n\nOr open this link:\n{link}\n\n\
-                 It expires in 10 minutes. If you didn't ask for it, ignore this email.\n"
+                 {SIGN_IN_FOOTER}\n"
             ),
             html(&[
                 &format!(
@@ -17,7 +24,23 @@ pub fn render(mail: &Mail) -> (String, String, String) {
                     esc(code)
                 ),
                 &format!("Or <a href=\"{}\">sign in with this link</a>.", esc(link)),
-                "It expires in 10 minutes. If you didn't ask for it, ignore this email.",
+                SIGN_IN_FOOTER,
+            ]),
+        ),
+        Mail::SignInCode {
+            code, link: None, ..
+        } => (
+            format!("Your curl-runner sign-in code: {code}"),
+            format!(
+                "Your curl-runner sign-in code is {code}.\n\n\
+                 Enter it in your terminal. {SIGN_IN_FOOTER}\n"
+            ),
+            html(&[
+                &format!(
+                    "Your curl-runner sign-in code is <strong>{}</strong>.",
+                    esc(code)
+                ),
+                &format!("Enter it in your terminal. {SIGN_IN_FOOTER}"),
             ]),
         ),
         Mail::MemberInvite {
@@ -84,7 +107,7 @@ mod tests {
         Mail::SignInCode {
             to: "ada@example.com".into(),
             code: "123456".into(),
-            link: "https://cloud.example.com/auth/magic?token=abc".into(),
+            link: Some("https://cloud.example.com/auth/magic?token=abc".into()),
         }
     }
 
@@ -99,6 +122,23 @@ mod tests {
         );
         assert!(html.contains("123456"));
         for s in [&subject, &text, &html] {
+            assert!(!s.contains('\u{2014}'));
+        }
+    }
+
+    #[test]
+    fn device_sign_in_template_has_code_and_no_link() {
+        let (subject, text, html) = render(&Mail::SignInCode {
+            to: "ada@example.com".into(),
+            code: "123456".into(),
+            link: None,
+        });
+        assert_eq!(subject, "Your curl-runner sign-in code: 123456");
+        assert!(text.contains("123456") && html.contains("123456"));
+        assert!(text.contains("Enter it in your terminal."));
+        for s in [&subject, &text, &html] {
+            assert!(!s.contains("http"), "{s}");
+            assert!(!s.contains("<a "), "{s}");
             assert!(!s.contains('\u{2014}'));
         }
     }

@@ -36,6 +36,7 @@ async fn start_always_202_and_queues_mail(pool: PgPool) {
         assert_eq!((status, body), (StatusCode::ACCEPTED, json!({})));
     }
     let (code, token) = app.start_email("new@example.com", "web").await;
+    let token = token.expect("web mail has a link");
     assert_eq!(code.len(), 6);
     assert!(code.bytes().all(|b| b.is_ascii_digit()));
     let link: String =
@@ -110,17 +111,65 @@ async fn verify_with_code_creates_user_and_session(pool: PgPool) {
 #[sqlx::test]
 async fn verify_with_link_token_works(pool: PgPool) {
     let app = test_app(pool).await;
-    let (_, token) = app.start_email("jane@example.com", "device").await;
+    let (_, token) = app.start_email("jane@example.com", "web").await;
+    let token = token.expect("web mail has a link");
     let (status, body) = verify(&app, json!({"token": token})).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let kind: String = sqlx::query_scalar("SELECT kind FROM sessions")
         .fetch_one(&app.state.db)
         .await
         .unwrap();
-    assert_eq!(kind, "device");
+    assert_eq!(kind, "web");
     let (status, body) = verify(&app, json!({"token": token})).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["error"], "code_invalid");
+}
+
+#[sqlx::test]
+async fn device_mail_has_code_and_no_link(pool: PgPool) {
+    let app = test_app(pool).await;
+    let (code, token) = app.start_email("jane@example.com", "device").await;
+    assert_eq!(token, None);
+    let (text, html): (String, String) =
+        sqlx::query_as("SELECT text_body, html_body FROM outbox_emails")
+            .fetch_one(&app.state.db)
+            .await
+            .unwrap();
+    for body in [&text, &html] {
+        assert!(body.contains(&code));
+        assert!(!body.contains("http"), "{body}");
+    }
+    let link_hash: Option<String> = sqlx::query_scalar("SELECT link_hash FROM email_codes")
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(link_hash, None);
+    let (status, body) = verify(&app, json!({"email": "jane@example.com", "code": code})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let kind: String = sqlx::query_scalar("SELECT kind FROM sessions")
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(kind, "device");
+}
+
+#[sqlx::test]
+async fn link_token_cannot_spend_a_device_code(pool: PgPool) {
+    let app = test_app(pool).await;
+    let (code, _) = app.start_email("jane@example.com", "device").await;
+    // Give the device row a link anyway, as if one had been mailed.
+    let key = app.state.config.secret_key.as_bytes();
+    sqlx::query("UPDATE email_codes SET link_hash = $1")
+        .bind(curl_runner_server::hash::secret_hash(key, "crl_forged"))
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    let (status, body) = verify(&app, json!({"token": "crl_forged"})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"], "invalid_request");
+    // The code is still live for the terminal.
+    let (status, body) = verify(&app, json!({"email": "jane@example.com", "code": code})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
 }
 
 #[sqlx::test]
@@ -155,14 +204,13 @@ async fn device_label_is_stored_and_listed(pool: PgPool) {
         .fetch_one(&app.state.db)
         .await
         .unwrap();
-    let token = body
-        .split("token=")
+    let code = body
+        .split("sign-in code is ")
         .nth(1)
         .unwrap()
-        .split('&')
-        .next()
+        .get(..6)
         .unwrap();
-    let (_, v) = verify(&app, json!({"token": token})).await;
+    let (_, v) = verify(&app, json!({"email": "jane@example.com", "code": code})).await;
     let (status, list) = app
         .request(Method::GET, "/v1/sessions", None, v["session"].as_str())
         .await;
@@ -229,7 +277,7 @@ async fn only_latest_code_valid(pool: PgPool) {
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         assert_eq!(body["error"], "code_invalid");
     }
-    let (_, body) = verify(&app, json!({"token": first_token})).await;
+    let (_, body) = verify(&app, json!({"token": first_token.unwrap()})).await;
     assert_eq!(body["error"], "code_invalid");
     let (status, _) = verify(&app, json!({"email": "jane@example.com", "code": second})).await;
     assert_eq!(status, StatusCode::OK);

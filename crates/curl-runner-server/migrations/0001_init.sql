@@ -25,7 +25,8 @@ CREATE TABLE email_codes (
     id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     email      citext NOT NULL,
     code_hash  text NOT NULL,
-    link_hash  text NOT NULL UNIQUE,
+    -- NULL for device codes: their email has no link, only the code.
+    link_hash  text UNIQUE,
     attempts   integer NOT NULL DEFAULT 0,
     expires_at timestamptz NOT NULL,
     used_at    timestamptz,

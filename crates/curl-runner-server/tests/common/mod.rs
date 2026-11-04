@@ -100,9 +100,9 @@ impl TestApp {
         (status, value)
     }
 
-    /// Ask for a sign-in code and read it, and the link token, from the newest
-    /// queued mail to `email`. Mail bodies are intact until the worker runs.
-    pub async fn start_email(&self, email: &str, client: &str) -> (String, String) {
+    /// Ask for a sign-in code and read it, and the link token (web only), from
+    /// the newest queued mail to `email`. Mail bodies are intact until the worker runs.
+    pub async fn start_email(&self, email: &str, client: &str) -> (String, Option<String>) {
         let (status, _) = self
             .request(
                 Method::POST,
@@ -129,8 +129,7 @@ impl TestApp {
             .split("token=")
             .nth(1)
             .and_then(|r| r.split('&').next())
-            .expect("token in mail")
-            .to_owned();
+            .map(str::to_owned);
         (code, token)
     }
 
