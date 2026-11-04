@@ -1,7 +1,7 @@
 import { Marked, type Token, type Tokens } from 'marked';
 import { bundledLanguages, codeToHtml } from 'shiki';
 import { YAML_THEME } from '@/components/site/Yaml';
-import type { ChangeEntry } from '@/lib/changelog';
+import { type ChangeEntry, type ChangeTag, TAG_LABEL } from '@/lib/changelog';
 
 /** Entries whose body is longer than this collapse behind a native `<details>`. */
 export const COLLAPSE_THRESHOLD = 1200;
@@ -12,6 +12,10 @@ const MIN_HIDDEN_LENGTH = 300;
 
 export interface RenderedEntry {
   headlineHtml: string | null;
+  /** The lead paragraph(s) of an entry with tagged items; '' otherwise. */
+  leadHtml: string;
+  /** Tagged items with inline-rendered text; empty for untagged entries. */
+  items: { tag: ChangeTag; html: string }[];
   previewHtml: string;
   /** The rest of a long entry, or null when the whole entry is shown. */
   restHtml: string | null;
@@ -28,12 +32,22 @@ function escapeHtml(text: string): string {
     .replace(/'/g, '&#39;');
 }
 
+const SAFE_URL = /^(?:https?:|mailto:|#|[^:]*(?:[/?#]|$))/i;
+
 const markdown = new Marked({
   gfm: true,
   renderer: {
     // The changelog is trusted repo content, but raw HTML in it is shown as text, never rendered.
     html({ text }) {
       return escapeHtml(text);
+    },
+    // Only safe URL schemes become links; anything else (javascript:, data:, ...) is plain text.
+    link({ href, tokens }) {
+      const text = this.parser.parseInline(tokens);
+      if (!SAFE_URL.test(href.trim())) {
+        return text;
+      }
+      return `<a href="${escapeHtml(href)}">${text}</a>`;
     },
     code(token) {
       const { highlighted, text } = token as HighlightedCode;
@@ -111,15 +125,25 @@ function renderGroups(groups: Group[]): string {
 
 /** Renders one entry's Markdown, splitting long entries into a preview and the rest. */
 export async function renderEntry(entry: ChangeEntry): Promise<RenderedEntry> {
-  const tokens = markdown.lexer(entry.body);
+  const tagged = entry.items.length > 0;
+  // Untagged entries render their whole body as the preview, as before.
+  const source = tagged ? entry.notes : entry.body;
+  const tokens = markdown.lexer(source);
   await highlightCode(tokens);
+  const leadTokens = tagged ? markdown.lexer(entry.lead) : [];
+  await highlightCode(leadTokens);
+  const leadHtml = markdown.parser(leadTokens);
+  const items = entry.items.map((item) => ({
+    tag: item.tag,
+    html: markdown.parseInline(item.text, { async: false }),
+  }));
   const groups = groupTokens(tokens);
   const headlineHtml = entry.headline
     ? markdown.parseInline(entry.headline, { async: false })
     : null;
 
   let shown = groups.length;
-  if (entry.body.length > COLLAPSE_THRESHOLD) {
+  if (source.length > COLLAPSE_THRESHOLD) {
     // Never hide a migration box; then fill the preview up to about PREVIEW_LENGTH.
     let visible = 0;
     shown = 0;
@@ -138,18 +162,39 @@ export async function renderEntry(entry: ChangeEntry): Promise<RenderedEntry> {
 
   return {
     headlineHtml,
+    leadHtml,
+    items,
     previewHtml: renderGroups(groups.slice(0, shown)),
     restHtml: shown < groups.length ? renderGroups(groups.slice(shown)) : null,
   };
 }
 
-/** Plain-text summary of an entry for feeds: the headline, else the first paragraph. */
-export function entrySummary(entry: ChangeEntry, max = 280): string {
-  const source = entry.headline ?? entry.body.split(/\n\s*\n/)[0] ?? '';
-  const text = source
+/** Inline Markdown as plain text for feeds: links, code ticks and bold removed, whitespace collapsed. */
+export function plainText(markdown: string, max = 280): string {
+  const text = markdown
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/`|\*\*/g, '')
     .replace(/\s+/g, ' ')
     .trim();
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+}
+
+/** Plain-text summary of an entry for feeds: the headline, else the first paragraph. */
+export function entrySummary(entry: ChangeEntry, max = 280): string {
+  return plainText(entry.headline ?? entry.body.split(/\n\s*\n/)[0] ?? '', max);
+}
+
+/**
+ * An entry's feed description. Untagged entries keep their summary; tagged
+ * ones get the lead's first paragraph (else the headline), then one
+ * `Label: text` line per item.
+ */
+export function entryFeedText(entry: ChangeEntry): string {
+  if (entry.items.length === 0) {
+    return entrySummary({ ...entry, headline: null });
+  }
+  const lead = entry.lead.split(/\n\s*\n/)[0] ?? '';
+  const summary = plainText(lead || (entry.headline ?? ''));
+  const lines = entry.items.map((item) => `${TAG_LABEL[item.tag]}: ${plainText(item.text)}`);
+  return (summary ? [summary, ...lines] : lines).join('\n');
 }

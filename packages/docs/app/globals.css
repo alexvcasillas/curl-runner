@@ -208,6 +208,50 @@
     outline: 2px solid var(--color-brand);
     outline-offset: 2px;
   }
+  /* The lead and the tagged item rows of an entry with `- **New:** …` items. */
+  .release-lead {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 44rem;
+    font-size: 17px;
+    line-height: 1.65;
+    color: var(--color-fg-secondary);
+  }
+  .release-lead p {
+    margin: 0;
+  }
+  .release-item {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--color-fg);
+  }
+  .release-lead code,
+  .release-item code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    color: var(--color-fg);
+  }
+  .release-lead strong,
+  .release-item strong {
+    font-weight: 600;
+    color: var(--color-fg);
+  }
+  .release-lead a,
+  .release-item a {
+    color: var(--color-fg);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .release-lead a:hover,
+  .release-item a:hover {
+    color: #fff;
+  }
+  .release-lead a:focus-visible,
+  .release-item a:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
   .release-code {
     border: 1px solid var(--color-line);
     border-radius: 12px;
@@ -326,5 +370,25 @@
   }
   .blog-prose figure.shiki pre {
     overflow-x: auto;
+  }
+}
+
+/* An open folded item list on /changelog continues the rows above it, with its toggle
+   moved below. Unlayered so it beats the list's Tailwind margin and border utilities. */
+@supports selector(::details-content) {
+  .release-items-more {
+    display: flex;
+    flex-direction: column;
+  }
+  .release-items-more[open] {
+    margin-top: -16px; /* cancels the parent's gap-4 (and data-filtering:-mt-4 in changelog/page.tsx) */
+  }
+  .release-items-more[open] > summary {
+    order: 1;
+    margin-top: 16px;
+  }
+  .release-items-more[open] > ul {
+    margin-top: 0;
+    border-top-width: 0;
   }
 }

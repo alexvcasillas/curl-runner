@@ -6,3 +6,4 @@
 - End every plan with its unresolved questions, extremely concise.
 - After a feature or fix is human-verified, ask whether to bump the version with changesets.
 - Public repo: keep employer and customer details (internal repos, CI setups, local paths) out of code, docs, commits and PRs.
+- Changesets: bold headline, short lead, then `- **New|Improved|Fixed|Breaking:**` items (see CONTRIBUTE.md).
