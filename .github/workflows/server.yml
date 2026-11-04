@@ -4,17 +4,21 @@ on:
   pull_request:
     paths:
       - "crates/curl-runner-server/**"
+      - "crates/curl-runner-cloud-proto/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "docker-compose.yaml"
+      - "docker-compose.preview.yml"
       - ".github/workflows/server.yml"
   push:
     branches: [main]
     paths:
       - "crates/curl-runner-server/**"
+      - "crates/curl-runner-cloud-proto/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "docker-compose.yaml"
+      - "docker-compose.preview.yml"
       - ".github/workflows/server.yml"
   workflow_dispatch:
 
@@ -24,12 +28,34 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: pg
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # `#[sqlx::test]` creates a fresh database per test on this server.
+      DATABASE_URL: postgres://postgres:pg@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p curl-runner-server
-      - run: cargo clippy -p curl-runner-server -- -D warnings
+      - run: cargo test -p curl-runner-server --features db-tests
+      - run: cargo clippy -p curl-runner-server --all-targets --features db-tests -- -D warnings
+      # aws-lc-rs needs cmake and a C cross toolchain the image doesn't have.
+      - name: TLS stays on ring
+        run: |
+          if cargo tree -p curl-runner-server -i aws-lc-sys --target all >/dev/null 2>&1; then
+            echo "aws-lc-sys is in the server's dependency tree" >&2
+            exit 1
+          fi
 
   build:
     needs: test

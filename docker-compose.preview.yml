@@ -1,12 +1,41 @@
-# Builds the server image from source and runs it locally on port 8080:
+# Builds the server image from source and runs it locally on port 8080, with
+# its own Postgres:
 #   docker compose -f docker-compose.preview.yml up -d --build
-# Stop it with:
+# Stop it with (add -v to also drop the database):
 #   docker compose -f docker-compose.preview.yml down
+# The fallback secrets below are for this local preview only.
 services:
   server:
     image: curl-runner-server-preview
     build:
       context: .
       dockerfile: crates/curl-runner-server/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_USER: curl_runner
+      DB_NAME: curl_runner
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-preview-password}
+      SECRET_KEY: ${SECRET_KEY:-preview-secret-key-not-for-production}
+      SIGNUP: ${SIGNUP:-open}
     ports:
       - "8080:8080"
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: curl_runner
+      POSTGRES_USER: curl_runner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-preview-password}
+    volumes:
+      - preview-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U curl_runner -d curl_runner"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  preview-db-data:

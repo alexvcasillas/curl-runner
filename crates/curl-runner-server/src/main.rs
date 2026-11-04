@@ -1,6 +1,10 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
-use curl_runner_server::{healthcheck, port_from_env, serve};
+use curl_runner_server::clock::SystemClock;
+use curl_runner_server::config::Config;
+use curl_runner_server::{AppState, healthcheck, port_from_env, serve};
+use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 use tokio::signal;
 use tracing_subscriber::EnvFilter;
@@ -25,6 +29,30 @@ async fn main() -> std::process::ExitCode {
         )
         .init();
 
+    let config = match Config::from_env(|key| std::env::var(key).ok()) {
+        Ok(config) => config,
+        Err(err) => {
+            tracing::error!("{err}");
+            return std::process::ExitCode::FAILURE;
+        }
+    };
+    let pool = match PgPoolOptions::new()
+        .max_connections(10)
+        .connect_with(config.database.clone())
+        .await
+    {
+        Ok(pool) => pool,
+        Err(err) => {
+            tracing::error!("cannot connect to Postgres: {err}");
+            return std::process::ExitCode::FAILURE;
+        }
+    };
+    if let Err(err) = sqlx::migrate!().run(&pool).await {
+        tracing::error!("migrations failed: {err}");
+        return std::process::ExitCode::FAILURE;
+    }
+    let state = AppState::new(pool, config, Arc::new(SystemClock));
+
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = match TcpListener::bind(addr).await {
         Ok(listener) => listener,
@@ -35,7 +63,7 @@ async fn main() -> std::process::ExitCode {
     };
     tracing::info!("listening on {addr}");
 
-    match serve(listener, shutdown_signal()).await {
+    match serve(state, listener, shutdown_signal()).await {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(err) => {
             tracing::error!("server error: {err}");

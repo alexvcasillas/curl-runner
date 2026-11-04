@@ -1,5 +1,11 @@
-//! curl-runner server: the sync/sharing backend. Today it only serves `GET /health`
-//! (and `GET /`, which answers the same).
+//! curl-runner server: the Cloud backend (accounts, teams, publish, sharing).
+
+pub mod clock;
+pub mod config;
+pub mod error;
+pub mod hash;
+pub mod info;
+pub mod state;
 
 use std::future::Future;
 use std::time::Duration;
@@ -12,13 +18,19 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
 use tracing::Level;
 
+pub use error::ApiError;
+pub use state::AppState;
+
 const DEFAULT_PORT: u16 = 8080;
 
 /// The application router.
-pub fn app() -> Router {
+pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(health))
         .route("/health", get(health))
+        .route("/v1/info", get(info::info))
+        .fallback(not_found)
+        .with_state(state)
         .layer(CorsLayer::permissive())
         .layer(
             TraceLayer::new_for_http()
@@ -31,12 +43,17 @@ async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({"status": "ok", "version": env!("CARGO_PKG_VERSION")}))
 }
 
+async fn not_found() -> ApiError {
+    ApiError::not_found()
+}
+
 /// Serve [`app`] on `listener` until `shutdown` resolves, draining in-flight requests.
 pub async fn serve(
+    state: AppState,
     listener: TcpListener,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
-    serve_router(app(), listener, shutdown).await
+    serve_router(app(state), listener, shutdown).await
 }
 
 async fn serve_router(
@@ -91,12 +108,27 @@ mod tests {
     use tokio::net::TcpListener;
     use tower::ServiceExt;
 
+    use crate::clock::SystemClock;
+    use crate::config::Config;
+
+    /// State over a pool that never connects: these routes don't touch the DB.
+    fn state() -> AppState {
+        let config = Config::from_env(|k| match k {
+            "DATABASE_URL" => Some("postgres://u@localhost/d".into()),
+            "SECRET_KEY" => Some("k".repeat(32)),
+            _ => None,
+        })
+        .unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new().connect_lazy_with(config.database.clone());
+        AppState::new(pool, config, std::sync::Arc::new(SystemClock))
+    }
+
     async fn send(method: &str, path: &str, origin: Option<&str>) -> axum::response::Response {
         let mut req = Request::builder().method(method).uri(path);
         if let Some(o) = origin {
             req = req.header(header::ORIGIN, o);
         }
-        app()
+        app(state())
             .oneshot(req.body(Body::empty()).unwrap())
             .await
             .unwrap()
@@ -141,10 +173,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unknown_path_is_404() {
+    async fn unknown_path_is_404_json() {
+        let res = send("GET", "/nope", None).await;
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        let body = res.into_body().collect().await.unwrap().to_bytes();
         assert_eq!(
-            send("GET", "/nope", None).await.status(),
-            StatusCode::NOT_FOUND
+            body,
+            r#"{"error":"not_found","message":"Not found."}"#.as_bytes()
         );
     }
 
@@ -173,7 +208,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-        let server = tokio::spawn(serve(listener, async {
+        let server = tokio::spawn(serve(state(), listener, async {
             let _ = rx.await;
         }));
         assert!(healthcheck(port).await);
@@ -185,7 +220,7 @@ mod tests {
 
     #[tokio::test]
     async fn shutdown_finishes_in_flight_request() {
-        let slow = app().route(
+        let slow = app(state()).route(
             "/slow",
             get(|| async {
                 tokio::time::sleep(Duration::from_millis(300)).await;
