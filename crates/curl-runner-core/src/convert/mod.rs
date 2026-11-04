@@ -7,6 +7,7 @@ mod batch;
 mod curl_parser;
 mod debug;
 mod generator;
+pub mod import;
 mod jsjson;
 mod jsutil;
 mod normalizer;

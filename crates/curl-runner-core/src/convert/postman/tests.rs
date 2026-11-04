@@ -363,10 +363,10 @@ fn renames_reserved_and_invalid_names() {
         |a| matches!(a, Attention::Renamed { from, to } if from == "UUID" && to == "UUID_VAR")
     ));
     assert!(m.variables.iter().any(|v| v.name == "UUID_VAR"));
-    assert_eq!(map::var_name("my-var.x"), "my_var_x");
-    assert_eq!(map::var_name("TIMESTAMP"), "TIMESTAMP_VAR");
-    assert_eq!(map::var_name("store.token"), "store_token_VAR");
-    assert_eq!(map::var_name("baseUrl"), "baseUrl");
+    assert_eq!(var_name("my-var.x"), "my_var_x");
+    assert_eq!(var_name("TIMESTAMP"), "TIMESTAMP_VAR");
+    assert_eq!(var_name("store.token"), "store_token_VAR");
+    assert_eq!(var_name("baseUrl"), "baseUrl");
 }
 
 #[test]
@@ -565,7 +565,7 @@ fn all_emitted() -> Vec<(MappedRequest, String)> {
     .into_iter()
     .flat_map(|f| mapped(f).requests)
     .map(|r| {
-        let y = emit_request(&r, "Sample");
+        let y = emit_request(&r, "Postman", "Sample");
         (r, y)
     })
     .collect()
@@ -691,7 +691,7 @@ fn notes_sit_above_their_field() {
         &mapped("sample.postman_collection.json"),
         "Convert document",
     );
-    let y = emit_request(&r, "Sample");
+    let y = emit_request(&r, "Postman", "Sample");
     let MappedBody::Form(f) = &r.body else {
         panic!()
     };
@@ -715,7 +715,7 @@ fn notes_sit_above_their_field() {
 #[test]
 fn keeps_postman_order_and_descriptions() {
     let r = req(&mapped("sample.postman_collection.json"), "Create customer");
-    let y = emit_request(&r, "Sample");
+    let y = emit_request(&r, "Postman", "Sample");
     assert!(
         y.starts_with("# Imported from Postman: Sample\n# Creates a customer.\n\n"),
         "{y}"
@@ -733,7 +733,7 @@ fn keeps_postman_order_and_descriptions() {
 fn the_runner_reads_what_postman_would_send() {
     let m = mapped("sample.postman_collection.json");
     let r = req(&m, "Create customer");
-    let y = emit_request(&r, "Sample");
+    let y = emit_request(&r, "Postman", "Sample");
     let env = |k: &str| match k {
         "baseUrl" => Some("https://api.example.com".into()),
         "apiKey" => Some("k".into()),
@@ -752,7 +752,7 @@ fn the_runner_reads_what_postman_would_send() {
 #[test]
 fn path_variables_go_under_global() {
     let r = req(&mapped("edge.postman_collection.json"), "Get item");
-    let y = emit_request(&r, "Edge");
+    let y = emit_request(&r, "Postman", "Edge");
     assert!(y.contains("\nglobal:\n  variables:\n"), "{y}");
     let parsed = load_with_env(&y, &|k| {
         (k == "baseUrl").then(|| "https://api.example.com".into())
@@ -831,7 +831,7 @@ fn text_bodies_and_odd_values_round_trip() {
             disabled: false,
             note: Some(s.into()),
         }];
-        let y = emit_request(&r, s);
+        let y = emit_request(&r, "Postman", s);
         let v = crate::parser::parse_raw_stream(&y).unwrap_or_else(|e| panic!("{s:?}: {e:?}\n{y}"));
         assert_eq!(v["request"]["body"], serde_json::json!(s), "{s:?}\n{y}");
         assert_eq!(
@@ -846,7 +846,7 @@ fn text_bodies_and_odd_values_round_trip() {
 fn multi_line_text_is_a_block_scalar() {
     let mut r = req(&mapped("sample.postman_collection.json"), "Health");
     r.body = MappedBody::Text("<a>\n  <b/>\n</a>\n".into());
-    let y = emit_request(&r, "Sample");
+    let y = emit_request(&r, "Postman", "Sample");
     assert!(
         y.contains("  body: |\n    <a>\n      <b/>\n    </a>\n"),
         "{y}"
@@ -856,7 +856,7 @@ fn multi_line_text_is_a_block_scalar() {
 #[test]
 fn references_stay_unquoted() {
     let r = req(&mapped("sample.postman_collection.json"), "Create customer");
-    let y = emit_request(&r, "Sample");
+    let y = emit_request(&r, "Postman", "Sample");
     assert!(y.contains("  url: ${baseUrl}/v1/customers\n"), "{y}");
     assert!(y.contains("    X-Api-Key: ${apiKey}\n"), "{y}");
 }
@@ -870,7 +870,7 @@ fn a_map_of_only_disabled_entries_is_still_written() {
         note: None,
     };
     r.headers = vec![off("X-One"), off("X-Two")];
-    let y = emit_request(&r, "Sample");
+    let y = emit_request(&r, "Postman", "Sample");
     assert!(
         y.contains("  headers:\n    # X-One: v\n    # X-Two: v\n"),
         "{y}"

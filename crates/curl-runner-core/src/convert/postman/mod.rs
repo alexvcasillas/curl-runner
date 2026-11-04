@@ -1,23 +1,24 @@
 //! Postman collection importer.
 
-pub mod emit;
 pub mod map;
 pub mod model;
-pub mod report;
 pub mod write;
 
 use super::ConvertError;
-pub use emit::emit_request;
-pub use map::{
-    Field, FieldValue, ImportedVar, Mapped, MappedAuth, MappedBody, MappedRequest, map_collection,
+pub use super::import::write_import as write_postman;
+pub use super::import::{
+    Attention, Field, FieldValue, Import, ImportFile, ImportReport, ImportedVar, Mapped,
+    MappedAuth, MappedBody, MappedRequest, WriteOutcome, emit_request, slug, var_name,
+    write_import,
 };
+pub use super::import::{Import as PostmanImport, ImportFile as PostmanFile};
+pub use map::map_collection;
 pub use model::Collection;
 pub use model::{
     Auth, Body, Description, Event, Folder, Info, Item, KeyValue, Request, RequestItem, Script,
     Url, Variable,
 };
-pub use report::{Attention, ImportReport};
-pub use write::{PostmanFile, PostmanImport, WriteOutcome, convert_postman, slug, write_postman};
+pub use write::convert_postman;
 
 /// Parse a Postman Collection v2.0/v2.1 export.
 pub fn parse_collection(json: &str) -> Result<Collection, ConvertError> {

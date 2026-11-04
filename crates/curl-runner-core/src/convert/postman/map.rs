@@ -4,127 +4,12 @@
 use super::model::{
     Auth, Body, Collection, Description, Event, Folder, Item, KeyValue, RequestItem, Url,
 };
-use super::report::{Attention, ImportReport};
+use crate::convert::import::{
+    Attention, Field, FieldValue, ImportReport, ImportedVar, Mapped, MappedAuth, MappedBody,
+    MappedRequest, PLACEHOLDER_FILE, var_name,
+};
 use crate::convert::{SECRET_PARAMS, header_var, param_var, secret_header};
 use serde_json::Value;
-use std::fmt;
-
-/// A whole collection, mapped.
-#[derive(Debug)]
-pub struct Mapped {
-    pub requests: Vec<MappedRequest>,
-    pub variables: Vec<ImportedVar>,
-    pub description: Option<String>,
-    pub report: ImportReport,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct MappedRequest {
-    /// Raw folder names from the collection root down.
-    pub folders: Vec<String>,
-    pub name: String,
-    /// Description lines: the request's first, then its folders' from
-    /// nearest to farthest.
-    pub comments: Vec<String>,
-    pub method: String,
-    pub url: String,
-    pub headers: Vec<Field>,
-    pub params: Vec<Field>,
-    pub body: MappedBody,
-    pub auth: Option<MappedAuth>,
-    /// Path variables, for the file's `global.variables`.
-    pub file_vars: Vec<(String, String)>,
-}
-
-impl MappedRequest {
-    /// Folders and name joined with `/`, as the report names it.
-    pub fn path(&self) -> String {
-        let mut p = self.folders.join("/");
-        if !p.is_empty() {
-            p.push('/');
-        }
-        p.push_str(&self.name);
-        p
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Field {
-    pub key: String,
-    pub value: FieldValue,
-    pub disabled: bool,
-    pub note: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum FieldValue {
-    Text(String),
-    File { path: String, placeholder: bool },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum MappedBody {
-    None,
-    Json(Value),
-    Text(String),
-    Form(Vec<Field>),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum MappedAuth {
-    Bearer(String),
-    Basic { username: String, password: String },
-}
-
-/// A variable for `.env`. Debug hides the value.
-#[derive(Clone, PartialEq)]
-pub struct ImportedVar {
-    pub name: String,
-    pub value: String,
-    pub secret: bool,
-}
-
-impl fmt::Debug for ImportedVar {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ImportedVar")
-            .field("name", &self.name)
-            .field("value", &"<hidden>")
-            .field("secret", &self.secret)
-            .finish()
-    }
-}
-
-/// Path of a file field Postman's export left without one.
-const PLACEHOLDER_FILE: &str = "./pick-a-file";
-
-/// Names that curl-runner reads as dynamic variables.
-const RESERVED_PREFIXES: [&str; 6] = [
-    "DATE",
-    "TIME",
-    "UUID",
-    "RANDOM",
-    "CURRENT_TIME",
-    "TIMESTAMP",
-];
-
-/// A Postman variable name as curl-runner can use it: only
-/// `[A-Za-z0-9_]`, and `_VAR` after a name curl-runner treats specially.
-pub fn var_name(name: &str) -> String {
-    let mut out: String = name
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    if name.starts_with("store.") || RESERVED_PREFIXES.iter().any(|p| out.starts_with(p)) {
-        out.push_str("_VAR");
-    }
-    out
-}
 
 pub fn map_collection(c: &Collection) -> Mapped {
     let mut m = Mapper {
@@ -236,6 +121,7 @@ impl<'c> Mapper<'c> {
             body: MappedBody::None,
             auth: None,
             file_vars: Vec::new(),
+            expect_status: None,
         };
         self.at = out.path();
         self.req_refs.clear();
