@@ -18,11 +18,12 @@ pub mod tokens;
 use std::future::Future;
 use std::time::Duration;
 
+use axum::http::{HeaderValue, Method, header};
 use axum::routing::get;
 use axum::{Json, Router};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::{Level, Span};
 
@@ -33,6 +34,7 @@ const DEFAULT_PORT: u16 = 8080;
 
 /// The application router.
 pub fn app(state: AppState) -> Router {
+    let cors = cors(&state.config.app_url);
     Router::new()
         .route("/", get(health))
         .route("/health", get(health))
@@ -43,12 +45,48 @@ pub fn app(state: AppState) -> Router {
         .merge(collections::routes())
         .fallback(not_found)
         .with_state(state)
-        .layer(CorsLayer::permissive())
+        .layer(cors)
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(make_span)
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
+}
+
+/// Browsers may call the API only from the dashboard. The CLI and CI do not
+/// send an `Origin`, so CORS does not affect them.
+fn cors(app_url: &str) -> CorsLayer {
+    let allow = match HeaderValue::from_str(&origin_of(app_url)) {
+        Ok(origin) => AllowOrigin::list([origin]),
+        Err(_) => {
+            tracing::warn!("PUBLIC_APP_URL is not a valid origin; CORS allows none");
+            AllowOrigin::list([])
+        }
+    };
+    CorsLayer::new()
+        .allow_origin(allow)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+        ])
+        .allow_headers([
+            header::AUTHORIZATION,
+            header::CONTENT_TYPE,
+            header::CONTENT_ENCODING,
+        ])
+        .expose_headers([header::RETRY_AFTER])
+        .max_age(Duration::from_secs(3600))
+}
+
+/// `scheme://host[:port]` of a URL: the form a browser sends as `Origin`.
+fn origin_of(url: &str) -> String {
+    match url.split_once("://") {
+        Some((scheme, rest)) => format!("{scheme}://{}", rest.split('/').next().unwrap_or("")),
+        None => url.to_owned(),
+    }
 }
 
 /// The request span. Share-link and invite tokens travel in the path, so it
@@ -176,9 +214,52 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn health_allows_any_origin() {
+    async fn cors_allows_only_the_dashboard_origin() {
+        // PUBLIC_APP_URL defaults to http://localhost:3000.
+        let res = send("GET", "/health", Some("http://localhost:3000")).await;
+        assert_eq!(
+            res.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN],
+            "http://localhost:3000"
+        );
         let res = send("GET", "/health", Some("https://example.com")).await;
-        assert_eq!(res.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
+        assert!(
+            res.headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn cors_preflight_from_the_dashboard() {
+        let req = Request::builder()
+            .method("OPTIONS")
+            .uri("/v1/me")
+            .header(header::ORIGIN, "http://localhost:3000")
+            .header(header::ACCESS_CONTROL_REQUEST_METHOD, "PATCH")
+            .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "authorization")
+            .body(Body::empty())
+            .unwrap();
+        let res = app(state()).oneshot(req).await.unwrap();
+        let h = res.headers();
+        assert_eq!(
+            h[header::ACCESS_CONTROL_ALLOW_ORIGIN],
+            "http://localhost:3000"
+        );
+        assert!(
+            h[header::ACCESS_CONTROL_ALLOW_METHODS]
+                .to_str()
+                .unwrap()
+                .contains("PATCH")
+        );
+    }
+
+    #[test]
+    fn origin_drops_the_path() {
+        assert_eq!(
+            origin_of("https://app.example.com/dashboard"),
+            "https://app.example.com"
+        );
+        assert_eq!(origin_of("http://localhost:3000"), "http://localhost:3000");
     }
 
     #[tokio::test]
@@ -191,13 +272,6 @@ mod tests {
         assert_eq!(res.headers()[header::CONTENT_TYPE], "application/json");
         let body = res.into_body().collect().await.unwrap().to_bytes();
         assert_eq!(body, health_body);
-    }
-
-    #[tokio::test]
-    async fn root_allows_any_origin() {
-        let res = send("GET", "/", Some("https://example.com")).await;
-        assert_eq!(res.status(), StatusCode::OK);
-        assert_eq!(res.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
     }
 
     #[tokio::test]
