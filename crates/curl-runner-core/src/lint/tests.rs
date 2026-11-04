@@ -27,6 +27,22 @@ fn unknown_key_is_a_warning_with_rename_fix() {
 }
 
 #[test]
+fn cloud_block_is_not_an_unknown_key() {
+    let LintOutcome::Linted { issues, .. } =
+        lint_text("cloud:\n  collection: payments-api\nrequest:\n  url: https://api.example.com\n")
+            .unwrap()
+    else {
+        panic!()
+    };
+    assert!(
+        !issues
+            .iter()
+            .any(|i| i.message.contains("Unknown top-level key")),
+        "{issues:?}"
+    );
+}
+
+#[test]
 fn invalid_method_is_an_error() {
     let LintOutcome::Linted { issues, .. } =
         lint_text("request:\n  url: https://api.example.com\n  method: FETCH\n").unwrap()

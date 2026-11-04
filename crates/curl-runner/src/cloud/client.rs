@@ -15,6 +15,9 @@ pub const DEFAULT_SERVER: &str = "https://api.curl-runner.com";
 pub const SERVER_ENV: &str = "CURL_RUNNER_SERVER";
 pub const TEST_SERVER_ENV: &str = "CURL_RUNNER_TEST_SERVER";
 const TIMEOUT: Duration = Duration::from_secs(30);
+/// A publish can be large on a slow uplink: a long total limit, but give up
+/// when the transfer stalls.
+const UPLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_RESPONSE: usize = 64 << 20;
 
 /// A transport failure (no HTTP response).
@@ -145,7 +148,13 @@ impl Client {
     ) -> Result<Reply, NetError> {
         let url = format!("{}{}", self.base, path);
         let e = |e: curl::Error| NetError(e.to_string());
-        let mut easy = net::easy_for(&url, TIMEOUT).map_err(e)?;
+        let upload = gzip && body.is_some();
+        let mut easy =
+            net::easy_for(&url, if upload { UPLOAD_TIMEOUT } else { TIMEOUT }).map_err(e)?;
+        if upload {
+            easy.low_speed_limit(1024).map_err(e)?;
+            easy.low_speed_time(Duration::from_secs(30)).map_err(e)?;
+        }
         // Never follow a redirect: it would replay the body and the token.
         easy.follow_location(false).map_err(e)?;
         easy.custom_request(method).map_err(e)?;

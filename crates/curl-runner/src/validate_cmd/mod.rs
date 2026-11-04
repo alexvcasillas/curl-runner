@@ -102,6 +102,7 @@ pub fn lint_and_print(name: &str, text: &str, color: bool, c: &mut Console) -> R
         c.out(&format!("{icon} {name}"));
         report::print_issues(c, p, &r.issues, false);
         report::print_counts(c, p, &n, !r.valid);
+        c.out("");
     }
     Ok(r.valid)
 }

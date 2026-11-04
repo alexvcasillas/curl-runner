@@ -15,7 +15,9 @@ use curl_runner_cloud_proto::{
     BundleFile, ErrorBody, ErrorCode, FileChanges, GitMeta, Input, PublishRequest, PublishResponse,
     PublishStatus,
 };
-use curl_runner_core::cloud::{SkipReason, find_secret_literals, load_cloud_config, scan_bundle};
+use curl_runner_core::cloud::{
+    SkipReason, find_secret_literals, load_cloud_config, scan_bundle, valid_slug,
+};
 use curl_runner_core::config::CONFIG_FILE_PATHS;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -92,12 +94,6 @@ struct Target {
     inputs: Vec<Input>,
     files: Vec<BundleFile>,
     hash: String,
-}
-
-fn valid_slug(s: &str) -> bool {
-    let b = s.as_bytes();
-    let ok = |c: u8| c.is_ascii_lowercase() || c.is_ascii_digit();
-    (1..=63).contains(&b.len()) && ok(b[0]) && b.iter().all(|&c| ok(c) || c == b'-')
 }
 
 /// Phase 1 for one directory. Prints every problem it finds and returns the
@@ -207,11 +203,14 @@ fn delay(retry: usize, retry_after: Option<u64>, unit: f64) -> Duration {
     Duration::from_secs_f64(base * (0.75 + 0.5 * unit))
 }
 
+/// A random number in [0, 1). `RandomState` is seeded by the OS, which
+/// avoids a clock whose low digits are always zero on some platforms.
 fn jitter_unit() -> f64 {
-    let n = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.subsec_nanos());
-    f64::from(n % 1000) / 1000.0
+    use std::hash::{BuildHasher, Hasher};
+    let n = std::collections::hash_map::RandomState::new()
+        .build_hasher()
+        .finish();
+    (n >> 11) as f64 / (1u64 << 53) as f64
 }
 
 /// A client that retries transport errors, 5xx and 429.
@@ -267,13 +266,13 @@ impl Api<'_> {
                     (e.to_string(), None)
                 }
             };
+            let wait = delay(attempt, retry_after, jitter_unit());
+            c.err(&format!(
+                "{why}. Retrying in {:.0}s (attempt {} of {ATTEMPTS}).",
+                wait.as_secs_f64(),
+                attempt + 2
+            ));
             if self.sleep {
-                let wait = delay(attempt, retry_after, jitter_unit());
-                c.err(&format!(
-                    "{why}. Retrying in {:.0}s (attempt {} of {ATTEMPTS}).",
-                    wait.as_secs_f64(),
-                    attempt + 2
-                ));
                 std::thread::sleep(wait);
             }
         }
@@ -382,13 +381,6 @@ fn resolve_team(
             }
         }
     };
-    if team.is_empty()
-        || !team
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-    {
-        return Err(fail(EXIT_AUTH, format!("{team} is not a valid team.")));
-    }
     Ok(team)
 }
 
@@ -472,10 +464,13 @@ fn publish_one(
     Ok(())
 }
 
-fn dry_run_one(api: &Api, c: &mut Console, team: &str, t: &Target) -> Result<(), Fail> {
-    let rows: Vec<CollectionRow> = api.get(c, &format!("/v1/teams/{team}/collections"), || {
-        cannot_publish(team)
-    })?;
+fn dry_run_one(
+    api: &Api,
+    c: &mut Console,
+    team: &str,
+    rows: &[CollectionRow],
+    t: &Target,
+) -> Result<(), Fail> {
     let current = rows
         .iter()
         .find(|r| r.slug == t.collection)
@@ -513,6 +508,13 @@ pub fn publish(args: &[String], env: Env, console: &mut Console) -> i32 {
     };
     if opts.collection.is_some() && opts.dirs.len() > 1 {
         console.err("--collection works with one directory.");
+        return EXIT_INVALID;
+    }
+    let team_env = env(TEAM_ENV).filter(|t| !t.is_empty());
+    if let Some(t) = opts.team.as_ref().or(team_env.as_ref())
+        && !valid_slug(t)
+    {
+        console.err(&format!("{t} is not a valid team."));
         return EXIT_INVALID;
     }
     let server = match server_from_args(args, env) {
@@ -567,9 +569,16 @@ pub fn publish(args: &[String], env: Env, console: &mut Console) -> i32 {
     let run = |console: &mut Console| -> Result<(), Fail> {
         let team = resolve_team(opts.team.clone(), env, &token, &api, console)?;
         let git = git_meta(env);
+        let rows: Vec<CollectionRow> = if opts.dry_run {
+            api.get(console, &format!("/v1/teams/{team}/collections"), || {
+                cannot_publish(&team)
+            })?
+        } else {
+            Vec::new()
+        };
         for t in &targets {
             if opts.dry_run {
-                dry_run_one(&api, console, &team, t)?;
+                dry_run_one(&api, console, &team, &rows, t)?;
             } else {
                 publish_one(&api, console, &team, t, git.clone())?;
             }
@@ -603,6 +612,19 @@ mod tests {
             assert!((delay(i, None, 0.0).as_secs_f64() - base * 0.75).abs() < 1e-9);
             assert!((delay(i, None, 0.999).as_secs_f64() - base * 1.2495).abs() < 1e-6);
         }
+    }
+
+    #[test]
+    fn jitter_stays_within_band_and_varies() {
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..50 {
+            let u = jitter_unit();
+            assert!((0.0..1.0).contains(&u));
+            let d = delay(2, None, u).as_secs_f64();
+            assert!((3.0..=5.0).contains(&d), "{d}");
+            seen.insert(d.to_bits());
+        }
+        assert!(seen.len() > 1);
     }
 
     #[test]
@@ -701,13 +723,5 @@ mod tests {
         assert_eq!(parse_options(&a(&[])).unwrap().dirs, ["."]);
         assert!(parse_options(&a(&["--bogus"])).is_err());
         assert!(parse_options(&a(&["--team"])).is_err());
-    }
-
-    #[test]
-    fn slugs() {
-        assert!(valid_slug("payments-api"));
-        assert!(!valid_slug("Payments"));
-        assert!(!valid_slug("-a"));
-        assert!(!valid_slug(""));
     }
 }

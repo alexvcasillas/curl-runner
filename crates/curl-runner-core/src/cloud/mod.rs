@@ -8,6 +8,6 @@ mod secrets;
 #[cfg(test)]
 mod tests;
 
-pub use config::{CloudConfig, CloudConfigError, load_cloud_config};
+pub use config::{CloudConfig, CloudConfigError, load_cloud_config, valid_slug};
 pub use scan::{Bundle, ScanError, SkipReason, scan_bundle};
 pub use secrets::{SecretLeak, find_secret_literals};

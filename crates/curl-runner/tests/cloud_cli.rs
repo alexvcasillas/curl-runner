@@ -752,3 +752,68 @@ fn publish_without_ci_env_sends_no_git() {
     let v: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert!(v["git"].is_null());
 }
+
+#[test]
+fn publish_401_is_not_retried() {
+    let (srv, calls) = fake(|_, _| json(401, r#"{"error":"unauthorized","message":"Bad token."}"#));
+    let a = project(CONFIG, &[("a.yaml", VALID)]);
+    let o = publish(&srv.base_url, a.path(), &[]).output().unwrap();
+    assert_eq!(o.status.code(), Some(2));
+    assert_eq!(calls.lock().unwrap().len(), 1);
+    assert!(!stderr(&o).contains("Retrying"));
+}
+
+#[test]
+fn publish_announces_retries_on_stderr() {
+    let (srv, _) = fake(|_, n| {
+        if n == 0 {
+            json(503, r#"{"error":"unavailable","message":"Try again."}"#)
+        } else {
+            json(200, UNCHANGED)
+        }
+    });
+    let a = project(CONFIG, &[("a.yaml", VALID)]);
+    let o = publish(&srv.base_url, a.path(), &[]).output().unwrap();
+    assert_eq!(o.status.code(), Some(0));
+    assert!(stderr(&o).contains("Retrying in "), "{}", stderr(&o));
+}
+
+#[test]
+fn publish_bad_team_is_a_usage_error() {
+    let (srv, calls) = fake(|_, _| created(1));
+    let a = project(CONFIG, &[("a.yaml", VALID)]);
+    let o = publish(&srv.base_url, a.path(), &["--team", "Bad Team"])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(1));
+    assert!(calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn publish_long_name_fails_before_sending() {
+    let (srv, calls) = fake(|_, _| created(1));
+    let ok = project(CONFIG, &[("a.yaml", VALID)]);
+    let long = project(
+        &format!("cloud:\n  collection: other\n  name: {}\n", "n".repeat(101)),
+        &[("a.yaml", VALID)],
+    );
+    let o = publish(&srv.base_url, ok.path(), &[])
+        .arg(long.path())
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(1));
+    assert!(calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn publish_dry_run_lists_collections_once() {
+    let (srv, calls) = fake(|_, _| json(200, "[]"));
+    let a = project(CONFIG, &[("a.yaml", VALID)]);
+    let b = project("cloud:\n  collection: other\n", &[("a.yaml", VALID)]);
+    let o = publish(&srv.base_url, a.path(), &["--dry-run"])
+        .arg(b.path())
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    assert_eq!(calls.lock().unwrap().len(), 1);
+}
