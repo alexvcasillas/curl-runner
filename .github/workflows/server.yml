@@ -52,8 +52,9 @@ jobs:
       # aws-lc-rs needs cmake and a C cross toolchain the image doesn't have.
       - name: TLS stays on ring
         run: |
-          if cargo tree -p curl-runner-server -i aws-lc-sys --target all >/dev/null 2>&1; then
-            echo "aws-lc-sys is in the server's dependency tree" >&2
+          cargo tree --locked -p curl-runner-server -e normal --target all > tree.txt
+          if grep -E 'aws-lc' tree.txt; then
+            echo "an aws-lc crate is in the server's dependency tree" >&2
             exit 1
           fi
 

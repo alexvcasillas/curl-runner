@@ -1,7 +1,8 @@
 # Runs the curl-runner server from the prebuilt image on GHCR, with Postgres.
 # Coolify deploys this file; the image is built by .github/workflows/server.yml.
 # Without Coolify, create the network first with `docker network create coolify`
-# or remove the `networks` keys below.
+# or remove the `coolify` entries below. Postgres sits only on the private
+# `internal` network.
 #
 # Required: POSTGRES_PASSWORD and SECRET_KEY (32+ bytes). Everything else is
 # optional; an unset value falls back to the server's default.
@@ -15,7 +16,9 @@ services:
       PORT: ${PORT:-8080}
       RUST_LOG: ${RUST_LOG:-info}
       # Postgres parts, not a URL, so the password needs no escaping.
-      DB_HOST: db
+      # A distinctive alias on the private network, so no other stack's `db`
+      # on the shared coolify network can answer.
+      DB_HOST: curl-runner-db
       DB_USER: curl_runner
       DB_NAME: curl_runner
       DB_PASSWORD: ${POSTGRES_PASSWORD}
@@ -38,6 +41,7 @@ services:
       SIGNUP_DOMAINS: ${SIGNUP_DOMAINS:-}
       OPERATOR_EMAILS: ${OPERATOR_EMAILS:-}
     networks:
+      - internal
       - coolify
     healthcheck:
       test: ["CMD", "/curl-runner-server", "healthcheck"]
@@ -55,8 +59,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
     volumes:
       - db-data:/var/lib/postgresql/data
+    # Private: only the server reaches Postgres. Not on the shared network.
     networks:
-      - coolify
+      internal:
+        aliases:
+          - curl-runner-db
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U curl_runner -d curl_runner"]
       interval: 5s
@@ -69,5 +76,6 @@ volumes:
   db-data:
 
 networks:
+  internal:
   coolify:
     external: true

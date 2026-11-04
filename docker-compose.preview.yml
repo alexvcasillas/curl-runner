@@ -14,14 +14,16 @@ services:
       db:
         condition: service_healthy
     environment:
-      DB_HOST: db
+      DB_HOST: curl-runner-db
       DB_USER: curl_runner
       DB_NAME: curl_runner
       DB_PASSWORD: ${POSTGRES_PASSWORD:-preview-password}
       SECRET_KEY: ${SECRET_KEY:-preview-secret-key-not-for-production}
       SIGNUP: ${SIGNUP:-open}
+    networks:
+      - internal
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
 
   db:
     image: postgres:17-alpine
@@ -31,6 +33,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-preview-password}
     volumes:
       - preview-db-data:/var/lib/postgresql/data
+    networks:
+      internal:
+        aliases:
+          - curl-runner-db
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U curl_runner -d curl_runner"]
       interval: 2s
@@ -39,3 +45,6 @@ services:
 
 volumes:
   preview-db-data:
+
+networks:
+  internal:
