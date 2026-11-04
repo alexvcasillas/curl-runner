@@ -5,6 +5,7 @@ pub mod config;
 pub mod error;
 pub mod hash;
 pub mod info;
+pub mod mail;
 pub mod state;
 
 use std::future::Future;

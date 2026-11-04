@@ -10,6 +10,7 @@ use sqlx::PgPool;
 use crate::clock::Clock;
 use crate::config::Config;
 use crate::error::ApiError;
+use crate::mail::Mailer;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -24,7 +25,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(db: PgPool, config: Config, clock: Arc<dyn Clock>) -> Self {
         Self {
-            mailer: Mailer { db: db.clone() },
+            mailer: Mailer::new(clock.clone()),
             oauth: Arc::new(NoOAuth),
             limiter: RateLimiter::new(clock.clone()),
             db,
@@ -32,13 +33,6 @@ impl AppState {
             clock,
         }
     }
-}
-
-/// Queues email in the `outbox_emails` table. Sending comes in a later task.
-#[derive(Clone)]
-pub struct Mailer {
-    #[allow(dead_code)] // Used once enqueueing lands.
-    db: PgPool,
 }
 
 /// GitHub and Google sign-in. Methods come in a later task.

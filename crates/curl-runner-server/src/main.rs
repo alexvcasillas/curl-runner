@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use curl_runner_server::clock::SystemClock;
 use curl_runner_server::config::Config;
+use curl_runner_server::mail::{LogTransport, SmtpTransport, Transport, worker};
 use curl_runner_server::{AppState, healthcheck, port_from_env, serve};
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
@@ -51,7 +52,29 @@ async fn main() -> std::process::ExitCode {
         tracing::error!("migrations failed: {err}");
         return std::process::ExitCode::FAILURE;
     }
+    let transport: Arc<dyn Transport> = match &config.smtp {
+        Some(smtp) => match SmtpTransport::new(smtp, &config.mail_from) {
+            Ok(transport) => Arc::new(transport),
+            Err(err) => {
+                tracing::error!("{err}");
+                return std::process::ExitCode::FAILURE;
+            }
+        },
+        None => {
+            tracing::warn!("SMTP not configured; emails are written to the log");
+            Arc::new(LogTransport)
+        }
+    };
     let state = AppState::new(pool, config, Arc::new(SystemClock));
+    let (stop_tx, mut stop_rx) = tokio::sync::watch::channel(false);
+    let mail_worker = tokio::spawn(worker::run(
+        state.db.clone(),
+        transport,
+        state.clock.clone(),
+        async move {
+            let _ = stop_rx.wait_for(|stop| *stop).await;
+        },
+    ));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = match TcpListener::bind(addr).await {
@@ -63,7 +86,13 @@ async fn main() -> std::process::ExitCode {
     };
     tracing::info!("listening on {addr}");
 
-    match serve(state, listener, shutdown_signal()).await {
+    let result = serve(state, listener, async move {
+        shutdown_signal().await;
+        let _ = stop_tx.send(true);
+    })
+    .await;
+    let _ = mail_worker.await;
+    match result {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(err) => {
             tracing::error!("server error: {err}");
