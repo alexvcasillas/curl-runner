@@ -1,5 +1,13 @@
 # @curl-runner/cli
 
+## 2.5.0
+
+### Minor Changes
+
+- [#172](https://github.com/alexvcasillas/curl-runner/pull/172) [`3f1fbaa`](https://github.com/alexvcasillas/curl-runner/commit/3f1fbaa3360767c9f555202c13c5a8f62d4fe3ad) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - The studio's Import dialog imports OpenAPI 3.0, 3.1 and Swagger 2.0 specs on its OpenAPI tab, with a preview, a summary of what needs your attention, and drops routed to the right tab by content.
+
+- [#170](https://github.com/alexvcasillas/curl-runner/pull/170) [`acdd9ef`](https://github.com/alexvcasillas/curl-runner/commit/acdd9ef24b0115b94e2fcbdacf278c926f07607f) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - `curl-runner convert openapi <spec.json|spec.yaml>` turns an OpenAPI 3.0, 3.1 or Swagger 2.0 document into YAML files and a `.env`. You get one file per operation, in a folder per tag, with sample values from the spec's examples and schemas and a check on the documented success status. Optional parameters come in commented out. Variables are prefixed per API, so two APIs can share one `.env`. Credentials from auth schemes and secret-named parameters never land in a file: their names are listed in `.env` and you set the values in `.env.local`. The command prints what it skipped or needs from you.
+
 ## 2.4.0
 
 ### Minor Changes
