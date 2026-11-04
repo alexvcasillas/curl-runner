@@ -9,6 +9,7 @@ use axum::Router;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header};
 use chrono::{DateTime, Utc};
+use curl_runner_server::auth::providers::FakeProviders;
 use curl_runner_server::clock::FixedClock;
 use curl_runner_server::config::Config;
 use curl_runner_server::{AppState, app};
@@ -23,6 +24,8 @@ pub const NOW: &str = "2026-11-04T10:00:00Z";
 pub struct TestApp {
     pub state: AppState,
     pub clock: Arc<FixedClock>,
+    /// What the OAuth providers answer; set per test.
+    pub providers: Arc<FakeProviders>,
     router: Router,
 }
 
@@ -47,8 +50,11 @@ pub async fn test_app(pool: PgPool) -> TestApp {
 pub async fn test_app_with(pool: PgPool, config: Config) -> TestApp {
     let start: DateTime<Utc> = NOW.parse().unwrap();
     let clock = Arc::new(FixedClock::new(start));
-    let state = AppState::new(pool, config, clock.clone());
+    let mut state = AppState::new(pool, config, clock.clone());
+    let providers = Arc::new(FakeProviders::new());
+    state.oauth = providers.clone();
     TestApp {
+        providers,
         router: app(state.clone()),
         state,
         clock,

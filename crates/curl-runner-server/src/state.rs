@@ -7,6 +7,7 @@ use chrono::{DateTime, Duration, Utc};
 use curl_runner_cloud_proto::ErrorCode;
 use sqlx::PgPool;
 
+use crate::auth::providers::{OAuthProviders, RealProviders};
 use crate::clock::Clock;
 use crate::config::Config;
 use crate::error::ApiError;
@@ -26,7 +27,10 @@ impl AppState {
     pub fn new(db: PgPool, config: Config, clock: Arc<dyn Clock>) -> Self {
         Self {
             mailer: Mailer::new(clock.clone()),
-            oauth: Arc::new(NoOAuth),
+            oauth: Arc::new(RealProviders::new(
+                config.github.clone(),
+                config.google.clone(),
+            )),
             limiter: RateLimiter::new(clock.clone()),
             db,
             config: Arc::new(config),
@@ -34,14 +38,6 @@ impl AppState {
         }
     }
 }
-
-/// GitHub and Google sign-in. Methods come in a later task.
-pub trait OAuthProviders: Send + Sync {}
-
-/// No OAuth provider is reachable.
-pub struct NoOAuth;
-
-impl OAuthProviders for NoOAuth {}
 
 /// In-memory fixed-window rate limiter. Single-instance by design: the server
 /// runs as one replica, so there is no shared store.
