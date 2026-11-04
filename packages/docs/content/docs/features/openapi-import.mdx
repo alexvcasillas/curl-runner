@@ -117,6 +117,8 @@ The command exits with `0` even when something needs your attention. It exits wi
 - When the spec lists more servers, the others are comment lines in `.env`.
 - A relative server URL, like `/v1`, or no server at all leaves the variable with the relative part or empty. The report asks you to set it.
 - An operation or path item with its own server uses that server's URL as written, and the report says so.
+- A user name or password in a server URL, like `https://user:pass@api.example.com`, is removed. The report says so, without the values.
+- Line breaks and control characters are removed from server URLs.
 
 ### Variable names
 
@@ -124,7 +126,7 @@ Every import writes into the one `.env` at the output root, and that file keeps 
 
 The prefix comes from `info.title`. It's uppercased, anything other than letters, digits and `_` becomes one `_`, and it's cut at a word boundary to at most 24 characters. An empty title gives `API`. For example, "Swagger Petstore - OpenAPI 3.0" gives `SWAGGER_PETSTORE`, so the base URL is `SWAGGER_PETSTORE_BASE_URL`.
 
-Path parameters, like `{petId}`, aren't prefixed. They are per file and live in that file's `global.variables`, with a sample value.
+Path parameters, like `{petId}`, aren't prefixed. They are per file and live in that file's `global.variables`, with a sample value. A path variable that no parameter declares gets `string`, and the report asks you to set it.
 
 ### Parameters
 
@@ -132,6 +134,8 @@ Path parameters, like `{petId}`, aren't prefixed. They are per file and live in 
 - An optional one is a commented-out line with a sample value and the parameter's description. Uncomment it to switch it on.
 - An array query parameter has its items joined with `,`. A required parameter that needs `explode` or another `style` is reported. Optional ones are commented out, so they aren't.
 - Required cookie parameters join into one `Cookie` header. Optional ones are left out and reported.
+- Header parameters named `Accept`, `Content-Type` and `Authorization` are skipped, as OpenAPI says. The body sets `Content-Type` and security schemes set auth. A required `Authorization` parameter on a request with no auth is reported.
+- A `Cookie` header parameter joins the same `Cookie` header, so a request sends one.
 - Parameters on a path item merge with the operation's. The operation wins on the same name and location.
 
 ### Sample values
@@ -160,6 +164,8 @@ Generated values are fixed, so the same spec always gives the same files:
 A recursive schema stops where it loops, so you never get an endless body. A very large schema gets a size cap on its optional properties.
 
 Values keep their type: an integer is `1`, not `"1"`. A query or header value is written as text.
+
+A value from the spec that holds `${`, like `${HOME}`, is kept as written. curl-runner fills it from your environment when it runs, so the report lists those requests. Check them.
 
 ### Auth
 
@@ -203,7 +209,7 @@ Each request gets `expect.status` set to the lowest documented `2xx` response. `
 
 ### Swagger 2.0
 
-A Swagger 2.0 document is read as if it were OpenAPI 3. `host`, `basePath` and `schemes` become the server, `in: body` becomes the request body, `in: formData` becomes a form body, and `securityDefinitions` become security schemes.
+A Swagger 2.0 document is read as if it were OpenAPI 3. `host`, `basePath` and `schemes` become the server, `in: body` becomes the request body, `in: formData` becomes a form body, and `securityDefinitions` become security schemes. The body gets every media type in `consumes`, so the preference under Bodies picks one. A form with a file is always multipart.
 
 ## The report [#report]
 
@@ -213,7 +219,7 @@ An issue that repeats across operations is one item, with a count and up to thre
 - **Set the secret …**: set the secret's value in `.env.local`.
 - **Set the variable …**: set a plain value in `.env`. It shows up for a relative or missing base URL, and for a basic auth username.
 - **Put an … access token in …**: an OAuth 2.0 or OpenID Connect scheme became a bearer token you supply.
-- **Used … in N requests that also accept …**: an operation offered several auth alternatives, and the first one was used.
+- **Used … in N requests that also accept …**: an operation offered several auth alternatives, and the first one was used. It reads **Sent no auth in …** when the first alternative is no auth.
 - **Skipped … auth (…) in N requests**: that scheme isn't supported. Add it by hand.
 - **Couldn't resolve …** or **Can't follow the external reference …**: a `$ref` points nowhere or outside the document. The schema behind it was treated as empty.
 - **Skipped … bodies in N requests**: that media type isn't supported.
@@ -225,18 +231,28 @@ An issue that repeats across operations is one item, with a count and up to thre
 - **Skipped N webhooks, callbacks or links**: they're counted, not converted.
 - **Renamed the variable … to …**: the name changed so curl-runner can use it.
 - **Kept the value of … already in .env**: `.env` already had the variable with another value, so the import left it.
+- **Skipped …: …**: a path item or operation couldn't be read, like one that isn't an object or a `$ref` that can't be followed. The rest still converts.
+- **Skipped N parameters with no name or an unknown location**: a parameter has no `name`, or an `in` other than path, query, header or cookie.
+- **Left out the Authorization header parameter in N requests**: OpenAPI sends auth through security schemes. Add it by hand if the API needs it.
+- **Kept `${…}` from the API description in N requests**: a spec value holds `${`. curl-runner fills it from your environment when it runs. Check it.
+- **Gave undeclared path variables a sample value in N requests**: the path has a `{template}` no parameter declares. Set the right values.
+- **Removed a user name or password from a server URL**: add the credentials as auth if the API needs them. The report never shows them.
+- **Removed line breaks and control characters from … in .env**: a value would have broken its `.env` line.
 
 ## What's skipped [#skipped]
 
+These show up in the report:
+
 - External `$ref`s, to another file or a URL.
 - Webhooks, callbacks and links.
-- Response body checks. Only the status is asserted.
-- Running OAuth 2.0 or OpenID Connect flows.
 - Auth schemes other than API key, bearer, basic, OAuth 2.0 and OpenID Connect.
 - Body types other than JSON, multipart, form-urlencoded, text and XML, such as a binary file.
-- `x-` extensions.
 
-Each one shows up in the report.
+These are skipped without a report item, since every spec has them:
+
+- Response body checks. Only the status is asserted.
+- Running OAuth 2.0 or OpenID Connect flows. The report asks for an access token instead.
+- `x-` extensions.
 
 ## Limits [#limits]
 
