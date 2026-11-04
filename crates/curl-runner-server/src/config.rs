@@ -5,7 +5,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use curl_runner_cloud_proto::SignupMode;
+use curl_runner_cloud_proto::{Plan, SignupMode};
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
 
 const REDACTED: &str = "<redacted>";
@@ -25,6 +25,9 @@ pub struct Config {
     pub github: Option<OAuthApp>,
     pub google: Option<OAuthApp>,
     pub signup: SignupMode,
+    /// Plan of a newly created team. `team` (no limits) unless the operator
+    /// asks for `free`, as the managed service does.
+    pub default_plan: Plan,
     /// Lower-cased domains allowed to sign up when `signup` is `Domains`.
     pub signup_domains: Vec<String>,
     /// Lower-cased operator emails.
@@ -109,6 +112,20 @@ impl Config {
             },
         };
 
+        let default_plan = match get("DEFAULT_PLAN").map(|v| v.trim().to_ascii_lowercase()) {
+            None => Plan::Team,
+            Some(v) => match v.as_str() {
+                "team" => Plan::Team,
+                "free" => Plan::Free,
+                _ => {
+                    return Err(ConfigError::Invalid {
+                        var: "DEFAULT_PLAN",
+                        reason: "expected team or free".into(),
+                    });
+                }
+            },
+        };
+
         Ok(Config {
             database,
             api_url: base_url(get("PUBLIC_API_URL"), "http://localhost:8080"),
@@ -120,6 +137,7 @@ impl Config {
             github: oauth_app(&get, "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET")?,
             google: oauth_app(&get, "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET")?,
             signup,
+            default_plan,
             signup_domains: lower_list(get("SIGNUP_DOMAINS")),
             operators: lower_list(get("OPERATOR_EMAILS")),
             trusted_proxy_hops: match get("TRUSTED_PROXY_HOPS") {
@@ -270,6 +288,7 @@ impl fmt::Debug for Config {
             .field("github", &self.github)
             .field("google", &self.google)
             .field("signup", &self.signup)
+            .field("default_plan", &self.default_plan)
             .field("signup_domains", &self.signup_domains)
             .field("operators", &self.operators)
             .field("trusted_proxy_hops", &self.trusted_proxy_hops)
@@ -425,6 +444,20 @@ mod tests {
         assert!(cfg.signup_domains.is_empty());
         assert!(cfg.operators.is_empty());
         assert_eq!(cfg.trusted_proxy_hops, 1);
+        assert_eq!(cfg.default_plan, Plan::Team);
+    }
+
+    #[test]
+    fn default_plan_is_team_or_free() {
+        assert_eq!(
+            with(&[("DEFAULT_PLAN", " Free ")]).unwrap().default_plan,
+            Plan::Free
+        );
+        assert_eq!(
+            with(&[("DEFAULT_PLAN", "team")]).unwrap().default_plan,
+            Plan::Team
+        );
+        assert!(with(&[("DEFAULT_PLAN", "pro")]).is_err());
     }
 
     #[test]

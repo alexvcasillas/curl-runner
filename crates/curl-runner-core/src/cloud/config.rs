@@ -25,6 +25,10 @@ pub enum CloudConfigError {
     BadSlug(String),
     #[error("invalid cloud block: {0}")]
     Invalid(String),
+    #[error("cloud.name must be 1 to 100 characters")]
+    BadName,
+    #[error("cloud.description must be at most 500 characters")]
+    BadDescription,
     #[error("invalid cloud.inputs: {0}")]
     Input(#[from] InputError),
 }
@@ -49,7 +53,8 @@ struct RawInput {
 }
 
 /// `^[a-z0-9][a-z0-9-]{0,62}$`
-fn valid_slug(s: &str) -> bool {
+/// Lowercase letters, digits and dashes, 1 to 63 characters, no leading dash.
+pub fn valid_slug(s: &str) -> bool {
     let b = s.as_bytes();
     let ok = |c: u8| c.is_ascii_lowercase() || c.is_ascii_digit();
     (1..=63).contains(&b.len()) && ok(b[0]) && b.iter().all(|&c| ok(c) || c == b'-')
@@ -84,6 +89,20 @@ pub fn load_cloud_config(dir: &Path) -> Result<Option<CloudConfig>, CloudConfigE
         return Err(CloudConfigError::BadSlug(raw.collection));
     }
     // collection.variables takes precedence over global.variables.
+    if raw
+        .name
+        .as_ref()
+        .is_some_and(|n| n.trim().is_empty() || n.chars().count() > 100)
+    {
+        return Err(CloudConfigError::BadName);
+    }
+    if raw
+        .description
+        .as_ref()
+        .is_some_and(|d| d.chars().count() > 500)
+    {
+        return Err(CloudConfigError::BadDescription);
+    }
     let variable = |name: &str| {
         ["collection", "global"]
             .iter()

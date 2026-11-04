@@ -71,7 +71,11 @@ fn run_command(argv: Vec<String>) -> i32 {
         | Command::Convert
         | Command::Validate
         | Command::Wizard
-        | Command::Upgrade => {}
+        | Command::Upgrade
+        | Command::Login
+        | Command::Logout
+        | Command::Publish
+        | Command::Pull => {}
     };
     let env = |k: &str| std::env::var(k).ok();
     let color = colors::enabled_from_env(env);
@@ -88,6 +92,12 @@ fn run_command(argv: Vec<String>) -> i32 {
             &crate::upgrade::Ctx::from_env(&env),
             &mut console,
         );
+    }
+    if matches!(
+        parsed.command,
+        Command::Login | Command::Logout | Command::Publish | Command::Pull
+    ) {
+        return crate::cloud::run(&parsed.rest, &env, &mut Console::stdio());
     }
     if parsed.command == Command::Validate {
         return crate::validate_cmd::run(&parsed.rest, color, &mut Console::stdio());

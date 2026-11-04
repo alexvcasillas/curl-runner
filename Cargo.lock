@@ -1475,6 +1475,7 @@ dependencies = [
  "cliclack",
  "ctrlc",
  "curl",
+ "curl-runner-cloud-proto",
  "curl-runner-core",
  "flate2",
  "indexmap",

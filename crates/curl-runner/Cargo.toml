@@ -16,6 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 curl-runner-core.workspace = true
+curl-runner-cloud-proto.workspace = true
 thiserror = "2.0.21"
 curl = { version = "0.4", default-features = false, features = ["static-curl", "http2", "rustls"] }
 ctrlc = "3.5.2"

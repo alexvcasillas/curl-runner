@@ -181,16 +181,22 @@ async fn operator_can_create_when_closed(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn new_team_plan_follows_signup_mode(pool: PgPool) {
-    for (mode, plan) in [("domains", "team"), ("closed", "free"), ("open", "free")] {
+async fn new_team_plan_follows_default_plan(pool: PgPool) {
+    for (mode, default_plan, plan) in [
+        ("domains", "", "team"),
+        ("open", "", "team"),
+        ("open", "free", "free"),
+        ("domains", "free", "free"),
+    ] {
         let cfg = test_config(&[
             ("SIGNUP", mode),
+            ("DEFAULT_PLAN", default_plan),
             ("SIGNUP_DOMAINS", "example.com"),
             ("OPERATOR_EMAILS", "ada@example.com"),
         ]);
         let app = test_app_with(pool.clone(), cfg).await;
         let s = app.sign_in("ada@example.com").await;
-        let slug = format!("t-{mode}");
+        let slug = format!("t-{mode}-{plan}-{}", default_plan.len());
         let (status, body) = app
             .request(
                 Method::POST,
@@ -200,7 +206,7 @@ async fn new_team_plan_follows_signup_mode(pool: PgPool) {
             )
             .await;
         assert_eq!(status, StatusCode::CREATED, "{mode}: {body}");
-        assert_eq!(body["plan"], plan, "{mode}");
+        assert_eq!(body["plan"], plan, "{mode} {default_plan}");
     }
 }
 

@@ -254,3 +254,28 @@ fn partial_reference_is_fine() {
     let b = bundle_of("global:\n  variables:\n    API_KEY: sk_${X}\n");
     assert!(find_secret_literals(&b, &[secret("API_KEY")]).is_empty());
 }
+
+#[test]
+fn cloud_config_checks_name_and_description_length() {
+    let name = |n: &str| load(&format!("cloud:\n  collection: acme\n  name: \"{n}\"\n"));
+    assert!(name(&"n".repeat(100)).is_ok());
+    assert!(matches!(
+        name(&"n".repeat(101)),
+        Err(CloudConfigError::BadName)
+    ));
+    assert!(matches!(name("  "), Err(CloudConfigError::BadName)));
+    let desc = |n: usize| {
+        load(&format!(
+            "cloud:\n  collection: acme\n  description: {}\n",
+            "d".repeat(n)
+        ))
+    };
+    assert!(desc(500).is_ok());
+    assert!(matches!(desc(501), Err(CloudConfigError::BadDescription)));
+}
+
+#[test]
+fn valid_slug_is_public() {
+    assert!(valid_slug("acme-1"));
+    assert!(!valid_slug("Acme"));
+}

@@ -9,7 +9,14 @@ use super::issues::{
 use super::request::validate_request_config;
 use crate::model::Json;
 
-const VALID_TOP_LEVEL_KEYS: &[&str] = &["version", "global", "collection", "requests", "request"];
+const VALID_TOP_LEVEL_KEYS: &[&str] = &[
+    "version",
+    "global",
+    "collection",
+    "requests",
+    "request",
+    "cloud",
+];
 const VALID_COLLECTION_KEYS: &[&str] =
     &["name", "description", "variables", "defaults", "requests"];
 

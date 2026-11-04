@@ -1,13 +1,26 @@
 ---
-title: "Self-hosting (early)"
-description: "Run the curl-runner server from its prebuilt Docker image with docker compose. Set the port and log level, pin a version, and check that it's up."
+title: "Self-hosting"
+description: "Run the curl-runner Cloud server from its Docker image with Postgres. Set the secret key, email, sign-in and sign-up policy, then add a proxy and backups."
 ---
 
-<Callout type="warn" title="Early">
-The server only has a `/health` endpoint today. Accounts, sync and sharing are coming, and this page will change with them.
+<Callout type="warn" title="Private preview">
+curl-runner Cloud is in private preview, and the hosted service opens to sign-ups at launch. The server is the same one we run, so you can host your own today. See [Cloud](/docs/features/cloud) for what it does.
 </Callout>
 
-The curl-runner server ships as a Docker image: `ghcr.io/alexvcasillas/curl-runner-server`. The repo's `docker-compose.yaml` runs it.
+The curl-runner server ships as a Docker image: `ghcr.io/alexvcasillas/curl-runner-server`. The repo's `docker-compose.yaml` runs it together with Postgres 17.
+
+Two values are required. Set them in your shell or in a `.env` file next to `docker-compose.yaml` before the first start:
+
+```bash title=".env"
+POSTGRES_PASSWORD=<a long random password>
+SECRET_KEY=<at least 32 random bytes>
+```
+
+Generate a key with `openssl rand -hex 32`.
+
+<Callout type="warn" title="Never change SECRET_KEY">
+The server hashes sessions, publish tokens and share links with `SECRET_KEY`, and encrypts stored share links with it. If you change it, every session and token stops working and every share link breaks. Back it up with your database and keep the same value for the life of the install.
+</Callout>
 
 ## Run it [#run]
 
@@ -36,7 +49,7 @@ The compose file attaches the service to an external network named `coolify`, be
 docker network create coolify
 ```
 
-Or delete the two `networks` keys from `docker-compose.yaml`.
+Or remove the `coolify` entries from `docker-compose.yaml`: the top-level `coolify` network and the `coolify` line under `server`'s `networks`. Keep `internal`.
 
 ## Check it's up [#health]
 
@@ -62,17 +75,130 @@ The container also runs its own healthcheck every 10 seconds. `docker compose ps
 
 ## Settings [#settings]
 
-Set these in your shell or in a `.env` file next to `docker-compose.yaml`.
+Set these in your shell or in the `.env` file. An empty value counts as unset.
+
+### Server
 
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `PORT` | `8080` | Port the server listens on. |
 | `RUST_LOG` | `info` | Log level, for example `debug` or `warn`. |
 | `SERVER_IMAGE_TAG` | `latest` | Image tag to run. |
+| `SECRET_KEY` | none | Required. At least 32 bytes. Never change it. |
+| `PUBLIC_API_URL` | `http://localhost:8080` | The public URL of this API, such as `https://api.example.com`. |
+| `PUBLIC_APP_URL` | `http://localhost:3000` | The public URL of the dashboard. Share links and emails point here. |
+| `TRUSTED_PROXY_HOPS` | `1` | How many reverse proxies sit in front of the server. See [Behind a proxy](#proxy). |
+
+### Database [#database]
+
+The compose file runs Postgres for you and sets the `DB_*` values. It reads the password from `POSTGRES_PASSWORD`. Postgres is only on a private network, and the connection doesn't use TLS.
+
+To use a Postgres you already run, set `DATABASE_URL` instead. It must start with `postgres://` or `postgresql://`. Without it, the server reads `DB_HOST` (default `db`), `DB_PORT` (default `5432`), `DB_USER`, `DB_PASSWORD` and `DB_NAME`.
+
+The server creates its tables on first start.
+
+### Email [#smtp]
+
+Sign-in codes, invites and share notices are sent by email. Without SMTP settings, the server only logs them, which is fine for a trial run and nothing else.
+
+| Variable | What it does |
+| --- | --- |
+| `SMTP_HOST` | The SMTP relay. Setting it switches to the parts below. |
+| `SMTP_PORT` | `465` (TLS from the first byte, the default) or `587` (STARTTLS). |
+| `SMTP_USER`, `SMTP_PASSWORD` | Credentials. Set both or neither. |
+| `SMTP_URL` | One URL instead of the parts, such as `smtps://user:password@smtp.example.com:465`. |
+| `MAIL_FROM` | The sender, such as `curl-runner <no-reply@example.com>`. |
+
+### Sign-in with GitHub or Google [#oauth]
+
+Email codes always work. To add a provider, create an OAuth app with it and set both values:
+
+| Variable | What it does |
+| --- | --- |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Enables sign-in with GitHub. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Enables sign-in with Google. |
+
+### Who can create a team [#signup]
+
+Anyone can sign in with an email code. A signed-in person who isn't in a team can still open a collection that was shared with them. `SIGNUP` decides who can create a team:
+
+| `SIGNUP` | What it does |
+| --- | --- |
+| `domains` | The default. Only emails on a domain in `SIGNUP_DOMAINS` can create a team. |
+| `open` | Anyone who signs in can create a team. |
+| `closed` | Nobody can create a team, except operators. |
+
+`SIGNUP_DOMAINS` is a comma-separated list, such as `example.com,acme.dev`.
+
+With `SIGNUP=domains` and an empty list, the first account becomes the operator and can create teams. Sign in yourself right after the first start, before you share the address.
+
+`OPERATOR_EMAILS` is a comma-separated list of operators. Operators can always create teams and can change a team's plan.
+
+To create the first team, sign in with `curl-runner login --server https://api.example.com`, then call the API with that session:
 
 ```bash
-PORT=9000 RUST_LOG=debug docker compose up -d
+SESSION=$(jq -r '.servers["https://api.example.com"].session' ~/.config/curl-runner/credentials.json)
+curl -X POST https://api.example.com/v1/teams \
+  -H "Authorization: Bearer $SESSION" \
+  -H "Content-Type: application/json" \
+  -d '{"slug": "acme", "name": "Acme"}'
 ```
+
+The dashboard will do this for you once it is out.
+
+### Plans [#plans]
+
+`DEFAULT_PLAN` sets the plan of a new team: `team` or `free`. The default is `team`, which has no member limits and allows restricted sharing. Leave it unset when you self-host. The managed service sets `DEFAULT_PLAN=free`.
+
+An operator can change a team's plan later:
+
+```bash
+curl -X PUT https://api.example.com/v1/admin/teams/acme/plan \
+  -H "Authorization: Bearer $SESSION" \
+  -H "Content-Type: application/json" \
+  -d '{"plan": "team"}'
+```
+
+```bash title="Example .env"
+POSTGRES_PASSWORD=<password>
+SECRET_KEY=<key>
+PUBLIC_API_URL=https://api.example.com
+PUBLIC_APP_URL=https://cloud.example.com
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=mailer
+SMTP_PASSWORD=<password>
+MAIL_FROM="curl-runner <no-reply@example.com>"
+SIGNUP=domains
+SIGNUP_DOMAINS=example.com
+OPERATOR_EMAILS=admin@example.com
+```
+
+## Behind a proxy [#proxy]
+
+Run the server behind a reverse proxy that terminates TLS. The server uses the client's address for rate limits, and it reads it from `X-Forwarded-For`. Set `TRUSTED_PROXY_HOPS` to the number of proxies in front of it. The default is `1`.
+
+- One proxy, such as Caddy or Traefik: leave it at `1`.
+- A CDN and a proxy: set `2`.
+- No proxy, with the server reachable directly: set `0`, so a client can't pick its own address.
+
+A wrong count lets clients dodge rate limits or makes everyone share one.
+
+Point your CLI at the server with `--server https://api.example.com` or `CURL_RUNNER_SERVER`. The CLI refuses plain `http` unless the host is `localhost`.
+
+## Treat links as credentials [#links]
+
+Invite links and share links are credentials. Whoever holds the link can use it. Send them over a channel you trust, and reset a share link if it leaks.
+
+## Back up Postgres [#backups]
+
+Everything lives in Postgres. Back it up every day. With the bundled database:
+
+```bash
+docker compose exec -T db pg_dump -U curl_runner curl_runner | gzip > curl-runner-$(date +%F).sql.gz
+```
+
+Run that from cron, copy the file off the machine, and try a restore now and then. Keep `SECRET_KEY` with the backup: a restored database is useless without the key it was written with.
 
 ## Pin a version [#pin]
 
