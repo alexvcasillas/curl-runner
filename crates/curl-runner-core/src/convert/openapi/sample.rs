@@ -13,6 +13,8 @@ const HARD_CAP: usize = 2 * BUDGET;
 const MAX_DEPTH: usize = 10;
 /// Placeholder path for a file field.
 const FILE_PLACEHOLDER: &str = "./pick-a-file";
+/// The sample for a plain string.
+pub const STRING_SAMPLE: &str = "string";
 
 /// A `$ref` the sampler could not follow.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +40,9 @@ pub struct Sampler<'d> {
     unresolved: Vec<UnresolvedRef>,
     /// Unresolved refs met since the last `take_hits`, once each.
     hits: Vec<UnresolvedRef>,
+    /// A value the document wrote was used since the last
+    /// `take_from_doc`.
+    from_doc: bool,
 }
 
 impl<'d> Sampler<'d> {
@@ -48,7 +53,15 @@ impl<'d> Sampler<'d> {
             count: 0,
             unresolved: Vec::new(),
             hits: Vec::new(),
+            from_doc: false,
         }
+    }
+
+    /// Whether a sample since the last call used a value the document
+    /// wrote (an `example`, `examples`, `default`, `const` or `enum`)
+    /// anywhere in it, rather than only generated ones.
+    pub fn take_from_doc(&mut self) -> bool {
+        std::mem::take(&mut self.from_doc)
     }
 
     /// Every `$ref` that failed to resolve so far, once per target, in first-seen order.
@@ -75,6 +88,12 @@ impl<'d> Sampler<'d> {
     /// list of values (3.1 schemas). Example objects may be `$ref`s and give
     /// their value in `value`.
     pub fn example(&mut self, holder: &Value) -> Option<Json> {
+        let found = self.find_example(holder);
+        self.from_doc |= found.is_some();
+        found
+    }
+
+    fn find_example(&mut self, holder: &Value) -> Option<Json> {
         if let Some(v) = holder.get("example") {
             return Some(v.clone());
         }
@@ -156,6 +175,7 @@ impl<'d> Sampler<'d> {
 
     fn generate(&mut self, s: &Value, depth: usize) -> Json {
         if let Some(v) = literal(s) {
+            self.from_doc = true;
             return v;
         }
         if let Some(parts) = s.get("allOf").and_then(Value::as_array) {
@@ -263,7 +283,7 @@ fn string(s: &Value) -> Json {
         Some("uuid") => "00000000-0000-4000-8000-000000000000",
         Some("uri" | "url") => "https://example.com",
         Some("binary") => FILE_PLACEHOLDER,
-        _ => "string",
+        _ => STRING_SAMPLE,
     };
     Json::String(text.to_string())
 }

@@ -2,6 +2,8 @@
 
 use serde_json::{Map, Value, json};
 
+use super::map::essence;
+
 const METHODS: [&str; 8] = [
     "get", "put", "post", "delete", "options", "head", "patch", "trace",
 ];
@@ -217,15 +219,23 @@ fn convert_operation(
         }
     }
     if body.is_none() && !form.is_empty() {
-        let multipart = consumes.iter().any(|c| c == "multipart/form-data")
-            || form
-                .iter()
-                .any(|(_, s, _)| s.get("format").and_then(Value::as_str) == Some("binary"));
-        let media = if multipart {
-            "multipart/form-data"
-        } else {
-            "application/x-www-form-urlencoded"
-        };
+        // Every form type `consumes` lists, so the mapper picks by its own
+        // preference. A file needs multipart.
+        let file = form
+            .iter()
+            .any(|(_, s, _)| s.get("format").and_then(Value::as_str) == Some("binary"));
+        let mut media: Vec<&str> = consumes
+            .iter()
+            .map(String::as_str)
+            .filter(|c| match essence(c).as_str() {
+                MULTIPART => true,
+                URLENCODED => !file,
+                _ => false,
+            })
+            .collect();
+        if media.is_empty() {
+            media.push(if file { MULTIPART } else { URLENCODED });
+        }
         let mut props = Map::new();
         let mut required = Vec::new();
         for (name, schema, req) in form {
@@ -238,7 +248,7 @@ fn convert_operation(
         if !required.is_empty() {
             schema["required"] = Value::Array(required);
         }
-        body = Some(json!({ "content": { media: { "schema": schema } } }));
+        body = Some(json!({ "content": content(&media, &schema) }));
     }
 
     let mut out = Map::new();
@@ -271,8 +281,26 @@ fn convert_operation(
     Value::Object(out)
 }
 
+const MULTIPART: &str = "multipart/form-data";
+const URLENCODED: &str = "application/x-www-form-urlencoded";
+
+/// The same schema under every media type in `media`.
+fn content(media: &[&str], schema: &Value) -> Value {
+    let map: Map<String, Value> = media
+        .iter()
+        .map(|m| ((*m).to_string(), json!({ "schema": schema })))
+        .collect();
+    Value::Object(map)
+}
+
+/// The body schema under every `consumes` media type, so the mapper picks
+/// by its own preference rather than the document's order.
 fn body_param(p: &Value, consumes: &[String]) -> Value {
-    let media = consumes.first().map_or("application/json", String::as_str);
+    let media: Vec<&str> = if consumes.is_empty() {
+        vec!["application/json"]
+    } else {
+        consumes.iter().map(String::as_str).collect()
+    };
     let mut rb = Map::new();
     if let Some(d) = p.get("description") {
         rb.insert("description".into(), d.clone());
@@ -281,7 +309,7 @@ fn body_param(p: &Value, consumes: &[String]) -> Value {
         rb.insert("required".into(), r.clone());
     }
     let schema = p.get("schema").cloned().unwrap_or_else(|| json!({}));
-    rb.insert("content".into(), json!({ media: { "schema": schema } }));
+    rb.insert("content".into(), content(&media, &schema));
     Value::Object(rb)
 }
 

@@ -32,7 +32,10 @@ impl Mapper<'_> {
             let others = alts[1..]
                 .iter()
                 .filter_map(Value::as_object)
-                .map(names)
+                .map(|o| match names(o) {
+                    n if n.is_empty() => "no auth".into(),
+                    n => n,
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
             self.tally.hit(
@@ -153,13 +156,9 @@ impl Mapper<'_> {
     }
 }
 
-/// A requirement's schemes, joined with ` + `; `no` for an empty one.
+/// A requirement's schemes, joined with ` + `; empty for no auth.
 fn names(req: &Map<String, Value>) -> String {
-    if req.is_empty() {
-        "no".into()
-    } else {
-        req.keys().cloned().collect::<Vec<_>>().join(" + ")
-    }
+    req.keys().cloned().collect::<Vec<_>>().join(" + ")
 }
 
 fn field(key: &str, value: String) -> Field {

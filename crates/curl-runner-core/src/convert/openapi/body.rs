@@ -49,6 +49,7 @@ impl<'d> Mapper<'d> {
                 Some(v) => v,
                 None => self.schema_sample(m.get("schema")),
             };
+            self.document_json(&value);
             r.body = MappedBody::Json(match value {
                 Json::Null => Json::Object(Map::new()),
                 v => v,
@@ -64,11 +65,13 @@ impl<'d> Mapper<'d> {
                 let schema = self.resolve(m.get("schema")?)?;
                 schema.get("example").cloned()
             });
-            r.body = MappedBody::Text(match example {
+            let text = match example {
                 Some(Json::String(s)) => s,
                 Some(Json::Null) | None => String::new(),
                 Some(other) => other.to_string(),
-            });
+            };
+            self.document_text(&text);
+            r.body = MappedBody::Text(text);
             Some(media)
         } else {
             if let Some(first) = content.keys().next() {
@@ -161,8 +164,9 @@ impl<'d> Mapper<'d> {
         };
         let text = to_text(&value);
         if is_secret_param(name) {
-            self.credential(&param_var(name), &text, false)
+            self.credential(&param_var(name))
         } else {
+            self.document_text(&text);
             text
         }
     }

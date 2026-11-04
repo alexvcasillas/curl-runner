@@ -1,7 +1,8 @@
 //! OpenAPI operations mapped to the shared import model. One request per
 //! operation, in `paths` order and then method order.
 
-use std::collections::BTreeMap;
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -9,10 +10,10 @@ use regex::Regex;
 use serde_json::{Map, Value};
 
 use super::doc::{Doc, Resolved};
-use super::sample::{Sampler, UnresolvedRef};
+use super::sample::{STRING_SAMPLE, Sampler, UnresolvedRef};
 use crate::convert::import::{
     Attention, Field, FieldValue, ImportReport, ImportedVar, Mapped, MappedBody, MappedRequest,
-    var_name,
+    one_line, slug, var_name,
 };
 use crate::convert::{SECRET_PARAMS, header_var, param_var, secret_header};
 use crate::model::Json;
@@ -20,9 +21,6 @@ use crate::model::Json;
 const METHODS: [&str; 8] = [
     "get", "put", "post", "delete", "options", "head", "patch", "trace",
 ];
-
-/// `Authorization` schemes kept in front of a scrubbed credential.
-const AUTH_SCHEMES: [&str; 5] = ["Bearer", "Basic", "Token", "Digest", "ApiKey"];
 
 /// The longest API prefix.
 const MAX_PREFIX: usize = 24;
@@ -80,6 +78,8 @@ pub fn map_document(doc: &Doc) -> Mapped {
 #[derive(Default)]
 pub(super) struct Tally {
     items: Vec<Attention>,
+    /// What `push` added, for a constant-time duplicate check.
+    pushed: HashSet<Attention>,
     /// Key → (index in `items`, number of the request last counted).
     keys: BTreeMap<String, (usize, usize)>,
 }
@@ -87,7 +87,8 @@ pub(super) struct Tally {
 impl Tally {
     /// Add `a` unless an equal entry is already there.
     pub(super) fn push(&mut self, a: Attention) {
-        if !self.items.contains(&a) {
+        if !self.pushed.contains(&a) {
+            self.pushed.insert(a.clone());
             self.items.push(a);
         }
     }
@@ -131,7 +132,10 @@ fn bump(a: &mut Attention, at: &str) {
         }
         | Attention::ParamStyle { count, examples }
         | Attention::CookieParams { count, examples }
-        | Attention::BodyShapes { count, examples } => {
+        | Attention::BodyShapes { count, examples }
+        | Attention::AuthHeaderParam { count, examples }
+        | Attention::DocumentVars { count, examples }
+        | Attention::UndeclaredPathVars { count, examples } => {
             *count += 1;
             if examples.len() < MAX_EXAMPLES && !examples.iter().any(|e| e == at) {
                 examples.push(at.to_string());
@@ -157,8 +161,10 @@ pub(super) struct Mapper<'d> {
     pub(super) tally: Tally,
     /// Secrets an `AccessToken` entry already asks for.
     pub(super) tokens: Vec<String>,
-    /// Tags that got a request.
-    folders: Vec<String>,
+    /// Slugged folders that got a request.
+    folders: HashSet<String>,
+    /// Each tag's first entry in the document's `tags`.
+    tags: HashMap<&'d str, &'d Value>,
     requests: Vec<MappedRequest>,
     /// Path of the request being mapped.
     pub(super) at: String,
@@ -170,6 +176,18 @@ pub(super) struct Mapper<'d> {
 
 impl<'d> Mapper<'d> {
     fn new(doc: &'d Doc, prefix: String) -> Self {
+        let mut tags = HashMap::new();
+        for t in doc
+            .root
+            .get("tags")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(name) = t.get("name").and_then(Value::as_str) {
+                tags.entry(name).or_insert(t);
+            }
+        }
         Self {
             doc,
             sampler: Sampler::new(doc),
@@ -180,7 +198,8 @@ impl<'d> Mapper<'d> {
             env_comments: Vec::new(),
             tally: Tally::default(),
             tokens: Vec::new(),
-            folders: Vec::new(),
+            folders: HashSet::new(),
+            tags,
             requests: Vec::new(),
             at: String::new(),
             req: 0,
@@ -222,10 +241,11 @@ impl<'d> Mapper<'d> {
     }
 
     /// `s.url` with its variables replaced by their defaults and no
-    /// trailing `/`. With `report`, a variable without a default is
-    /// reported.
+    /// trailing `/`, on one line and without a user name or password. With
+    /// `report`, a variable without a default is reported.
     fn server_url(&mut self, s: &Value, report: bool) -> String {
-        let url = s.get("url").and_then(Value::as_str).unwrap_or("");
+        let url = one_line(s.get("url").and_then(Value::as_str).unwrap_or(""));
+        let url = url.as_str();
         let vars = s.get("variables");
         let mut out = String::new();
         let mut rest = url;
@@ -250,6 +270,11 @@ impl<'d> Mapper<'d> {
             rest = &rest[open + len + 1..];
         }
         out.push_str(rest);
+        let mut out = one_line(&out);
+        if let Some(bare) = without_userinfo(&out) {
+            self.tally.push(Attention::ServerCredentials);
+            out = bare;
+        }
         out.trim_end_matches('/').to_string()
     }
 
@@ -328,10 +353,9 @@ impl<'d> Mapper<'d> {
             file_vars: Vec::new(),
             expect_status: expect_status(op),
         };
-        if let Some(t) = folder
-            && !self.folders.iter().any(|f| f == t)
-        {
-            self.folders.push(t.to_string());
+        // Folders are written by slug, so `Pets` and `pets` are one.
+        if let Some(t) = folder {
+            self.folders.insert(slug(t, "folder"));
         }
         self.at = r.path();
         self.req = self.requests.len();
@@ -347,11 +371,7 @@ impl<'d> Mapper<'d> {
             r.comments.push(url);
         }
         if let Some(t) = tag {
-            let tags = self.doc.root.get("tags").and_then(Value::as_array);
-            let described = tags
-                .into_iter()
-                .flatten()
-                .find(|x| x.get("name").and_then(Value::as_str) == Some(t));
+            let described = self.tags.get(t);
             r.comments
                 .extend(comment_lines(described.and_then(|x| x.get("description"))));
         }
@@ -368,18 +388,20 @@ impl<'d> Mapper<'d> {
                             count: 1,
                         }
                     });
+                self.document_text(&url);
                 url
             }
-            _ => format!("${{{}}}", self.base_var),
+            _ => {
+                let base = self.base_url.clone();
+                self.document_text(&base);
+                format!("${{{}}}", self.base_var)
+            }
         };
 
         let mut cookies = Vec::new();
         self.security(op, &mut r, &mut cookies);
         let path_values = self.params(op, item, &mut r, &mut cookies);
-        if !cookies.is_empty() {
-            r.headers
-                .push(text_field("Cookie", cookies.join("; "), false, None));
-        }
+        one_cookie(&mut r, cookies);
         r.url = format!("{base}{}", self.path_template(path, &path_values, &mut r));
         self.body(op, &mut r);
 
@@ -427,11 +449,19 @@ impl<'d> Mapper<'d> {
             out.push_str(&rest[..open]);
             out.push_str(&format!("${{{name}}}"));
             if !r.file_vars.iter().any(|(n, _)| *n == name) {
-                let value = values
-                    .iter()
-                    .find(|(n, _)| n == raw)
-                    .map(|(_, v)| v.clone())
-                    .unwrap_or_default();
+                let value = match values.iter().find(|(n, _)| n == raw) {
+                    Some((_, v)) => v.clone(),
+                    None => {
+                        self.tally
+                            .hit("undeclared".into(), self.req, &self.at, true, || {
+                                Attention::UndeclaredPathVars {
+                                    count: 1,
+                                    examples: vec![self.at.clone()],
+                                }
+                            });
+                        STRING_SAMPLE.into()
+                    }
+                };
                 r.file_vars.push((name, value));
             }
             rest = &rest[open + len + 1..];
@@ -452,6 +482,7 @@ impl<'d> Mapper<'d> {
         // Path-item parameters, then the operation's; the operation's win
         // on the same `name` + `in`.
         let mut merged: Vec<&'d Value> = Vec::new();
+        let mut slots = HashMap::new();
         for raw in [item, op]
             .into_iter()
             .filter_map(|v| v.get("parameters")?.as_array())
@@ -460,10 +491,13 @@ impl<'d> Mapper<'d> {
             let Some(p) = self.resolve(raw) else {
                 continue;
             };
-            let key = |p: &Value| (p.get("name").cloned(), p.get("in").cloned());
-            match merged.iter_mut().find(|m| key(m) == key(p)) {
-                Some(slot) => *slot = p,
-                None => merged.push(p),
+            let text = |k: &str| p.get(k).map(Value::to_string);
+            match slots.entry((text("name"), text("in"))) {
+                Entry::Occupied(e) => merged[*e.get()] = p,
+                Entry::Vacant(e) => {
+                    e.insert(merged.len());
+                    merged.push(p);
+                }
             }
         }
 
@@ -486,7 +520,7 @@ impl<'d> Mapper<'d> {
             };
             let required =
                 place == "path" || p.get("required").and_then(Value::as_bool) == Some(true);
-            let sample = self.param_sample(p);
+            let (sample, from_doc) = self.param_sample(p);
             // A disabled param is a commented-out line; its style matters
             // only once someone turns it on.
             if required && needs_style(p, place, &sample) {
@@ -504,9 +538,10 @@ impl<'d> Mapper<'d> {
                 "path" => {
                     // Path segments are mostly ids, so only a literal the
                     // document wrote counts as a credential.
-                    let value = if is_secret_param(name) && self.has_literal(p) {
-                        self.credential(&param_var(name), &value, false)
+                    let value = if is_secret_param(name) && from_doc {
+                        self.credential(&param_var(name))
                     } else {
+                        self.document_text(&value);
                         value
                     };
                     path_values.push((name.to_string(), value));
@@ -516,23 +551,42 @@ impl<'d> Mapper<'d> {
                         continue;
                     }
                     let value = if is_secret_param(name) {
-                        self.credential(&param_var(name), &value, false)
+                        self.credential(&param_var(name))
                     } else {
+                        self.document_text(&value);
                         value
                     };
                     r.params.push(text_field(name, value, !required, note));
                 }
                 "header" => {
-                    // The body sets it, and OpenAPI ignores it as a parameter.
+                    // OpenAPI ignores these as parameters: the body sets
+                    // `Content-Type`, the responses `Accept`, and security
+                    // schemes `Authorization`.
+                    if name.eq_ignore_ascii_case("authorization") {
+                        if required
+                            && r.auth.is_none()
+                            && !r.headers.iter().any(|f| f.key.eq_ignore_ascii_case(name))
+                        {
+                            self.tally
+                                .hit("authparam".into(), self.req, &self.at, true, || {
+                                    Attention::AuthHeaderParam {
+                                        count: 1,
+                                        examples: vec![self.at.clone()],
+                                    }
+                                });
+                        }
+                        continue;
+                    }
                     if name.eq_ignore_ascii_case("content-type")
+                        || name.eq_ignore_ascii_case("accept")
                         || r.headers.iter().any(|f| f.key.eq_ignore_ascii_case(name))
                     {
                         continue;
                     }
                     let value = if secret_header(name) {
-                        let auth = name.eq_ignore_ascii_case("authorization");
-                        self.credential(&header_var(name), &value, auth)
+                        self.credential(&header_var(name))
                     } else {
+                        self.document_text(&value);
                         value
                     };
                     r.headers.push(text_field(name, value, !required, note));
@@ -544,7 +598,7 @@ impl<'d> Mapper<'d> {
                         continue;
                     }
                     // A `Cookie` header is a secret, so every value is.
-                    let value = self.credential(&param_var(name), &value, false);
+                    let value = self.credential(&param_var(name));
                     cookies.push(format!("{name}={value}"));
                 }
                 "cookie" => {
@@ -562,23 +616,16 @@ impl<'d> Mapper<'d> {
         path_values
     }
 
-    /// Whether the document itself gives `p` a value: an example, or a
-    /// schema `example`, `examples`, `default`, `enum` or `const`.
-    fn has_literal(&self, p: &Value) -> bool {
-        if p.get("example").is_some() || p.get("examples").is_some() {
-            return true;
-        }
-        let Some(Resolved::Value(s)) = p.get("schema").map(|s| self.doc.resolve(s)) else {
-            return false;
-        };
-        ["example", "examples", "default", "enum", "const"]
-            .iter()
-            .any(|k| s.get(*k).is_some())
+    /// A parameter's sample: its example, else one from its schema or its
+    /// `content`'s first media type. True when any of it is a value the
+    /// document wrote rather than a generated one.
+    fn param_sample(&mut self, p: &'d Value) -> (Json, bool) {
+        self.sampler.take_from_doc();
+        let sample = self.param_value(p);
+        (sample, self.sampler.take_from_doc())
     }
 
-    /// A parameter's sample: its example, else one from its schema or its
-    /// `content`'s first media type.
-    fn param_sample(&mut self, p: &'d Value) -> Json {
+    fn param_value(&mut self, p: &'d Value) -> Json {
         if let Some(v) = self.sampler.example(p) {
             return v;
         }
@@ -601,16 +648,35 @@ impl<'d> Mapper<'d> {
     }
 
     /// `${PREFIX_BASE}` as a new empty secret, for a value that names a
-    /// credential. The value itself is never kept. With `scheme`, a
-    /// leading auth scheme like `Bearer ` stays.
-    pub(super) fn credential(&mut self, base: &str, value: &str, scheme: bool) -> String {
+    /// credential. The value itself is never kept.
+    pub(super) fn credential(&mut self, base: &str) -> String {
         let var = self.secret_var(&format!("{}_{base}", self.prefix));
-        match value.split_once(' ') {
-            Some((s, _)) if scheme && AUTH_SCHEMES.iter().any(|k| k.eq_ignore_ascii_case(s)) => {
-                format!("{s} ${{{var}}}")
-            }
-            _ => format!("${{{var}}}"),
+        format!("${{{var}}}")
+    }
+
+    /// Note `text` when it holds `${`: written to a request file, the
+    /// runner fills it in from the environment. Counted once per request.
+    pub(super) fn document_text(&mut self, text: &str) {
+        if text.contains("${") {
+            self.kept_braces();
         }
+    }
+
+    /// [`Self::document_text`] for every key and string in `v`.
+    pub(super) fn document_json(&mut self, v: &Json) {
+        if has_braces(v) {
+            self.kept_braces();
+        }
+    }
+
+    fn kept_braces(&mut self) {
+        self.tally
+            .hit("dollar".into(), self.req, &self.at, true, || {
+                Attention::DocumentVars {
+                    count: 1,
+                    examples: vec![self.at.clone()],
+                }
+            });
     }
 
     /// Register `name` as an empty secret; returns its final name.
@@ -724,6 +790,43 @@ impl<'d> Mapper<'d> {
             env_comments: self.env_comments,
         }
     }
+}
+
+/// `cookies` and every enabled `Cookie` header joined into one `Cookie`
+/// header at the end of `r.headers`, so the YAML map has one key.
+fn one_cookie(r: &mut MappedRequest, mut cookies: Vec<String>) {
+    let is_cookie = |f: &Field| f.key.eq_ignore_ascii_case("cookie");
+    for f in r.headers.iter().filter(|f| is_cookie(f) && !f.disabled) {
+        if let FieldValue::Text(v) = &f.value {
+            cookies.push(v.clone());
+        }
+    }
+    if cookies.is_empty() {
+        return;
+    }
+    r.headers.retain(|f| !is_cookie(f));
+    r.headers
+        .push(text_field("Cookie", cookies.join("; "), false, None));
+}
+
+/// Whether a key or string anywhere in `v` holds `${`.
+fn has_braces(v: &Json) -> bool {
+    match v {
+        Json::String(s) => s.contains("${"),
+        Json::Array(items) => items.iter().any(has_braces),
+        Json::Object(m) => m.iter().any(|(k, v)| k.contains("${") || has_braces(v)),
+        _ => false,
+    }
+}
+
+/// `url` without the `user:password@` of its authority, or `None` when it
+/// has none.
+fn without_userinfo(url: &str) -> Option<String> {
+    let start = url.find("://")? + 3;
+    let rest = &url[start..];
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let at = rest[..end].rfind('@')?;
+    Some(format!("{}{}", &url[..start], &rest[at + 1..]))
 }
 
 /// The lowest documented `2xx`, else `200` for `2XX`.
