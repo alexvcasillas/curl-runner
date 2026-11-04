@@ -97,13 +97,19 @@ Publishing records the commit, ref and repository from GitHub Actions or GitLab 
 | Code | Meaning |
 | --- | --- |
 | `0` | Published, or nothing to change. |
-| `1` | Invalid files, or a bad option. Nothing was sent. |
+| `1` | Invalid files, or a bad option or `--server`. Nothing was sent. |
 | `2` | Not signed in, or the token can't publish to that team. |
 | `3` | Your plan's limit was reached. |
 | `4` | The collection's source is the studio, not git. Switch its source to git, then publish again. |
 | `5` | The server could not be reached. |
 
 `publish` tries a request up to five times, waiting longer each time, before it exits with `5`.
+
+With more than one folder, a refusal from the server for one folder does not stop the others. Each failure is printed with its collection, and the exit code is the most severe one: `5`, then `2`, `4`, `3`, `1`. An unreachable server stops the run at once.
+
+A config file named `.curl-runner.yaml` is not published, so `publish` stops with exit `1` and asks you to rename it to `curl-runner.yaml`.
+
+`login`, `logout`, `publish` and `pull` all exit `1` for a bad option, a missing value or a bad `--server`. Exit `2` is only for sign-in problems.
 
 ### GitHub Action [#github-action]
 
@@ -142,6 +148,24 @@ jobs:
 </Callout>
 
 Any other CI works the same way. Install the CLI, set `CURL_RUNNER_TOKEN` and `CURL_RUNNER_TEAM`, and run `curl-runner publish`.
+
+## Create a team [#team]
+
+<Callout type="info" title="API only for now">
+Until the dashboard is out, you create a team with the API. Sign in first with `curl-runner login`.
+</Callout>
+
+An account that isn't in a team can't publish. Create one with a signed-in session. This reads the session `curl-runner login` saved:
+
+```bash title="Create a team"
+SESSION=$(jq -r '.servers["https://api.curl-runner.com"].session' ~/.config/curl-runner/credentials.json)
+curl -X POST https://api.curl-runner.com/v1/teams \
+  -H "Authorization: Bearer $SESSION" \
+  -H "Content-Type: application/json" \
+  -d '{"slug": "acme", "name": "Acme"}'
+```
+
+On a self-hosted server, `SIGNUP` decides who can do this. See [Self-hosting](/docs/self-hosting#signup).
 
 ## Share a collection [#share]
 
@@ -208,10 +232,10 @@ curl-runner pull https://cloud.curl-runner.com/s/<token> payments-api
 ```
 
 ```text title="Output"
-Pulled Payments API v3 into payments-api. Fill in .env (see .env.example), then run curl-runner payments-api.
+Pulled Payments API v3 into payments-api. Fill in payments-api/.env (see .env.example), then run: cd payments-api && curl-runner --all
 ```
 
-The files are written into the folder. Pulled secret inputs are listed in `.env.example` without values. Copy it to `.env` and fill them in.
+The files are written into the folder. Pulled secret inputs are listed in `.env.example` without values. Copy it to `.env` and fill them in. Run the collection from inside the folder, so its `.env` and `curl-runner.yaml` are used and nested folders are included.
 
 To get the latest version later, run `pull` in that folder:
 
@@ -220,7 +244,7 @@ curl-runner pull payments-api
 ```
 
 ```text title="Output"
-Updated Payments API to v4 in payments-api.
+Updated Payments API to v4.
 ```
 
 If you changed a pulled file, `pull` asks before replacing it. Without a terminal, it stops and tells you to pass `--force`.
@@ -231,7 +255,7 @@ curl-runner pull [LINK] [DIR] [--force]
 
 A share link can also look like `curl-runner://open?server=<api-url>&share=<token>`. It names the server itself, so `pull` doesn't have to look it up. Use it for a self-hosted server.
 
-A collection that isn't public asks you to sign in. Run `curl-runner login --server <url>` first, or let `pull` offer it in a terminal. A `pull` writes nothing until every file passes the same path checks `publish` uses, so a bad bundle can't write outside the folder. Exit codes: `0` ok, `1` a problem with the link or the data, `2` sign-in, `5` the server can't be reached.
+A collection that isn't public asks you to sign in. Run `curl-runner login --server <url>` first, or let `pull` offer it in a terminal. A `pull` writes nothing until every file passes the same path checks `publish` uses, so a bad bundle can't write outside the folder. Exit codes: `0` ok, `1` a problem with the link, the data or an option, `2` sign-in, `5` the server can't be reached.
 
 ## Next steps [#next]
 

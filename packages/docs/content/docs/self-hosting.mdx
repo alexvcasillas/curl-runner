@@ -134,6 +134,18 @@ With `SIGNUP=domains` and an empty list, the first account becomes the operator 
 
 `OPERATOR_EMAILS` is a comma-separated list of operators. Operators can always create teams and can change a team's plan.
 
+To create the first team, sign in with `curl-runner login --server https://api.example.com`, then call the API with that session:
+
+```bash
+SESSION=$(jq -r '.servers["https://api.example.com"].session' ~/.config/curl-runner/credentials.json)
+curl -X POST https://api.example.com/v1/teams \
+  -H "Authorization: Bearer $SESSION" \
+  -H "Content-Type: application/json" \
+  -d '{"slug": "acme", "name": "Acme"}'
+```
+
+The dashboard will do this for you once it is out.
+
 ### Plans [#plans]
 
 `DEFAULT_PLAN` sets the plan of a new team: `team` or `free`. The default is `team`, which has no member limits and allows restricted sharing. Leave it unset when you self-host. The managed service sets `DEFAULT_PLAN=free`.
