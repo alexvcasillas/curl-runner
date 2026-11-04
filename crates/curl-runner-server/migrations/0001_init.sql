@@ -28,7 +28,11 @@ CREATE TABLE email_codes (
     link_hash  text NOT NULL UNIQUE,
     attempts   integer NOT NULL DEFAULT 0,
     expires_at timestamptz NOT NULL,
-    used_at    timestamptz
+    used_at    timestamptz,
+    -- Which client asked for the code, so the session made at verify time
+    -- gets the right kind and label whether the code or the emailed link is used.
+    client     text NOT NULL CHECK (client IN ('device', 'web')),
+    label      text
 );
 CREATE INDEX email_codes_email ON email_codes (email);
 
@@ -45,18 +49,25 @@ CREATE TABLE sessions (
 );
 CREATE INDEX sessions_user_id ON sessions (user_id);
 
+-- label: the device label, because the device session itself is created at
+-- redeem time (its clear token cannot be stored).
 CREATE TABLE auth_handoffs (
     code_hash  text PRIMARY KEY,
     session_id uuid NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
-    expires_at timestamptz NOT NULL
+    expires_at timestamptz NOT NULL,
+    label      text
 );
 
+-- client: echoed to the dashboard, which hands off for devices.
+-- binding_hash: ties the flow to the browser that started it.
 CREATE TABLE oauth_states (
-    state_hash text PRIMARY KEY,
-    provider   text NOT NULL,
-    verifier   text NOT NULL,
-    return_to  text,
-    expires_at timestamptz NOT NULL
+    state_hash   text PRIMARY KEY,
+    provider     text NOT NULL,
+    verifier     text NOT NULL,
+    return_to    text,
+    expires_at   timestamptz NOT NULL,
+    client       text NOT NULL CHECK (client IN ('device', 'web')),
+    binding_hash text NOT NULL
 );
 
 CREATE TABLE teams (
@@ -172,3 +183,10 @@ CREATE TABLE outbox_emails (
     last_error      text
 );
 CREATE INDEX outbox_emails_pending ON outbox_emails (next_attempt_at) WHERE sent_at IS NULL;
+
+-- Server-wide key/value settings. `first_operator` is the email of the first
+-- account on a self-hosted server with SIGNUP=domains and no domains listed.
+CREATE TABLE settings (
+    key   text PRIMARY KEY,
+    value text NOT NULL
+);
