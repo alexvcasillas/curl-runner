@@ -9,10 +9,9 @@ use curl_runner_cloud_proto::{BundleFile, FileChanges, GitMeta, VersionSummary};
 use sqlx::types::Json as Jsonb;
 
 use super::collection_id;
-use crate::auth::UserAuth;
 use crate::error::ApiError;
 use crate::state::AppState;
-use crate::teams::team_access;
+use crate::tokens::PublishAuth;
 
 /// Paths added, changed and removed going from `old` to `new` (path to file hash).
 pub(super) fn diff(old: &HashMap<String, String>, new: &HashMap<String, String>) -> FileChanges {
@@ -44,14 +43,14 @@ type SummaryRow = (
     i64,
 );
 
-/// Newest first.
+/// Newest first. Read-only, so a team's publish token may call it as well
+/// as a member.
 pub(super) async fn list(
     State(state): State<AppState>,
-    auth: UserAuth,
-    Path((team, slug)): Path<(String, String)>,
+    auth: PublishAuth,
+    Path((_team, slug)): Path<(String, String)>,
 ) -> Result<Json<Vec<VersionSummary>>, ApiError> {
-    let access = team_access(&state.db, auth.user_id, &team).await?;
-    let id = collection_id(&state.db, access.team_id, &slug).await?;
+    let id = collection_id(&state.db, auth.team_id, &slug).await?;
     let rows: Vec<SummaryRow> = sqlx::query_as(
         "SELECT v.number, v.hash, v.created_at, v.published_by, v.git, \
                 (SELECT count(*) FROM version_files f WHERE f.version_id = v.id) \
@@ -76,14 +75,14 @@ pub(super) async fn list(
     ))
 }
 
+/// Read-only, so a team's publish token may call it as well as a member.
 pub(super) async fn files(
     State(state): State<AppState>,
-    auth: UserAuth,
-    Path((team, slug, n)): Path<(String, String, String)>,
+    auth: PublishAuth,
+    Path((_team, slug, n)): Path<(String, String, String)>,
 ) -> Result<Json<Vec<BundleFile>>, ApiError> {
-    let access = team_access(&state.db, auth.user_id, &team).await?;
     let n: i32 = n.parse().map_err(|_| ApiError::not_found())?;
-    let id = collection_id(&state.db, access.team_id, &slug).await?;
+    let id = collection_id(&state.db, auth.team_id, &slug).await?;
     let version: Option<uuid::Uuid> =
         sqlx::query_scalar("SELECT id FROM versions WHERE collection_id = $1 AND number = $2")
             .bind(id)

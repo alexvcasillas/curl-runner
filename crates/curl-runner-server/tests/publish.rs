@@ -558,6 +558,103 @@ async fn other_team_404(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+async fn mint_token(app: &TestApp, session: &str, team: &str) -> String {
+    let (status, body) = app
+        .request(
+            Method::POST,
+            &format!("/v1/teams/{team}/tokens"),
+            Some(json!({"name": "ci"})),
+            Some(session),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    body["token"].as_str().unwrap().to_owned()
+}
+
+#[sqlx::test]
+async fn publish_token_reads_collections_versions_and_files(pool: PgPool) {
+    let (app, s) = setup(pool).await;
+    let token = mint_token(&app, &s, "acme").await;
+    let (status, res) = publish(&app, &token, &[("a.yaml", "x: 1")]).await;
+    assert_eq!(status, StatusCode::CREATED, "{res}");
+
+    let (status, list) = app
+        .request(
+            Method::GET,
+            "/v1/teams/acme/collections",
+            None,
+            Some(&token),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list[0]["slug"], "payments-api");
+    let (status, versions) = app.request(Method::GET, PUBLISH, None, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK, "{versions}");
+    assert_eq!(versions[0]["number"], 1);
+    assert_eq!(versions[0]["publisher"], "token ci");
+    let (status, files) = app
+        .request(
+            Method::GET,
+            &format!("{PUBLISH}/1/files"),
+            None,
+            Some(&token),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(files, json!([{"path": "a.yaml", "text": "x: 1"}]));
+
+    // Read-only: the token cannot change or delete the collection.
+    let (status, _) = app
+        .request(
+            Method::PATCH,
+            "/v1/teams/acme/collections/payments-api",
+            Some(json!({"source": "cloud"})),
+            Some(&token),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // Another team's token gets 404 on all three.
+    let outsider = app.sign_in("b@example.com").await;
+    app.create_team(&outsider, "other").await;
+    let other = mint_token(&app, &outsider, "other").await;
+    for path in [
+        "/v1/teams/acme/collections",
+        PUBLISH,
+        &format!("{PUBLISH}/1/files"),
+    ] {
+        let (status, _) = app.request(Method::GET, path, None, Some(&other)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+    }
+}
+
+#[sqlx::test]
+async fn publish_rate_limited_per_team(pool: PgPool) {
+    let (app, s) = setup(pool).await;
+    for i in 0..60 {
+        let (status, res) = publish(&app, &s, &[("a.yaml", &i.to_string())]).await;
+        assert_eq!(status, StatusCode::CREATED, "{i}: {res}");
+    }
+    let (status, res) = publish(&app, &s, &[("a.yaml", "late")]).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{res}");
+    assert_eq!(res["error"], "rate_limited");
+    // Another team is unaffected, and the window resets.
+    let other = app.sign_in("b@example.com").await;
+    app.create_team(&other, "other").await;
+    let (status, _) = put_raw(
+        &app,
+        "/v1/teams/other/collections/payments-api/versions",
+        &other,
+        body_for(&[("a.yaml", "1")]).to_string().into_bytes(),
+        false,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    app.clock.advance(chrono::Duration::minutes(1));
+    let (status, _) = publish(&app, &s, &[("a.yaml", "late")]).await;
+    assert_eq!(status, StatusCode::CREATED);
+}
+
 #[sqlx::test]
 async fn delete_is_owner_only_and_keeps_blobs(pool: PgPool) {
     let (app, owner) = setup(pool).await;

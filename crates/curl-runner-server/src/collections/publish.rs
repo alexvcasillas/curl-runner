@@ -37,6 +37,8 @@ const MAX_JSON: usize = 2 * MAX_BUNDLE_BYTES + (1 << 20);
 const MAX_BODY: usize = MAX_JSON;
 const TOO_LARGE: &str = "The request body is larger than 51 MiB.";
 const MAX_NAME_CHARS: usize = 100;
+const PUBLISHES_PER_TEAM: u32 = 60;
+const PUBLISH_WINDOW: chrono::Duration = chrono::Duration::minutes(1);
 const MAX_DESCRIPTION_CHARS: usize = 500;
 
 fn invalid_bundle(message: impl Into<String>) -> ApiError {
@@ -168,6 +170,11 @@ pub(super) async fn publish(
     headers: HeaderMap,
     body: Body,
 ) -> Result<(StatusCode, Json<PublishResponse>), ApiError> {
+    state.limiter.check(
+        &format!("publish:team:{}", auth.team_id),
+        PUBLISHES_PER_TEAM,
+        PUBLISH_WINDOW,
+    )?;
     let bytes = axum::body::to_bytes(body, MAX_BODY).await.map_err(|e| {
         if is_length_limit(&e) {
             invalid_bundle(TOO_LARGE)

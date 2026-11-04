@@ -22,6 +22,7 @@ use crate::error::ApiError;
 use crate::extract::ApiJson;
 use crate::state::AppState;
 use crate::teams::team_access;
+use crate::tokens::PublishAuth;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -102,16 +103,15 @@ const COLLECTION_COLUMNS: &str = "c.slug::text AS slug, c.name, c.source, c.acce
      (SELECT v.created_at FROM versions v \
       WHERE v.collection_id = c.id AND v.number = c.current_version) AS updated_at";
 
+/// Read-only, so a team's publish token may call it as well as a member.
 async fn list(
     State(state): State<AppState>,
-    auth: UserAuth,
-    Path(team): Path<String>,
+    auth: PublishAuth,
 ) -> Result<Json<Vec<CollectionBody>>, ApiError> {
-    let access = team_access(&state.db, auth.user_id, &team).await?;
     let rows: Vec<CollectionRow> = sqlx::query_as(&format!(
         "SELECT {COLLECTION_COLUMNS} FROM collections c WHERE c.team_id = $1 ORDER BY c.slug"
     ))
-    .bind(access.team_id)
+    .bind(auth.team_id)
     .fetch_all(&state.db)
     .await?;
     Ok(Json(
