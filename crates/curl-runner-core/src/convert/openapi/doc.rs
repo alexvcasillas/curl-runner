@@ -38,7 +38,8 @@ pub fn parse_document(text: &str) -> Result<Doc, ConvertError> {
     let value = if text.trim_start().starts_with('{') {
         serde_json::from_str::<Value>(text).map_err(not_openapi)?
     } else {
-        let y = serde_yaml_ng::from_str::<serde_yaml_ng::Value>(text).map_err(not_openapi)?;
+        let mut y = serde_yaml_ng::from_str::<serde_yaml_ng::Value>(text).map_err(not_openapi)?;
+        y.apply_merge().map_err(not_openapi)?;
         yaml_to_json(y)
     };
     let version = detect_version(&value)?;

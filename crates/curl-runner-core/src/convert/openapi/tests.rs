@@ -214,3 +214,109 @@ fn swagger2_ref_parameters() {
         "string"
     );
 }
+
+#[test]
+fn swagger2_oauth2_becomes_flows() {
+    let d = doc(json!({
+        "swagger": "2.0",
+        "securityDefinitions": { "o": {
+            "type": "oauth2", "flow": "accessCode",
+            "authorizationUrl": "https://auth.example.com/a",
+            "tokenUrl": "https://auth.example.com/t",
+            "scopes": { "read": "Read" }
+        } }
+    }));
+    let o = &d.root["components"]["securitySchemes"]["o"];
+    assert_eq!(o["type"], "oauth2");
+    let f = &o["flows"]["authorizationCode"];
+    assert_eq!(f["tokenUrl"], "https://auth.example.com/t");
+    assert_eq!(f["scopes"]["read"], "Read");
+}
+
+#[test]
+fn swagger2_response_uses_produces() {
+    let d = doc(json!({
+        "swagger": "2.0",
+        "produces": ["application/xml"],
+        "paths": { "/x": {
+            "get": { "responses": { "200": { "description": "ok", "schema": { "type": "string" } } } },
+            "post": { "produces": ["text/csv"],
+                "responses": { "200": { "description": "ok", "schema": { "type": "string" } } } }
+        } }
+    }));
+    let p = &d.root["paths"]["/x"];
+    assert!(p["get"]["responses"]["200"]["content"]["application/xml"].is_object());
+    assert!(p["post"]["responses"]["200"]["content"]["text/csv"].is_object());
+}
+
+#[test]
+fn swagger2_path_level_params_merge_into_operations() {
+    let d = doc(json!({
+        "swagger": "2.0",
+        "paths": { "/x/{id}": {
+            "parameters": [
+                { "in": "body", "name": "b", "schema": { "type": "string" } },
+                { "in": "path", "name": "id", "required": true, "type": "string" },
+                { "in": "query", "name": "q", "type": "string", "description": "path" }
+            ],
+            "get": { "parameters": [
+                { "in": "query", "name": "q", "type": "integer", "description": "op" }
+            ] },
+            "put": {}
+        } }
+    }));
+    let item = &d.root["paths"]["/x/{id}"];
+    assert!(item.get("parameters").is_none());
+    for m in ["get", "put"] {
+        assert!(
+            item[m]["requestBody"]["content"]["application/json"]["schema"].is_object(),
+            "{m}"
+        );
+    }
+    let get = item["get"]["parameters"].as_array().unwrap();
+    assert_eq!(get.len(), 2);
+    let q = get.iter().find(|p| p["name"] == "q").unwrap();
+    assert_eq!(q["description"], "op");
+    assert_eq!(item["put"]["parameters"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn swagger2_collection_formats() {
+    let param = |cf: Option<&str>| {
+        let mut p =
+            json!({ "in": "query", "name": "q", "type": "array", "items": { "type": "string" } });
+        if let Some(c) = cf {
+            p["collectionFormat"] = json!(c);
+        }
+        let d = doc(json!({ "swagger": "2.0",
+            "paths": { "/x": { "get": { "parameters": [p] } } } }));
+        d.root["paths"]["/x"]["get"]["parameters"][0].clone()
+    };
+    let csv = param(Some("csv"));
+    assert_eq!(
+        (csv["style"].clone(), csv["explode"].clone()),
+        (json!("form"), json!(false))
+    );
+    let multi = param(Some("multi"));
+    assert_eq!(
+        (multi["style"].clone(), multi["explode"].clone()),
+        (json!("form"), json!(true))
+    );
+    assert_eq!(param(Some("ssv"))["style"], "spaceDelimited");
+    assert_eq!(param(Some("pipes"))["style"], "pipeDelimited");
+    let tsv = param(Some("tsv"));
+    assert_eq!(tsv["x-collectionFormat"], "tsv");
+    assert!(tsv.get("style").is_none());
+    assert!(param(None).get("style").is_none());
+    assert!(csv.get("collectionFormat").is_none());
+}
+
+#[test]
+fn yaml_merge_keys_apply() {
+    let y = "openapi: 3.0.0\nx-base: &base\n  description: shared\n  type: string\ncomponents:\n  schemas:\n    A:\n      <<: *base\n      type: integer\n";
+    let d = parse_document(y).unwrap();
+    let a = &d.root["components"]["schemas"]["A"];
+    assert_eq!(a["description"], "shared");
+    assert_eq!(a["type"], "integer");
+    assert!(a.get("<<").is_none());
+}

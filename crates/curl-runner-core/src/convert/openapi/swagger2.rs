@@ -111,30 +111,38 @@ fn convert_path_item(
     let Some(map) = item.as_object() else {
         return item.clone();
     };
+    let path_params: &[Value] = map
+        .get("parameters")
+        .and_then(Value::as_array)
+        .map_or(&[], Vec::as_slice);
     let mut out = Map::new();
     for (k, v) in map {
         if METHODS.contains(&k.as_str()) {
             out.insert(
                 k.clone(),
-                convert_operation(v, consumes, produces, params_src),
+                convert_operation(v, consumes, produces, params_src, path_params),
             );
-        } else if k == "parameters" {
-            // Body and form parameters at path level are rare: keep non-body ones.
-            let kept: Vec<Value> = v
-                .as_array()
-                .map(|a| {
-                    a.iter()
-                        .filter(|p| !matches!(param_in(p, params_src), Some("body" | "formData")))
-                        .map(convert_param)
-                        .collect()
-                })
-                .unwrap_or_default();
-            out.insert(k.clone(), Value::Array(kept));
-        } else {
+        } else if k != "parameters" {
             out.insert(k.clone(), v.clone());
         }
     }
     Value::Object(out)
+}
+
+/// `(in, name)` of a parameter, following a `#/parameters/x` reference.
+fn param_key(p: &Value, params_src: &Value) -> Option<(String, String)> {
+    let r = match p
+        .get("$ref")
+        .and_then(Value::as_str)
+        .and_then(|r| r.strip_prefix("#/parameters/"))
+    {
+        Some(name) => params_src.get(name)?,
+        None => p,
+    };
+    Some((
+        r.get("in")?.as_str()?.to_string(),
+        r.get("name")?.as_str()?.to_string(),
+    ))
 }
 
 /// The `in` of a parameter, following a `#/parameters/x` reference.
@@ -154,6 +162,7 @@ fn convert_operation(
     doc_consumes: &[String],
     produces: &[String],
     params_src: &Value,
+    path_params: &[Value],
 ) -> Value {
     let Some(map) = op.as_object() else {
         return op.clone();
@@ -170,12 +179,18 @@ fn convert_operation(
     let mut params = Vec::new();
     let mut body: Option<Value> = None;
     let mut form: Vec<(String, Value, bool)> = Vec::new();
-    for p in map
+    let own_params: &[Value] = map
         .get("parameters")
         .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
+        .map_or(&[], Vec::as_slice);
+    let own_keys: Vec<_> = own_params
+        .iter()
+        .filter_map(|p| param_key(p, params_src))
+        .collect();
+    let inherited = path_params
+        .iter()
+        .filter(|p| param_key(p, params_src).is_none_or(|k| !own_keys.contains(&k)));
+    for p in inherited.chain(own_params) {
         let resolved = match p
             .get("$ref")
             .and_then(Value::as_str)
@@ -319,11 +334,31 @@ fn convert_param(p: &Value) -> Value {
     }
     let mut out = Map::new();
     for (k, v) in map {
-        if !SCHEMA_KEYS.contains(&k.as_str()) && k != "collectionFormat" && k != "allowEmptyValue" {
+        if !SCHEMA_KEYS.contains(&k.as_str()) && k != "collectionFormat" {
             out.insert(k.clone(), v.clone());
         }
     }
     out.insert("schema".into(), type_fields(p));
+    match map.get("collectionFormat").and_then(Value::as_str) {
+        Some("multi") => {
+            out.insert("style".into(), json!("form"));
+            out.insert("explode".into(), json!(true));
+        }
+        Some("ssv") => {
+            out.insert("style".into(), json!("spaceDelimited"));
+        }
+        Some("pipes") => {
+            out.insert("style".into(), json!("pipeDelimited"));
+        }
+        Some("tsv") => {
+            out.insert("x-collectionFormat".into(), json!("tsv"));
+        }
+        Some("csv") => {
+            out.insert("style".into(), json!("form"));
+            out.insert("explode".into(), json!(false));
+        }
+        _ => {}
+    }
     Value::Object(out)
 }
 
