@@ -84,13 +84,25 @@ pub fn file_hash(text: &str) -> String {
 /// Order-independent hash of a bundle: files sorted by path (byte order),
 /// each contributing `path \0 file_hash \n`.
 pub fn bundle_hash(files: &[BundleFile]) -> String {
-    let mut sorted: Vec<&BundleFile> = files.iter().collect();
-    sorted.sort_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
+    let hashes: Vec<String> = files.iter().map(|f| file_hash(&f.text)).collect();
+    let pairs: Vec<(&str, &str)> = files
+        .iter()
+        .zip(&hashes)
+        .map(|(f, h)| (f.path.as_str(), h.as_str()))
+        .collect();
+    bundle_hash_from_file_hashes(&pairs)
+}
+
+/// [`bundle_hash`] from `(path, file_hash)` pairs, for callers that already
+/// hashed each file. The single home of the formula.
+pub fn bundle_hash_from_file_hashes(files: &[(&str, &str)]) -> String {
+    let mut sorted: Vec<&(&str, &str)> = files.iter().collect();
+    sorted.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
     let mut h = Sha256::new();
-    for f in sorted {
-        h.update(f.path.as_bytes());
+    for (path, file_hash) in sorted {
+        h.update(path.as_bytes());
         h.update([0]);
-        h.update(file_hash(&f.text).as_bytes());
+        h.update(file_hash.as_bytes());
         h.update(b"\n");
     }
     hex(&h.finalize())
@@ -173,6 +185,18 @@ mod tests {
         let a = f("a.yaml", "1");
         let b = f("b.yaml", "2");
         assert_eq!(bundle_hash(&[a.clone(), b.clone()]), bundle_hash(&[b, a]));
+    }
+
+    #[test]
+    fn bundle_hash_from_file_hashes_matches_bundle_hash() {
+        let files = [f("b.yaml", "2"), f("a.yaml", "1")];
+        let hashes: Vec<String> = files.iter().map(|x| file_hash(&x.text)).collect();
+        let pairs: Vec<(&str, &str)> = files
+            .iter()
+            .zip(&hashes)
+            .map(|(x, h)| (x.path.as_str(), h.as_str()))
+            .collect();
+        assert_eq!(bundle_hash_from_file_hashes(&pairs), bundle_hash(&files));
     }
 
     #[test]

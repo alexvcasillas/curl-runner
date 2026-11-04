@@ -79,9 +79,10 @@ pub(super) async fn list(
 pub(super) async fn files(
     State(state): State<AppState>,
     auth: UserAuth,
-    Path((team, slug, n)): Path<(String, String, i32)>,
+    Path((team, slug, n)): Path<(String, String, String)>,
 ) -> Result<Json<Vec<BundleFile>>, ApiError> {
     let access = team_access(&state.db, auth.user_id, &team).await?;
+    let n: i32 = n.parse().map_err(|_| ApiError::not_found())?;
     let id = collection_id(&state.db, access.team_id, &slug).await?;
     let version: Option<uuid::Uuid> =
         sqlx::query_scalar("SELECT id FROM versions WHERE collection_id = $1 AND number = $2")

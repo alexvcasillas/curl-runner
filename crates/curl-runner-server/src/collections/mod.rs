@@ -30,9 +30,8 @@ pub fn routes() -> Router<AppState> {
         )
         .route(
             "/v1/teams/{team}/collections/{slug}/versions",
-            put(publish::publish)
-                .layer(axum::extract::DefaultBodyLimit::max(publish::MAX_BODY))
-                .get(versions::list),
+            // The publish handler reads its own body, capped in `publish`.
+            put(publish::publish).get(versions::list),
         )
         .route(
             "/v1/teams/{team}/collections/{slug}/versions/{n}/files",

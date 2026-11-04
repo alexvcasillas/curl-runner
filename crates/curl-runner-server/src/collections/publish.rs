@@ -13,7 +13,7 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use curl_runner_cloud_proto::{
     BundleFile, ErrorCode, FileChanges, MAX_BUNDLE_BYTES, PublishRequest, PublishResponse,
-    PublishStatus, bundle_hash, file_hash, validate_bundle,
+    PublishStatus, bundle_hash_from_file_hashes, file_hash, validate_bundle,
 };
 use flate2::read::GzDecoder;
 use sqlx::PgConnection;
@@ -29,10 +29,13 @@ use crate::state::AppState;
 use crate::teams::valid_slug;
 use crate::tokens::PublishAuth;
 
-/// Largest accepted request body as sent (gzipped or not).
-pub(super) const MAX_BODY: usize = 26 << 20;
-/// Largest JSON document after decompression: the bundle plus JSON overhead.
-const MAX_JSON: usize = MAX_BUNDLE_BYTES + (1 << 20);
+/// Largest request body as sent, and largest JSON after decompression. JSON
+/// escaping can double the size of a bundle that is within 25 MiB, so the cap
+/// is twice the bundle limit plus overhead; `validate_bundle` enforces the real
+/// limit on the decoded files. This only stops a body from exhausting memory.
+const MAX_JSON: usize = 2 * MAX_BUNDLE_BYTES + (1 << 20);
+const MAX_BODY: usize = MAX_JSON;
+const TOO_LARGE: &str = "The request body is larger than 51 MiB.";
 
 fn invalid_bundle(message: impl Into<String>) -> ApiError {
     ApiError::new(ErrorCode::InvalidBundle, message)
@@ -40,6 +43,18 @@ fn invalid_bundle(message: impl Into<String>) -> ApiError {
 
 fn invalid_request(message: &'static str) -> ApiError {
     ApiError::new(ErrorCode::InvalidRequest, message)
+}
+
+/// True when reading the body stopped at the size cap (not a client abort).
+fn is_length_limit(err: &(dyn std::error::Error + 'static)) -> bool {
+    let mut cur = Some(err);
+    while let Some(e) = cur {
+        if e.is::<http_body_util::LengthLimitError>() {
+            return true;
+        }
+        cur = e.source();
+    }
+    false
 }
 
 /// The request JSON bytes: gunzipped when `Content-Encoding: gzip`. The read
@@ -62,7 +77,7 @@ fn decode_body(headers: &HeaderMap, body: &[u8]) -> Result<Vec<u8>, ApiError> {
         Some(_) => return Err(invalid_request("Content-Encoding must be gzip or absent.")),
     };
     if json.len() > MAX_JSON {
-        return Err(invalid_bundle("The bundle is larger than 25 MiB."));
+        return Err(invalid_bundle(TOO_LARGE));
     }
     Ok(json)
 }
@@ -87,18 +102,46 @@ fn check(headers: &HeaderMap, body: &[u8], slug: &str) -> Result<Checked, ApiErr
     if let Some(f) = req.files.iter().find(|f| f.text.contains('\0')) {
         return Err(invalid_bundle(format!("{}: text contains a NUL", f.path)));
     }
-    if bundle_hash(&req.files) != req.hash {
+    let file_hashes: Vec<String> = req.files.iter().map(|f| file_hash(&f.text)).collect();
+    let pairs: Vec<(&str, &str)> = req
+        .files
+        .iter()
+        .zip(&file_hashes)
+        .map(|(f, h)| (f.path.as_str(), h.as_str()))
+        .collect();
+    if bundle_hash_from_file_hashes(&pairs) != req.hash {
         return Err(invalid_bundle("The hash does not match the files."));
     }
-    let file_hashes = req.files.iter().map(|f| file_hash(&f.text)).collect();
     Ok(Checked { req, file_hashes })
 }
 
+/// A collection row held `FOR UPDATE`.
 struct Locked {
     id: Uuid,
     source: String,
     access: String,
     current_version: Option<i32>,
+}
+
+async fn lock_collection(
+    conn: &mut PgConnection,
+    team_id: Uuid,
+    slug: &str,
+) -> Result<Option<Locked>, ApiError> {
+    let row: Option<(Uuid, String, String, Option<i32>)> = sqlx::query_as(
+        "SELECT id, source, access, current_version FROM collections \
+         WHERE team_id = $1 AND slug = $2 FOR UPDATE",
+    )
+    .bind(team_id)
+    .bind(slug)
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.map(|(id, source, access, current_version)| Locked {
+        id,
+        source,
+        access,
+        current_version,
+    }))
 }
 
 pub(super) async fn publish(
@@ -108,9 +151,13 @@ pub(super) async fn publish(
     headers: HeaderMap,
     body: Body,
 ) -> Result<(StatusCode, Json<PublishResponse>), ApiError> {
-    let bytes = axum::body::to_bytes(body, MAX_BODY)
-        .await
-        .map_err(|_| invalid_bundle("The request body is larger than 26 MiB."))?;
+    let bytes = axum::body::to_bytes(body, MAX_BODY).await.map_err(|e| {
+        if is_length_limit(&e) {
+            invalid_bundle(TOO_LARGE)
+        } else {
+            invalid_request("Couldn't read the request body.")
+        }
+    })?;
     let checked = {
         let slug = slug.clone();
         tokio::task::spawn_blocking(move || check(&headers, &bytes, &slug))
@@ -119,41 +166,33 @@ pub(super) async fn publish(
     };
     let Checked { req, file_hashes } = checked;
 
-    let secret = state.config.secret_key.as_bytes();
-    let token = new_token("crsl_");
-    let link_hash = secret_hash(secret, &token);
-    let link_enc = encrypt_link_token(secret, &token);
     let published_by = auth.publisher.label();
     let now = state.clock.now();
 
     let mut tx = state.db.begin().await?;
-    // Two first publishes of one slug: the loser waits for the winner's commit,
-    // does nothing, and finds the row below.
-    sqlx::query(
-        "INSERT INTO collections (team_id, slug, name, link_hash, link_token_enc) \
-         VALUES ($1, $2, $3, $4, $5) ON CONFLICT (team_id, slug) DO NOTHING",
-    )
-    .bind(auth.team_id)
-    .bind(&slug)
-    .bind(req.name.as_deref().unwrap_or(&slug))
-    .bind(&link_hash)
-    .bind(&link_enc)
-    .execute(&mut *tx)
-    .await?;
-    let (id, source, access, current_version): (Uuid, String, String, Option<i32>) =
-        sqlx::query_as(
-            "SELECT id, source, access, current_version FROM collections \
-             WHERE team_id = $1 AND slug = $2 FOR UPDATE",
-        )
-        .bind(auth.team_id)
-        .bind(&slug)
-        .fetch_one(&mut *tx)
-        .await?;
-    let locked = Locked {
-        id,
-        source,
-        access,
-        current_version,
+    let locked = match lock_collection(&mut tx, auth.team_id, &slug).await? {
+        Some(locked) => locked,
+        None => {
+            // New collection: only now is a share link token needed. Two first
+            // publishes of one slug: the loser waits for the winner's commit,
+            // does nothing, and finds the row below.
+            let secret = state.config.secret_key.as_bytes();
+            let token = new_token("crsl_");
+            sqlx::query(
+                "INSERT INTO collections (team_id, slug, name, link_hash, link_token_enc) \
+                 VALUES ($1, $2, $3, $4, $5) ON CONFLICT (team_id, slug) DO NOTHING",
+            )
+            .bind(auth.team_id)
+            .bind(&slug)
+            .bind(req.name.as_deref().unwrap_or(&slug))
+            .bind(secret_hash(secret, &token))
+            .bind(encrypt_link_token(secret, &token))
+            .execute(&mut *tx)
+            .await?;
+            lock_collection(&mut tx, auth.team_id, &slug)
+                .await?
+                .ok_or_else(ApiError::unavailable)?
+        }
     };
 
     if locked.source == "cloud" {
@@ -179,6 +218,9 @@ pub(super) async fn publish(
         }
     }
 
+    // A separate statement, run after the lock: after waiting on the lock, a
+    // joined read would still see the pre-wait snapshot and miss a version the
+    // other publisher just committed.
     let previous: Option<(Uuid, String)> = match locked.current_version {
         Some(n) => {
             sqlx::query_as("SELECT id, hash FROM versions WHERE collection_id = $1 AND number = $2")
@@ -364,5 +406,14 @@ mod tests {
             decode_body(&h, b"{}").unwrap_err().code,
             ErrorCode::InvalidRequest
         );
+    }
+
+    #[tokio::test]
+    async fn only_the_size_cap_counts_as_length_limit() {
+        let over = axum::body::to_bytes(Body::from(vec![0u8; 10]), 5)
+            .await
+            .unwrap_err();
+        assert!(is_length_limit(&over));
+        assert!(!is_length_limit(&std::io::Error::other("connection reset")));
     }
 }

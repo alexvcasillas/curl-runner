@@ -254,7 +254,7 @@ async fn malformed_requests_are_400(pool: PgPool) {
 #[sqlx::test]
 async fn zip_bomb_400_invalid_bundle(pool: PgPool) {
     let (app, s) = setup(pool).await;
-    let bomb = gzip(&vec![b' '; 30 << 20]);
+    let bomb = gzip(&vec![b' '; 52 << 20]);
     let (status, res) = put_raw(&app, PUBLISH, &s, bomb, true).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(res["error"], "invalid_bundle");
@@ -517,4 +517,108 @@ async fn delete_is_owner_only_and_keeps_blobs(pool: PgPool) {
     assert_eq!(count(&app, "blobs").await, 1);
     let (status, _) = app.request(Method::DELETE, path, None, Some(&owner)).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test]
+async fn escaping_heavy_bundle_within_25_mib_is_accepted(pool: PgPool) {
+    let (app, s) = setup(pool).await;
+    // 24 MiB of text whose JSON form is about 48 MiB: over the old 26 MiB cap.
+    let text = "\n".repeat(1 << 20);
+    let names: Vec<String> = (0..24).map(|i| format!("f{i}.yaml")).collect();
+    // Distinct texts, so each file is its own blob.
+    let texts: Vec<String> = (0..24)
+        .map(|i| format!("{}{}", "x".repeat(i), &text[i..]))
+        .collect();
+    let files: Vec<(&str, &str)> = names
+        .iter()
+        .zip(&texts)
+        .map(|(n, t)| (n.as_str(), t.as_str()))
+        .collect();
+    let json = body_for(&files).to_string();
+    assert!(json.len() > 26 << 20, "{}", json.len());
+    let (status, res) = put_raw(&app, PUBLISH, &s, gzip(json.as_bytes()), true).await;
+    assert_eq!(status, StatusCode::CREATED, "{res}");
+    // Over 25 MiB of real text still fails, with the bundle message (24 escaped
+    // files plus 2 plain ones: 26 MiB of text, about 50 MiB of JSON).
+    let big: Vec<String> = (0..26)
+        .map(|i| {
+            if i < 24 {
+                format!("{}{}", "y".repeat(i), &text[i..])
+            } else {
+                format!("{i}{}", "z".repeat((1 << 20) - 2))
+            }
+        })
+        .collect();
+    let names: Vec<String> = (0..26).map(|i| format!("g{i}.yaml")).collect();
+    let files: Vec<(&str, &str)> = names
+        .iter()
+        .zip(&big)
+        .map(|(n, t)| (n.as_str(), t.as_str()))
+        .collect();
+    let (status, res) = put_raw(
+        &app,
+        PUBLISH,
+        &s,
+        gzip(body_for(&files).to_string().as_bytes()),
+        true,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(res["error"], "invalid_bundle");
+    let message = res["message"].as_str().unwrap();
+    assert!(message.contains("bundle is larger"), "{message}");
+}
+
+#[sqlx::test]
+async fn non_numeric_version_is_json_404(pool: PgPool) {
+    let (app, s) = setup(pool).await;
+    publish(&app, &s, &[("a.yaml", "1")]).await;
+    let (status, res) = app
+        .request(
+            Method::GET,
+            &format!("{PUBLISH}/latest/files"),
+            None,
+            Some(&s),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(res["error"], "not_found");
+}
+
+#[sqlx::test]
+async fn concurrent_identical_publishes_create_once(pool: PgPool) {
+    let (app, s) = setup(pool).await;
+    assert_eq!(
+        publish(&app, &s, &[("a.yaml", "0")]).await.0,
+        StatusCode::CREATED
+    );
+    let mut holder = app.state.db.begin().await.unwrap();
+    sqlx::query("SELECT id FROM collections WHERE slug = 'payments-api' FOR UPDATE")
+        .execute(&mut *holder)
+        .await
+        .unwrap();
+    let tasks = vec![
+        spawn_publish(&app, &s, "same"),
+        spawn_publish(&app, &s, "same"),
+    ];
+    wait_blocked(&app, 2, &tasks).await;
+    holder.commit().await.unwrap();
+    let mut results = Vec::new();
+    for t in tasks {
+        let (status, body) = t.await.unwrap();
+        results.push((
+            status.as_u16(),
+            body["status"].as_str().unwrap().to_owned(),
+            body["version"].as_i64().unwrap(),
+        ));
+    }
+    results.sort();
+    assert_eq!(
+        results,
+        vec![
+            (200, "unchanged".to_owned(), 2),
+            (201, "created".to_owned(), 2)
+        ]
+    );
+    assert_eq!(count(&app, "versions").await, 2);
 }

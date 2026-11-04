@@ -15,6 +15,7 @@ base64 = "0.22.1"
 chacha20poly1305 = "0.10"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
 curl-runner-cloud-proto.workspace = true
+http-body-util = "0.1"
 flate2 = "1.1.10"
 hkdf = "0.12"
 # TLS for OAuth (reqwest) and SMTP (lettre) is rustls on ring, never aws-lc-rs,
@@ -36,4 +37,3 @@ uuid = { version = "1.29.0", features = ["v4", "serde"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
-http-body-util = "0.1"
