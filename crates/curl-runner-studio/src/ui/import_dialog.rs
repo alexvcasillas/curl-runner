@@ -106,7 +106,7 @@ const OPENAPI: FileSource = FileSource {
     choose: "Choose an OpenAPI spec to import.",
     hint: "One file per operation, in a folder per tag. The base URL and secrets go to .env.",
     env_note: "The base URL and secrets are in .env. Secrets are listed there by name only.",
-    place: "OpenAPI security scheme",
+    place: "OpenAPI variable",
     pick_id: "import-pick-openapi",
     files_id: "import-openapi-files",
 };
@@ -546,7 +546,8 @@ impl ImportDialog {
                     task.detach();
                 }
                 this.apply_pick(tab, picked, import, cx);
-                if route {
+                // Not if the user moved to the curl or Folder tab meanwhile.
+                if route && this.tab.file_source().is_some() {
                     this.set_tab(tab, cx);
                 }
             })
@@ -2090,7 +2091,11 @@ pub(super) fn route_text(text: &str) -> ImportTab {
     }
     let text = text.trim_start_matches('\u{feff}');
     let spec = if text.trim_start().starts_with('{') {
-        serde_json::from_str::<Top>(text).is_ok_and(|t| t.openapi.is_some() || t.swagger.is_some())
+        match serde_json::from_str::<Top>(text) {
+            Ok(t) => t.openapi.is_some() || t.swagger.is_some(),
+            // Not JSON: YAML flow style, `{openapi: 3.0.0, ...}`.
+            Err(_) => flow_spec_key(text),
+        }
     } else {
         text.lines().any(spec_key)
     };
@@ -2099,6 +2104,26 @@ pub(super) fn route_text(text: &str) -> ImportTab {
     } else {
         ImportTab::Postman
     }
+}
+
+/// Whether the first 4 KB, a YAML flow map, has an `openapi` or `swagger`
+/// key straight after the `{` or a `,`. Cheap, not a parser: a nested key
+/// after a comma would match too.
+fn flow_spec_key(text: &str) -> bool {
+    let mut end = text.len().min(4096);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    let head = &text[..end];
+    ["openapi", "swagger"].iter().any(|key| {
+        head.match_indices(key).any(|(i, _)| {
+            let before = head[..i].trim_end_matches(['"', '\'']).trim_end();
+            let after = head[i + key.len()..]
+                .trim_start_matches(['"', '\''])
+                .trim_start();
+            before.ends_with(['{', ',']) && after.starts_with(':')
+        })
+    })
 }
 
 /// A YAML line at column 0 that is the `openapi` or `swagger` key, bare
@@ -3159,6 +3184,22 @@ mod tests {
     }
 
     #[test]
+    fn yaml_flow_style_routes_to_openapi() {
+        use super::route_text;
+        for spec in [
+            "{openapi: 3.0.0, info: {title: X}}",
+            "{ \"openapi\": 3.0.0, info: {title: X} }",
+            "{info: {title: X}, swagger: '2.0'}",
+            "{\n  swagger : \"2.0\",\n  info: {}\n}",
+        ] {
+            assert_eq!(route_text(spec), ImportTab::OpenApi, "{spec:?}");
+        }
+        for other in ["{info: {title: openapi}}", "{ not json", "{openapis: 1}"] {
+            assert_eq!(route_text(other), ImportTab::Postman, "{other:?}");
+        }
+    }
+
+    #[test]
     fn yaml_routes_by_a_key_at_column_0() {
         use super::route_text;
         for spec in [
@@ -3194,6 +3235,25 @@ mod tests {
         let (tab, import) = read_pick(&binary, ImportTab::OpenApi, true);
         assert_eq!(tab, ImportTab::OpenApi);
         assert!(import.is_err());
+    }
+
+    #[gpui_kit::test]
+    fn a_finished_drop_does_not_pull_back_from_the_curl_tab(cx: &mut TestAppContext) {
+        let dir = collection();
+        let (_src, file) = temp_file("pets.yaml", PETS);
+        let (window, ws) = open(cx, Some(dir.path().to_path_buf()), StateStore::none());
+        let cx = &mut VisualTestContext::from_window(window, cx);
+        let dialog = cx.update(|window, cx| ws.update(cx, |ws, cx| ws.import(window, cx).unwrap()));
+        dialog.update(cx, |d, cx| {
+            d.set_tab(ImportTab::Postman, cx);
+            d.drop_file(file, cx);
+            d.set_tab(ImportTab::Curl, cx);
+        });
+        cx.run_until_parked();
+        dialog.read_with(cx, |d, _| {
+            assert_eq!(d.tab, ImportTab::Curl);
+            assert!(d.reading.is_none());
+        });
     }
 
     #[gpui_kit::test]
