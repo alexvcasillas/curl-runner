@@ -1,0 +1,140 @@
+openapi: 3.0.3
+info:
+  title: Pets
+  description: A small pet store API.
+  version: 1.0.0
+servers:
+  - url: https://api.example.com/v1/
+  - url: https://staging.example.com/v1
+tags:
+  - name: pets
+    description: Everything about pets.
+  - name: store
+  - name: users
+security:
+  - api_key: []
+paths:
+  /pets:
+    get:
+      tags: [pets]
+      summary: List pets
+      operationId: listPets
+      parameters:
+        - name: limit
+          in: query
+          description: How many pets to return.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: A page of pets.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Pet'
+    post:
+      tags: [pets]
+      summary: Create pet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pet'
+      responses:
+        '201':
+          description: Created.
+  /store/orders:
+    post:
+      tags: [store]
+      summary: Place order
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [petId]
+              properties:
+                petId:
+                  type: integer
+                quantity:
+                  type: integer
+                  minimum: 1
+      responses:
+        '200':
+          description: Placed.
+  /pets/{petId}:
+    parameters:
+      - name: petId
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [pets]
+      summary: Get pet
+      responses:
+        '200':
+          description: A pet.
+        '404':
+          description: Not found.
+  /pets/{petId}/photo:
+    post:
+      tags: [pets]
+      summary: Upload photo
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                caption:
+                  type: string
+                  description: Shown under the photo.
+      responses:
+        '200':
+          description: Uploaded.
+  /users/{username}:
+    get:
+      tags: [users]
+      summary: Get user
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+            example: alice
+      responses:
+        2XX:
+          description: A user.
+components:
+  schemas:
+    Pet:
+      type: object
+      required: [name]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          example: Rex
+        tag:
+          type: string
+  securitySchemes:
+    api_key:
+      type: apiKey
+      in: header
+      name: X-API-Key

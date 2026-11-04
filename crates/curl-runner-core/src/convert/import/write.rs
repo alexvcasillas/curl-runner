@@ -17,6 +17,8 @@ pub struct Import {
     pub source: String,
     pub files: Vec<ImportFile>,
     pub variables: Vec<ImportedVar>,
+    /// `.env` comment lines per variable, as in [`Mapped::env_comments`].
+    pub env_comments: Vec<(String, String)>,
     pub readme: Option<String>,
     pub report: ImportReport,
 }
@@ -68,6 +70,7 @@ pub fn plan_import(name: String, mapped: Mapped, source: &str) -> Import {
         source: source.to_string(),
         files,
         variables: mapped.variables,
+        env_comments: mapped.env_comments,
         report: mapped.report,
     }
 }
@@ -166,16 +169,23 @@ fn append_env(path: &Path, import: &Import, secret_note: &str) -> io::Result<Vec
     let mut kept = Vec::new();
     let mut lines = Vec::new();
     for v in &import.variables {
+        let notes = import
+            .env_comments
+            .iter()
+            .filter(|(name, _)| *name == v.name)
+            .map(|(_, line)| format!("# {line}"));
         if let Some(value) = present.get(&v.name) {
             if !v.secret && *value != v.value {
                 kept.push(v.name.clone());
             }
         } else if v.secret {
             if !placeholders.contains(v.name.as_str()) {
+                lines.extend(notes);
                 lines.push(format!("# {} is a secret: {secret_note}", v.name));
                 lines.push(format!("# {}=", v.name));
             }
         } else {
+            lines.extend(notes);
             lines.push(format!("{}={}", v.name, env_value(&v.name, &v.value)));
         }
     }

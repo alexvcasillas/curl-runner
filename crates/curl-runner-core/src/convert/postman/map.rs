@@ -641,6 +641,7 @@ impl<'c> Mapper<'c> {
             requests: self.requests,
             variables: self.vars,
             description,
+            env_comments: Vec::new(),
         }
     }
 }
@@ -668,7 +669,7 @@ fn replace_refs(s: &str, mut f: impl FnMut(&str) -> Option<String>) -> String {
 }
 
 /// Form-encodes `s`, leaving `${…}` references as written.
-fn form_encode(s: &str) -> String {
+pub(crate) fn form_encode(s: &str) -> String {
     let mut out = String::new();
     let mut rest = s;
     while let Some(i) = rest.find("${") {

@@ -56,6 +56,7 @@ fn plan_import_names_files_and_source() {
         }],
         variables: Vec::new(),
         description: Some("About".into()),
+        env_comments: Vec::new(),
         report: ImportReport::default(),
     };
     let imp = plan_import("My  API".into(), mapped, "OpenAPI");
@@ -70,4 +71,49 @@ fn plan_import_names_files_and_source() {
             .starts_with("# Imported from OpenAPI: My  API\n")
     );
     assert_eq!(imp.readme.as_deref(), Some("# My API\n\nAbout\n"));
+}
+
+#[test]
+fn env_comments_go_above_new_keys_only() {
+    let mapped = Mapped {
+        requests: Vec::new(),
+        variables: vec![
+            ImportedVar {
+                name: "PETS_BASE_URL".into(),
+                value: "https://api.example.com".into(),
+                secret: false,
+            },
+            ImportedVar {
+                name: "PETS_API_KEY".into(),
+                value: String::new(),
+                secret: true,
+            },
+            ImportedVar {
+                name: "OLD".into(),
+                value: "1".into(),
+                secret: false,
+            },
+        ],
+        description: None,
+        env_comments: vec![
+            (
+                "PETS_BASE_URL".into(),
+                "Other server: https://b.example.com".into(),
+            ),
+            ("PETS_API_KEY".into(), "Sent as X-API-Key".into()),
+            ("OLD".into(), "never written".into()),
+        ],
+        report: ImportReport::default(),
+    };
+    let imp = plan_import("Pets".into(), mapped, "OpenAPI");
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join(".env"), "OLD=1\n").unwrap();
+    write_import(dir.path(), std::path::Path::new("pets"), &imp, "note").unwrap();
+    let env = std::fs::read_to_string(dir.path().join(".env")).unwrap();
+    assert_eq!(
+        env,
+        "OLD=1\n# Imported from OpenAPI: Pets\n\
+         # Other server: https://b.example.com\nPETS_BASE_URL=https://api.example.com\n\
+         # Sent as X-API-Key\n# PETS_API_KEY is a secret: note\n# PETS_API_KEY=\n"
+    );
 }

@@ -36,6 +36,8 @@ pub struct Sampler<'d> {
     stack: Vec<String>,
     count: usize,
     unresolved: Vec<UnresolvedRef>,
+    /// Unresolved refs met since the last `take_hits`, once each.
+    hits: Vec<UnresolvedRef>,
 }
 
 impl<'d> Sampler<'d> {
@@ -45,12 +47,19 @@ impl<'d> Sampler<'d> {
             stack: Vec::new(),
             count: 0,
             unresolved: Vec::new(),
+            hits: Vec::new(),
         }
     }
 
     /// Every `$ref` that failed to resolve so far, once per target, in first-seen order.
     pub fn unresolved_refs(&self) -> &[UnresolvedRef] {
         &self.unresolved
+    }
+
+    /// The unresolved refs met since the last call, once each, in
+    /// first-seen order. Lets a caller tell which request met them.
+    pub fn take_hits(&mut self) -> Vec<UnresolvedRef> {
+        std::mem::take(&mut self.hits)
     }
 
     /// A sample for `schema`, within the size budget.
@@ -102,8 +111,12 @@ impl<'d> Sampler<'d> {
             Resolved::External(t) => (t, true),
             Resolved::Value(_) => return,
         };
-        if !self.unresolved.iter().any(|u| u.target == target) {
-            self.unresolved.push(UnresolvedRef { target, external });
+        let r = UnresolvedRef { target, external };
+        if !self.hits.contains(&r) {
+            self.hits.push(r.clone());
+        }
+        if !self.unresolved.contains(&r) {
+            self.unresolved.push(r);
         }
     }
 

@@ -10,6 +10,9 @@ pub struct Mapped {
     pub requests: Vec<MappedRequest>,
     pub variables: Vec<ImportedVar>,
     pub description: Option<String>,
+    /// `.env` comment lines, each written above its variable's key when
+    /// the import adds that key. In order; a variable may have several.
+    pub env_comments: Vec<(String, String)>,
     pub report: ImportReport,
 }
 

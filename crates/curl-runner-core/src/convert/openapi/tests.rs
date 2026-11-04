@@ -521,4 +521,773 @@ mod sample {
             ]
         );
     }
+
+    #[test]
+    fn take_hits_reports_each_call_again() {
+        let d = empty_doc();
+        let mut s = Sampler::new(&d);
+        let nope = json!({"$ref": "#/components/schemas/Nope"});
+        s.value(&json!({"type": "array", "items": nope}));
+        s.value(&nope);
+        assert_eq!(s.take_hits().len(), 1);
+        assert!(s.take_hits().is_empty());
+        s.value(&nope);
+        assert_eq!(s.take_hits()[0].target, "#/components/schemas/Nope");
+        assert_eq!(s.unresolved_refs().len(), 1);
+    }
+}
+
+mod map {
+    use serde_json::{Value, json};
+
+    use super::doc;
+    use crate::convert::import::{Attention, Field, FieldValue, Mapped, MappedAuth, MappedBody};
+    use crate::convert::openapi::{api_prefix, map_document, parse_document};
+
+    const SMALL: &str = include_str!("../../../tests/fixtures/openapi/small_v30.yaml");
+    const V2: &str = include_str!("../../../tests/fixtures/openapi/petstore_v2.json");
+
+    fn small() -> Mapped {
+        map_document(&parse_document(SMALL).unwrap())
+    }
+
+    /// A 3.0 document titled `Pets` on `https://api.example.com`.
+    fn spec(paths: Value) -> Value {
+        json!({
+            "openapi": "3.0.3",
+            "info": { "title": "Pets", "version": "1" },
+            "servers": [{ "url": "https://api.example.com" }],
+            "paths": paths
+        })
+    }
+
+    fn map(v: Value) -> Mapped {
+        map_document(&doc(v))
+    }
+
+    fn lines(m: &Mapped) -> Vec<String> {
+        m.report.attention.iter().map(ToString::to_string).collect()
+    }
+
+    fn field(key: &str, value: &str, disabled: bool, note: Option<&str>) -> Field {
+        Field {
+            key: key.into(),
+            value: FieldValue::Text(value.into()),
+            disabled,
+            note: note.map(Into::into),
+        }
+    }
+
+    fn var<'m>(m: &'m Mapped, name: &str) -> &'m crate::convert::import::ImportedVar {
+        m.variables
+            .iter()
+            .find(|v| v.name == name)
+            .unwrap_or_else(|| panic!("no {name} in {:?}", m.variables))
+    }
+
+    #[test]
+    fn maps_small_spec() {
+        let m = small();
+        let folders: Vec<Vec<String>> = m.requests.iter().map(|r| r.folders.clone()).collect();
+        assert_eq!(
+            folders,
+            [["pets"], ["pets"], ["store"], ["pets"], ["pets"], ["users"]]
+                .map(|f| vec![f[0].to_string()])
+        );
+        assert_eq!((m.report.requests, m.report.folders), (6, 3));
+        let r = &m.requests[0];
+        assert_eq!(r.name, "List pets");
+        assert_eq!(r.method, "GET");
+        assert_eq!(r.url, "${PETS_BASE_URL}/pets");
+        assert_eq!(r.expect_status, Some(200));
+        assert_eq!(
+            r.params,
+            [field("limit", "1", true, Some("How many pets to return."))]
+        );
+        assert_eq!(
+            r.headers,
+            [field("X-API-Key", "${PETS_API_KEY}", false, None)]
+        );
+        assert_eq!(
+            r.comments,
+            ["operationId: listPets", "Everything about pets."]
+        );
+        assert_eq!(m.requests[1].expect_status, Some(201));
+        assert_eq!(m.requests[3].expect_status, Some(200));
+        // `2XX`
+        assert_eq!(m.requests[5].expect_status, Some(200));
+        assert_eq!(
+            m.requests[5].file_vars,
+            [("username".to_string(), "alice".to_string())]
+        );
+
+        let base = var(&m, "PETS_BASE_URL");
+        assert_eq!(
+            (base.value.as_str(), base.secret),
+            ("https://api.example.com/v1", false)
+        );
+        let key = var(&m, "PETS_API_KEY");
+        assert_eq!((key.value.as_str(), key.secret), ("", true));
+        assert_eq!(
+            m.env_comments,
+            [(
+                "PETS_BASE_URL".to_string(),
+                "Other server: https://staging.example.com/v1".to_string()
+            )]
+        );
+        assert_eq!(m.description.as_deref(), Some("A small pet store API."));
+        assert_eq!(
+            lines(&m),
+            [
+                "Pick a file for \"file\" in pets/Upload photo",
+                "Set the secret PETS_API_KEY"
+            ]
+        );
+    }
+
+    #[test]
+    fn path_params_in_file_vars() {
+        let m = small();
+        let r = &m.requests[3];
+        assert_eq!(r.name, "Get pet");
+        assert_eq!(r.url, "${PETS_BASE_URL}/pets/${petId}");
+        assert_eq!(r.file_vars, [("petId".to_string(), "1".to_string())]);
+    }
+
+    #[test]
+    fn json_body_and_content_type() {
+        let m = small();
+        let r = &m.requests[1];
+        assert_eq!(r.method, "POST");
+        assert_eq!(
+            r.body,
+            MappedBody::Json(json!({ "id": 1, "name": "Rex", "tag": "string" }))
+        );
+        assert!(
+            r.headers
+                .contains(&field("Content-Type", "application/json", false, None)),
+            "{:?}",
+            r.headers
+        );
+    }
+
+    #[test]
+    fn multipart_file_field() {
+        let m = small();
+        let r = &m.requests[4];
+        assert_eq!(
+            r.body,
+            MappedBody::Form(vec![
+                Field {
+                    key: "file".into(),
+                    value: FieldValue::File {
+                        path: "./pick-a-file".into(),
+                        placeholder: true
+                    },
+                    disabled: false,
+                    note: None,
+                },
+                field("caption", "string", true, Some("Shown under the photo.")),
+            ])
+        );
+        assert!(
+            !r.headers
+                .iter()
+                .any(|h| h.key.eq_ignore_ascii_case("content-type"))
+        );
+        assert!(m.report.attention.contains(&Attention::PickFile {
+            request: "pets/Upload photo".into(),
+            field: "file".into()
+        }));
+    }
+
+    #[test]
+    fn content_media_type_is_a_file_field() {
+        let mut v = spec(json!({ "/up": { "post": {
+            "requestBody": { "content": { "multipart/form-data": { "schema": {
+                "type": "object",
+                "properties": { "doc": { "type": "string", "contentMediaType": "application/pdf" } }
+            } } } },
+            "responses": {}
+        } } }));
+        v["openapi"] = json!("3.1.0");
+        let m = map(v);
+        let MappedBody::Form(f) = &m.requests[0].body else {
+            panic!("{:?}", m.requests[0].body)
+        };
+        assert!(matches!(
+            f[0].value,
+            FieldValue::File {
+                placeholder: true,
+                ..
+            }
+        ));
+        // Optional, so there's nothing to pick yet.
+        assert!(f[0].disabled);
+    }
+
+    #[test]
+    fn urlencoded_required_only() {
+        let m = map(spec(json!({ "/login": { "post": {
+            "requestBody": { "content": { "application/x-www-form-urlencoded": { "schema": {
+                "type": "object",
+                "required": ["user name"],
+                "properties": {
+                    "user name": { "type": "string", "example": "a&b" },
+                    "remember": { "type": "boolean" },
+                    "next": { "type": "string" }
+                }
+            } } } },
+            "responses": { "204": { "description": "ok" } }
+        } } })));
+        let r = &m.requests[0];
+        assert_eq!(r.body, MappedBody::Text("user+name=a%26b".into()));
+        assert!(
+            r.comments
+                .contains(&"Optional form fields: remember, next".to_string())
+        );
+        assert!(r.headers.contains(&field(
+            "Content-Type",
+            "application/x-www-form-urlencoded",
+            false,
+            None
+        )));
+        assert_eq!(r.expect_status, Some(204));
+    }
+
+    #[test]
+    fn text_body_uses_example() {
+        let m = map(spec(json!({ "/x": { "put": {
+            "requestBody": { "content": {
+                "application/octet-stream": {},
+                "application/xml": { "example": "<a/>" }
+            } },
+            "responses": {}
+        } } })));
+        let r = &m.requests[0];
+        assert_eq!(r.body, MappedBody::Text("<a/>".into()));
+        assert!(
+            r.headers
+                .contains(&field("Content-Type", "application/xml", false, None))
+        );
+        assert!(m.report.attention.is_empty(), "{:?}", lines(&m));
+    }
+
+    #[test]
+    fn octet_stream_skipped() {
+        let op = json!({ "put": {
+            "requestBody": { "content": { "application/octet-stream": {} } },
+            "responses": {}
+        } });
+        let m = map(spec(json!({ "/a": op, "/b": op })));
+        assert_eq!(m.requests.len(), 2);
+        assert_eq!(m.requests[0].body, MappedBody::None);
+        assert_eq!(
+            m.report.attention,
+            [Attention::SkippedBody {
+                media: "application/octet-stream".into(),
+                count: 2,
+                examples: vec!["PUT /a".into(), "PUT /b".into()],
+            }]
+        );
+        assert_eq!(
+            lines(&m),
+            [
+                "Skipped application/octet-stream bodies in 2 requests, like PUT /a and PUT /b. Add them by hand."
+            ]
+        );
+    }
+
+    #[test]
+    fn auth_rows() {
+        let op = |scheme: &str| json!({ "get": { "security": [{ scheme: [] }], "responses": {} } });
+        let mut v = spec(json!({
+            "/h": op("hk"),
+            "/q": op("qk"),
+            "/c": op("ck"),
+            "/b": op("bearerAuth"),
+            "/basic": op("basicAuth"),
+            "/o": op("oauth"),
+            "/oidc": op("oidc"),
+            "/d": op("dig"),
+            "/none": { "get": { "security": [], "responses": {} } },
+            "/default": { "get": { "responses": {} } }
+        }));
+        v["security"] = json!([{ "hk": [] }]);
+        v["components"] = json!({ "securitySchemes": {
+            "hk": { "type": "apiKey", "in": "header", "name": "X-Key" },
+            "qk": { "type": "apiKey", "in": "query", "name": "key" },
+            "ck": { "type": "apiKey", "in": "cookie", "name": "sid" },
+            "bearerAuth": { "type": "http", "scheme": "bearer" },
+            "basicAuth": { "type": "http", "scheme": "Basic" },
+            "oauth": { "type": "oauth2", "flows": {} },
+            "oidc": { "type": "openIdConnect", "openIdConnectUrl": "https://api.example.com/.well-known" },
+            "dig": { "type": "http", "scheme": "digest" }
+        } });
+        let m = map(v);
+        let r = |i: usize| &m.requests[i];
+        assert_eq!(r(0).headers, [field("X-Key", "${PETS_HK}", false, None)]);
+        assert_eq!(r(1).params, [field("key", "${PETS_QK}", false, None)]);
+        assert_eq!(
+            r(2).headers,
+            [field("Cookie", "sid=${PETS_CK}", false, None)]
+        );
+        assert_eq!(
+            r(3).auth,
+            Some(MappedAuth::Bearer("${PETS_BEARERAUTH_TOKEN}".into()))
+        );
+        assert_eq!(
+            r(4).auth,
+            Some(MappedAuth::Basic {
+                username: "${PETS_BASICAUTH_USERNAME}".into(),
+                password: "${PETS_BASICAUTH_PASSWORD}".into()
+            })
+        );
+        assert_eq!(r(5).auth, Some(MappedAuth::Bearer("${PETS_OAUTH}".into())));
+        assert_eq!(r(6).auth, Some(MappedAuth::Bearer("${PETS_OIDC}".into())));
+        assert_eq!(r(7).auth, None);
+        assert!(r(7).headers.is_empty());
+        assert_eq!((r(8).auth.clone(), r(8).headers.len()), (None, 0));
+        assert_eq!(r(9).headers, [field("X-Key", "${PETS_HK}", false, None)]);
+
+        for (name, secret) in [
+            ("PETS_HK", true),
+            ("PETS_QK", true),
+            ("PETS_CK", true),
+            ("PETS_BEARERAUTH_TOKEN", true),
+            ("PETS_BASICAUTH_USERNAME", false),
+            ("PETS_BASICAUTH_PASSWORD", true),
+            ("PETS_OAUTH", true),
+            ("PETS_OIDC", true),
+        ] {
+            let v = var(&m, name);
+            assert_eq!((v.secret, v.value.as_str()), (secret, ""), "{name}");
+        }
+        let a = &m.report.attention;
+        assert!(a.contains(&Attention::AccessToken {
+            var: "PETS_OAUTH".into(),
+            kind: "OAuth 2".into()
+        }));
+        assert!(a.contains(&Attention::AccessToken {
+            var: "PETS_OIDC".into(),
+            kind: "OpenID Connect".into()
+        }));
+        assert!(a.contains(&Attention::UnsupportedScheme {
+            scheme: "dig".into(),
+            kind: "digest".into(),
+            count: 1
+        }));
+        assert!(a.contains(&Attention::SetVariable {
+            var: "PETS_BASICAUTH_USERNAME".into()
+        }));
+        assert!(a.contains(&Attention::SetSecret {
+            var: "PETS_BASICAUTH_PASSWORD".into()
+        }));
+        // The access token line already says to set it.
+        assert!(!a.contains(&Attention::SetSecret {
+            var: "PETS_OAUTH".into()
+        }));
+        let l = lines(&m);
+        assert!(
+            l.contains(&"Put an OAuth 2 access token in PETS_OAUTH".to_string()),
+            "{l:?}"
+        );
+        assert!(
+            l.contains(&"Skipped digest auth (dig) in 1 request. Add it by hand.".to_string()),
+            "{l:?}"
+        );
+    }
+
+    #[test]
+    fn auth_choice_aggregated() {
+        let op = json!({ "get": { "security": [{ "k": [] }, { "o": [] }], "responses": {} } });
+        let mut v = spec(json!({ "/1": op, "/2": op, "/3": op, "/4": op, "/5": op }));
+        v["components"] = json!({ "securitySchemes": {
+            "k": { "type": "apiKey", "in": "header", "name": "X-Key" },
+            "o": { "type": "oauth2" }
+        } });
+        let m = map(v);
+        let choices: Vec<_> = m
+            .report
+            .attention
+            .iter()
+            .filter(|a| matches!(a, Attention::AuthChoice { .. }))
+            .collect();
+        assert_eq!(
+            choices,
+            [&Attention::AuthChoice {
+                used: "k".into(),
+                others: "o".into(),
+                count: 5
+            }]
+        );
+        assert_eq!(
+            choices[0].to_string(),
+            "Used k auth in 5 requests that also accept o"
+        );
+    }
+
+    #[test]
+    fn literal_credential_scrubbed() {
+        let m = map(spec(json!({ "/me": { "get": {
+            "parameters": [
+                { "name": "Authorization", "in": "header", "required": true,
+                  "schema": { "type": "string" }, "example": "Bearer sk_live_x" },
+                { "name": "api_key", "in": "query", "required": true,
+                  "schema": { "type": "string", "example": "qk_live_y" } }
+            ],
+            "responses": {}
+        } } })));
+        let r = &m.requests[0];
+        assert_eq!(
+            r.headers,
+            [field(
+                "Authorization",
+                "Bearer ${PETS_AUTHORIZATION}",
+                false,
+                None
+            )]
+        );
+        assert_eq!(r.params, [field("api_key", "${PETS_API_KEY}", false, None)]);
+        for name in ["PETS_AUTHORIZATION", "PETS_API_KEY"] {
+            let v = var(&m, name);
+            assert!(v.secret);
+            assert_eq!(v.value, "");
+        }
+        let everything = format!(
+            "{:?}{:?}{:?}{}",
+            m.requests,
+            m.variables.iter().map(|v| &v.value).collect::<Vec<_>>(),
+            m.env_comments,
+            lines(&m).join("\n")
+        );
+        for secret in ["sk_live_x", "qk_live_y"] {
+            assert!(!everything.contains(secret), "{everything}");
+        }
+    }
+
+    #[test]
+    fn relative_server_needs_setting() {
+        let mut v = spec(json!({ "/a": { "get": { "responses": {} } } }));
+        v["servers"] = json!([{ "url": "/v1" }]);
+        let m = map(v);
+        assert_eq!(var(&m, "PETS_BASE_URL").value, "/v1");
+        assert!(m.report.attention.contains(&Attention::SetVariable {
+            var: "PETS_BASE_URL".into()
+        }));
+
+        let mut v = spec(json!({}));
+        v.as_object_mut().unwrap().remove("servers");
+        let m = map(v);
+        assert_eq!(var(&m, "PETS_BASE_URL").value, "");
+        assert_eq!(
+            m.report.attention,
+            [Attention::SetVariable {
+                var: "PETS_BASE_URL".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn server_variables_default() {
+        let mut v = spec(json!({}));
+        v["servers"] = json!([{
+            "url": "https://{region}.example.com/{version}",
+            "variables": { "region": { "default": "eu" }, "version": { "enum": ["v1"] } }
+        }]);
+        let m = map(v);
+        assert_eq!(
+            var(&m, "PETS_BASE_URL").value,
+            "https://eu.example.com/{version}"
+        );
+        assert_eq!(
+            lines(&m),
+            ["The server variable version has no default. Edit the base URL."]
+        );
+    }
+
+    #[test]
+    fn bad_parts_dont_stop_others() {
+        let m = map(spec(json!({
+            "/broken": "oops",
+            "/nores": { "get": { "summary": "No responses" } },
+            "/badref": { "post": {
+                "requestBody": { "$ref": "#/components/requestBodies/Nope" },
+                "responses": { "200": { "description": "ok" } }
+            } },
+            "/ok": { "get": { "responses": { "200": { "description": "ok" } } } }
+        })));
+        let names: Vec<_> = m.requests.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["No responses", "POST /badref", "GET /ok"]);
+        assert_eq!(m.requests[0].expect_status, None);
+        assert_eq!(m.requests[1].body, MappedBody::None);
+        assert_eq!(
+            m.report.attention,
+            [
+                Attention::BadOperation {
+                    at: "/broken".into(),
+                    reason: "it isn't a path item object".into()
+                },
+                Attention::UnresolvedRef {
+                    target: "#/components/requestBodies/Nope".into(),
+                    external: false,
+                    count: 1,
+                    examples: vec!["POST /badref".into()]
+                }
+            ]
+        );
+        assert_eq!(
+            lines(&m)[1],
+            "Couldn't resolve #/components/requestBodies/Nope in 1 request, like POST /badref. Used an empty value."
+        );
+    }
+
+    #[test]
+    fn unresolved_refs_count_requests_and_keep_three_examples() {
+        let op = json!({ "post": {
+            "requestBody": { "content": { "application/json": { "schema": {
+                "type": "object",
+                "properties": {
+                    "a": { "$ref": "#/components/schemas/Gone" },
+                    "b": { "$ref": "#/components/schemas/Gone" }
+                }
+            } } } },
+            "responses": {}
+        } });
+        let ext =
+            json!({ "get": { "parameters": [{ "$ref": "other.yaml#/P" }], "responses": {} } });
+        let m = map(spec(
+            json!({ "/1": op, "/2": op, "/3": op, "/4": op, "/x": ext }),
+        ));
+        assert_eq!(
+            m.report.attention,
+            [
+                Attention::UnresolvedRef {
+                    target: "#/components/schemas/Gone".into(),
+                    external: false,
+                    count: 4,
+                    examples: vec!["POST /1".into(), "POST /2".into(), "POST /3".into()]
+                },
+                Attention::UnresolvedRef {
+                    target: "other.yaml#/P".into(),
+                    external: true,
+                    count: 1,
+                    examples: vec!["GET /x".into()]
+                }
+            ]
+        );
+        assert_eq!(
+            lines(&m)[0],
+            "Couldn't resolve #/components/schemas/Gone in 4 requests, like POST /1, POST /2 and POST /3. Used an empty value."
+        );
+        assert_eq!(
+            lines(&m)[1],
+            "Can't follow the external reference other.yaml#/P in 1 request, like GET /x. Used an empty value."
+        );
+    }
+
+    #[test]
+    fn other_issues_aggregate() {
+        let mut v = spec(json!({
+            "/own": {
+                "servers": [{ "url": "https://files.example.com" }],
+                "get": { "responses": {} },
+                "put": { "responses": {} }
+            },
+            "/same": {
+                "servers": [{ "url": "https://api.example.com/" }],
+                "get": { "responses": {} }
+            },
+            "/cookies": { "get": {
+                "parameters": [
+                    { "name": "session", "in": "cookie", "required": true, "schema": { "type": "string" } },
+                    { "name": "theme", "in": "cookie", "schema": { "type": "string" } },
+                    { "name": "ids", "in": "query", "required": true, "style": "pipeDelimited",
+                      "schema": { "type": "array", "items": { "type": "integer" } } },
+                    { "name": "tags", "in": "query", "required": true, "explode": false,
+                      "schema": { "type": "array", "items": { "type": "string" } }, "example": ["a", "b"] },
+                    { "name": "many", "in": "query", "required": true,
+                      "schema": { "type": "array", "items": { "type": "string" } }, "example": ["a", "b"] }
+                ],
+                "callbacks": { "done": { "{$request.body#/url}": {} } },
+                "responses": { "200": { "description": "ok", "links": { "self": {}, "next": {} } } }
+            } },
+            "/shapes": { "post": {
+                "requestBody": { "content": { "application/json": { "schema": {
+                    "oneOf": [{ "type": "object" }, { "type": "string" }]
+                } } } },
+                "responses": {}
+            } }
+        }));
+        v["openapi"] = json!("3.1.0");
+        v["webhooks"] = json!({ "newPet": {}, "oldPet": {} });
+        let m = map(v);
+        let urls: Vec<_> = m.requests.iter().map(|r| r.url.as_str()).collect();
+        assert_eq!(
+            urls,
+            [
+                "https://files.example.com/own",
+                "https://files.example.com/own",
+                "${PETS_BASE_URL}/same",
+                "${PETS_BASE_URL}/cookies",
+                "${PETS_BASE_URL}/shapes"
+            ]
+        );
+        let c = &m.requests[3];
+        assert_eq!(c.headers, [field("Cookie", "session=string", false, None)]);
+        assert_eq!(
+            c.params,
+            [
+                field("ids", "1", false, None),
+                field("tags", "a,b", false, None),
+                field("many", "a,b", false, None)
+            ]
+        );
+        assert_eq!(
+            lines(&m),
+            [
+                "2 requests use their own server https://files.example.com",
+                "Left out optional cookies in 1 request, like GET /cookies",
+                "2 parameters use a style curl-runner doesn't model, like in GET /cookies. Check their values.",
+                "Skipped 1 callback",
+                "Skipped 2 links",
+                "Used the first of several body shapes in 1 request, like POST /shapes",
+                "Skipped 2 webhooks",
+            ]
+        );
+    }
+
+    #[test]
+    fn tsv_collection_format_is_a_param_style() {
+        let d = doc(json!({ "swagger": "2.0", "info": { "title": "T" },
+            "paths": { "/x": { "get": { "parameters": [{ "in": "query", "name": "q",
+                "type": "array", "items": { "type": "string" }, "collectionFormat": "tsv" }] } } } }));
+        let m = map_document(&d);
+        assert!(
+            matches!(
+                m.report.attention.as_slice(),
+                [
+                    Attention::SetVariable { .. },
+                    Attention::ParamStyle { count: 1, .. }
+                ]
+            ),
+            "{:?}",
+            m.report.attention
+        );
+    }
+
+    #[test]
+    fn names_and_comments() {
+        let mut v = spec(json!({ "/pets/{id}": { "delete": {
+            "tags": ["pets", "admin"],
+            "operationId": "deletePet",
+            "description": "Removes a pet.\n\nForever.",
+            "deprecated": true,
+            "externalDocs": { "url": "https://docs.example.com/delete" },
+            "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+            "responses": { "204": { "description": "gone" } }
+        } } }));
+        v["tags"] = json!([{ "name": "pets", "description": "Pet things." }]);
+        let m = map(v);
+        let r = &m.requests[0];
+        assert_eq!(r.name, "deletePet");
+        assert_eq!(r.method, "DELETE");
+        assert_eq!(r.folders, ["pets"]);
+        assert_eq!(
+            r.comments,
+            [
+                "Removes a pet.",
+                "Forever.",
+                "operationId: deletePet",
+                "Deprecated",
+                "https://docs.example.com/delete",
+                "Pet things."
+            ]
+        );
+        assert_eq!(
+            r.file_vars,
+            [(
+                "id".to_string(),
+                "00000000-0000-4000-8000-000000000000".to_string()
+            )]
+        );
+    }
+
+    #[test]
+    fn methods_in_order_and_renamed_path_vars() {
+        let m = map(spec(json!({ "/a/{pet-id}": {
+            "post": { "responses": {} },
+            "get": { "responses": {} },
+            "parameters": [{ "name": "pet-id", "in": "path", "required": true, "schema": { "type": "integer" } }]
+        } })));
+        let names: Vec<_> = m.requests.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["GET /a/{pet-id}", "POST /a/{pet-id}"]);
+        assert_eq!(m.requests[0].url, "${PETS_BASE_URL}/a/${pet_id}");
+        assert_eq!(
+            m.requests[0].file_vars,
+            [("pet_id".to_string(), "1".to_string())]
+        );
+        assert_eq!(
+            m.report.attention,
+            [Attention::Renamed {
+                from: "pet-id".into(),
+                to: "pet_id".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn api_prefix_cases() {
+        assert_eq!(
+            api_prefix("Swagger Petstore - OpenAPI 3.0"),
+            "SWAGGER_PETSTORE"
+        );
+        assert_eq!(api_prefix("Pets"), "PETS");
+        assert_eq!(api_prefix(""), "API");
+        assert_eq!(api_prefix(" -- "), "API");
+        let long = "Very Long Inventory Management Service Api";
+        assert_eq!(long.len(), 42);
+        assert_eq!(api_prefix(long), "VERY_LONG_INVENTORY");
+        assert_eq!(
+            api_prefix("Supercalifragilisticexpialidocious"),
+            "SUPERCALIFRAGILISTICEXPI"
+        );
+        assert_eq!(api_prefix("my_api v2"), "MY_API_V2");
+    }
+
+    #[test]
+    fn swagger2_end_to_end() {
+        let m = map_document(&parse_document(V2).unwrap());
+        assert_eq!((m.report.requests, m.report.folders), (2, 1));
+        assert_eq!(
+            var(&m, "PETSTORE_V2_BASE_URL").value,
+            "https://api.example.com/v2"
+        );
+        let r = &m.requests[0];
+        assert_eq!(r.url, "${PETSTORE_V2_BASE_URL}/pets/${petId}");
+        assert_eq!(
+            r.auth,
+            Some(MappedAuth::Basic {
+                username: "${PETSTORE_V2_BASIC_AUTH_USERNAME}".into(),
+                password: "${PETSTORE_V2_BASIC_AUTH_PASSWORD}".into()
+            })
+        );
+        let MappedBody::Form(f) = &m.requests[1].body else {
+            panic!("{:?}", m.requests[1].body)
+        };
+        assert_eq!(f[0].key, "file");
+        assert!(matches!(
+            f[0].value,
+            FieldValue::File {
+                placeholder: true,
+                ..
+            }
+        ));
+        assert!(!f[0].disabled);
+        assert_eq!(f[1], field("note", "string", true, None));
+        assert!(m.report.attention.contains(&Attention::PickFile {
+            request: "pets/Upload image".into(),
+            field: "file".into()
+        }));
+    }
 }
