@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publish curl-runner-core, then curl-runner, to crates.io at the workspace
+# Publish curl-runner-cloud-proto, curl-runner-core, then curl-runner, to crates.io at the workspace
 # version. Re-runnable: versions already on crates.io are skipped. A failed
 # registry lookup aborts instead of being mistaken for "unpublished".
 # Needs CARGO_REGISTRY_TOKEN (CI: crates.io trusted publishing).
@@ -31,7 +31,7 @@ published() {
   return 2
 }
 
-for crate in curl-runner-core curl-runner; do
+for crate in curl-runner-cloud-proto curl-runner-core curl-runner; do
   status=0
   published "$crate" "$VERSION" || status=$?
   case "$status" in
