@@ -34,16 +34,8 @@ fn fake_api(verify_ok: bool) -> (TestServer, Seen) {
 
 fn cmd(home: &std::path::Path, server: &str) -> Command {
     let mut c = Command::cargo_bin("curl-runner").unwrap();
-    // Do not clear the whole environment: on Windows, dropping SystemRoot
-    // makes Winsock fail, so every connection is refused.
-    for k in [
-        "CURL_RUNNER_TOKEN",
-        "CURL_RUNNER_SERVER",
-        "HOSTNAME",
-        "COMPUTERNAME",
-    ] {
-        c.env_remove(k);
-    }
+    // system_env keeps what Windows needs (SystemRoot) and nothing else.
+    c.env_clear().envs(testkit::system_env());
     c.env("XDG_CONFIG_HOME", home)
         .env("APPDATA", home)
         .env("HOME", home)
