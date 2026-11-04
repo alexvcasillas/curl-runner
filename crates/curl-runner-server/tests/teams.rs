@@ -145,6 +145,8 @@ async fn create_team_domains_allows_listed_domain(pool: PgPool) {
 async fn first_user_on_empty_domains_becomes_operator(pool: PgPool) {
     let app = test_app_with(pool, test_config(&[("SIGNUP", "domains")])).await;
     let first = app.sign_in("ada@example.com").await;
+    // The fixed clock gives both accounts one timestamp otherwise.
+    app.clock.advance(Duration::seconds(1));
     let second = app.sign_in("bob@example.com").await;
     // The second account cannot, even if it asks first.
     let (status, _) = app
@@ -435,5 +437,84 @@ async fn admin_plan_endpoint_operator_only(pool: PgPool) {
     assert_eq!(
         set_plan(&app, &ops, "missing", "team").await.0,
         StatusCode::NOT_FOUND
+    );
+}
+
+#[sqlx::test]
+async fn concurrent_invites_respect_the_free_limit(pool: PgPool) {
+    let app = test_app(pool).await;
+    let owner = app.sign_in("ada@example.com").await;
+    app.create_team(&owner, "acme").await;
+    invite(&app, &owner, "acme", "bob@example.com").await;
+    let token = invite_token(&app, "bob@example.com").await;
+    let bob = app.sign_in("bob@example.com").await;
+    accept(&app, &bob, &token).await;
+    // 2 members, 0 pending: room for exactly one more.
+    let (a, b) = tokio::join!(
+        invite(&app, &owner, "acme", "cy@example.com"),
+        invite(&app, &owner, "acme", "di@example.com"),
+    );
+    let mut codes = [a.0.as_u16(), b.0.as_u16()];
+    codes.sort();
+    assert_eq!(codes, [201, 402], "{a:?} {b:?}");
+}
+
+#[sqlx::test]
+async fn owners_removing_each_other_concurrently_leave_one_owner(pool: PgPool) {
+    let app = test_app(pool).await;
+    let ada = app.sign_in("ada@example.com").await;
+    app.create_team(&ada, "acme").await;
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/v1/teams/acme/invites",
+            Some(json!({"email": "bob@example.com", "role": "owner"})),
+            Some(&ada),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let token = invite_token(&app, "bob@example.com").await;
+    let bob = app.sign_in("bob@example.com").await;
+    accept(&app, &bob, &token).await;
+    let ada_id = user_id(&app, &ada).await;
+    let bob_id = user_id(&app, &bob).await;
+    let remove_bob = format!("/v1/teams/acme/members/{bob_id}");
+    let demote_ada = format!("/v1/teams/acme/members/{ada_id}");
+    let (a, b) = tokio::join!(
+        app.request(Method::DELETE, &remove_bob, None, Some(&ada)),
+        app.request(
+            Method::PATCH,
+            &demote_ada,
+            Some(json!({"role": "member"})),
+            Some(&bob)
+        ),
+    );
+    // Whoever the lock admits first wins; the other is refused (404 once
+    // removed, 403 once demoted), never a team with no owner.
+    let wins = [a.0, b.0].iter().filter(|s| s.is_success()).count();
+    assert_eq!(wins, 1, "{a:?} {b:?}");
+    let owners: i64 = sqlx::query_scalar("SELECT count(*) FROM memberships WHERE role = 'owner'")
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(owners, 1);
+}
+
+#[sqlx::test]
+async fn invite_to_member_or_pending_email_conflicts(pool: PgPool) {
+    let app = test_app(pool).await;
+    let owner = app.sign_in("ada@example.com").await;
+    app.create_team(&owner, "acme").await;
+    assert_eq!(
+        invite(&app, &owner, "acme", "Ada@example.com").await.0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        invite(&app, &owner, "acme", "bob@example.com").await.0,
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        invite(&app, &owner, "acme", "bob@example.com").await.0,
+        StatusCode::CONFLICT
     );
 }

@@ -146,6 +146,14 @@ pub async fn can_create_team(db: &PgPool, config: &Config, email: &str) -> Resul
     }
 }
 
+/// The snake_case string the database stores for a proto enum.
+fn enum_str<T: Serialize>(value: T) -> String {
+    match serde_json::to_value(value) {
+        Ok(serde_json::Value::String(s)) => s,
+        _ => unreachable!("proto enums serialise to strings"),
+    }
+}
+
 fn invalid(message: &str) -> ApiError {
     ApiError::new(ErrorCode::InvalidRequest, message)
 }
@@ -196,7 +204,7 @@ async fn create_team(
     )
     .bind(&req.slug)
     .bind(&name)
-    .bind(plan_str(plan))
+    .bind(enum_str(plan))
     .bind(now)
     .fetch_optional(&mut *tx)
     .await?;
@@ -219,13 +227,6 @@ async fn create_team(
             plan,
         }),
     ))
-}
-
-fn plan_str(plan: Plan) -> &'static str {
-    match plan {
-        Plan::Free => "free",
-        Plan::Team => "team",
-    }
 }
 
 #[derive(Serialize)]
@@ -328,6 +329,31 @@ async fn lock_team(conn: &mut PgConnection, team_id: Uuid) -> Result<Plan, ApiEr
     column_enum(plan)
 }
 
+/// Lock the team row, then read the caller's current role under the lock, so
+/// a just-removed or demoted caller cannot finish another action. A caller
+/// who is no longer a member gets `404`.
+async fn lock_as(
+    conn: &mut PgConnection,
+    team_id: Uuid,
+    user_id: Uuid,
+) -> Result<(Plan, TeamAccess), ApiError> {
+    let plan = lock_team(&mut *conn, team_id).await?;
+    let role: Option<String> =
+        sqlx::query_scalar("SELECT role FROM memberships WHERE team_id = $1 AND user_id = $2")
+            .bind(team_id)
+            .bind(user_id)
+            .fetch_optional(conn)
+            .await?;
+    let role = role.ok_or_else(ApiError::not_found)?;
+    Ok((
+        plan,
+        TeamAccess {
+            team_id,
+            role: column_enum(role)?,
+        },
+    ))
+}
+
 async fn member_count(conn: &mut PgConnection, team_id: Uuid) -> Result<i64, ApiError> {
     Ok(
         sqlx::query_scalar("SELECT count(*) FROM memberships WHERE team_id = $1")
@@ -367,7 +393,25 @@ async fn invite(
     let expires_at = now + INVITE_TTL;
     let token = new_token("cri_");
     let mut tx = state.db.begin().await?;
-    let plan = lock_team(&mut tx, access.team_id).await?;
+    let (plan, locked) = lock_as(&mut tx, access.team_id, auth.user_id).await?;
+    locked.require_owner()?;
+    let taken: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id \
+                        WHERE m.team_id = $1 AND u.email = $2) \
+             OR EXISTS (SELECT 1 FROM member_invites \
+                        WHERE team_id = $1 AND email = $2 AND accepted_at IS NULL AND expires_at > $3)",
+    )
+    .bind(access.team_id)
+    .bind(&email)
+    .bind(now)
+    .fetch_one(&mut *tx)
+    .await?;
+    if taken {
+        return Err(ApiError::new(
+            ErrorCode::Conflict,
+            "That email is already a member or has a pending invite.",
+        ));
+    }
     if let Some(max) = limits(plan).members {
         let pending: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM member_invites \
@@ -387,7 +431,7 @@ async fn invite(
     )
     .bind(access.team_id)
     .bind(&email)
-    .bind(role_str(req.role))
+    .bind(enum_str(req.role))
     .bind(secret_hash(state.config.secret_key.as_bytes(), &token))
     .bind(auth.user_id)
     .bind(expires_at)
@@ -423,13 +467,6 @@ async fn invite(
             expires_at,
         }),
     ))
-}
-
-fn role_str(role: Role) -> &'static str {
-    match role {
-        Role::Owner => "owner",
-        Role::Member => "member",
-    }
 }
 
 #[derive(Serialize)]
@@ -539,11 +576,11 @@ async fn remove_member(
     Path((slug, user_id)): Path<(String, Uuid)>,
 ) -> Result<StatusCode, ApiError> {
     let access = team_access(&state.db, auth.user_id, &slug).await?;
-    if user_id != auth.user_id {
-        access.require_owner()?;
-    }
     let mut tx = state.db.begin().await?;
-    lock_team(&mut tx, access.team_id).await?;
+    let (_, locked) = lock_as(&mut tx, access.team_id, auth.user_id).await?;
+    if user_id != auth.user_id {
+        locked.require_owner()?;
+    }
     if is_last_owner(&mut tx, access.team_id, user_id).await? {
         return Err(last_owner());
     }
@@ -579,14 +616,15 @@ async fn set_role(
     let access = team_access(&state.db, auth.user_id, &slug).await?;
     access.require_owner()?;
     let mut tx = state.db.begin().await?;
-    lock_team(&mut tx, access.team_id).await?;
+    let (_, locked) = lock_as(&mut tx, access.team_id, auth.user_id).await?;
+    locked.require_owner()?;
     if req.role != Role::Owner && is_last_owner(&mut tx, access.team_id, user_id).await? {
         return Err(last_owner());
     }
     let done = sqlx::query("UPDATE memberships SET role = $3 WHERE team_id = $1 AND user_id = $2")
         .bind(access.team_id)
         .bind(user_id)
-        .bind(role_str(req.role))
+        .bind(enum_str(req.role))
         .execute(&mut *tx)
         .await?;
     if done.rows_affected() == 0 {
@@ -621,7 +659,7 @@ async fn set_plan(
     }
     let done = sqlx::query("UPDATE teams SET plan = $2 WHERE slug = $1")
         .bind(&slug)
-        .bind(plan_str(req.plan))
+        .bind(enum_str(req.plan))
         .execute(&state.db)
         .await?;
     if done.rows_affected() == 0 {
