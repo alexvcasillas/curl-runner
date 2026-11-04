@@ -91,4 +91,94 @@ impl TestApp {
         };
         (status, value)
     }
+
+    /// Ask for a sign-in code and read it, and the link token, from the newest
+    /// queued mail to `email`. Mail bodies are intact until the worker runs.
+    pub async fn start_email(&self, email: &str, client: &str) -> (String, String) {
+        let (status, _) = self
+            .request(
+                Method::POST,
+                "/v1/auth/email/start",
+                Some(serde_json::json!({"email": email, "client": client})),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::ACCEPTED);
+        let body: String = sqlx::query_scalar(
+            "SELECT text_body FROM outbox_emails WHERE to_addr = $1 ORDER BY ctid DESC LIMIT 1",
+        )
+        .bind(email.to_lowercase())
+        .fetch_one(&self.state.db)
+        .await
+        .unwrap();
+        let code = body
+            .split("sign-in code is ")
+            .nth(1)
+            .and_then(|r| r.get(..6))
+            .expect("code in mail")
+            .to_owned();
+        let token = body
+            .split("token=")
+            .nth(1)
+            .and_then(|r| r.split('&').next())
+            .expect("token in mail")
+            .to_owned();
+        (code, token)
+    }
+
+    /// Sign `email` in (start, read the code, verify) and return the session token.
+    pub async fn sign_in(&self, email: &str) -> String {
+        let (code, _) = self.start_email(email, "web").await;
+        let (status, body) = self
+            .request(
+                Method::POST,
+                "/v1/auth/email/verify",
+                Some(serde_json::json!({"email": email, "code": code})),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        body["session"].as_str().expect("session token").to_owned()
+    }
+
+    /// POST a JSON body with an `X-Forwarded-For` header.
+    pub async fn request_with_ip(
+        &self,
+        path: &str,
+        json: Value,
+        forwarded: &str,
+    ) -> (StatusCode, Value) {
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(path)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("x-forwarded-for", forwarded)
+            .body(Body::from(json.to_string()))
+            .unwrap();
+        self.send(req).await
+    }
+
+    /// POST a raw (possibly malformed) body labelled as JSON.
+    pub async fn request_raw(&self, method: Method, path: &str, body: &str) -> (StatusCode, Value) {
+        let req = Request::builder()
+            .method(method)
+            .uri(path)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_owned()))
+            .unwrap();
+        self.send(req).await
+    }
+
+    async fn send(&self, req: Request<Body>) -> (StatusCode, Value) {
+        let res = self.router.clone().oneshot(req).await.unwrap();
+        let status = res.status();
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        let value = if bytes.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_slice(&bytes)
+                .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()))
+        };
+        (status, value)
+    }
 }

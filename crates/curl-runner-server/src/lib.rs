@@ -1,8 +1,10 @@
 //! curl-runner server: the Cloud backend (accounts, teams, publish, sharing).
 
+pub mod auth;
 pub mod clock;
 pub mod config;
 pub mod error;
+pub mod extract;
 pub mod hash;
 pub mod info;
 pub mod mail;
@@ -30,6 +32,7 @@ pub fn app(state: AppState) -> Router {
         .route("/", get(health))
         .route("/health", get(health))
         .route("/v1/info", get(info::info))
+        .merge(auth::routes())
         .fallback(not_found)
         .with_state(state)
         .layer(CorsLayer::permissive())
@@ -62,9 +65,12 @@ async fn serve_router(
     listener: TcpListener,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
-    axum::serve(listener, router)
-        .with_graceful_shutdown(shutdown)
-        .await
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown)
+    .await
 }
 
 /// Parse the `PORT` env value; missing or invalid values fall back to 8080.
