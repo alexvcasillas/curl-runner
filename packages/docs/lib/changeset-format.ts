@@ -8,11 +8,19 @@ const EXPECTED = [
 ].join('\n');
 
 const HEADLINE = /^\*\*(.+?)\*\*[ \t]*(?:\n|$)/;
-const FRONT_MATTER = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
+const FRONT_MATTER = /^---\r?\n(?:[\s\S]*?\r?\n)?---\r?\n?/;
 
 /** Returns the problems in one changeset file's text (empty when it is fine). */
 export function checkChangesetText(text: string, name: string): string[] {
-  const body = text.replace(/\r\n?/g, '\n').replace(FRONT_MATTER, '').trim();
+  const body = text
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n?/g, '\n')
+    .replace(FRONT_MATTER, '')
+    .trim();
+  // `pnpm changeset --empty` writes no body: no release notes, so nothing to check.
+  if (body === '') {
+    return [];
+  }
   const problems: string[] = [];
   const headline = body.match(HEADLINE);
   if (!headline) {

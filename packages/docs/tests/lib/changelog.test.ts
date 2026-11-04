@@ -199,6 +199,28 @@ describe('getReleaseDates', () => {
   });
 });
 
+describe('splitEntry scan', () => {
+  it('treats a tagged marker without text as untagged', () => {
+    expect(splitEntry('Lead.\n\n- **New:**').items).toEqual([]);
+    expect(splitEntry('- **New:**   \n- **Fixed:** b').items).toEqual([
+      { tag: 'fixed', text: 'b' },
+    ]);
+  });
+
+  it('keeps a long fence open until a closing fence of the same char and length', () => {
+    const body = '````md\n```\n- **New:** inside\n```\n````\n\n- **Fixed:** real';
+    expect(splitEntry(body).items).toEqual([{ tag: 'fixed', text: 'real' }]);
+    const tilde = '~~~~\n~~~\n- **New:** inside\n~~~~\n- **Fixed:** real';
+    expect(splitEntry(tilde).items).toEqual([{ tag: 'fixed', text: 'real' }]);
+  });
+
+  it('ignores tagged lines inside a multi-line HTML comment', () => {
+    const body = 'Lead.\n\n<!--\n- **New:** hidden\n-->\n\n- **Fixed:** shown';
+    expect(splitEntry(body).items).toEqual([{ tag: 'fixed', text: 'shown' }]);
+    expect(splitEntry('<!--\n- **New:** hidden\n-->').items).toEqual([]);
+  });
+});
+
 describe('splitEntry', () => {
   it('splits lead, tagged items and notes', () => {
     const body = [

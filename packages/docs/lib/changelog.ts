@@ -61,9 +61,10 @@ const PREFIX =
   /^(?:\[#(\d+)\]\([^)]*\)\s*)?(?:\[`([0-9a-f]{7,40})`\]\([^)]*\)\s*)?(?:Thanks [^!]*!\s*)?- /;
 const HEADLINE = /^\*\*(.+?)\*\*[ \t]*(?:\n|$)/;
 
-const TAGGED_ITEM = /^[-*] \*\*(new|improved|fixed|breaking):\*\*[ \t]*(.*)$/i;
+// The text is required: a bare `- **New:**` is not an item.
+const TAGGED_ITEM = /^[-*] \*\*(new|improved|fixed|breaking):\*\*[ \t]*(\S.*)$/i;
 const BLOCK_START = /^\s*(?:```|~~~|#{1,6}\s|[-*+] |\d+[.)] )/;
-const FENCE_LINE = /^\s*(```|~~~)/;
+const FENCE_LINE = /^\s*(`{3,}|~{3,})(.*)$/;
 
 /**
  * Splits an entry body into a lead, the run of `- **Tag:** text` items, and
@@ -71,21 +72,35 @@ const FENCE_LINE = /^\s*(```|~~~)/;
  * indented or wrapped continuation lines and the blank lines between them.
  * Anything else (an untagged bullet, a fence, a heading, a paragraph) ends the
  * run, and it plus everything after it is the notes. Tagged-looking lines
- * inside fenced code are ignored. Without tagged items the whole body is the lead.
+ * inside fenced code (honouring fence length) or a multi-line HTML comment are ignored. Without tagged items the whole body is the lead.
  */
 export function splitEntry(body: string): { lead: string; items: ChangeItem[]; notes: string } {
   const lines = body.split('\n');
   let first = -1;
   let fence: string | null = null;
+  let inComment = false;
   for (let n = 0; n < lines.length && first === -1; n++) {
-    const marker = lines[n].match(FENCE_LINE)?.[1];
+    const line = lines[n];
+    if (inComment) {
+      inComment = !line.includes('-->');
+      continue;
+    }
+    const match = line.match(FENCE_LINE);
     if (fence) {
-      if (marker === fence) {
+      // A closing fence uses the same character, is at least as long, and has no info string.
+      if (
+        match &&
+        match[1][0] === fence[0] &&
+        match[1].length >= fence.length &&
+        !match[2].trim()
+      ) {
         fence = null;
       }
-    } else if (marker) {
-      fence = marker;
-    } else if (TAGGED_ITEM.test(lines[n])) {
+    } else if (match) {
+      fence = match[1];
+    } else if (line.includes('<!--') && !line.slice(line.indexOf('<!--') + 4).includes('-->')) {
+      inComment = true;
+    } else if (TAGGED_ITEM.test(line)) {
       first = n;
     }
   }

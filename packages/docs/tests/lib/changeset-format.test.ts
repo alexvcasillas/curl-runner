@@ -16,6 +16,27 @@ import {
 const repoRoot = path.resolve(__dirname, '../../../..');
 const FM = '---\n"@curl-runner/cli": minor\n---\n\n';
 
+describe('changeset format checker front matter', () => {
+  const entry = '**Title**\n\nLead.\n\n- **New:** a.\n';
+  it('accepts empty front matter, CRLF and a BOM', () => {
+    expect(checkChangesetText(`---\n---\n${entry}`, 'a.md')).toEqual([]);
+    expect(
+      checkChangesetText(`---\r\n"@curl-runner/cli": minor\r\n---\r\n\r\n${entry}`, 'a.md'),
+    ).toEqual([]);
+    expect(checkChangesetText(`---\r\n---\r\n${entry}`, 'a.md')).toEqual([]);
+    expect(checkChangesetText(`\uFEFF${FM}${entry}`, 'a.md')).toEqual([]);
+  });
+
+  it('exempts an empty changeset (no body after the front matter)', () => {
+    expect(checkChangesetText('---\n---\n', 'empty.md')).toEqual([]);
+    expect(checkChangesetText('---\n---\n\n', 'empty.md')).toEqual([]);
+  });
+
+  it('still flags a bodyless-headline changeset', () => {
+    expect(checkChangesetText(`${FM}plain\n`, 'x.md').join('\n')).toContain('bold headline');
+  });
+});
+
 describe('changeset format checker', () => {
   it('accepts a headline with tagged items', () => {
     const text = `${FM}**Title**\n\nLead.\n\n- **New:** a thing.\n- **Fixed:** b.\n`;

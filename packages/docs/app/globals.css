@@ -381,7 +381,7 @@
     flex-direction: column;
   }
   .release-items-more[open] {
-    margin-top: -16px;
+    margin-top: -16px; /* cancels the parent's gap-4 (and data-filtering:-mt-4 in changelog/page.tsx) */
   }
   .release-items-more[open] > summary {
     order: 1;

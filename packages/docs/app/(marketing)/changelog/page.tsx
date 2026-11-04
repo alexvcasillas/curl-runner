@@ -250,8 +250,8 @@ export default async function ChangelogPage() {
                       {html.restHtml ? (
                         <details className="group">
                           <summary className={TOGGLE}>
-                            <span className="group-open:hidden">{`Show all ${release.version} changes`}</span>
-                            <span className="hidden group-open:inline">Show fewer changes</span>
+                            <span className="group-open:hidden">{`Show the full ${release.version} notes`}</span>
+                            <span className="hidden group-open:inline">Hide the full notes</span>
                           </summary>
                           <div className="mt-4">
                             <Notes html={html.restHtml} />

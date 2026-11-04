@@ -32,12 +32,22 @@ function escapeHtml(text: string): string {
     .replace(/'/g, '&#39;');
 }
 
+const SAFE_URL = /^(?:https?:|mailto:|#|[^:]*(?:[/?#]|$))/i;
+
 const markdown = new Marked({
   gfm: true,
   renderer: {
     // The changelog is trusted repo content, but raw HTML in it is shown as text, never rendered.
     html({ text }) {
       return escapeHtml(text);
+    },
+    // Only safe URL schemes become links; anything else (javascript:, data:, ...) is plain text.
+    link({ href, tokens }) {
+      const text = this.parser.parseInline(tokens);
+      if (!SAFE_URL.test(href.trim())) {
+        return text;
+      }
+      return `<a href="${escapeHtml(href)}">${text}</a>`;
     },
     code(token) {
       const { highlighted, text } = token as HighlightedCode;

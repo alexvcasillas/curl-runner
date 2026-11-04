@@ -83,7 +83,8 @@ describe('changelog page', () => {
     const html = await render();
     const article = html.slice(html.indexOf('id="2.0.0"'), html.indexOf('id="1.25.0"'));
     expect(article).toContain('<details');
-    expect(article).toContain('Show all 2.0.0 changes');
+    expect(article).toContain('Show the full 2.0.0 notes');
+    expect(article).toContain('Hide the full notes');
     // The notes fold, not the folded item list (`data-more-items`).
     const details = article.indexOf('<details class="group">');
     expect(details).toBeGreaterThan(-1);
@@ -425,6 +426,28 @@ describe('renderEntry', () => {
     expect(out.previewHtml).not.toContain('<script>');
     expect(out.previewHtml).not.toContain('<b>');
     expect(out.previewHtml).toContain('&lt;script&gt;');
+  });
+
+  it('only links safe URL schemes, in notes, leads and items', async () => {
+    const bad = ['javascript:alert(1)', 'data:text/html,x', 'vbscript:x'];
+    const md = (label: string) => bad.map((u) => `[${label}](${u})`).join(' ');
+    const out = await renderEntry({
+      ...base,
+      body: md('n'),
+      lead: md('l'),
+      items: [{ tag: 'new', text: md('i') }],
+      notes: md('n'),
+    });
+    const all = out.previewHtml + out.leadHtml + out.items.map((i) => i.html).join('');
+    expect(all).not.toMatch(/href="(javascript|data|vbscript):/i);
+    expect(out.items[0].html).toBe('i i i');
+    const ok = await renderEntry({
+      ...base,
+      body: '[a](https://x.dev/y) [b](mailto:a@b.co) [c](#top) [d](/docs) [e](../x?q=1:2)',
+    });
+    for (const h of ['https://x.dev/y', 'mailto:a@b.co', '#top', '/docs', '../x?q=1:2']) {
+      expect(ok.previewHtml).toContain(`href="${h}"`);
+    }
   });
 
   it('highlights fenced code with Shiki and shifts headings below the headline', async () => {

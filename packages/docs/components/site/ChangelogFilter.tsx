@@ -124,6 +124,7 @@ export function ChangelogFilter({ tags, pageSize, children }: ChangelogFilterPro
         return;
       }
       scrollTarget.current = next.target;
+      setStatus('');
       setView(next.view);
     };
     window.addEventListener('hashchange', onNavigate);
