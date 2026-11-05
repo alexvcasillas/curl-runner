@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "packages/cloud/**"
+      - "crates/curl-runner-server/**"
+      - "crates/curl-runner/src/cloud/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -14,6 +16,8 @@ on:
     branches: [main]
     paths:
       - "packages/cloud/**"
+      - "crates/curl-runner-server/**"
+      - "crates/curl-runner/src/cloud/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -43,6 +47,74 @@ jobs:
       - run: pnpm biome ci packages/cloud
       - run: pnpm --filter @curl-runner/cloud typecheck
       - run: pnpm --filter @curl-runner/cloud test
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: pg
+          POSTGRES_DB: cloud_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:pg@localhost:5432/cloud_e2e
+      E2E_API_URL: http://localhost:8090
+      E2E_APP_URL: http://localhost:3090
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/setup@v3
+        with:
+          install: false
+          node-version-file: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: cargo build --release -p curl-runner-server -p curl-runner
+      - run: pnpm --filter @curl-runner/cloud build
+      - run: npx playwright install --with-deps chromium
+        working-directory: packages/cloud
+      # SMTP points at a closed port on purpose. With no SMTP the server logs a
+      # mail and blanks its stored body, so the test couldn't read the code.
+      - name: Start the API and the dashboard
+        run: |
+          SECRET_KEY=$(openssl rand -hex 32) \
+          PUBLIC_API_URL=$E2E_API_URL PUBLIC_APP_URL=$E2E_APP_URL PORT=8090 \
+          SIGNUP=open DEFAULT_PLAN=free SMTP_HOST=127.0.0.1 SMTP_PORT=9 \
+          nohup target/release/curl-runner-server > server.log 2>&1 &
+          API_INTERNAL_URL=$E2E_API_URL PUBLIC_API_URL=$E2E_API_URL PUBLIC_APP_URL=$E2E_APP_URL \
+          nohup pnpm --filter @curl-runner/cloud exec next start --port 3090 > app.log 2>&1 &
+          for url in $E2E_API_URL/health $E2E_APP_URL/healthz; do
+            for _ in $(seq 1 60); do
+              curl -fs "$url" > /dev/null && break
+              sleep 1
+            done
+            curl -fs "$url" > /dev/null
+          done
+      - run: pnpm --filter @curl-runner/cloud test:e2e
+        env:
+          CURL_RUNNER_BIN: ${{ github.workspace }}/target/release/curl-runner
+      - name: Logs
+        if: failure()
+        run: tail -n 100 server.log app.log
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: e2e-report
+          path: |
+            packages/cloud/playwright-report
+            packages/cloud/test-results
 
   build:
     needs: test
