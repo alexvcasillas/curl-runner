@@ -103,8 +103,8 @@ Sign-in codes, invites and share notices are sent by email. Without SMTP setting
 
 | Variable | What it does |
 | --- | --- |
-| `SMTP_HOST` | The SMTP relay. Setting it switches to the parts below. |
-| `SMTP_PORT` | `465` (TLS from the first byte, the default) or `587` (STARTTLS). |
+| `SMTP_HOST` | The SMTP relay. Without it, the server only logs emails. |
+| `SMTP_PORT` | `587` (STARTTLS, the default) or `465` (TLS from the first byte). Many hosts, Hetzner among them, block outbound `465`. |
 | `SMTP_USER`, `SMTP_PASSWORD` | Credentials. Set both or neither. |
 | `MAIL_FROM` | The sender, such as `curl-runner <no-reply@example.com>`. |
 
