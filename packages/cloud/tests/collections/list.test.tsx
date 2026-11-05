@@ -57,6 +57,7 @@ const collections = [
     access: 'public',
     current_version: 14,
     updated_at: new Date(Date.now() - 2 * 3600_000).toISOString(),
+    publisher: 'token github-actions',
   },
   {
     slug: 'webhooks',
@@ -65,6 +66,7 @@ const collections = [
     access: 'restricted',
     current_version: 3,
     updated_at: '2026-11-04T10:00:00Z',
+    publisher: 'grace@acme.com',
   },
   {
     slug: 'sandbox-tour',
@@ -73,19 +75,9 @@ const collections = [
     access: 'off',
     current_version: null,
     updated_at: null,
+    publisher: null,
   },
 ];
-
-const detail = (publisher: string, at: string) => () =>
-  json(200, {
-    number: 14,
-    hash: 'h',
-    published_at: at,
-    publisher,
-    git: null,
-    file_count: 2,
-    inputs: [],
-  });
 
 const infoBody =
   (billing = true) =>
@@ -108,19 +100,11 @@ afterEach(() => {
 const params = (team = 'acme') => ({ params: Promise.resolve({ team }) });
 
 describe('collections list', () => {
-  it('shows each collection with source, access, version and last publish', async () => {
+  it('shows each collection from one request, with source, access, version and last publish', async () => {
     byPath({
       '/v1/me': () => json(200, me),
       '/v1/info': infoBody(),
       '/v1/teams/acme/collections': () => json(200, collections),
-      '/v1/teams/acme/collections/payments-api/versions/14': detail(
-        'token github-actions',
-        collections[0].updated_at as string,
-      ),
-      '/v1/teams/acme/collections/webhooks/versions/3': detail(
-        'grace@acme.com',
-        '2026-11-04T10:00:00Z',
-      ),
     });
     render(await TeamPage(params()));
     expect(screen.getByRole('heading', { name: 'Collections' })).toBeInTheDocument();
@@ -145,6 +129,12 @@ describe('collections list', () => {
     expect(never.getByText('Off')).toBeInTheDocument();
     expect(never.getByText('Not published')).toBeInTheDocument();
     expect(screen.getByText('3 collections')).toBeInTheDocument();
+    // The publisher comes with the list: no per-collection requests.
+    expect(fetchMock.mock.calls.map((c) => new URL(c[0]).pathname).sort()).toEqual([
+      '/v1/info',
+      '/v1/me',
+      '/v1/teams/acme/collections',
+    ]);
   });
 
   it('filters by access and searches by name or slug', async () => {
@@ -152,8 +142,6 @@ describe('collections list', () => {
       '/v1/me': () => json(200, me),
       '/v1/info': infoBody(),
       '/v1/teams/acme/collections': () => json(200, collections),
-      '/v1/teams/acme/collections/payments-api/versions/14': detail('x', '2026-11-04T10:00:00Z'),
-      '/v1/teams/acme/collections/webhooks/versions/3': detail('x', '2026-11-04T10:00:00Z'),
     });
     const user = userEvent.setup();
     render(await TeamPage(params()));
@@ -167,18 +155,6 @@ describe('collections list', () => {
     await user.clear(screen.getByRole('searchbox', { name: 'Search collections' }));
     await user.type(screen.getByRole('searchbox', { name: 'Search collections' }), 'nothing');
     expect(screen.getByText('No collections match.')).toBeInTheDocument();
-  });
-
-  it('still lists a collection when its latest version can not be read', async () => {
-    byPath({
-      '/v1/me': () => json(200, me),
-      '/v1/info': infoBody(),
-      '/v1/teams/acme/collections': () => json(200, [collections[0]]),
-      '/v1/teams/acme/collections/payments-api/versions/14': () =>
-        json(404, { error: 'not_found', message: 'Not found.' }),
-    });
-    render(await TeamPage(params()));
-    expect(screen.getByRole('link', { name: 'Payments API' })).toBeInTheDocument();
   });
 
   it('says what the plan covers, or that a self-hosted server has everything', async () => {

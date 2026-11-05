@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffVersions, hunkHeader, lineCounts } from '@/lib/diff';
+import { diffVersions, hunkHeader, lineCounts, MAX_DIFF_BYTES, MAX_DIFF_LINES } from '@/lib/diff';
 
 const f = (path: string, text: string) => ({ path, text });
 
@@ -63,5 +63,33 @@ describe('diffVersions', () => {
   it('counts added and removed lines', () => {
     const [d] = diffVersions([f('a.yaml', 'a\nb\n')], [f('a.yaml', 'a\nc\nd\n')]);
     expect(lineCounts(d)).toEqual({ plus: 2, minus: 1 });
+  });
+
+  it('does not diff a file over 1 MB on either side', () => {
+    const big = `${'x'.repeat(MAX_DIFF_BYTES)}y\n`;
+    const out = diffVersions(
+      [f('a.yaml', 'small\n'), f('b.yaml', big)],
+      [f('a.yaml', big), f('b.yaml', 'small\n'), f('c.yaml', big)],
+    );
+    expect(out.map((d) => [d.path, d.status, d.tooLarge, d.hunks.length])).toEqual([
+      ['a.yaml', 'changed', true, 0],
+      ['b.yaml', 'changed', true, 0],
+      ['c.yaml', 'added', true, 0],
+    ]);
+  });
+
+  it('counts bytes, not characters', () => {
+    const wide = '€'.repeat(Math.ceil(MAX_DIFF_BYTES / 3) + 1);
+    expect(diffVersions([], [f('a.yaml', wide)])[0].tooLarge).toBe(true);
+  });
+
+  it('does not show a diff past 2,000 lines', () => {
+    const many = (n: number) => `${Array.from({ length: n }, (_, i) => `l${i}`).join('\n')}\n`;
+    const [atLimit] = diffVersions([], [f('a.yaml', many(MAX_DIFF_LINES - 1))]);
+    expect(atLimit.tooLarge).toBeUndefined();
+    const [over] = diffVersions([], [f('a.yaml', many(MAX_DIFF_LINES))]);
+    expect(over.tooLarge).toBe(true);
+    expect(over.hunks).toEqual([]);
+    expect(over.status).toBe('added');
   });
 });

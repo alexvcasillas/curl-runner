@@ -22,6 +22,7 @@ import {
   requireCollection,
   requireTeam,
 } from '@/lib/collections-data';
+import { ApiError } from '@/lib/errors';
 import { routes } from '@/lib/routes';
 import { absoluteTime, relativeTime } from '@/lib/time';
 import { deleteCollection, switchSource } from './actions';
@@ -33,8 +34,16 @@ type Props = {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { team, slug } = await params;
-  const found = (await getCollections(team).catch(() => [])).find((c) => c.slug === slug);
-  return { title: found?.name ?? 'Collection' };
+  try {
+    const found = (await getCollections(team)).find((c) => c.slug === slug);
+    return { title: found?.name ?? 'Collection' };
+  } catch (e) {
+    // The page itself shows the error. A title is not worth failing over.
+    if (e instanceof ApiError) {
+      return { title: 'Collection' };
+    }
+    throw e;
+  }
 }
 
 function tabOf(value: string | undefined): Exclude<CollectionTab, 'sharing'> {

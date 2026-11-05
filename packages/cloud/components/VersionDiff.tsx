@@ -80,7 +80,16 @@ function Line({ row }: { row: Row }) {
 }
 
 /** Changed files as a list on the left and, for each, its hunks with line numbers. */
-export function VersionDiff({ diffs }: { diffs: FileDiff[] }) {
+export function VersionDiff({
+  diffs,
+  version,
+  downloadHref,
+}: {
+  diffs: FileDiff[];
+  /** The version being viewed, for "Download v14 to see it". */
+  version: number;
+  downloadHref: string;
+}) {
   return (
     <div className="flex flex-wrap items-start gap-5">
       <nav
@@ -125,14 +134,21 @@ export function VersionDiff({ diffs }: { diffs: FileDiff[] }) {
                 <span className="min-w-0 flex-1 font-mono text-[12px] [overflow-wrap:anywhere]">
                   {d.path}
                 </span>
-                <span className="font-mono text-[12px]">
-                  <span className="text-success">+{plus}</span>{' '}
-                  <span className="text-danger">-{minus}</span>
-                </span>
+                {d.tooLarge ? null : (
+                  <span className="font-mono text-[12px]">
+                    <span className="text-success">+{plus}</span>{' '}
+                    <span className="text-danger">-{minus}</span>
+                  </span>
+                )}
               </div>
               <div className="overflow-x-auto py-1">
                 <div className="w-max min-w-full">
-                  {d.hunks.length === 0 ? (
+                  {d.tooLarge ? (
+                    <div className="px-3.5 py-2 text-fg-muted">
+                      This file is too large to show here.{' '}
+                      <a href={downloadHref}>Download v{version}</a> to see it.
+                    </div>
+                  ) : d.hunks.length === 0 ? (
                     <div className="px-3.5 py-2 text-fg-subtle">An empty file.</div>
                   ) : (
                     rowsOf(d.hunks).map((row, j) => <Line key={j} row={row} />)

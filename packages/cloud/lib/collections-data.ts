@@ -4,6 +4,7 @@ import { cache } from 'react';
 import { api } from './api';
 import { getMe } from './app-data';
 import { ApiError } from './errors';
+import { isSlug } from './params';
 import type {
   BundleFile,
   CollectionSummary,
@@ -14,8 +15,16 @@ import type {
 } from './types';
 
 const enc = encodeURIComponent;
-const base = (team: string) => `/v1/teams/${enc(team)}/collections`;
-const one = (team: string, slug: string) => `${base(team)}/${enc(slug)}`;
+
+/** A team or collection slug from the URL. Anything the server would never issue is a 404. */
+function checked(value: string): string {
+  if (!isSlug(value)) {
+    notFound();
+  }
+  return enc(value);
+}
+const base = (team: string) => `/v1/teams/${checked(team)}/collections`;
+const one = (team: string, slug: string) => `${base(team)}/${checked(slug)}`;
 
 /** `GET …/collections`, once per request. */
 export const getCollections = cache((team: string) => api<CollectionSummary[]>(base(team)));
@@ -47,6 +56,7 @@ export const getShare = cache(async (team: string, slug: string): Promise<Share 
 
 /** The team from the URL, if the person is in it. Anything else is a 404. */
 export async function requireTeam(team: string): Promise<MeTeam> {
+  checked(team);
   const me = await getMe();
   const current = me.teams.find((t) => t.slug === team);
   if (!current) {
@@ -56,6 +66,7 @@ export async function requireTeam(team: string): Promise<MeTeam> {
 }
 
 export async function requireCollection(team: string, slug: string): Promise<CollectionSummary> {
+  checked(slug);
   const collection = (await getCollections(team)).find((c) => c.slug === slug);
   if (!collection) {
     notFound();

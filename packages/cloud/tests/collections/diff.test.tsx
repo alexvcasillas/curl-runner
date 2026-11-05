@@ -178,6 +178,27 @@ describe('version diff page', () => {
   });
 });
 
+describe('large files', () => {
+  it('points at the download instead of rendering a huge diff', async () => {
+    const many = `${Array.from({ length: 2500 }, (_, i) => `line ${i}`).join('\n')}\n`;
+    routes({
+      [`${base}/versions/2/files`]: () => json(200, [...v2Files, { path: 'big.yaml', text: many }]),
+    });
+    render(await DiffPage(page('2')));
+    const big = screen.getByRole('region', { name: 'big.yaml' });
+    expect(within(big).getByText(/This file is too large to show here\./)).toBeInTheDocument();
+    expect(within(big).getByRole('link', { name: 'Download v2' })).toHaveAttribute(
+      'href',
+      '/t/acme/c/payments-api/versions/2/download',
+    );
+    expect(within(big).queryByText('line 100')).not.toBeInTheDocument();
+    // The small files still render.
+    expect(
+      within(screen.getByRole('region', { name: 'requests/refund.yaml' })).getByText('Added'),
+    ).toBeInTheDocument();
+  });
+});
+
 describe('zip download', () => {
   const ctx = (n: string, team = 'acme', slug = 'payments-api') => ({
     params: Promise.resolve({ team, slug, n }),
@@ -211,6 +232,42 @@ describe('zip download', () => {
     const res = await download(new Request('http://localhost/x'), ctx('2/../x'));
     expect(res.status).toBe(404);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('sends a rejected session to sign in and back to the collection page', async () => {
+    routes({
+      [`${base}/versions/2/files`]: () => json(401, { error: 'unauthorized', message: '' }),
+    });
+    await expect(download(new Request('http://localhost/x'), ctx('2'))).rejects.toThrow(
+      'NEXT_REDIRECT /sign-in/expired?return_to=%2Ft%2Facme%2Fc%2Fpayments-api',
+    );
+  });
+
+  it('rejects team and collection slugs the server would never issue', async () => {
+    routes();
+    for (const [team, slug] of [
+      ['Acme', 'payments-api'],
+      ['acme', '-bad'],
+      ['acme', 'a'.repeat(64)],
+      ['..', 'payments-api'],
+    ]) {
+      const res = await download(new Request('http://localhost/x'), ctx('2', team, slug));
+      expect(res.status, `${team}/${slug}`).toBe(404);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('fails with 500, not a partial zip, when a path could escape the folder', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    routes({
+      [`${base}/versions/2/files`]: () =>
+        json(200, [...v2Files, { path: '../../evil.yaml', text: 'x' }]),
+    });
+    const res = await download(new Request('http://localhost/x'), ctx('2'));
+    expect(res.status).toBe(500);
+    expect(res.headers.get('content-type')).not.toBe('application/zip');
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
   });
 
   it('is 503 when the API is down', async () => {

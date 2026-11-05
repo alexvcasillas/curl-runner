@@ -35,6 +35,7 @@ const { SourceSwitch } = await import('@/components/SourceSwitch');
 const { DeleteCollection } = await import('@/components/DeleteCollection');
 const { InputsTable } = await import('@/components/InputsTable');
 const { switchSource, deleteCollection } = await import('@/app/(app)/t/[team]/c/[slug]/actions');
+const { generateMetadata } = await import('@/app/(app)/t/[team]/c/[slug]/page');
 const { resetEnv } = await import('@/lib/env');
 
 function json(status: number, body: unknown) {
@@ -119,6 +120,7 @@ const collection = (source: 'git' | 'cloud' = 'git', access = 'public') => ({
   access,
   current_version: 14,
   updated_at: versions[0].published_at,
+  publisher: versions[0].publisher,
 });
 const share =
   (entries: unknown[] = []) =>
@@ -203,6 +205,43 @@ describe('collection header', () => {
     expect(within(nav).getByRole('link', { name: 'Sharing' })).toHaveAttribute(
       'href',
       '/t/acme/c/payments-api/sharing',
+    );
+  });
+});
+
+describe('route params', () => {
+  it('is not found for a slug the server would never issue, without calling the API', async () => {
+    routes();
+    fetchMock.mockClear();
+    await expect(CollectionPage(page(undefined, 'acme', 'Bad_Slug'))).rejects.toThrow(
+      'NEXT_NOT_FOUND',
+    );
+    await expect(CollectionPage(page(undefined, '../x', 'payments-api'))).rejects.toThrow(
+      'NEXT_NOT_FOUND',
+    );
+    expect(fetchMock.mock.calls.map((c) => new URL(c[0]).pathname)).not.toContain('/v1/teams/../x');
+  });
+});
+
+describe('metadata', () => {
+  const props = { params: Promise.resolve({ team: 'acme', slug: 'payments-api' }) };
+
+  it('titles the page with the collection name', async () => {
+    routes();
+    expect(await generateMetadata({ ...props, searchParams: Promise.resolve({}) })).toEqual({
+      title: 'Payments API',
+    });
+  });
+
+  it('falls back to a plain title on an API error only', async () => {
+    routes({ [base]: () => json(503, { error: 'unavailable', message: '' }) });
+    expect(await generateMetadata({ ...props, searchParams: Promise.resolve({}) })).toEqual({
+      title: 'Collection',
+    });
+    fetchMock.mockRejectedValue(new TypeError('boom'));
+    // A network failure is an ApiError too (503), so still a title. Anything else would throw.
+    expect((await generateMetadata({ ...props, searchParams: Promise.resolve({}) })).title).toBe(
+      'Collection',
     );
   });
 });

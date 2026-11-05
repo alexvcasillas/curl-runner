@@ -35,6 +35,8 @@ export type CollectionSummary = {
   current_version: number | null;
   /** When the current version was published. */
   updated_at: string | null;
+  /** Who published it: `token {name}` or an email. Null before the first. */
+  publisher: string | null;
 };
 
 export type GitMeta = {

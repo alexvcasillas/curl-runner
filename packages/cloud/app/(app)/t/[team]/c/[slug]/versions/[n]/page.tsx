@@ -88,7 +88,7 @@ export default async function VersionPage({ params, searchParams }: Props) {
           {base === null ? `v${n} has no files.` : `v${n} has the same files as v${base}.`}
         </EmptyState>
       ) : (
-        <VersionDiff diffs={diffs} />
+        <VersionDiff diffs={diffs} version={n} downloadHref={routes.download(team, slug, n)} />
       )}
     </>
   );

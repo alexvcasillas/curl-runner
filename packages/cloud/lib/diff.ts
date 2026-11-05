@@ -8,13 +8,30 @@ export type FileDiff = {
   status: 'added' | 'removed' | 'changed';
   /** Each line starts with a space (context), `+` or `-`, or is a `\ No newline` note. */
   hunks: Hunk[];
+  /** Too big to show: `hunks` is empty and the page points at the download. */
+  tooLarge?: boolean;
 };
 
 const CONTEXT = 3;
+/** A file over this on either side is not diffed at all. */
+export const MAX_DIFF_BYTES = 1_000_000;
+/** A diff with more lines than this is not shown. */
+export const MAX_DIFF_LINES = 2000;
 
-function patch(path: string, before: string, after: string): Hunk[] {
-  return structuredPatch(path, path, before, after, undefined, undefined, { context: CONTEXT })
-    .hunks;
+const encoder = new TextEncoder();
+const bytes = (text: string) => encoder.encode(text).length;
+
+function patch(path: string, status: FileDiff['status'], before: string, after: string): FileDiff {
+  if (bytes(before) > MAX_DIFF_BYTES || bytes(after) > MAX_DIFF_BYTES) {
+    return { path, status, hunks: [], tooLarge: true };
+  }
+  const { hunks } = structuredPatch(path, path, before, after, undefined, undefined, {
+    context: CONTEXT,
+  });
+  const lines = hunks.reduce((n, h) => n + 1 + h.lines.length, 0);
+  return lines > MAX_DIFF_LINES
+    ? { path, status, hunks: [], tooLarge: true }
+    : { path, status, hunks };
 }
 
 /**
@@ -29,14 +46,14 @@ export function diffVersions(prev: BundleFile[], next: BundleFile[]): FileDiff[]
   for (const [path, text] of after) {
     const old = before.get(path);
     if (old === undefined) {
-      out.push({ path, status: 'added', hunks: patch(path, '', text) });
+      out.push(patch(path, 'added', '', text));
     } else if (old !== text) {
-      out.push({ path, status: 'changed', hunks: patch(path, old, text) });
+      out.push(patch(path, 'changed', old, text));
     }
   }
   for (const [path, text] of before) {
     if (!after.has(path)) {
-      out.push({ path, status: 'removed', hunks: patch(path, text, '') });
+      out.push(patch(path, 'removed', text, ''));
     }
   }
   return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
