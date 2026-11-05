@@ -13,6 +13,7 @@ pub mod hash;
 pub mod info;
 pub mod mail;
 pub mod plans;
+pub mod settings;
 pub mod state;
 pub mod teams;
 pub mod tokens;

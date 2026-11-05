@@ -8,9 +8,10 @@ pub mod admins;
 pub mod auth;
 pub mod csv;
 pub mod events;
+pub mod settings;
 
 use axum::Router;
-use axum::routing::{get, patch, put};
+use axum::routing::{get, patch, post, put};
 
 use crate::error::ApiError;
 use crate::state::AppState;
@@ -27,6 +28,9 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/v1/admin/activity", get(activity::list))
         .route("/v1/admin/activity.csv", get(activity::export))
+        .route("/v1/admin/settings", get(settings::get))
+        .route("/v1/admin/settings/test-email", post(settings::test_email))
+        .route("/v1/admin/settings/{section}", put(settings::update))
         .route("/v1/admin/teams/{team}/plan", put(crate::teams::set_plan))
         // A wrong method is a 404 too: a 405 would confirm the path exists.
         .method_not_allowed_fallback(not_found)

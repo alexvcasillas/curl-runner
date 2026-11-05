@@ -13,6 +13,7 @@ use crate::clock::Clock;
 use crate::config::Config;
 use crate::error::ApiError;
 use crate::mail::Mailer;
+use crate::settings::{Settings, SettingsCache};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -25,6 +26,8 @@ pub struct AppState {
     /// `None` when `STRIPE_*` is not configured.
     pub billing: Option<Arc<dyn Billing>>,
     pub price_cache: PriceCache,
+    /// The `server_settings` row behind a 5 second cache.
+    pub settings_cache: SettingsCache,
 }
 
 impl AppState {
@@ -41,10 +44,17 @@ impl AppState {
                 .clone()
                 .map(|b| Arc::new(StripeBilling::new(b.secret_key)) as Arc<dyn Billing>),
             price_cache: PriceCache::default(),
+            settings_cache: SettingsCache::new(clock.clone()),
             db,
             config: Arc::new(config),
             clock,
         }
+    }
+
+    /// The server settings: the one place to read signup, plans, grace days,
+    /// the banner and the publishing pause.
+    pub async fn settings(&self) -> Result<Arc<Settings>, ApiError> {
+        self.settings_cache.get(&self.db, &self.config).await
     }
 }
 

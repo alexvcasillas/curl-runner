@@ -152,6 +152,7 @@ pub(super) async fn patch(
     };
     let now = state.clock.now();
     let found = team_access(&state.db, auth.user_id, &team).await?;
+    let settings = state.settings().await?;
     let mut tx = state.db.begin().await?;
     let (plan, _) = lock_as(&mut tx, found.team_id, auth.user_id).await?;
     let row: Option<(Uuid, String)> = sqlx::query_as(
@@ -166,7 +167,7 @@ pub(super) async fn patch(
     if let Some(access) = req.access
         && access == Access::Restricted
         && current != access_str(access)
-        && !limits(plan).restricted
+        && !limits(plan, &settings).restricted
     {
         return Err(restricted_needs_team(&slug));
     }
@@ -297,6 +298,7 @@ pub(super) async fn add_entry(
     let (entry, kind) = parse_entry(&req.entry)?;
     let now = state.clock.now();
     let found = team_access(&state.db, auth.user_id, &team).await?;
+    let settings = state.settings().await?;
     let mut tx = state.db.begin().await?;
     let Locked {
         id,
@@ -310,7 +312,7 @@ pub(super) async fn add_entry(
             format!("{slug} isn't restricted. Set its access to restricted before adding people."),
         ));
     }
-    if !limits(plan).restricted {
+    if !limits(plan, &settings).restricted {
         return Err(restricted_needs_team(&slug));
     }
     let inserted: Option<DateTime<Utc>> = sqlx::query_scalar(

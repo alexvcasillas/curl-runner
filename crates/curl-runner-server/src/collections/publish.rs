@@ -39,6 +39,9 @@ const TOO_LARGE: &str = "The request body is larger than 51 MiB.";
 const MAX_NAME_CHARS: usize = 100;
 const PUBLISHES_PER_TEAM: u32 = 60;
 const PUBLISH_WINDOW: chrono::Duration = chrono::Duration::minutes(1);
+/// What a publish gets while an admin has paused publishing.
+pub const PUBLISHING_PAUSED: &str =
+    "Publishing is paused for maintenance. Try again in a few minutes.";
 const MAX_DESCRIPTION_CHARS: usize = 500;
 
 fn invalid_bundle(message: impl Into<String>) -> ApiError {
@@ -170,6 +173,11 @@ pub(super) async fn publish(
     headers: HeaderMap,
     body: Body,
 ) -> Result<(StatusCode, Json<PublishResponse>), ApiError> {
+    // First, so a paused server reads nothing and creates nothing.
+    let settings = state.settings().await?;
+    if settings.publishing_paused {
+        return Err(ApiError::new(ErrorCode::Unavailable, PUBLISHING_PAUSED));
+    }
     state.limiter.check(
         &format!("publish:team:{}", auth.team_id),
         PUBLISHES_PER_TEAM,
@@ -232,7 +240,7 @@ pub(super) async fn publish(
             .bind(auth.team_id)
             .fetch_one(&mut *tx)
             .await?;
-        if !limits(column_enum(plan)?).restricted {
+        if !limits(column_enum(plan)?, &settings).restricted {
             return Err(ApiError::new(
                 ErrorCode::PlanLimit,
                 format!(

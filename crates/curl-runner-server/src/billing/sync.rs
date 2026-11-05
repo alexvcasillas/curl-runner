@@ -15,8 +15,6 @@ use crate::mail::Mail;
 use crate::state::AppState;
 use curl_runner_cloud_proto::ErrorCode;
 
-/// How long a team may stay past due before it moves to Free.
-pub const PAST_DUE_GRACE: chrono::Duration = chrono::Duration::days(14);
 /// Time between ticks.
 const TICK: Duration = Duration::from_secs(60);
 
@@ -253,7 +251,7 @@ pub async fn apply_subscription(
         && team.past_due_since.is_none()
         && let Some(since) = next.past_due_since
     {
-        let deadline = since + PAST_DUE_GRACE;
+        let deadline = since + state.settings().await?.grace();
         mail_owners(state, tx, team.id, |to| Mail::PaymentFailed {
             to,
             team_name: team.name.clone(),
@@ -292,8 +290,8 @@ pub async fn apply_missing(
     Ok(())
 }
 
-/// One pass of background work: move teams that stayed past due for 14 days to
-/// Free, push changed seat counts to Stripe, and delete admin events older
+/// One pass of background work: move teams that stayed past due for the grace period
+/// to Free, push changed seat counts to Stripe, and delete admin events older
 /// than 2 years (an indexed delete that almost always finds nothing). A
 /// failure is logged and the next tick tries again.
 pub async fn tick(state: &AppState, now: DateTime<Utc>) {
@@ -321,7 +319,8 @@ pub async fn run(state: AppState, shutdown: impl Future<Output = ()>) {
 }
 
 async fn downgrade_past_due(state: &AppState, now: DateTime<Utc>) -> Result<(), ApiError> {
-    let cutoff = now - PAST_DUE_GRACE;
+    // How long a team may stay past due is the grace period setting.
+    let cutoff = now - state.settings().await?.grace();
     let due: Vec<Uuid> =
         sqlx::query_scalar("SELECT id FROM teams WHERE plan = 'team' AND past_due_since <= $1")
             .bind(cutoff)

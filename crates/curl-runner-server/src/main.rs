@@ -2,9 +2,10 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use curl_runner_server::billing::sync;
-use curl_runner_server::clock::SystemClock;
+use curl_runner_server::clock::{Clock, SystemClock};
 use curl_runner_server::config::Config;
 use curl_runner_server::mail::{LogTransport, SmtpTransport, Transport, worker};
+use curl_runner_server::settings;
 use curl_runner_server::{AppState, healthcheck, port_from_env, serve};
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
@@ -52,6 +53,25 @@ async fn main() -> std::process::ExitCode {
     if let Err(err) = sqlx::migrate!().run(&pool).await {
         tracing::error!("migrations failed: {err}");
         return std::process::ExitCode::FAILURE;
+    }
+    match settings::seed(&pool, &config, SystemClock.now()).await {
+        Ok(outcome) => {
+            if outcome.inserted {
+                tracing::info!(
+                    "server settings created from SIGNUP, SIGNUP_DOMAINS and DEFAULT_PLAN"
+                );
+            }
+            for var in outcome.drifted {
+                tracing::warn!(
+                    "{var} changed since the server settings were created and is ignored. \
+                     Change it on the admin settings page instead."
+                );
+            }
+        }
+        Err(err) => {
+            tracing::error!("cannot seed the server settings: {err:?}");
+            return std::process::ExitCode::FAILURE;
+        }
     }
     let transport: Arc<dyn Transport> = match &config.smtp {
         Some(smtp) => match SmtpTransport::new(smtp, &config.mail_from) {

@@ -1,6 +1,9 @@
-//! What each plan allows. The team's `plan` column is the only input.
+//! What each plan allows. The team's `plan` column and the server settings
+//! are the only inputs.
 
 use curl_runner_cloud_proto::Plan;
+
+use crate::settings::Settings;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits {
@@ -10,11 +13,12 @@ pub struct Limits {
     pub restricted: bool,
 }
 
-pub fn limits(plan: Plan) -> Limits {
+/// The Free limits come from `settings`; Team has none.
+pub fn limits(plan: Plan, settings: &Settings) -> Limits {
     match plan {
         Plan::Free => Limits {
-            members: Some(3),
-            restricted: false,
+            members: Some(settings.free_member_limit),
+            restricted: settings.free_restricted,
         },
         Plan::Team => Limits {
             members: None,
@@ -28,9 +32,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn free_is_three_members_and_unrestricted_only() {
+    fn free_defaults_to_three_members_and_unrestricted_only() {
         assert_eq!(
-            limits(Plan::Free),
+            limits(Plan::Free, &Settings::default()),
             Limits {
                 members: Some(3),
                 restricted: false
@@ -39,9 +43,29 @@ mod tests {
     }
 
     #[test]
-    fn team_has_no_member_cap_and_allows_restricted() {
+    fn free_follows_the_settings() {
+        let settings = Settings {
+            free_member_limit: 7,
+            free_restricted: true,
+            ..Settings::default()
+        };
         assert_eq!(
-            limits(Plan::Team),
+            limits(Plan::Free, &settings),
+            Limits {
+                members: Some(7),
+                restricted: true
+            }
+        );
+    }
+
+    #[test]
+    fn team_has_no_member_cap_and_allows_restricted() {
+        let settings = Settings {
+            free_member_limit: 1,
+            ..Settings::default()
+        };
+        assert_eq!(
+            limits(Plan::Team, &settings),
             Limits {
                 members: None,
                 restricted: true

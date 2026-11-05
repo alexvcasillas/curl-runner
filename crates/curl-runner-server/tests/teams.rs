@@ -194,6 +194,11 @@ async fn new_team_plan_follows_default_plan(pool: PgPool) {
             ("SIGNUP_DOMAINS", "example.com"),
             ("OPERATOR_EMAILS", "ada@example.com"),
         ]);
+        // The env only seeds the settings row, so each case starts a fresh server.
+        sqlx::query("DELETE FROM server_settings")
+            .execute(&pool)
+            .await
+            .unwrap();
         let app = test_app_with(pool.clone(), cfg).await;
         let s = app.sign_in("ada@example.com").await;
         let slug = format!("t-{mode}-{plan}-{}", default_plan.len());

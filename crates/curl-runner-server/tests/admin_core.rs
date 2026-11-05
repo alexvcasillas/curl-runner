@@ -128,6 +128,36 @@ fn admin_routes(some_user: &str) -> Vec<(&'static str, String, Option<String>)> 
             None,
         ),
         ("GET", "/v1/admin/activity.csv".into(), None),
+        ("GET", "/v1/admin/settings".into(), None),
+        (
+            "PUT",
+            "/v1/admin/settings/signup".into(),
+            Some(json!({"mode": "closed", "domains": []}).to_string()),
+        ),
+        (
+            "PUT",
+            "/v1/admin/settings/plans".into(),
+            Some(
+                json!({"default_plan": "free", "free_member_limit": 3,
+                       "free_restricted": false, "grace_days": 14})
+                .to_string(),
+            ),
+        ),
+        (
+            "PUT",
+            "/v1/admin/settings/banner".into(),
+            Some(
+                json!({"message": "Hi", "tone": "info", "audience": "everyone", "link": null})
+                    .to_string(),
+            ),
+        ),
+        (
+            "PUT",
+            "/v1/admin/settings/publishing".into(),
+            Some(json!({"paused": true}).to_string()),
+        ),
+        ("PUT", "/v1/admin/settings/nope".into(), Some("{}".into())),
+        ("POST", "/v1/admin/settings/test-email".into(), None),
         (
             "PUT",
             "/v1/admin/teams/acme/plan".into(),
@@ -156,6 +186,13 @@ async fn non_admin_gets_404_everywhere(pool: PgPool) {
         // A wrong method, and a route that does not exist.
         ("POST", "/v1/admin/me".into(), None),
         ("DELETE", "/v1/admin/activity".into(), None),
+        (
+            "PUT",
+            "/v1/admin/settings/plans".into(),
+            Some("{nope".into()),
+        ),
+        ("PUT", "/v1/admin/settings".into(), None),
+        ("GET", "/v1/admin/settings/test-email".into(), None),
         ("GET", "/v1/admin/nope".into(), None),
     ]);
     let callers: [(&str, Option<&str>); 4] = [

@@ -52,6 +52,8 @@ pub enum Mail {
         slug: String,
         app_url: String,
     },
+    /// Sent to an admin who asks for one from the settings page.
+    TestEmail { to: String },
 }
 
 impl std::fmt::Debug for Mail {
@@ -101,6 +103,7 @@ impl std::fmt::Debug for Mail {
                 .field("slug", slug)
                 .field("deadline", deadline)
                 .finish(),
+            Self::TestEmail { to } => f.debug_struct("TestEmail").field("to", to).finish(),
             Self::PlanChanged {
                 to,
                 team_name,
@@ -123,7 +126,8 @@ impl Mail {
             | Self::MemberInvite { to, .. }
             | Self::CustomerInvite { to, .. }
             | Self::PaymentFailed { to, .. }
-            | Self::PlanChanged { to, .. } => to,
+            | Self::PlanChanged { to, .. }
+            | Self::TestEmail { to } => to,
         }
     }
 }

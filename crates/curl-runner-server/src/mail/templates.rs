@@ -148,6 +148,18 @@ fn render_parts(mail: &Mail) -> (String, String, String) {
                 ),
             )
         }
+        Mail::TestEmail { .. } => (
+            "curl-runner test email".into(),
+            "This is a test email from your curl-runner server.\n\n\
+             If you can read it, sending works. Nothing else to do.\n"
+                .into(),
+            layout(
+                "This is a test email from your curl-runner server.",
+                &[Block::Text(
+                    "If you can read it, sending works. Nothing else to do.".into(),
+                )],
+            ),
+        ),
         Mail::PlanChanged {
             team_name,
             slug,
@@ -409,6 +421,9 @@ mod tests {
                 team_name: "Acme".into(),
                 slug: "acme".into(),
                 app_url: "https://app.example.com".into(),
+            },
+            Mail::TestEmail {
+                to: "ada@example.com".into(),
             },
         ]
     }

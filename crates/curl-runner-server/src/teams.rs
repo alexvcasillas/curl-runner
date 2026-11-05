@@ -23,6 +23,7 @@ use crate::extract::{ApiJson, ClientIp};
 use crate::hash::{new_token, secret_hash};
 use crate::mail::Mail;
 use crate::plans::limits;
+use crate::settings::Settings;
 use crate::state::AppState;
 
 /// Member invites last this long.
@@ -141,21 +142,26 @@ pub async fn admin_role(
 ///
 /// With `domains` and no domains listed, the earliest account on the server
 /// is recorded as the first operator and may create teams.
-pub async fn can_create_team(db: &PgPool, config: &Config, email: &str) -> Result<bool, ApiError> {
+pub async fn can_create_team(
+    db: &PgPool,
+    config: &Config,
+    settings: &Settings,
+    email: &str,
+) -> Result<bool, ApiError> {
     if is_operator(db, config, email).await? {
         return Ok(true);
     }
     let email = email.to_lowercase();
-    match config.signup {
+    match settings.signup_mode {
         SignupMode::Open => Ok(true),
         SignupMode::Closed => Ok(false),
         SignupMode::Domains => {
             if let Some((_, domain)) = email.rsplit_once('@')
-                && config.signup_domains.iter().any(|d| d == domain)
+                && settings.signup_domains.iter().any(|d| d == domain)
             {
                 return Ok(true);
             }
-            if !config.signup_domains.is_empty() {
+            if !settings.signup_domains.is_empty() {
                 return Ok(false);
             }
             let earliest: Option<String> =
@@ -178,7 +184,7 @@ pub async fn can_create_team(db: &PgPool, config: &Config, email: &str) -> Resul
 }
 
 /// The snake_case string the database stores for a proto enum.
-fn enum_str<T: Serialize>(value: T) -> String {
+pub(crate) fn enum_str<T: Serialize>(value: T) -> String {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(s)) => s,
         _ => unreachable!("proto enums serialise to strings"),
@@ -225,13 +231,14 @@ async fn create_team(
             "The slug must be lowercase letters, digits and dashes, up to 63 characters.",
         ));
     }
-    if !can_create_team(&state.db, &state.config, &auth.email).await? {
+    let settings = state.settings().await?;
+    if !can_create_team(&state.db, &state.config, &settings, &auth.email).await? {
         return Err(ApiError::new(
             ErrorCode::SignupClosed,
             "Creating teams is closed on this server.",
         ));
     }
-    let plan = state.config.default_plan;
+    let plan = settings.default_plan;
     let now = state.clock.now();
     let mut tx = state.db.begin().await?;
     let team_id: Option<Uuid> = sqlx::query_scalar(
@@ -436,10 +443,10 @@ async fn get_team(
     }))
 }
 
-fn plan_limit() -> ApiError {
+fn plan_limit(max: u32) -> ApiError {
     ApiError::new(
         ErrorCode::PlanLimit,
-        "The Free plan allows 3 members. Upgrade to add more.",
+        format!("The Free plan allows {max} members. Upgrade to add more."),
     )
 }
 
@@ -518,6 +525,7 @@ async fn invite(
 ) -> Result<(StatusCode, Json<InviteCreated>), ApiError> {
     let access = team_access(&state.db, auth.user_id, &slug).await?;
     access.require_owner()?;
+    let settings = state.settings().await?;
     let email = parse_email(&req.email)
         .filter(|e| e.len() <= 254)
         .ok_or_else(|| invalid("Enter a valid email address."))?;
@@ -544,7 +552,7 @@ async fn invite(
             "That email is already a member or has a pending invite.",
         ));
     }
-    if let Some(max) = limits(plan).members {
+    if let Some(max) = limits(plan, &settings).members {
         let pending: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM member_invites \
              WHERE team_id = $1 AND accepted_at IS NULL AND expires_at > $2",
@@ -554,7 +562,7 @@ async fn invite(
         .fetch_one(&mut *tx)
         .await?;
         if member_count(&mut tx, access.team_id).await? + pending >= i64::from(max) {
-            return Err(plan_limit());
+            return Err(plan_limit(max));
         }
     }
     let id: Uuid = sqlx::query_scalar(
@@ -713,6 +721,7 @@ async fn accept_invite(
     Path(token): Path<String>,
 ) -> Result<Json<Joined>, ApiError> {
     let now = state.clock.now();
+    let settings = state.settings().await?;
     let OpenInvite {
         id: invite_id,
         team_id,
@@ -744,10 +753,10 @@ async fn accept_invite(
             "You are already a member of this team.",
         ));
     }
-    if let Some(max) = limits(plan).members
+    if let Some(max) = limits(plan, &settings).members
         && member_count(&mut tx, team_id).await? >= i64::from(max)
     {
-        return Err(plan_limit());
+        return Err(plan_limit(max));
     }
     sqlx::query(
         "INSERT INTO memberships (team_id, user_id, role, created_at) VALUES ($1, $2, $3, $4)",
