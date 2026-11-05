@@ -27,7 +27,7 @@ export function isStripeUrl(value: string): boolean {
   );
 }
 
-/** "$10", "$8.33". Assumes a two-decimal currency (USD, per the spec). USD or whichever currency Stripe holds, from cents. */
+/** Converts cents to a currency string, like "$10" or "$8.33". Assumes a two-decimal currency, which is USD per the spec. */
 export function dollars(cents: number, currency: string): string {
   const whole = Math.abs(cents % 100) < 0.005;
   return new Intl.NumberFormat('en-US', {

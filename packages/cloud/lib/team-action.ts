@@ -1,13 +1,13 @@
 import 'server-only';
 import type { ActionResult } from './action-result';
-import { ApiError, type ErrorCode, messageFor } from './errors';
+import { ApiError, type ErrorCode, INVALID_FORM, messageFor } from './errors';
 import { isSlug } from './params';
 
 export type Failure = Extract<ActionResult, { ok: false }>;
 
 export const INVALID: Failure = {
   ok: false,
-  message: 'Something in the form isn’t right. Check it and try again.',
+  message: INVALID_FORM,
   code: 'invalid_request',
 };
 

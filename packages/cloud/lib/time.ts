@@ -57,6 +57,11 @@ export function formatDate(iso: string): string {
   return `${day(d)}, ${d.getUTCFullYear()}`;
 }
 
+/** "Nov 2" for a date this year, "Oct 30, 2025" for any other. Calendar days are UTC. */
+export function dateThisYear(iso: string, now: Date = new Date()): string {
+  return new Date(iso).getUTCFullYear() === now.getUTCFullYear() ? shortDate(iso) : formatDate(iso);
+}
+
 /** A token's expiry: "Never", "In 9 days" (flagged when it is two weeks off or less) or a date. */
 export function tokenExpiry(
   iso: string | null,

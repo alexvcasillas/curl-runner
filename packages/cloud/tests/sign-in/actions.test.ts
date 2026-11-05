@@ -282,6 +282,15 @@ describe('oauth', () => {
     });
   });
 
+  it('refuses a provider URL that is not https', async () => {
+    fetchMock.mockResolvedValueOnce(
+      json(200, { url: 'http://github.com/login/oauth/authorize', binding: 'b' }),
+    );
+    const r = await actions.startOAuth('github', '/', 'web');
+    expect(r.ok).toBe(false);
+    expect(jar.current.sets.find((s) => s.name === 'cr_oauth')).toBeUndefined();
+  });
+
   it('sends a hostile return_to as /', async () => {
     fetchMock.mockResolvedValueOnce(json(200, { url: 'https://x.example/a', binding: 'b' }));
     await redirected(actions.startOAuth('google', '//evil.example', 'web'));

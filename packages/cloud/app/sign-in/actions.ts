@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { api } from '@/lib/api';
 import { ApiError, messageFor } from '@/lib/errors';
+import { text } from '@/lib/form';
 import { safeReturnTo } from '@/lib/return-to';
 import { cookieOptions, setSession } from '@/lib/session';
 import {
@@ -34,11 +35,6 @@ export type CodeResult = {
 };
 
 export type OAuthStartResult = { ok: false; message: string };
-
-function text(formData: FormData, name: string): string {
-  const v = formData.get(name);
-  return typeof v === 'string' ? v.trim() : '';
-}
 
 async function forgetFlowCookie(name: string) {
   (await cookies()).set(name, '', cookieOptions(0, FLOW_PATH));
@@ -188,7 +184,7 @@ export async function startOAuth(
     }
     return { ok: false, message: messageFor(e) };
   }
-  if (!/^https?:\/\//.test(started.url)) {
+  if (!started.url.startsWith('https://')) {
     return { ok: false, message: messageFor(new ApiError(502, 'unavailable', '')) };
   }
   (await cookies()).set(OAUTH_COOKIE, started.binding, cookieOptions(FLOW_MAX_AGE, FLOW_PATH));

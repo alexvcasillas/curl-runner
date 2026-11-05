@@ -40,8 +40,11 @@ export class ApiError extends Error {
   }
 }
 
+/** The copy for a form the page would never send. One place, so every action says the same. */
+export const INVALID_FORM = 'Something in the form isn’t right. Check it and try again.';
+
 const FALLBACK: Record<ErrorCode, string> = {
-  invalid_request: 'Something in the form isn’t right. Check it and try again.',
+  invalid_request: INVALID_FORM,
   invalid_bundle: 'The collection isn’t valid. Fix it and publish again.',
   unauthorized: 'You were signed out. Sign in again.',
   forbidden: 'Only team owners can do this.',

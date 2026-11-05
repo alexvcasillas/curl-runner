@@ -39,7 +39,8 @@ const { default: Home } = await import('@/app/(app)/page');
 const { default: NewTeamPage } = await import('@/app/(app)/new-team/page');
 const { NewTeamForm } = await import('@/app/(app)/new-team/NewTeamForm');
 const { AppShell } = await import('@/components/AppShell');
-const { slugFromName, isValidSlug } = await import('@/lib/slug');
+const { slugFromName } = await import('@/lib/slug');
+const { isSlug: isValidSlug } = await import('@/lib/params');
 const { parseLocation } = await import('@/lib/routes');
 const { resetEnv } = await import('@/lib/env');
 

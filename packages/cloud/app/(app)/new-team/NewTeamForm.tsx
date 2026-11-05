@@ -6,8 +6,9 @@ import { ButtonLink } from '@/components/ButtonLink';
 import { Card, CardBody, CardFooter } from '@/components/Card';
 import { Field } from '@/components/Field';
 import { Notice } from '@/components/Notice';
+import { isSlug } from '@/lib/params';
 import { routes } from '@/lib/routes';
-import { isValidSlug, slugFromName } from '@/lib/slug';
+import { slugFromName } from '@/lib/slug';
 import type { CreateTeamResult } from './actions';
 
 export type NewTeamFormProps = {
@@ -47,7 +48,7 @@ export function NewTeamForm({ email, billing, first = false, slugHost, action }:
       setProblem('Enter a team name.');
       return;
     }
-    if (!isValidSlug(slug)) {
+    if (!isSlug(slug)) {
       setSlugError(BAD_SLUG);
       return;
     }

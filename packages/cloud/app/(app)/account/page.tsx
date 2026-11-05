@@ -2,13 +2,12 @@ import type { Metadata } from 'next';
 import { AccountView, type ProviderRow, type SessionRow } from '@/components/AccountView';
 import { getIdentities, getSessions } from '@/lib/account-data';
 import { getInfo, getMe } from '@/lib/app-data';
+import { PROVIDER_NAMES } from '@/lib/sign-in';
 import { formatDate, relativeTimeInline } from '@/lib/time';
 import { leaveTeam } from '../t/[team]/members/actions';
 import { revokeSession } from './actions';
 
 export const metadata: Metadata = { title: 'Account' };
-
-const MONTH_DAY = (iso: string) => formatDate(iso);
 
 export default async function AccountPage() {
   const [me, info, identities, sessions] = await Promise.all([
@@ -26,14 +25,13 @@ export default async function AccountPage() {
     if (found) {
       providers.push({
         provider: p,
-        detail: `Linked ${MONTH_DAY(found.created_at)} with ${found.email}`,
+        detail: `Linked ${formatDate(found.created_at)} with ${found.email}`,
         linked: true,
       });
     } else if (info.sign_in.includes(p)) {
-      const name = p === 'github' ? 'GitHub' : 'Google';
       providers.push({
         provider: p,
-        detail: `Not linked. Sign in with ${name} once, using ${me.user.email}, to link it.`,
+        detail: `Not linked. Sign in with ${PROVIDER_NAMES[p]} once, using ${me.user.email}, to link it.`,
         linked: false,
       });
     }

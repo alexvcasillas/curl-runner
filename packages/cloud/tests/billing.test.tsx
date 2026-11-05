@@ -360,8 +360,9 @@ describe('BillingView', () => {
     const { user, onPortal } = view({ summary: TEAM, restricted: 1 });
     expect(screen.getByRole('heading', { name: 'Team plan' })).toBeInTheDocument();
     expect(screen.getByText('Active')).toBeInTheDocument();
-    expect(screen.getByText('$288 / year')).toBeInTheDocument();
+    expect(screen.getByText('$288 a year')).toBeInTheDocument();
     expect(screen.getByText(/Renews on Nov 5, 2027/)).toBeInTheDocument();
+    expect(screen.getByText(/switching to monthly and cancelling/)).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Plans' })).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Manage billing' }));
     expect(onPortal).toHaveBeenCalled();
@@ -369,8 +370,9 @@ describe('BillingView', () => {
 
   it('Team, monthly: next invoice per month', () => {
     view({ summary: { ...TEAM, interval: 'monthly' } });
-    expect(screen.getByText('$30 / month')).toBeInTheDocument();
+    expect(screen.getByText('$30 a month')).toBeInTheDocument();
     expect(screen.getByText(/Billed monthly/)).toBeInTheDocument();
+    expect(screen.getByText(/switching to annual and cancelling/)).toBeInTheDocument();
   });
 
   it('Team, member: no portal', () => {

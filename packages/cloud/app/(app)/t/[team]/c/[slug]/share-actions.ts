@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { normalizeEntry } from '@/lib/access-entry';
 import { api } from '@/lib/api';
-import { ApiError, messageFor } from '@/lib/errors';
+import { ApiError, INVALID_FORM, messageFor } from '@/lib/errors';
 import { isSlug } from '@/lib/params';
 import { routes } from '@/lib/routes';
 import type { AccessMode, Share } from '@/lib/types';
@@ -21,7 +21,7 @@ const enc = encodeURIComponent;
 
 const INVALID: ShareResult = {
   ok: false,
-  message: 'Something in the form isn’t right. Check it and try again.',
+  message: INVALID_FORM,
 };
 
 /** Only what the page can send. Anything else never reaches the API. */

@@ -1,4 +1,4 @@
-import { dollars } from './billing';
+import { perMonth } from './billing';
 import type { BillingSummary, Plan, Prices } from './types';
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -34,7 +34,5 @@ export function seatCostNote(
   if (interval !== 'monthly' && interval !== 'annual') {
     return null;
   }
-  const price = interval === 'annual' ? prices.annual : prices.monthly;
-  const perMonth = interval === 'annual' ? price.unit_amount / 12 : price.unit_amount;
-  return `On the Team plan, each member who accepts adds ${dollars(perMonth, price.currency)} a month on the ${interval} plan, prorated on the next invoice. Pending invites aren’t billed.`;
+  return `On the Team plan, each member who accepts adds ${perMonth(prices, interval)} a month on the ${interval} plan, prorated on the next invoice. Pending invites aren’t billed.`;
 }

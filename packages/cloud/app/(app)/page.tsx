@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { api } from '@/lib/api';
+import { getShared } from '@/lib/account-data';
 import { getMe } from '@/lib/app-data';
 import { ApiError } from '@/lib/errors';
 import { routes } from '@/lib/routes';
@@ -12,9 +12,9 @@ export default async function Home() {
   }
   // A failed lookup must not break `/`: treat it as nothing shared. Only an
   // `ApiError` is swallowed: the 401 sign-in redirect is a thrown `redirect()`.
-  let shared: unknown[] = [];
+  let shared: readonly unknown[] = [];
   try {
-    shared = await api<unknown[]>('/v1/me/shared');
+    shared = await getShared();
   } catch (e) {
     if (!(e instanceof ApiError)) {
       throw e;

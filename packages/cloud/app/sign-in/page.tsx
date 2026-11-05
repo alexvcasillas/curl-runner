@@ -3,32 +3,12 @@ import { redirect } from 'next/navigation';
 import { AuthShell } from '@/components/AuthShell';
 import { Notice } from '@/components/Notice';
 import { api } from '@/lib/api';
-import { ApiError } from '@/lib/errors';
-import { getSession } from '@/lib/session';
+import { getViewer } from '@/lib/public-data';
 import { destination, first, type Provider, parseClient } from '@/lib/sign-in';
 import type { Info } from '@/lib/types';
 import { SignInForm } from './SignInForm';
 
 export const metadata: Metadata = { title: 'Sign in' };
-
-/**
- * A cookie is not a session: it may be revoked or expired. Only `GET /v1/me`
- * says so, and a stale cookie must show the form, not loop.
- */
-async function isSignedIn(): Promise<boolean> {
-  if (!(await getSession())) {
-    return false;
-  }
-  try {
-    await api('/v1/me', { auth: 'optional' });
-    return true;
-  } catch (e) {
-    if (e instanceof ApiError) {
-      return false;
-    }
-    throw e;
-  }
-}
 
 export default async function SignInPage({
   searchParams,
@@ -39,7 +19,7 @@ export default async function SignInPage({
   const client = parseClient(first(sp.client));
   const returnTo = destination(first(sp.return_to), client);
 
-  if (await isSignedIn()) {
+  if (await getViewer()) {
     redirect(returnTo);
   }
 

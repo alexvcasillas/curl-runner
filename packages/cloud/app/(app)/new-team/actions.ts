@@ -4,18 +4,14 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { api } from '@/lib/api';
 import { ApiError, messageFor } from '@/lib/errors';
+import { text } from '@/lib/form';
+import { isSlug } from '@/lib/params';
 import { routes } from '@/lib/routes';
-import { isValidSlug } from '@/lib/slug';
 
 export type CreateTeamResult =
   | { ok: false; kind: 'closed' }
   | { ok: false; kind: 'taken' }
   | { ok: false; kind: 'invalid' | 'error'; message: string };
-
-function text(formData: FormData, name: string): string {
-  const v = formData.get(name);
-  return typeof v === 'string' ? v.trim() : '';
-}
 
 /** `POST /v1/teams`. Success goes to the new team, so only a problem comes back. */
 export async function createTeam(formData: FormData): Promise<CreateTeamResult> {
@@ -24,7 +20,7 @@ export async function createTeam(formData: FormData): Promise<CreateTeamResult> 
   if (!name) {
     return { ok: false, kind: 'invalid', message: 'Enter a team name.' };
   }
-  if (!isValidSlug(slug)) {
+  if (!isSlug(slug)) {
     return {
       ok: false,
       kind: 'invalid',

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { type TokenRow, TokensView } from '@/components/TokensView';
 import { requireTeam } from '@/lib/collections-data';
 import { getTokens } from '@/lib/team-data';
-import { formatDate, relativeTime, tokenExpiry } from '@/lib/time';
+import { dateThisYear, relativeTime, tokenExpiry } from '@/lib/time';
 import { createToken, revokeToken } from './actions';
 
 export const metadata: Metadata = { title: 'Tokens' };
@@ -19,9 +19,7 @@ export default async function TokensPage({ params }: { params: Promise<{ team: s
       id: t.id,
       name: t.name,
       by: t.created_by,
-      created: formatDate(t.created_at).replace(/, \d{4}$/, (y) =>
-        new Date(t.created_at).getUTCFullYear() === now.getUTCFullYear() ? '' : y,
-      ),
+      created: dateThisYear(t.created_at, now),
       expires: expiry.label,
       expiresSoon: expiry.soon,
       lastUsed: t.last_used_at ? relativeTime(t.last_used_at, now) : null,

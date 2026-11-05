@@ -2,14 +2,7 @@
 
 import { useState } from 'react';
 import type { ActionResult } from '@/lib/action-result';
-import {
-  billedNote,
-  dollars,
-  dueBy as dueDate,
-  type Interval,
-  perMonth,
-  total,
-} from '@/lib/billing';
+import { billedNote, dueBy as dueDate, type Interval, perMonth, total } from '@/lib/billing';
 import { formatDate } from '@/lib/time';
 import type { BillingSummary, Prices } from '@/lib/types';
 import { Banner } from './Banner';
@@ -109,18 +102,17 @@ export function BillingView(p: BillingViewProps) {
       : mode === 'scheduled'
         ? 'None'
         : prices
-          ? `${dollars(
-              (sub === 'annual' ? prices.annual : prices.monthly).unit_amount * s.seats,
-              prices.annual.currency,
-            )} / ${sub === 'annual' ? 'year' : 'month'}`
+          ? total(prices, sub, s.seats)
           : 'Unavailable';
+
+  const portalNote = `Cards, invoices, switching to ${sub === 'annual' ? 'monthly' : 'annual'} and cancelling are in the Stripe portal.`;
 
   const foot = {
     free: `Upgrading starts today. The first invoice covers the members ${teamName} has now.`,
     granted: `When the grant ends, ${teamName} moves to Free unless an owner upgrades. Owners get an email 14 days before.`,
-    active: 'Cards, invoices, switching to monthly and cancelling are in the Stripe portal.',
-    scheduled: 'Cards, invoices, switching to monthly and cancelling are in the Stripe portal.',
-    past_due: 'Cards, invoices, switching to monthly and cancelling are in the Stripe portal.',
+    active: portalNote,
+    scheduled: portalNote,
+    past_due: portalNote,
   }[mode];
 
   return (
