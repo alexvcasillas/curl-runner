@@ -22,7 +22,7 @@ describe('cloud screenshots', () => {
   });
 
   it('ships no image nothing references, and every one is used in the Cloud page', () => {
-    const referenced = new Set(Object.values(CLOUD_SCREENSHOTS).map((s) => s.src));
+    const referenced = new Set<string>(Object.values(CLOUD_SCREENSHOTS).map((s) => s.src));
     for (const file of readdirSync(join(PUBLIC_DIR, 'cloud'))) {
       expect(referenced.has(`/cloud/${file}`), file).toBe(true);
     }
