@@ -185,3 +185,19 @@ export function ClockIcon(p: IconProps) {
     </Glyph>
   );
 }
+
+export function DownloadIcon(p: IconProps) {
+  return (
+    <Glyph strokeLinecap="round" strokeLinejoin="round" {...p}>
+      <path d="M8 2.5v8M4.5 7L8 10.5 11.5 7M3 13.5h10" />
+    </Glyph>
+  );
+}
+
+export function LinkIcon(p: IconProps) {
+  return (
+    <Glyph strokeLinecap="round" {...p}>
+      <path d="M6.5 9.5l3-3M7 4.5l1-1a2.8 2.8 0 014 4l-1 1M9 11.5l-1 1a2.8 2.8 0 01-4-4l1-1" />
+    </Glyph>
+  );
+}

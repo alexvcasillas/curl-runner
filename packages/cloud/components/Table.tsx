@@ -47,7 +47,7 @@ export function TableHeader({ children }: { children: React.ReactNode }) {
   return (
     <div
       role="row"
-      className="flex h-9 items-center gap-3 border-b border-hairline px-4 text-[12px] text-fg-subtle"
+      className="relative flex h-9 items-center gap-3 border-b border-hairline px-4 text-[12px] text-fg-subtle"
     >
       {children}
     </div>

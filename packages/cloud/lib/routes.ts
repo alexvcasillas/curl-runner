@@ -15,6 +15,14 @@ export const routes = {
     tab === 'collections'
       ? `/t/${encodeURIComponent(slug)}`
       : `/t/${encodeURIComponent(slug)}/${tab}`,
+  collection: (team: string, slug: string, tab?: 'inputs' | 'settings') =>
+    `/t/${encodeURIComponent(team)}/c/${encodeURIComponent(slug)}${tab ? `?tab=${tab}` : ''}`,
+  sharing: (team: string, slug: string) =>
+    `/t/${encodeURIComponent(team)}/c/${encodeURIComponent(slug)}/sharing`,
+  version: (team: string, slug: string, n: number, compare?: number) =>
+    `/t/${encodeURIComponent(team)}/c/${encodeURIComponent(slug)}/versions/${n}${compare === undefined ? '' : `?compare=${compare}`}`,
+  download: (team: string, slug: string, n: number) =>
+    `/t/${encodeURIComponent(team)}/c/${encodeURIComponent(slug)}/versions/${n}/download`,
 };
 
 export const external = {

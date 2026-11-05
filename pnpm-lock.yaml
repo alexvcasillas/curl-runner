@@ -224,6 +224,9 @@ importers:
       diff:
         specifier: ^9.0.0
         version: 9.0.0
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       geist:
         specifier: ^1.8.2
         version: 1.8.2(next@16.2.12(@babel/core@7.29.7)(@playwright/test@1.64.1)(react-dom@19.2.9(react@19.2.9))(react@19.2.9))
@@ -2231,6 +2234,9 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
+
+  fflate@0.8.3:
+    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
 
   framer-motion@14.7.1:
     resolution: {integrity: sha512-mFDYZxyfeZnpvL/zEQEqLZNYVA/ya47c9TBfZb/PEoNBBVSVvCLkMrCv9U38cuw72W161XENZwZB0+4nIBLEJg==}
@@ -5088,6 +5094,8 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.7):
     optionalDependencies:
       picomatch: 4.0.7
+
+  fflate@0.8.3: {}
 
   framer-motion@14.7.1(react-dom@19.2.9(react@19.2.9))(react@19.2.9):
     dependencies:
