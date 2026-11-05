@@ -4,12 +4,13 @@ description: "Publish a curl-runner collection to curl-runner Cloud from CI, sha
 ---
 
 <Callout type="warn" title="Private preview">
-curl-runner Cloud is in private preview. Sign-ups open at launch. Until then the commands on this page talk to a server that only accepts people we have invited. You can also [run the server yourself](/docs/self-hosting).
+curl-runner Cloud is in private preview. Sign-ups open at launch. Until then the dashboard and the commands on this page talk to a server that only accepts people we have invited. You can also [run the server yourself](/docs/self-hosting).
 </Callout>
 
 Cloud keeps a copy of your collection where your team and your customers can open it. Git stays the source of truth. Your CI publishes the folder on every push, and Cloud shows the latest version.
 
 - **Publish** a folder of YAML files from CI with `curl-runner publish`.
+- **Manage** it in the dashboard: teams, tokens, versions, members and billing.
 - **Share** it with a link, or with named people.
 - **Pull** a shared collection onto your machine with `curl-runner pull`.
 
@@ -149,79 +150,111 @@ jobs:
 
 Any other CI works the same way. Install the CLI, set `CURL_RUNNER_TOKEN` and `CURL_RUNNER_TEAM`, and run `curl-runner publish`.
 
-## Create a team [#team]
+## Sign in [#sign-in]
 
-<Callout type="info" title="API only for now">
-Until the dashboard is out, you create a team with the API. Sign in first with `curl-runner login`.
-</Callout>
+Open the dashboard at `https://cloud.curl-runner.com`. On a self-hosted server it is the `PUBLIC_APP_URL` you set. There is no password. Continue with GitHub or Google, or enter your email and type the 6-digit code we send. You can also click the link in the same email. A code works for 10 minutes.
 
-An account that isn't in a team can't publish. Create one with a signed-in session. This reads the session `curl-runner login` saved:
+GitHub and Google show up only when the server has them set up. Email always works.
 
-```bash title="Create a team"
-SESSION=$(jq -r '.servers["https://api.curl-runner.com"].session' ~/.config/curl-runner/credentials.json)
-curl -X POST https://api.curl-runner.com/v1/teams \
-  -H "Authorization: Bearer $SESSION" \
-  -H "Content-Type: application/json" \
-  -d '{"slug": "acme", "name": "Acme"}'
+To sign in to the CLI with the same account, run `curl-runner login --browser`. It opens the dashboard sign-in page. After you sign in, the page shows a code. Paste it into the terminal.
+
+```bash title="Command"
+curl-runner login --browser
 ```
 
-On a self-hosted server, `SIGNUP` decides who can do this. See [Self-hosting](/docs/self-hosting#signup).
+If the browser doesn't open, open the printed link yourself. Without `--browser`, `login` emails you a code and you type it in the terminal. Run `curl-runner login --server <url>` for a self-hosted server.
+
+## Create a team [#team]
+
+A team owns collections, tokens and members. Choose **New team** from the team switcher, or let the dashboard send you there after your first sign-in. Enter a name and a slug, such as `acme`. The slug is part of every URL and can't change later.
+
+Who can create a team depends on the server. On the hosted service you can. On a self-hosted server, `SIGNUP` decides. See [Self-hosting](/docs/self-hosting#signup). If you can't create a team, you can still open collections that people shared with you.
+
+<CloudScreenshot name="collections">The Collections page. Each row is a collection, with its access and latest version.</CloudScreenshot>
+
+## Create a publish token [#tokens]
+
+A publish token belongs to one team and can only publish. Open **Tokens** and choose **Create token**. Give it a name, such as `github-actions`, and an expiry. Never, 30 days, 90 days or 1 year.
+
+<CloudScreenshot name="tokens-created">The token shows once. Copy it into your CI's secrets as `CURL_RUNNER_TOKEN`.</CloudScreenshot>
+
+The dialog also shows the GitHub Actions step to paste into your workflow. Revoke a token from the same page. Revoking one doesn't affect the others.
+
+## Publish [#publish-dashboard]
+
+Publish from CI as described in [Publish from CI](#publish). The first publish creates the collection. Open it from the **Collections** page to see these tabs:
+
+- **Versions** lists every version, who published it, the commit, and the file count. **Changes** shows a diff against the version before it. The download icon gets a zip of that version.
+- **Inputs** lists the inputs from the `cloud:` block. A secret input never shows a default.
+- **Settings** switches the collection's source between git and the studio, downloads the current version, and deletes the collection. Only owners can delete.
+- **Sharing** opens the share settings.
+
+<CloudScreenshot name="collection">A collection with two versions. Each publish makes a new one.</CloudScreenshot>
 
 ## Share a collection [#share]
 
-<Callout type="info" title="API only for now">
-The dashboard is not out yet. Until it is, you share a collection with the API. These calls need a signed-in session as a team member, sent as `Authorization: Bearer crs_...`. `curl-runner login` saves one in `~/.config/curl-runner/credentials.json`.
-</Callout>
+Open a collection and choose **Share**. Pick who can open the link:
 
-Each collection has a share link and an access mode: `off`, `public` or `restricted`. In `restricted` mode only the people on the access list can open the link. Restricted sharing needs the Team plan.
+| Access | Who can open it |
+| --- | --- |
+| Off | Only members of your team. |
+| Public | Anyone with the link. No account needed. |
+| Restricted | Only the people on the access list, after they sign in. Needs the Team plan. |
 
-```bash title="Restrict it"
-curl -X PATCH https://api.curl-runner.com/v1/teams/acme/collections/payments-api/share \
-  -H "Authorization: Bearer $SESSION" \
-  -H "Content-Type: application/json" \
-  -d '{"access": "restricted"}'
-```
+<CloudScreenshot name="sharing">Restricted access, with an email and a whole domain on the list.</CloudScreenshot>
 
-Use `"public"` instead to let anyone with the link open it. The reply has the link:
+The page shows the share link with a **Copy link** button. You can set it to expire, or **Reset link** to replace it and stop the old one working. A reset can't be undone.
 
-```json title="Reply"
-{
-  "access": "restricted",
-  "link": "https://cloud.curl-runner.com/s/<token>",
-  "expires_at": null,
-  "entries": []
-}
-```
-
-`PATCH` also takes `expires_in_days` (`null` removes the expiry) and `reset_link: true`, which replaces the link and stops the old one working.
-
-Then add people to the access list. An entry is an email, or `*@example.com` for everyone on a domain. `notify` sends an invite email, and only to email entries that are new:
-
-```bash title="Invite someone"
-curl -X POST https://api.curl-runner.com/v1/teams/acme/collections/payments-api/share/entries \
-  -H "Authorization: Bearer $SESSION" \
-  -H "Content-Type: application/json" \
-  -d '{"entry": "dev@example.com", "notify": true}'
-```
-
-`GET` on the same `/share` path shows the link and the list. `DELETE` on `/share/entries/<entry>` removes someone.
+In Restricted mode, add an email, or `*@example.com` for everyone on a domain. Leave **Email them the link** checked to send an invite. Domains never get an email. Each entry shows whether the person has opened the link yet. **Remove** takes someone off the list.
 
 <Callout type="warn" title="A link is a credential">
-Whoever holds a share link can use it. In `public` mode that means anyone. Don't paste it where you wouldn't paste a password. If a link leaks, reset it.
+Whoever holds a share link can use it. In Public mode that means anyone. Don't paste it where you wouldn't paste a password. If a link leaks, reset it.
 </Callout>
 
-## Publish tokens [#tokens]
+**Preview the page** shows what your customers see.
 
-A publish token belongs to one team and can only publish. Create one as a signed-in member:
+## Members [#members]
 
-```bash
-curl -X POST https://api.curl-runner.com/v1/teams/acme/tokens \
-  -H "Authorization: Bearer $SESSION" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "github-actions"}'
-```
+Open **Members** to invite people. Enter an email and a role, then **Send invite**. An invite expires after 7 days.
 
-The reply shows the token once. Copy it into your CI's secrets. Add `expires_in_days` to make it expire, and `DELETE /v1/teams/acme/tokens/<id>` to revoke it.
+| Role | What it can do |
+| --- | --- |
+| Member | Publish, share collections and create tokens. |
+| Owner | Everything a member can do, plus manage members and billing, and delete collections. |
+
+<CloudScreenshot name="members">Two members and one pending invite.</CloudScreenshot>
+
+Owners change a role from the list or remove a member. Anyone can leave a team, except its only owner. Customers you share with are not members and never use a seat.
+
+## Billing [#billing]
+
+On the hosted service, a team starts on the Free plan. Free has up to 3 members, counting pending invites, with unlimited public collections and publishing. The Team plan has no member limit and adds Restricted sharing. It costs $10 per member per month, or $96 per member per year. Prices are in USD before tax.
+
+Owners open **Billing** to see the plan and the member count, and to upgrade. **Upgrade to Team** goes to a Stripe checkout page that accepts business tax IDs. After you pay, the page shows the new plan. To change the interval, update the card or cancel, use the Stripe customer portal from the same page. A cancelled team goes back to Free at the end of the period. If a payment fails, a banner on every page tells owners.
+
+Members can see the plan but can't change it. A self-hosted server has no plans. The page doesn't exist there, and every feature is on.
+
+## Shared with me [#shared-with-me]
+
+**Shared with me** in the header lists the collections people shared with you, from every team. You see it even if you aren't in a team. Open one to see its page, with a link to open it in the studio.
+
+## What your customers see [#landing]
+
+A share link opens a page with the collection name, the team, the request count and the latest version. If the link is Restricted, the person signs in first.
+
+<CloudScreenshot name="landing">The page behind a Public share link.</CloudScreenshot>
+
+From there a customer can:
+
+- **Open in curl-runner studio**, which opens the collection in the studio.
+- **Download the studio** for macOS.
+- Run the `curl-runner pull` command shown, on any system.
+
+They fill in the inputs on their own machine. Secret values never go back to your team.
+
+<Callout type="info" title="API">
+Everything the dashboard does is also an API call. Sessions and tokens go in `Authorization: Bearer ...`. See `GET /v1/me` on your server for the teams your account is in.
+</Callout>
 
 ## Pull a shared collection [#pull]
 

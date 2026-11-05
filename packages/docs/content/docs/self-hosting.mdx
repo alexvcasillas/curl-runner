@@ -9,11 +9,13 @@ curl-runner Cloud is in private preview, and the hosted service opens to sign-up
 
 The curl-runner server ships as a Docker image: `ghcr.io/alexvcasillas/curl-runner-server`. The repo's `docker-compose.yaml` runs it together with Postgres 17.
 
-Two values are required. Set them in your shell or in a `.env` file next to `docker-compose.yaml` before the first start:
+Four values are required. Set them in your shell or in a `.env` file next to `docker-compose.yaml` before the first start:
 
 ```bash title=".env"
 POSTGRES_PASSWORD=<a long random password>
 SECRET_KEY=<at least 32 random bytes>
+PUBLIC_API_URL=https://api.example.com
+PUBLIC_APP_URL=https://cloud.example.com
 ```
 
 Generate a key with `openssl rand -hex 32`.
@@ -30,7 +32,7 @@ From a checkout of the repo:
 docker compose up -d
 ```
 
-This pulls the image and starts a service called `server`. It listens on port 8080 inside the container, but the compose file doesn't publish it to your machine.
+This pulls the images and starts two services: `server`, the API, and `app`, the dashboard. The API listens on port 8080 inside the container and the dashboard on port 3000. The compose file doesn't publish either to your machine. Point your reverse proxy at them. See [The dashboard](#dashboard).
 
 To reach it from your host, add a `docker-compose.override.yml` next to `docker-compose.yaml`. Compose picks it up automatically:
 
@@ -50,6 +52,38 @@ docker network create coolify
 ```
 
 Or remove the `coolify` entries from `docker-compose.yaml`: the top-level `coolify` network and the `coolify` line under `server`'s `networks`. Keep `internal`.
+
+## The dashboard [#dashboard]
+
+The `app` service is the web dashboard, from the image `ghcr.io/alexvcasillas/curl-runner-cloud`. It talks to the API over the private network. Your CLI and the studio still need the API's public URL.
+
+Give each service a public address on your reverse proxy, with TLS:
+
+- `https://cloud.example.com` goes to the `app` service on port 3000. This is `PUBLIC_APP_URL`.
+- `https://api.example.com` goes to the `server` service on port 8080. This is `PUBLIC_API_URL`.
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `PUBLIC_APP_URL` | none | Required. The dashboard's public URL. It decides where links and emails point, and the session cookie is marked `Secure` for an `https` URL. |
+| `PUBLIC_API_URL` | none | Required. The API's public URL. The dashboard advertises it to the CLI. |
+| `API_INTERNAL_URL` | `http://localhost:8080` | How the dashboard reaches the API. The compose file sets it to `http://curl-runner-server:8080`, on the private network. Set it yourself if you run the dashboard some other way. |
+| `CLOUD_IMAGE_TAG` | `latest` | The dashboard image tag. |
+
+The compose file refuses to start the dashboard without both public URLs. Without them it would send people to `localhost`.
+
+The dashboard calls the API from its own container, so the API sees it as one proxy hop. With the proxy in front of the dashboard as well, `TRUSTED_PROXY_HOPS` is still `1` for the API. See [Behind a proxy](#proxy).
+
+Check it with `curl https://cloud.example.com/healthz`. It answers `200`.
+
+### Discovery [#well-known]
+
+The dashboard serves `/.well-known/curl-runner.json`:
+
+```json
+{"api":"https://api.example.com"}
+```
+
+`curl-runner login --browser` and `curl-runner pull` use it to find the API from the dashboard's address, so a person only needs to know your dashboard URL. It reports `PUBLIC_API_URL`.
 
 ## Check it's up [#health]
 
@@ -85,8 +119,8 @@ Set these in your shell or in the `.env` file. An empty value counts as unset.
 | `RUST_LOG` | `info` | Log level, for example `debug` or `warn`. |
 | `SERVER_IMAGE_TAG` | `latest` | Image tag to run. |
 | `SECRET_KEY` | none | Required. At least 32 bytes. Never change it. |
-| `PUBLIC_API_URL` | `http://localhost:8080` | The public URL of this API, such as `https://api.example.com`. |
-| `PUBLIC_APP_URL` | `http://localhost:3000` | The public URL of the dashboard. Share links and emails point here. |
+| `PUBLIC_API_URL` | none | Required with the compose file. The public URL of this API, such as `https://api.example.com`. |
+| `PUBLIC_APP_URL` | none | Required with the compose file. The public URL of the dashboard. Share links and emails point here. |
 | `TRUSTED_PROXY_HOPS` | `1` | How many reverse proxies sit in front of the server. See [Behind a proxy](#proxy). |
 
 ### Database [#database]
@@ -110,12 +144,19 @@ Sign-in codes, invites and share notices are sent by email. Without SMTP setting
 
 ### Sign-in with GitHub or Google [#oauth]
 
-Email codes always work. To add a provider, create an OAuth app with it and set both values:
+Email codes always work. To add a provider, create an OAuth app with it and set both values. The dashboard handles the sign-in, so the callback URL is on `PUBLIC_APP_URL`:
 
 | Variable | What it does |
 | --- | --- |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Enables sign-in with GitHub. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Enables sign-in with Google. |
+
+| Provider | Callback URL |
+| --- | --- |
+| GitHub | `{PUBLIC_APP_URL}/sign-in/github/callback` |
+| Google | `{PUBLIC_APP_URL}/sign-in/google/callback` |
+
+For `https://cloud.example.com`, the GitHub callback is `https://cloud.example.com/sign-in/github/callback`. A provider's button shows on the sign-in page once its two values are set.
 
 ### Who can create a team [#signup]
 
@@ -143,7 +184,7 @@ curl -X POST https://api.example.com/v1/teams \
   -d '{"slug": "acme", "name": "Acme"}'
 ```
 
-The dashboard will do this for you once it is out.
+You can also do this in the dashboard. Sign in at your `PUBLIC_APP_URL` and create the team from the new team page.
 
 ### Plans [#plans]
 
@@ -190,7 +231,9 @@ Set billing up in Stripe like this:
 3. Set the endpoint's API version to `2026-10-28.endive`.
 4. Create two prices, one monthly and one annual. Each must be a flat per-seat recurring price. Tiered and metered prices aren't supported.
 
-With billing on, `GET /v1/info` reports `"billing": true` and team owners can start a checkout or open the Stripe customer portal from the dashboard.
+With billing on, `GET /v1/info` reports `"billing": true`. The dashboard then shows a **Billing** page, where team owners start a checkout or open the Stripe customer portal. Without it, the page doesn't exist.
+
+The dashboard needs no Stripe settings of its own. It asks the API, which holds the keys.
 
 ## Behind a proxy [#proxy]
 
