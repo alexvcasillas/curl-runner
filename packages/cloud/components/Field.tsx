@@ -57,7 +57,11 @@ export function Field({
         input
       )}
       {note ? (
-        <span id={noteId} className={error ? 'text-danger' : 'text-fg-subtle'}>
+        <span
+          id={noteId}
+          role={error ? 'alert' : undefined}
+          className={error ? 'text-danger' : 'text-fg-subtle'}
+        >
           {note}
         </span>
       ) : null}

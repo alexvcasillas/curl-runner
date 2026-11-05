@@ -79,7 +79,7 @@ describe('Shell', () => {
     expect(radios[1]).toHaveAttribute('href', '/t/globex');
     expect(within(menu).getByRole('menuitem', { name: 'New team' })).toHaveAttribute(
       'href',
-      '/new',
+      '/new-team',
     );
     expect(radios[0]).toHaveFocus();
   });

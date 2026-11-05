@@ -8,7 +8,7 @@ export const routes = {
   signOut: '/sign-out',
   shared: '/shared',
   account: '/account',
-  newTeam: '/new',
+  newTeam: '/new-team',
   admin: '/admin',
   team: (slug: string) => `/t/${encodeURIComponent(slug)}`,
   teamTab: (slug: string, tab: TeamTab) =>
@@ -24,3 +24,25 @@ export const external = {
   cloudDocs: 'https://www.curl-runner.com/docs/features/cloud',
   selfHosting: 'https://www.curl-runner.com/docs/self-hosting',
 };
+
+const TEAM_TABS: readonly TeamTab[] = ['collections', 'tokens', 'members', 'billing', 'settings'];
+
+/** The team and tab a path belongs to. Collection pages (`/t/acme/c/api`) sit under Collections. */
+export function parseLocation(path: string): { team: string | null; tab: TeamTab | null } {
+  const [pathname] = path.split(/[?#]/);
+  const m = /^\/t\/([^/]+)(?:\/([^/]+))?/.exec(pathname);
+  if (!m) {
+    return { team: null, tab: null };
+  }
+  let team = m[1];
+  try {
+    team = decodeURIComponent(team);
+  } catch {
+    // Keep the raw segment.
+  }
+  const seg = m[2] as TeamTab | undefined;
+  return {
+    team,
+    tab: seg && seg !== 'collections' && TEAM_TABS.includes(seg) ? seg : 'collections',
+  };
+}
