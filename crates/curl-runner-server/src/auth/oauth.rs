@@ -223,13 +223,14 @@ pub async fn callback(
             .fetch_one(&mut *tx)
             .await?;
             sqlx::query(
-                "INSERT INTO identities (user_id, provider, subject, email) \
-                 VALUES ($1, $2, $3, $4) ON CONFLICT (provider, subject) DO NOTHING",
+                "INSERT INTO identities (user_id, provider, subject, email, created_at) \
+                 VALUES ($1, $2, $3, $4, $5) ON CONFLICT (provider, subject) DO NOTHING",
             )
             .bind(user.id)
             .bind(provider.as_str())
             .bind(&identity.subject)
             .bind(&email)
+            .bind(now)
             .execute(&mut *tx)
             .await?;
             user

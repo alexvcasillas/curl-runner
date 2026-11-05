@@ -144,6 +144,9 @@ pub struct ServerInfo {
     pub sign_in: Vec<SignInMethod>,
     pub signup: SignupMode,
     pub billing: bool,
+    /// The dashboard's public URL. Absent from servers that predate it.
+    #[serde(default)]
+    pub app_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

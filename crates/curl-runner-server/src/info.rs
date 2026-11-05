@@ -25,5 +25,6 @@ pub fn server_info(config: &Config) -> ServerInfo {
         sign_in,
         signup: config.signup,
         billing: false,
+        app_url: Some(config.app_url.clone()),
     }
 }

@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use axum::Json;
 use axum::extract::{Path, State};
 use chrono::{DateTime, Utc};
-use curl_runner_cloud_proto::{BundleFile, FileChanges, GitMeta, VersionSummary};
+use curl_runner_cloud_proto::{BundleFile, FileChanges, GitMeta, Input, VersionSummary};
+use serde::Serialize;
 use sqlx::types::Json as Jsonb;
 
 use super::collection_id;
@@ -43,6 +44,30 @@ type SummaryRow = (
     i64,
 );
 
+type DetailRow = (
+    i32,
+    String,
+    DateTime<Utc>,
+    String,
+    Option<Jsonb<GitMeta>>,
+    i64,
+    Jsonb<Vec<Input>>,
+);
+
+const SUMMARY_COLUMNS: &str = "v.number, v.hash, v.created_at, v.published_by, v.git, \
+     (SELECT count(*) FROM version_files f WHERE f.version_id = v.id)";
+
+fn summary_of((number, hash, published_at, publisher, git, files): SummaryRow) -> VersionSummary {
+    VersionSummary {
+        number: u32::try_from(number).unwrap_or_default(),
+        hash,
+        published_at,
+        publisher,
+        git: git.map(|g| g.0),
+        file_count: u32::try_from(files).unwrap_or_default(),
+    }
+}
+
 /// Newest first. Read-only, so a team's publish token may call it as well
 /// as a member.
 pub(super) async fn list(
@@ -51,28 +76,46 @@ pub(super) async fn list(
     Path((_team, slug)): Path<(String, String)>,
 ) -> Result<Json<Vec<VersionSummary>>, ApiError> {
     let id = collection_id(&state.db, auth.team_id, &slug).await?;
-    let rows: Vec<SummaryRow> = sqlx::query_as(
-        "SELECT v.number, v.hash, v.created_at, v.published_by, v.git, \
-                (SELECT count(*) FROM version_files f WHERE f.version_id = v.id) \
-         FROM versions v WHERE v.collection_id = $1 ORDER BY v.number DESC",
-    )
+    let rows: Vec<SummaryRow> = sqlx::query_as(&format!(
+        "SELECT {SUMMARY_COLUMNS} FROM versions v WHERE v.collection_id = $1 \
+         ORDER BY v.number DESC"
+    ))
     .bind(id)
     .fetch_all(&state.db)
     .await?;
-    Ok(Json(
-        rows.into_iter()
-            .map(
-                |(number, hash, published_at, publisher, git, files)| VersionSummary {
-                    number: u32::try_from(number).unwrap_or_default(),
-                    hash,
-                    published_at,
-                    publisher,
-                    git: git.map(|g| g.0),
-                    file_count: u32::try_from(files).unwrap_or_default(),
-                },
-            )
-            .collect(),
+    Ok(Json(rows.into_iter().map(summary_of).collect()))
+}
+
+#[derive(Serialize)]
+pub(super) struct VersionDetail {
+    #[serde(flatten)]
+    summary: VersionSummary,
+    inputs: Vec<Input>,
+}
+
+/// One version with its declared inputs. Read-only, so a team's publish token
+/// may call it as well as a member.
+pub(super) async fn detail(
+    State(state): State<AppState>,
+    auth: PublishAuth,
+    Path((_team, slug, n)): Path<(String, String, String)>,
+) -> Result<Json<VersionDetail>, ApiError> {
+    let n: i32 = n.parse().map_err(|_| ApiError::not_found())?;
+    let id = collection_id(&state.db, auth.team_id, &slug).await?;
+    let row: Option<DetailRow> = sqlx::query_as(&format!(
+        "SELECT {SUMMARY_COLUMNS}, v.inputs FROM versions v \
+         WHERE v.collection_id = $1 AND v.number = $2"
     ))
+    .bind(id)
+    .bind(n)
+    .fetch_optional(&state.db)
+    .await?;
+    let (number, hash, published_at, publisher, git, files, inputs) =
+        row.ok_or_else(ApiError::not_found)?;
+    Ok(Json(VersionDetail {
+        summary: summary_of((number, hash, published_at, publisher, git, files)),
+        inputs: inputs.0,
+    }))
 }
 
 /// Read-only, so a team's publish token may call it as well as a member.

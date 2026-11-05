@@ -23,6 +23,7 @@ pub fn routes() -> Router<AppState> {
         .route("/v1/auth/handoff/redeem", post(handoff::redeem))
         .route("/v1/auth/sign-out", post(session::sign_out))
         .route("/v1/me", get(session::me))
+        .route("/v1/me/identities", get(session::identities))
         .route("/v1/sessions", get(session::list))
         .route("/v1/sessions/{id}", delete(session::revoke))
 }

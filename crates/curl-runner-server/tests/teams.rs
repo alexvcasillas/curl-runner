@@ -567,3 +567,301 @@ async fn invite_email_is_validated_like_share_entries(pool: PgPool) {
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["email"], "bob@example.com");
 }
+
+async fn invite_id(app: &TestApp, session: &str, team: &str, email: &str) -> String {
+    let (status, body) = invite(app, session, team, email).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    body["id"].as_str().unwrap().to_owned()
+}
+
+#[sqlx::test]
+async fn revoke_invite_owner_only_and_404_for_other_team(pool: PgPool) {
+    let app = test_app(pool).await;
+    let ada = app.sign_in("ada@example.com").await;
+    app.create_team(&ada, "acme").await;
+    let bob = app.sign_in("bob@example.com").await;
+    app.create_team(&bob, "globex").await;
+    let id = invite_id(&app, &ada, "acme", "jane@example.com").await;
+
+    // Another team's owner cannot reach it, nor can it be revoked through their team.
+    let (status, _) = app
+        .request(
+            Method::DELETE,
+            &format!("/v1/teams/globex/invites/{id}"),
+            None,
+            Some(&bob),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = app
+        .request(
+            Method::DELETE,
+            &format!("/v1/teams/acme/invites/{id}"),
+            None,
+            Some(&bob),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // A plain member is forbidden.
+    let token = invite_token(&app, "jane@example.com").await;
+    let jane = app.sign_in("jane@example.com").await;
+    assert_eq!(accept(&app, &jane, &token).await.0, StatusCode::OK);
+    let id2 = invite_id(&app, &ada, "acme", "kim@example.com").await;
+    let (status, body) = app
+        .request(
+            Method::DELETE,
+            &format!("/v1/teams/acme/invites/{id2}"),
+            None,
+            Some(&jane),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
+    let (status, _) = app
+        .request(
+            Method::DELETE,
+            &format!("/v1/teams/acme/invites/{id2}"),
+            None,
+            Some(&ada),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = app
+        .request(
+            Method::DELETE,
+            &format!("/v1/teams/acme/invites/{id2}"),
+            None,
+            Some(&ada),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (_, team) = app
+        .request(Method::GET, "/v1/teams/acme", None, Some(&ada))
+        .await;
+    assert_eq!(team["pending_invites"].as_array().unwrap().len(), 0);
+}
+
+#[sqlx::test]
+async fn revoked_invite_frees_a_free_seat(pool: PgPool) {
+    let app = test_app(pool).await;
+    let ada = app.sign_in("ada@example.com").await;
+    app.create_team(&ada, "acme").await;
+    for email in ["b@example.com", "c@example.com"] {
+        let id = invite_id(&app, &ada, "acme", email).await;
+        if email == "b@example.com" {
+            let token = invite_token(&app, email).await;
+            let s = app.sign_in(email).await;
+            assert_eq!(accept(&app, &s, &token).await.0, StatusCode::OK);
+            let _ = id;
+        }
+    }
+    // Two members (ada, b) plus one pending (c): the Free limit of 3 is full.
+    let (status, body) = invite(&app, &ada, "acme", "d@example.com").await;
+    assert_eq!(status, StatusCode::PAYMENT_REQUIRED, "{body}");
+    let (_, team) = app
+        .request(Method::GET, "/v1/teams/acme", None, Some(&ada))
+        .await;
+    let pending = team["pending_invites"][0]["id"].as_str().unwrap();
+    let (status, _) = app
+        .request(
+            Method::DELETE,
+            &format!("/v1/teams/acme/invites/{pending}"),
+            None,
+            Some(&ada),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, body) = invite(&app, &ada, "acme", "d@example.com").await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+}
+
+#[sqlx::test]
+async fn invite_preview_shows_team_and_inviter(pool: PgPool) {
+    let app = test_app(pool).await;
+    let ada = app.sign_in("ada@example.com").await;
+    app.create_team(&ada, "acme").await;
+    invite_id(&app, &ada, "acme", "jane@example.com").await;
+    let token = invite_token(&app, "jane@example.com").await;
+    // No auth needed. The inviter has no name yet, so the email stands in.
+    let (status, body) = app
+        .request(Method::GET, &format!("/v1/invites/{token}"), None, None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["team_slug"], "acme");
+    assert_eq!(body["team_name"], "acme");
+    assert_eq!(body["inviter_name"], "ada@example.com");
+    assert_eq!(body["role"], "member");
+    assert_eq!(body["email"], "jane@example.com");
+    assert!(body["expires_at"].is_string());
+
+    sqlx::query("UPDATE users SET name = 'Ada Lovelace' WHERE email = 'ada@example.com'")
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    let (_, body) = app
+        .request(Method::GET, &format!("/v1/invites/{token}"), None, None)
+        .await;
+    assert_eq!(body["inviter_name"], "Ada Lovelace");
+}
+
+#[sqlx::test]
+async fn invite_preview_expired_or_used_404(pool: PgPool) {
+    let app = test_app(pool).await;
+    let ada = app.sign_in("ada@example.com").await;
+    app.create_team(&ada, "acme").await;
+    invite_id(&app, &ada, "acme", "jane@example.com").await;
+    let used = invite_token(&app, "jane@example.com").await;
+    let jane = app.sign_in("jane@example.com").await;
+    assert_eq!(accept(&app, &jane, &used).await.0, StatusCode::OK);
+    invite_id(&app, &ada, "acme", "kim@example.com").await;
+    let stale = invite_token(&app, "kim@example.com").await;
+    app.clock.advance(Duration::days(8));
+
+    for token in [used.as_str(), &stale, "cri_unknown"] {
+        let (status, body) = app
+            .request(Method::GET, &format!("/v1/invites/{token}"), None, None)
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{token}");
+        assert_eq!(body["error"], "not_found");
+    }
+}
+
+#[sqlx::test]
+async fn team_rename_owner_only(pool: PgPool) {
+    let app = test_app(pool).await;
+    let ada = app.sign_in("ada@example.com").await;
+    app.create_team(&ada, "acme").await;
+    invite_id(&app, &ada, "acme", "jane@example.com").await;
+    let token = invite_token(&app, "jane@example.com").await;
+    let jane = app.sign_in("jane@example.com").await;
+    assert_eq!(accept(&app, &jane, &token).await.0, StatusCode::OK);
+    let bob = app.sign_in("bob@example.com").await;
+    let patch = |s: String, body: Value| {
+        let app = &app;
+        async move {
+            app.request(Method::PATCH, "/v1/teams/acme", Some(body), Some(&s))
+                .await
+        }
+    };
+
+    let (status, _) = patch(jane, json!({"name": "Nope"})).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = patch(bob, json!({"name": "Nope"})).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    for bad in ["", "   ", &"x".repeat(101)] {
+        let (status, body) = patch(ada.clone(), json!({"name": bad})).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["error"], "invalid_request");
+    }
+    let (status, body) = patch(ada.clone(), json!({"name": "  Acme Inc  "})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["slug"], "acme");
+    assert_eq!(body["name"], "Acme Inc");
+    assert_eq!(body["plan"], "free");
+    let (_, team) = app
+        .request(Method::GET, "/v1/teams/acme", None, Some(&ada))
+        .await;
+    assert_eq!(team["name"], "Acme Inc");
+}
+
+#[sqlx::test]
+async fn team_delete_owner_only_cascades(pool: PgPool) {
+    let app = test_app(pool).await;
+    let ada = app.sign_in("ada@example.com").await;
+    app.create_team(&ada, "acme").await;
+    app.create_team(&ada, "other").await;
+    invite_id(&app, &ada, "acme", "jane@example.com").await;
+    let token = invite_token(&app, "jane@example.com").await;
+    let jane = app.sign_in("jane@example.com").await;
+    assert_eq!(accept(&app, &jane, &token).await.0, StatusCode::OK);
+    invite_id(&app, &ada, "acme", "kim@example.com").await;
+    let (status, _) = app
+        .request(
+            Method::POST,
+            "/v1/teams/acme/tokens",
+            Some(json!({"name": "ci"})),
+            Some(&ada),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    sqlx::query(
+        "INSERT INTO collections (team_id, slug, name, link_hash, link_token_enc) \
+         SELECT id, 'api', 'api', 'h1', 'e' FROM teams WHERE slug = 'acme'",
+    )
+    .execute(&app.state.db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO versions (collection_id, number, hash, published_by, created_at) \
+         SELECT id, 1, 'x', 'ada', now() FROM collections",
+    )
+    .execute(&app.state.db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO access_entries (collection_id, entry, kind, invited_at) \
+         SELECT id, 'jane@example.com', 'email', now() FROM collections",
+    )
+    .execute(&app.state.db)
+    .await
+    .unwrap();
+
+    let (status, _) = app
+        .request(Method::DELETE, "/v1/teams/acme", None, Some(&jane))
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let bob = app.sign_in("bob@example.com").await;
+    let (status, _) = app
+        .request(Method::DELETE, "/v1/teams/acme", None, Some(&bob))
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM teams")
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(n, 2);
+
+    let (status, _) = app
+        .request(Method::DELETE, "/v1/teams/acme", None, Some(&ada))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    for table in [
+        "collections",
+        "versions",
+        "access_entries",
+        "tokens",
+        "member_invites",
+    ] {
+        let n: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {table}"))
+            .fetch_one(&app.state.db)
+            .await
+            .unwrap();
+        // Only `other` survives, and it has no rows in these tables.
+        assert_eq!(n, 0, "{table}");
+    }
+    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM memberships")
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(n, 1, "only ada's membership in `other` remains");
+    let (status, _) = app
+        .request(Method::GET, "/v1/teams/acme", None, Some(&ada))
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = app
+        .request(Method::GET, "/v1/teams/other", None, Some(&ada))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[sqlx::test]
+async fn me_admin_flag(pool: PgPool) {
+    let app = test_app_with(pool, test_config(&[("OPERATOR_EMAILS", "Ops@Example.com")])).await;
+    let ops = app.sign_in("ops@example.com").await;
+    let (_, me) = app.request(Method::GET, "/v1/me", None, Some(&ops)).await;
+    assert_eq!(me["admin"], true);
+    let jane = app.sign_in("jane@example.com").await;
+    let (_, me) = app.request(Method::GET, "/v1/me", None, Some(&jane)).await;
+    assert_eq!(me["admin"], false);
+}

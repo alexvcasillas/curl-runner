@@ -39,6 +39,10 @@ pub fn routes() -> Router<AppState> {
             put(publish::publish).get(versions::list),
         )
         .route(
+            "/v1/teams/{team}/collections/{slug}/versions/{n}",
+            get(versions::detail),
+        )
+        .route(
             "/v1/teams/{team}/collections/{slug}/versions/{n}/files",
             get(versions::files),
         )
@@ -54,6 +58,7 @@ pub fn routes() -> Router<AppState> {
             "/v1/teams/{team}/collections/{slug}/share/entries/{entry}",
             axum::routing::delete(share::remove_entry),
         )
+        .route("/v1/me/shared", get(access::shared_with_me))
         .route("/v1/shared/{token}", get(access::info))
         .route("/v1/shared/{token}/snapshot", get(access::snapshot))
         .route("/v1/shared/{token}/versions/latest", get(access::latest))

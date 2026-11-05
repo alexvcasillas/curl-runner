@@ -19,6 +19,7 @@ async fn info_lists_email_only_without_oauth(pool: PgPool) {
             "sign_in": ["email"],
             "signup": "domains",
             "billing": false,
+            "app_url": "http://localhost:3000",
         })
     );
 }

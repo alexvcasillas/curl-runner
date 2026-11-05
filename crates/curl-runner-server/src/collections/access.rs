@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 use crate::auth::session::column_enum;
 use crate::auth::{OptionalUserAuth, UserAuth};
+use crate::crypto::decrypt_link_token;
 use crate::error::ApiError;
 use crate::extract::ClientIp;
 use crate::state::AppState;
@@ -152,24 +153,117 @@ async fn is_member(state: &AppState, team_id: Uuid, user_id: Uuid) -> Result<boo
     .await?)
 }
 
+/// The values an access-list entry is matched against for `email`: the
+/// lowercased address and its `*@domain` form. Entries are `citext`, so the
+/// comparison ignores case on the stored side too.
+pub(super) fn entry_keys(email: &str) -> (String, String) {
+    let email = email.to_lowercase();
+    let domain = email.rsplit_once('@').map_or("", |(_, d)| d).to_owned();
+    (email, format!("*@{domain}"))
+}
+
+/// SQL: whether the `access_entries` row aliased `alias` covers the caller.
+/// `email` and `domain` are the placeholders (`$2`, `$3`) bound to [`entry_keys`].
+pub(super) fn entry_covers(alias: &str, email: &str, domain: &str) -> String {
+    format!(
+        "(({alias}.kind = 'email' AND {alias}.entry = {email}) \
+          OR ({alias}.kind = 'domain' AND {alias}.entry = {domain}))"
+    )
+}
+
 /// The access-list entry covering `email`: the email itself, else its domain.
 async fn matching_entry(
     state: &AppState,
     collection_id: Uuid,
     email: &str,
 ) -> Result<Option<String>, ApiError> {
-    let email = email.to_lowercase();
-    let domain = email.rsplit_once('@').map_or("", |(_, d)| d);
-    Ok(sqlx::query_scalar(
-        "SELECT entry::text FROM access_entries WHERE collection_id = $1 \
-           AND ((kind = 'email' AND entry = $2) OR (kind = 'domain' AND entry = $3)) \
-         ORDER BY kind = 'email' DESC LIMIT 1",
-    )
+    let (email, domain) = entry_keys(email);
+    Ok(sqlx::query_scalar(&format!(
+        "SELECT e.entry::text FROM access_entries e WHERE e.collection_id = $1 AND {} \
+         ORDER BY e.kind = 'email' DESC LIMIT 1",
+        entry_covers("e", "$2", "$3")
+    ))
     .bind(collection_id)
     .bind(&email)
-    .bind(format!("*@{domain}"))
+    .bind(&domain)
     .fetch_optional(&state.db)
     .await?)
+}
+
+#[derive(Serialize)]
+pub(super) struct SharedWithMe {
+    team: String,
+    collection: String,
+    name: String,
+    version: u32,
+    updated_at: DateTime<Utc>,
+    access: Access,
+    link: String,
+}
+
+type SharedRow = (
+    String,
+    String,
+    String,
+    i32,
+    DateTime<Utc>,
+    String,
+    Option<String>,
+);
+
+/// Collections shared with the caller by teams they are not in: a live link,
+/// a published version, and either an access-list entry covering them
+/// (restricted) or a recorded open (public). A restricted collection the
+/// caller opened but is no longer listed on is left out, since they cannot
+/// open it now.
+pub(super) async fn shared_with_me(
+    State(state): State<AppState>,
+    auth: UserAuth,
+) -> Result<Json<Vec<SharedWithMe>>, ApiError> {
+    let (email, domain) = entry_keys(&auth.email);
+    let rows: Vec<SharedRow> = sqlx::query_as(&format!(
+        "SELECT t.name, c.slug::text, c.name, v.number, v.created_at, c.access, c.link_token_enc \
+         FROM collections c \
+         JOIN teams t ON t.id = c.team_id \
+         JOIN versions v ON v.collection_id = c.id AND v.number = c.current_version \
+         WHERE c.access <> 'off' AND c.link_hash IS NOT NULL \
+           AND (c.link_expires_at IS NULL OR c.link_expires_at > $4) \
+           AND NOT EXISTS (SELECT 1 FROM memberships m \
+                           WHERE m.team_id = c.team_id AND m.user_id = $1) \
+           AND ((c.access = 'restricted' AND EXISTS ( \
+                    SELECT 1 FROM access_entries e WHERE e.collection_id = c.id AND {})) \
+                OR (c.access = 'public' AND EXISTS ( \
+                    SELECT 1 FROM share_opens o \
+                    WHERE o.collection_id = c.id AND o.user_id = $1))) \
+         ORDER BY v.created_at DESC, t.name, c.slug",
+        entry_covers("e", "$2", "$3")
+    ))
+    .bind(auth.user_id)
+    .bind(&email)
+    .bind(&domain)
+    .bind(state.clock.now())
+    .fetch_all(&state.db)
+    .await?;
+    let mut out = Vec::with_capacity(rows.len());
+    for (team, collection, name, version, updated_at, access, enc) in rows {
+        let Some(token) = enc
+            .as_deref()
+            .and_then(|enc| decrypt_link_token(state.config.secret_key.as_bytes(), enc))
+        else {
+            tracing::error!("collection {team}/{collection} has no readable share link token");
+            continue;
+        };
+        out.push(SharedWithMe {
+            team,
+            collection,
+            name,
+            version: u32::try_from(version).unwrap_or_default(),
+            updated_at,
+            access: column_enum(access)?,
+            link: format!("{}/s/{token}", state.config.app_url),
+        });
+    }
+    Ok(Json(out))
 }
 
 /// Record that `auth` opened the collection, at most once per user per UTC
