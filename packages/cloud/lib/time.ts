@@ -81,3 +81,8 @@ export function expiresIn(iso: string, now: Date = new Date()): string {
   }
   return 'Expires soon';
 }
+
+/** `relativeTime` for the middle of a sentence: "yesterday", "just now", "Oct 30". */
+export function relativeTimeInline(iso: string, now: Date = new Date()): string {
+  return relativeTime(iso, now).replace(/^(Just now|Yesterday)/, (w) => w.toLowerCase());
+}

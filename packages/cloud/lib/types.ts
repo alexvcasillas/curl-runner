@@ -116,3 +116,31 @@ export type BillingSummary = {
   /** `stripe` when a subscription backs the plan, else `none`. */
   plan_source: string;
 };
+
+// Wire shapes for the account and shared pages, from `/v1/me/…` and `/v1/sessions`.
+
+export type Identity = { provider: string; email: string; created_at: string };
+
+export type SessionInfo = {
+  id: string;
+  kind: 'web' | 'device' | string;
+  label: string | null;
+  created_at: string;
+  last_used_at: string;
+  expires_at: string;
+  current: boolean;
+};
+
+export type SharedItem = {
+  /** The team's display name. */
+  team: string;
+  team_slug: string;
+  /** The collection's slug. */
+  collection: string;
+  name: string;
+  version: number;
+  updated_at: string;
+  access: AccessMode;
+  /** The share link. The token in it is a share token, not a session. */
+  link: string;
+};
