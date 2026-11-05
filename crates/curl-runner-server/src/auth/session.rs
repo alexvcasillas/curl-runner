@@ -190,6 +190,8 @@ struct TeamBody {
     name: String,
     role: Role,
     plan: Plan,
+    /// An admin suspended the team (no reason or admin: those are admin notes).
+    suspended: bool,
 }
 
 /// A role or plan column (checked by the schema) as its proto enum.
@@ -205,6 +207,7 @@ struct MeTeamRow {
     slug: String,
     name: String,
     role: String,
+    suspended: bool,
     #[sqlx(flatten)]
     plan: PlanRow,
 }
@@ -224,7 +227,7 @@ pub async fn me(State(state): State<AppState>, auth: UserAuth) -> Result<Json<Me
             .fetch_one(&state.db)
             .await?;
     let rows: Vec<MeTeamRow> = sqlx::query_as(&format!(
-        "SELECT t.slug::text AS slug, t.name, m.role, {} \
+        "SELECT t.slug::text AS slug, t.name, m.role, t.suspended_at IS NOT NULL AS suspended, {} \
          FROM memberships m JOIN teams t ON t.id = m.team_id \
          WHERE m.user_id = $1 ORDER BY t.name, t.slug",
         plan_columns("t")
@@ -241,6 +244,7 @@ pub async fn me(State(state): State<AppState>, auth: UserAuth) -> Result<Json<Me
                 slug: r.slug,
                 name: r.name,
                 role: column_enum(r.role)?,
+                suspended: r.suspended,
             })
         })
         .collect::<Result<_, ApiError>>()?;

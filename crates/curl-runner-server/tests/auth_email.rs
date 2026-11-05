@@ -578,7 +578,8 @@ async fn me_lists_teams(pool: PgPool) {
     let (_, who) = me(&app, &token).await;
     assert_eq!(
         who["teams"],
-        json!([{"slug": "acme", "name": "Acme", "role": "owner", "plan": "free"}])
+        json!([{"slug": "acme", "name": "Acme", "role": "owner", "plan": "free",
+                 "suspended": false}])
     );
 }
 

@@ -381,6 +381,13 @@ async fn override_reminder_14_days_once(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
     tick(&c.app.state, c.app.clock.now()).await;
     assert_eq!(mails(&c.app, ending).await, [ADA]);
+    // Into the new end date's 14-day window: the second reminder, once.
+    c.app.clock.advance(Duration::days(58));
+    tick(&c.app.state, c.app.clock.now()).await;
+    assert_eq!(mails(&c.app, ending).await, [ADA, ADA]);
+    c.app.clock.advance(Duration::days(1));
+    tick(&c.app.state, c.app.clock.now()).await;
+    assert_eq!(mails(&c.app, ending).await, [ADA, ADA]);
 
     // No end date: never reminded.
     let (status, _) = grant(
@@ -391,7 +398,186 @@ async fn override_reminder_14_days_once(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
     c.app.clock.advance(Duration::days(365));
     tick(&c.app.state, c.app.clock.now()).await;
-    assert_eq!(mails(&c.app, ending).await, [ADA]);
+    assert_eq!(mails(&c.app, ending).await, [ADA, ADA]);
+}
+
+#[sqlx::test]
+async fn notified_edit_inside_the_window_is_not_reminded_again(pool: PgPool) {
+    let c = setup(pool).await;
+    let until = now() + Duration::days(10);
+    let body = |notify: bool, reason: &str| json!({"plan": "team", "until": until, "reason": reason, "notify": notify});
+    let (status, _) = grant(&c, body(false, "Pilot")).await;
+    assert_eq!(status, StatusCode::OK);
+    // Same end date, owners told now: PlanGranted, and no OverrideEnding after it.
+    let (status, res) = grant(&c, body(true, "Pilot, extended scope")).await;
+    assert_eq!(status, StatusCode::OK, "{res}");
+    assert!(res["override"]["reminded_at"].is_string(), "{res}");
+    tick(&c.app.state, c.app.clock.now()).await;
+    assert_eq!(
+        mails(&c.app, "curl-runner gave acme the Team plan").await,
+        [ADA]
+    );
+    assert!(mails(&c.app, "%granted plan ends%").await.is_empty());
+}
+
+#[sqlx::test]
+async fn regrant_over_an_uncleared_ended_override_records_the_expiry(pool: PgPool) {
+    let c = setup(pool).await;
+    let until = now() + Duration::days(2);
+    grant(
+        &c,
+        json!({"plan": "team", "until": until, "reason": "Pilot", "notify": false}),
+    )
+    .await;
+    c.app.clock.advance(Duration::days(3));
+    // The worker has not run: the ended override is still on the row.
+    let (status, _) = grant(
+        &c,
+        json!({"plan": "team", "reason": "Signed", "notify": false}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let got: Vec<(String, String)> = history(&c).await;
+    let got: Vec<(&str, &str)> = got.iter().map(|(s, p)| (s.as_str(), p.as_str())).collect();
+    assert_eq!(
+        got,
+        [
+            ("default", "free"),
+            ("override", "team"),
+            ("expired", "free"),
+            ("override", "team")
+        ]
+    );
+    // A fresh grant, not an edit of the ended one.
+    assert_eq!(
+        actions(&c.app).await,
+        ["team.override.grant", "team.override.grant"]
+    );
+}
+
+#[sqlx::test]
+async fn stripe_cancel_under_an_override_keeps_the_team(pool: PgPool) {
+    let c = setup(pool).await;
+    pay(&c).await;
+    let (status, _) = grant(
+        &c,
+        json!({"plan": "team", "reason": "Partner", "notify": false}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    c.fake.subscription.lock().unwrap().status = "canceled".into();
+    let (status, body) = req(
+        &c.app,
+        "POST",
+        &format!("{TEAM}/stripe-sync"),
+        None,
+        Some(&c.root),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(me_plan(&c).await, "team");
+    let s = summary(&c).await;
+    assert_eq!(
+        (&s["plan"], &s["plan_source"]),
+        (&json!("team"), &json!("override"))
+    );
+    assert_eq!(s["has_subscription"], false);
+    assert!(mails(&c.app, "%moved to the Free plan%").await.is_empty());
+    let h = history(&c).await;
+    let tail: Vec<(&str, &str)> = h[h.len() - 2..]
+        .iter()
+        .map(|(s, p)| (s.as_str(), p.as_str()))
+        .collect();
+    assert_eq!(tail, [("override", "team"), ("stripe", "free")]);
+}
+
+#[sqlx::test]
+async fn payment_failed_is_not_sent_under_a_free_override(pool: PgPool) {
+    let c = setup(pool).await;
+    pay(&c).await;
+    let (status, _) = grant(
+        &c,
+        json!({"plan": "free", "reason": "Review", "notify": false}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    c.fake.subscription.lock().unwrap().status = "past_due".into();
+    let (status, body) = req(
+        &c.app,
+        "POST",
+        &format!("{TEAM}/stripe-sync"),
+        None,
+        Some(&c.root),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(mails(&c.app, "We couldn't take%").await.is_empty());
+    // The clock still starts, so the grace period runs as usual.
+    let since: Option<DateTime<Utc>> =
+        sqlx::query_scalar("SELECT past_due_since FROM teams WHERE id = $1")
+            .bind(c.team_id)
+            .fetch_one(&c.app.state.db)
+            .await
+            .unwrap();
+    assert!(since.is_some());
+}
+
+#[sqlx::test]
+async fn summary_has_subscription_under_an_override(pool: PgPool) {
+    let c = setup(pool).await;
+    assert_eq!(summary(&c).await["has_subscription"], false);
+    pay(&c).await;
+    assert_eq!(summary(&c).await["has_subscription"], true);
+    let (status, _) = grant(
+        &c,
+        json!({"plan": "free", "reason": "Review", "notify": false}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let s = summary(&c).await;
+    assert_eq!(s["plan_source"], "override");
+    assert_eq!(s["has_subscription"], true);
+    // A canceled subscription id left on the row is not one.
+    sql(&c.app, "UPDATE teams SET billing_status = 'canceled'").await;
+    assert_eq!(summary(&c).await["has_subscription"], false);
+}
+
+#[sqlx::test]
+async fn members_see_the_suspension_without_admin_notes(pool: PgPool) {
+    let c = setup(pool).await;
+    let (_, team) = req(&c.app, "GET", "/v1/teams/acme", None, Some(&c.ada)).await;
+    assert_eq!(team["suspended"], false);
+    assert_eq!(team["suspended_at"], Value::Null);
+    let (_, me) = req(&c.app, "GET", "/v1/me", None, Some(&c.ada)).await;
+    assert_eq!(me["teams"][0]["suspended"], false);
+    let (status, _) = req(
+        &c.app,
+        "POST",
+        &format!("{TEAM}/suspend"),
+        Some(json!({"reason": "Secret admin note", "notify": false})),
+        Some(&c.root),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, team) = req(&c.app, "GET", "/v1/teams/acme", None, Some(&c.ada)).await;
+    assert_eq!(status, StatusCode::OK, "{team}");
+    assert_eq!(team["suspended"], true);
+    assert_eq!(
+        team["suspended_at"]
+            .as_str()
+            .unwrap()
+            .parse::<DateTime<Utc>>()
+            .unwrap(),
+        now()
+    );
+    let (_, me) = req(&c.app, "GET", "/v1/me", None, Some(&c.ada)).await;
+    assert_eq!(me["teams"][0]["suspended"], true);
+    for body in [team.to_string(), me.to_string()] {
+        assert!(!body.contains("Secret admin note"), "{body}");
+        assert!(!body.contains(ROOT), "{body}");
+        assert!(!body.contains("suspended_reason"), "{body}");
+        assert!(!body.contains("suspended_by"), "{body}");
+    }
 }
 
 #[sqlx::test]

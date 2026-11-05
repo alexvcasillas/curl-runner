@@ -864,14 +864,34 @@ pub async fn grant(
     }
     let team = lock_team(&mut tx, &slug).await?;
     let updating = team.plan.override_active(at);
-    let reminded_at = if updating && team.plan.override_until == req.until {
-        team.override_reminded_at
-    } else if req.notify
+    // An override that ended but the worker has not cleared yet: record its
+    // expiry first, so the history reads as it happened.
+    if let Some(ended) = team.plan.override_plan.as_deref()
+        && !updating
+    {
+        PlanChange {
+            team_id: team.id,
+            at,
+            source: "expired",
+            plan: team.plan.underlying().0,
+            admin: None,
+            reason: None,
+            detail: json!({"override": ended, "until": team.plan.override_until}),
+        }
+        .record(&mut tx)
+        .await?;
+    }
+    // Owners told now about an end inside the window need no reminder on top;
+    // an edit that keeps the end date keeps its reminder state; any other new
+    // end date re-arms it.
+    let reminded_at = if req.notify
         && req
             .until
             .is_some_and(|until| until <= at + OVERRIDE_REMINDER)
     {
         Some(at)
+    } else if updating && team.plan.override_until == req.until {
+        team.override_reminded_at
     } else {
         None
     };
@@ -1234,6 +1254,18 @@ pub async fn stripe_sync(
     }))
 }
 
+/// Stripe refusing the send (`400`, such as an invoice that is not finalized)
+/// is a state the admin can see and wait out, not an outage.
+fn resend_error(err: BillingError) -> ApiError {
+    match err {
+        BillingError::Api { status: 400, body } => {
+            tracing::info!("stripe refused to send the invoice: {body}");
+            conflict("There's no finished invoice to resend yet.")
+        }
+        err => stripe_down(err),
+    }
+}
+
 /// `POST /v1/admin/teams/{slug}/resend-invoice`, perm `billing`: Stripe
 /// emails the customer's newest invoice again.
 pub async fn resend_invoice(
@@ -1253,7 +1285,7 @@ pub async fn resend_invoice(
     let invoice = billing
         .send_latest_invoice(&customer)
         .await
-        .map_err(stripe_down)?
+        .map_err(resend_error)?
         .ok_or_else(|| conflict("Stripe has no invoice for this team yet."))?;
     let tx = AdminTx::begin(&state, &admin).await?;
     tx.commit(
@@ -1345,6 +1377,23 @@ mod tests {
         assert_eq!(seats(Some(3), 1), 3);
         assert_eq!(seats(None, 4), 4);
         assert_eq!(seats(Some(0), 0), 1);
+    }
+
+    #[test]
+    fn resend_refusal_by_stripe_is_a_conflict_not_an_outage() {
+        let err = resend_error(BillingError::Api {
+            status: 400,
+            body: "invoice is not finalized".into(),
+        });
+        assert_eq!(err.code, ErrorCode::Conflict);
+        assert_eq!(err.message, "There's no finished invoice to resend yet.");
+        let err = resend_error(BillingError::Unreachable("timeout".into()));
+        assert_eq!(err.code, ErrorCode::Unavailable);
+        let err = resend_error(BillingError::Api {
+            status: 500,
+            body: String::new(),
+        });
+        assert_eq!(err.code, ErrorCode::Unavailable);
     }
 
     #[test]

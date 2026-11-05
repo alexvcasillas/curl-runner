@@ -408,6 +408,10 @@ pub struct TeamDetail {
     name: String,
     plan: Plan,
     role: Role,
+    /// An admin suspended the team. Members see that and when; the reason
+    /// and who did it are admin notes and stay out.
+    suspended: bool,
+    suspended_at: Option<DateTime<Utc>>,
     members: Vec<MemberBody>,
     pending_invites: Vec<PendingInviteBody>,
 }
@@ -418,8 +422,8 @@ async fn get_team(
     Path(slug): Path<String>,
 ) -> Result<Json<TeamDetail>, ApiError> {
     let access = team_access(&state.db, auth.user_id, &slug).await?;
-    let (slug, name): (String, String) =
-        sqlx::query_as("SELECT slug::text, name FROM teams WHERE id = $1")
+    let (slug, name, suspended_at): (String, String, Option<DateTime<Utc>>) =
+        sqlx::query_as("SELECT slug::text, name, suspended_at FROM teams WHERE id = $1")
             .bind(access.team_id)
             .fetch_one(&state.db)
             .await?;
@@ -448,6 +452,8 @@ async fn get_team(
         name,
         plan,
         role: access.role,
+        suspended: suspended_at.is_some(),
+        suspended_at,
         members: members
             .into_iter()
             .map(|(user_id, email, name, role)| {

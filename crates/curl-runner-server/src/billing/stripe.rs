@@ -274,8 +274,10 @@ impl Billing for StripeBilling {
     async fn send_latest_invoice(&self, customer: &str) -> Result<Option<String>, BillingError> {
         // Only for its form encoding of the query.
         let mut url = reqwest::Url::parse("http://stripe.invalid/v1/invoices").expect("static url");
+        // Open invoices only: drafts can't be sent, and paid ones are receipts.
         url.query_pairs_mut()
             .append_pair("customer", customer)
+            .append_pair("status", "open")
             .append_pair("limit", "1");
         let path = format!("{}?{}", url.path(), url.query().unwrap_or_default());
         let list: InvoiceList = self.call(Method::GET, &path, None).await?;
@@ -427,7 +429,7 @@ mod tests {
         assert_eq!(seen.len(), 2);
         assert_eq!(
             (seen[0].0.as_str(), seen[0].1.as_str()),
-            ("GET", "/v1/invoices?customer=cus_1&limit=1")
+            ("GET", "/v1/invoices?customer=cus_1&status=open&limit=1")
         );
         assert_eq!(
             (seen[1].0.as_str(), seen[1].1.as_str()),
@@ -449,7 +451,10 @@ mod tests {
         let billing = StripeBilling::with_base_url("k".into(), &server.base_url);
         billing.send_latest_invoice("cus_1&limit=99").await.unwrap();
         let url = seen.lock().unwrap()[0].1.clone();
-        assert_eq!(url, "/v1/invoices?customer=cus_1%26limit%3D99&limit=1");
+        assert_eq!(
+            url,
+            "/v1/invoices?customer=cus_1%26limit%3D99&status=open&limit=1"
+        );
     }
 
     #[tokio::test]

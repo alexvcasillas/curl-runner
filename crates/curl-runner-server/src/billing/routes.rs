@@ -144,6 +144,9 @@ struct SummaryBody {
     plan_source: PlanSource,
     /// When the override ends; `null` with no override or no end date.
     override_until: Option<DateTime<Utc>>,
+    /// A live Stripe subscription exists, whatever `plan_source` says: an
+    /// override can sit on top of one that keeps billing.
+    has_subscription: bool,
 }
 
 /// Members only.
@@ -157,6 +160,8 @@ async fn summary(
     let row = billing_row(&state, access.team_id).await?;
     let now = state.clock.now();
     let (plan, plan_source) = effective_plan(&row.plan, now);
+    let has_subscription =
+        row.plan.stripe_subscription_id.is_some() && is_live(row.billing_status.as_deref());
     Ok(Json(SummaryBody {
         plan,
         interval: row.billing_interval,
@@ -172,6 +177,7 @@ async fn summary(
         } else {
             None
         },
+        has_subscription,
     }))
 }
 

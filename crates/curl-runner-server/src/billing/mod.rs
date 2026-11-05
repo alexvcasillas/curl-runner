@@ -85,8 +85,9 @@ pub trait Billing: Send + Sync {
     /// Cancel immediately (`DELETE /v1/subscriptions/{id}`).
     async fn cancel_subscription(&self, id: &str) -> Result<(), BillingError>;
     async fn price(&self, id: &str) -> Result<Price, BillingError>;
-    /// Email the customer's newest invoice again (`GET /v1/invoices?customer=&limit=1`,
-    /// then `POST /v1/invoices/{id}/send`). Its id, or `None` when there is no invoice.
+    /// Email the customer's newest open invoice again
+    /// (`GET /v1/invoices?customer=&status=open&limit=1`, then
+    /// `POST /v1/invoices/{id}/send`). Its id, or `None` when there is none.
     async fn send_latest_invoice(&self, customer: &str) -> Result<Option<String>, BillingError>;
 }
 

@@ -213,6 +213,17 @@ pub(super) async fn publish(
     let now = state.clock.now();
 
     let mut tx = state.db.begin().await?;
+    // Again under a share lock on the team row: a suspension (which takes the
+    // row for update) either waits for this publish to commit or is seen here.
+    // The check above only spares a suspended team the body read.
+    let suspended: bool =
+        sqlx::query_scalar("SELECT suspended_at IS NOT NULL FROM teams WHERE id = $1 FOR SHARE")
+            .bind(auth.team_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    if suspended {
+        return Err(ApiError::new(ErrorCode::TeamSuspended, TEAM_SUSPENDED));
+    }
     let locked = match lock_collection(&mut tx, auth.team_id, &slug).await? {
         Some(locked) => locked,
         None => {

@@ -285,8 +285,10 @@ pub async fn apply_subscription(
     let before = team.effective(was, team.stripe_subscription_id.as_deref(), now);
     let after = team.effective(next.plan, (!terminal).then_some(sub.id.as_str()), now);
 
-    // The copy says "keep the Team plan": only for a team that has it.
+    // The copy says "keep the Team plan": only for a team that has it through
+    // Stripe and is on it now (a Free override in force: nothing to keep).
     if was == "team"
+        && before == Plan::Team
         && team.past_due_since.is_none()
         && let Some(since) = next.past_due_since
     {
