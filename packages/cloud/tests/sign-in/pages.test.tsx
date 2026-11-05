@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cookieJar } from '../cookies';
 
@@ -112,20 +113,38 @@ describe('/sign-in', () => {
   });
 });
 
+const handoffCalls = () =>
+  fetchMock.mock.calls.filter(([u]) => String(u).endsWith('/v1/auth/handoff'));
+
 describe('/sign-in/device', () => {
-  it('shows the hand-off code to paste', async () => {
+  it('mints nothing on load, then shows the code when asked', async () => {
+    const user = userEvent.setup();
     jar.current = cookieJar({ cr_session: 'crs_ok' });
     byPath({
       '/v1/me': me,
       '/v1/auth/handoff': () => json(200, { code: 'crh_abc123' }),
     });
     render(await DevicePage());
-    expect(screen.getByText('crh_abc123')).toBeInTheDocument();
+    expect(handoffCalls()).toHaveLength(0);
+    expect(screen.queryByText('crh_abc123')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Show code' }));
+    expect(await screen.findByText('crh_abc123')).toBeInTheDocument();
     expect(screen.getByText('Paste this code in your terminal')).toBeInTheDocument();
     expect(screen.getByText(/works once and expires in 2 minutes/)).toBeInTheDocument();
-    const [, init] =
-      fetchMock.mock.calls.find(([u]) => String(u).endsWith('/v1/auth/handoff')) ?? [];
-    expect(JSON.parse(init.body)).toEqual({ session_label: 'CLI' });
+    expect(handoffCalls()).toHaveLength(1);
+    expect(JSON.parse(handoffCalls()[0][1].body)).toEqual({ session_label: 'CLI' });
+    expect(handoffCalls()[0][1].method).toBe('POST');
+  });
+
+  it('builds the terminal line from the app URL', async () => {
+    const user = userEvent.setup();
+    jar.current = cookieJar({ cr_session: 'crs_ok' });
+    byPath({ '/v1/me': me, '/v1/auth/handoff': () => json(200, { code: 'crh_x' }) });
+    render(await DevicePage());
+    await user.click(screen.getByRole('button', { name: 'Show code' }));
+    expect(
+      await screen.findByText('Opened https://cloud.example.com/sign-in?client=device'),
+    ).toBeInTheDocument();
   });
 
   it('needs a session: without one it goes to sign in and back', async () => {
@@ -137,26 +156,33 @@ describe('/sign-in/device', () => {
 });
 
 describe('/sign-in/studio', () => {
-  it('gets a Studio hand-off code and links to the app with the server', async () => {
+  it('mints nothing on load; the click mints a Studio code and opens the app', async () => {
+    const user = userEvent.setup();
     jar.current = cookieJar({ cr_session: 'crs_ok' });
     incoming.current = new Headers({ 'x-pathname': '/sign-in/studio' });
     byPath({
       '/v1/me': me,
       '/v1/auth/handoff': () => json(200, { code: 'crh_studio1' }),
     });
+    const hrefSet = vi.fn();
+    const loc = { ...window.location } as Record<string, unknown>;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: Object.defineProperty(loc, 'href', { set: hrefSet, get: () => 'http://localhost/' }),
+    });
     render(await StudioPage());
-    const open = screen.getByRole('link', { name: 'Open curl-runner studio' });
-    expect(open).toHaveAttribute(
-      'href',
-      `curl-runner://auth/callback?code=crh_studio1&server=${encodeURIComponent('https://api.example.com')}`,
-    );
+    expect(handoffCalls()).toHaveLength(0);
+    expect(screen.queryByRole('link', { name: 'Open curl-runner studio' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Open curl-runner studio' }));
+    const expected = `curl-runner://auth/callback?code=crh_studio1&server=${encodeURIComponent('https://api.example.com')}`;
+    const open = await screen.findByRole('link', { name: 'Open curl-runner studio' });
+    expect(open).toHaveAttribute('href', expected);
+    expect(hrefSet).toHaveBeenCalledWith(expected);
     expect(screen.getByText('crh_studio1')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Download it' })).toHaveAttribute(
       'href',
       'https://www.curl-runner.com/downloads',
     );
-    const [, init] =
-      fetchMock.mock.calls.find(([u]) => String(u).endsWith('/v1/auth/handoff')) ?? [];
-    expect(JSON.parse(init.body)).toEqual({ session_label: 'Studio' });
+    expect(JSON.parse(handoffCalls()[0][1].body)).toEqual({ session_label: 'Studio' });
   });
 });

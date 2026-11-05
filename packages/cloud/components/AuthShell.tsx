@@ -39,7 +39,7 @@ export function AuthShell({ signedInAs, width = 'sm', footer = false, children }
             <span className="truncate max-sm:hidden">{signedInAs}</span>
           </span>
         ) : (
-          <a href={external.docs} className="text-fg-muted hover:text-fg">
+          <a href={external.cloudDocs} className="text-fg-muted hover:text-fg">
             Docs
           </a>
         )}
@@ -54,7 +54,7 @@ export function AuthShell({ signedInAs, width = 'sm', footer = false, children }
       {footer ? (
         <footer className="flex flex-wrap justify-center gap-5 border-t border-hairline px-4 py-6 text-[12px] text-fg-subtle">
           <span>curl-runner is open source</span>
-          <a href={external.docs} className="text-fg-subtle hover:text-fg">
+          <a href={external.selfHosting} className="text-fg-subtle hover:text-fg">
             Self-host it
           </a>
         </footer>

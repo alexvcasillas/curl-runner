@@ -20,4 +20,7 @@ export const routes = {
 export const external = {
   docs: 'https://www.curl-runner.com/docs',
   download: 'https://www.curl-runner.com/downloads',
+  /** The Cloud page of the docs. */
+  cloudDocs: 'https://www.curl-runner.com/docs/features/cloud',
+  selfHosting: 'https://www.curl-runner.com/docs/self-hosting',
 };

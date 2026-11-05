@@ -50,17 +50,3 @@ export type AuthProblem = {
   /** An extra info notice under the action. */
   hint?: string;
 };
-
-/** `/sign-in` with the part of the flow worth keeping. */
-export function signInHref(returnTo?: string | null, client?: SignInClient): string {
-  const q = new URLSearchParams();
-  if (client && client !== 'web') {
-    q.set('client', client);
-  }
-  const safe = safeReturnTo(returnTo);
-  if (safe !== '/' && (!client || client === 'web')) {
-    q.set('return_to', safe);
-  }
-  const s = q.toString();
-  return s ? `/sign-in?${s}` : '/sign-in';
-}

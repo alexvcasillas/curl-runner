@@ -8,7 +8,11 @@ import { clearSession } from '@/lib/session';
  * cookie, so this does, then sends the person to sign in and back.
  */
 export async function GET(request: Request) {
-  await clearSession();
+  // Only the app's own redirect should delete the cookie, not a link on another site.
+  const site = request.headers.get('sec-fetch-site');
+  if (!site || site === 'same-origin' || site === 'none') {
+    await clearSession();
+  }
   const returnTo = safeReturnTo(new URL(request.url).searchParams.get('return_to'));
   const to = new URL('/sign-in', env().PUBLIC_APP_URL);
   if (returnTo !== '/') {

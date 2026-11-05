@@ -11,6 +11,7 @@ import {
   destination,
   FLOW_MAX_AGE,
   FLOW_PATH,
+  isProvider,
   OAUTH_COOKIE,
   PROVIDER_NAMES,
   type Provider,
@@ -165,10 +166,14 @@ export async function verifyLink(
 
 /** `POST /v1/auth/oauth/{provider}/start`: keeps the binding in `cr_oauth`, then goes to the provider. */
 export async function startOAuth(
-  provider: Provider,
+  provider: string,
   returnTo: string,
   client: SignInClient,
 ): Promise<OAuthStartResult> {
+  // The provider comes from the browser: only ours go into the API path.
+  if (!isProvider(provider)) {
+    return { ok: false, message: UNKNOWN_PROVIDER.body };
+  }
   const to = destination(returnTo, client);
   let started: { url: string; binding: string };
   try {
@@ -190,23 +195,35 @@ export async function startOAuth(
   redirect(started.url);
 }
 
-const EXPIRED: AuthProblem = {
-  title: 'That sign-in has expired',
-  body: 'You took longer than 10 minutes, or opened the provider’s page twice. Start again and it’ll go straight through.',
-  actionLabel: 'Start again',
+const UNKNOWN_PROVIDER: AuthProblem = {
+  title: 'That sign-in method isn’t available',
+  body: 'This server doesn’t offer that provider. Sign in with an email code.',
+  actionLabel: 'Back to sign in',
   actionHref: '/sign-in',
 };
 
+function expired(provider: Provider): AuthProblem {
+  return {
+    title: 'That sign-in has expired',
+    body: `You took longer than 10 minutes, or opened the ${PROVIDER_NAMES[provider]} page twice. Start again and it’ll go straight through.`,
+    actionLabel: 'Start again',
+    actionHref: '/sign-in',
+  };
+}
+
 /** `POST /v1/auth/oauth/{provider}/callback`. Returns what to show if it fails. */
 export async function finishOAuth(
-  provider: Provider,
+  provider: string,
   code: string | undefined,
   state: string | undefined,
 ): Promise<AuthProblem | undefined> {
+  if (!isProvider(provider)) {
+    return UNKNOWN_PROVIDER;
+  }
   const binding = (await cookies()).get(OAUTH_COOKIE)?.value;
   if (!binding || !code || !state) {
     await forgetFlowCookie(OAUTH_COOKIE);
-    return EXPIRED;
+    return expired(provider);
   }
   let res: Session & { return_to?: string | null };
   try {
@@ -221,7 +238,7 @@ export async function finishOAuth(
       throw e;
     }
     if (e.code === 'invalid_request') {
-      return EXPIRED;
+      return expired(provider);
     }
     if (e.code === 'unauthorized') {
       const name = PROVIDER_NAMES[provider];

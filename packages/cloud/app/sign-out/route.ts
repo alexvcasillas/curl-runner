@@ -4,7 +4,12 @@ import { env } from '@/lib/env';
 import { clearSession, getSession } from '@/lib/session';
 
 /** The account menu posts here. Ends the session on the server, then drops the cookie. */
-export async function POST() {
+export async function POST(request?: Request) {
+  // A form on another site can post here with the cookie attached by some browsers.
+  const origin = request?.headers.get('origin');
+  if (origin && origin !== new URL(env().PUBLIC_APP_URL).origin) {
+    return new NextResponse(null, { status: 403 });
+  }
   if (await getSession()) {
     try {
       await api('/v1/auth/sign-out', { method: 'POST', auth: 'optional' });

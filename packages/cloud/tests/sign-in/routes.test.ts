@@ -36,8 +36,8 @@ afterEach(() => {
   resetEnv();
 });
 
-const get = (qs: string) =>
-  expired.GET(new Request(`https://cloud.example.com/sign-in/expired${qs}`));
+const get = (qs: string, headers: Record<string, string> = {}) =>
+  expired.GET(new Request(`https://cloud.example.com/sign-in/expired${qs}`, { headers }));
 
 describe('GET /sign-in/expired', () => {
   it('clears the cookie and goes to sign in with the return_to', async () => {
@@ -60,6 +60,52 @@ describe('GET /sign-in/expired', () => {
   it('does not add return_to when there is none', async () => {
     const res = await get('');
     expect(res.headers.get('location')).toBe('https://cloud.example.com/sign-in');
+  });
+});
+
+describe('GET /sign-in/expired, cross-site', () => {
+  it('keeps the cookie for a cross-site or same-site request, and still redirects', async () => {
+    for (const site of ['cross-site', 'same-site']) {
+      jar.current = cookieJar({ cr_session: 'crs_old' });
+      const res = await get('?return_to=%2Ft%2Facme', { 'sec-fetch-site': site });
+      expect(res.headers.get('location')).toBe(
+        'https://cloud.example.com/sign-in?return_to=%2Ft%2Facme',
+      );
+      expect(jar.current.values.has('cr_session')).toBe(true);
+    }
+  });
+
+  it('clears it for same-origin, none and a missing header', async () => {
+    for (const site of ['same-origin', 'none', undefined]) {
+      jar.current = cookieJar({ cr_session: 'crs_old' });
+      await get('', site ? { 'sec-fetch-site': site } : {});
+      expect(jar.current.values.has('cr_session')).toBe(false);
+    }
+  });
+});
+
+describe('POST /sign-out origin', () => {
+  const post = (origin?: string) =>
+    signOut.POST(
+      new Request('https://cloud.example.com/sign-out', {
+        method: 'POST',
+        headers: origin ? { origin } : {},
+      }),
+    );
+
+  it('refuses another origin with 403 and keeps the cookie', async () => {
+    const res = await post('https://evil.example');
+    expect(res.status).toBe(403);
+    expect(jar.current.values.has('cr_session')).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('accepts the app origin and a request with no Origin', async () => {
+    fetchMock.mockImplementation(async () => new Response(null, { status: 204 }));
+    expect((await post('https://cloud.example.com')).status).toBe(303);
+    jar.current = cookieJar({ cr_session: 'crs_old' });
+    expect((await post()).status).toBe(303);
+    expect(jar.current.values.has('cr_session')).toBe(false);
   });
 });
 

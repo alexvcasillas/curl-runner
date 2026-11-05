@@ -243,6 +243,23 @@ describe('email link', () => {
 });
 
 describe('oauth', () => {
+  it('refuses a provider we do not offer, without calling the API', async () => {
+    for (const bad of ['../admin', 'github/../x', 'gitlab', '']) {
+      expect(await actions.startOAuth(bad, '/', 'web')).toMatchObject({ ok: false });
+      jar.current = cookieJar({ cr_oauth: 'b' });
+      expect(await actions.finishOAuth(bad, 'c', 's')).toMatchObject({
+        title: 'That sign-in method isn’t available',
+        actionHref: '/sign-in',
+      });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('names the provider in the expired copy', async () => {
+    const r = await actions.finishOAuth('google', 'c', 's');
+    expect((r as { body: string }).body).toContain('opened the Google page twice');
+  });
+
   it('stores the binding in cr_oauth and redirects to the provider', async () => {
     fetchMock.mockResolvedValueOnce(
       json(200, { url: 'https://github.com/login/oauth/authorize?x=1', binding: 'bind_1' }),
