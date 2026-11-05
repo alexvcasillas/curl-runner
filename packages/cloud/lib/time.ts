@@ -46,6 +46,11 @@ export function absoluteTime(iso: string): string {
   return `${day(d)}, ${d.getUTCFullYear()}, ${hh}:${mm} UTC`;
 }
 
+/** "Nov 19", for a date this year or next that the page already frames. */
+export function shortDate(iso: string): string {
+  return day(new Date(iso));
+}
+
 /** "Feb 1, 2027". */
 export function formatDate(iso: string): string {
   const d = new Date(iso);

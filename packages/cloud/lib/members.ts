@@ -1,3 +1,4 @@
+import { dollars } from './billing';
 import type { BillingSummary, Plan, Prices } from './types';
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -14,16 +15,6 @@ export function seatNote(plan: Plan, billing: boolean, members: number, pending:
   return billing
     ? `${plural(members, 'member')} on the Team plan, billed per member. Customers are never seats.`
     : `${plural(members, 'member')}. Customers are never seats.`;
-}
-
-function dollars(cents: number, currency: string): string {
-  const whole = Math.abs(cents % 100) < 0.005;
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: currency.toUpperCase(),
-    minimumFractionDigits: whole ? 0 : 2,
-    maximumFractionDigits: 2,
-  }).format(cents / 100);
 }
 
 /**
