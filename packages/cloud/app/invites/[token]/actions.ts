@@ -21,10 +21,18 @@ export async function acceptInvite(token: string): Promise<ActionResult> {
     return { ok: false, code: 'not_found', message: 'This invite doesn’t exist.' };
   }
   const result = await attempt(() =>
-    api<Joined>(`/v1/invites/${encodeURIComponent(token)}/accept`, { method: 'POST' }),
+    // `optional` so a 401 comes back here, where the way back is known.
+    api<Joined>(`/v1/invites/${encodeURIComponent(token)}/accept`, {
+      method: 'POST',
+      auth: 'optional',
+    }),
   );
   if (result.ok) {
     redirect(routes.team(result.value.slug));
+  }
+  if (result.code === 'unauthorized') {
+    // The session expired between render and click.
+    redirect(`/sign-in/expired?return_to=${encodeURIComponent(`/invites/${token}`)}`);
   }
   if (result.code === 'conflict') {
     // The invite is still open, so the preview names the team the person is in.
@@ -34,9 +42,7 @@ export async function acceptInvite(token: string): Promise<ActionResult> {
       }
       throw e;
     });
-    if (invite) {
-      redirect(routes.team(invite.team_slug));
-    }
+    redirect(invite ? routes.team(invite.team_slug) : routes.home);
   }
   if (result.code === 'not_found') {
     redirect(`/invites/${token}`);

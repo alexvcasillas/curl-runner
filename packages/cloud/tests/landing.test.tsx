@@ -139,6 +139,7 @@ describe('/s/[token]', () => {
     await user.click(open);
     expect(details.open).toBe(true);
     expect(details).toHaveTextContent('The studio needs to be installed first');
+    expect(details.textContent).not.toMatch(/\d+\.\d+/);
   });
 
   it('asks a signed-out visitor to sign in on a restricted link', async () => {

@@ -264,6 +264,25 @@ describe('acceptInvite', () => {
     expect((err as RedirectSignal).url).toBe('/t/acme');
   });
 
+  it('goes home on a 409 when the invite can no longer be read', async () => {
+    routes({
+      [ACCEPT]: () => json(409, { error: 'conflict', message: 'You are already a member.' }),
+      [PREVIEW]: () => json(404, { error: 'not_found', message: 'Not found.' }),
+    });
+    const err = await actions.acceptInvite(TOKEN).catch((e: unknown) => e);
+    expect((err as RedirectSignal).url).toBe('/');
+  });
+
+  it('sends an expired session through sign-in and back to the invite on a 401', async () => {
+    routes({
+      [ACCEPT]: () => json(401, { error: 'unauthorized', message: 'Sign in.' }),
+    });
+    const err = await actions.acceptInvite(TOKEN).catch((e: unknown) => e);
+    expect((err as RedirectSignal).url).toBe(
+      `/sign-in/expired?return_to=${encodeURIComponent(`/invites/${TOKEN}`)}`,
+    );
+  });
+
   it('returns the plan_limit code on a 402', async () => {
     routes({
       [ACCEPT]: () =>

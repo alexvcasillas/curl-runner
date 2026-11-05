@@ -34,7 +34,7 @@ export function OpenInStudio({ href, downloadHref }: { href: string; downloadHre
           className="mt-2 rounded-[6px] border border-info-border bg-info-bg px-3 py-2.5"
         >
           The studio needs to be installed first. Download it below, open it once, then click Open
-          again. Version 2.7 or newer.
+          again. Update to the latest curl-runner studio.
         </div>
       </details>
       <a
