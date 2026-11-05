@@ -51,6 +51,9 @@ pub enum Mail {
         team_name: String,
         slug: String,
         app_url: String,
+        /// The Free limits in force now, from the server settings.
+        free_member_limit: u32,
+        free_restricted: bool,
     },
     /// Sent to an admin who asks for one from the settings page.
     TestEmail { to: String },

@@ -122,11 +122,14 @@ async fn mail_plan_changed(
     tx: &mut PgConnection,
     team: &TeamRow,
 ) -> Result<(), ApiError> {
+    let settings = state.settings().await?;
     mail_owners(state, tx, team.id, |to| Mail::PlanChanged {
         to,
         team_name: team.name.clone(),
         slug: team.slug.clone(),
         app_url: state.config.app_url.clone(),
+        free_member_limit: settings.free_member_limit,
+        free_restricted: settings.free_restricted,
     })
     .await
 }

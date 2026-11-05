@@ -164,14 +164,18 @@ fn render_parts(mail: &Mail) -> (String, String, String) {
             team_name,
             slug,
             app_url,
+            free_member_limit,
+            free_restricted,
             ..
         } => {
             let link = format!("{app_url}/t/{slug}/billing");
+            let items = free_limits(*free_member_limit, *free_restricted);
+            let bullets: String = items.iter().map(|i| format!("- {i}\n")).collect();
             (
                 format!("{team_name} moved to the Free plan"),
                 format!(
                     "{team_name} is on the Free plan now. Nothing was deleted.\n\n\
-                     - {FREE_KEEPS_SERVING}\n- {FREE_RESTRICTED}\n- {FREE_OR_PUBLIC}\n\n\
+                     {bullets}\n\
                      Go to billing:\n{link}\n"
                 ),
                 layout(
@@ -180,7 +184,7 @@ fn render_parts(mail: &Mail) -> (String, String, String) {
                         esc(team_name)
                     ),
                     &[
-                        Block::List(&[FREE_KEEPS_SERVING, FREE_RESTRICTED, FREE_OR_PUBLIC]),
+                        Block::List(items.iter().map(|i| esc(i)).collect()),
                         Block::Button("Go to billing", esc(&link)),
                     ],
                 ),
@@ -193,10 +197,26 @@ const MEMBER_ROLE: &str = "Members publish collections, share them and make publ
 const INVITE_FOOTER: &str = "The invite expires in 7 days. Not expecting it? Ignore this email.";
 const FREE_KEEPS_SERVING: &str =
     "Restricted collections keep serving the people already on their lists.";
-const FREE_RESTRICTED: &str = "Until you upgrade, you can\u{2019}t publish to them, add people to \
-                               them, or add members past 3.";
 const FREE_OR_PUBLIC: &str =
     "Or make those collections public or off, and everything works on Free.";
+
+/// What changes on Free, from the limits in force. With restricted
+/// collections allowed there is nothing to say about them.
+fn free_limits(member_limit: u32, restricted_allowed: bool) -> Vec<String> {
+    if restricted_allowed {
+        return vec![format!(
+            "Free allows up to {member_limit} members. Upgrade to add more."
+        )];
+    }
+    vec![
+        FREE_KEEPS_SERVING.to_owned(),
+        format!(
+            "Until you upgrade, you can\u{2019}t publish to them, add people to them, \
+             or add members past {member_limit}."
+        ),
+        FREE_OR_PUBLIC.to_owned(),
+    ]
+}
 
 const FONT: &str = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
 const MONO: &str = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace";
@@ -207,7 +227,7 @@ enum Block {
     Muted(String),
     Code(String),
     Callout(String),
-    List(&'static [&'static str]),
+    List(Vec<String>),
     /// Label and escaped URL.
     Button(&'static str, String),
     Fine(String),
@@ -421,6 +441,8 @@ mod tests {
                 team_name: "Acme".into(),
                 slug: "acme".into(),
                 app_url: "https://app.example.com".into(),
+                free_member_limit: 3,
+                free_restricted: false,
             },
             Mail::TestEmail {
                 to: "ada@example.com".into(),
@@ -471,9 +493,42 @@ mod tests {
         assert_eq!(subject, "Acme moved to the Free plan");
         assert!(text.contains("Nothing was deleted."));
         assert!(text.contains("Restricted collections keep serving the people already"));
-        assert!(text.contains("add members past 3"));
+        assert!(text.contains("add members past 3."));
         for s in [&text, &html] {
             assert!(s.contains("https://app.example.com/t/acme/billing"), "{s}");
+        }
+    }
+
+    fn plan_changed(limit: u32, restricted: bool) -> (String, String, String) {
+        render(&Mail::PlanChanged {
+            to: "ada@example.com".into(),
+            team_name: "Acme".into(),
+            slug: "acme".into(),
+            app_url: "https://app.example.com".into(),
+            free_member_limit: limit,
+            free_restricted: restricted,
+        })
+    }
+
+    #[test]
+    fn plan_changed_states_the_configured_limit() {
+        let (_, text, html) = plan_changed(7, false);
+        for s in [&text, &html] {
+            assert!(s.contains("add members past 7."), "{s}");
+            assert!(!s.contains("past 3"), "{s}");
+            assert!(s.contains("publish to them"), "{s}");
+            assert!(!s.contains('\u{2014}'), "{s}");
+        }
+    }
+
+    #[test]
+    fn plan_changed_drops_the_restricted_clause_when_allowed() {
+        let (_, text, html) = plan_changed(5, true);
+        for s in [&text, &html] {
+            assert!(s.contains("Free allows up to 5 members."), "{s}");
+            assert!(!s.contains("publish to them"), "{s}");
+            assert!(!s.contains("Restricted collections"), "{s}");
+            assert!(!s.contains('\u{2014}'), "{s}");
         }
     }
 }
