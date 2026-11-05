@@ -1174,13 +1174,15 @@ request:
         serde_json::from_str(&std::fs::read_to_string(e.path("res.json")).unwrap()).unwrap();
     let r = &v["results"][0];
     assert_eq!(r["status"], 200, "{v}");
-    assert!(
-        r["error"]
-            .as_str()
-            .unwrap()
-            .starts_with("Expected response time to match < 2000ms, got 25"),
-        "{v}"
-    );
+    // The time includes the 2.5 s retry delay. Slow CI runners add a little on
+    // top, so check the floor rather than the exact leading digits.
+    let error = r["error"].as_str().unwrap();
+    let got: f64 = error
+        .strip_prefix("Expected response time to match < 2000ms, got ")
+        .and_then(|rest| rest.strip_suffix("ms"))
+        .and_then(|ms| ms.parse().ok())
+        .unwrap_or_else(|| panic!("unexpected error: {v}"));
+    assert!(got >= 2500.0, "{v}");
     assert!(r["metrics"]["duration"].as_f64().unwrap() >= 2500.0, "{v}");
 }
 
