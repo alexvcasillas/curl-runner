@@ -1,5 +1,16 @@
 # @curl-runner/cli
 
+## 2.7.0
+
+### Minor Changes
+
+- [#185](https://github.com/alexvcasillas/curl-runner/pull/185) [`b6abe56`](https://github.com/alexvcasillas/curl-runner/commit/b6abe56dc4a12c90badf58a84208c0aea6d50bbe) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **Sign in through your browser**
+  
+  Sign the CLI in with the same account you use on the dashboard.
+  
+  - **New:** `curl-runner login --browser` signs in with GitHub, Google or email in your browser.
+  - **Improved:** self-hosted servers advertise their dashboard URL, so `login --browser` finds it without extra setup.
+
 ## 2.6.0
 
 ### Minor Changes
