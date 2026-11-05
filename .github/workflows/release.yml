@@ -14,6 +14,10 @@ on:
         description: "Rebuild, sign and re-upload only the studio dmg for this existing release tag (e.g. @curl-runner/cli@2.3.0). The tag must already contain the studio packaging (scripts/studio-dmg.sh). Everything else is skipped."
         type: string
         default: ""
+      crates_tag:
+        description: "Publish only the crates (curl-runner-cloud-proto, curl-runner-core, curl-runner) from this existing release tag (e.g. @curl-runner/cli@2.6.0), for a release whose crates.io step failed. Versions already on crates.io are skipped. Everything else is skipped."
+        type: string
+        default: ""
 
 # Flow: meta -> build (matrix) -> release (changesets: version PR, or publish
 # the five @curl-runner/cli-<platform> npm packages with the built binaries,
@@ -31,7 +35,7 @@ permissions:
 
 # Dispatches that don't publish (smoke, studio_tag) get their own group, so
 # they never replace a pending release run on main.
-concurrency: ${{ github.workflow }}-${{ github.ref }}${{ inputs.smoke && '-smoke' || '' }}${{ inputs.studio_tag && format('-studio-{0}', inputs.studio_tag) || '' }}
+concurrency: ${{ github.workflow }}-${{ github.ref }}${{ inputs.smoke && '-smoke' || '' }}${{ inputs.studio_tag && format('-studio-{0}', inputs.studio_tag) || '' }}${{ inputs.crates_tag && format('-crates-{0}', inputs.crates_tag) || '' }}
 
 jobs:
   meta:
@@ -51,10 +55,21 @@ jobs:
         env:
           SMOKE: ${{ inputs.smoke }}
           STUDIO_TAG: ${{ inputs.studio_tag }}
+          CRATES_TAG: ${{ inputs.crates_tag }}
         run: |
           VERSION=$(jq -r .version packages/cli/package.json)
           pending=$(find .changeset -name '*.md' ! -name README.md | wc -l)
-          if [ -n "$STUDIO_TAG" ]; then
+          if [ -n "$CRATES_TAG" ]; then
+            # Crates-only run: BUILD=false skips everything but the crates job.
+            if [ "$SMOKE" = "true" ] || [ -n "$STUDIO_TAG" ]; then
+              echo "::error::crates_tag can't be combined with smoke or studio_tag"; exit 1
+            fi
+            case "$CRATES_TAG" in
+              @curl-runner/cli@?*) VERSION=${CRATES_TAG#@curl-runner/cli@} ;;
+              *) echo "::error::crates_tag must look like @curl-runner/cli@<version>"; exit 1 ;;
+            esac
+            BUILD=false
+          elif [ -n "$STUDIO_TAG" ]; then
             # Studio-only run: BUILD=false skips build, package and upload;
             # release and the smoke jobs check studio_tag themselves.
             if [ "$SMOKE" = "true" ]; then
@@ -97,7 +112,7 @@ jobs:
   release:
     name: Release
     needs: [meta, build]
-    if: ${{ !inputs.smoke && !inputs.studio_tag && !cancelled() && needs.meta.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    if: ${{ !inputs.smoke && !inputs.studio_tag && !inputs.crates_tag && !cancelled() && needs.meta.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: ubuntu-latest
     outputs:
       published: ${{ steps.changesets.outputs.published }}
@@ -171,6 +186,38 @@ jobs:
 
       - name: Publish crates
         if: ${{ steps.changesets.outputs.published == 'true' }}
+        run: scripts/crates-publish.sh
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
+
+  # Re-publish the crates of an existing release (crates_tag dispatch), for when
+  # the crates.io step of that release failed. Same trusted publishing as the
+  # release job, from the tag's own sources.
+  crates:
+    name: Publish crates (tag)
+    needs: meta
+    if: ${{ inputs.crates_tag != '' && needs.meta.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: Production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.crates_tag }}
+
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Authenticate to crates.io
+        id: crates-auth
+        uses: rust-lang/crates-io-auth-action@v1
+
+      # The tag's own script; versions already on crates.io are skipped.
+      - name: Publish crates
         run: scripts/crates-publish.sh
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
