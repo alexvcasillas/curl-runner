@@ -99,12 +99,12 @@ async fn checkout_owner_only_sends_member_count_and_team_id(pool: PgPool) {
     let (status, res) = app.request(Method::POST, path, body(), Some(&ada)).await;
     assert_eq!(status, StatusCode::OK, "{res}");
     assert_eq!(res["url"], "https://checkout.stripe.test/c/1");
-    let calls = fake.checkouts.lock().unwrap();
-    let req = &calls[0];
     let team_id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM teams WHERE slug = 'acme'")
         .fetch_one(&app.state.db)
         .await
         .unwrap();
+    let calls = fake.checkouts.lock().unwrap();
+    let req = &calls[0];
     assert_eq!(req.team_id, team_id);
     assert_eq!(req.team_slug, "acme");
     assert_eq!(req.quantity, 2);
