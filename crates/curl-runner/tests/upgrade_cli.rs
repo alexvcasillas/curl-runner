@@ -94,16 +94,31 @@ fn install_copy() -> Installed {
     Installed { _dir: dir, exe }
 }
 
+/// Spawns `cmd`, retrying while Linux reports the file busy. Another test
+/// thread can fork while `install_copy` still holds the copy open for writing,
+/// and the child keeps that fd until its own exec (rust-lang/rust#114554).
+fn output(cmd: &mut Command) -> std::process::Output {
+    for _ in 0..50 {
+        match cmd.output() {
+            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            result => return result.unwrap(),
+        }
+    }
+    panic!("executable stayed busy")
+}
+
 fn run(i: &Installed, srv: &TestServer, args: &[&str]) -> (i32, String) {
-    let out = Command::new(&i.exe)
-        .env_clear()
-        .envs(testkit::system_env())
-        .env("NO_COLOR", "1")
-        .env("CURL_RUNNER_TEST_GITHUB_BASE", &srv.base_url)
-        .arg("upgrade")
-        .args(args)
-        .output()
-        .unwrap();
+    let out = output(
+        Command::new(&i.exe)
+            .env_clear()
+            .envs(testkit::system_env())
+            .env("NO_COLOR", "1")
+            .env("CURL_RUNNER_TEST_GITHUB_BASE", &srv.base_url)
+            .arg("upgrade")
+            .args(args),
+    );
     (
         out.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -159,14 +174,14 @@ fn help_and_unreachable_registry() {
         .unwrap();
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stdout).contains("Cannot upgrade"));
-    let dead = Command::new(&i.exe)
-        .env_clear()
-        .envs(testkit::system_env())
-        .env("NO_COLOR", "1")
-        .env("CURL_RUNNER_TEST_GITHUB_BASE", "http://127.0.0.1:1")
-        .arg("upgrade")
-        .output()
-        .unwrap();
+    let dead = output(
+        Command::new(&i.exe)
+            .env_clear()
+            .envs(testkit::system_env())
+            .env("NO_COLOR", "1")
+            .env("CURL_RUNNER_TEST_GITHUB_BASE", "http://127.0.0.1:1")
+            .arg("upgrade"),
+    );
     assert_eq!(dead.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&dead.stdout).contains("Failed to fetch latest version"));
 }
