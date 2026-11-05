@@ -58,7 +58,7 @@ export default async function SharingPage({ params }: Props) {
               onRemove={removeEntry.bind(null, team, slug)}
             />
           </div>
-          <ShareAside teamName={current.name} />
+          <ShareAside teamName={current.name} link={share.link} off={share.access === 'off'} />
         </div>
       ) : (
         <EmptyState

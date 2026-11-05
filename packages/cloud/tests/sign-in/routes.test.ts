@@ -123,6 +123,28 @@ describe('POST /sign-out', () => {
     expect(jar.current.values.has('cr_session')).toBe(false);
   });
 
+  it('goes to sign in with a safe return_to, and ignores a hostile one', async () => {
+    fetchMock.mockImplementation(async () => new Response(null, { status: 204 }));
+    const to = async (target: string) =>
+      (
+        await signOut.POST(
+          new Request(
+            `https://cloud.example.com/sign-out?return_to=${encodeURIComponent(target)}`,
+            {
+              method: 'POST',
+            },
+          ),
+        )
+      ).headers.get('location');
+    expect(await to('/s/crsl_abc')).toBe(
+      `https://cloud.example.com/sign-in?return_to=${encodeURIComponent('/s/crsl_abc')}`,
+    );
+    for (const bad of ['//evil.example', 'https://evil.example', '/\\evil']) {
+      jar.current = cookieJar({ cr_session: 'crs_old' });
+      expect(await to(bad)).toBe('https://cloud.example.com/sign-in');
+    }
+  });
+
   it('clears the cookie even when the API says 401', async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ error: 'unauthorized', message: 'Sign in.' }), {

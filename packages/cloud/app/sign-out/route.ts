@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ApiError, api } from '@/lib/api';
 import { env } from '@/lib/env';
+import { safeReturnTo } from '@/lib/return-to';
 import { clearSession, getSession } from '@/lib/session';
 
 /** The account menu posts here. Ends the session on the server, then drops the cookie. */
@@ -21,6 +22,14 @@ export async function POST(request?: Request) {
     }
   }
   await clearSession();
+  // A page that offers "Use another account" says where to come back to.
+  const returnTo = safeReturnTo(
+    request ? new URL(request.url).searchParams.get('return_to') : null,
+  );
+  const to = new URL('/sign-in', env().PUBLIC_APP_URL);
+  if (returnTo !== '/') {
+    to.searchParams.set('return_to', returnTo);
+  }
   // 303 turns the POST into a GET of the sign-in page.
-  return NextResponse.redirect(new URL('/sign-in', env().PUBLIC_APP_URL), 303);
+  return NextResponse.redirect(to, 303);
 }

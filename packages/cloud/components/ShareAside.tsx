@@ -1,5 +1,17 @@
+import { buttonClasses } from './button-styles';
+
 /** What a customer sees when they open the link. */
-export function ShareAside({ teamName }: { teamName: string }) {
+export function ShareAside({
+  teamName,
+  link,
+  off = false,
+}: {
+  teamName: string;
+  /** The share link: the page it opens is what the button previews. */
+  link: string;
+  /** Sharing is off, so the link shows the dead-link page. */
+  off?: boolean;
+}) {
   return (
     <aside
       aria-label="How customers open it"
@@ -21,6 +33,16 @@ export function ShareAside({ teamName }: { teamName: string }) {
         They fill in the inputs, and secrets stay on their machine. When CI publishes a new version,
         the studio offers the update.
       </p>
+      {off ? null : (
+        <a
+          href={link}
+          target="_blank"
+          rel="noreferrer"
+          className={buttonClasses('secondary', 'sm', 'self-start')}
+        >
+          Preview the page
+        </a>
+      )}
     </aside>
   );
 }

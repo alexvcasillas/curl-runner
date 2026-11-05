@@ -144,3 +144,27 @@ export type SharedItem = {
   /** The share link. The token in it is a share token, not a session. */
   link: string;
 };
+
+// Wire shapes for the public pages, from `GET /v1/shared/{token}` and `GET /v1/invites/{token}`.
+
+export type SharedInfo = {
+  /** The team's display name. */
+  team: string;
+  team_slug: string;
+  collection: string;
+  name: string;
+  description: string | null;
+  version: number;
+  updated_at: string;
+  request_count: number;
+  access: AccessMode;
+};
+
+export type InvitePreview = {
+  team_name: string;
+  team_slug: string;
+  inviter_name: string | null;
+  role: Role;
+  email: string;
+  expires_at: string;
+};
