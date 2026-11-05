@@ -51,28 +51,17 @@ impl SmtpTransport {
         let from: Mailbox = mail_from
             .parse()
             .map_err(|err| format!("invalid MAIL_FROM: {err}"))?;
-        let builder = match config {
-            SmtpConfig::Url(url) => AsyncSmtpTransport::<Tokio1Executor>::from_url(url)
-                .map_err(|err| format!("invalid SMTP_URL: {err}"))?,
-            SmtpConfig::Parts {
-                host,
-                port,
-                tls,
-                credentials,
-            } => {
-                let builder = match tls {
-                    SmtpTls::Implicit => AsyncSmtpTransport::<Tokio1Executor>::relay(host),
-                    SmtpTls::StartTls => AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(host),
-                }
-                .map_err(|err| format!("invalid SMTP_HOST: {err}"))?
-                .port(*port);
-                match credentials {
-                    Some((user, password)) => {
-                        builder.credentials(Credentials::new(user.clone(), password.clone()))
-                    }
-                    None => builder,
-                }
+        let builder = match config.tls {
+            SmtpTls::Implicit => AsyncSmtpTransport::<Tokio1Executor>::relay(&config.host),
+            SmtpTls::StartTls => AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&config.host),
+        }
+        .map_err(|err| format!("invalid SMTP_HOST: {err}"))?
+        .port(config.port);
+        let builder = match &config.credentials {
+            Some((user, password)) => {
+                builder.credentials(Credentials::new(user.clone(), password.clone()))
             }
+            None => builder,
         };
         Ok(Self {
             inner: builder.build(),
@@ -119,18 +108,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn builds_from_parts_and_url_without_connecting() {
+    fn builds_without_connecting() {
         for tls in [SmtpTls::Implicit, SmtpTls::StartTls] {
-            let parts = SmtpConfig::Parts {
+            let config = SmtpConfig {
                 host: "smtp.example.com".into(),
                 port: if tls == SmtpTls::Implicit { 465 } else { 587 },
                 tls,
                 credentials: Some(("user".into(), "pw".into())),
             };
-            assert!(SmtpTransport::new(&parts, "curl-runner <no-reply@example.com>").is_ok());
+            assert!(SmtpTransport::new(&config, "curl-runner <no-reply@example.com>").is_ok());
+            assert!(SmtpTransport::new(&config, "not an address").is_err());
         }
-        let url = SmtpConfig::Url("smtps://u:p@smtp.example.com:465".into());
-        assert!(SmtpTransport::new(&url, "no-reply@example.com").is_ok());
-        assert!(SmtpTransport::new(&url, "not an address").is_err());
     }
 }

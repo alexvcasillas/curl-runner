@@ -37,18 +37,14 @@ pub struct Config {
     pub trusted_proxy_hops: usize,
 }
 
-/// How to reach the SMTP relay.
+/// How to reach the SMTP relay: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` and
+/// `SMTP_PASSWORD`, taken as-is.
 #[derive(Clone, PartialEq, Eq)]
-pub enum SmtpConfig {
-    /// From `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` and `SMTP_PASSWORD`, taken as-is.
-    Parts {
-        host: String,
-        port: u16,
-        tls: SmtpTls,
-        credentials: Option<(String, String)>,
-    },
-    /// From `SMTP_URL`, e.g. `smtps://user:pass@smtp.example.com:465`.
-    Url(String),
+pub struct SmtpConfig {
+    pub host: String,
+    pub port: u16,
+    pub tls: SmtpTls,
+    pub credentials: Option<(String, String)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -184,42 +180,33 @@ fn database(get: &impl Fn(&str) -> Option<String>) -> Result<PgConnectOptions, C
         .ssl_mode(PgSslMode::Disable))
 }
 
-/// The `SMTP_*` parts if `SMTP_HOST` is set, else `SMTP_URL`, else none.
+/// The `SMTP_*` settings if `SMTP_HOST` is set, else none.
 fn smtp(get: &impl Fn(&str) -> Option<String>) -> Result<Option<SmtpConfig>, ConfigError> {
-    if let Some(host) = get("SMTP_HOST") {
-        let port = parse_port(get("SMTP_PORT"), "SMTP_PORT", 465)?;
-        let tls = if port == 587 {
-            SmtpTls::StartTls
-        } else {
-            SmtpTls::Implicit
-        };
-        let credentials = match (get("SMTP_USER"), get("SMTP_PASSWORD")) {
-            (Some(user), Some(password)) => Some((user, password)),
-            (None, None) => None,
-            _ => {
-                return Err(ConfigError::Invalid {
-                    var: "SMTP_USER",
-                    reason: "SMTP_USER and SMTP_PASSWORD go together".into(),
-                });
-            }
-        };
-        return Ok(Some(SmtpConfig::Parts {
-            host,
-            port,
-            tls,
-            credentials,
-        }));
-    }
-    match get("SMTP_URL") {
-        Some(url) if url.starts_with("smtp://") || url.starts_with("smtps://") => {
-            Ok(Some(SmtpConfig::Url(url)))
+    let Some(host) = get("SMTP_HOST") else {
+        return Ok(None);
+    };
+    let port = parse_port(get("SMTP_PORT"), "SMTP_PORT", 465)?;
+    let tls = if port == 587 {
+        SmtpTls::StartTls
+    } else {
+        SmtpTls::Implicit
+    };
+    let credentials = match (get("SMTP_USER"), get("SMTP_PASSWORD")) {
+        (Some(user), Some(password)) => Some((user, password)),
+        (None, None) => None,
+        _ => {
+            return Err(ConfigError::Invalid {
+                var: "SMTP_USER",
+                reason: "SMTP_USER and SMTP_PASSWORD go together".into(),
+            });
         }
-        Some(_) => Err(ConfigError::Invalid {
-            var: "SMTP_URL",
-            reason: "must start with smtp:// or smtps://".into(),
-        }),
-        None => Ok(None),
-    }
+    };
+    Ok(Some(SmtpConfig {
+        host,
+        port,
+        tls,
+        credentials,
+    }))
 }
 
 fn oauth_app(
@@ -298,22 +285,13 @@ impl fmt::Debug for Config {
 
 impl fmt::Debug for SmtpConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Parts {
-                host,
-                port,
-                tls,
-                credentials,
-            } => f
-                .debug_struct("Parts")
-                .field("host", host)
-                .field("port", port)
-                .field("tls", tls)
-                .field("user", &credentials.as_ref().map(|(user, _)| user))
-                .field("password", &credentials.as_ref().map(|_| REDACTED))
-                .finish(),
-            Self::Url(_) => f.debug_tuple("Url").field(&REDACTED).finish(),
-        }
+        f.debug_struct("SmtpConfig")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("tls", &self.tls)
+            .field("user", &self.credentials.as_ref().map(|(user, _)| user))
+            .field("password", &self.credentials.as_ref().map(|_| REDACTED))
+            .finish()
     }
 }
 
@@ -507,7 +485,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             cfg.smtp,
-            Some(SmtpConfig::Parts {
+            Some(SmtpConfig {
                 host: "email-smtp.example.com".into(),
                 port: 465,
                 tls: SmtpTls::Implicit,
@@ -517,7 +495,7 @@ mod tests {
         let starttls = with(&[("SMTP_HOST", "h"), ("SMTP_PORT", "587")]).unwrap();
         assert!(matches!(
             starttls.smtp,
-            Some(SmtpConfig::Parts {
+            Some(SmtpConfig {
                 port: 587,
                 tls: SmtpTls::StartTls,
                 credentials: None,
@@ -529,26 +507,13 @@ mod tests {
     }
 
     #[test]
-    fn config_smtp_url_and_parts_win() {
-        let url = "smtps://user:pass@smtp.example.com:465";
-        let cfg = with(&[("SMTP_URL", url)]).unwrap();
-        assert_eq!(cfg.smtp, Some(SmtpConfig::Url(url.into())));
-        let both = with(&[("SMTP_URL", url), ("SMTP_HOST", "other.example.com")]).unwrap();
-        assert!(
-            matches!(both.smtp, Some(SmtpConfig::Parts { ref host, .. }) if host == "other.example.com")
-        );
-        assert!(with(&[("SMTP_URL", "https://smtp.example.com")]).is_err());
-    }
-
-    #[test]
     fn config_debug_redacts_secrets() {
         let cfg = with(&[
             ("DB_PASSWORD", "db-pass-123"),
             ("SECRET_KEY", "super-secret-key-super-secret-key-0"),
-            (
-                "SMTP_URL",
-                "smtps://user:smtp-pass-456@smtp.example.com:465",
-            ),
+            ("SMTP_HOST", "smtp.example.com"),
+            ("SMTP_USER", "smtp-user"),
+            ("SMTP_PASSWORD", "smtp-pass-456"),
             ("GITHUB_CLIENT_ID", "gh-id"),
             ("GITHUB_CLIENT_SECRET", "gh-secret-789"),
             ("GOOGLE_CLIENT_ID", "g-id"),
