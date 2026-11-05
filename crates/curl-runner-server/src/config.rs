@@ -185,11 +185,11 @@ fn smtp(get: &impl Fn(&str) -> Option<String>) -> Result<Option<SmtpConfig>, Con
     let Some(host) = get("SMTP_HOST") else {
         return Ok(None);
     };
-    let port = parse_port(get("SMTP_PORT"), "SMTP_PORT", 465)?;
-    let tls = if port == 587 {
-        SmtpTls::StartTls
-    } else {
+    let port = parse_port(get("SMTP_PORT"), "SMTP_PORT", 587)?;
+    let tls = if port == 465 {
         SmtpTls::Implicit
+    } else {
+        SmtpTls::StartTls
     };
     let credentials = match (get("SMTP_USER"), get("SMTP_PASSWORD")) {
         (Some(user), Some(password)) => Some((user, password)),
@@ -487,17 +487,17 @@ mod tests {
             cfg.smtp,
             Some(SmtpConfig {
                 host: "email-smtp.example.com".into(),
-                port: 465,
-                tls: SmtpTls::Implicit,
+                port: 587,
+                tls: SmtpTls::StartTls,
                 credentials: Some(("AKIA".into(), "a/b+c==".into())),
             })
         );
-        let starttls = with(&[("SMTP_HOST", "h"), ("SMTP_PORT", "587")]).unwrap();
+        let implicit = with(&[("SMTP_HOST", "h"), ("SMTP_PORT", "465")]).unwrap();
         assert!(matches!(
-            starttls.smtp,
+            implicit.smtp,
             Some(SmtpConfig {
-                port: 587,
-                tls: SmtpTls::StartTls,
+                port: 465,
+                tls: SmtpTls::Implicit,
                 credentials: None,
                 ..
             })
