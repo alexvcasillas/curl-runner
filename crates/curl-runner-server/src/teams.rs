@@ -1,15 +1,18 @@
-//! Teams, members, invites and the operator endpoints.
+//! Teams, members and invites, and who is a server owner or admin.
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::routing::{delete, get, post, put};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Duration, Utc};
 use curl_runner_cloud_proto::{ErrorCode, Plan, Role, SignupMode};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
+use crate::admin::events::{self, Event};
+use crate::admin::{AdminAuth, Perm, Role as AdminRole};
 use crate::auth::UserAuth;
 use crate::auth::session::column_enum;
 use crate::billing::BillingError;
@@ -43,7 +46,6 @@ pub fn routes() -> Router<AppState> {
             "/v1/teams/{team}/members/{user_id}",
             delete(remove_member).patch(set_role),
         )
-        .route("/v1/admin/teams/{team}/plan", put(set_plan))
 }
 
 /// A slug: `^[a-z0-9][a-z0-9-]{0,62}$`. Shared by teams and collections.
@@ -94,7 +96,8 @@ pub async fn team_access(db: &PgPool, user_id: Uuid, slug: &str) -> Result<TeamA
     })
 }
 
-async fn first_operator(db: &PgPool) -> Result<Option<String>, ApiError> {
+/// The recorded first operator's email, if any.
+pub(crate) async fn first_operator(db: &PgPool) -> Result<Option<String>, ApiError> {
     Ok(
         sqlx::query_scalar("SELECT value FROM settings WHERE key = $1")
             .bind(FIRST_OPERATOR)
@@ -112,6 +115,26 @@ pub async fn is_operator(db: &PgPool, config: &Config, email: &str) -> Result<bo
     Ok(first_operator(db)
         .await?
         .is_some_and(|op| op.to_lowercase() == email))
+}
+
+/// The caller's standing in the admin panel: an owner (`OPERATOR_EMAILS` or
+/// the first operator) has every permission, an admin has the permissions in
+/// `admins`, anyone else is `None`.
+pub async fn admin_role(
+    db: &PgPool,
+    config: &Config,
+    user_id: Uuid,
+    email: &str,
+) -> Result<Option<(AdminRole, Vec<Perm>)>, ApiError> {
+    if is_operator(db, config, email).await? {
+        return Ok(Some((AdminRole::Owner, Perm::ALL.to_vec())));
+    }
+    let perms: Option<Vec<String>> =
+        sqlx::query_scalar("SELECT permissions FROM admins WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(db)
+            .await?;
+    Ok(perms.map(|p| (AdminRole::Admin, Perm::from_column(&p))))
 }
 
 /// Whether `email` may create a team under the signup mode.
@@ -854,23 +877,37 @@ pub struct TeamPlan {
     plan: Plan,
 }
 
-async fn set_plan(
+/// `PUT /v1/admin/teams/{team}/plan`, perm `billing`: set the stored plan.
+pub(crate) async fn set_plan(
+    admin: AdminAuth,
     State(state): State<AppState>,
-    auth: UserAuth,
     Path(slug): Path<String>,
     ApiJson(req): ApiJson<SetPlan>,
 ) -> Result<Json<TeamPlan>, ApiError> {
-    if !is_operator(&state.db, &state.config, &auth.email).await? {
-        return Err(ApiError::not_found());
-    }
-    let done = sqlx::query("UPDATE teams SET plan = $2 WHERE slug = $1")
-        .bind(&slug)
-        .bind(enum_str(req.plan))
-        .execute(&state.db)
+    admin.require(Perm::Billing)?;
+    let mut tx = state.db.begin().await?;
+    let team: Option<(Uuid, String, String)> =
+        sqlx::query_as("SELECT id, slug::text, plan FROM teams WHERE slug = $1 FOR UPDATE")
+            .bind(&slug)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let (team_id, slug, before) = team.ok_or_else(ApiError::not_found)?;
+    let plan = enum_str(req.plan);
+    sqlx::query("UPDATE teams SET plan = $2 WHERE id = $1")
+        .bind(team_id)
+        .bind(&plan)
+        .execute(&mut *tx)
         .await?;
-    if done.rows_affected() == 0 {
-        return Err(ApiError::not_found());
-    }
+    events::record(
+        &mut tx,
+        &admin,
+        state.clock.now(),
+        Event::new("team.plan.set")
+            .target("team", team_id, &slug)
+            .detail(json!({"from": before, "to": plan})),
+    )
+    .await?;
+    tx.commit().await?;
     Ok(Json(TeamPlan {
         slug,
         plan: req.plan,

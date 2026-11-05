@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::error::ApiError;
 use crate::hash::{new_token, secret_hash};
 use crate::state::AppState;
-use crate::teams::is_operator;
+use crate::teams::admin_role;
 
 /// Sessions slide: each use pushes expiry to this far from now.
 pub const SESSION_TTL: Duration = Duration::days(90);
@@ -161,7 +161,7 @@ pub(crate) fn column_enum<T: serde::de::DeserializeOwned>(value: String) -> Resu
 pub struct MeBody {
     user: UserBody,
     teams: Vec<TeamBody>,
-    /// The user is a server operator (the dashboard shows its admin section).
+    /// The user is a server owner or admin (the dashboard shows its admin panel).
     admin: bool,
 }
 
@@ -190,7 +190,9 @@ pub async fn me(State(state): State<AppState>, auth: UserAuth) -> Result<Json<Me
             })
         })
         .collect::<Result<_, ApiError>>()?;
-    let admin = is_operator(&state.db, &state.config, &user.email).await?;
+    let admin = admin_role(&state.db, &state.config, user.id, &user.email)
+        .await?
+        .is_some();
     Ok(Json(MeBody { user, teams, admin }))
 }
 

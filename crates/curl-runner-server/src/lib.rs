@@ -1,5 +1,6 @@
 //! curl-runner server: the Cloud backend (accounts, teams, publish, sharing).
 
+pub mod admin;
 pub mod auth;
 pub mod billing;
 pub mod clock;
@@ -40,6 +41,7 @@ pub fn app(state: AppState) -> Router {
         .route("/", get(health))
         .route("/health", get(health))
         .route("/v1/info", get(info::info))
+        .merge(admin::routes())
         .merge(auth::routes())
         .merge(teams::routes())
         .merge(billing::routes::routes())

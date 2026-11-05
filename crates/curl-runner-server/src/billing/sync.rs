@@ -293,14 +293,18 @@ pub async fn apply_missing(
 }
 
 /// One pass of background work: move teams that stayed past due for 14 days to
-/// Free, then push changed seat counts to Stripe. A failure is logged and the
-/// next tick tries again.
+/// Free, push changed seat counts to Stripe, and delete admin events older
+/// than 2 years (an indexed delete that almost always finds nothing). A
+/// failure is logged and the next tick tries again.
 pub async fn tick(state: &AppState, now: DateTime<Utc>) {
     if let Err(err) = downgrade_past_due(state, now).await {
         tracing::error!("past-due downgrade: {err}");
     }
     if let Err(err) = sync_seats(state).await {
         tracing::error!("seat sync: {err}");
+    }
+    if let Err(err) = crate::admin::events::prune(&state.db, now).await {
+        tracing::error!("audit log retention: {err}");
     }
 }
 
