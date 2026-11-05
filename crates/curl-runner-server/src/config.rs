@@ -35,6 +35,18 @@ pub struct Config {
     /// Reverse proxies in front of the server; the client IP is that many
     /// entries from the right of `X-Forwarded-For`. 0 trusts only the socket.
     pub trusted_proxy_hops: usize,
+    /// Stripe billing; `None` leaves the server self-hosted and free of it.
+    pub billing: Option<BillingConfig>,
+}
+
+/// `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY` and
+/// `STRIPE_PRICE_ANNUAL`: all four or none.
+#[derive(Clone, PartialEq, Eq)]
+pub struct BillingConfig {
+    pub secret_key: String,
+    pub webhook_secret: String,
+    pub price_monthly: String,
+    pub price_annual: String,
 }
 
 /// How to reach the SMTP relay: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` and
@@ -143,7 +155,32 @@ impl Config {
                     reason: "expected a non-negative whole number".into(),
                 })?,
             },
+            billing: billing(&get)?,
         })
+    }
+}
+
+/// The `STRIPE_*` settings: all four, or none.
+fn billing(get: &impl Fn(&str) -> Option<String>) -> Result<Option<BillingConfig>, ConfigError> {
+    match (
+        get("STRIPE_SECRET_KEY"),
+        get("STRIPE_WEBHOOK_SECRET"),
+        get("STRIPE_PRICE_MONTHLY"),
+        get("STRIPE_PRICE_ANNUAL"),
+    ) {
+        (Some(secret_key), Some(webhook_secret), Some(price_monthly), Some(price_annual)) => {
+            Ok(Some(BillingConfig {
+                secret_key,
+                webhook_secret,
+                price_monthly,
+                price_annual,
+            }))
+        }
+        (None, None, None, None) => Ok(None),
+        _ => Err(ConfigError::Invalid {
+            var: "STRIPE_SECRET_KEY",
+            reason: "Set all four STRIPE_ variables or none.".into(),
+        }),
     }
 }
 
@@ -279,6 +316,7 @@ impl fmt::Debug for Config {
             .field("signup_domains", &self.signup_domains)
             .field("operators", &self.operators)
             .field("trusted_proxy_hops", &self.trusted_proxy_hops)
+            .field("billing", &self.billing)
             .finish()
     }
 }
@@ -291,6 +329,17 @@ impl fmt::Debug for SmtpConfig {
             .field("tls", &self.tls)
             .field("user", &self.credentials.as_ref().map(|(user, _)| user))
             .field("password", &self.credentials.as_ref().map(|_| REDACTED))
+            .finish()
+    }
+}
+
+impl fmt::Debug for BillingConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BillingConfig")
+            .field("secret_key", &REDACTED)
+            .field("webhook_secret", &REDACTED)
+            .field("price_monthly", &self.price_monthly)
+            .field("price_annual", &self.price_annual)
             .finish()
     }
 }
@@ -540,5 +589,50 @@ mod tests {
         ])
         .unwrap();
         assert!(!format!("{parts:?}").contains("smtp-part-pass"));
+    }
+
+    const STRIPE: [(&str, &str); 4] = [
+        ("STRIPE_SECRET_KEY", "sk_live_secret123"),
+        ("STRIPE_WEBHOOK_SECRET", "whsec_secret456"),
+        ("STRIPE_PRICE_MONTHLY", "price_m"),
+        ("STRIPE_PRICE_ANNUAL", "price_a"),
+    ];
+
+    #[test]
+    fn partial_stripe_config_is_error() {
+        assert!(with(&[]).unwrap().billing.is_none());
+        let cfg = with(&STRIPE).unwrap();
+        assert_eq!(cfg.billing.unwrap().price_annual, "price_a");
+        for (skip, (missing, _)) in STRIPE.iter().enumerate() {
+            let partial: Vec<_> = STRIPE
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != skip)
+                .map(|(_, kv)| *kv)
+                .collect();
+            assert_eq!(
+                with(&partial).unwrap_err(),
+                ConfigError::Invalid {
+                    var: "STRIPE_SECRET_KEY",
+                    reason: "Set all four STRIPE_ variables or none.".into(),
+                },
+                "without {missing}"
+            );
+        }
+        // An empty value counts as unset.
+        assert!(
+            with(&[("STRIPE_PRICE_ANNUAL", "")])
+                .unwrap()
+                .billing
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn config_debug_redacts_stripe_secrets() {
+        let debug = format!("{:?}", with(&STRIPE).unwrap());
+        assert!(!debug.contains("sk_live_secret123"), "{debug}");
+        assert!(!debug.contains("whsec_secret456"), "{debug}");
+        assert!(debug.contains("price_m"), "{debug}");
     }
 }

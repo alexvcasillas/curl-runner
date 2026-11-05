@@ -7,6 +7,8 @@ use chrono::{DateTime, Duration, Utc};
 use sqlx::PgPool;
 
 use crate::auth::providers::{OAuthProviders, RealProviders};
+use crate::billing::stripe::StripeBilling;
+use crate::billing::{Billing, PriceCache};
 use crate::clock::Clock;
 use crate::config::Config;
 use crate::error::ApiError;
@@ -20,6 +22,9 @@ pub struct AppState {
     pub mailer: Mailer,
     pub oauth: Arc<dyn OAuthProviders>,
     pub limiter: RateLimiter,
+    /// `None` when `STRIPE_*` is not configured.
+    pub billing: Option<Arc<dyn Billing>>,
+    pub price_cache: PriceCache,
 }
 
 impl AppState {
@@ -31,6 +36,11 @@ impl AppState {
                 config.google.clone(),
             )),
             limiter: RateLimiter::new(clock.clone()),
+            billing: config
+                .billing
+                .clone()
+                .map(|b| Arc::new(StripeBilling::new(b.secret_key)) as Arc<dyn Billing>),
+            price_cache: PriceCache::default(),
             db,
             config: Arc::new(config),
             clock,

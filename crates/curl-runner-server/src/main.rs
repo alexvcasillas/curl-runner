@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use curl_runner_server::billing::sync;
 use curl_runner_server::clock::SystemClock;
 use curl_runner_server::config::Config;
 use curl_runner_server::mail::{LogTransport, SmtpTransport, Transport, worker};
@@ -67,6 +68,7 @@ async fn main() -> std::process::ExitCode {
     };
     let state = AppState::new(pool, config, Arc::new(SystemClock));
     let (stop_tx, mut stop_rx) = tokio::sync::watch::channel(false);
+    let mut sync_stop = stop_rx.clone();
     let mail_worker = tokio::spawn(worker::run(
         state.db.clone(),
         transport,
@@ -75,6 +77,10 @@ async fn main() -> std::process::ExitCode {
             let _ = stop_rx.wait_for(|stop| *stop).await;
         },
     ));
+
+    let seat_worker = tokio::spawn(sync::run(state.clone(), async move {
+        let _ = sync_stop.wait_for(|stop| *stop).await;
+    }));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = match TcpListener::bind(addr).await {
@@ -92,6 +98,7 @@ async fn main() -> std::process::ExitCode {
     })
     .await;
     let _ = mail_worker.await;
+    let _ = seat_worker.await;
     match result {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(err) => {

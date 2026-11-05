@@ -12,10 +12,11 @@ use uuid::Uuid;
 
 use crate::auth::UserAuth;
 use crate::auth::session::column_enum;
+use crate::billing::BillingError;
 use crate::collections::parse_email;
 use crate::config::Config;
 use crate::error::ApiError;
-use crate::extract::ApiJson;
+use crate::extract::{ApiJson, ClientIp};
 use crate::hash::{new_token, secret_hash};
 use crate::mail::Mail;
 use crate::plans::limits;
@@ -30,8 +31,13 @@ const MAX_TEAM_NAME_CHARS: usize = 100;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/v1/teams", post(create_team))
-        .route("/v1/teams/{team}", get(get_team))
+        .route(
+            "/v1/teams/{team}",
+            get(get_team).patch(rename_team).delete(delete_team),
+        )
         .route("/v1/teams/{team}/invites", post(invite))
+        .route("/v1/teams/{team}/invites/{id}", delete(revoke_invite))
+        .route("/v1/invites/{token}", get(invite_preview))
         .route("/v1/invites/{token}/accept", post(accept_invite))
         .route(
             "/v1/teams/{team}/members/{user_id}",
@@ -160,6 +166,18 @@ fn invalid(message: &str) -> ApiError {
     ApiError::new(ErrorCode::InvalidRequest, message)
 }
 
+/// A team name, trimmed: 1 to 100 characters.
+fn valid_team_name(name: &str) -> Result<String, ApiError> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(invalid("The team needs a name."));
+    }
+    if name.chars().count() > MAX_TEAM_NAME_CHARS {
+        return Err(invalid("The team name must be at most 100 characters."));
+    }
+    Ok(name.to_owned())
+}
+
 #[derive(Deserialize)]
 pub struct CreateTeam {
     slug: String,
@@ -178,17 +196,11 @@ async fn create_team(
     auth: UserAuth,
     ApiJson(req): ApiJson<CreateTeam>,
 ) -> Result<(StatusCode, Json<CreatedTeam>), ApiError> {
-    let name = req.name.trim().to_owned();
+    let name = valid_team_name(&req.name)?;
     if !valid_slug(&req.slug) {
         return Err(invalid(
             "The slug must be lowercase letters, digits and dashes, up to 63 characters.",
         ));
-    }
-    if name.is_empty() {
-        return Err(invalid("The team needs a name."));
-    }
-    if name.chars().count() > MAX_TEAM_NAME_CHARS {
-        return Err(invalid("The team name must be at most 100 characters."));
     }
     if !can_create_team(&state.db, &state.config, &auth.email).await? {
         return Err(ApiError::new(
@@ -228,6 +240,93 @@ async fn create_team(
             plan,
         }),
     ))
+}
+
+#[derive(Deserialize)]
+pub struct RenameTeam {
+    name: String,
+}
+
+#[derive(Serialize)]
+pub struct TeamSummary {
+    slug: String,
+    name: String,
+    plan: Plan,
+    role: Role,
+}
+
+/// Owner only.
+async fn rename_team(
+    State(state): State<AppState>,
+    auth: UserAuth,
+    Path(slug): Path<String>,
+    ApiJson(req): ApiJson<RenameTeam>,
+) -> Result<Json<TeamSummary>, ApiError> {
+    let access = team_access(&state.db, auth.user_id, &slug).await?;
+    access.require_owner()?;
+    let name = valid_team_name(&req.name)?;
+    let mut tx = state.db.begin().await?;
+    let (_, locked) = lock_as(&mut tx, access.team_id, auth.user_id).await?;
+    locked.require_owner()?;
+    let (slug, name, plan): (String, String, String) =
+        sqlx::query_as("UPDATE teams SET name = $2 WHERE id = $1 RETURNING slug::text, name, plan")
+            .bind(access.team_id)
+            .bind(&name)
+            .fetch_one(&mut *tx)
+            .await?;
+    tx.commit().await?;
+    Ok(Json(TeamSummary {
+        slug,
+        name,
+        plan: column_enum(plan)?,
+        role: locked.role,
+    }))
+}
+
+/// Owner only. Memberships, invites, tokens, collections (with their versions,
+/// files, access entries and opens) all go with the team through
+/// `ON DELETE CASCADE`. Blobs stay: they are shared by content hash.
+async fn delete_team(
+    State(state): State<AppState>,
+    auth: UserAuth,
+    Path(slug): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let access = team_access(&state.db, auth.user_id, &slug).await?;
+    access.require_owner()?;
+    let mut tx = state.db.begin().await?;
+    let (_, locked) = lock_as(&mut tx, access.team_id, auth.user_id).await?;
+    locked.require_owner()?;
+    // Stop the billing first: a team that is gone must not keep being charged.
+    // If Stripe cannot be reached the team stays and the owner can retry.
+    let subscription: Option<String> =
+        sqlx::query_scalar("SELECT stripe_subscription_id FROM teams WHERE id = $1")
+            .bind(access.team_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    if state.billing.is_none()
+        && let Some(id) = &subscription
+    {
+        tracing::warn!("billing is off: subscription {id} of team {slug} was not cancelled");
+    }
+    if let (Some(billing), Some(id)) = (&state.billing, subscription) {
+        match billing.cancel_subscription(&id).await {
+            // Already gone on Stripe's side.
+            Ok(()) | Err(BillingError::Api { status: 404, .. }) => {}
+            Err(err) => {
+                tracing::warn!("cannot cancel subscription {id} for team {slug}: {err}");
+                return Err(ApiError::new(
+                    ErrorCode::Unavailable,
+                    "Billing is not reachable right now. Try again in a minute.",
+                ));
+            }
+        }
+    }
+    sqlx::query("DELETE FROM teams WHERE id = $1")
+        .bind(access.team_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Serialize)]
@@ -355,6 +454,16 @@ pub(crate) async fn lock_as(
     ))
 }
 
+/// The seat count changed: the background tick must tell Stripe. Called in the
+/// same transaction as the membership change.
+async fn mark_seats_dirty(conn: &mut PgConnection, team_id: Uuid) -> Result<(), ApiError> {
+    sqlx::query("UPDATE teams SET seats_synced = NULL WHERE id = $1")
+        .bind(team_id)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
 async fn member_count(conn: &mut PgConnection, team_id: Uuid) -> Result<i64, ApiError> {
     Ok(
         sqlx::query_scalar("SELECT count(*) FROM memberships WHERE team_id = $1")
@@ -469,6 +578,105 @@ async fn invite(
     ))
 }
 
+/// Owner only. Only a pending invite can be revoked, and only in its own team.
+async fn revoke_invite(
+    State(state): State<AppState>,
+    auth: UserAuth,
+    Path((slug, id)): Path<(String, Uuid)>,
+) -> Result<StatusCode, ApiError> {
+    let access = team_access(&state.db, auth.user_id, &slug).await?;
+    access.require_owner()?;
+    let mut tx = state.db.begin().await?;
+    let (_, locked) = lock_as(&mut tx, access.team_id, auth.user_id).await?;
+    locked.require_owner()?;
+    let done = sqlx::query(
+        "DELETE FROM member_invites WHERE id = $1 AND team_id = $2 AND accepted_at IS NULL",
+    )
+    .bind(id)
+    .bind(access.team_id)
+    .execute(&mut *tx)
+    .await?;
+    if done.rows_affected() == 0 {
+        return Err(ApiError::not_found());
+    }
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// An invite that is neither accepted nor expired.
+#[derive(sqlx::FromRow)]
+struct OpenInvite {
+    id: Uuid,
+    team_id: Uuid,
+    email: String,
+    role: String,
+    invited_by: Option<Uuid>,
+    expires_at: DateTime<Utc>,
+}
+
+/// Look an invite up by its clear token. Unknown, accepted and expired invites are `404`.
+async fn open_invite(state: &AppState, token: &str) -> Result<OpenInvite, ApiError> {
+    let hash = secret_hash(state.config.secret_key.as_bytes(), token);
+    sqlx::query_as(
+        "SELECT id, team_id, email::text AS email, role, invited_by, expires_at \
+         FROM member_invites WHERE token_hash = $1 AND accepted_at IS NULL AND expires_at > $2",
+    )
+    .bind(&hash)
+    .bind(state.clock.now())
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(ApiError::not_found)
+}
+
+#[derive(Serialize)]
+pub struct InvitePreview {
+    team_name: String,
+    team_slug: String,
+    inviter_name: Option<String>,
+    role: Role,
+    email: String,
+    expires_at: DateTime<Utc>,
+}
+
+/// Requests per IP per minute for invite previews.
+const PREVIEW_PER_MINUTE: u32 = 60;
+
+/// What the accept page shows before sign-in. The token is the credential.
+async fn invite_preview(
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    Path(token): Path<String>,
+) -> Result<Json<InvitePreview>, ApiError> {
+    state.limiter.check(
+        &format!("invite-preview:ip:{ip}"),
+        PREVIEW_PER_MINUTE,
+        Duration::minutes(1),
+    )?;
+    let invite = open_invite(&state, &token).await?;
+    let (team_name, team_slug): (String, String) =
+        sqlx::query_as("SELECT name, slug::text FROM teams WHERE id = $1")
+            .bind(invite.team_id)
+            .fetch_one(&state.db)
+            .await?;
+    let inviter_name: Option<String> = match invite.invited_by {
+        Some(user_id) => {
+            sqlx::query_scalar("SELECT COALESCE(name, email::text) FROM users WHERE id = $1")
+                .bind(user_id)
+                .fetch_optional(&state.db)
+                .await?
+        }
+        None => None,
+    };
+    Ok(Json(InvitePreview {
+        team_name,
+        team_slug,
+        inviter_name,
+        role: column_enum(invite.role)?,
+        email: invite.email,
+        expires_at: invite.expires_at,
+    }))
+}
+
 #[derive(Serialize)]
 pub struct Joined {
     slug: String,
@@ -481,17 +689,13 @@ async fn accept_invite(
     auth: UserAuth,
     Path(token): Path<String>,
 ) -> Result<Json<Joined>, ApiError> {
-    let hash = secret_hash(state.config.secret_key.as_bytes(), &token);
     let now = state.clock.now();
-    let row: Option<(Uuid, Uuid, String)> = sqlx::query_as(
-        "SELECT id, team_id, role FROM member_invites \
-         WHERE token_hash = $1 AND accepted_at IS NULL AND expires_at > $2",
-    )
-    .bind(&hash)
-    .bind(now)
-    .fetch_optional(&state.db)
-    .await?;
-    let (invite_id, team_id, role) = row.ok_or_else(ApiError::not_found)?;
+    let OpenInvite {
+        id: invite_id,
+        team_id,
+        role,
+        ..
+    } = open_invite(&state, &token).await?;
     let mut tx = state.db.begin().await?;
     let plan = lock_team(&mut tx, team_id).await?;
     // Re-read under the lock: a concurrent accept may have used it.
@@ -531,6 +735,7 @@ async fn accept_invite(
     .bind(now)
     .execute(&mut *tx)
     .await?;
+    mark_seats_dirty(&mut tx, team_id).await?;
     sqlx::query("UPDATE member_invites SET accepted_at = $2 WHERE id = $1")
         .bind(invite_id)
         .bind(now)
@@ -592,6 +797,7 @@ async fn remove_member(
     if done.rows_affected() == 0 {
         return Err(ApiError::not_found());
     }
+    mark_seats_dirty(&mut tx, access.team_id).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

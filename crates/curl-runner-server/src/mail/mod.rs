@@ -7,6 +7,7 @@ pub mod worker;
 
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
 
 use crate::clock::Clock;
@@ -35,6 +36,21 @@ pub enum Mail {
         team_name: String,
         collection_name: String,
         link: String,
+    },
+    /// First failed payment. `deadline` is when the team moves to Free.
+    PaymentFailed {
+        to: String,
+        team_name: String,
+        slug: String,
+        deadline: DateTime<Utc>,
+        app_url: String,
+    },
+    /// The team moved from Team to Free.
+    PlanChanged {
+        to: String,
+        team_name: String,
+        slug: String,
+        app_url: String,
     },
 }
 
@@ -72,6 +88,30 @@ impl std::fmt::Debug for Mail {
                 .field("collection_name", collection_name)
                 .field("link", &R)
                 .finish(),
+            Self::PaymentFailed {
+                to,
+                team_name,
+                slug,
+                deadline,
+                ..
+            } => f
+                .debug_struct("PaymentFailed")
+                .field("to", to)
+                .field("team_name", team_name)
+                .field("slug", slug)
+                .field("deadline", deadline)
+                .finish(),
+            Self::PlanChanged {
+                to,
+                team_name,
+                slug,
+                ..
+            } => f
+                .debug_struct("PlanChanged")
+                .field("to", to)
+                .field("team_name", team_name)
+                .field("slug", slug)
+                .finish(),
         }
     }
 }
@@ -81,7 +121,9 @@ impl Mail {
         match self {
             Self::SignInCode { to, .. }
             | Self::MemberInvite { to, .. }
-            | Self::CustomerInvite { to, .. } => to,
+            | Self::CustomerInvite { to, .. }
+            | Self::PaymentFailed { to, .. }
+            | Self::PlanChanged { to, .. } => to,
         }
     }
 }

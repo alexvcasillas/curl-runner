@@ -15,6 +15,7 @@ use uuid::Uuid;
 use crate::error::ApiError;
 use crate::hash::{new_token, secret_hash};
 use crate::state::AppState;
+use crate::teams::is_operator;
 
 /// Sessions slide: each use pushes expiry to this far from now.
 pub const SESSION_TTL: Duration = Duration::days(90);
@@ -160,6 +161,8 @@ pub(crate) fn column_enum<T: serde::de::DeserializeOwned>(value: String) -> Resu
 pub struct MeBody {
     user: UserBody,
     teams: Vec<TeamBody>,
+    /// The user is a server operator (the dashboard shows its admin section).
+    admin: bool,
 }
 
 pub async fn me(State(state): State<AppState>, auth: UserAuth) -> Result<Json<MeBody>, ApiError> {
@@ -187,7 +190,50 @@ pub async fn me(State(state): State<AppState>, auth: UserAuth) -> Result<Json<Me
             })
         })
         .collect::<Result<_, ApiError>>()?;
-    Ok(Json(MeBody { user, teams }))
+    let admin = is_operator(&state.db, &state.config, &user.email).await?;
+    Ok(Json(MeBody { user, teams, admin }))
+}
+
+#[derive(Serialize)]
+pub struct IdentityBody {
+    provider: String,
+    email: String,
+    created_at: DateTime<Utc>,
+}
+
+/// How the caller can sign in: the account email (always) plus each linked
+/// OAuth provider. The email is a pseudo-identity, listed first.
+pub async fn identities(
+    State(state): State<AppState>,
+    auth: UserAuth,
+) -> Result<Json<Vec<IdentityBody>>, ApiError> {
+    let (email, created_at): (String, DateTime<Utc>) =
+        sqlx::query_as("SELECT email::text, created_at FROM users WHERE id = $1")
+            .bind(auth.user_id)
+            .fetch_one(&state.db)
+            .await?;
+    let linked: Vec<(String, Option<String>, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT provider, email::text, created_at FROM identities \
+         WHERE user_id = $1 ORDER BY created_at, provider",
+    )
+    .bind(auth.user_id)
+    .fetch_all(&state.db)
+    .await?;
+    let mut rows = vec![IdentityBody {
+        provider: "email".to_owned(),
+        email: email.clone(),
+        created_at,
+    }];
+    rows.extend(
+        linked
+            .into_iter()
+            .map(|(provider, e, created_at)| IdentityBody {
+                provider,
+                email: e.unwrap_or_else(|| email.clone()),
+                created_at,
+            }),
+    );
+    Ok(Json(rows))
 }
 
 pub async fn sign_out(
