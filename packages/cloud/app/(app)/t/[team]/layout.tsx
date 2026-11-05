@@ -40,7 +40,7 @@ export default async function TeamLayout({
       billing: true,
       summary,
       restricted: collections.filter((c) => c.access === 'restricted').length,
-      members: detail.members.length,
+      members: summary.seats,
     });
     const banner = kind ? (
       <PlanBanner
@@ -66,7 +66,7 @@ export default async function TeamLayout({
         teamName={detail.name}
         owner={detail.role === 'owner'}
         owners={detail.members.filter((m) => m.role === 'owner').map((m) => m.name || m.email)}
-        members={detail.members.length}
+        members={summary.seats}
         pending={detail.pending_invites.length}
         prices={prices}
         billingUrl={`${env().PUBLIC_APP_URL}${routes.teamTab(team, 'billing')}`}

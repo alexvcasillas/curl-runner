@@ -67,7 +67,7 @@ function modeOf(s: BillingSummary): Mode {
 export function BillingView(p: BillingViewProps) {
   const { summary: s, prices, teamName } = p;
   const upgrade = useUpgrade();
-  const [interval, setInterval] = useState<Interval>('annual');
+  const [interval, setPeriod] = useState<Interval>('annual');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const mode = modeOf(s);
@@ -113,7 +113,7 @@ export function BillingView(p: BillingViewProps) {
               (sub === 'annual' ? prices.annual : prices.monthly).unit_amount * s.seats,
               prices.annual.currency,
             )} / ${sub === 'annual' ? 'year' : 'month'}`
-          : '—';
+          : 'Unavailable';
 
   const foot = {
     free: `Upgrading starts today. The first invoice covers the members ${teamName} has now.`,
@@ -208,7 +208,7 @@ export function BillingView(p: BillingViewProps) {
             <Segmented
               label="Billing interval"
               value={interval}
-              onChange={setInterval}
+              onChange={setPeriod}
               options={[
                 { value: 'annual', label: 'Annual' },
                 { value: 'monthly', label: 'Monthly' },

@@ -58,14 +58,14 @@ export type UpgradeDialogProps = {
  * pay on Stripe. A member sees who to ask instead.
  */
 export function UpgradeDialog(p: UpgradeDialogProps) {
-  const [interval, setInterval] = useState<Interval>(p.initialInterval);
+  const [interval, setPeriod] = useState<Interval>(p.initialInterval);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
   // A fresh dialog each time it opens.
   useEffect(() => {
     if (p.open) {
-      setInterval(p.initialInterval);
+      setPeriod(p.initialInterval);
       setBusy(false);
       setProblem(null);
     }
@@ -138,7 +138,7 @@ export function UpgradeDialog(p: UpgradeDialogProps) {
                   name="upgrade-interval"
                   value="annual"
                   checked={interval === 'annual'}
-                  onChange={() => setInterval('annual')}
+                  onChange={() => setPeriod('annual')}
                   title={`Annual · ${perMonth(prices, 'annual')} per member a month`}
                   description={`Billed ${dollars(prices.annual.unit_amount, prices.annual.currency)} per member a year.${freeNote}`}
                 />
@@ -146,7 +146,7 @@ export function UpgradeDialog(p: UpgradeDialogProps) {
                   name="upgrade-interval"
                   value="monthly"
                   checked={interval === 'monthly'}
-                  onChange={() => setInterval('monthly')}
+                  onChange={() => setPeriod('monthly')}
                   title={`Monthly · ${perMonth(prices, 'monthly')} per member a month`}
                   description="Cancel any month."
                 />

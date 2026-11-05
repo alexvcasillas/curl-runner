@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cookieJar } from './cookies';
@@ -17,10 +17,11 @@ vi.mock('next/navigation', () => ({
   notFound: () => {
     throw new Error('NEXT_NOT_FOUND');
   },
-  useRouter: () => ({ refresh: refresh }),
+  useRouter: () => ({ refresh: refresh, replace: replace }),
   usePathname: () => path.current,
 }));
 const refresh = vi.fn();
+const replace = vi.fn();
 const path = { current: '/t/acme' };
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/link', () => ({
@@ -265,6 +266,34 @@ function view(over: Partial<React.ComponentProps<typeof BillingView>> = {}) {
   return { user, onPortal, onCheckout };
 }
 
+describe('BillingPage', () => {
+  const fetchMock = vi.fn();
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubEnv('API_INTERNAL_URL', 'http://api.test');
+    vi.stubEnv('PUBLIC_APP_URL', 'http://localhost:3000');
+    resetEnv();
+  });
+  const json = (body: unknown) =>
+    new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+
+  it('is a 404 with billing off, without asking for a plan', async () => {
+    fetchMock.mockImplementation(async () =>
+      json({ version: '2.6.0', sign_in: ['email'], signup: 'open', billing: false }),
+    );
+    const { default: BillingPage } = await import('@/app/(app)/t/[team]/billing/page');
+    await expect(
+      BillingPage({ params: Promise.resolve({ team: 'acme' }), searchParams: Promise.resolve({}) }),
+    ).rejects.toThrow('NEXT_NOT_FOUND');
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.includes('/billing'))).toBe(false);
+  });
+});
+
 describe('BillingView', () => {
   it('Free, owner: plan cards with API prices, annual first', () => {
     view();
@@ -393,6 +422,11 @@ describe('BillingView', () => {
     expect(screen.queryByRole('button', { name: 'Manage billing' })).toBeNull();
   });
 
+  it('says Unavailable, not a dash, when prices are missing on Team', () => {
+    view({ summary: TEAM, prices: null });
+    expect(screen.getByText('Unavailable')).toBeInTheDocument();
+  });
+
   it('copes with prices it could not read', () => {
     view({ prices: null });
     expect(
@@ -462,6 +496,19 @@ describe('CheckoutStatus', () => {
       vi.advanceTimersByTime(10_000);
     });
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('drops ?checkout=done once the plan reads team, keeping the thank-you up', () => {
+    path.current = '/t/acme/billing';
+    replace.mockReset();
+    const { rerender } = render(<CheckoutStatus plan="team" checkout="done" teamName="Acme" />);
+    expect(replace).toHaveBeenCalledWith('/t/acme/billing');
+    rerender(<CheckoutStatus plan="team" checkout={null} teamName="Acme" />);
+    expect(screen.getByRole('status')).toHaveTextContent('Thanks. Acme is on the Team plan.');
+    // A later load without the param shows nothing.
+    cleanup();
+    const again = render(<CheckoutStatus plan="team" checkout={null} teamName="Acme" />);
+    expect(again.container).toBeEmptyDOMElement();
   });
 
   it('cancelled: says nothing was charged', () => {

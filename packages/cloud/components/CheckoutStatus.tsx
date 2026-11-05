@@ -1,6 +1,6 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import type { Plan } from '@/lib/types';
 import { Button } from './Button';
@@ -25,8 +25,18 @@ export function CheckoutStatus({
   teamName: string;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const waiting = checkout === 'done' && plan !== 'team';
   const [slow, setSlow] = useState(false);
+  // The thank-you stays up after `?checkout=done` is dropped, so a reload doesn't repeat it.
+  const [thanked, setThanked] = useState(false);
+  const arrived = checkout === 'done' && plan === 'team';
+  useEffect(() => {
+    if (arrived && !thanked) {
+      setThanked(true);
+      router.replace(pathname);
+    }
+  }, [arrived, thanked, pathname, router]);
   // Held in a ref so a new router object never restarts the 30 seconds.
   const refresh = useRef(() => router.refresh());
   refresh.current = () => router.refresh();
@@ -46,7 +56,7 @@ export function CheckoutStatus({
     };
   }, [waiting, slow]);
 
-  if (checkout === 'done' && plan === 'team') {
+  if (arrived || thanked) {
     return (
       <Notice tone="ok" role="status" className="px-4 py-3 text-[13px] leading-5">
         Thanks. {teamName} is on the Team plan. Restricted sharing and unlimited members are on now.
