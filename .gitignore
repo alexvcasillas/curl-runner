@@ -42,6 +42,10 @@ packages/docs/.vercel
 packages/docs/.turbo
 packages/docs/next-env.d.ts
 
+# Next.js (packages/cloud)
+packages/cloud/.next/
+packages/cloud/next-env.d.ts
+
 # Generated documentation markdown (regenerated at build time)
 
 # Build

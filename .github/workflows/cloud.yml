@@ -1,0 +1,91 @@
+name: Cloud
+
+on:
+  pull_request:
+    paths:
+      - "packages/cloud/**"
+      - "docker-compose.yaml"
+      - ".github/workflows/cloud.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/cloud/**"
+      - "docker-compose.yaml"
+      - ".github/workflows/cloud.yml"
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/alexvcasillas/curl-runner-cloud
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/setup@v3
+        with:
+          # Node and the store cache come from actions/setup-node.
+          install: false
+          node-version-file: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm biome ci packages/cloud
+      - run: pnpm --filter @curl-runner/cloud typecheck
+      - run: pnpm --filter @curl-runner/cloud test
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      # The image builds on each target platform: Next's standalone output
+      # carries sharp's native binary, so arm64 builds under QEMU.
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short,prefix=sha-
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: packages/cloud/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=cloud
+          cache-to: type=gha,mode=max,scope=cloud
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Shares server.yml's group: both redeploy the same compose stack.
+    concurrency:
+      group: deploy-server
+      cancel-in-progress: false
+    steps:
+      - name: Trigger Coolify deploy
+        env:
+          COOLIFY_WEBHOOK_SERVER: ${{ secrets.COOLIFY_WEBHOOK_SERVER }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          curl --request POST "$COOLIFY_WEBHOOK_SERVER" \
+            --header "Authorization: Bearer $COOLIFY_TOKEN" \
+            --fail --silent --show-error --retry 3 --retry-delay 5
