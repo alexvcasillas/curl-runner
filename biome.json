@@ -16,6 +16,7 @@
       "!curl-runner",
       "!packages/cli/examples",
       "!crates/**/*",
+      "!target",
       "!parity/**/*",
       "!packages/cli/dist",
       "!packages/web/.next",
@@ -23,9 +24,12 @@
       "!**/.next",
       "!**/out",
       "!packages/docs/.next",
+      "!packages/cloud/.next",
+      "!**/next-env.d.ts",
       "!packages/cli/build",
       "!packages/docs/.source",
       "!packages/docs/app/globals.css",
+      "!packages/cloud/app/globals.css",
       "!.claude/settings.local.json"
     ]
   },

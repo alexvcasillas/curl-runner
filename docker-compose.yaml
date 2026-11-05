@@ -1,11 +1,13 @@
-# Runs the curl-runner server from the prebuilt image on GHCR, with Postgres.
-# Coolify deploys this file; the image is built by .github/workflows/server.yml.
+# Runs the curl-runner server and the Cloud dashboard from their prebuilt images
+# on GHCR, with Postgres. Coolify deploys this file; the images are built by
+# .github/workflows/server.yml and .github/workflows/cloud.yml.
 # Without Coolify, create the network first with `docker network create coolify`
 # or remove the `coolify` entries below. Postgres sits only on the private
 # `internal` network.
 #
-# Required: POSTGRES_PASSWORD and SECRET_KEY (32+ bytes). Everything else is
-# optional; an unset value falls back to the server's default.
+# Required: POSTGRES_PASSWORD, SECRET_KEY (32+ bytes), PUBLIC_API_URL and
+# PUBLIC_APP_URL. Everything else is optional; an unset value falls back to the
+# server's default.
 services:
   server:
     image: ghcr.io/alexvcasillas/curl-runner-server:${SERVER_IMAGE_TAG:-latest}
@@ -46,10 +48,37 @@ services:
       STRIPE_PRICE_MONTHLY: ${STRIPE_PRICE_MONTHLY:-}
       STRIPE_PRICE_ANNUAL: ${STRIPE_PRICE_ANNUAL:-}
     networks:
+      # The dashboard calls the API here, on the private network.
+      internal:
+        aliases:
+          - curl-runner-server
+      coolify:
+    healthcheck:
+      test: ["CMD", "/curl-runner-server", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # The dashboard at cloud.curl-runner.com. It reaches the API on the private
+  # network, so the API sees the dashboard as its one trusted proxy hop.
+  app:
+    image: ghcr.io/alexvcasillas/curl-runner-cloud:${CLOUD_IMAGE_TAG:-latest}
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      API_INTERNAL_URL: http://curl-runner-server:8080
+      # No defaults: the dashboard would advertise localhost and drop Secure cookies.
+      PUBLIC_API_URL: ${PUBLIC_API_URL:?set PUBLIC_API_URL to the API's public URL}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:?set PUBLIC_APP_URL to the dashboard's public URL}
+      PORT: 3000
+    networks:
       - internal
       - coolify
     healthcheck:
-      test: ["CMD", "/curl-runner-server", "healthcheck"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5

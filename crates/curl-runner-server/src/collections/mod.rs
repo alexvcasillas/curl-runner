@@ -80,6 +80,8 @@ struct CollectionBody {
     access: Access,
     current_version: Option<i32>,
     updated_at: Option<DateTime<Utc>>,
+    /// Who published the current version: `token {name}` or an email.
+    publisher: Option<String>,
 }
 
 #[derive(FromRow)]
@@ -90,6 +92,7 @@ struct CollectionRow {
     access: String,
     current_version: Option<i32>,
     updated_at: Option<DateTime<Utc>>,
+    publisher: Option<String>,
 }
 
 impl CollectionRow {
@@ -101,14 +104,19 @@ impl CollectionRow {
             access: column_enum(self.access)?,
             current_version: self.current_version,
             updated_at: self.updated_at,
+            publisher: self.publisher,
         })
     }
 }
 
-/// `updated_at` is the current version's publish time (`null` before the first).
+/// `updated_at` and `publisher` are the current version's (`null` before the
+/// first), read from one lateral subquery so a list costs one query.
 const COLLECTION_COLUMNS: &str = "c.slug::text AS slug, c.name, c.source, c.access, c.current_version, \
-     (SELECT v.created_at FROM versions v \
-      WHERE v.collection_id = c.id AND v.number = c.current_version) AS updated_at";
+     cv.created_at AS updated_at, cv.published_by AS publisher";
+
+/// The current version's row, joined to each collection.
+const CURRENT_VERSION_JOIN: &str = "LEFT JOIN LATERAL (SELECT v.created_at, v.published_by \
+     FROM versions v WHERE v.collection_id = c.id AND v.number = c.current_version) cv ON true";
 
 /// Read-only, so a team's publish token may call it as well as a member.
 async fn list(
@@ -116,7 +124,8 @@ async fn list(
     auth: PublishAuth,
 ) -> Result<Json<Vec<CollectionBody>>, ApiError> {
     let rows: Vec<CollectionRow> = sqlx::query_as(&format!(
-        "SELECT {COLLECTION_COLUMNS} FROM collections c WHERE c.team_id = $1 ORDER BY c.slug"
+        "SELECT {COLLECTION_COLUMNS} FROM collections c {CURRENT_VERSION_JOIN} \
+         WHERE c.team_id = $1 ORDER BY c.slug"
     ))
     .bind(auth.team_id)
     .fetch_all(&state.db)
@@ -155,7 +164,7 @@ async fn patch(
     let row: Option<CollectionRow> = sqlx::query_as(&format!(
         "WITH c AS (UPDATE collections SET source = COALESCE($3, source) \
                     WHERE team_id = $1 AND slug = $2 RETURNING *) \
-         SELECT {COLLECTION_COLUMNS} FROM c"
+         SELECT {COLLECTION_COLUMNS} FROM c {CURRENT_VERSION_JOIN}"
     ))
     .bind(access.team_id)
     .bind(&slug)

@@ -206,6 +206,8 @@ async fn shared_lists_restricted_entry_and_opened_public(pool: PgPool) {
         .collect();
     assert_eq!(slugs, ["newer", "older"], "{rows:?}");
     assert_eq!(rows[0]["team"], "acme");
+    assert_eq!(rows[0]["team_slug"], "acme");
+    assert_eq!(rows[1]["team_slug"], "acme");
     assert_eq!(rows[0]["name"], "newer");
     assert_eq!(rows[0]["version"], 1);
     assert_eq!(rows[0]["access"], "public");

@@ -116,6 +116,7 @@ async fn first_publish_creates_git_collection_v1(pool: PgPool) {
     assert_eq!(list[0]["access"], "off");
     assert_eq!(list[0]["current_version"], 1);
     assert!(list[0]["updated_at"].is_string());
+    assert_eq!(list[0]["publisher"], "a@example.com");
 
     // A fresh link token, hashed, and recoverable with the secret key.
     let (hash, enc): (String, String) =

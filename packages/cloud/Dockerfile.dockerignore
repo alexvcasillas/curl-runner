@@ -1,0 +1,12 @@
+# Used instead of the root .dockerignore for packages/cloud/Dockerfile.
+**
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!packages/cloud
+packages/cloud/node_modules
+packages/cloud/.next
+packages/cloud/next-env.d.ts
+packages/cloud/*.tsbuildinfo
+packages/cloud/tests
+packages/cloud/Dockerfile*

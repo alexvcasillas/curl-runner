@@ -1,0 +1,195 @@
+name: Cloud
+
+on:
+  pull_request:
+    paths:
+      - "packages/cloud/**"
+      - "crates/curl-runner-server/**"
+      - "crates/curl-runner/src/cloud/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "biome.json"
+      - "docker-compose.yaml"
+      - ".github/workflows/cloud.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/cloud/**"
+      - "crates/curl-runner-server/**"
+      - "crates/curl-runner/src/cloud/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "biome.json"
+      - "docker-compose.yaml"
+      - ".github/workflows/cloud.yml"
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/alexvcasillas/curl-runner-cloud
+
+jobs:
+  # Server and CLI changes run the tests, but only a dashboard change builds and
+  # deploys the image. Anything unclear (a manual run, a missing base) counts as changed.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      dashboard: ${{ steps.diff.outputs.dashboard }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          changed=true
+          if [ -n "$BASE" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            if git diff --quiet "$BASE" "$GITHUB_SHA" -- \
+              packages/cloud package.json pnpm-lock.yaml pnpm-workspace.yaml .github/workflows/cloud.yml; then
+              changed=false
+            fi
+          fi
+          echo "dashboard=$changed" >> "$GITHUB_OUTPUT"
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/setup@v3
+        with:
+          # Node and the store cache come from actions/setup-node.
+          install: false
+          node-version-file: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm biome ci packages/cloud
+      - run: pnpm --filter @curl-runner/cloud typecheck
+      - run: pnpm --filter @curl-runner/cloud test
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: pg
+          POSTGRES_DB: cloud_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:pg@localhost:5432/cloud_e2e
+      E2E_API_URL: http://localhost:8090
+      E2E_APP_URL: http://localhost:3090
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/setup@v3
+        with:
+          install: false
+          node-version-file: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: cargo build --release -p curl-runner-server -p curl-runner
+      - run: pnpm --filter @curl-runner/cloud build
+      - run: npx playwright install --with-deps chromium
+        working-directory: packages/cloud
+      # SMTP points at a closed port on purpose. With no SMTP the server logs a
+      # mail and blanks its stored body, so the test couldn't read the code.
+      - name: Start the API and the dashboard
+        run: |
+          SECRET_KEY=$(openssl rand -hex 32) \
+          PUBLIC_API_URL=$E2E_API_URL PUBLIC_APP_URL=$E2E_APP_URL PORT=8090 \
+          SIGNUP=open DEFAULT_PLAN=free SMTP_HOST=127.0.0.1 SMTP_PORT=9 \
+          nohup target/release/curl-runner-server > server.log 2>&1 &
+          API_INTERNAL_URL=$E2E_API_URL PUBLIC_API_URL=$E2E_API_URL PUBLIC_APP_URL=$E2E_APP_URL \
+          nohup pnpm --filter @curl-runner/cloud exec next start --port 3090 > app.log 2>&1 &
+          for url in $E2E_API_URL/health $E2E_APP_URL/healthz; do
+            for _ in $(seq 1 60); do
+              curl -fs "$url" > /dev/null && break
+              sleep 1
+            done
+            curl -fs "$url" > /dev/null
+          done
+      - run: pnpm --filter @curl-runner/cloud test:e2e
+        env:
+          CURL_RUNNER_BIN: ${{ github.workspace }}/target/release/curl-runner
+      - name: Logs
+        if: failure()
+        run: tail -n 100 server.log app.log
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: e2e-report
+          path: |
+            packages/cloud/playwright-report
+            packages/cloud/test-results
+
+  build:
+    needs: [test, e2e, changes]
+    if: needs.changes.outputs.dashboard == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      # The image builds on each target platform: Next's standalone output
+      # carries sharp's native binary, so arm64 builds under QEMU.
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short,prefix=sha-
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: packages/cloud/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=cloud
+          cache-to: type=gha,mode=max,scope=cloud
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Shares server.yml's group: both redeploy the same compose stack.
+    concurrency:
+      group: deploy-server
+      cancel-in-progress: false
+    steps:
+      - name: Trigger Coolify deploy
+        env:
+          COOLIFY_WEBHOOK_SERVER: ${{ secrets.COOLIFY_WEBHOOK_SERVER }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          curl --request POST "$COOLIFY_WEBHOOK_SERVER" \
+            --header "Authorization: Bearer $COOLIFY_TOKEN" \
+            --fail --silent --show-error --retry 3 --retry-delay 5

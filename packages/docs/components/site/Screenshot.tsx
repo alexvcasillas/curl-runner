@@ -1,6 +1,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { type CloudScreenshotName, cloudScreenshot } from '@/lib/cloud-screenshots';
 import {
   type Screenshot as ScreenshotData,
   STUDIO_DOCS_HREF,
@@ -83,6 +84,24 @@ export function StudioScreenshot({
           </>
         )
       }
+    />
+  );
+}
+
+/** A curl-runner Cloud dashboard screenshot in a docs page (`<CloudScreenshot name="…">caption</CloudScreenshot>`). */
+export function CloudScreenshot({
+  name,
+  children,
+}: {
+  name: CloudScreenshotName;
+  children?: ReactNode;
+}) {
+  return (
+    <ScreenshotFrame
+      shot={cloudScreenshot(name)}
+      sizes="(min-width: 1280px) 840px, (min-width: 768px) calc(100vw - 320px), 100vw"
+      className="my-8"
+      caption={children}
     />
   );
 }

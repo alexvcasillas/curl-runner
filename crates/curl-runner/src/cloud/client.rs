@@ -5,7 +5,7 @@ use super::Env;
 use crate::net;
 use crate::version_check::{HOOKS_ENABLED, hook};
 use curl::easy::List;
-use curl_runner_cloud_proto::{ErrorBody, ErrorCode, Plan, Role};
+use curl_runner_cloud_proto::{ErrorBody, ErrorCode, Plan, Role, ServerInfo};
 use flate2::{Compression, write::GzEncoder};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::io::Write;
@@ -270,6 +270,15 @@ impl Client {
     pub fn email_verify(&self, email: &str, code: &str) -> Result<Verified, CloudError> {
         let body = serde_json::json!({"email": email, "code": code});
         self.json("POST", "/v1/auth/email/verify", Some(&body))
+    }
+
+    pub fn info(&self) -> Result<ServerInfo, CloudError> {
+        self.json("GET", "/v1/info", None::<&()>)
+    }
+
+    pub fn handoff_redeem(&self, code: &str) -> Result<Verified, CloudError> {
+        let body = serde_json::json!({"code": code});
+        self.json("POST", "/v1/auth/handoff/redeem", Some(&body))
     }
 
     pub fn sign_out(&self) -> Result<(), CloudError> {

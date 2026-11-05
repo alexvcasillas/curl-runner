@@ -1,0 +1,137 @@
+@import "tailwindcss";
+
+/*
+ * curl-runner studio tokens, dark only, as the approved Cloud boards use them.
+ * Colour means state: neutrals carry the interface, blue is links and focus.
+ */
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-black: #000000;
+
+  /* Ground and surfaces */
+  --color-bg: #0a0a0a;
+  --color-canvas: #030303;
+  --color-raised: #0f0f0f;
+  --color-surface-100: #111111;
+  --color-surface-200: #141414;
+  --color-surface-300: #1f1f1f;
+  --color-skeleton: #1a1a1a;
+  --color-overlay: #000000b3;
+
+  /* Lines */
+  --color-hairline: #1f1f1f;
+  --color-control: #2e2e2e;
+  --color-strong: #4d4d4d;
+
+  /* Text */
+  --color-fg: #ededed;
+  --color-fg-muted: #a1a1a1;
+  --color-fg-subtle: #8f8f8f;
+  --color-fg-disabled: #5e5e5e;
+
+  /* The one bright button */
+  --color-primary: #ededed;
+  --color-primary-hover: #d4d4d4;
+  --color-on-primary: #0a0a0a;
+
+  /* Links and focus */
+  --color-blue: #52a8ff;
+  --color-blue-hover: #8ec5ff;
+
+  /* States, each with its subtle fill and border */
+  --color-success: #62c073;
+  --color-success-bg: #0b1a0f;
+  --color-success-border: #1c3f24;
+  --color-warning: #ffb224;
+  --color-warning-bg: #1a1404;
+  --color-warning-border: #3d2e0b;
+  --color-danger: #ff6166;
+  --color-danger-bg: #1a0b0c;
+  --color-danger-border: #3c1618;
+  --color-info: #52a8ff;
+  --color-info-bg: #0a1a2e;
+  --color-info-border: #10325a;
+
+  --shadow-menu: 0 8px 24px #00000099;
+  --shadow-dialog: 0 24px 64px #000000cc;
+  --shadow-focus: 0 0 0 1px #0a0a0a, 0 0 0 3px #52a8ff;
+
+  --animate-spin: spin 0.7s linear infinite;
+  --animate-rise: rise 160ms ease-out;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body {
+    background: var(--color-bg);
+    color: var(--color-fg);
+  }
+
+  body {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100dvh;
+  }
+
+  a {
+    color: var(--color-blue);
+    text-decoration: none;
+  }
+
+  a:hover {
+    color: var(--color-blue-hover);
+  }
+
+  /* The studio focus ring: 1px ground gap, then 2px blue. */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 0 4px;
+    border-radius: 4px;
+    background: var(--color-surface-300);
+    color: var(--color-fg);
+  }
+
+  dialog::backdrop {
+    background: var(--color-overlay);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
