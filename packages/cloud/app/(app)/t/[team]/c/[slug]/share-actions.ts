@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { normalizeEntry } from '@/lib/access-entry';
 import { api } from '@/lib/api';
 import { ApiError, messageFor } from '@/lib/errors';
 import { isSlug } from '@/lib/params';
@@ -17,6 +18,35 @@ export type SharePatch = {
 };
 
 const enc = encodeURIComponent;
+
+const INVALID: ShareResult = {
+  ok: false,
+  message: 'Something in the form isn’t right. Check it and try again.',
+};
+
+/** Only what the page can send. Anything else never reaches the API. */
+function validPatch(p: unknown): p is SharePatch {
+  if (typeof p !== 'object' || p === null || Array.isArray(p)) {
+    return false;
+  }
+  const o = p as Record<string, unknown>;
+  const known = ['access', 'expires_in_days', 'reset_link'];
+  if (Object.keys(o).some((k) => !known.includes(k))) {
+    return false;
+  }
+  if ('access' in o && o.access !== 'off' && o.access !== 'public' && o.access !== 'restricted') {
+    return false;
+  }
+  if (
+    'expires_in_days' in o &&
+    o.expires_in_days !== null &&
+    o.expires_in_days !== 7 &&
+    o.expires_in_days !== 30
+  ) {
+    return false;
+  }
+  return !('reset_link' in o) || typeof o.reset_link === 'boolean';
+}
 
 async function run(
   team: string,
@@ -45,6 +75,9 @@ export async function patchShare(
   slug: string,
   patch: SharePatch,
 ): Promise<ShareResult> {
+  if (!validPatch(patch)) {
+    return INVALID;
+  }
   return run(team, slug, (base) => api<Share>(base, { method: 'PATCH', json: patch }));
 }
 
@@ -55,16 +88,24 @@ export async function addEntry(
   entry: string,
   notify: boolean,
 ): Promise<ShareResult> {
+  const clean = typeof entry === 'string' ? normalizeEntry(entry) : null;
+  if (clean === null || typeof notify !== 'boolean') {
+    return INVALID;
+  }
   return run(team, slug, async (base) => {
-    await api(`${base}/entries`, { method: 'POST', json: { entry: entry.trim(), notify } });
+    await api(`${base}/entries`, { method: 'POST', json: { entry: clean, notify } });
     return api<Share>(base);
   });
 }
 
 /** `DELETE …/share/entries/{entry}`. The entry can be `*@customer.com`, so it is encoded. */
 export async function removeEntry(team: string, slug: string, entry: string): Promise<ShareResult> {
+  const clean = typeof entry === 'string' ? normalizeEntry(entry) : null;
+  if (clean === null) {
+    return INVALID;
+  }
   return run(team, slug, async (base) => {
-    await api(`${base}/entries/${enc(entry)}`, { method: 'DELETE' });
+    await api(`${base}/entries/${enc(clean)}`, { method: 'DELETE' });
     return api<Share>(base);
   });
 }

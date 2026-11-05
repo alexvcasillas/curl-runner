@@ -258,13 +258,30 @@ describe('SharePanel', () => {
       expect(await screen.findByText('Domain · anyone at customer.com')).toBeInTheDocument();
     });
 
+    it('rejects an invalid entry inline without calling the API', async () => {
+      const { user, onAdd } = setup(mk({ access: 'restricted' }));
+      await user.type(screen.getByLabelText('Email or domain'), 'foo');
+      await user.click(screen.getByRole('button', { name: 'Add' }));
+      expect(
+        screen.getByText('Enter an email like ada@customer.com, or a domain like *@customer.com.'),
+      ).toBeInTheDocument();
+      expect(onAdd).not.toHaveBeenCalled();
+    });
+
+    it('trims and lower-cases before sending', async () => {
+      const { user, onAdd } = setup(mk({ access: 'restricted' }));
+      await user.type(screen.getByLabelText('Email or domain'), '  *@Customer.com ');
+      await user.click(screen.getByRole('button', { name: 'Add' }));
+      expect(onAdd).toHaveBeenCalledWith('*@customer.com', true);
+    });
+
     it('shows the error from a refused add and keeps the text', async () => {
       const { user, onAdd } = setup(mk({ access: 'restricted' }));
       onAdd.mockResolvedValueOnce({ ok: false, message: 'An entry is an email.' } as never);
-      await user.type(screen.getByLabelText('Email or domain'), 'nope');
+      await user.type(screen.getByLabelText('Email or domain'), 'nope@example.com');
       await user.click(screen.getByRole('button', { name: 'Add' }));
       expect(await screen.findByText('An entry is an email.')).toBeInTheDocument();
-      expect(screen.getByLabelText('Email or domain')).toHaveValue('nope');
+      expect(screen.getByLabelText('Email or domain')).toHaveValue('nope@example.com');
     });
 
     it('confirms before removing', async () => {
@@ -333,6 +350,35 @@ describe('share actions', () => {
       'http://api.test/v1/teams/acme/collections/payments-api/share/entries/*%40customer.com',
     );
     expect(fetchMock.mock.calls[0][1].method).toBe('DELETE');
+  });
+
+  it('rejects inputs the page never sends, without calling the API', async () => {
+    const bad = [
+      actions.patchShare('acme', 'payments-api', { access: 'admin' } as never),
+      actions.patchShare('acme', 'payments-api', { expires_in_days: 5 } as never),
+      actions.patchShare('acme', 'payments-api', { expires_in_days: '7' } as never),
+      actions.patchShare('acme', 'payments-api', { reset_link: 'yes' } as never),
+      actions.patchShare('acme', 'payments-api', { extra: 1 } as never),
+      actions.addEntry('acme', 'payments-api', 'foo', true),
+      actions.addEntry('acme', 'payments-api', 'a@b.com', 'yes' as never),
+      actions.removeEntry('acme', 'payments-api', '..'),
+      actions.removeEntry('acme', 'payments-api', '../x'),
+    ];
+    for (const r of await Promise.all(bad)) {
+      expect(r.ok).toBe(false);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('sends a lower-cased entry', async () => {
+    fetchMock
+      .mockResolvedValueOnce(json(201, entry('a@b.com')))
+      .mockResolvedValueOnce(json(200, mk()));
+    await actions.addEntry('acme', 'payments-api', ' A@B.com ', false);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      entry: 'a@b.com',
+      notify: false,
+    });
   });
 
   it('rejects an invalid slug without calling the API', async () => {

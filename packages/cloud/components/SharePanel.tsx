@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useId, useRef, useState } from 'react';
+import { normalizeEntry } from '@/lib/access-entry';
 import { cx } from '@/lib/cx';
 import { absoluteTime } from '@/lib/time';
 import type { AccessMode, Plan, Share } from '@/lib/types';
@@ -183,8 +184,12 @@ export function SharePanel({
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
-    const value = entry.trim();
-    if (!value || adding) {
+    if (adding) {
+      return;
+    }
+    const value = normalizeEntry(entry);
+    if (value === null) {
+      setAddError('Enter an email like ada@customer.com, or a domain like *@customer.com.');
       return;
     }
     setAdding(true);
