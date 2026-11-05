@@ -51,7 +51,7 @@ The compose file attaches the service to an external network named `coolify`, be
 docker network create coolify
 ```
 
-Or remove the `coolify` entries from `docker-compose.yaml`: the top-level `coolify` network and the `coolify` line under `server`'s `networks`. Keep `internal`.
+Or remove the `coolify` entries from `docker-compose.yaml`: the top-level `coolify` network, the `coolify:` entry under `server`'s `networks`, and the `- coolify` line under `app`'s. Keep `internal`.
 
 ## The dashboard [#dashboard]
 
@@ -64,7 +64,7 @@ Give each service a public address on your reverse proxy, with TLS:
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `PUBLIC_APP_URL` | none | Required. The dashboard's public URL. It decides where links and emails point, and the session cookie is marked `Secure` for an `https` URL. |
+| `PUBLIC_APP_URL` | none | Required. The dashboard's public URL. It decides where links and emails point, and the session cookie is marked `Secure`. Use `https` unless it's `http://localhost`. |
 | `PUBLIC_API_URL` | none | Required. The API's public URL. The dashboard advertises it to the CLI. |
 | `API_INTERNAL_URL` | `http://localhost:8080` | How the dashboard reaches the API. The compose file sets it to `http://curl-runner-server:8080`, on the private network. Set it yourself if you run the dashboard some other way. |
 | `CLOUD_IMAGE_TAG` | `latest` | The dashboard image tag. |
@@ -83,7 +83,9 @@ The dashboard serves `/.well-known/curl-runner.json`:
 {"api":"https://api.example.com"}
 ```
 
-`curl-runner login --browser` and `curl-runner pull` use it to find the API from the dashboard's address, so a person only needs to know your dashboard URL. It reports `PUBLIC_API_URL`.
+`curl-runner pull <link>` reads it on the dashboard host of the link to find the API, so a person only needs the link. It reports `PUBLIC_API_URL`.
+
+`curl-runner login --browser --server <api url>` goes the other way. It reads the dashboard's URL from the API's `/v1/info`, which reports `PUBLIC_APP_URL`.
 
 ## Check it's up [#health]
 

@@ -66,7 +66,8 @@ services:
   app:
     image: ghcr.io/alexvcasillas/curl-runner-cloud:${CLOUD_IMAGE_TAG:-latest}
     depends_on:
-      - server
+      server:
+        condition: service_healthy
     environment:
       API_INTERNAL_URL: http://curl-runner-server:8080
       # No defaults: the dashboard would advertise localhost and drop Secure cookies.

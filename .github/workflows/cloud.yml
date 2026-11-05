@@ -30,6 +30,29 @@ env:
   IMAGE: ghcr.io/alexvcasillas/curl-runner-cloud
 
 jobs:
+  # Server and CLI changes run the tests, but only a dashboard change builds and
+  # deploys the image. Anything unclear (a manual run, a missing base) counts as changed.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      dashboard: ${{ steps.diff.outputs.dashboard }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          changed=true
+          if [ -n "$BASE" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            if git diff --quiet "$BASE" "$GITHUB_SHA" -- \
+              packages/cloud package.json pnpm-lock.yaml pnpm-workspace.yaml .github/workflows/cloud.yml; then
+              changed=false
+            fi
+          fi
+          echo "dashboard=$changed" >> "$GITHUB_OUTPUT"
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -117,7 +140,8 @@ jobs:
             packages/cloud/test-results
 
   build:
-    needs: test
+    needs: [test, e2e, changes]
+    if: needs.changes.outputs.dashboard == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
