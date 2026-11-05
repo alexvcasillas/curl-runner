@@ -1,7 +1,7 @@
 import type { InputHTMLAttributes } from 'react';
 import { cx } from '@/lib/cx';
 
-export type RadioCardProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & {
+export type RadioCardProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'title'> & {
   title: React.ReactNode;
   description?: React.ReactNode;
 };
