@@ -53,6 +53,7 @@ export default async function SharePage({ params }: Props) {
       <PublicShell signedInAs={viewer} footer={<FooterNote />}>
         <ShareGate
           returnTo={returnTo}
+          limited={landing.kind === 'limited' ? landing.message : undefined}
           denied={
             landing.kind === 'denied' ? { message: landing.message, email: viewer } : undefined
           }

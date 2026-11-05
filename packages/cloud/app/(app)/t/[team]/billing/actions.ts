@@ -25,7 +25,7 @@ const BAD_URL: Failure = {
 
 /**
  * Asks the API for a Stripe page and returns its URL, or the copy to show.
- * 403 is a member; 409 and 503 carry the API's own message.
+ * `forbidden` is a member; other errors carry the API's own message.
  */
 async function stripeUrl(path: string, json?: unknown): Promise<{ url: string } | Failure> {
   try {
@@ -33,7 +33,7 @@ async function stripeUrl(path: string, json?: unknown): Promise<{ url: string } 
     return isStripeUrl(url) ? { url } : BAD_URL;
   } catch (e) {
     if (e instanceof ApiError) {
-      if (e.status === 403) {
+      if (e.code === 'forbidden') {
         return NOT_OWNER;
       }
       return { ok: false, message: messageFor(e), code: e.code };

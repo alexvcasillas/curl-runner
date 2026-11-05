@@ -23,19 +23,19 @@ export async function GET(_request: Request, { params }: Params): Promise<Respon
   }
   let files: BundleFile[];
   try {
-    // `optional`: a dead session comes back as a 401 here, so we can choose where to send them.
+    // `optional`: a dead session comes back as `unauthorized` here, so we can choose where to send them.
     files = await api<BundleFile[]>(`/v1/teams/${team}/collections/${slug}/versions/${n}/files`, {
       auth: 'optional',
     });
   } catch (e) {
     if (e instanceof ApiError) {
-      if (e.status === 401) {
+      if (e.code === 'unauthorized') {
         redirect(`/sign-in/expired?return_to=${encodeURIComponent(routes.collection(team, slug))}`);
       }
-      if (e.status === 404) {
+      if (e.code === 'not_found') {
         return text(404, 'Not found.');
       }
-      if (e.status === 403) {
+      if (e.code === 'forbidden') {
         return text(403, 'You can’t download this.');
       }
       return text(503, 'Cloud isn’t answering right now. Try again in a minute.');

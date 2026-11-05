@@ -506,6 +506,7 @@ describe('actions', () => {
     expect(await switchSource('acme', 'payments-api', 'git')).toEqual({
       ok: false,
       message: 'No such collection.',
+      code: 'not_found',
     });
   });
 
@@ -530,6 +531,7 @@ describe('actions', () => {
     expect(await deleteCollection('acme', 'payments-api')).toEqual({
       ok: false,
       message: 'Only owners.',
+      code: 'forbidden',
     });
   });
 });

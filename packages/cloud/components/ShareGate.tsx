@@ -10,13 +10,15 @@ export type ShareGateProps = {
   returnTo: string;
   /** Set on a 403: the API's message, which names the team, and who is signed in. */
   denied?: { message: string; email: string | null };
+  /** Set on a 429: the copy to show, with the wait when the API gave one. */
+  limited?: string;
 };
 
 /**
  * A restricted link the visitor can't open yet. The API says nothing about the
  * collection until they can, so this card names nothing but what it was told.
  */
-export function ShareGate({ returnTo, denied }: ShareGateProps) {
+export function ShareGate({ returnTo, denied, limited }: ShareGateProps) {
   return (
     <Card className="flex flex-col gap-4 rounded-[12px] px-7 py-8 max-sm:px-4 max-sm:py-6">
       <span
@@ -25,7 +27,14 @@ export function ShareGate({ returnTo, denied }: ShareGateProps) {
       >
         <LockIcon size={18} />
       </span>
-      {denied ? (
+      {limited ? (
+        <>
+          <h1 className="m-0 text-[20px] leading-7 font-semibold">Too many tries</h1>
+          <Notice tone="err" role="alert">
+            {limited}
+          </Notice>
+        </>
+      ) : denied ? (
         <>
           <h1 className="m-0 text-[20px] leading-7 font-semibold">You don’t have access yet</h1>
           <Notice tone="err" role="alert">
