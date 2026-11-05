@@ -4,12 +4,15 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use axum::Router;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header};
 use chrono::{DateTime, Utc};
 use curl_runner_server::auth::providers::FakeProviders;
+use curl_runner_server::billing::{Billing, BillingError, CheckoutRequest, Price, Subscription};
 use curl_runner_server::clock::FixedClock;
 use curl_runner_server::config::Config;
 use curl_runner_server::{AppState, app};
@@ -214,4 +217,119 @@ impl TestApp {
             .await;
         assert_eq!(status, StatusCode::CREATED, "{body}");
     }
+}
+
+/// The four `STRIPE_*` settings that turn billing on.
+pub const BILLING_ENV: [(&str, &str); 4] = [
+    ("STRIPE_SECRET_KEY", "sk_test_fake"),
+    ("STRIPE_WEBHOOK_SECRET", "whsec_fake"),
+    ("STRIPE_PRICE_MONTHLY", "price_monthly"),
+    ("STRIPE_PRICE_ANNUAL", "price_annual"),
+];
+
+/// Test double for Stripe: records every call, answers canned values.
+pub struct FakeBilling {
+    pub checkouts: Mutex<Vec<CheckoutRequest>>,
+    /// `(customer, return_url)` of each portal call.
+    pub portals: Mutex<Vec<(String, String)>>,
+    pub quantities: Mutex<Vec<(String, u32)>>,
+    pub cancelled: Mutex<Vec<String>>,
+    pub price_calls: AtomicU32,
+    /// Make every call fail like an unreachable Stripe.
+    pub fail: AtomicBool,
+    pub subscription: Mutex<Subscription>,
+}
+
+impl FakeBilling {
+    pub fn new() -> Self {
+        Self {
+            checkouts: Mutex::default(),
+            portals: Mutex::default(),
+            quantities: Mutex::default(),
+            cancelled: Mutex::default(),
+            price_calls: AtomicU32::new(0),
+            fail: AtomicBool::new(false),
+            subscription: Mutex::new(Subscription {
+                id: "sub_1".into(),
+                customer: "cus_1".into(),
+                status: "active".into(),
+                price: "price_monthly".into(),
+                quantity: 1,
+                team_id: None,
+                cancel_at: None,
+                current_period_end: Some(1_793_000_000),
+            }),
+        }
+    }
+
+    fn check(&self) -> Result<(), BillingError> {
+        if self.fail.load(Ordering::SeqCst) {
+            Err(BillingError::Unreachable("fake failure".into()))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl Billing for FakeBilling {
+    async fn checkout_url(&self, req: CheckoutRequest) -> Result<String, BillingError> {
+        self.check()?;
+        self.checkouts.lock().unwrap().push(req);
+        Ok("https://checkout.stripe.test/c/1".into())
+    }
+
+    async fn portal_url(&self, customer: &str, return_url: &str) -> Result<String, BillingError> {
+        self.check()?;
+        self.portals
+            .lock()
+            .unwrap()
+            .push((customer.to_owned(), return_url.to_owned()));
+        Ok("https://billing.stripe.test/p/1".into())
+    }
+
+    async fn subscription(&self, _id: &str) -> Result<Subscription, BillingError> {
+        self.check()?;
+        Ok(self.subscription.lock().unwrap().clone())
+    }
+
+    async fn set_quantity(&self, subscription: &str, quantity: u32) -> Result<(), BillingError> {
+        self.check()?;
+        self.quantities
+            .lock()
+            .unwrap()
+            .push((subscription.to_owned(), quantity));
+        Ok(())
+    }
+
+    async fn cancel_subscription(&self, id: &str) -> Result<(), BillingError> {
+        self.check()?;
+        self.cancelled.lock().unwrap().push(id.to_owned());
+        Ok(())
+    }
+
+    async fn price(&self, id: &str) -> Result<Price, BillingError> {
+        self.check()?;
+        self.price_calls.fetch_add(1, Ordering::SeqCst);
+        let annual = id == "price_annual";
+        Ok(Price {
+            unit_amount: if annual { 9_000 } else { 900 },
+            currency: "usd".into(),
+            interval: if annual { "year" } else { "month" }.into(),
+        })
+    }
+}
+
+/// The app with billing configured and a [`FakeBilling`] behind it.
+pub async fn test_app_billing(pool: PgPool) -> (TestApp, Arc<FakeBilling>) {
+    let app = test_app_with(pool, test_config(&BILLING_ENV)).await;
+    let fake = Arc::new(FakeBilling::new());
+    let mut state = app.state.clone();
+    state.billing = Some(fake.clone());
+    let app = TestApp {
+        router: curl_runner_server::app(state.clone()),
+        state,
+        ..app
+    };
+    (app, fake)
 }

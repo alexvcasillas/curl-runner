@@ -158,6 +158,18 @@ curl -X PUT https://api.example.com/v1/admin/teams/acme/plan \
   -d '{"plan": "team"}'
 ```
 
+### Stripe billing [#billing]
+
+Billing is off by default, and self-hosted servers don't need it. To charge for teams, set all four variables. Setting only some stops the server at startup.
+
+| Variable | Meaning |
+| --- | --- |
+| `STRIPE_SECRET_KEY` | A Stripe secret or restricted key. |
+| `STRIPE_WEBHOOK_SECRET` | The signing secret of the webhook endpoint. |
+| `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_ANNUAL` | The per-seat price IDs for each billing interval. |
+
+With billing on, `GET /v1/info` reports `"billing": true` and team owners can start a checkout or open the Stripe customer portal from the dashboard.
+
 ```bash title="Example .env"
 POSTGRES_PASSWORD=<password>
 SECRET_KEY=<key>

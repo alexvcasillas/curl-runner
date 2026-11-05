@@ -85,6 +85,7 @@ async fn migrations_create_every_table(pool: PgPool) {
             "sessions",
             "settings",
             "share_opens",
+            "stripe_events",
             "teams",
             "tokens",
             "users",

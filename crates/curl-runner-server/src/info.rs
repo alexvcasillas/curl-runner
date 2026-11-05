@@ -8,11 +8,11 @@ use crate::config::Config;
 use crate::state::AppState;
 
 pub async fn info(State(state): State<AppState>) -> Json<ServerInfo> {
-    Json(server_info(&state.config))
+    Json(server_info(&state.config, state.billing.is_some()))
 }
 
 /// Email sign-in is always on; GitHub and Google appear when configured.
-pub fn server_info(config: &Config) -> ServerInfo {
+pub fn server_info(config: &Config, billing: bool) -> ServerInfo {
     let mut sign_in = vec![SignInMethod::Email];
     if config.github.is_some() {
         sign_in.push(SignInMethod::Github);
@@ -24,7 +24,7 @@ pub fn server_info(config: &Config) -> ServerInfo {
         version: env!("CARGO_PKG_VERSION").to_owned(),
         sign_in,
         signup: config.signup,
-        billing: false,
+        billing,
         app_url: Some(config.app_url.clone()),
     }
 }
