@@ -1511,3 +1511,124 @@ fn pull_landing_ignores_a_well_known_api_with_control_characters() {
         .clone();
     assert!(!stderr(&o).contains('\u{1b}'), "{:?}", stderr(&o));
 }
+
+/// A server with `/v1/info` and a hand-off redeem that accepts `crh_good`.
+fn handoff_api(app_url: Option<&str>) -> (TestServer, Seen) {
+    let seen: Seen = Arc::default();
+    let s2 = seen.clone();
+    let app = app_url.map(str::to_string);
+    let srv = TestServer::with_handler(move |r: Request| {
+        s2.lock().unwrap().push((
+            r.method.clone(),
+            r.url.clone(),
+            r.header("authorization").map(str::to_string),
+            String::from_utf8_lossy(&r.body).into_owned(),
+        ));
+        match r.url.as_str() {
+            "/v1/info" => {
+                let app = app
+                    .as_ref()
+                    .map(|a| format!(r#","app_url":"{a}""#))
+                    .unwrap_or_default();
+                Response::from_data(
+                    format!(
+                        r#"{{"version":"1.0.0","sign_in":["email"],"signup":"open","billing":false{app}}}"#
+                    )
+                    .into_bytes(),
+                )
+            }
+            "/v1/auth/handoff/redeem" => {
+                let body = String::from_utf8_lossy(&r.body).into_owned();
+                if body.contains("crh_good") {
+                    Response::from_data(
+                        br#"{"session":"crs_handoff","user":{"id":"u1","email":"ada@example.com","name":null}}"#.to_vec(),
+                    )
+                } else if body.contains("crh_old") {
+                    Response::from_data(
+                        br#"{"error":"code_expired","message":"That code has expired. Ask for a new one."}"#.to_vec(),
+                    )
+                    .with_status_code(400)
+                } else {
+                    Response::from_data(
+                        br#"{"error":"code_invalid","message":"That code is not right."}"#.to_vec(),
+                    )
+                    .with_status_code(400)
+                }
+            }
+            _ => Response::from_data(b"{}".to_vec()).with_status_code(404),
+        }
+    });
+    (srv, seen)
+}
+
+#[test]
+fn login_browser_redeems_handoff_code() {
+    let (srv, seen) = handoff_api(Some("https://app.acme.test"));
+    let home = tempfile::tempdir().unwrap();
+    let out = cmd(home.path(), &srv.base_url)
+        .args(["login", "--browser"])
+        .write_stdin("crh_good\n")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let out = String::from_utf8(out).unwrap();
+    assert!(out.contains("https://app.acme.test/sign-in?client=device"));
+    assert!(out.contains(&format!(
+        "Signed in to {} as ada@example.com.",
+        srv.base_url
+    )));
+    assert!(!out.contains("crs_handoff"));
+    let saved: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(creds_path(home.path())).unwrap()).unwrap();
+    assert_eq!(saved["servers"][&srv.base_url]["session"], "crs_handoff");
+    assert_eq!(saved["servers"][&srv.base_url]["email"], "ada@example.com");
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen[0].1, "/v1/info");
+    let redeem: serde_json::Value = serde_json::from_str(&seen[1].3).unwrap();
+    assert_eq!(redeem["code"], "crh_good");
+}
+
+#[test]
+fn login_browser_old_server_explains() {
+    let (srv, _) = handoff_api(None);
+    let home = tempfile::tempdir().unwrap();
+    let o = cmd(home.path(), &srv.base_url)
+        .args(["login", "--browser"])
+        .write_stdin("crh_good\n")
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(1));
+    assert!(stderr(&o).contains(
+        "This server doesn't support browser sign-in. Run curl-runner login without --browser."
+    ));
+    assert!(!creds_path(home.path()).exists());
+}
+
+#[test]
+fn login_browser_bad_code_reprompts() {
+    let (srv, seen) = handoff_api(Some("https://app.acme.test"));
+    let home = tempfile::tempdir().unwrap();
+    let o = cmd(home.path(), &srv.base_url)
+        .args(["login", "--browser"])
+        .write_stdin("crh_bad\ncrh_old\ncrh_good\n")
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0));
+    let err = stderr(&o);
+    assert!(err.contains("That code is not right."));
+    assert!(err.contains("That code has expired."));
+    assert!(creds_path(home.path()).exists());
+    assert_eq!(seen.lock().unwrap().len(), 4);
+
+    // Three failures give up.
+    let home = tempfile::tempdir().unwrap();
+    let o = cmd(home.path(), &srv.base_url)
+        .args(["login", "--browser"])
+        .write_stdin("crh_a\ncrh_b\ncrh_c\ncrh_good\n")
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(1));
+    assert!(!creds_path(home.path()).exists());
+}

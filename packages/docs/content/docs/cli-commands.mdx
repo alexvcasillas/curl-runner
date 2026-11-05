@@ -218,13 +218,13 @@ For CI/CD, `--strict-exit`, `--fail-on <count>` and `--fail-on-percentage <pct>`
 curl-runner Cloud is in private preview. See [Cloud](/docs/features/cloud) for the full guide.
 
 ```bash
-curl-runner login [--server <url>] [--email <address>]
+curl-runner login [--server <url>] [--email <address> | --browser]
 curl-runner logout [--server <url>]
 curl-runner publish [DIR...] [--collection <slug>] [--team <slug>] [--server <url>] [--dry-run]
 curl-runner pull [LINK] [DIR] [--force]
 ```
 
-`login` asks for your email address, sends a 6-digit code and saves the session on this computer. Without a terminal, pass `--email` and send the code on standard input. If neither is possible, set `CURL_RUNNER_TOKEN`. `logout` signs out on the server and removes the saved session, even if the server cannot be reached.
+`login` asks for your email address, sends a 6-digit code and saves the session on this computer. Without a terminal, pass `--email` and send the code on standard input. If neither is possible, set `CURL_RUNNER_TOKEN`. `login --browser` opens the dashboard sign-in page, where you can use GitHub, Google or email. Paste the code it shows back into the terminal. If the browser doesn't open, open the printed link yourself. Self-hosted servers advertise their dashboard URL, and older servers without one need the email flow. `logout` signs out on the server and removes the saved session, even if the server cannot be reached.
 
 `publish` checks the folder, then uploads it as a new version of the collection named in its `cloud:` block. It's meant for CI. `--dry-run` shows what would change and sends nothing. The team comes from `--team`, else `CURL_RUNNER_TEAM`.
 

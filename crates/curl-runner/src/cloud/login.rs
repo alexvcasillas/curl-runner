@@ -1,4 +1,4 @@
-//! `curl-runner login [--server URL] [--email ADDR]` and
+//! `curl-runner login [--server URL] [--email ADDR | --browser]` and
 //! `curl-runner logout [--server URL]`.
 
 use super::client::{self, Client, CloudError};
@@ -36,6 +36,9 @@ pub(super) fn login(args: &[String], env: Env, console: &mut Console) -> i32 {
         }
     };
     let tty = std::io::stdin().is_terminal();
+    if args.iter().any(|a| a == "--browser") {
+        return login_browser(&server, tty, env, console);
+    }
     let email = match email_flag {
         Some(e) => e.trim().to_string(),
         None if tty => match prompt("Email address", true) {
@@ -75,15 +78,24 @@ pub(super) fn login(args: &[String], env: Env, console: &mut Console) -> i32 {
             return 1;
         }
     };
-    let saved = Credentials::load(&path).and_then(|mut c| {
+    save_session(&server, &path, verified, console)
+}
+
+fn save_session(
+    server: &str,
+    path: &std::path::Path,
+    verified: client::Verified,
+    console: &mut Console,
+) -> i32 {
+    let saved = Credentials::load(path).and_then(|mut c| {
         c.servers.insert(
-            server.clone(),
+            server.to_string(),
             Entry {
                 session: verified.session,
                 email: verified.user.email.clone(),
             },
         );
-        c.save(&path)
+        c.save(path)
     });
     if let Err(e) = saved {
         console.err(&e);
@@ -94,6 +106,78 @@ pub(super) fn login(args: &[String], env: Env, console: &mut Console) -> i32 {
         escape_control(&verified.user.email)
     ));
     0
+}
+
+const MAX_CODE_TRIES: usize = 3;
+
+/// Best effort: only on macOS and only from a terminal. Printing the URL is
+/// what the sign-in relies on, so every failure here is ignored.
+fn try_open(url: &str, tty: bool) {
+    if cfg!(target_os = "macos") && tty {
+        let _ = std::process::Command::new("open")
+            .arg(url)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+}
+
+/// `login --browser`: sign in on the dashboard, then paste the hand-off code.
+fn login_browser(server: &str, tty: bool, env: Env, console: &mut Console) -> i32 {
+    let Some(path) = credentials::path(env) else {
+        console.err("Cannot find a place to save your session.");
+        return 1;
+    };
+    let api = Client::new(server, None);
+    let info = match api.info() {
+        Ok(i) => i,
+        Err(e) => {
+            console.err(&client::describe(&e, server));
+            return 1;
+        }
+    };
+    let Some(app_url) = info.app_url.filter(|u| !u.trim().is_empty()) else {
+        console.err(
+            "This server doesn't support browser sign-in. Run curl-runner login without --browser.",
+        );
+        return 1;
+    };
+    let url = format!(
+        "{}/sign-in?client=device",
+        escape_control(app_url.trim_end_matches('/'))
+    );
+    console.out(&format!("Open this page to sign in:\n  {url}"));
+    try_open(&url, tty);
+    for attempt in 1..=MAX_CODE_TRIES {
+        let code = match prompt("Paste the code from your browser:", tty) {
+            Some(c) if !c.trim().is_empty() => c.trim().to_string(),
+            _ => {
+                console.err("A code is required.");
+                return 1;
+            }
+        };
+        match api.handoff_redeem(&code) {
+            Ok(verified) => return save_session(server, &path, verified, console),
+            Err(CloudError::Api(b, _))
+                if matches!(
+                    b.error,
+                    curl_runner_cloud_proto::ErrorCode::CodeInvalid
+                        | curl_runner_cloud_proto::ErrorCode::CodeExpired
+                ) =>
+            {
+                console.err(&escape_control(&b.message));
+                if attempt == MAX_CODE_TRIES {
+                    return 1;
+                }
+            }
+            Err(e) => {
+                console.err(&client::describe(&e, server));
+                return 1;
+            }
+        }
+    }
+    1
 }
 
 pub fn logout(args: &[String], env: Env, console: &mut Console) -> i32 {
