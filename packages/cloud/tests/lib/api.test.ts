@@ -114,27 +114,28 @@ describe('api', () => {
     await expect(api('/v1/x')).rejects.toMatchObject({ code: 'rate_limited', retryAfter: 720 });
   });
 
-  it('on 401 with auth session, clears the cookie and redirects with return_to', async () => {
+  it('on 401 with auth session, redirects to /sign-in/expired with return_to', async () => {
     fetchMock.mockResolvedValue(json(401, { error: 'unauthorized', message: 'Sign in.' }));
+    const err = await api('/v1/me').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RedirectSignal);
+    expect((err as RedirectSignal).url).toBe(
+      `/sign-in/expired?return_to=${encodeURIComponent('/t/acme/tokens?x=1')}`,
+    );
+    // A render can't change cookies: the route handler clears it.
+    expect(jar.current.store.set).not.toHaveBeenCalled();
+    expect(await jar.current.store.get('cr_session')).toEqual({
+      name: 'cr_session',
+      value: 'crs_token',
+    });
+  });
+
+  it('redirects to sign in without calling the API when there is no session', async () => {
+    jar.current = cookieJar();
     const err = await api('/v1/me').catch((e: unknown) => e);
     expect(err).toBeInstanceOf(RedirectSignal);
     expect((err as RedirectSignal).url).toBe(
       `/sign-in?return_to=${encodeURIComponent('/t/acme/tokens?x=1')}`,
     );
-    expect(await jar.current.store.get('cr_session')).toBeUndefined();
-  });
-
-  it('still redirects when the cookie cannot be changed (a Server Component render)', async () => {
-    jar.current.store.set.mockImplementation(() => {
-      throw new Error('Cookies can only be modified in a Server Action or Route Handler.');
-    });
-    fetchMock.mockResolvedValue(json(401, { error: 'unauthorized', message: 'Sign in.' }));
-    await expect(api('/v1/me')).rejects.toBeInstanceOf(RedirectSignal);
-  });
-
-  it('redirects without calling the API when there is no session', async () => {
-    jar.current = cookieJar();
-    await expect(api('/v1/me')).rejects.toBeInstanceOf(RedirectSignal);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

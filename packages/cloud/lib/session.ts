@@ -12,12 +12,13 @@ function isLocalHttp(appUrl: string): boolean {
   return u.protocol === 'http:' && u.hostname === 'localhost';
 }
 
-function cookieOptions(maxAge: number) {
+/** The options every cookie here shares. `path` narrows a short-lived one to its pages. */
+export function cookieOptions(maxAge: number, path = '/') {
   return {
     httpOnly: true,
     secure: !isLocalHttp(env().PUBLIC_APP_URL),
     sameSite: 'lax' as const,
-    path: '/',
+    path,
     maxAge,
   };
 }

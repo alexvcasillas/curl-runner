@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { PATHNAME_HEADER } from './constants';
 import { env } from './env';
 import { ApiError, toErrorCode } from './errors';
-import { clearSession, getSession } from './session';
+import { getSession } from './session';
 
 export { ApiError } from './errors';
 
@@ -34,14 +34,13 @@ export function clientIp(h: Headers): string | null {
   return h.get('x-real-ip')?.trim() || null;
 }
 
-async function signInAgain(incoming: Headers): Promise<never> {
-  try {
-    await clearSession();
-  } catch {
-    // A Server Component render can't change cookies. The sign-in page replaces it.
-  }
-  const here = incoming.get(PATHNAME_HEADER) || '/';
-  redirect(`/sign-in?return_to=${encodeURIComponent(here)}`);
+/**
+ * Sends the person to sign in and back. A render can't delete the dead cookie, so
+ * a rejected session goes through `/sign-in/expired`, a route handler that does.
+ */
+function signInAgain(incoming: Headers, sessionRejected: boolean): never {
+  const here = encodeURIComponent(incoming.get(PATHNAME_HEADER) || '/');
+  redirect(sessionRejected ? `/sign-in/expired?return_to=${here}` : `/sign-in?return_to=${here}`);
 }
 
 function retryAfter(res: Response): number | undefined {
@@ -79,7 +78,7 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
   const incoming = await headers();
   const token = auth === 'none' ? null : await getSession();
   if (auth === 'session' && !token) {
-    return signInAgain(incoming);
+    return signInAgain(incoming, false);
   }
 
   const h = new Headers({ accept: 'application/json' });
@@ -110,7 +109,7 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
   if (!res.ok) {
     const err = await toApiError(res);
     if (err.code === 'unauthorized' && auth === 'session') {
-      return signInAgain(incoming);
+      return signInAgain(incoming, true);
     }
     throw err;
   }

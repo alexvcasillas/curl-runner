@@ -57,7 +57,8 @@ const FALLBACK: Record<ErrorCode, string> = {
   unknown: 'Something went wrong. Try again in a minute.',
 };
 
-function waitFor(seconds: number): string {
+/** "12 minutes", "1 minute", "30 seconds". */
+export function waitFor(seconds: number): string {
   if (seconds < 60) {
     return `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`;
   }
