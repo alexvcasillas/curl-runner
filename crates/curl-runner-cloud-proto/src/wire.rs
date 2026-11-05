@@ -104,6 +104,9 @@ pub struct VersionSummary {
 #[serde(rename_all = "snake_case")]
 pub struct SharedInfo {
     pub team: String,
+    /// The team's slug, which the studio deep link needs. Absent from older servers.
+    #[serde(default)]
+    pub team_slug: String,
     pub collection: String,
     pub name: String,
     pub description: Option<String>,

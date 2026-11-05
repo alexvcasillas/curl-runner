@@ -121,6 +121,7 @@ async fn public_link_no_auth_snapshot(pool: PgPool) {
     assert_eq!(status, StatusCode::OK, "{info}");
     assert_eq!(info["collection"], "payments-api");
     assert_eq!(info["team"], "acme");
+    assert_eq!(info["team_slug"], "acme");
     assert_eq!(info["version"], 1);
     assert_eq!(info["request_count"], 2, "config files are not requests");
     assert_eq!(info["access"], "public");
