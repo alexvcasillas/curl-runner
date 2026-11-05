@@ -526,3 +526,47 @@ async fn team_delete_without_subscription_calls_nothing(pool: PgPool) {
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert!(fake.cancelled.lock().unwrap().is_empty());
 }
+
+#[sqlx::test]
+async fn slow_read_cannot_overwrite_a_newer_event(pool: PgPool) {
+    use std::sync::Arc;
+    use tokio::sync::Notify;
+    let (app, fake, _) = setup(pool).await;
+    let (entered, release) = (Arc::new(Notify::new()), Arc::new(Notify::new()));
+    *fake.gate.lock().unwrap() = Some((entered.clone(), release.clone()));
+
+    // A reads `active`, then stalls before applying it.
+    let evt_a = checkout("evt_a");
+    let a = deliver(&app, &evt_a);
+    // Stripe moves on to `canceled` while A is stalled; B arrives meanwhile and
+    // A is released only after B has had time to run (or to queue behind A).
+    let rest = async {
+        entered.notified().await;
+        set_status(&fake, "canceled");
+        let deleted = event(
+            "evt_b",
+            "customer.subscription.deleted",
+            json!({"id": "sub_1"}),
+        );
+        let unblock = async {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            release.notify_one();
+        };
+        tokio::join!(deliver(&app, &deleted), unblock).0
+    };
+    let ((sa, _), (sb, _)) = tokio::join!(a, rest);
+    assert_eq!((sa, sb), (StatusCode::OK, StatusCode::OK));
+    let r = row(&app).await;
+    assert_eq!(r.plan, "free");
+    assert_eq!(r.stripe_subscription_id, None);
+}
+
+#[sqlx::test]
+async fn payment_failed_mail_only_for_a_team_on_the_team_plan(pool: PgPool) {
+    let (app, fake, _) = setup(pool).await;
+    // Never completed checkout: the team is still Free.
+    set_status(&fake, "past_due");
+    deliver(&app, &invoice("evt_1", "invoice.payment_failed")).await;
+    assert!(row(&app).await.past_due_since.is_some());
+    assert!(mails(&app, "We couldn't take%").await.is_empty());
+}

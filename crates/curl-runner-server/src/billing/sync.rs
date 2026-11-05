@@ -201,7 +201,9 @@ pub async fn apply_subscription(
     .execute(&mut *tx)
     .await?;
 
-    if team.past_due_since.is_none()
+    // The copy says "keep the Team plan": only for a team that has it.
+    if was == "team"
+        && team.past_due_since.is_none()
         && let Some(since) = next.past_due_since
     {
         let deadline = since + PAST_DUE_GRACE;
@@ -225,7 +227,6 @@ pub async fn apply_missing(
     state: &AppState,
     tx: &mut PgConnection,
     subscription: &str,
-    _now: DateTime<Utc>,
 ) -> Result<(), ApiError> {
     let Some(team) = lock_team_by_subscription(tx, subscription).await? else {
         return Ok(());

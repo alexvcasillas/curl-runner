@@ -152,11 +152,18 @@ async fn webhook(
     }
     let object = event.pointer("/data/object").unwrap_or(&Value::Null);
     if let Some(id) = subscription_id(kind, object) {
+        // One event per subscription at a time, so the re-read below happens
+        // after any earlier event's changes are committed and the last one to
+        // apply always saw the newest Stripe state.
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
+            .bind(&id)
+            .execute(&mut *tx)
+            .await?;
         match billing.subscription(&id).await {
             Ok(sub) => apply_subscription(&state, &mut tx, &sub, now).await?,
             // Stripe no longer knows it: as good as canceled.
             Err(BillingError::Api { status: 404, .. }) => {
-                apply_missing(&state, &mut tx, &id, now).await?;
+                apply_missing(&state, &mut tx, &id).await?;
             }
             Err(err) => {
                 tracing::warn!("webhook {kind} {event_id}: {err}");
