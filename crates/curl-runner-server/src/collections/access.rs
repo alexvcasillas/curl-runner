@@ -193,6 +193,7 @@ async fn matching_entry(
 #[derive(Serialize)]
 pub(super) struct SharedWithMe {
     team: String,
+    team_slug: String,
     collection: String,
     name: String,
     version: u32,
@@ -202,6 +203,7 @@ pub(super) struct SharedWithMe {
 }
 
 type SharedRow = (
+    String,
     String,
     String,
     String,
@@ -222,7 +224,7 @@ pub(super) async fn shared_with_me(
 ) -> Result<Json<Vec<SharedWithMe>>, ApiError> {
     let (email, domain) = entry_keys(&auth.email);
     let rows: Vec<SharedRow> = sqlx::query_as(&format!(
-        "SELECT t.name, c.slug::text, c.name, v.number, v.created_at, c.access, c.link_token_enc \
+        "SELECT t.name, t.slug::text, c.slug::text, c.name, v.number, v.created_at, c.access, c.link_token_enc \
          FROM collections c \
          JOIN teams t ON t.id = c.team_id \
          JOIN versions v ON v.collection_id = c.id AND v.number = c.current_version \
@@ -245,7 +247,7 @@ pub(super) async fn shared_with_me(
     .fetch_all(&state.db)
     .await?;
     let mut out = Vec::with_capacity(rows.len());
-    for (team, collection, name, version, updated_at, access, enc) in rows {
+    for (team, team_slug, collection, name, version, updated_at, access, enc) in rows {
         let Some(token) = enc
             .as_deref()
             .and_then(|enc| decrypt_link_token(state.config.secret_key.as_bytes(), enc))
@@ -255,6 +257,7 @@ pub(super) async fn shared_with_me(
         };
         out.push(SharedWithMe {
             team,
+            team_slug,
             collection,
             name,
             version: u32::try_from(version).unwrap_or_default(),
