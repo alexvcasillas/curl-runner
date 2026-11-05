@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::auth::UserAuth;
 use crate::auth::session::column_enum;
+use crate::billing::BillingError;
 use crate::collections::parse_email;
 use crate::config::Config;
 use crate::error::ApiError;
@@ -295,6 +296,26 @@ async fn delete_team(
     let mut tx = state.db.begin().await?;
     let (_, locked) = lock_as(&mut tx, access.team_id, auth.user_id).await?;
     locked.require_owner()?;
+    // Stop the billing first: a team that is gone must not keep being charged.
+    // If Stripe cannot be reached the team stays and the owner can retry.
+    let subscription: Option<String> =
+        sqlx::query_scalar("SELECT stripe_subscription_id FROM teams WHERE id = $1")
+            .bind(access.team_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    if let (Some(billing), Some(id)) = (&state.billing, subscription) {
+        match billing.cancel_subscription(&id).await {
+            // Already gone on Stripe's side.
+            Ok(()) | Err(BillingError::Api { status: 404, .. }) => {}
+            Err(err) => {
+                tracing::warn!("cannot cancel subscription {id} for team {slug}: {err}");
+                return Err(ApiError::new(
+                    ErrorCode::Unavailable,
+                    "Billing is not reachable right now. Try again in a minute.",
+                ));
+            }
+        }
+    }
     sqlx::query("DELETE FROM teams WHERE id = $1")
         .bind(access.team_id)
         .execute(&mut *tx)
@@ -426,6 +447,16 @@ pub(crate) async fn lock_as(
             role: column_enum(role)?,
         },
     ))
+}
+
+/// The seat count changed: the background tick must tell Stripe. Called in the
+/// same transaction as the membership change.
+async fn mark_seats_dirty(conn: &mut PgConnection, team_id: Uuid) -> Result<(), ApiError> {
+    sqlx::query("UPDATE teams SET seats_synced = NULL WHERE id = $1")
+        .bind(team_id)
+        .execute(conn)
+        .await?;
+    Ok(())
 }
 
 async fn member_count(conn: &mut PgConnection, team_id: Uuid) -> Result<i64, ApiError> {
@@ -699,6 +730,7 @@ async fn accept_invite(
     .bind(now)
     .execute(&mut *tx)
     .await?;
+    mark_seats_dirty(&mut tx, team_id).await?;
     sqlx::query("UPDATE member_invites SET accepted_at = $2 WHERE id = $1")
         .bind(invite_id)
         .bind(now)
@@ -760,6 +792,7 @@ async fn remove_member(
     if done.rows_affected() == 0 {
         return Err(ApiError::not_found());
     }
+    mark_seats_dirty(&mut tx, access.team_id).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

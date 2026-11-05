@@ -3,6 +3,8 @@
 
 pub mod routes;
 pub mod stripe;
+pub mod sync;
+pub mod webhook;
 
 use std::fmt;
 use std::sync::{Arc, Mutex};
@@ -82,6 +84,11 @@ pub trait Billing: Send + Sync {
     /// Cancel immediately (`DELETE /v1/subscriptions/{id}`).
     async fn cancel_subscription(&self, id: &str) -> Result<(), BillingError>;
     async fn price(&self, id: &str) -> Result<Price, BillingError>;
+}
+
+/// Log a Stripe failure from background work.
+pub(crate) fn stripe_down_log(err: &BillingError) {
+    tracing::warn!("stripe request failed: {err}");
 }
 
 /// The public price list, as `GET /v1/billing/prices` answers it.

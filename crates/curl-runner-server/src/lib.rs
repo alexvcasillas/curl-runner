@@ -43,6 +43,7 @@ pub fn app(state: AppState) -> Router {
         .merge(auth::routes())
         .merge(teams::routes())
         .merge(billing::routes::routes())
+        .merge(billing::webhook::routes())
         .merge(tokens::routes())
         .merge(collections::routes())
         .fallback(not_found)

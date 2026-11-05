@@ -194,6 +194,21 @@ impl TestApp {
         (status, value)
     }
 
+    /// POST a raw body with the given headers.
+    pub async fn post_raw(
+        &self,
+        path: &str,
+        body: &str,
+        headers: &[(&str, &str)],
+    ) -> (StatusCode, Value) {
+        let mut req = Request::builder().method(Method::POST).uri(path);
+        for (name, value) in headers {
+            req = req.header(*name, *value);
+        }
+        self.send(req.body(Body::from(body.to_owned())).unwrap())
+            .await
+    }
+
     /// GET with a raw `Authorization` header value.
     pub async fn request_with_auth(&self, path: &str, authorization: &str) -> (StatusCode, Value) {
         let req = Request::builder()
@@ -235,8 +250,11 @@ pub struct FakeBilling {
     pub quantities: Mutex<Vec<(String, u32)>>,
     pub cancelled: Mutex<Vec<String>>,
     pub price_calls: AtomicU32,
+    pub subscription_calls: AtomicU32,
     /// Make every call fail like an unreachable Stripe.
     pub fail: AtomicBool,
+    /// Answer `subscription` like Stripe's 404 for an unknown id.
+    pub missing: AtomicBool,
     pub subscription: Mutex<Subscription>,
 }
 
@@ -248,7 +266,9 @@ impl FakeBilling {
             quantities: Mutex::default(),
             cancelled: Mutex::default(),
             price_calls: AtomicU32::new(0),
+            subscription_calls: AtomicU32::new(0),
             fail: AtomicBool::new(false),
+            missing: AtomicBool::new(false),
             subscription: Mutex::new(Subscription {
                 id: "sub_1".into(),
                 customer: "cus_1".into(),
@@ -290,6 +310,13 @@ impl Billing for FakeBilling {
 
     async fn subscription(&self, _id: &str) -> Result<Subscription, BillingError> {
         self.check()?;
+        self.subscription_calls.fetch_add(1, Ordering::SeqCst);
+        if self.missing.load(Ordering::SeqCst) {
+            return Err(BillingError::Api {
+                status: 404,
+                body: "resource_missing".into(),
+            });
+        }
         Ok(self.subscription.lock().unwrap().clone())
     }
 
