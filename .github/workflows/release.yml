@@ -158,7 +158,7 @@ jobs:
           NPM_CONFIG_PROVENANCE: true
           PNPM_CONFIG_PROVENANCE: true
 
-      # crates.io trusted publishing (OIDC token), then curl-runner-core and
+      # crates.io trusted publishing (OIDC token), then curl-runner-cloud-proto, curl-runner-core and
       # curl-runner at the version the version PR synced into Cargo.toml.
       - name: Install Rust toolchain
         if: ${{ steps.changesets.outputs.published == 'true' }}
