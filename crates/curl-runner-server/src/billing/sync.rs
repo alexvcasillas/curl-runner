@@ -9,10 +9,11 @@ use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
 
-use super::{Subscription, stripe_down_log};
+use super::{BillingError, Subscription, stripe_down_log};
 use crate::error::ApiError;
 use crate::mail::Mail;
 use crate::state::AppState;
+use curl_runner_cloud_proto::ErrorCode;
 
 /// How long a team may stay past due before it moves to Free.
 pub const PAST_DUE_GRACE: chrono::Duration = chrono::Duration::days(14);
@@ -67,10 +68,11 @@ struct TeamRow {
     plan: String,
     past_due_since: Option<DateTime<Utc>>,
     stripe_subscription_id: Option<String>,
+    billing_status: Option<String>,
 }
 
-const TEAM_COLUMNS: &str =
-    "id, name, slug::text AS slug, plan, past_due_since, stripe_subscription_id";
+const TEAM_COLUMNS: &str = "id, name, slug::text AS slug, plan, past_due_since, \
+                            stripe_subscription_id, billing_status";
 
 fn plan_str(plan: &str) -> &'static str {
     if plan == "team" { "team" } else { "free" }
@@ -146,6 +148,24 @@ fn at(secs: Option<i64>) -> Option<DateTime<Utc>> {
     secs.and_then(|s| DateTime::from_timestamp(s, 0))
 }
 
+/// Cancel a subscription that must not exist. A failure fails the caller, so
+/// Stripe redelivers the webhook; one already gone counts as done.
+async fn cancel_extra(state: &AppState, id: &str) -> Result<(), ApiError> {
+    let Some(billing) = &state.billing else {
+        return Ok(());
+    };
+    match billing.cancel_subscription(id).await {
+        Ok(()) | Err(BillingError::Api { status: 404, .. }) => Ok(()),
+        Err(err) => {
+            stripe_down_log(&err);
+            Err(ApiError::new(
+                ErrorCode::Unavailable,
+                "Billing is not reachable right now.",
+            ))
+        }
+    }
+}
+
 /// Write what Stripe says about `sub` onto its team, in the caller's
 /// transaction. A subscription with no team here is ignored.
 pub async fn apply_subscription(
@@ -161,11 +181,21 @@ pub async fn apply_subscription(
     if team.is_none() {
         team = lock_team_by_subscription(tx, &sub.id).await?;
     }
+    let terminal = is_terminal(&sub.status);
     let Some(team) = team else {
-        tracing::warn!("stripe subscription {} matches no team", sub.id);
+        if !terminal && sub.team_id.is_some() {
+            // The team was deleted after the owner paid: stop the charge.
+            tracing::error!(
+                "stripe subscription {} is for a deleted team {:?}: cancelling it",
+                sub.id,
+                sub.team_id
+            );
+            cancel_extra(state, &sub.id).await?;
+        } else {
+            tracing::warn!("stripe subscription {} matches no team", sub.id);
+        }
         return Ok(());
     };
-    let terminal = is_terminal(&sub.status);
     // A late event for a subscription the team has since replaced.
     if terminal
         && team
@@ -173,6 +203,23 @@ pub async fn apply_subscription(
             .as_deref()
             .is_some_and(|current| current != sub.id)
     {
+        return Ok(());
+    }
+    // A second live subscription for the team: keep the first, cancel this one.
+    if !terminal
+        && let Some(current) = team.stripe_subscription_id.as_deref()
+        && current != sub.id
+        && matches!(
+            team.billing_status.as_deref(),
+            Some("active" | "trialing" | "past_due" | "unpaid")
+        )
+    {
+        tracing::error!(
+            "team {} already has subscription {current}: cancelling duplicate {}",
+            team.id,
+            sub.id
+        );
+        cancel_extra(state, &sub.id).await?;
         return Ok(());
     }
 
@@ -326,7 +373,14 @@ async fn sync_seats(state: &AppState) -> Result<(), ApiError> {
             .set_quantity(&team.stripe_subscription_id, seats)
             .await
         {
-            stripe_down_log(&err);
+            if matches!(err, BillingError::Api { status: 404, .. }) {
+                // The subscription is gone: the team moves to Free.
+                let mut tx = state.db.begin().await?;
+                apply_missing(state, &mut tx, &team.stripe_subscription_id).await?;
+                tx.commit().await?;
+            } else {
+                stripe_down_log(&err);
+            }
             continue;
         }
         // Only if the count is still what was sent: a member added meanwhile

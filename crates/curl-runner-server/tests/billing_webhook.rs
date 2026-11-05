@@ -570,3 +570,47 @@ async fn payment_failed_mail_only_for_a_team_on_the_team_plan(pool: PgPool) {
     assert!(row(&app).await.past_due_since.is_some());
     assert!(mails(&app, "We couldn't take%").await.is_empty());
 }
+
+#[sqlx::test]
+async fn subscription_for_deleted_team_is_cancelled(pool: PgPool) {
+    let (app, fake, team) = setup(pool).await;
+    let (status, _) = app
+        .request(Method::DELETE, "/v1/teams/acme", None, Some(&team.ada))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = deliver(&app, &checkout("evt_1")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(*fake.cancelled.lock().unwrap(), ["sub_1"]);
+}
+
+#[sqlx::test]
+async fn second_subscription_for_a_team_is_cancelled(pool: PgPool) {
+    let (app, fake, _team) = setup(pool).await;
+    deliver(&app, &checkout("evt_1")).await;
+    fake.subscription.lock().unwrap().id = "sub_2".into();
+    let second = event(
+        "evt_2",
+        "checkout.session.completed",
+        json!({"id": "cs_2", "subscription": "sub_2"}),
+    );
+    let (status, _) = deliver(&app, &second).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        row(&app).await.stripe_subscription_id.as_deref(),
+        Some("sub_1")
+    );
+    assert_eq!(*fake.cancelled.lock().unwrap(), ["sub_2"]);
+}
+
+#[sqlx::test]
+async fn seat_sync_on_missing_subscription_applies_missing(pool: PgPool) {
+    let (app, fake, team) = setup(pool).await;
+    deliver(&app, &checkout("evt_1")).await;
+    add_member(&app, &team.ada, "jane@example.com").await;
+    fake.not_found_on_quantity.store(true, Ordering::SeqCst);
+    tick(&app.state, app.clock.now()).await;
+    let r = row(&app).await;
+    assert_eq!(r.plan, "free");
+    assert_eq!(r.stripe_subscription_id, None);
+    assert_eq!(r.billing_status.as_deref(), Some("canceled"));
+}

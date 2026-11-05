@@ -303,6 +303,11 @@ async fn delete_team(
             .bind(access.team_id)
             .fetch_one(&mut *tx)
             .await?;
+    if state.billing.is_none()
+        && let Some(id) = &subscription
+    {
+        tracing::warn!("billing is off: subscription {id} of team {slug} was not cancelled");
+    }
     if let (Some(billing), Some(id)) = (&state.billing, subscription) {
         match billing.cancel_subscription(&id).await {
             // Already gone on Stripe's side.

@@ -255,6 +255,8 @@ pub struct FakeBilling {
     pub fail: AtomicBool,
     /// Answer `subscription` like Stripe's 404 for an unknown id.
     pub missing: AtomicBool,
+    /// Answer `set_quantity` like Stripe's 404 for an unknown id.
+    pub not_found_on_quantity: AtomicBool,
     /// When set, the next `subscription` call answers its current state, then
     /// waits (after signalling `entered`) until `release` fires: a slow read.
     pub gate: Mutex<Option<(Arc<tokio::sync::Notify>, Arc<tokio::sync::Notify>)>>,
@@ -272,6 +274,7 @@ impl FakeBilling {
             subscription_calls: AtomicU32::new(0),
             fail: AtomicBool::new(false),
             missing: AtomicBool::new(false),
+            not_found_on_quantity: AtomicBool::new(false),
             gate: Mutex::new(None),
             subscription: Mutex::new(Subscription {
                 id: "sub_1".into(),
@@ -332,6 +335,12 @@ impl Billing for FakeBilling {
 
     async fn set_quantity(&self, subscription: &str, quantity: u32) -> Result<(), BillingError> {
         self.check()?;
+        if self.not_found_on_quantity.load(Ordering::SeqCst) {
+            return Err(BillingError::Api {
+                status: 404,
+                body: "resource_missing".into(),
+            });
+        }
         self.quantities
             .lock()
             .unwrap()
