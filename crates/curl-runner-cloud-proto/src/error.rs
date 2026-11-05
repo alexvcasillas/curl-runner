@@ -20,6 +20,8 @@ pub enum ErrorCode {
     AccountSuspended,
     /// The team is suspended: publishing to it is refused.
     TeamSuspended,
+    /// An admin turned the share link off: the team cannot reset it.
+    LinkDisabled,
     Unavailable,
     /// A code from a newer server that this build does not know.
     #[serde(other)]
@@ -39,6 +41,10 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&ErrorCode::TeamSuspended).unwrap(),
             "\"team_suspended\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ErrorCode::LinkDisabled).unwrap(),
+            "\"link_disabled\""
         );
         assert_eq!(
             serde_json::to_string(&ErrorCode::WrongSource).unwrap(),

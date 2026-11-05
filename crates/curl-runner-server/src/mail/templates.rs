@@ -290,6 +290,39 @@ fn render_parts(mail: &Mail) -> (String, String, String) {
                 ),
             )
         }
+        Mail::LinkDisabled {
+            team,
+            collection,
+            reason,
+            ..
+        } => {
+            let how = "Anyone who opens it sees that the link no longer works. The collection \
+                       and its versions are untouched, and the link can't be turned back on \
+                       from the dashboard. If you think this is a mistake, reply to this \
+                       email or contact support.";
+            let reason_text = reason
+                .as_deref()
+                .map(|r| format!("\n\nReason: {r}"))
+                .unwrap_or_default();
+            let mut blocks = vec![Block::Muted(how.into())];
+            if let Some(r) = reason {
+                blocks.push(Block::Callout(format!("Reason: {}", esc(r))));
+            }
+            (
+                format!("The share link of {collection} was turned off"),
+                format!(
+                    "The share link of {collection} ({team}) was turned off by an admin.\n\n{how}{reason_text}\n"
+                ),
+                layout(
+                    &format!(
+                        "The share link of <b>{}</b> ({}) was turned off by an admin.",
+                        esc(collection),
+                        esc(team)
+                    ),
+                    &blocks,
+                ),
+            )
+        }
         Mail::AdminMessage { subject, body, .. } => (
             subject.clone(),
             format!("{}\n", body.trim()),
@@ -606,6 +639,12 @@ mod tests {
             Mail::TestEmail {
                 to: "ada@example.com".into(),
             },
+            Mail::LinkDisabled {
+                to: "ada@example.com".into(),
+                team: "Acme".into(),
+                collection: "payments-api".into(),
+                reason: Some("Spam".into()),
+            },
             Mail::AccountSuspended {
                 to: "ada@example.com".into(),
                 reason: Some("Chargeback dispute".into()),
@@ -652,6 +691,29 @@ mod tests {
             team_name: "Acme".into(),
             reason: reason.map(Into::into),
         }
+    }
+
+    #[test]
+    fn link_disabled_names_the_collection_and_reason() {
+        let mail = Mail::LinkDisabled {
+            to: "ada@example.com".into(),
+            team: "Acme".into(),
+            collection: "payments-api".into(),
+            reason: Some("Spam <b>".into()),
+        };
+        let (subject, text, html) = render(&mail);
+        assert_eq!(subject, "The share link of payments-api was turned off");
+        assert!(text.contains("payments-api (Acme)"), "{text}");
+        assert!(text.contains("Reason: Spam <b>"), "{text}");
+        assert!(html.contains("Reason: Spam &lt;b&gt;"), "{html}");
+        let (_, text, html) = render(&Mail::LinkDisabled {
+            to: "ada@example.com".into(),
+            team: "Acme".into(),
+            collection: "payments-api".into(),
+            reason: None,
+        });
+        assert!(!text.contains("Reason"), "{text}");
+        assert!(!html.contains("Reason"), "{html}");
     }
 
     #[test]

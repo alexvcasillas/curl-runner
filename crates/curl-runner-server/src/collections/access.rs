@@ -72,11 +72,10 @@ type Row = (
 /// SQL: whether the share link of the `collections` row aliased `collection`,
 /// of the `teams` row aliased `team`, is blocked by an admin. A blocked link
 /// answers 404 to everyone and drops out of "shared with me" and the admin
-/// counts. Every share read goes through this one condition. Today: the
-/// team is suspended.
-/// `_collection` is for link takedowns, which land on the collection row.
-pub(crate) fn share_blocked(team: &str, _collection: &str) -> String {
-    format!("({team}.suspended_at IS NOT NULL)")
+/// counts. Every share read goes through this one condition: the team is
+/// suspended, or an admin took the link down.
+pub(crate) fn share_blocked(team: &str, collection: &str) -> String {
+    format!("({team}.suspended_at IS NOT NULL OR {collection}.link_disabled_at IS NOT NULL)")
 }
 
 /// Find the collection behind `token` and decide whether `auth` may read it.

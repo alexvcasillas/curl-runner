@@ -232,6 +232,24 @@ fn admin_routes(some_user: &str) -> Vec<(&'static str, String, Option<String>)> 
             "/v1/admin/teams/acme/email-owners".into(),
             Some(json!({"subject": "Hi", "body_md": "Hello"}).to_string()),
         ),
+        ("GET", "/v1/admin/collections".into(), None),
+        (
+            "GET",
+            "/v1/admin/collections?q=pay&filter=disabled".into(),
+            None,
+        ),
+        ("GET", "/v1/admin/collections.csv".into(), None),
+        ("GET", "/v1/admin/collections/stats".into(), None),
+        (
+            "POST",
+            "/v1/admin/collections/acme/payments-api/disable-link".into(),
+            Some(json!({"reason": "x"}).to_string()),
+        ),
+        (
+            "POST",
+            "/v1/admin/collections/acme/payments-api/enable-link".into(),
+            None,
+        ),
     ]
 }
 
@@ -279,6 +297,16 @@ async fn non_admin_gets_404_everywhere(pool: PgPool) {
             Some("{}".into()),
         ),
         ("PUT", "/v1/admin/teams/acme/suspend".into(), None),
+        (
+            "GET",
+            "/v1/admin/collections?filter=nope&limit=0".into(),
+            None,
+        ),
+        (
+            "POST",
+            "/v1/admin/collections/acme/payments-api/disable-link".into(),
+            Some("{nope".into()),
+        ),
     ]);
     let callers: [(&str, Option<&str>); 4] = [
         ("anonymous", None),

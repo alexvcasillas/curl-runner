@@ -37,6 +37,8 @@ pub(super) struct ShareBody {
     access: Access,
     link: String,
     expires_at: Option<DateTime<Utc>>,
+    /// An admin turned the link off. It answers 404 and cannot be reset.
+    link_disabled: bool,
     entries: Vec<EntryBody>,
 }
 
@@ -46,6 +48,7 @@ struct ShareRow {
     access: String,
     link_token_enc: Option<String>,
     link_expires_at: Option<DateTime<Utc>>,
+    link_disabled_at: Option<DateTime<Utc>>,
 }
 
 async fn share_body(state: &AppState, row: ShareRow) -> Result<ShareBody, ApiError> {
@@ -70,6 +73,7 @@ async fn share_body(state: &AppState, row: ShareRow) -> Result<ShareBody, ApiErr
         access: column_enum(row.access)?,
         link: format!("{}/s/{token}", state.config.app_url),
         expires_at: row.link_expires_at,
+        link_disabled: row.link_disabled_at.is_some(),
         entries: entries
             .into_iter()
             .map(|(entry, kind, invited_at, opened)| EntryBody {
@@ -82,7 +86,7 @@ async fn share_body(state: &AppState, row: ShareRow) -> Result<ShareBody, ApiErr
     })
 }
 
-const SHARE_COLUMNS: &str = "id, access, link_token_enc, link_expires_at";
+const SHARE_COLUMNS: &str = "id, access, link_token_enc, link_expires_at, link_disabled_at";
 
 pub(super) async fn get(
     State(state): State<AppState>,
@@ -155,14 +159,23 @@ pub(super) async fn patch(
     let settings = state.settings().await?;
     let mut tx = state.db.begin().await?;
     let (plan, _) = lock_as(&mut tx, found.team_id, auth.user_id, now).await?;
-    let row: Option<(Uuid, String)> = sqlx::query_as(
-        "SELECT id, access FROM collections WHERE team_id = $1 AND slug = $2 FOR UPDATE",
+    let row: Option<(Uuid, String, bool)> = sqlx::query_as(
+        "SELECT id, access, link_disabled_at IS NOT NULL FROM collections \
+         WHERE team_id = $1 AND slug = $2 FOR UPDATE",
     )
     .bind(found.team_id)
     .bind(&slug)
     .fetch_optional(&mut *tx)
     .await?;
-    let (id, current) = row.ok_or_else(ApiError::not_found)?;
+    let (id, current, disabled) = row.ok_or_else(ApiError::not_found)?;
+    // A new link would be a way round the takedown. Access and expiry are
+    // still the team's to change, but not in the same call as a reset.
+    if req.reset_link && disabled {
+        return Err(ApiError::new(
+            ErrorCode::LinkDisabled,
+            "This link was turned off by an admin. Contact support.",
+        ));
+    }
     // Re-sending the access it already has is not a change, so no plan check.
     if let Some(access) = req.access
         && access == Access::Restricted

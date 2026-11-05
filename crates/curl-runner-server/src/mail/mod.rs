@@ -86,6 +86,13 @@ pub enum Mail {
         team_name: String,
         reason: Option<String>,
     },
+    /// An admin turned a collection's share link off; sent to the team's owners.
+    LinkDisabled {
+        to: String,
+        team: String,
+        collection: String,
+        reason: Option<String>,
+    },
     /// A message an admin wrote to one person. `body` is plain text with
     /// blank-line paragraphs; its renderer is `templates::message_blocks`.
     AdminMessage {
@@ -175,6 +182,17 @@ impl std::fmt::Debug for Mail {
                 .field("to", to)
                 .field("team_name", team_name)
                 .finish(),
+            Self::LinkDisabled {
+                to,
+                team,
+                collection,
+                ..
+            } => f
+                .debug_struct("LinkDisabled")
+                .field("to", to)
+                .field("team", team)
+                .field("collection", collection)
+                .finish(),
             Self::AdminMessage { to, subject, .. } => f
                 .debug_struct("AdminMessage")
                 .field("to", to)
@@ -207,6 +225,7 @@ impl Mail {
             | Self::PlanGranted { to, .. }
             | Self::OverrideEnding { to, .. }
             | Self::TeamSuspended { to, .. }
+            | Self::LinkDisabled { to, .. }
             | Self::AdminMessage { to, .. }
             | Self::TestEmail { to } => to,
         }

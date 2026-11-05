@@ -6,6 +6,7 @@
 pub mod activity;
 pub mod admins;
 pub mod auth;
+pub mod collections;
 pub mod csv;
 pub mod events;
 pub mod settings;
@@ -83,6 +84,17 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/v1/admin/teams/{team}/email-owners",
             post(teams::email_owners),
+        )
+        .route("/v1/admin/collections", get(collections::list))
+        .route("/v1/admin/collections.csv", get(collections::export))
+        .route("/v1/admin/collections/stats", get(collections::stats))
+        .route(
+            "/v1/admin/collections/{team}/{slug}/disable-link",
+            post(collections::disable_link),
+        )
+        .route(
+            "/v1/admin/collections/{team}/{slug}/enable-link",
+            post(collections::enable_link),
         )
         // A wrong method is a 404 too: a 405 would confirm the path exists.
         .method_not_allowed_fallback(not_found)
