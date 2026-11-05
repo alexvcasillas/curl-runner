@@ -23,8 +23,10 @@ fn prompt(message: &str, tty: bool) -> Option<String> {
         return cliclack::input(message).interact::<String>().ok();
     }
     let mut line = String::new();
-    std::io::stdin().lock().read_line(&mut line).ok()?;
-    Some(line)
+    match std::io::stdin().lock().read_line(&mut line) {
+        Ok(0) | Err(_) => None,
+        Ok(_) => Some(line),
+    }
 }
 
 pub(super) fn login(args: &[String], env: Env, console: &mut Console) -> i32 {
@@ -37,6 +39,10 @@ pub(super) fn login(args: &[String], env: Env, console: &mut Console) -> i32 {
     };
     let tty = std::io::stdin().is_terminal();
     if args.iter().any(|a| a == "--browser") {
+        if email_flag.is_some() {
+            console.err("Use --browser or --email, not both.");
+            return 1;
+        }
         return login_browser(&server, tty, env, console);
     }
     let email = match email_flag {
@@ -123,6 +129,12 @@ fn try_open(url: &str, tty: bool) {
     }
 }
 
+/// The dashboard URL comes from the server and may reach `open`, so it must
+/// be http(s), with plain http only for loopback (same rule as `--server`).
+fn dashboard_url_ok(url: &str) -> bool {
+    client::check_server(url.trim()).is_ok()
+}
+
 /// `login --browser`: sign in on the dashboard, then paste the hand-off code.
 fn login_browser(server: &str, tty: bool, env: Env, console: &mut Console) -> i32 {
     let Some(path) = credentials::path(env) else {
@@ -137,7 +149,7 @@ fn login_browser(server: &str, tty: bool, env: Env, console: &mut Console) -> i3
             return 1;
         }
     };
-    let Some(app_url) = info.app_url.filter(|u| !u.trim().is_empty()) else {
+    let Some(app_url) = info.app_url.filter(|u| dashboard_url_ok(u)) else {
         console.err(
             "This server doesn't support browser sign-in. Run curl-runner login without --browser.",
         );
@@ -152,6 +164,10 @@ fn login_browser(server: &str, tty: bool, env: Env, console: &mut Console) -> i3
     for attempt in 1..=MAX_CODE_TRIES {
         let code = match prompt("Paste the code from your browser:", tty) {
             Some(c) if !c.trim().is_empty() => c.trim().to_string(),
+            None => {
+                console.err("Sign-in cancelled.");
+                return 1;
+            }
             _ => {
                 console.err("A code is required.");
                 return 1;
@@ -225,6 +241,21 @@ pub fn logout(args: &[String], env: Env, console: &mut Console) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dashboard_url_must_be_http_s() {
+        for bad in [
+            "file:///etc/passwd",
+            "curl-runner://x",
+            "-x",
+            "http://example.com",
+        ] {
+            assert!(!dashboard_url_ok(bad), "{bad}");
+        }
+        for ok in ["http://localhost:3000", "https://cloud.example.com"] {
+            assert!(dashboard_url_ok(ok), "{ok}");
+        }
+    }
 
     #[test]
     fn label_uses_env_host_or_fallback() {

@@ -1632,3 +1632,44 @@ fn login_browser_bad_code_reprompts() {
     assert_eq!(o.status.code(), Some(1));
     assert!(!creds_path(home.path()).exists());
 }
+
+#[test]
+fn login_browser_with_email_is_a_usage_error() {
+    let (srv, seen) = handoff_api(Some("https://app.acme.test"));
+    let home = tempfile::tempdir().unwrap();
+    let o = cmd(home.path(), &srv.base_url)
+        .args(["login", "--browser", "--email", "ada@example.com"])
+        .write_stdin("")
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(1));
+    assert!(stderr(&o).contains("Use --browser or --email, not both."));
+    assert!(seen.lock().unwrap().is_empty());
+}
+
+#[test]
+fn login_browser_unsafe_app_url_is_unsupported() {
+    let (srv, _) = handoff_api(Some("file:///etc/passwd"));
+    let home = tempfile::tempdir().unwrap();
+    let o = cmd(home.path(), &srv.base_url)
+        .args(["login", "--browser"])
+        .write_stdin("crh_good\n")
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(1));
+    assert!(stderr(&o).contains("This server doesn't support browser sign-in."));
+}
+
+#[test]
+fn login_browser_eof_says_cancelled() {
+    let (srv, _) = handoff_api(Some("https://app.acme.test"));
+    let home = tempfile::tempdir().unwrap();
+    let o = cmd(home.path(), &srv.base_url)
+        .args(["login", "--browser"])
+        .write_stdin("")
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(1));
+    assert!(stderr(&o).contains("Sign-in cancelled."));
+    assert!(!stderr(&o).contains("A code is required."));
+}
