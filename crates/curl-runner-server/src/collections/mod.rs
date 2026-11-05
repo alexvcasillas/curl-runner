@@ -6,7 +6,7 @@ mod publish;
 mod share;
 mod versions;
 
-pub(crate) use access::{SharedWithMe, shared_for, shared_from};
+pub(crate) use access::{SharedWithMe, share_blocked, shared_for, shared_from};
 pub(crate) use share::parse_email;
 
 use axum::extract::{Path, State};

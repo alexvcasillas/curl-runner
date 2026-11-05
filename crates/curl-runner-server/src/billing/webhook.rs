@@ -163,7 +163,7 @@ async fn webhook(
             Ok(sub) => apply_subscription(&state, &mut tx, &sub, now).await?,
             // Stripe no longer knows it: as good as canceled.
             Err(BillingError::Api { status: 404, .. }) => {
-                apply_missing(&state, &mut tx, &id).await?;
+                apply_missing(&state, &mut tx, &id, now).await?;
             }
             Err(err) => {
                 tracing::warn!("webhook {kind} {event_id}: {err}");

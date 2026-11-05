@@ -9,6 +9,7 @@ pub mod auth;
 pub mod csv;
 pub mod events;
 pub mod settings;
+pub mod teams;
 pub mod users;
 
 use axum::Router;
@@ -54,7 +55,35 @@ pub fn routes() -> Router<AppState> {
             delete(users::unlink_identity),
         )
         .route("/v1/admin/users/{id}/email", post(users::email))
+        .route("/v1/admin/teams", get(teams::list))
+        .route("/v1/admin/teams.csv", get(teams::export))
+        .route(
+            "/v1/admin/teams/{team}",
+            get(teams::detail).delete(teams::delete),
+        )
         .route("/v1/admin/teams/{team}/plan", put(crate::teams::set_plan))
+        .route(
+            "/v1/admin/teams/{team}/override",
+            put(teams::grant).delete(teams::remove_override),
+        )
+        .route("/v1/admin/teams/{team}/suspend", post(teams::suspend))
+        .route("/v1/admin/teams/{team}/unsuspend", post(teams::unsuspend))
+        .route(
+            "/v1/admin/teams/{team}/members/{user_id}",
+            patch(teams::set_member_role),
+        )
+        .route(
+            "/v1/admin/teams/{team}/stripe-sync",
+            post(teams::stripe_sync),
+        )
+        .route(
+            "/v1/admin/teams/{team}/resend-invoice",
+            post(teams::resend_invoice),
+        )
+        .route(
+            "/v1/admin/teams/{team}/email-owners",
+            post(teams::email_owners),
+        )
         // A wrong method is a 404 too: a 405 would confirm the path exists.
         .method_not_allowed_fallback(not_found)
 }

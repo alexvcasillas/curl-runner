@@ -1,5 +1,6 @@
-//! What each plan allows. The team's `plan` column and the server settings
-//! are the only inputs.
+//! What each plan allows. The team's effective plan
+//! ([`crate::billing::effective::effective_plan`]) and the server settings are
+//! the only inputs.
 
 use curl_runner_cloud_proto::Plan;
 

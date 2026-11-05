@@ -29,6 +29,7 @@ use super::auth::{AdminAuth, Perm};
 use super::csv;
 use super::events::{AdminTx, Event};
 use crate::auth::session::column_enum;
+use crate::billing::effective::{PlanRow, PlanSource, effective_plan, plan_columns};
 use crate::collections::{SharedWithMe, shared_for, shared_from};
 use crate::error::ApiError;
 use crate::extract::{ApiJson, ApiPath, ApiQuery};
@@ -93,7 +94,7 @@ struct Filters {
 }
 
 /// `s` as an `ILIKE` contains-pattern, with `%`, `_` and `\` taken literally.
-fn like_pattern(s: &str) -> String {
+pub(super) fn like_pattern(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('%');
     for c in s.chars() {
@@ -405,8 +406,8 @@ struct TeamSql {
     name: String,
     role: String,
     joined_at: DateTime<Utc>,
-    plan: String,
-    plan_source: String,
+    #[sqlx(flatten)]
+    plan: PlanRow,
 }
 
 #[derive(Serialize)]
@@ -417,7 +418,7 @@ pub struct TeamEntry {
     joined_at: DateTime<Utc>,
     plan: Plan,
     /// What backs the plan: `override` (an admin grant), `stripe` or `none`.
-    plan_source: String,
+    plan_source: PlanSource,
 }
 
 #[derive(Serialize, FromRow)]
@@ -478,19 +479,13 @@ pub async fn detail(
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(ApiError::not_found)?;
-    let teams: Vec<TeamSql> = sqlx::query_as(
-        "SELECT t.slug::text AS slug, t.name, m.role, m.created_at AS joined_at, \
-                CASE WHEN ov THEN t.override_plan ELSE t.plan END AS plan, \
-                CASE WHEN ov THEN 'override' \
-                     WHEN t.stripe_subscription_id IS NOT NULL THEN 'stripe' \
-                     ELSE 'none' END AS plan_source \
-         FROM memberships m JOIN teams t ON t.id = m.team_id, \
-              LATERAL (SELECT t.override_plan IS NOT NULL \
-                              AND (t.override_until IS NULL OR t.override_until > $2) AS ov) o \
+    let teams: Vec<TeamSql> = sqlx::query_as(&format!(
+        "SELECT t.slug::text AS slug, t.name, m.role, m.created_at AS joined_at, {} \
+         FROM memberships m JOIN teams t ON t.id = m.team_id \
          WHERE m.user_id = $1 ORDER BY t.name, t.slug",
-    )
+        plan_columns("t")
+    ))
     .bind(id)
-    .bind(now)
     .fetch_all(&state.db)
     .await?;
     let linked: Vec<IdentityEntry> = sqlx::query_as(
@@ -547,13 +542,14 @@ pub async fn detail(
         teams: teams
             .into_iter()
             .map(|t| {
+                let (plan, plan_source) = effective_plan(&t.plan, now);
                 Ok(TeamEntry {
                     slug: t.slug,
                     name: t.name,
                     role: column_enum(t.role)?,
                     joined_at: t.joined_at,
-                    plan: column_enum(t.plan)?,
-                    plan_source: t.plan_source,
+                    plan,
+                    plan_source,
                 })
             })
             .collect::<Result<_, ApiError>>()?,
@@ -611,7 +607,7 @@ fn guard(admin: &AdminAuth, owners: &[String], target: &Target) -> Result<(), Ap
 }
 
 /// `reason` trimmed; empty is `None`.
-fn clean_reason(reason: Option<String>) -> Result<Option<String>, ApiError> {
+pub(super) fn clean_reason(reason: Option<String>) -> Result<Option<String>, ApiError> {
     let reason = reason
         .map(|r| r.trim().to_owned())
         .filter(|r| !r.is_empty());
@@ -912,6 +908,21 @@ pub struct EmailReq {
     body_md: String,
 }
 
+impl EmailReq {
+    /// The subject and body, trimmed and checked: `(subject, body)`.
+    pub(super) fn checked(self) -> Result<(String, String), ApiError> {
+        let subject = self.subject.trim().to_owned();
+        let body = self.body_md.trim().to_owned();
+        if subject.is_empty() || subject.chars().count() > MAX_SUBJECT {
+            return Err(invalid("The subject must be 1 to 200 characters."));
+        }
+        if body.is_empty() || body.chars().count() > MAX_BODY {
+            return Err(invalid("The message must be 1 to 10000 characters."));
+        }
+        Ok((subject, body))
+    }
+}
+
 /// `POST /v1/admin/users/{id}/email`, perm `emails`. The body is plain text
 /// with blank-line paragraphs for now.
 pub async fn email(
@@ -921,14 +932,7 @@ pub async fn email(
     ApiJson(req): ApiJson<EmailReq>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     admin.require(Perm::Emails)?;
-    let subject = req.subject.trim().to_owned();
-    let body = req.body_md.trim().to_owned();
-    if subject.is_empty() || subject.chars().count() > MAX_SUBJECT {
-        return Err(invalid("The subject must be 1 to 200 characters."));
-    }
-    if body.is_empty() || body.chars().count() > MAX_BODY {
-        return Err(invalid("The message must be 1 to 10000 characters."));
-    }
+    let (subject, body) = req.checked()?;
     let mut tx = AdminTx::begin(&state, &admin).await?;
     let target = lock_target(&mut tx, id).await?;
     state

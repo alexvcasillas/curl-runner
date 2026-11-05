@@ -154,7 +154,7 @@ pub(super) async fn patch(
     let found = team_access(&state.db, auth.user_id, &team).await?;
     let settings = state.settings().await?;
     let mut tx = state.db.begin().await?;
-    let (plan, _) = lock_as(&mut tx, found.team_id, auth.user_id).await?;
+    let (plan, _) = lock_as(&mut tx, found.team_id, auth.user_id, now).await?;
     let row: Option<(Uuid, String)> = sqlx::query_as(
         "SELECT id, access FROM collections WHERE team_id = $1 AND slug = $2 FOR UPDATE",
     )
@@ -271,8 +271,9 @@ async fn lock_collection(
     team_id: Uuid,
     user_id: Uuid,
     slug: &str,
+    now: DateTime<Utc>,
 ) -> Result<Locked, ApiError> {
-    let (plan, _) = lock_as(&mut *conn, team_id, user_id).await?;
+    let (plan, _) = lock_as(&mut *conn, team_id, user_id, now).await?;
     let row: Option<(Uuid, String, String)> = sqlx::query_as(
         "SELECT id, access, name FROM collections WHERE team_id = $1 AND slug = $2 FOR UPDATE",
     )
@@ -305,7 +306,7 @@ pub(super) async fn add_entry(
         access,
         name,
         plan,
-    } = lock_collection(&mut tx, found.team_id, auth.user_id, &slug).await?;
+    } = lock_collection(&mut tx, found.team_id, auth.user_id, &slug, now).await?;
     if access != "restricted" {
         return Err(ApiError::new(
             ErrorCode::Conflict,

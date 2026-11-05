@@ -8,6 +8,7 @@ pub mod worker;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use curl_runner_cloud_proto::Plan;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
@@ -60,6 +61,31 @@ pub enum Mail {
     TestEmail { to: String },
     /// The account was suspended and the admin asked to tell them.
     AccountSuspended { to: String, reason: Option<String> },
+    /// An admin granted the team a plan override and asked to tell the owners.
+    /// `until` is `None` for no end date.
+    PlanGranted {
+        to: String,
+        team_name: String,
+        slug: String,
+        plan: Plan,
+        until: Option<DateTime<Utc>>,
+        app_url: String,
+    },
+    /// The team's override ends in 14 days. Sent once per end date.
+    OverrideEnding {
+        to: String,
+        team_name: String,
+        slug: String,
+        plan: Plan,
+        until: DateTime<Utc>,
+        app_url: String,
+    },
+    /// The team was suspended and the admin asked to tell the owners.
+    TeamSuspended {
+        to: String,
+        team_name: String,
+        reason: Option<String>,
+    },
     /// A message an admin wrote to one person. `body` is plain text with
     /// blank-line paragraphs; its renderer is `templates::message_blocks`.
     AdminMessage {
@@ -120,6 +146,35 @@ impl std::fmt::Debug for Mail {
             Self::AccountSuspended { to, .. } => {
                 f.debug_struct("AccountSuspended").field("to", to).finish()
             }
+            Self::PlanGranted {
+                to,
+                team_name,
+                plan,
+                until,
+                ..
+            } => f
+                .debug_struct("PlanGranted")
+                .field("to", to)
+                .field("team_name", team_name)
+                .field("plan", plan)
+                .field("until", until)
+                .finish(),
+            Self::OverrideEnding {
+                to,
+                team_name,
+                until,
+                ..
+            } => f
+                .debug_struct("OverrideEnding")
+                .field("to", to)
+                .field("team_name", team_name)
+                .field("until", until)
+                .finish(),
+            Self::TeamSuspended { to, team_name, .. } => f
+                .debug_struct("TeamSuspended")
+                .field("to", to)
+                .field("team_name", team_name)
+                .finish(),
             Self::AdminMessage { to, subject, .. } => f
                 .debug_struct("AdminMessage")
                 .field("to", to)
@@ -149,6 +204,9 @@ impl Mail {
             | Self::PaymentFailed { to, .. }
             | Self::PlanChanged { to, .. }
             | Self::AccountSuspended { to, .. }
+            | Self::PlanGranted { to, .. }
+            | Self::OverrideEnding { to, .. }
+            | Self::TeamSuspended { to, .. }
             | Self::AdminMessage { to, .. }
             | Self::TestEmail { to } => to,
         }

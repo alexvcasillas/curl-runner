@@ -1,14 +1,17 @@
 //! Keeping the `teams` table in step with Stripe: applying a re-read
-//! subscription, and the background tick for seat counts and the past-due
-//! downgrade.
+//! subscription, and the background tick for seat counts, the past-due
+//! downgrade and plan overrides (the 14-day reminder and expiry).
 
 use std::future::Future;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use curl_runner_cloud_proto::Plan;
+use serde_json::json;
 use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
 
+use super::effective::{PlanChange, PlanRow, effective_plan, parse_plan};
 use super::{BillingError, Subscription, stripe_down_log};
 use crate::error::ApiError;
 use crate::mail::Mail;
@@ -17,6 +20,8 @@ use curl_runner_cloud_proto::ErrorCode;
 
 /// Time between ticks.
 const TICK: Duration = Duration::from_secs(60);
+/// How long before an override ends its owners are reminded.
+pub const OVERRIDE_REMINDER: chrono::Duration = chrono::Duration::days(14);
 
 /// Statuses after which a subscription is gone for good.
 fn is_terminal(status: &str) -> bool {
@@ -67,10 +72,25 @@ struct TeamRow {
     past_due_since: Option<DateTime<Utc>>,
     stripe_subscription_id: Option<String>,
     billing_status: Option<String>,
+    override_plan: Option<String>,
+    override_until: Option<DateTime<Utc>>,
+}
+
+impl TeamRow {
+    /// The effective plan the team would have with `plan` and `subscription`.
+    fn effective(&self, plan: &str, subscription: Option<&str>, now: DateTime<Utc>) -> Plan {
+        let row = PlanRow {
+            plan: plan.to_owned(),
+            stripe_subscription_id: subscription.map(str::to_owned),
+            override_plan: self.override_plan.clone(),
+            override_until: self.override_until,
+        };
+        effective_plan(&row, now).0
+    }
 }
 
 const TEAM_COLUMNS: &str = "id, name, slug::text AS slug, plan, past_due_since, \
-                            stripe_subscription_id, billing_status";
+                            stripe_subscription_id, billing_status, override_plan, override_until";
 
 fn plan_str(plan: &str) -> &'static str {
     if plan == "team" { "team" } else { "free" }
@@ -98,7 +118,7 @@ async fn lock_team_by_subscription(
 }
 
 /// Mail `make(email)` to every owner of `team_id`.
-async fn mail_owners(
+pub(crate) async fn mail_owners(
     state: &AppState,
     tx: &mut PgConnection,
     team_id: Uuid,
@@ -249,6 +269,22 @@ pub async fn apply_subscription(
     .execute(&mut *tx)
     .await?;
 
+    if was != next.plan {
+        PlanChange {
+            team_id: team.id,
+            at: now,
+            source: "stripe",
+            plan: parse_plan(next.plan),
+            admin: None,
+            reason: None,
+            detail: json!({"from": was, "status": sub.status, "subscription": sub.id}),
+        }
+        .record(tx)
+        .await?;
+    }
+    let before = team.effective(was, team.stripe_subscription_id.as_deref(), now);
+    let after = team.effective(next.plan, (!terminal).then_some(sub.id.as_str()), now);
+
     // The copy says "keep the Team plan": only for a team that has it.
     if was == "team"
         && team.past_due_since.is_none()
@@ -264,7 +300,8 @@ pub async fn apply_subscription(
         })
         .await?;
     }
-    if was == "team" && next.plan == "free" {
+    // An active override hides the change: nothing to tell the owners.
+    if before == Plan::Team && after == Plan::Free {
         mail_plan_changed(state, tx, &team).await?;
     }
     Ok(())
@@ -275,6 +312,7 @@ pub async fn apply_missing(
     state: &AppState,
     tx: &mut PgConnection,
     subscription: &str,
+    now: DateTime<Utc>,
 ) -> Result<(), ApiError> {
     let Some(team) = lock_team_by_subscription(tx, subscription).await? else {
         return Ok(());
@@ -288,20 +326,43 @@ pub async fn apply_missing(
     .execute(&mut *tx)
     .await?;
     if team.plan == "team" {
-        mail_plan_changed(state, tx, &team).await?;
+        PlanChange {
+            team_id: team.id,
+            at: now,
+            source: "stripe",
+            plan: Plan::Free,
+            admin: None,
+            reason: None,
+            detail: json!({"from": "team", "status": "missing", "subscription": subscription}),
+        }
+        .record(tx)
+        .await?;
+        // An active override hides the change: nothing to tell the owners.
+        if team.effective("team", Some(subscription), now) == Plan::Team
+            && team.effective("free", None, now) == Plan::Free
+        {
+            mail_plan_changed(state, tx, &team).await?;
+        }
     }
     Ok(())
 }
 
 /// One pass of background work: move teams that stayed past due for the grace period
-/// to Free, push changed seat counts to Stripe, and delete admin events older
-/// than 2 years (an indexed delete that almost always finds nothing). A
+/// to Free, end plan overrides that ran out and remind owners 14 days before
+/// one does, push changed seat counts to Stripe, and delete admin events
+/// older than 2 years (an indexed delete that almost always finds nothing). A
 /// failure is logged and the next tick tries again.
 pub async fn tick(state: &AppState, now: DateTime<Utc>) {
     if let Err(err) = downgrade_past_due(state, now).await {
         tracing::error!("past-due downgrade: {err}");
     }
-    if let Err(err) = sync_seats(state).await {
+    if let Err(err) = expire_overrides(state, now).await {
+        tracing::error!("override expiry: {err}");
+    }
+    if let Err(err) = remind_overrides(state, now).await {
+        tracing::error!("override reminder: {err}");
+    }
+    if let Err(err) = sync_seats(state, now).await {
         tracing::error!("seat sync: {err}");
     }
     if let Err(err) = crate::admin::events::prune(&state.db, now).await {
@@ -348,7 +409,24 @@ async fn downgrade_past_due(state: &AppState, now: DateTime<Utc>) -> Result<(), 
             .bind(id)
             .execute(&mut *tx)
             .await?;
-        mail_plan_changed(state, &mut tx, &team).await?;
+        PlanChange {
+            team_id: id,
+            at: now,
+            source: "past_due",
+            plan: Plan::Free,
+            admin: None,
+            reason: None,
+            detail: json!({"from": "team", "past_due_since": team.past_due_since}),
+        }
+        .record(&mut tx)
+        .await?;
+        // An active override hides the change: nothing to tell the owners.
+        let sub = team.stripe_subscription_id.as_deref();
+        if team.effective("team", sub, now) == Plan::Team
+            && team.effective("free", sub, now) == Plan::Free
+        {
+            mail_plan_changed(state, &mut tx, &team).await?;
+        }
         tx.commit().await?;
     }
     Ok(())
@@ -361,7 +439,107 @@ struct SeatRow {
     seats: i32,
 }
 
-async fn sync_seats(state: &AppState) -> Result<(), ApiError> {
+/// Clear overrides whose end date has passed. The team is back on its stored
+/// (Stripe or default) plan, which `plan_history` records as `expired`.
+async fn expire_overrides(state: &AppState, now: DateTime<Utc>) -> Result<(), ApiError> {
+    let due: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM teams WHERE override_plan IS NOT NULL AND override_until <= $1",
+    )
+    .bind(now)
+    .fetch_all(&state.db)
+    .await?;
+    for id in due {
+        let mut tx = state.db.begin().await?;
+        // Re-check under the lock: an admin may have just extended it.
+        let team: Option<TeamRow> = sqlx::query_as(&format!(
+            "SELECT {TEAM_COLUMNS} FROM teams \
+             WHERE id = $1 AND override_plan IS NOT NULL AND override_until <= $2 FOR UPDATE"
+        ))
+        .bind(id)
+        .bind(now)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some(team) = team else {
+            continue;
+        };
+        sqlx::query(
+            "UPDATE teams SET override_plan = NULL, override_until = NULL, \
+             override_reason = NULL, override_by = NULL, override_at = NULL, \
+             override_reminded_at = NULL WHERE id = $1",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+        let granted = team.override_plan.as_deref().map(parse_plan);
+        let fallback = parse_plan(&team.plan);
+        PlanChange {
+            team_id: id,
+            at: now,
+            source: "expired",
+            plan: fallback,
+            admin: None,
+            reason: None,
+            detail: json!({"override": team.override_plan, "until": team.override_until}),
+        }
+        .record(&mut tx)
+        .await?;
+        if granted == Some(Plan::Team) && fallback == Plan::Free {
+            mail_plan_changed(state, &mut tx, &team).await?;
+        }
+        tx.commit().await?;
+    }
+    Ok(())
+}
+
+/// Email the owners of each team whose override ends within
+/// [`OVERRIDE_REMINDER`], once per end date: `override_reminded_at` is set
+/// with the mail and cleared whenever an admin sets a new end date.
+async fn remind_overrides(state: &AppState, now: DateTime<Utc>) -> Result<(), ApiError> {
+    const DUE: &str = "override_plan IS NOT NULL AND override_reminded_at IS NULL \
+                       AND override_until > $1 AND override_until <= $2";
+    let soon = now + OVERRIDE_REMINDER;
+    let due: Vec<Uuid> = sqlx::query_scalar(&format!("SELECT id FROM teams WHERE {DUE}"))
+        .bind(now)
+        .bind(soon)
+        .fetch_all(&state.db)
+        .await?;
+    for id in due {
+        let mut tx = state.db.begin().await?;
+        let team: Option<TeamRow> = sqlx::query_as(&format!(
+            "SELECT {TEAM_COLUMNS} FROM teams WHERE id = $3 AND {DUE} FOR UPDATE"
+        ))
+        .bind(now)
+        .bind(soon)
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some(team) = team else {
+            continue;
+        };
+        let (Some(plan), Some(until)) = (team.override_plan.as_deref(), team.override_until) else {
+            continue;
+        };
+        let plan = parse_plan(plan);
+        mail_owners(state, &mut tx, team.id, |to| Mail::OverrideEnding {
+            to,
+            team_name: team.name.clone(),
+            slug: team.slug.clone(),
+            plan,
+            until,
+            app_url: state.config.app_url.clone(),
+        })
+        .await?;
+        sqlx::query("UPDATE teams SET override_reminded_at = $2 WHERE id = $1")
+            .bind(id)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+    }
+    Ok(())
+}
+
+async fn sync_seats(state: &AppState, now: DateTime<Utc>) -> Result<(), ApiError> {
     let Some(billing) = &state.billing else {
         return Ok(());
     };
@@ -382,7 +560,7 @@ async fn sync_seats(state: &AppState) -> Result<(), ApiError> {
             if matches!(err, BillingError::Api { status: 404, .. }) {
                 // The subscription is gone: the team moves to Free.
                 let mut tx = state.db.begin().await?;
-                apply_missing(state, &mut tx, &team.stripe_subscription_id).await?;
+                apply_missing(state, &mut tx, &team.stripe_subscription_id, now).await?;
                 tx.commit().await?;
             } else {
                 stripe_down_log(&err);

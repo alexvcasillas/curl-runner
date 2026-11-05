@@ -203,6 +203,35 @@ fn admin_routes(some_user: &str) -> Vec<(&'static str, String, Option<String>)> 
             "/v1/admin/users/bulk".into(),
             Some(json!({"ids": [some_user], "action": "sign_out"}).to_string()),
         ),
+        ("GET", "/v1/admin/teams".into(), None),
+        ("GET", "/v1/admin/teams?q=acme&filter=granted".into(), None),
+        ("GET", "/v1/admin/teams.csv".into(), None),
+        ("GET", "/v1/admin/teams/acme".into(), None),
+        ("DELETE", "/v1/admin/teams/acme".into(), None),
+        (
+            "PUT",
+            "/v1/admin/teams/acme/override".into(),
+            Some(json!({"plan": "team", "reason": "x", "notify": true}).to_string()),
+        ),
+        ("DELETE", "/v1/admin/teams/acme/override".into(), None),
+        (
+            "POST",
+            "/v1/admin/teams/acme/suspend".into(),
+            Some(json!({"reason": "x", "notify": true}).to_string()),
+        ),
+        ("POST", "/v1/admin/teams/acme/unsuspend".into(), None),
+        (
+            "PATCH",
+            format!("/v1/admin/teams/acme/members/{some_user}"),
+            Some(json!({"role": "member"}).to_string()),
+        ),
+        ("POST", "/v1/admin/teams/acme/stripe-sync".into(), None),
+        ("POST", "/v1/admin/teams/acme/resend-invoice".into(), None),
+        (
+            "POST",
+            "/v1/admin/teams/acme/email-owners".into(),
+            Some(json!({"subject": "Hi", "body_md": "Hello"}).to_string()),
+        ),
     ]
 }
 
@@ -238,6 +267,18 @@ async fn non_admin_gets_404_everywhere(pool: PgPool) {
         ("GET", "/v1/admin/users/not-a-uuid".into(), None),
         ("POST", "/v1/admin/users/bulk".into(), Some("{nope".into())),
         ("PUT", format!("/v1/admin/users/{jane_id}"), None),
+        ("GET", "/v1/admin/teams?filter=nope&limit=0".into(), None),
+        (
+            "PUT",
+            "/v1/admin/teams/acme/override".into(),
+            Some("{nope".into()),
+        ),
+        (
+            "PATCH",
+            "/v1/admin/teams/acme/members/not-a-uuid".into(),
+            Some("{}".into()),
+        ),
+        ("PUT", "/v1/admin/teams/acme/suspend".into(), None),
     ]);
     let callers: [(&str, Option<&str>); 4] = [
         ("anonymous", None),

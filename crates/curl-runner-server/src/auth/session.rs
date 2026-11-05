@@ -12,6 +12,7 @@ use serde::Serialize;
 use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
 
+use crate::billing::effective::{PlanRow, effective_plan, plan_columns};
 use crate::error::ApiError;
 use crate::hash::{new_token, secret_hash};
 use crate::state::AppState;
@@ -199,6 +200,15 @@ pub(crate) fn column_enum<T: serde::de::DeserializeOwned>(value: String) -> Resu
     })
 }
 
+#[derive(FromRow)]
+struct MeTeamRow {
+    slug: String,
+    name: String,
+    role: String,
+    #[sqlx(flatten)]
+    plan: PlanRow,
+}
+
 #[derive(Serialize)]
 pub struct MeBody {
     user: UserBody,
@@ -213,22 +223,24 @@ pub async fn me(State(state): State<AppState>, auth: UserAuth) -> Result<Json<Me
             .bind(auth.user_id)
             .fetch_one(&state.db)
             .await?;
-    let rows: Vec<(String, String, String, String)> = sqlx::query_as(
-        "SELECT t.slug::text, t.name, m.role, t.plan \
+    let rows: Vec<MeTeamRow> = sqlx::query_as(&format!(
+        "SELECT t.slug::text AS slug, t.name, m.role, {} \
          FROM memberships m JOIN teams t ON t.id = m.team_id \
          WHERE m.user_id = $1 ORDER BY t.name, t.slug",
-    )
+        plan_columns("t")
+    ))
     .bind(auth.user_id)
     .fetch_all(&state.db)
     .await?;
+    let now = state.clock.now();
     let teams = rows
         .into_iter()
-        .map(|(slug, name, role, plan)| {
+        .map(|r| {
             Ok(TeamBody {
-                slug,
-                name,
-                role: column_enum(role)?,
-                plan: column_enum(plan)?,
+                plan: effective_plan(&r.plan, now).0,
+                slug: r.slug,
+                name: r.name,
+                role: column_enum(r.role)?,
             })
         })
         .collect::<Result<_, ApiError>>()?;

@@ -211,7 +211,7 @@ async fn summary_has_plan_source_and_period_fields(pool: PgPool) {
         json!({
             "plan": "free", "interval": null, "status": null, "seats": 1,
             "past_due_since": null, "can_manage": true, "cancel_at": null,
-            "current_period_end": null, "plan_source": "none",
+            "current_period_end": null, "plan_source": "none", "override_until": null,
         })
     );
     sqlx::query(
@@ -233,6 +233,7 @@ async fn summary_has_plan_source_and_period_fields(pool: PgPool) {
             "past_due_since": "2026-11-01T00:00:00Z", "can_manage": true,
             "cancel_at": "2026-12-01T00:00:00Z",
             "current_period_end": "2026-12-01T00:00:00Z", "plan_source": "stripe",
+            "override_until": null,
         })
     );
 }

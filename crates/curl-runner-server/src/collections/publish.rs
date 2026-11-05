@@ -20,7 +20,7 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::versions::diff;
-use crate::auth::session::column_enum;
+use crate::billing::effective::team_plan;
 use crate::crypto::encrypt_link_token;
 use crate::error::ApiError;
 use crate::hash::{new_token, secret_hash};
@@ -42,6 +42,9 @@ const PUBLISH_WINDOW: chrono::Duration = chrono::Duration::minutes(1);
 /// What a publish gets while an admin has paused publishing.
 pub const PUBLISHING_PAUSED: &str =
     "Publishing is paused for maintenance. Try again in a few minutes.";
+/// What a publish to a suspended team gets.
+pub const TEAM_SUSPENDED: &str =
+    "This team is suspended, so publishing is turned off. Contact support.";
 const MAX_DESCRIPTION_CHARS: usize = 500;
 
 fn invalid_bundle(message: impl Into<String>) -> ApiError {
@@ -178,6 +181,14 @@ pub(super) async fn publish(
     if settings.publishing_paused {
         return Err(ApiError::new(ErrorCode::Unavailable, PUBLISHING_PAUSED));
     }
+    let suspended: bool =
+        sqlx::query_scalar("SELECT suspended_at IS NOT NULL FROM teams WHERE id = $1")
+            .bind(auth.team_id)
+            .fetch_one(&state.db)
+            .await?;
+    if suspended {
+        return Err(ApiError::new(ErrorCode::TeamSuspended, TEAM_SUSPENDED));
+    }
     state.limiter.check(
         &format!("publish:team:{}", auth.team_id),
         PUBLISHES_PER_TEAM,
@@ -236,11 +247,8 @@ pub(super) async fn publish(
         ));
     }
     if locked.access == "restricted" {
-        let plan: String = sqlx::query_scalar("SELECT plan FROM teams WHERE id = $1")
-            .bind(auth.team_id)
-            .fetch_one(&mut *tx)
-            .await?;
-        if !limits(column_enum(plan)?, &settings).restricted {
+        let (plan, _) = team_plan(&mut tx, auth.team_id, now, false).await?;
+        if !limits(plan, &settings).restricted {
             return Err(ApiError::new(
                 ErrorCode::PlanLimit,
                 format!(

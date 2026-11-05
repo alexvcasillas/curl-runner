@@ -1,5 +1,8 @@
 //! Email copy. Short sentences, no em dashes.
 
+use chrono::{DateTime, Utc};
+use curl_runner_cloud_proto::Plan;
+
 use super::Mail;
 
 const SIGN_IN_FOOTER: &str =
@@ -178,6 +181,115 @@ fn render_parts(mail: &Mail) -> (String, String, String) {
                 layout("Your curl-runner account is suspended.", &blocks),
             )
         }
+        Mail::PlanGranted {
+            team_name,
+            slug,
+            plan,
+            until,
+            app_url,
+            ..
+        } => {
+            let name = plan_name(*plan);
+            let link = format!("{app_url}/t/{slug}");
+            let subject = match plan {
+                Plan::Team => format!("curl-runner gave {team_name} the Team plan"),
+                Plan::Free => format!("curl-runner moved {team_name} to the Free plan"),
+            };
+            let (text_end, html_end) = match until {
+                Some(until) => {
+                    let date = long_date(*until);
+                    (
+                        format!(" until {date}."),
+                        format!(" until <b>{}</b>.", esc(&date)),
+                    )
+                }
+                None => (
+                    ", with no end date.".to_owned(),
+                    ", with no end date.".to_owned(),
+                ),
+            };
+            let after = match plan {
+                Plan::Team => {
+                    "Members, restricted collections and everything else on Team work as usual."
+                }
+                Plan::Free => "Nothing was deleted.",
+            };
+            (
+                subject.clone(),
+                format!(
+                    "{subject}.\n\n{team_name} is on the {name} plan{text_end}\n\n{after}\n\n\
+                     Open the team:\n{link}\n"
+                ),
+                layout(
+                    &format!("{}.", esc(&subject)),
+                    &[
+                        Block::Text(format!(
+                            "{} is on the {name} plan{html_end}",
+                            esc(team_name)
+                        )),
+                        Block::Muted(after.into()),
+                        Block::Button("Open the team", esc(&link)),
+                    ],
+                ),
+            )
+        }
+        Mail::OverrideEnding {
+            team_name,
+            slug,
+            plan,
+            until,
+            app_url,
+            ..
+        } => {
+            let name = plan_name(*plan);
+            let date = long_date(*until);
+            let link = format!("{app_url}/t/{slug}/billing");
+            let next = format!(
+                "After that, {team_name} goes back to its Stripe subscription, or to Free if \
+                 it has none. Nothing is deleted."
+            );
+            (
+                format!("{team_name}'s granted plan ends on {date}"),
+                format!(
+                    "The {name} plan curl-runner gave {team_name} ends on {date}.\n\n{next}\n\n\
+                     Go to billing:\n{link}\n"
+                ),
+                layout(
+                    &format!(
+                        "The {name} plan curl-runner gave {} ends on <b>{}</b>.",
+                        esc(team_name),
+                        esc(&date)
+                    ),
+                    &[
+                        Block::Muted(esc(&next)),
+                        Block::Button("Go to billing", esc(&link)),
+                    ],
+                ),
+            )
+        }
+        Mail::TeamSuspended {
+            team_name, reason, ..
+        } => {
+            let how = "Publishing is refused and its share links no longer work. Nothing is \
+                       deleted. Members can still sign in. If you think this is a mistake, \
+                       reply to this email or contact support.";
+            let reason_text = reason
+                .as_deref()
+                .map(|r| format!("\n\nReason: {r}"))
+                .unwrap_or_default();
+            let mut blocks = vec![Block::Muted(how.into())];
+            if let Some(r) = reason {
+                blocks.push(Block::Callout(format!("Reason: {}", esc(r))));
+            }
+            (
+                format!("{team_name} is suspended on curl-runner"),
+                format!("{team_name} is suspended on curl-runner.\n\n{how}{reason_text}\n"),
+                layout(
+                    &format!("<b>{}</b> is suspended on curl-runner.", esc(team_name)),
+                    &blocks,
+                ),
+            )
+        }
         Mail::AdminMessage { subject, body, .. } => (
             subject.clone(),
             format!("{}\n", body.trim()),
@@ -214,6 +326,18 @@ fn render_parts(mail: &Mail) -> (String, String, String) {
             )
         }
     }
+}
+
+fn plan_name(plan: Plan) -> &'static str {
+    match plan {
+        Plan::Free => "Free",
+        Plan::Team => "Team",
+    }
+}
+
+/// `Mar 31, 2027`.
+fn long_date(at: DateTime<Utc>) -> String {
+    at.format("%b %-d, %Y").to_string()
 }
 
 /// The body of an admin's message as layout blocks: one paragraph per blank
@@ -491,7 +615,96 @@ mod tests {
                 subject: "About your account".into(),
                 body: "First line\nsecond line\n\nNext paragraph".into(),
             },
+            plan_granted(Plan::Team, Some(deadline)),
+            plan_granted(Plan::Free, None),
+            override_ending(Plan::Team),
+            override_ending(Plan::Free),
+            team_suspended(Some("Phishing pages")),
+            team_suspended(None),
         ]
+    }
+
+    fn plan_granted(plan: Plan, until: Option<DateTime<Utc>>) -> Mail {
+        Mail::PlanGranted {
+            to: "ada@example.com".into(),
+            team_name: "Acme".into(),
+            slug: "acme".into(),
+            plan,
+            until,
+            app_url: "https://app.example.com".into(),
+        }
+    }
+
+    fn override_ending(plan: Plan) -> Mail {
+        Mail::OverrideEnding {
+            to: "ada@example.com".into(),
+            team_name: "Acme".into(),
+            slug: "acme".into(),
+            plan,
+            until: "2027-03-31T00:00:00Z".parse().unwrap(),
+            app_url: "https://app.example.com".into(),
+        }
+    }
+
+    fn team_suspended(reason: Option<&str>) -> Mail {
+        Mail::TeamSuspended {
+            to: "ada@example.com".into(),
+            team_name: "Acme".into(),
+            reason: reason.map(Into::into),
+        }
+    }
+
+    #[test]
+    fn plan_granted_names_the_plan_and_end() {
+        let (subject, text, html) = render(&plan_granted(
+            Plan::Team,
+            Some("2027-03-31T00:00:00Z".parse().unwrap()),
+        ));
+        assert_eq!(subject, "curl-runner gave Acme the Team plan");
+        assert!(
+            text.contains("Acme is on the Team plan until Mar 31, 2027."),
+            "{text}"
+        );
+        assert!(html.contains("<b>Mar 31, 2027</b>"), "{html}");
+        for s in [&text, &html] {
+            assert!(s.contains("https://app.example.com/t/acme"), "{s}");
+        }
+        let (subject, text, _) = render(&plan_granted(Plan::Free, None));
+        assert_eq!(subject, "curl-runner moved Acme to the Free plan");
+        assert!(
+            text.contains("Acme is on the Free plan, with no end date."),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn override_ending_says_what_comes_next() {
+        let (subject, text, html) = render(&override_ending(Plan::Team));
+        assert_eq!(subject, "Acme's granted plan ends on Mar 31, 2027");
+        assert!(
+            text.contains("The Team plan curl-runner gave Acme ends on Mar 31, 2027."),
+            "{text}"
+        );
+        assert!(
+            text.contains("goes back to its Stripe subscription, or to Free"),
+            "{text}"
+        );
+        assert!(text.contains("Nothing is deleted."), "{text}");
+        for s in [&text, &html] {
+            assert!(s.contains("https://app.example.com/t/acme/billing"), "{s}");
+        }
+    }
+
+    #[test]
+    fn team_suspended_explains_and_names_the_reason_when_given() {
+        let (subject, text, html) = render(&team_suspended(Some("Spam <b>")));
+        assert_eq!(subject, "Acme is suspended on curl-runner");
+        assert!(text.contains("Publishing is refused and its share links no longer work."));
+        assert!(text.contains("Nothing is deleted."));
+        assert!(text.contains("Reason: Spam <b>"));
+        assert!(html.contains("Reason: Spam &lt;b&gt;"));
+        let (_, text, html) = render(&team_suspended(None));
+        assert!(!text.contains("Reason") && !html.contains("Reason"));
     }
 
     #[test]

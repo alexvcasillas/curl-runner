@@ -69,6 +69,16 @@ type Row = (
     DateTime<Utc>,
 );
 
+/// SQL: whether the share link of the `collections` row aliased `collection`,
+/// of the `teams` row aliased `team`, is blocked by an admin. A blocked link
+/// answers 404 to everyone and drops out of "shared with me" and the admin
+/// counts. Every share read goes through this one condition. Today: the
+/// team is suspended.
+/// `_collection` is for link takedowns, which land on the collection row.
+pub(crate) fn share_blocked(team: &str, _collection: &str) -> String {
+    format!("({team}.suspended_at IS NOT NULL)")
+}
+
 /// Find the collection behind `token` and decide whether `auth` may read it.
 async fn resolve(
     state: &AppState,
@@ -85,15 +95,16 @@ async fn resolve(
         return Err(ApiError::not_found());
     }
     let hash = crate::hash::secret_hash(state.config.secret_key.as_bytes(), token);
-    let row: Option<Row> = sqlx::query_as(
+    let row: Option<Row> = sqlx::query_as(&format!(
         "SELECT c.id, c.team_id, t.name, t.slug::text, c.slug::text, c.name, c.description, c.access, \
                 v.number, v.id, v.hash, v.created_at \
          FROM collections c \
          JOIN teams t ON t.id = c.team_id \
          JOIN versions v ON v.collection_id = c.id AND v.number = c.current_version \
          WHERE c.link_hash = $1 AND c.access <> 'off' \
-           AND (c.link_expires_at IS NULL OR c.link_expires_at > $2)",
-    )
+           AND (c.link_expires_at IS NULL OR c.link_expires_at > $2) AND NOT {}",
+        share_blocked("t", "c")
+    ))
     .bind(&hash)
     .bind(state.clock.now())
     .fetch_optional(&state.db)
@@ -220,10 +231,11 @@ type SharedRow = (
 );
 
 /// SQL `FROM ... WHERE` (aliases `c`, `t`, `v`) for the collections shared
-/// with a user by teams they are not in: a live link, a published version,
-/// and either an access-list entry covering them (restricted) or a recorded
-/// open (public). The arguments are SQL expressions: the user's id, their
-/// lowercased email, the `*@domain` form of it, and the current time.
+/// with a user by teams they are not in: a live link that is not
+/// [`share_blocked`], a published version, and either an access-list entry
+/// covering them (restricted) or a recorded open (public). The arguments are
+/// SQL expressions: the user's id, their lowercased email, the `*@domain`
+/// form of it, and the current time.
 pub(crate) fn shared_from(user: &str, email: &str, domain: &str, now: &str) -> String {
     format!(
         "FROM collections c \
@@ -231,6 +243,7 @@ pub(crate) fn shared_from(user: &str, email: &str, domain: &str, now: &str) -> S
          JOIN versions v ON v.collection_id = c.id AND v.number = c.current_version \
          WHERE c.access <> 'off' AND c.link_hash IS NOT NULL \
            AND (c.link_expires_at IS NULL OR c.link_expires_at > {now}) \
+           AND NOT {blocked} \
            AND NOT EXISTS (SELECT 1 FROM memberships m \
                            WHERE m.team_id = c.team_id AND m.user_id = {user}) \
            AND ((c.access = 'restricted' AND EXISTS ( \
@@ -238,7 +251,8 @@ pub(crate) fn shared_from(user: &str, email: &str, domain: &str, now: &str) -> S
                 OR (c.access = 'public' AND EXISTS ( \
                     SELECT 1 FROM share_opens o \
                     WHERE o.collection_id = c.id AND o.user_id = {user})))",
-        entry_covers("e", email, domain)
+        entry_covers("e", email, domain),
+        blocked = share_blocked("t", "c"),
     )
 }
 
