@@ -158,18 +158,6 @@ curl -X PUT https://api.example.com/v1/admin/teams/acme/plan \
   -d '{"plan": "team"}'
 ```
 
-### Stripe billing [#billing]
-
-Billing is off by default, and self-hosted servers don't need it. To charge for teams, set all four variables. Setting only some stops the server at startup.
-
-| Variable | Meaning |
-| --- | --- |
-| `STRIPE_SECRET_KEY` | A Stripe secret or restricted key. |
-| `STRIPE_WEBHOOK_SECRET` | The signing secret of the webhook endpoint. |
-| `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_ANNUAL` | The per-seat price IDs for each billing interval. |
-
-With billing on, `GET /v1/info` reports `"billing": true` and team owners can start a checkout or open the Stripe customer portal from the dashboard.
-
 ```bash title="Example .env"
 POSTGRES_PASSWORD=<password>
 SECRET_KEY=<key>
@@ -184,6 +172,25 @@ SIGNUP=domains
 SIGNUP_DOMAINS=example.com
 OPERATOR_EMAILS=admin@example.com
 ```
+
+### Stripe billing [#billing]
+
+Billing is off by default, and self-hosted servers don't need it. To charge for teams, set all four variables. Setting only some stops the server at startup.
+
+| Variable | Meaning |
+| --- | --- |
+| `STRIPE_SECRET_KEY` | A Stripe secret or restricted key. |
+| `STRIPE_WEBHOOK_SECRET` | The signing secret of the webhook endpoint. |
+| `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_ANNUAL` | The per-seat price IDs for each billing interval. |
+
+Set billing up in Stripe like this:
+
+1. Create a webhook endpoint that points at `{PUBLIC_API_URL}/v1/billing/webhook`.
+2. Subscribe it to six events: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed` and `invoice.paid`.
+3. Set the endpoint's API version to `2026-10-28.endive`.
+4. Create two prices, one monthly and one annual. Each must be a flat per-seat recurring price. Tiered and metered prices aren't supported.
+
+With billing on, `GET /v1/info` reports `"billing": true` and team owners can start a checkout or open the Stripe customer portal from the dashboard.
 
 ## Behind a proxy [#proxy]
 
