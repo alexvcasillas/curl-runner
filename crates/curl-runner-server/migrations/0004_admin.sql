@@ -18,6 +18,8 @@ CREATE TABLE admins (
 CREATE TABLE admin_events (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     admin_user_id uuid,
+    -- The admin's email when it happened, so the log names deleted admins.
+    admin_email   text NOT NULL,
     action        text NOT NULL,
     target_kind   text,
     target_id     text,
@@ -111,13 +113,18 @@ CREATE TABLE broadcasts (
 CREATE INDEX broadcasts_due ON broadcasts (scheduled_at) WHERE status IN ('scheduled', 'sending');
 
 -- kind: `transactional` for everything sent so far. A broadcast queues one
--- row per recipient; the unique index makes a resumed send skip the ones
--- already queued.
+-- row per recipient user; the unique index makes a resumed send skip the
+-- ones already queued. created_at stays NULL on rows queued before this
+-- migration; failed_at is set when the worker gives up.
 ALTER TABLE outbox_emails
     ADD COLUMN kind text NOT NULL DEFAULT 'transactional',
-    ADD COLUMN broadcast_id uuid REFERENCES broadcasts (id) ON DELETE SET NULL;
+    ADD COLUMN broadcast_id uuid REFERENCES broadcasts (id) ON DELETE SET NULL,
+    ADD COLUMN user_id uuid REFERENCES users (id) ON DELETE SET NULL,
+    ADD COLUMN created_at timestamptz,
+    ADD COLUMN failed_at timestamptz;
+ALTER TABLE outbox_emails ALTER COLUMN created_at SET DEFAULT now();
 CREATE UNIQUE INDEX outbox_emails_broadcast_recipient
-    ON outbox_emails (broadcast_id, to_addr) WHERE broadcast_id IS NOT NULL;
+    ON outbox_emails (broadcast_id, user_id) WHERE broadcast_id IS NOT NULL;
 
 -- One row a day for the 90-day revenue chart.
 CREATE TABLE mrr_snapshots (

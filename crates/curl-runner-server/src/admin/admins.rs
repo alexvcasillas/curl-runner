@@ -1,7 +1,7 @@
 //! `/v1/admin/me` and managing who else is an admin.
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::http::StatusCode;
 use chrono::{DateTime, Utc};
 use curl_runner_cloud_proto::ErrorCode;
@@ -11,9 +11,9 @@ use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
 
 use super::auth::{AdminAuth, Perm, Role};
-use super::events::{self, Event};
+use super::events::{AdminTx, Event};
 use crate::error::ApiError;
-use crate::extract::ApiJson;
+use crate::extract::{ApiJson, ApiPath};
 use crate::state::AppState;
 use crate::teams::{first_operator, is_operator};
 
@@ -190,8 +190,7 @@ pub async fn add(
         return Err(owner_conflict());
     }
     let permissions = Perm::normalize(&req.permissions);
-    let now = state.clock.now();
-    let mut tx = state.db.begin().await?;
+    let mut tx = AdminTx::begin(&state, &admin).await?;
     let inserted: Option<Uuid> = sqlx::query_scalar(
         "INSERT INTO admins (user_id, permissions, added_by, added_at) VALUES ($1, $2, $3, $4) \
          ON CONFLICT (user_id) DO NOTHING RETURNING user_id",
@@ -199,7 +198,7 @@ pub async fn add(
     .bind(user_id)
     .bind(Perm::to_column(&permissions))
     .bind(admin.user_id)
-    .bind(now)
+    .bind(tx.at())
     .fetch_optional(&mut *tx)
     .await?;
     if inserted.is_none() {
@@ -208,17 +207,13 @@ pub async fn add(
             "That person is already an admin.",
         ));
     }
-    events::record(
-        &mut tx,
-        &admin,
-        now,
+    let row = one_admin(&mut tx, user_id).await?;
+    tx.commit(
         Event::new("admin.add")
             .target("user", user_id, &email)
             .detail(json!({"permissions": permissions})),
     )
     .await?;
-    let row = one_admin(&mut tx, user_id).await?;
-    tx.commit().await?;
     Ok((StatusCode::CREATED, Json(row)))
 }
 
@@ -265,31 +260,26 @@ pub struct SetPermissions {
 pub async fn update(
     admin: AdminAuth,
     State(state): State<AppState>,
-    Path(user_id): Path<Uuid>,
+    ApiPath(user_id): ApiPath<Uuid>,
     ApiJson(req): ApiJson<SetPermissions>,
 ) -> Result<Json<AdminRow>, ApiError> {
     admin.require(Perm::Admins)?;
     let email = non_owner_email(&state, user_id).await?;
     let permissions = Perm::normalize(&req.permissions);
-    let now = state.clock.now();
-    let mut tx = state.db.begin().await?;
+    let mut tx = AdminTx::begin(&state, &admin).await?;
     let before = lock_admin(&mut tx, user_id).await?;
     sqlx::query("UPDATE admins SET permissions = $2 WHERE user_id = $1")
         .bind(user_id)
         .bind(Perm::to_column(&permissions))
         .execute(&mut *tx)
         .await?;
-    events::record(
-        &mut tx,
-        &admin,
-        now,
+    let row = one_admin(&mut tx, user_id).await?;
+    tx.commit(
         Event::new("admin.update")
             .target("user", user_id, &email)
             .detail(json!({"from": before, "to": permissions})),
     )
     .await?;
-    let row = one_admin(&mut tx, user_id).await?;
-    tx.commit().await?;
     Ok(Json(row))
 }
 
@@ -297,26 +287,21 @@ pub async fn update(
 pub async fn remove(
     admin: AdminAuth,
     State(state): State<AppState>,
-    Path(user_id): Path<Uuid>,
+    ApiPath(user_id): ApiPath<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     admin.require(Perm::Admins)?;
     let email = non_owner_email(&state, user_id).await?;
-    let now = state.clock.now();
-    let mut tx = state.db.begin().await?;
+    let mut tx = AdminTx::begin(&state, &admin).await?;
     let before = lock_admin(&mut tx, user_id).await?;
     sqlx::query("DELETE FROM admins WHERE user_id = $1")
         .bind(user_id)
         .execute(&mut *tx)
         .await?;
-    events::record(
-        &mut tx,
-        &admin,
-        now,
+    tx.commit(
         Event::new("admin.remove")
             .target("user", user_id, &email)
             .detail(json!({"permissions": before})),
     )
     .await?;
-    tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

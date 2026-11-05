@@ -129,6 +129,7 @@ async fn send_next(
             // After the last attempt nothing will read the bodies again.
             sqlx::query(
                 "UPDATE outbox_emails SET attempts = $2, next_attempt_at = $3, last_error = $4, \
+                 failed_at = CASE WHEN $5 THEN $6 ELSE failed_at END, \
                  subject = CASE WHEN $5 THEN '' ELSE subject END, \
                  text_body = CASE WHEN $5 THEN '' ELSE text_body END, \
                  html_body = CASE WHEN $5 THEN '' ELSE html_body END WHERE id = $1",
@@ -138,6 +139,7 @@ async fn send_next(
             .bind(now + backoff(row.attempts))
             .bind(error)
             .bind(gave_up)
+            .bind(now)
             .execute(&mut *tx)
             .await?;
         }

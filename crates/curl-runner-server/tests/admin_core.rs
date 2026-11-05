@@ -563,8 +563,8 @@ async fn every_write_records_one_event(pool: PgPool) {
 async fn seed_events(app: &TestApp, admin: Uuid, actions: &[&str], start: DateTime<Utc>) {
     for (i, action) in actions.iter().enumerate() {
         sqlx::query(
-            "INSERT INTO admin_events (id, admin_user_id, action, target_kind, target_id, target_label, detail, ip, at) \
-             VALUES ($1, $2, $3, 'team', 't', 'acme', '{}', '203.0.113.7', $4)",
+            "INSERT INTO admin_events (id, admin_user_id, admin_email, action, target_kind, target_id, target_label, detail, ip, at) \
+             VALUES ($1, $2, 'snapshot@example.com', $3, 'team', 't', 'acme', '{}', '203.0.113.7', $4)",
         )
         .bind(Uuid::new_v4())
         .bind(admin)
@@ -730,8 +730,8 @@ async fn csv_escapes_formulas(pool: PgPool) {
     .enumerate()
     {
         sqlx::query(
-            "INSERT INTO admin_events (id, admin_user_id, action, target_kind, target_id, target_label, detail, ip, at) \
-             VALUES ($1, $2, 'team.suspend', 'team', 't', $3, $4, '203.0.113.7', $5)",
+            "INSERT INTO admin_events (id, admin_user_id, admin_email, action, target_kind, target_id, target_label, detail, ip, at) \
+             VALUES ($1, $2, 'snapshot@example.com', 'team.suspend', 'team', 't', $3, $4, '203.0.113.7', $5)",
         )
         .bind(Uuid::new_v4())
         .bind(ada_id)
@@ -907,6 +907,16 @@ async fn migration_0004_applies_to_populated_db(pool: PgPool) {
             .await
             .unwrap();
     assert_eq!((kind.as_str(), broadcast), ("transactional", None));
+    let (created, failed, recipient): (Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<Uuid>) =
+        sqlx::query_as("SELECT created_at, failed_at, user_id FROM outbox_emails")
+            .fetch_one(db)
+            .await
+            .unwrap();
+    assert_eq!(
+        (created, failed, recipient),
+        (None, None, None),
+        "existing rows"
+    );
     let (team_id, summary): (Option<Uuid>, Option<String>) =
         sqlx::query_as("SELECT team_id, summary FROM stripe_events")
             .fetch_one(db)
@@ -955,17 +965,27 @@ async fn migration_0004_applies_to_populated_db(pool: PgPool) {
     .fetch_one(db)
     .await
     .unwrap();
-    let insert = || {
+    let insert = |to: &'static str| {
         sqlx::query(
-            "INSERT INTO outbox_emails (to_addr, subject, text_body, next_attempt_at, kind, broadcast_id) \
-             VALUES ('ada@example.com', 'News', 'Hi', $1, 'broadcast', $2)",
+            "INSERT INTO outbox_emails (to_addr, subject, text_body, next_attempt_at, kind, broadcast_id, user_id) \
+             VALUES ($3, 'News', 'Hi', $1, 'broadcast', $2, $4)",
         )
         .bind(now)
         .bind(broadcast)
+        .bind(to)
+        .bind(user)
         .execute(db)
     };
-    insert().await.unwrap();
-    assert!(insert().await.is_err());
+    insert("ada@example.com").await.unwrap();
+    // Keyed on the user, not the address: a changed email is still one row.
+    assert!(insert("ada.new@example.com").await.is_err());
+    // New rows get created_at from the column default.
+    let created: Option<DateTime<Utc>> =
+        sqlx::query_scalar("SELECT created_at FROM outbox_emails WHERE broadcast_id IS NOT NULL")
+            .fetch_one(db)
+            .await
+            .unwrap();
+    assert!(created.is_some());
 
     // A user delete still cascades through the new tables.
     sqlx::query("INSERT INTO admins (user_id, permissions, added_at) VALUES ($1, '{users}', $2)")
@@ -991,4 +1011,121 @@ async fn migration_0004_applies_to_populated_db(pool: PgPool) {
     .await
     .unwrap();
     assert_eq!(left, 0);
+}
+
+#[sqlx::test]
+async fn deleted_admin_still_named_in_log(pool: PgPool) {
+    let app = owner_app(pool).await;
+    let ada = app.sign_in(OWNER).await;
+    let rosa = app.sign_in(ROSA).await;
+    let rosa_id = user_id(&app, &rosa).await;
+    let jane = app.sign_in("jane@example.com").await;
+    add_admin(&app, &ada, ROSA, json!(["admins"])).await;
+    app.clock.advance(Duration::seconds(1));
+    let (status, _) = add_admin(&app, &rosa, "jane@example.com", json!([])).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let _ = jane;
+    sqlx::query("DELETE FROM users WHERE id = $1::uuid")
+        .bind(&rosa_id)
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+
+    let body = list_by(&app, &ada, "").await;
+    let by_rosa = &body["items"][0];
+    assert_eq!(by_rosa["target_label"], "jane@example.com");
+    assert_eq!(by_rosa["admin"]["user_id"], rosa_id.as_str());
+    assert_eq!(by_rosa["admin"]["email"], ROSA);
+    assert_eq!(by_rosa["admin"]["name"], Value::Null);
+    let (_, _, csv) = send(
+        &app,
+        "GET",
+        "/v1/admin/activity.csv",
+        None,
+        Some(&ada),
+        None,
+    )
+    .await;
+    let line = csv.split("\r\n").nth(1).unwrap();
+    assert!(line.contains(&format!(",{ROSA},admin.add,")), "{line}");
+}
+
+#[sqlx::test]
+async fn cursor_walks_rows_sharing_a_time(pool: PgPool) {
+    let app = owner_app(pool).await;
+    let ada = app.sign_in(OWNER).await;
+    let ada_id: Uuid = user_id(&app, &ada).await.parse().unwrap();
+    let at: DateTime<Utc> = NOW.parse().unwrap();
+    for _ in 0..5 {
+        seed_events(&app, ada_id, &["admin.add"], at).await;
+    }
+    seed_events(&app, ada_id, &["admin.remove"], at - Duration::seconds(1)).await;
+    let mut ids = Vec::new();
+    let mut q = "?limit=1".to_owned();
+    loop {
+        let body = list_by(&app, &ada, &q).await;
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1, "{body}");
+        ids.push(items[0]["id"].as_str().unwrap().to_owned());
+        match body["next_cursor"].as_str() {
+            Some(c) => q = format!("?limit=1&cursor={c}"),
+            None => break,
+        }
+    }
+    let all = list_by(&app, &ada, "").await;
+    let want: Vec<String> = all["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["id"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(want.len(), 6);
+    assert_eq!(ids, want, "every row once, in order");
+}
+
+#[sqlx::test]
+async fn email_group_is_anchored(pool: PgPool) {
+    let app = owner_app(pool).await;
+    let ada = app.sign_in(OWNER).await;
+    let ada_id: Uuid = user_id(&app, &ada).await.parse().unwrap();
+    let at = NOW.parse::<DateTime<Utc>>().unwrap() - Duration::minutes(1);
+    seed_events(
+        &app,
+        ada_id,
+        &[
+            "broadcast.send",
+            "user.email",
+            "team.email_owners",
+            "settings.emailing",
+            "user.email_change",
+            "admin.broadcast.x",
+        ],
+        at,
+    )
+    .await;
+    let body = list_by(&app, &ada, "?action_group=email").await;
+    let actions: Vec<&str> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["action"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        actions,
+        ["team.email_owners", "user.email", "broadcast.send"]
+    );
+}
+
+#[sqlx::test]
+async fn admin_bad_path_uuid_is_api_400(pool: PgPool) {
+    let app = owner_app(pool).await;
+    let ada = app.sign_in(OWNER).await;
+    for (method, body) in [
+        ("PATCH", Some(json!({"permissions": []}))),
+        ("DELETE", None),
+    ] {
+        let (status, out) = json_req(&app, method, "/v1/admin/admins/not-a-uuid", body, &ada).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{method}");
+        assert_eq!(out["error"], "invalid_request", "{method}: {out}");
+    }
 }

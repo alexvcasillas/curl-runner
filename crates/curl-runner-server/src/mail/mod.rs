@@ -144,8 +144,9 @@ impl Mailer {
     pub async fn enqueue(&self, tx: &mut PgConnection, mail: Mail) -> Result<(), ApiError> {
         let (subject, text, html) = templates::render(&mail);
         sqlx::query(
-            "INSERT INTO outbox_emails (to_addr, subject, text_body, html_body, next_attempt_at) \
-             VALUES ($1, $2, $3, $4, $5)",
+            "INSERT INTO outbox_emails \
+             (to_addr, subject, text_body, html_body, next_attempt_at, created_at) \
+             VALUES ($1, $2, $3, $4, $5, $5)",
         )
         .bind(mail.to())
         .bind(subject)

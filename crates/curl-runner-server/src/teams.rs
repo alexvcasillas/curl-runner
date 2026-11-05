@@ -11,7 +11,7 @@ use serde_json::json;
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
-use crate::admin::events::{self, Event};
+use crate::admin::events::{AdminTx, Event};
 use crate::admin::{AdminAuth, Perm, Role as AdminRole};
 use crate::auth::UserAuth;
 use crate::auth::session::column_enum;
@@ -885,7 +885,7 @@ pub(crate) async fn set_plan(
     ApiJson(req): ApiJson<SetPlan>,
 ) -> Result<Json<TeamPlan>, ApiError> {
     admin.require(Perm::Billing)?;
-    let mut tx = state.db.begin().await?;
+    let mut tx = AdminTx::begin(&state, &admin).await?;
     let team: Option<(Uuid, String, String)> =
         sqlx::query_as("SELECT id, slug::text, plan FROM teams WHERE slug = $1 FOR UPDATE")
             .bind(&slug)
@@ -898,16 +898,12 @@ pub(crate) async fn set_plan(
         .bind(&plan)
         .execute(&mut *tx)
         .await?;
-    events::record(
-        &mut tx,
-        &admin,
-        state.clock.now(),
+    tx.commit(
         Event::new("team.plan.set")
             .target("team", team_id, &slug)
             .detail(json!({"from": before, "to": plan})),
     )
     .await?;
-    tx.commit().await?;
     Ok(Json(TeamPlan {
         slug,
         plan: req.plan,

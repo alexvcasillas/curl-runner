@@ -1,12 +1,15 @@
 //! The audit log: one `admin_events` row per admin write.
 
+use std::ops::{Deref, DerefMut};
+
 use chrono::{DateTime, Months, Utc};
 use serde_json::Value;
-use sqlx::{PgConnection, PgPool};
+use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use super::auth::AdminAuth;
 use crate::error::ApiError;
+use crate::state::AppState;
 
 /// Events older than this are deleted.
 pub const RETENTION: Months = Months::new(24);
@@ -54,7 +57,8 @@ impl Event {
 }
 
 /// Insert `event` by `admin` at `at`. Call it inside the write's own
-/// transaction, so the change and its record commit together.
+/// transaction, so the change and its record commit together. Prefer
+/// [`AdminTx`], which cannot commit without an event.
 pub async fn record(
     conn: &mut PgConnection,
     admin: &AdminAuth,
@@ -63,11 +67,13 @@ pub async fn record(
 ) -> Result<(), ApiError> {
     sqlx::query(
         "INSERT INTO admin_events \
-         (id, admin_user_id, action, target_kind, target_id, target_label, detail, ip, at) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+         (id, admin_user_id, admin_email, action, target_kind, target_id, target_label, \
+          detail, ip, at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
     )
     .bind(Uuid::new_v4())
     .bind(admin.user_id)
+    .bind(&admin.email)
     .bind(event.action)
     .bind(event.target_kind)
     .bind(event.target_id)
@@ -78,6 +84,51 @@ pub async fn record(
     .execute(conn)
     .await?;
     Ok(())
+}
+
+/// The transaction of one admin write. It derefs to the connection for the
+/// write's queries, and the only way to commit is [`AdminTx::commit`], which
+/// records the event first. Dropping it rolls back.
+pub struct AdminTx<'a> {
+    tx: Transaction<'static, Postgres>,
+    admin: &'a AdminAuth,
+    at: DateTime<Utc>,
+}
+
+impl<'a> AdminTx<'a> {
+    pub async fn begin(state: &AppState, admin: &'a AdminAuth) -> Result<Self, ApiError> {
+        Ok(Self {
+            tx: state.db.begin().await?,
+            admin,
+            at: state.clock.now(),
+        })
+    }
+
+    /// When the write happens: the event's `at`.
+    pub fn at(&self) -> DateTime<Utc> {
+        self.at
+    }
+
+    /// Record `event`, then commit the write and the event together.
+    pub async fn commit(mut self, event: Event) -> Result<(), ApiError> {
+        record(&mut self.tx, self.admin, self.at, event).await?;
+        self.tx.commit().await?;
+        Ok(())
+    }
+}
+
+impl Deref for AdminTx<'_> {
+    type Target = PgConnection;
+
+    fn deref(&self) -> &PgConnection {
+        &self.tx
+    }
+}
+
+impl DerefMut for AdminTx<'_> {
+    fn deref_mut(&mut self) -> &mut PgConnection {
+        &mut self.tx
+    }
 }
 
 /// Delete events older than [`RETENTION`]. Returns how many went.

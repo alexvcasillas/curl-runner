@@ -29,7 +29,7 @@ fn group_pattern(group: &str) -> Option<&'static str> {
     match group {
         "override" => Some(r"^team\.(override|plan)\."),
         "suspension" => Some(r"^((user|team)\.(un)?suspend$|collection\.link\.)"),
-        "email" => Some(r"(^broadcast\.|\.email)"),
+        "email" => Some(r"(^broadcast\.|\.email(_owners)?$)"),
         "settings" => Some(r"^settings\."),
         "admins" => Some(r"^admin\."),
         _ => None,
@@ -130,7 +130,7 @@ struct EventSql {
     id: Uuid,
     at: DateTime<Utc>,
     admin_user_id: Option<Uuid>,
-    admin_email: Option<String>,
+    admin_email: String,
     admin_name: Option<String>,
     action: String,
     target_kind: Option<String>,
@@ -143,8 +143,9 @@ struct EventSql {
 #[derive(Serialize)]
 pub struct AdminRef {
     user_id: Uuid,
-    /// `None` once the admin's account is deleted.
-    email: Option<String>,
+    /// The current email, or the one at the time once the account is deleted.
+    email: String,
+    /// `None` once the account is deleted.
     name: Option<String>,
 }
 
@@ -181,7 +182,8 @@ async fn page(
     limit: i64,
 ) -> Result<(Vec<EventSql>, Option<Cursor>), ApiError> {
     let mut rows: Vec<EventSql> = sqlx::query_as(&format!(
-        "SELECT e.id, e.at, e.admin_user_id, u.email::text AS admin_email, u.name AS admin_name, \
+        "SELECT e.id, e.at, e.admin_user_id, \
+                COALESCE(u.email::text, e.admin_email) AS admin_email, u.name AS admin_name, \
                 e.action, e.target_kind, e.target_id, e.target_label, e.detail, e.ip \
          FROM admin_events e LEFT JOIN users u ON u.id = e.admin_user_id \
          WHERE {WHERE} AND ($4::timestamptz IS NULL OR (e.at, e.id) < ($4, $5::uuid)) \
@@ -261,7 +263,7 @@ const CSV_HEADER: [&str; 8] = [
 fn csv_row(r: EventSql) -> Vec<String> {
     vec![
         r.at.to_rfc3339_opts(SecondsFormat::Secs, true),
-        r.admin_email.unwrap_or_default(),
+        r.admin_email,
         r.action,
         r.target_kind.unwrap_or_default(),
         r.target_id.unwrap_or_default(),

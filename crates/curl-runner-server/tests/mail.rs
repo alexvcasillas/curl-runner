@@ -6,6 +6,7 @@ use std::sync::Mutex;
 
 use chrono::{DateTime, Duration, Utc};
 use common::{NOW, test_app};
+use curl_runner_server::clock::Clock;
 use curl_runner_server::mail::transport::SendFuture;
 use curl_runner_server::mail::worker::{MAX_ATTEMPTS, run_once};
 use curl_runner_server::mail::{Mail, Transport};
@@ -184,6 +185,27 @@ async fn worker_backs_off_on_failure(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn enqueue_sets_created_at_from_the_clock(pool: PgPool) {
+    let app = test_app(pool.clone()).await;
+    app.clock.advance(Duration::minutes(5));
+    let mut tx = pool.begin().await.unwrap();
+    app.state
+        .mailer
+        .enqueue(&mut tx, code_mail())
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let (created, failed, kind): (Option<DateTime<Utc>>, Option<DateTime<Utc>>, String) =
+        sqlx::query_as("SELECT created_at, failed_at, kind FROM outbox_emails")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(created, Some(app.clock.now()));
+    assert_eq!(failed, None);
+    assert_eq!(kind, "transactional");
+}
+
+#[sqlx::test]
 async fn worker_gives_up_after_max_attempts(pool: PgPool) {
     let app = test_app(pool.clone()).await;
     let mut tx = pool.begin().await.unwrap();
@@ -206,6 +228,16 @@ async fn worker_gives_up_after_max_attempts(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(attempts, MAX_ATTEMPTS);
+    let failed_at: Option<DateTime<Utc>> =
+        sqlx::query_scalar("SELECT failed_at FROM outbox_emails")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        failed_at,
+        Some(app.clock.now() - Duration::hours(2)),
+        "set on the last attempt"
+    );
     let (subject, text, html): (String, String, Option<String>) =
         sqlx::query_as("SELECT subject, text_body, html_body FROM outbox_emails")
             .fetch_one(&pool)
