@@ -1,0 +1,124 @@
+---
+title: "Introducing curl-runner Cloud in private preview"
+description: curl-runner Cloud keeps the API collections you share in sync with git. 2.6.0 ships publish and pull, so CI publishes on every push.
+date: 2026-11-05
+author: Alex Casillas
+---
+
+curl-runner Cloud is in private preview. It keeps the collections you share with customers and other teams in sync with git. curl-runner 2.6.0 ships the first pieces: publish a collection from CI, and pull a shared one onto your machine.
+
+```bash title="Terminal"
+curl-runner upgrade
+curl-runner publish
+```
+
+## Why
+
+If you share API requests with customers or other teams, you've probably lived this. The requests live in a shared workspace somewhere. The API changes in git, and someone has to remember to update that workspace by hand. Usually nobody does, and a customer finds out when a request stops working.
+
+Your collection already lives in git, as YAML files. So the copy everyone else sees should come from git too: your CI publishes the folder on every push, and the people you share it with always get the latest version.
+
+<CloudFlow>Your CI publishes from git, Cloud keeps every version, and the people you share with pull the latest.</CloudFlow>
+
+## Git or Cloud as the source
+
+Each collection in Cloud has one source of truth, and you pick which:
+
+- **Git.** The YAML files in your repo are the collection. CI publishes them, and nobody edits the Cloud copy. This is what 2.6.0 ships.
+- **Cloud.** The collection is edited in Cloud itself, from the studio, with no repo behind it. This comes with the dashboard and studio sync.
+
+Only one side can win, so the two never fight. If a collection's source is Cloud, `publish` from CI stops with exit code `4` and tells you to switch the source to git first. It never overwrites edits made in Cloud.
+
+## Publish from CI
+
+Add a `cloud:` block to `curl-runner.yaml` in the collection folder:
+
+```yaml title="curl-runner.yaml"
+cloud:
+  collection: payments-api
+  name: Payments API
+  description: Smoke tests for the payments service.
+  inputs:
+    - name: BASE_URL
+      description: Where the API runs.
+      default: https://api.example.com
+    - name: API_TOKEN
+      description: A token for the staging API.
+      secret: true
+      required: true
+```
+
+Inputs are what a person fills in before running the collection. A secret input is declared by name only, so its value never leaves the machine of whoever runs it.
+
+Then publish:
+
+```text title="Output"
+$ curl-runner publish
+payments-api: published v3 (1 added, 2 changed, 0 removed)
+```
+
+A few things I cared about here:
+
+- **Nothing half-published.** `publish` checks every file on your machine first and sends nothing if anything is wrong. `--dry-run` shows what would change.
+- **No retrying CI jobs by hand.** If the server can't be reached, `publish` tries up to five times, waiting longer each time. Publishing the same folder twice is safe: an unchanged folder prints `unchanged (v3)` and exits `0`.
+- **Exit codes you can act on.** `1` bad files, `2` sign-in, `3` plan limit, `4` the collection is edited in the studio instead of git, `5` server unreachable.
+- **No secrets by accident.** A folder where a secret input has a literal value in a `variables` block is refused.
+- **Each version links back to git.** On GitHub Actions and GitLab CI, the commit, ref and repository are recorded with it.
+
+There's a GitHub Action that installs the CLI and publishes on every push to `main`:
+
+```yaml title=".github/workflows/publish.yml"
+name: Publish to curl-runner Cloud
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: alexvcasillas/curl-runner/actions/publish@main
+        with:
+          token: ${{ secrets.CURL_RUNNER_TOKEN }}
+          team: acme
+          path: collections/*
+          version: 2.6.0
+```
+
+Pin the action to a commit SHA rather than `@main` in a workflow that holds a token. Any other CI works the same way: install the CLI, set `CURL_RUNNER_TOKEN` and `CURL_RUNNER_TEAM`, and run `curl-runner publish`.
+
+## Pull a shared collection
+
+The people you share a collection with get a link. One command puts it on their machine:
+
+```text title="Output"
+$ curl-runner pull https://cloud.curl-runner.com/s/<token> payments-api
+Pulled Payments API v3 into payments-api. Fill in payments-api/.env (see .env.example), then run: cd payments-api && curl-runner --all
+```
+
+Later, `curl-runner pull payments-api` updates it to the latest version. Their own changes are local: if they edited a pulled file, `pull` asks before replacing it.
+
+A collection can be public, so anyone with the link opens it, or restricted to a list of emails or a whole domain like `*@example.com`.
+
+## Sign in
+
+`curl-runner login` emails you a code. No passwords, no browser required. `curl-runner logout` signs you out.
+
+## Private preview
+
+Cloud is invite-only for now. Sign-ups open with the dashboard at `cloud.curl-runner.com`, where you'll create teams, manage share links and see every version. Until it's out, share links work with `curl-runner pull` but don't open in a browser yet. The [Cloud docs](/docs/features/cloud) show how to do all of it with the API in the meantime.
+
+The server is open source. If you'd rather keep everything on your own machines, [run it yourself](/docs/self-hosting). It's one Docker Compose file with Postgres. It's free, and teams on your server have no member limits.
+
+## Upgrade
+
+If you installed the standalone binary, `curl-runner upgrade` takes you to 2.6.0. With Homebrew or npm:
+
+```bash title="Terminal"
+brew upgrade alexvcasillas/tap/curl-runner
+npm i -g @curl-runner/cli@latest
+```
+
+The [changelog](/changelog#2.6.0) has the rest. If you share API collections today and this sounds useful, [open an issue](https://github.com/alexvcasillas/curl-runner/issues) and tell me how you do it now. I'd love to hear what hurts 🙂

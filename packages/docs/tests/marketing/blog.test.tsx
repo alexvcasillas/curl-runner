@@ -117,8 +117,8 @@ describe('2.4 Postman import post', () => {
 describe('2.5 OpenAPI import post', () => {
   const SLUG = 'curl-runner-2-5-openapi-import';
 
-  it('is the newest post', () => {
-    expect(getPosts()[0]?.slug).toBe(SLUG);
+  it('is listed', () => {
+    expect(getPosts().map((p) => p.slug)).toContain(SLUG);
   });
 
   it('shows the OpenAPI screenshots and links to the docs, downloads and changelog', async () => {
@@ -131,6 +131,30 @@ describe('2.5 OpenAPI import post', () => {
     expect(out).toContain('href="/changelog#2.5.0"');
     const text = out.replace(/<[^>]+>/g, '');
     expect(text).toContain('curl-runner convert openapi');
+    expect(out).not.toContain('—');
+  });
+});
+
+describe('Cloud private preview post', () => {
+  const SLUG = 'introducing-curl-runner-cloud';
+
+  it('is the newest post', () => {
+    expect(getPosts()[0]?.slug).toBe(SLUG);
+  });
+
+  it('shows the flow diagram and links to the docs, self-hosting and changelog', async () => {
+    const out = await html(await postPage(SLUG));
+    const text = out.replace(/<[^>]+>/g, '');
+    for (const step of ['Your repo', 'CI', 'curl-runner Cloud', 'Your customers']) {
+      expect(text, step).toContain(step);
+    }
+    expect(out).toContain('href="/docs/features/cloud"');
+    expect(out).toContain('href="/docs/self-hosting"');
+    expect(out).toContain('href="/changelog#2.6.0"');
+    expect(text).toContain('curl-runner publish');
+    expect(text).toContain('version: 2.6.0');
+    // The dashboard isn't live yet, so nothing may link to it.
+    expect(out).not.toContain('href="https://cloud.curl-runner.com');
     expect(out).not.toContain('—');
   });
 });

@@ -1,10 +1,12 @@
 import defaultMdxComponents from 'fumadocs-ui/mdx';
 import type { MDXComponents } from 'mdx/types';
+import { CloudFlow } from '@/components/site/CloudFlow';
 import { StudioScreenshot } from '@/components/site/Screenshot';
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
     ...defaultMdxComponents,
+    CloudFlow,
     StudioScreenshot,
     ...components,
   } satisfies MDXComponents;
