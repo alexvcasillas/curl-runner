@@ -160,6 +160,29 @@ fn render_parts(mail: &Mail) -> (String, String, String) {
                 )],
             ),
         ),
+        Mail::AccountSuspended { reason, .. } => {
+            let how = "You can't sign in while it is suspended. Teams, tokens and collections \
+                       keep working. If you think this is a mistake, reply to this email or \
+                       contact support.";
+            let reason_text = reason
+                .as_deref()
+                .map(|r| format!("\n\nReason: {r}"))
+                .unwrap_or_default();
+            let mut blocks = vec![Block::Muted(how.into())];
+            if let Some(r) = reason {
+                blocks.push(Block::Callout(format!("Reason: {}", esc(r))));
+            }
+            (
+                "Your curl-runner account is suspended".into(),
+                format!("Your curl-runner account is suspended.\n\n{how}{reason_text}\n"),
+                layout("Your curl-runner account is suspended.", &blocks),
+            )
+        }
+        Mail::AdminMessage { subject, body, .. } => (
+            subject.clone(),
+            format!("{}\n", body.trim()),
+            layout(&esc(&one_line(subject)), &message_blocks(body)),
+        ),
         Mail::PlanChanged {
             team_name,
             slug,
@@ -191,6 +214,18 @@ fn render_parts(mail: &Mail) -> (String, String, String) {
             )
         }
     }
+}
+
+/// The body of an admin's message as layout blocks: one paragraph per blank
+/// line, single line breaks kept, HTML escaped. Task 6 replaces this with a
+/// Markdown renderer; everything else about `AdminMessage` stays.
+fn message_blocks(body: &str) -> Vec<Block> {
+    body.replace("\r\n", "\n")
+        .split("\n\n")
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(|p| Block::Text(esc(p).replace('\n', "<br>")))
+        .collect()
 }
 
 const MEMBER_ROLE: &str = "Members publish collections, share them and make publish tokens.";
@@ -447,7 +482,46 @@ mod tests {
             Mail::TestEmail {
                 to: "ada@example.com".into(),
             },
+            Mail::AccountSuspended {
+                to: "ada@example.com".into(),
+                reason: Some("Chargeback dispute".into()),
+            },
+            Mail::AdminMessage {
+                to: "ada@example.com".into(),
+                subject: "About your account".into(),
+                body: "First line\nsecond line\n\nNext paragraph".into(),
+            },
         ]
+    }
+
+    #[test]
+    fn suspension_notice_names_the_reason_only_when_given() {
+        let (subject, text, html) = render(&Mail::AccountSuspended {
+            to: "a@example.com".into(),
+            reason: Some("Spam <b>".into()),
+        });
+        assert_eq!(subject, "Your curl-runner account is suspended");
+        assert!(text.contains("Reason: Spam <b>"));
+        assert!(html.contains("Reason: Spam &lt;b&gt;"));
+        let (_, text, html) = render(&Mail::AccountSuspended {
+            to: "a@example.com".into(),
+            reason: None,
+        });
+        assert!(!text.contains("Reason") && !html.contains("Reason"));
+    }
+
+    #[test]
+    fn admin_message_is_escaped_paragraphs() {
+        let (subject, text, html) = render(&Mail::AdminMessage {
+            to: "a@example.com".into(),
+            subject: "Hi\r\nBcc: x".into(),
+            body: "A <i>&</i>\nB\r\n\r\nC".into(),
+        });
+        assert_eq!(subject, "Hi  Bcc: x");
+        assert!(text.contains("A <i>&</i>"));
+        assert!(html.contains("A &lt;i&gt;&amp;&lt;/i&gt;<br>B"));
+        assert!(html.contains(">C</p>"));
+        assert!(!html.contains("<i>"));
     }
 
     #[test]

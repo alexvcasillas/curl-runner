@@ -486,7 +486,10 @@ pub(crate) async fn lock_as(
 
 /// The seat count changed: the background tick must tell Stripe. Called in the
 /// same transaction as the membership change.
-async fn mark_seats_dirty(conn: &mut PgConnection, team_id: Uuid) -> Result<(), ApiError> {
+pub(crate) async fn mark_seats_dirty(
+    conn: &mut PgConnection,
+    team_id: Uuid,
+) -> Result<(), ApiError> {
     sqlx::query("UPDATE teams SET seats_synced = NULL WHERE id = $1")
         .bind(team_id)
         .execute(conn)

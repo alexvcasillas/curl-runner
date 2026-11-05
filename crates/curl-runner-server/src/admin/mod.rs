@@ -9,9 +9,10 @@ pub mod auth;
 pub mod csv;
 pub mod events;
 pub mod settings;
+pub mod users;
 
 use axum::Router;
-use axum::routing::{get, patch, post, put};
+use axum::routing::{delete, get, patch, post, put};
 
 use crate::error::ApiError;
 use crate::state::AppState;
@@ -31,6 +32,28 @@ pub fn routes() -> Router<AppState> {
         .route("/v1/admin/settings", get(settings::get))
         .route("/v1/admin/settings/test-email", post(settings::test_email))
         .route("/v1/admin/settings/{section}", put(settings::update))
+        .route("/v1/admin/users", get(users::list))
+        .route("/v1/admin/users.csv", get(users::export))
+        .route("/v1/admin/users/bulk", post(users::bulk))
+        .route(
+            "/v1/admin/users/{id}",
+            get(users::detail).delete(users::delete),
+        )
+        .route("/v1/admin/users/{id}/suspend", post(users::suspend))
+        .route("/v1/admin/users/{id}/unsuspend", post(users::unsuspend))
+        .route(
+            "/v1/admin/users/{id}/sign-out-everywhere",
+            post(users::sign_out_everywhere),
+        )
+        .route(
+            "/v1/admin/users/{id}/sessions/{sid}",
+            delete(users::revoke_session),
+        )
+        .route(
+            "/v1/admin/users/{id}/identities/{provider}",
+            delete(users::unlink_identity),
+        )
+        .route("/v1/admin/users/{id}/email", post(users::email))
         .route("/v1/admin/teams/{team}/plan", put(crate::teams::set_plan))
         // A wrong method is a 404 too: a 405 would confirm the path exists.
         .method_not_allowed_fallback(not_found)

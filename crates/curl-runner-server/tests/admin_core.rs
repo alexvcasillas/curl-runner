@@ -163,6 +163,46 @@ fn admin_routes(some_user: &str) -> Vec<(&'static str, String, Option<String>)> 
             "/v1/admin/teams/acme/plan".into(),
             Some(json!({"plan": "team"}).to_string()),
         ),
+        ("GET", "/v1/admin/users".into(), None),
+        ("GET", "/v1/admin/users?q=ada&filter=admins".into(), None),
+        ("GET", "/v1/admin/users.csv".into(), None),
+        ("GET", format!("/v1/admin/users/{some_user}"), None),
+        (
+            "POST",
+            format!("/v1/admin/users/{some_user}/suspend"),
+            Some(json!({"reason": "x", "notify": true}).to_string()),
+        ),
+        (
+            "POST",
+            format!("/v1/admin/users/{some_user}/unsuspend"),
+            None,
+        ),
+        (
+            "POST",
+            format!("/v1/admin/users/{some_user}/sign-out-everywhere"),
+            None,
+        ),
+        (
+            "DELETE",
+            format!("/v1/admin/users/{some_user}/sessions/{some_user}"),
+            None,
+        ),
+        (
+            "DELETE",
+            format!("/v1/admin/users/{some_user}/identities/github"),
+            None,
+        ),
+        ("DELETE", format!("/v1/admin/users/{some_user}"), None),
+        (
+            "POST",
+            format!("/v1/admin/users/{some_user}/email"),
+            Some(json!({"subject": "Hi", "body_md": "Hello"}).to_string()),
+        ),
+        (
+            "POST",
+            "/v1/admin/users/bulk".into(),
+            Some(json!({"ids": [some_user], "action": "sign_out"}).to_string()),
+        ),
     ]
 }
 
@@ -194,6 +234,10 @@ async fn non_admin_gets_404_everywhere(pool: PgPool) {
         ("PUT", "/v1/admin/settings".into(), None),
         ("GET", "/v1/admin/settings/test-email".into(), None),
         ("GET", "/v1/admin/nope".into(), None),
+        ("GET", "/v1/admin/users?filter=nope&limit=0".into(), None),
+        ("GET", "/v1/admin/users/not-a-uuid".into(), None),
+        ("POST", "/v1/admin/users/bulk".into(), Some("{nope".into())),
+        ("PUT", format!("/v1/admin/users/{jane_id}"), None),
     ]);
     let callers: [(&str, Option<&str>); 4] = [
         ("anonymous", None),

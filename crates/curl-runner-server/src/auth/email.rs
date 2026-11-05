@@ -10,7 +10,7 @@ use rand::Rng as _;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::auth::session::{UserBody, create_session};
+use crate::auth::session::{UserBody, create_session, ensure_email_not_suspended};
 use crate::error::ApiError;
 use crate::extract::{ApiJson, ClientIp};
 use crate::hash::{new_token, secret_hash};
@@ -259,6 +259,8 @@ pub async fn verify(
         return Err(code_invalid());
     }
 
+    // After the code is proven, so a wrong guess says nothing about the account.
+    ensure_email_not_suspended(&mut tx, &row.email).await?;
     sqlx::query("UPDATE email_codes SET used_at = $2 WHERE id = $1")
         .bind(row.id)
         .bind(now)

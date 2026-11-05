@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
+use uuid::Uuid;
 
 use crate::clock::Clock;
 use crate::error::ApiError;
@@ -57,6 +58,15 @@ pub enum Mail {
     },
     /// Sent to an admin who asks for one from the settings page.
     TestEmail { to: String },
+    /// The account was suspended and the admin asked to tell them.
+    AccountSuspended { to: String, reason: Option<String> },
+    /// A message an admin wrote to one person. `body` is plain text with
+    /// blank-line paragraphs; its renderer is `templates::message_blocks`.
+    AdminMessage {
+        to: String,
+        subject: String,
+        body: String,
+    },
 }
 
 impl std::fmt::Debug for Mail {
@@ -107,6 +117,14 @@ impl std::fmt::Debug for Mail {
                 .field("deadline", deadline)
                 .finish(),
             Self::TestEmail { to } => f.debug_struct("TestEmail").field("to", to).finish(),
+            Self::AccountSuspended { to, .. } => {
+                f.debug_struct("AccountSuspended").field("to", to).finish()
+            }
+            Self::AdminMessage { to, subject, .. } => f
+                .debug_struct("AdminMessage")
+                .field("to", to)
+                .field("subject", subject)
+                .finish(),
             Self::PlanChanged {
                 to,
                 team_name,
@@ -130,7 +148,21 @@ impl Mail {
             | Self::CustomerInvite { to, .. }
             | Self::PaymentFailed { to, .. }
             | Self::PlanChanged { to, .. }
+            | Self::AccountSuspended { to, .. }
+            | Self::AdminMessage { to, .. }
             | Self::TestEmail { to } => to,
+        }
+    }
+
+    /// The `outbox_emails.kind` it is queued with. `transactional` is mail the
+    /// server sends because of something that happened (codes, invites,
+    /// billing, a suspension). `admin` is a message an admin wrote by hand.
+    /// Broadcasts (plan 2b task 6) will use `broadcast`; only those honour the
+    /// product-email opt-out.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::AdminMessage { .. } => "admin",
+            _ => "transactional",
         }
     }
 }
@@ -149,17 +181,29 @@ impl Mailer {
     /// Queue `mail` on the caller's connection. It is only sent once the
     /// caller's transaction commits.
     pub async fn enqueue(&self, tx: &mut PgConnection, mail: Mail) -> Result<(), ApiError> {
+        self.enqueue_for(tx, mail, None).await
+    }
+
+    /// Like [`Mailer::enqueue`], recording which user the mail is for.
+    pub async fn enqueue_for(
+        &self,
+        tx: &mut PgConnection,
+        mail: Mail,
+        user_id: Option<Uuid>,
+    ) -> Result<(), ApiError> {
         let (subject, text, html) = templates::render(&mail);
         sqlx::query(
             "INSERT INTO outbox_emails \
-             (to_addr, subject, text_body, html_body, next_attempt_at, created_at) \
-             VALUES ($1, $2, $3, $4, $5, $5)",
+             (to_addr, subject, text_body, html_body, next_attempt_at, created_at, kind, user_id) \
+             VALUES ($1, $2, $3, $4, $5, $5, $6, $7)",
         )
         .bind(mail.to())
         .bind(subject)
         .bind(text)
         .bind(html)
         .bind(self.clock.now())
+        .bind(mail.kind())
+        .bind(user_id)
         .execute(tx)
         .await
         .map_err(|err| {

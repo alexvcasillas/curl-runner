@@ -16,6 +16,8 @@ pub enum ErrorCode {
     CodeExpired,
     CodeInvalid,
     SignupClosed,
+    /// The account is suspended: no sign-in by any method.
+    AccountSuspended,
     Unavailable,
     /// A code from a newer server that this build does not know.
     #[serde(other)]
@@ -28,6 +30,10 @@ mod tests {
 
     #[test]
     fn error_code_wire_names() {
+        assert_eq!(
+            serde_json::to_string(&ErrorCode::AccountSuspended).unwrap(),
+            "\"account_suspended\""
+        );
         assert_eq!(
             serde_json::to_string(&ErrorCode::WrongSource).unwrap(),
             "\"wrong_source\""

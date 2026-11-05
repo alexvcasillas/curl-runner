@@ -87,7 +87,8 @@ pub(crate) async fn validate_session(state: &AppState, token: &str) -> Result<Us
     let row: Option<(Uuid, Uuid, String, DateTime<Utc>)> = sqlx::query_as(
         "SELECT s.id, s.user_id, u.email::text, s.last_used_at \
          FROM sessions s JOIN users u ON u.id = s.user_id \
-         WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > $2",
+         WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > $2 \
+           AND u.suspended_at IS NULL",
     )
     .bind(&hash)
     .bind(now)
@@ -107,6 +108,46 @@ pub(crate) async fn validate_session(state: &AppState, token: &str) -> Result<Us
         session_id,
         email,
     })
+}
+
+/// `403 account_suspended`, for every way of signing in.
+pub(crate) fn account_suspended() -> ApiError {
+    ApiError::new(
+        ErrorCode::AccountSuspended,
+        "This account is suspended. Contact support.",
+    )
+}
+
+/// Refuse a suspended account. No account with that email yet is fine.
+pub(crate) async fn ensure_email_not_suspended(
+    conn: &mut PgConnection,
+    email: &str,
+) -> Result<(), ApiError> {
+    let suspended: Option<bool> =
+        sqlx::query_scalar("SELECT suspended_at IS NOT NULL FROM users WHERE email = $1::citext")
+            .bind(email)
+            .fetch_optional(conn)
+            .await?;
+    if suspended == Some(true) {
+        return Err(account_suspended());
+    }
+    Ok(())
+}
+
+/// Refuse a suspended account.
+pub(crate) async fn ensure_not_suspended(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<(), ApiError> {
+    let suspended: Option<bool> =
+        sqlx::query_scalar("SELECT suspended_at IS NOT NULL FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(conn)
+            .await?;
+    if suspended == Some(true) {
+        return Err(account_suspended());
+    }
+    Ok(())
 }
 
 /// Insert a session for `user_id` and return the clear token (shown once).

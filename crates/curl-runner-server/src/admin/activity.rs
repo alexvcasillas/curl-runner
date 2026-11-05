@@ -21,7 +21,7 @@ use crate::state::AppState;
 
 const DEFAULT_LIMIT: i64 = 50;
 const MAX_LIMIT: i64 = 200;
-const EXPORT_PAGE: i64 = 500;
+pub(super) const EXPORT_PAGE: i64 = 500;
 
 /// The regex (Postgres `~`) on `action` for each `action_group`. Later
 /// actions are named so they land in the right group.
@@ -54,17 +54,17 @@ struct Filters {
 
 /// Position after the last row of a page: `(at, id)` of that row.
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct Cursor {
-    at: DateTime<Utc>,
-    id: Uuid,
+pub(super) struct Cursor {
+    pub(super) at: DateTime<Utc>,
+    pub(super) id: Uuid,
 }
 
 impl Cursor {
-    fn encode(self) -> String {
+    pub(super) fn encode(self) -> String {
         URL_SAFE_NO_PAD.encode(format!("{}:{}", self.at.timestamp_micros(), self.id))
     }
 
-    fn decode(s: &str) -> Option<Self> {
+    pub(super) fn decode(s: &str) -> Option<Self> {
         let raw = String::from_utf8(URL_SAFE_NO_PAD.decode(s).ok()?).ok()?;
         let (micros, id) = raw.split_once(':')?;
         Some(Self {
@@ -74,11 +74,11 @@ impl Cursor {
     }
 }
 
-fn invalid(message: &str) -> ApiError {
+pub(super) fn invalid(message: &str) -> ApiError {
     ApiError::new(ErrorCode::InvalidRequest, message)
 }
 
-fn non_empty(v: Option<&String>) -> Option<&str> {
+pub(super) fn non_empty(v: Option<&String>) -> Option<&str> {
     v.map(|s| s.trim()).filter(|s| !s.is_empty())
 }
 
@@ -114,14 +114,19 @@ impl ActivityQuery {
     }
 
     fn limit(&self) -> Result<i64, ApiError> {
-        match non_empty(self.limit.as_ref()) {
-            None => Ok(DEFAULT_LIMIT),
-            Some(l) => l
-                .parse()
-                .ok()
-                .filter(|n| (1..=MAX_LIMIT).contains(n))
-                .ok_or_else(|| invalid("`limit` must be between 1 and 200.")),
-        }
+        page_limit(self.limit.as_ref())
+    }
+}
+
+/// The `limit` query value: 1 to 200, 50 when absent.
+pub(super) fn page_limit(raw: Option<&String>) -> Result<i64, ApiError> {
+    match non_empty(raw) {
+        None => Ok(DEFAULT_LIMIT),
+        Some(l) => l
+            .parse()
+            .ok()
+            .filter(|n| (1..=MAX_LIMIT).contains(n))
+            .ok_or_else(|| invalid("`limit` must be between 1 and 200.")),
     }
 }
 
