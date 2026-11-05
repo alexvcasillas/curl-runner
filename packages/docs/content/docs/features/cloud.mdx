@@ -230,7 +230,11 @@ Owners change a role from the list or remove a member. Anyone can leave a team, 
 
 On the hosted service, a team starts on the Free plan. Free has up to 3 members, counting pending invites, with unlimited public collections and publishing. The Team plan has no member limit and adds Restricted sharing. It costs $10 per member per month, or $96 per member per year. Prices are in USD before tax.
 
-Owners open **Billing** to see the plan and the member count, and to upgrade. **Upgrade to Team** goes to a Stripe checkout page that accepts business tax IDs. After you pay, the page shows the new plan. To change the interval, update the card or cancel, use the Stripe customer portal from the same page. A cancelled team goes back to Free at the end of the period. If a payment fails, a banner on every page tells owners.
+Owners open **Billing** to see the plan and the member count, and to upgrade. **Upgrade to Team** goes to a Stripe checkout page that accepts business tax IDs. After you pay, the page shows the new plan. To change the interval, update the card or cancel, use the Stripe customer portal from the same page. A cancelled team goes back to Free at the end of the period. If a payment fails, a banner on every page tells owners, and Stripe retries the charge. If you don't update the card within 14 days, the team moves to Free.
+
+Nothing is deleted when a team moves to Free. Restricted collections keep serving the people already on their list. Until you upgrade again, or switch those collections to Public or Off, you can't publish to a Restricted collection, add people to it, or add members past 3.
+
+Stripe Tax adds tax at checkout. Checkout accepts business tax IDs.
 
 Members can see the plan but can't change it. A self-hosted server has no plans. The page doesn't exist there, and every feature is on.
 
