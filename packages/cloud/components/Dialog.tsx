@@ -1,16 +1,20 @@
 'use client';
 
 import { useEffect, useId, useRef } from 'react';
+import { cx } from '@/lib/cx';
 
-function focusBack(opener: React.RefObject<HTMLElement | null>) {
+/** Focus the opener, or the fallback when the opener is gone (a menu item, a deleted row). */
+function focusBack(
+  opener: React.RefObject<HTMLElement | null>,
+  fallback?: React.RefObject<HTMLElement | null>,
+) {
   const el = opener.current;
   opener.current = null;
-  if (el?.isConnected) {
-    el.focus();
+  const target = el?.isConnected ? el : fallback?.current;
+  if (target?.isConnected) {
+    target.focus();
   }
 }
-
-import { cx } from '@/lib/cx';
 
 export type DialogProps = {
   open: boolean;
@@ -25,6 +29,8 @@ export type DialogProps = {
   footer?: React.ReactNode;
   /** `alertdialog` for confirmations. */
   role?: 'dialog' | 'alertdialog';
+  /** Where focus goes on close when whatever opened the dialog is no longer on the page. */
+  returnFocusTo?: React.RefObject<HTMLElement | null>;
   className?: string;
 };
 
@@ -40,9 +46,13 @@ export function Dialog({
   children,
   footer,
   role = 'dialog',
+  returnFocusTo,
   className,
 }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
+  // The latest `open`, for the native close event.
+  const openRef = useRef(open);
+  openRef.current = open;
   const opener = useRef<HTMLElement | null>(null);
   const titleId = useId();
   const descId = useId();
@@ -70,10 +80,10 @@ export function Dialog({
         dialog.close();
       } else {
         dialog.removeAttribute('open');
-        focusBack(opener);
+        focusBack(opener, returnFocusTo);
       }
     }
-  }, [open]);
+  }, [open, returnFocusTo]);
 
   return (
     <dialog
@@ -93,7 +103,14 @@ export function Dialog({
           onClose();
         }
       }}
-      onClose={() => focusBack(opener)}
+      onClose={() => {
+        focusBack(opener, returnFocusTo);
+        // Closed by the browser (a form with method="dialog", a close request) while
+        // the parent still says open: tell it, so the two stay in step.
+        if (openRef.current) {
+          onClose();
+        }
+      }}
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           onClose();

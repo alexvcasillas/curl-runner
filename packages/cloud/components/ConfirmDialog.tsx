@@ -29,6 +29,8 @@ export type ConfirmDialogProps = {
   confirmText?: string;
   /** An error to show, such as the API's message. */
   error?: string | null;
+  /** Where focus goes on close when the opener is gone, like a row's action menu. */
+  returnFocusTo?: React.RefObject<HTMLElement | null>;
 };
 
 /** Names the thing it changes and what happens to the people affected. Safe choice first. */
@@ -46,6 +48,7 @@ export function ConfirmDialog({
   variant,
   confirmText,
   error,
+  returnFocusTo,
 }: ConfirmDialogProps) {
   const [typed, setTyped] = useState('');
   const [pending, setPending] = useState(false);
@@ -93,6 +96,7 @@ export function ConfirmDialog({
         }
       }}
       role="alertdialog"
+      returnFocusTo={returnFocusTo}
       title={title}
       description={description}
       footer={

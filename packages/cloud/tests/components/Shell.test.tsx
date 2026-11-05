@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Shell } from '@/components/Shell';
 import { info, me } from '../fixtures';
 
@@ -94,10 +94,13 @@ describe('Shell', () => {
     await user.click(screen.getByRole('button', { name: 'Account menu for ada@acme.com' }));
     const menu = screen.getByRole('menu', { name: 'Account' });
     expect(within(menu).queryByRole('menuitem', { name: 'Admin' })).toBeNull();
-    expect(within(menu).getByRole('menuitem', { name: 'Sign out' })).toHaveAttribute(
-      'type',
-      'submit',
-    );
+    const form = document.getElementById('sign-out') as HTMLFormElement;
+    expect(form).toHaveAttribute('action', '/sign-out');
+    expect(form).toHaveAttribute('method', 'post');
+    const submitted = vi.fn((e: Event) => e.preventDefault());
+    form.addEventListener('submit', submitted);
+    await user.click(within(menu).getByRole('menuitem', { name: 'Sign out' }));
+    expect(submitted).toHaveBeenCalledOnce();
     unmount();
 
     render(

@@ -6,7 +6,7 @@ import type { MeTeam } from '@/lib/types';
 import { Avatar } from './Avatar';
 import { PlanBadge } from './Badge';
 import { ChevronsUpDownIcon, FolderIcon, PlusIcon } from './icons';
-import { Menu, MenuItem, MenuLabel, MenuSeparator } from './Menu';
+import { Menu, MenuGroup, MenuItem, MenuLabel, MenuSeparator } from './Menu';
 
 export type TeamSwitcherProps = {
   teams: MeTeam[];
@@ -49,20 +49,22 @@ export function TeamSwitcher({ teams, current, billing }: TeamSwitcherProps) {
       }
     >
       {teams.length > 0 ? <MenuLabel>Teams</MenuLabel> : null}
-      {teams.map((t) => {
-        const on = t.slug === current?.slug;
-        return (
-          <MenuItem
-            key={t.slug}
-            href={routes.team(t.slug)}
-            checked={on}
-            icon={<Avatar kind="team" name={t.name} size={22} active={on} />}
-            end={billing ? <PlanBadge plan={t.plan} /> : undefined}
-          >
-            {t.name}
-          </MenuItem>
-        );
-      })}
+      <MenuGroup label="Teams">
+        {teams.map((t) => {
+          const on = t.slug === current?.slug;
+          return (
+            <MenuItem
+              key={t.slug}
+              href={routes.team(t.slug)}
+              checked={on}
+              icon={<Avatar kind="team" name={t.name} size={22} active={on} />}
+              end={billing ? <PlanBadge plan={t.plan} /> : undefined}
+            >
+              {t.name}
+            </MenuItem>
+          );
+        })}
+      </MenuGroup>
       {teams.length > 0 ? <MenuSeparator /> : null}
       <MenuItem href={routes.shared} icon={<FolderIcon />}>
         Shared with me

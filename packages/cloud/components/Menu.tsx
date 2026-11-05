@@ -106,7 +106,9 @@ export function Menu({
         next = list.length - 1;
         break;
       case 'Escape':
+        // Stop here, so a menu inside a dialog doesn't close the dialog too.
         e.preventDefault();
+        e.stopPropagation();
         close(true);
         return;
       case 'Tab':
@@ -196,9 +198,15 @@ export function MenuItem({
     'aria-checked': radio ? checked : undefined,
     tabIndex: -1,
     className: cx(ITEM_CLASSES, checked && 'bg-surface-300'),
-    onClick: () => {
+    onClick: (e: React.MouseEvent) => {
+      if (form) {
+        // Submit before the menu unmounts: a detached button has no form to submit.
+        e.preventDefault();
+        (document.getElementById(form) as HTMLFormElement | null)?.requestSubmit();
+      }
       onSelect?.();
-      ctx?.close(false);
+      // Focus goes back to the trigger, so a dialog opened from here returns focus there.
+      ctx?.close(true);
     },
   } as const;
   const content = (
@@ -230,7 +238,7 @@ export function MenuItem({
     );
   }
   return (
-    <button type={form ? 'submit' : 'button'} form={form} {...common}>
+    <button type="button" {...common}>
       {content}
     </button>
   );
@@ -238,8 +246,12 @@ export function MenuItem({
 
 /** A group heading inside a menu: "Teams". */
 export function MenuLabel({ children }: { children: React.ReactNode }) {
+  // Presentational: a menu holds only items, groups and separators.
   return (
-    <div className="px-2 pt-2 pb-1 text-[11px] font-medium tracking-[0.02em] text-fg-subtle uppercase">
+    <div
+      role="none"
+      className="px-2 pt-2 pb-1 text-[11px] font-medium tracking-[0.02em] text-fg-subtle uppercase"
+    >
       {children}
     </div>
   );
@@ -248,13 +260,23 @@ export function MenuLabel({ children }: { children: React.ReactNode }) {
 /** Who's signed in, at the top of the account menu. */
 export function MenuHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <div className="flex flex-col px-2 pt-2 pb-2.5">
+    <div role="none" className="flex flex-col px-2 pt-2 pb-2.5">
       <span className="truncate font-medium">{title}</span>
       {subtitle ? <span className="truncate text-[12px] text-fg-muted">{subtitle}</span> : null}
     </div>
   );
 }
 
+/** Items that belong together, named for screen readers: the teams. */
+export function MenuGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div role="group" aria-label={label}>
+      {children}
+    </div>
+  );
+}
+
+/** `<hr>` has the implicit `separator` role. */
 export function MenuSeparator() {
   return <hr className="-mx-1 my-1 h-px border-0 bg-control" />;
 }

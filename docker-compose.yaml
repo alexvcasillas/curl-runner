@@ -5,8 +5,9 @@
 # or remove the `coolify` entries below. Postgres sits only on the private
 # `internal` network.
 #
-# Required: POSTGRES_PASSWORD and SECRET_KEY (32+ bytes). Everything else is
-# optional; an unset value falls back to the server's default.
+# Required: POSTGRES_PASSWORD, SECRET_KEY (32+ bytes), PUBLIC_API_URL and
+# PUBLIC_APP_URL. Everything else is optional; an unset value falls back to the
+# server's default.
 services:
   server:
     image: ghcr.io/alexvcasillas/curl-runner-server:${SERVER_IMAGE_TAG:-latest}
@@ -68,8 +69,9 @@ services:
       - server
     environment:
       API_INTERNAL_URL: http://curl-runner-server:8080
-      PUBLIC_API_URL: ${PUBLIC_API_URL:-}
-      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-}
+      # No defaults: the dashboard would advertise localhost and drop Secure cookies.
+      PUBLIC_API_URL: ${PUBLIC_API_URL:?set PUBLIC_API_URL to the API's public URL}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:?set PUBLIC_APP_URL to the dashboard's public URL}
       PORT: 3000
     networks:
       - internal
