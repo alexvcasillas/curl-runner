@@ -75,3 +75,44 @@ export type Share = {
   expires_at: string | null;
   entries: { entry: string; kind: string; invited_at: string; opened: boolean }[];
 };
+
+// Wire shapes for tokens, members and billing, from `/v1/teams/{team}/…`.
+
+export type Token = {
+  id: string;
+  name: string;
+  /** The email of whoever made it. Null when that account is gone. */
+  created_by: string | null;
+  created_at: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+};
+
+export type Member = { user_id: string; email: string; name: string | null; role: Role };
+
+export type PendingInvite = { id: string; email: string; role: Role; expires_at: string };
+
+export type TeamDetail = {
+  slug: string;
+  name: string;
+  plan: Plan;
+  role: Role;
+  members: Member[];
+  pending_invites: PendingInvite[];
+};
+
+export type Price = { unit_amount: number; currency: string };
+export type Prices = { monthly: Price; annual: Price };
+
+export type BillingSummary = {
+  plan: Plan;
+  interval: string | null;
+  status: string | null;
+  seats: number;
+  past_due_since: string | null;
+  can_manage: boolean;
+  cancel_at: string | null;
+  current_period_end: string | null;
+  /** `stripe` when a subscription backs the plan, else `none`. */
+  plan_source: string;
+};

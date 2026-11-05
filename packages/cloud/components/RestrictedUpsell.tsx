@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { routes } from '@/lib/routes';
+import { ButtonLink } from './ButtonLink';
 
 /**
  * Why Restricted is locked on a Free team. Billing off (self-hosted) has no
@@ -25,5 +26,21 @@ export function RestrictedUpsell({
       </Link>{' '}
       to share only with people you name.
     </p>
+  );
+}
+
+/**
+ * "Upgrade to Team", as a small button to Billing, for a limit that only Team
+ * lifts. Billing off (self-hosted) has no plan to buy, so it renders nothing.
+ * The upgrade dialog replaces this link later.
+ */
+export function UpgradeLink({ team, billing }: { team: string; billing: boolean }) {
+  if (!billing) {
+    return null;
+  }
+  return (
+    <ButtonLink href={routes.teamTab(team, 'billing')} size="sm">
+      Upgrade to Team
+    </ButtonLink>
   );
 }

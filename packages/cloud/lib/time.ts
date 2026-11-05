@@ -45,3 +45,39 @@ export function absoluteTime(iso: string): string {
   const mm = String(d.getUTCMinutes()).padStart(2, '0');
   return `${day(d)}, ${d.getUTCFullYear()}, ${hh}:${mm} UTC`;
 }
+
+/** "Feb 1, 2027". */
+export function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return `${day(d)}, ${d.getUTCFullYear()}`;
+}
+
+/** A token's expiry: "Never", "In 9 days" (flagged when it is two weeks off or less) or a date. */
+export function tokenExpiry(
+  iso: string | null,
+  now: Date = new Date(),
+): { label: string; soon: boolean } {
+  if (iso === null) {
+    return { label: 'Never', soon: false };
+  }
+  const left = new Date(iso).getTime() - now.getTime();
+  const days = Math.max(1, Math.ceil(left / DAY));
+  if (days <= 14) {
+    return { label: `In ${days} ${days === 1 ? 'day' : 'days'}`, soon: true };
+  }
+  return { label: formatDate(iso), soon: false };
+}
+
+/** "Expires in 5 days", "Expires in 5 hours" or "Expires soon". */
+export function expiresIn(iso: string, now: Date = new Date()): string {
+  const left = new Date(iso).getTime() - now.getTime();
+  if (left >= DAY) {
+    const d = Math.floor(left / DAY);
+    return `Expires in ${d} ${d === 1 ? 'day' : 'days'}`;
+  }
+  if (left >= HOUR) {
+    const h = Math.floor(left / HOUR);
+    return `Expires in ${h} ${h === 1 ? 'hour' : 'hours'}`;
+  }
+  return 'Expires soon';
+}

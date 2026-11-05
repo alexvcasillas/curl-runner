@@ -17,7 +17,7 @@ import type {
 const enc = encodeURIComponent;
 
 /** A team or collection slug from the URL. Anything the server would never issue is a 404. */
-function checked(value: string): string {
+export function checked(value: string): string {
   if (!isSlug(value)) {
     notFound();
   }
