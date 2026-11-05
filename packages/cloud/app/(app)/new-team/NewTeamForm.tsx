@@ -12,6 +12,8 @@ import type { CreateTeamResult } from './actions';
 
 export type NewTeamFormProps = {
   email: string;
+  /** The dashboard's host, from `PUBLIC_APP_URL`: the slug shows as `<host>/t/`. */
+  slugHost: string;
   /** Plans exist only on a server with billing. */
   billing: boolean;
   /** No teams yet: the form is followed by the three steps. */
@@ -29,7 +31,7 @@ const TAKEN = 'That team slug is already taken. Try acme-api or acme-eng.';
 const BAD_SLUG = 'Use lower case letters, numbers and dashes, and start with a letter or number.';
 
 /** Name and slug. The slug follows the name until someone edits it. */
-export function NewTeamForm({ email, billing, first = false, action }: NewTeamFormProps) {
+export function NewTeamForm({ email, billing, first = false, slugHost, action }: NewTeamFormProps) {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [edited, setEdited] = useState(false);
@@ -114,7 +116,7 @@ export function NewTeamForm({ email, billing, first = false, action }: NewTeamFo
             <Field
               label="Slug"
               name="slug"
-              prefix="cloud.curl-runner.com/t/"
+              prefix={`${slugHost}/t/`}
               mono
               placeholder="acme"
               autoComplete="off"

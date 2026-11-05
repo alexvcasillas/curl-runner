@@ -36,7 +36,7 @@ export function Field({
       aria-describedby={note ? noteId : undefined}
       className={inputClasses(
         Boolean(error),
-        cx(mono && 'font-mono text-[12px]', prefix && 'rounded-l-none'),
+        cx(mono && 'font-mono text-[12px]', prefix && 'sm:rounded-l-none max-sm:rounded-t-none'),
       )}
       {...rest}
     />
@@ -47,8 +47,8 @@ export function Field({
         {label}
       </label>
       {prefix ? (
-        <div className="flex items-stretch">
-          <span className="flex items-center rounded-l-[6px] border border-r-0 border-control bg-raised px-2.5 font-mono text-[12px] whitespace-nowrap text-fg-subtle max-sm:max-w-[55%] max-sm:overflow-hidden max-sm:text-ellipsis">
+        <div className="flex items-stretch max-sm:flex-col">
+          <span className="flex items-center rounded-l-[6px] border border-r-0 border-control bg-raised px-2.5 font-mono text-[12px] whitespace-nowrap text-fg-subtle max-sm:h-8 max-sm:rounded-t-[6px] max-sm:rounded-l-none max-sm:rounded-b-none max-sm:border-r max-sm:border-b-0 max-sm:break-all max-sm:whitespace-normal">
             {prefix}
           </span>
           {input}

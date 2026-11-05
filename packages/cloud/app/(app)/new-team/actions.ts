@@ -9,7 +9,8 @@ import { isValidSlug } from '@/lib/slug';
 
 export type CreateTeamResult =
   | { ok: false; kind: 'closed' }
-  | { ok: false; kind: 'taken' | 'invalid' | 'error'; message: string };
+  | { ok: false; kind: 'taken' }
+  | { ok: false; kind: 'invalid' | 'error'; message: string };
 
 function text(formData: FormData, name: string): string {
   const v = formData.get(name);
@@ -38,7 +39,7 @@ export async function createTeam(formData: FormData): Promise<CreateTeamResult> 
         return { ok: false, kind: 'closed' };
       }
       if (e.code === 'conflict') {
-        return { ok: false, kind: 'taken', message: messageFor(e) };
+        return { ok: false, kind: 'taken' };
       }
       if (e.code === 'invalid_request') {
         return { ok: false, kind: 'invalid', message: messageFor(e) };

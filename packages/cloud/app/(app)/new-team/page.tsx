@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Notice } from '@/components/Notice';
 import { getInfo, getMe } from '@/lib/app-data';
+import { env } from '@/lib/env';
 import { createTeam } from './actions';
 import { NewTeamForm } from './NewTeamForm';
 
@@ -31,7 +32,13 @@ export default async function NewTeamPage() {
           </span>
         </Notice>
       ) : null}
-      <NewTeamForm email={me.user.email} billing={info.billing} first={first} action={createTeam} />
+      <NewTeamForm
+        email={me.user.email}
+        billing={info.billing}
+        slugHost={new URL(env().PUBLIC_APP_URL).host}
+        first={first}
+        action={createTeam}
+      />
     </div>
   );
 }

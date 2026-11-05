@@ -165,6 +165,15 @@ describe('/new-team', () => {
     expect(screen.queryByText('Make a publish token')).toBeNull();
   });
 
+  it('shows the slug prefix from PUBLIC_APP_URL', async () => {
+    vi.stubEnv('PUBLIC_APP_URL', 'https://studio.acme.test:8443');
+    resetEnv();
+    byPath({ '/v1/me': meBody([]), '/v1/info': infoBody() });
+    render(await NewTeamPage());
+    expect(screen.getByText('studio.acme.test:8443/t/')).toBeInTheDocument();
+    expect(screen.queryByText(/curl-runner\.com\/t\//)).toBeNull();
+  });
+
   it('shows the admin notice and the self-hosted plan note', async () => {
     byPath({ '/v1/me': meBody([], true), '/v1/info': infoBody(false) });
     render(await NewTeamPage());
@@ -175,9 +184,35 @@ describe('/new-team', () => {
   });
 });
 
+describe('/ with a failing shared lookup', () => {
+  it('falls through to new team instead of crashing', async () => {
+    byPath({
+      '/v1/me': meBody([]),
+      '/v1/info': infoBody(),
+      '/v1/me/shared': () => json(500, { error: 'unavailable' }),
+    });
+    expect(await redirectOf(Home())).toBe('/new-team');
+  });
+
+  it('still lets the sign-in redirect through', async () => {
+    byPath({
+      '/v1/me': meBody([]),
+      '/v1/me/shared': () => json(401, { error: 'unauthorized' }),
+    });
+    expect(await redirectOf(Home())).toContain('/sign-in/expired');
+  });
+});
+
 describe('NewTeamForm', () => {
   const run = (action: (f: FormData) => Promise<unknown>) =>
-    render(<NewTeamForm email="ada@example.com" billing action={action as never} />);
+    render(
+      <NewTeamForm
+        email="ada@example.com"
+        billing
+        slugHost="cloud.example.com"
+        action={action as never}
+      />,
+    );
 
   it('derives the slug from the name until the slug is edited', async () => {
     const user = userEvent.setup();
