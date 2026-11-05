@@ -671,7 +671,10 @@ async fn customers_filter_is_users_with_no_team(pool: PgPool) {
     let row = &body["items"][0];
     assert_eq!(row["status"], "active");
     assert_eq!(row["methods"], json!(["email"]));
-    assert_eq!(row["teams"], json!([{"slug": "acme", "name": "acme"}]));
+    assert_eq!(
+        row["teams"],
+        json!([{"slug": "acme", "name": "acme", "role": "owner"}])
+    );
     assert_eq!(row["shared_in"], 0);
     assert!(row["last_active"].is_string());
 }
@@ -846,6 +849,25 @@ async fn bulk_sign_out(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["done"], 2);
+    assert_eq!(body["skipped"], json!([]));
+    // The caller is skipped, so an admin never signs themselves out.
+    let mut with_self = ids.clone();
+    with_self.push(ada_id.clone());
+    let (status, body) = req(
+        &app,
+        "POST",
+        "/v1/admin/users/bulk",
+        Some(json!({"ids": with_self, "action": "sign_out"})),
+        &ada,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["done"], 2);
+    assert_eq!(body["skipped"], json!([ada_id]));
+    assert_eq!(
+        req(&app, "GET", "/v1/me", None, &ada).await.0,
+        StatusCode::OK
+    );
     assert_eq!(
         req(&app, "GET", "/v1/me", None, &jane).await.0,
         StatusCode::UNAUTHORIZED
@@ -882,11 +904,27 @@ async fn bulk_sign_out(pool: PgPool) {
         scalar(
             &app,
             "SELECT count(*) FROM admin_events WHERE action = $1",
-            "users.bulk"
+            "users.bulk.sign_out"
         )
         .await,
         2
     );
+    // The suspension filter of the activity log finds the bulk suspend.
+    let (_, act) = req(
+        &app,
+        "GET",
+        "/v1/admin/activity?action_group=suspension",
+        None,
+        &ada,
+    )
+    .await;
+    let actions: Vec<&str> = act["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["action"].as_str().unwrap())
+        .collect();
+    assert_eq!(actions, ["users.bulk.suspend"]);
 
     // Validation.
     for body in [
@@ -913,7 +951,7 @@ async fn bulk_sign_out(pool: PgPool) {
         &ada,
     )
     .await;
-    assert_eq!(d["events"].as_array().unwrap().len(), 2, "{d}");
+    assert_eq!(d["events"].as_array().unwrap().len(), 3, "{d}");
 }
 
 #[sqlx::test]
@@ -1156,5 +1194,72 @@ async fn writes_need_the_users_perm(pool: PgPool) {
         )
         .await,
         0
+    );
+}
+
+#[sqlx::test]
+async fn delete_clears_exact_email_opens(pool: PgPool) {
+    let app = app_with(pool).await;
+    let ada = app.sign_in(OWNER).await;
+    let jane = app.sign_in("jane@example.com").await;
+    let jane_id = uid(&app, &jane).await;
+    let owner = app.sign_in("owner@other.com").await;
+    app.create_team(&owner, "initech").await;
+    let team_id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM teams WHERE slug = 'initech'")
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    let coll: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO collections (team_id, slug, name, access) VALUES ($1, 'c', 'c', 'restricted') RETURNING id",
+    )
+    .bind(team_id)
+    .fetch_one(&app.state.db)
+    .await
+    .unwrap();
+    for entry in ["jane@example.com", "*@example.com"] {
+        sqlx::query("INSERT INTO share_opens (collection_id, user_id, entry, opened_at) VALUES ($1, $2::uuid, $3, now())")
+            .bind(coll)
+            .bind(&jane_id)
+            .bind(entry)
+            .execute(&app.state.db)
+            .await
+            .unwrap();
+    }
+    let (status, _) = req(
+        &app,
+        "DELETE",
+        &format!("/v1/admin/users/{jane_id}"),
+        None,
+        &ada,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        scalar(
+            &app,
+            "SELECT count(*) FROM share_opens WHERE entry = $1",
+            "jane@example.com"
+        )
+        .await,
+        0
+    );
+    // The domain-matched open is not theirs to clear; both opens still count.
+    assert_eq!(
+        scalar(
+            &app,
+            "SELECT count(*) FROM share_opens WHERE entry = $1",
+            "*@example.com"
+        )
+        .await,
+        1
+    );
+    assert_eq!(
+        scalar(
+            &app,
+            "SELECT count(*) FROM share_opens WHERE collection_id = $1::uuid",
+            &coll.to_string()
+        )
+        .await,
+        2
     );
 }

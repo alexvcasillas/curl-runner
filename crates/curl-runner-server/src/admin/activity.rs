@@ -28,7 +28,9 @@ pub(super) const EXPORT_PAGE: i64 = 500;
 fn group_pattern(group: &str) -> Option<&'static str> {
     match group {
         "override" => Some(r"^team\.(override|plan)\."),
-        "suspension" => Some(r"^((user|team)\.(un)?suspend$|collection\.link\.)"),
+        "suspension" => {
+            Some(r"^((user|team)\.(un)?suspend$|users\.bulk\.suspend$|collection\.link\.)")
+        }
         "email" => Some(r"(^broadcast\.|\.email(_owners)?$)"),
         "settings" => Some(r"^settings\."),
         "admins" => Some(r"^admin\."),

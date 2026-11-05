@@ -123,11 +123,12 @@ pub(crate) async fn ensure_email_not_suspended(
     conn: &mut PgConnection,
     email: &str,
 ) -> Result<(), ApiError> {
-    let suspended: Option<bool> =
-        sqlx::query_scalar("SELECT suspended_at IS NOT NULL FROM users WHERE email = $1::citext")
-            .bind(email)
-            .fetch_optional(conn)
-            .await?;
+    let suspended: Option<bool> = sqlx::query_scalar(
+        "SELECT suspended_at IS NOT NULL FROM users WHERE email = $1::citext FOR SHARE",
+    )
+    .bind(email)
+    .fetch_optional(conn)
+    .await?;
     if suspended == Some(true) {
         return Err(account_suspended());
     }
@@ -140,7 +141,7 @@ pub(crate) async fn ensure_not_suspended(
     user_id: Uuid,
 ) -> Result<(), ApiError> {
     let suspended: Option<bool> =
-        sqlx::query_scalar("SELECT suspended_at IS NOT NULL FROM users WHERE id = $1")
+        sqlx::query_scalar("SELECT suspended_at IS NOT NULL FROM users WHERE id = $1 FOR SHARE")
             .bind(user_id)
             .fetch_optional(conn)
             .await?;

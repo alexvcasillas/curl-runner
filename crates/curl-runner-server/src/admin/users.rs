@@ -164,6 +164,8 @@ const WHERE: &str = "($1::text IS NULL OR u.email::text ILIKE $1 OR u.name ILIKE
 pub struct TeamRef {
     slug: String,
     name: String,
+    /// `owner` or `member`.
+    role: Role,
 }
 
 #[derive(FromRow)]
@@ -234,7 +236,7 @@ async fn page(
         "SELECT u.id, u.email::text AS email, u.name, u.created_at, u.suspended_at, \
                 ARRAY['email']::text[] || COALESCE((SELECT array_agg(DISTINCT i.provider ORDER BY i.provider) \
                     FROM identities i WHERE i.user_id = u.id), '{{}}') AS methods, \
-                COALESCE((SELECT jsonb_agg(jsonb_build_object('slug', t.slug::text, 'name', t.name) \
+                COALESCE((SELECT jsonb_agg(jsonb_build_object('slug', t.slug::text, 'name', t.name, 'role', m.role) \
                     ORDER BY t.name, t.slug) \
                     FROM memberships m JOIN teams t ON t.id = m.team_id \
                     WHERE m.user_id = u.id), '[]'::jsonb) AS teams, \
@@ -519,7 +521,7 @@ pub async fn detail(
                 e.detail, e.ip \
          FROM admin_events e LEFT JOIN users a ON a.id = e.admin_user_id \
          WHERE (e.target_kind = 'user' AND e.target_id = $1) \
-            OR (e.action = 'users.bulk' AND e.detail->'ids' @> to_jsonb($1::text)) \
+            OR (e.action LIKE 'users.bulk.%' AND e.detail->'ids' @> to_jsonb($1::text)) \
          ORDER BY e.at DESC, e.id DESC LIMIT $2",
     )
     .bind(id.to_string())
@@ -868,6 +870,14 @@ pub async fn delete(
             target.short_name()
         )));
     }
+    // Opens recorded under their exact email would read as "Opened" for a
+    // re-added address. `entry` is nullable, so the open itself (and the count)
+    // stays and only the email is dropped; domain entries are not theirs.
+    sqlx::query("UPDATE share_opens SET entry = NULL WHERE user_id = $1 AND entry = $2")
+        .bind(id)
+        .bind(&target.email)
+        .execute(&mut *tx)
+        .await?;
     // Access entries that are exactly their email; domain entries are not theirs.
     let entries = sqlx::query("DELETE FROM access_entries WHERE kind = 'email' AND entry = $1")
         .bind(&target.email)
@@ -992,6 +1002,8 @@ pub async fn bulk(
     for (id, email, name) in rows {
         let target = Target { id, email, name };
         let changed = match req.action {
+            // Not the caller: they would end their own session mid-request.
+            BulkAction::SignOut if id == admin.user_id => false,
             BulkAction::SignOut => {
                 revoke_all(&mut tx, at, id).await?;
                 true
@@ -1010,7 +1022,11 @@ pub async fn bulk(
         BulkAction::SignOut => "sign_out",
         BulkAction::Suspend => "suspend",
     };
-    let mut event = Event::new("users.bulk").detail(json!({
+    let mut event = Event::new(match req.action {
+        BulkAction::SignOut => "users.bulk.sign_out",
+        BulkAction::Suspend => "users.bulk.suspend",
+    })
+    .detail(json!({
         "action": action,
         "ids": done,
         "skipped": skipped,
