@@ -34,7 +34,7 @@ fn sign_in_then_account_persists_across_open() {
     let account = testing::sign_in(&b);
     assert_eq!(account.name, "Jamie Rivera");
     assert_eq!(account.email, "jamie@acme.dev");
-    assert_eq!(account.provider, SignInMethod::Github);
+    assert_eq!(account.provider, Some(SignInMethod::Github));
     drop(b);
     let again = mock(d.path());
     assert_eq!(again.account(), Some(account));
@@ -965,7 +965,7 @@ fn sign_in_round_trip() {
     let account = block_on(b.complete_sign_in(&cb)).unwrap();
     assert_eq!(account.name, "Jamie Rivera");
     assert_eq!(account.email, "jamie@acme.dev");
-    assert_eq!(account.provider, SignInMethod::Github);
+    assert_eq!(account.provider, Some(SignInMethod::Github));
     assert_eq!(b.account(), Some(account.clone()));
     assert_eq!(b.account_on(Server::Cloud.url()), Some(account.clone()));
     // A callback works once.

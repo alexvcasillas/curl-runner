@@ -8,8 +8,7 @@
 use super::{
     Account, AuthCallback, Backend, BackendError, BoxFut, CollectionKey, ConnectionInfo,
     DevControls, PendingSignIns, Person, ReceivedShare, Server, ShareLink, ShareSettings,
-    ShareUpdate, SharedCollection, SharedSnapshot, SignInMethod, SyncDeletion, SyncFile,
-    SyncReport, SyncStatus,
+    ShareUpdate, SharedCollection, SharedSnapshot, SyncDeletion, SyncFile, SyncReport, SyncStatus,
 };
 use crate::model::sessions::{AccountCache, CachedAccount, SessionStore};
 use curl_runner_cloud_client::{Client, CloudError, check_server, describe};
@@ -20,10 +19,6 @@ use std::time::Instant;
 
 /// Where the server choice is kept, under the state folder.
 const SERVER_FILE: &str = "server.json";
-
-/// The server doesn't say how a person signed in, so a cached account
-/// shows as this.
-const UNKNOWN_PROVIDER: SignInMethod = SignInMethod::Email;
 
 pub struct HttpBackend {
     state: Option<PathBuf>,
@@ -48,7 +43,7 @@ fn account_of(c: &CachedAccount) -> Account {
     Account {
         name: c.name.clone().unwrap_or_else(|| c.email.clone()),
         email: c.email.clone(),
-        provider: UNKNOWN_PROVIDER,
+        provider: None,
     }
 }
 
@@ -107,19 +102,28 @@ impl HttpBackend {
     }
 
     /// A failed call to `server` as the studio shows it. A 401 also
-    /// forgets that server's session (and no other).
+    /// forgets that server's session (and no other). Every authenticated
+    /// call must route its errors through here: that keeps a 401 signing
+    /// out on every call, not only the first one written.
     fn map_error(&self, server: &str, err: CloudError) -> BackendError {
+        let mapped = Self::describe_error(server, err);
+        if mapped == BackendError::SignedOut {
+            // Signed out either way; a Keychain that won't delete is
+            // retried by the next sign-out.
+            let _ = self.forget(&key(server));
+        }
+        mapped
+    }
+
+    /// [`HttpBackend::map_error`] without the side effect: for calls that
+    /// carry no session (a failed redeem must never sign anyone out).
+    fn describe_error(server: &str, err: CloudError) -> BackendError {
         let (body, _) = match err {
             CloudError::Unreachable(_) => return BackendError::Offline,
             CloudError::Api(ref b, status) => (b.clone(), status),
         };
         match body.error {
-            ErrorCode::Unauthorized => {
-                // Signed out either way; a Keychain that won't delete is
-                // retried by the next sign-out.
-                let _ = self.forget(&key(server));
-                BackendError::SignedOut
-            }
+            ErrorCode::Unauthorized => BackendError::SignedOut,
             ErrorCode::Forbidden => BackendError::Unauthorized,
             ErrorCode::NotFound | ErrorCode::LinkDisabled => BackendError::NotFound,
             ErrorCode::CodeExpired => BackendError::Expired,
@@ -214,7 +218,11 @@ impl Backend for HttpBackend {
         Box::pin(async move {
             let verified = Client::new(&server, None)
                 .handoff_redeem(&code)
-                .map_err(|e| self.map_error(&server, e))?;
+                .map_err(|e| match Self::describe_error(&server, e) {
+                    // Not a session going bad: the sign-in failed.
+                    BackendError::SignedOut => BackendError::Unauthorized,
+                    other => other,
+                })?;
             self.sessions.set(&server, &verified.session).map_err(|_| {
                 BackendError::Invalid("Couldn't save your sign-in to the Keychain.".into())
             })?;

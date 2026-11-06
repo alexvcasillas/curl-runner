@@ -1088,13 +1088,19 @@ fn avatar() -> Div {
         ))
 }
 
-/// `jamie@acme.dev · signed in with GitHub`.
+/// `jamie@acme.dev · signed in with GitHub`; just the email when the
+/// server doesn't say how they signed in.
+fn account_text(a: &Account) -> String {
+    match a.provider {
+        Some(p) => format!("{} · signed in with {}", a.email, method_label(p)),
+        None => a.email.clone(),
+    }
+}
+
 fn account_line(a: &Account) -> Div {
-    div().text_color(color("text-secondary")).child(format!(
-        "{} · signed in with {}",
-        a.email,
-        method_label(a.provider)
-    ))
+    div()
+        .text_color(color("text-secondary"))
+        .child(account_text(a))
 }
 
 /// The Sync card's status line: its dot's token and text. What waits,
@@ -1573,6 +1579,22 @@ fn render_updates() -> impl IntoElement {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn account_line_omits_an_unknown_provider() {
+        use crate::model::backend::{Account, SignInMethod};
+        let mut a = Account {
+            name: "Ada".into(),
+            email: "ada@example.test".into(),
+            provider: None,
+        };
+        assert_eq!(super::account_text(&a), "ada@example.test");
+        a.provider = Some(SignInMethod::Github);
+        assert_eq!(
+            super::account_text(&a),
+            "ada@example.test · signed in with GitHub"
+        );
+    }
+
     #[test]
     fn server_note_says_sessions_are_per_server() {
         assert!(super::SERVER_NOTE.contains("stay signed in to the others"));

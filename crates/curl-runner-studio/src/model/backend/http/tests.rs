@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::backend::FOREIGN_CALLBACK;
+use crate::model::backend::{FOREIGN_CALLBACK, SignInMethod};
 use crate::model::secrets::MemorySecrets;
 use crate::model::sessions::{AccountCache, MemorySessions};
 use curl_runner_cloud_client::CloudError;
@@ -340,4 +340,30 @@ fn team_side_calls_are_unavailable_until_3b() {
     un(block_on(b.remove_person(&key, "a@b.c")).unwrap_err());
     assert_eq!(b.sync_status(&key), SyncStatus::Off);
     assert!(b.dev().is_none());
+}
+
+#[test]
+fn a_failed_redeem_keeps_the_existing_session() {
+    let srv = TestServer::with_handler(|r: Request| match r.url.as_str() {
+        "/v1/info" => json(200, &info_body(Some("https://app.example.test"))),
+        _ => json(401, r#"{"error":"unauthorized","message":"No."}"#),
+    });
+    let (b, sessions) = backend(None);
+    sessions.set(&srv.base_url, "crs_old").unwrap();
+    block_on(b.sign_in_url(&own(&srv.base_url))).unwrap();
+    let err = block_on(b.complete_sign_in(&callback(&srv.base_url))).unwrap_err();
+    assert_eq!(err, BackendError::Unauthorized);
+    assert_eq!(
+        sessions.get(&srv.base_url).unwrap().as_deref(),
+        Some("crs_old")
+    );
+}
+
+#[test]
+fn http_accounts_carry_no_provider() {
+    let (srv, _) = server(200);
+    let (b, _) = backend(None);
+    block_on(b.sign_in_url(&own(&srv.base_url))).unwrap();
+    let a = block_on(b.complete_sign_in(&callback(&srv.base_url))).unwrap();
+    assert_eq!(a.provider, None);
 }

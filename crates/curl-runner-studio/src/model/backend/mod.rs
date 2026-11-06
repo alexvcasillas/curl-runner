@@ -154,7 +154,8 @@ pub fn methods_text(methods: &[SignInMethod]) -> Option<String> {
 pub struct Account {
     pub name: String,
     pub email: String,
-    pub provider: SignInMethod,
+    /// How they signed in, when the server says (the API doesn't).
+    pub provider: Option<SignInMethod>,
 }
 
 /// What `Test connection` shows:

@@ -39,13 +39,13 @@ pub fn account(code: &str) -> Account {
         Account {
             name: "Maria".into(),
             email: "maria@example.com".into(),
-            provider: SignInMethod::Email,
+            provider: Some(SignInMethod::Email),
         }
     } else {
         Account {
             name: "Jamie Rivera".into(),
             email: "jamie@acme.dev".into(),
-            provider: SignInMethod::Github,
+            provider: Some(SignInMethod::Github),
         }
     }
 }
