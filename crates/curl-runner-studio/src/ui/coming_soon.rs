@@ -292,7 +292,8 @@ mod tests {
         let (tx, rx) = futures::channel::mpsc::unbounded();
         let mut handler = link_handler(tx);
         handler(vec![
-            "curl-runner://open/acme/shipping-api?share=7Kx2Qm".into(),
+            "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_7Kx2Qm"
+                .into(),
         ]);
         let (window, ws) = open(cx, None, store, test_backend());
         cx.update(|cx| pump_links(rx, window, ws.downgrade(), cx));

@@ -1511,7 +1511,7 @@ mod gpui_tests {
         let link = view
             .read_with(cx, |v, cx| v.settings(cx).and_then(|s| s.link.clone()))
             .expect("opening Share gives the collection a link");
-        assert!(link.starts_with("https://studio.example.com/s/"), "{link}");
+        assert!(link.starts_with("curl-runner://open?server="), "{link}");
         assert!(labelled(cx, window, "share-link", &link));
         let name = ws.read_with(cx, |ws, _| {
             ws.state.collection.as_ref().unwrap().name.clone()

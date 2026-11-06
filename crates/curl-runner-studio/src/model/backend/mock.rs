@@ -32,6 +32,8 @@ const STATE_FILE: &str = "mock-backend.json";
 const RECORD_CAP: usize = 2000;
 /// How long a new link lasts (the Share board's default).
 const DEFAULT_EXPIRY_DAYS: u32 = 30;
+/// The server the mock's links name.
+pub const MOCK_SERVER: &str = "https://api.mock.curl-runner.test";
 
 pub struct MockBackend {
     /// `None`: memory only (tests).
@@ -103,7 +105,6 @@ struct State {
 struct OwnedShare {
     name: String,
     owner_org: String,
-    slug: String,
     token: String,
     access: Access,
     expires: Option<NaiveDate>,
@@ -227,25 +228,21 @@ fn rel_key(rel: &Path) -> String {
         .join("/")
 }
 
-fn slug(name: &str) -> String {
-    let file = crate::model::templates::file_name_for(name);
-    file.trim_end_matches(".yaml").to_string()
-}
-
-/// 6 base62 chars from the collection, a counter and the clock.
+/// `crsl_` and 6 base62 chars from the collection, a counter and the clock.
 fn new_token(id: &str, seq: u64) -> String {
     const ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos());
     let mut h = SyncFile::hash_of(&format!("{id}:{seq}:{nanos}"));
-    (0..6)
+    let tail: String = (0..6)
         .map(|_| {
             let c = ALPHABET[(h % 62) as usize] as char;
             h /= 62;
             c
         })
-        .collect()
+        .collect();
+    format!("crsl_{tail}")
 }
 
 fn expiry_date(e: Expiry) -> Option<NaiveDate> {
@@ -282,7 +279,10 @@ fn owner(account: &Account) -> Person {
 
 fn settings_of(share: &OwnedShare) -> ShareSettings {
     ShareSettings {
-        link: Some(ShareLink::web(&share.slug, &share.token)),
+        link: Some(format!(
+            "curl-runner://open?server={MOCK_SERVER}&share={}",
+            share.token
+        )),
         access: share.access,
         expires: share.expires,
         people: share.people.clone(),
@@ -299,7 +299,6 @@ fn share_mut<'s>(s: &'s mut State, key: &CollectionKey, account: &Account) -> &'
         .or_insert_with(|| OwnedShare {
             name: key.name.clone(),
             owner_org: account.org.clone().unwrap_or_else(|| account.name.clone()),
-            slug: slug(&key.name),
             token: new_token(&key.id, seq),
             access: Access::AnyoneWithLink,
             expires: expiry_date(Expiry::Days(DEFAULT_EXPIRY_DAYS)),
@@ -818,10 +817,7 @@ impl Backend for MockBackend {
         let link = link.clone();
         self.call(false, move |s| {
             online(s)?;
-            let fixture = link.token == fixtures::SHIPPING_TOKEN
-                && link.collection_slug == fixtures::SHIPPING_SLUG
-                && (link.owner_slug.is_empty() || link.owner_slug == fixtures::SHIPPING_OWNER_SLUG);
-            if fixture {
+            if link.token == fixtures::SHIPPING_TOKEN {
                 if s.toggles.expire_links {
                     return Err(BackendError::Expired);
                 }
@@ -830,7 +826,7 @@ impl Backend for MockBackend {
             let (id, share) = s
                 .shares
                 .iter()
-                .find(|(_, sh)| sh.token == link.token && sh.slug == link.collection_slug)
+                .find(|(_, sh)| sh.token == link.token)
                 .ok_or(BackendError::NotFound)?;
             let today = Utc::now().date_naive();
             if s.toggles.expire_links || share.expires.is_some_and(|d| d < today) {

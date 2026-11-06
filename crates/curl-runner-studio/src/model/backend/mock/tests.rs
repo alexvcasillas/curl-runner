@@ -88,7 +88,10 @@ fn offline_fails_every_call_with_offline() {
     assert!(dev(&b).offline());
     assert!(mock(d.path()).offline(), "the toggle persists");
     let k = key();
-    let link = ShareLink::parse("curl-runner://open/acme/shipping-api?share=7Kx2Qm").unwrap();
+    let link = ShareLink::parse(
+        "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_7Kx2Qm",
+    )
+    .unwrap();
     let off = Err(BackendError::Offline);
     assert_eq!(block_on(b.set_server(Server::Cloud)), off);
     assert_eq!(block_on(b.test_connection(&Server::Cloud)).map(|_| ()), off);
@@ -179,7 +182,7 @@ fn share_link_round_trip_and_invite() {
     let shared = block_on(b.update_share(&k, ShareUpdate::default())).unwrap();
     let url = shared.link.clone().expect("a link");
     assert!(
-        url.starts_with("https://studio.example.com/s/payments-api-"),
+        url.starts_with("curl-runner://open?server=https://api.mock.curl-runner.test&share=crsl_"),
         "{url}"
     );
     assert_eq!(shared.access, Access::AnyoneWithLink);
@@ -256,8 +259,8 @@ fn signed_out_share_and_sync_say_signed_out() {
 fn fixture_link_resolves_and_fetches() {
     let b = MockBackend::open(None, Duration::ZERO);
     for text in [
-        "curl-runner://open/acme/shipping-api?share=7Kx2Qm",
-        "https://studio.example.com/s/shipping-api-7Kx2Qm",
+        "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_7Kx2Qm",
+        "curl-runner://open/acme/shipping-api?share=crsl_7Kx2Qm&server=https%3A%2F%2Fapi.mock.curl-runner.test",
     ] {
         let c = block_on(b.resolve_link(&ShareLink::parse(text).unwrap())).unwrap();
         assert_eq!(c.owner_org, "Acme");
@@ -274,7 +277,10 @@ fn fixture_link_resolves_and_fetches() {
         block_on(b.fetch_shared("acme/nope")).map(|_| ()),
         Err(BackendError::NotFound)
     );
-    let unknown = ShareLink::parse("curl-runner://open/acme/shipping-api?share=zzzzzz").unwrap();
+    let unknown = ShareLink::parse(
+        "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_zzzzzz",
+    )
+    .unwrap();
     assert_eq!(
         block_on(b.resolve_link(&unknown)).map(|_| ()),
         Err(BackendError::NotFound)
@@ -289,7 +295,10 @@ fn expired_links_resolve_to_expired() {
         .unwrap()
         .link
         .unwrap();
-    let fixture = ShareLink::parse("curl-runner://open/acme/shipping-api?share=7Kx2Qm").unwrap();
+    let fixture = ShareLink::parse(
+        "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_7Kx2Qm",
+    )
+    .unwrap();
     let own = ShareLink::parse(&own).unwrap();
     dev(&b).expire_links(true);
     assert_eq!(
@@ -300,7 +309,10 @@ fn expired_links_resolve_to_expired() {
         block_on(b.resolve_link(&own)).map(|_| ()),
         Err(BackendError::Expired)
     );
-    let garbage = ShareLink::parse("https://studio.example.com/s/x-zzzzzz").unwrap();
+    let garbage = ShareLink::parse(
+        "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_zzzzzz",
+    )
+    .unwrap();
     assert_eq!(
         block_on(b.resolve_link(&garbage)).map(|_| ()),
         Err(BackendError::NotFound),

@@ -98,7 +98,9 @@ mod tests {
         assert!(unavailable(b.update_share(&key, ShareUpdate::default())));
         assert!(unavailable(b.invite(&key, "a@b.c")));
         assert!(unavailable(b.remove_person(&key, "a@b.c")));
-        let link = ShareLink::parse("curl-runner://open/acme/api?share=t").unwrap();
+        let link =
+            ShareLink::parse("curl-runner://open?server=https%3A%2F%2Fapi.x.test&share=crsl_t")
+                .unwrap();
         assert!(unavailable(b.resolve_link(&link)));
         assert!(unavailable(b.fetch_shared("s")));
         let share = ReceivedShare {

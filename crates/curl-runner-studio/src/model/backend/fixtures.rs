@@ -16,10 +16,8 @@ pub const SHIPPING_ORG: &str = "Acme";
 pub const SHIPPING_NAME: &str = "Shipping API";
 /// The fixture's server id ([`super::Backend::fetch_shared`]).
 pub const SHIPPING_ID: &str = "acme/shipping-api";
-pub const SHIPPING_OWNER_SLUG: &str = "acme";
-pub const SHIPPING_SLUG: &str = "shipping-api";
 /// The token of the fixture's link (board OpenShared).
-pub const SHIPPING_TOKEN: &str = "7Kx2Qm";
+pub const SHIPPING_TOKEN: &str = "crsl_7Kx2Qm";
 /// The folders the summary card names (board OpenShared).
 pub const SHIPPING_SUMMARY: &str = "rates, labels, tracking";
 /// How long ago Acme last pushed it.

@@ -29,6 +29,7 @@ pub use no_server::NoServer;
 use crate::model::collection_meta::CollectionMeta;
 use crate::model::environments::is_secret;
 use chrono::{DateTime, NaiveDate, Utc};
+use curl_runner_cloud_client::link::{self, Link, LinkError};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::future::Future;
@@ -88,8 +89,6 @@ impl std::error::Error for BackendError {}
 
 /// The cloud server's address.
 pub const CLOUD_URL: &str = "https://cloud.curl-runner.com";
-/// Where web share links point ([`ShareLink`]).
-pub const SHARE_HOST: &str = "https://studio.example.com";
 
 /// Where collections live.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -325,51 +324,56 @@ pub struct ShareUpdate {
     pub reset_link: bool,
 }
 
-/// A share link, either form.
+/// A share link: the API to ask and the token to ask with.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ShareLink {
-    /// Empty for the web form, which does not carry it.
-    pub owner_slug: String,
-    pub collection_slug: String,
+    pub server: String,
     pub token: String,
 }
 
 impl ShareLink {
-    /// `curl-runner://open/{owner}/{collection}?share={token}` or
-    /// `https://studio.example.com/s/{collection}-{token}`; surrounding
-    /// whitespace is ignored.
-    pub fn parse(text: &str) -> Option<ShareLink> {
-        let text = text.trim();
-        let slug = |s: &str| {
-            !s.is_empty()
-                && s.chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-        };
-        let token = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric());
-        if let Some(rest) = text.strip_prefix("curl-runner://open/") {
-            let (path, query) = rest.split_once('?')?;
-            let (owner, collection) = path.trim_end_matches('/').split_once('/')?;
-            let t = query.split('&').find_map(|kv| kv.strip_prefix("share="))?;
-            return (slug(owner) && slug(collection) && token(t)).then(|| ShareLink {
-                owner_slug: owner.into(),
-                collection_slug: collection.into(),
-                token: t.into(),
-            });
+    /// `curl-runner://open[/team/collection]?server=&share=` or
+    /// `https://{host}/s/{token}`; surrounding whitespace is ignored.
+    ///
+    /// A landing URL asks its host where the API is, so this blocks on the
+    /// network for that form: call it off the UI thread.
+    pub fn parse(text: &str) -> Result<ShareLink, LinkError> {
+        match link::parse(text.trim())? {
+            Link::Api { server, token } => Ok(ShareLink { server, token }),
+            Link::Landing { origin, token } => Ok(ShareLink {
+                server: link::api_for_landing(&origin, None)?,
+                token,
+            }),
         }
-        let rest = text.strip_prefix(SHARE_HOST)?.strip_prefix("/s/")?;
-        let rest = rest.trim_end_matches('/');
-        let (collection, t) = rest.rsplit_once('-')?;
-        (slug(collection) && token(t)).then(|| ShareLink {
-            owner_slug: String::new(),
-            collection_slug: collection.into(),
-            token: t.into(),
-        })
     }
+}
 
-    /// The web form, as the Share dialog shows it.
-    #[cfg_attr(not(feature = "server"), allow(dead_code))]
-    pub fn web(collection_slug: &str, token: &str) -> String {
-        format!("{}/s/{collection_slug}-{token}", SHARE_HOST)
+/// The dashboard's answer to `Continue in browser`:
+/// `curl-runner://auth/callback?code=crh_…&server={api}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthCallback {
+    pub server: String,
+    pub code: String,
+}
+
+impl AuthCallback {
+    /// `None` unless the URL is an auth callback with both a `crh_` code and
+    /// a server.
+    pub fn parse(url: &str) -> Option<AuthCallback> {
+        let u = url::Url::parse(url.trim()).ok()?;
+        if u.scheme() != "curl-runner" || u.host_str() != Some("auth") || u.path() != "/callback" {
+            return None;
+        }
+        let get = |k: &str| {
+            u.query_pairs()
+                .find(|(name, _)| name == k)
+                .map(|(_, v)| v.into_owned())
+        };
+        let code = get("code").filter(|c| c.starts_with("crh_") && link::valid_token(c))?;
+        let server = get("server")
+            .map(|s| s.trim_end_matches('/').to_string())
+            .filter(|s| !s.is_empty())?;
+        Some(AuthCallback { server, code })
     }
 }
 
@@ -745,43 +749,88 @@ pub mod testing {
 mod tests {
     use super::*;
 
+    const API: &str = "https://api.x.test";
+
     #[test]
-    fn parse_both_link_forms() {
-        let deep = ShareLink::parse("curl-runner://open/acme/shipping-api?share=7Kx2Qm").unwrap();
-        assert_eq!(
-            deep,
-            ShareLink {
-                owner_slug: "acme".into(),
-                collection_slug: "shipping-api".into(),
-                token: "7Kx2Qm".into(),
+    fn share_link_from_deep_link() {
+        let want = ShareLink {
+            server: API.into(),
+            token: "crsl_Ab-9_".into(),
+        };
+        for text in [
+            "curl-runner://open?server=https%3A%2F%2Fapi.x.test&share=crsl_Ab-9_",
+            "  curl-runner://open/acme/pay?share=crsl_Ab-9_&server=https%3A%2F%2Fapi.x.test\n",
+        ] {
+            assert_eq!(ShareLink::parse(text).unwrap(), want, "{text}");
+        }
+    }
+
+    #[test]
+    fn share_link_from_landing_url_asks_the_well_known() {
+        let server = testkit::TestServer::with_handler(|req| {
+            if req.url == "/.well-known/curl-runner.json" {
+                testkit::Response::from_data(br#"{"api":"https://api.x.test"}"#.to_vec())
+            } else {
+                testkit::Response::from_data(Vec::new()).with_status_code(404)
             }
-        );
-        let web = ShareLink::parse("  https://studio.example.com/s/shipping-api-7Kx2Qm\n").unwrap();
-        assert_eq!(web.owner_slug, "");
-        assert_eq!(web.collection_slug, "shipping-api");
-        assert_eq!(web.token, "7Kx2Qm");
+        });
+        let link = ShareLink::parse(&format!("{}/s/crsl_Ab-9_", server.base_url)).unwrap();
+        assert_eq!(link.server, API);
+        assert_eq!(link.token, "crsl_Ab-9_");
+        let none = testkit::TestServer::with_handler(|_| {
+            testkit::Response::from_data(Vec::new()).with_status_code(404)
+        });
         assert_eq!(
-            ShareLink::web("shipping-api", "7Kx2Qm"),
-            "https://studio.example.com/s/shipping-api-7Kx2Qm"
+            ShareLink::parse(&format!("{}/s/crsl_Ab-9_", none.base_url)),
+            Err(LinkError::NoApi)
         );
     }
 
     #[test]
-    fn garbage_link_is_none() {
+    fn share_link_rejects_bad_tokens() {
+        let open =
+            |t: &str| ShareLink::parse(&format!("curl-runner://open?server={API}&share={t}"));
+        let max = "a_-".repeat(85) + "z";
+        assert_eq!(max.len(), 256);
+        assert_eq!(open(&max).unwrap().token, max);
+        assert_eq!(open(&(max + "z")), Err(LinkError::Malformed));
+        for bad in ["", "7K/x", "7K x", "a.b"] {
+            assert_eq!(open(bad), Err(LinkError::Malformed), "{bad:?}");
+        }
         for bad in [
             "",
             "hello",
-            "https://example.com/s/shipping-api-7Kx2Qm",
-            "https://studio.example.com/s/",
-            "https://studio.example.com/s/shippingapi",
-            "https://studio.example.com/s/shipping-api-",
-            "curl-runner://open/acme?share=7Kx2Qm",
-            "curl-runner://open/acme/shipping-api",
-            "curl-runner://open/acme/shipping-api?share=",
-            "curl-runner://open/acme/ship ping?share=7Kx2Qm",
-            "curl-runner://open/acme/shipping-api?share=7K/x",
+            "curl-runner://open?server=https%3A%2F%2Fapi.x.test",
+            "curl-runner://open?share=crsl_abc",
+            "curl-runner://auth/callback?share=crsl_abc&server=https%3A%2F%2Fapi.x.test",
         ] {
-            assert_eq!(ShareLink::parse(bad), None, "{bad:?}");
+            assert_eq!(ShareLink::parse(bad), Err(LinkError::Malformed), "{bad:?}");
+        }
+        assert_eq!(
+            ShareLink::parse("curl-runner://open?server=http%3A%2F%2Fevil.test&share=crsl_a"),
+            Err(LinkError::InsecureServer("http://evil.test".into()))
+        );
+    }
+
+    #[test]
+    fn auth_callback_parse() {
+        assert_eq!(
+            AuthCallback::parse(
+                "curl-runner://auth/callback?code=crh_abc123&server=https%3A%2F%2Fapi.x.test"
+            ),
+            Some(AuthCallback {
+                server: API.into(),
+                code: "crh_abc123".into()
+            })
+        );
+        for bad in [
+            "curl-runner://auth/callback?code=crh_abc123",
+            "curl-runner://auth/callback?server=https%3A%2F%2Fapi.x.test",
+            "curl-runner://auth/callback?code=abc123&server=https%3A%2F%2Fapi.x.test",
+            "curl-runner://open?code=crh_abc123&server=https%3A%2F%2Fapi.x.test",
+            "https://x.test/auth/callback?code=crh_abc123&server=https%3A%2F%2Fapi.x.test",
+        ] {
+            assert_eq!(AuthCallback::parse(bad), None, "{bad:?}");
         }
     }
 

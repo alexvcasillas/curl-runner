@@ -519,7 +519,8 @@ mod gpui_tests {
     use std::path::{Path, PathBuf};
     use std::sync::{Arc, Mutex};
 
-    const LINK: &str = "curl-runner://open/acme/shipping-api?share=7Kx2Qm";
+    const LINK: &str =
+        "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_7Kx2Qm";
     const TOKEN: &str = "sk-live-customer-4242";
     const RATES: &str = "rates/get-rates.yaml";
 

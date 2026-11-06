@@ -10,12 +10,13 @@
 //! never to disk, a log, a toast or the backend.
 
 use super::app::mono_font;
-use super::backend_call;
 use super::color;
 use super::icons::{self, glyph};
 use super::share_dialog::initials;
 use super::workspace::{Workspace, notify_error};
-use crate::model::backend::{Backend, BackendError, ShareLink, SharedCollection, SharedVar};
+use crate::model::backend::{
+    AuthCallback, Backend, BackendError, ShareLink, SharedCollection, SharedVar,
+};
 use crate::model::environments::is_secret;
 use crate::model::history::relative_time;
 use crate::model::secrets::SecretStore;
@@ -41,7 +42,7 @@ const DIALOG_H: f32 = 600.;
 const FILL_LABEL: &str = "Fill in the variables these requests use";
 const PASTE_TITLE: &str = "Open a shared link";
 const PASTE_SUBTITLE: &str = "Paste a curl-runner link someone sent you. Opens read-only.";
-const PASTE_HINT: &str = "curl-runner://open/… or https://studio.example.com/s/…";
+const PASTE_HINT: &str = "curl-runner://open?… or https://cloud.curl-runner.com/s/…";
 const ALREADY_ADDED: &str = "Already in your studio — open it?";
 
 /// `Acme shared Shipping API with you`.
@@ -78,26 +79,9 @@ pub fn summary_text(shared: &SharedCollection, now: chrono::DateTime<Local>) -> 
         .join(" · ")
 }
 
-/// The org a link names, for an error before it resolves: `acme` → `Acme`.
-/// The web form names none.
-fn org_of(link: Option<&ShareLink>) -> String {
-    let slug = link.map_or("", |l| l.owner_slug.as_str());
-    let words: Vec<String> = slug
-        .split(['-', '_'])
-        .filter(|w| !w.is_empty())
-        .map(|w| {
-            let mut c = w.chars();
-            c.next()
-                .map(|f| f.to_uppercase().chain(c).collect())
-                .unwrap_or_default()
-        })
-        .collect();
-    if words.is_empty() {
-        "whoever shared it".into()
-    } else {
-        words.join(" ")
-    }
-}
+/// Who a link came from, for an error before it resolves: the link names
+/// no one.
+const LINK_OWNER: &str = "whoever shared it";
 
 /// The flow's steps; `Paste` comes before the board's two.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -174,8 +158,8 @@ impl OpenSharedView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let link =
-            cx.new(|cx| InputState::new(window, cx).placeholder("https://studio.example.com/s/…"));
+        let link = cx
+            .new(|cx| InputState::new(window, cx).placeholder("https://cloud.curl-runner.com/s/…"));
         let events =
             cx.subscribe_in(
                 &link,
@@ -252,15 +236,15 @@ impl OpenSharedView {
         self.opened = Some(text.clone());
         self.shared = None;
         self.existing = None;
-        let Some(link) = ShareLink::parse(&text) else {
-            self.error = Some(BackendError::NotFound.link_text(&org_of(None)));
-            cx.notify();
-            return;
-        };
         self.error = None;
         self.busy = true;
-        let org = org_of(Some(&link));
-        let call = backend_call(cx, &self.backend, move |b| b.resolve_link(&link));
+        let org = LINK_OWNER;
+        // A landing URL asks its host where the API is: off the UI thread.
+        let backend = self.backend.clone();
+        let call = cx.background_executor().spawn(async move {
+            let link = ShareLink::parse(&text).map_err(|e| BackendError::Invalid(e.to_string()))?;
+            backend.resolve_link(&link).await
+        });
         self.task = Some(cx.spawn_in(window, async move |this, cx| {
             let result = call.await;
             this.update_in(cx, |this, window, cx| {
@@ -269,7 +253,7 @@ impl OpenSharedView {
                     Ok(shared) => this.resolved(shared, window, cx),
                     Err(e) => {
                         this.step = Step::Paste;
-                        this.error = Some(e.link_text(&org));
+                        this.error = Some(e.link_text(org));
                     }
                 }
                 this.take_queued(window, cx);
@@ -1377,12 +1361,32 @@ impl Workspace {
             self.notify_soon(SHARED_LINKS_SOON, window, cx);
             return;
         }
+        // The dashboard's answer to a sign-in: never a share link, even when
+        // it is malformed.
+        if url.trim_start().starts_with("curl-runner://auth/") {
+            if let Some(callback) = AuthCallback::parse(&url) {
+                self.complete_sign_in(callback, window, cx);
+            }
+            return;
+        }
         // The sign-in screen answers first; the link waits for it.
         if self.sign_in_shown() {
             self.pending_link = Some(url);
         } else {
             self.open_shared(Some(url), window, cx);
         }
+    }
+}
+
+impl Workspace {
+    /// The dashboard sent the studio back with a handoff code. Task 4 redeems
+    /// it; until then there is nothing to do.
+    pub(super) fn complete_sign_in(
+        &mut self,
+        _callback: AuthCallback,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
     }
 }
 
@@ -1430,8 +1434,7 @@ pub(super) fn pump_links(
 #[cfg(test)]
 mod tests {
     use super::{
-        Local, ShareLink, SharedCollection, keychain_note, org_of, subtitle_text, summary_text,
-        title_text,
+        Local, PASTE_HINT, SharedCollection, keychain_note, subtitle_text, summary_text, title_text,
     };
     use chrono::Utc;
 
@@ -1463,9 +1466,15 @@ mod tests {
             summary_text(&s, Local::now()),
             "12 requests · rates, labels, tracking · updated 3 days ago"
         );
-        let link = ShareLink::parse("curl-runner://open/acme-labs/x?share=a1").unwrap();
-        assert_eq!(org_of(Some(&link)), "Acme Labs");
-        assert_eq!(org_of(None), "whoever shared it");
+    }
+
+    #[test]
+    fn paste_hint_names_both_forms() {
+        assert!(
+            PASTE_HINT.contains("cloud.curl-runner.com/s/"),
+            "{PASTE_HINT}"
+        );
+        assert!(PASTE_HINT.contains("curl-runner://open"), "{PASTE_HINT}");
     }
 }
 
@@ -1487,8 +1496,9 @@ mod gpui_tests {
     use std::path::Path;
     use std::sync::Arc;
 
-    const WEB_LINK: &str = "https://studio.example.com/s/shipping-api-7Kx2Qm";
-    const DEEP_LINK: &str = "curl-runner://open/acme/shipping-api?share=7Kx2Qm";
+    const PATH_LINK: &str = "curl-runner://open/acme/shipping-api?share=crsl_7Kx2Qm&server=https%3A%2F%2Fapi.mock.curl-runner.test";
+    const DEEP_LINK: &str =
+        "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_7Kx2Qm";
     const TOKEN: &str = "sk-live-customer-4242";
 
     struct Studio {
@@ -1617,7 +1627,7 @@ mod gpui_tests {
         let s = studio(cx);
         let view = open_flow(cx, &s);
         assert!(labelled(cx, &s, "open-shared-title", "Open a shared link"));
-        paste_and_open(cx, &s, &view, WEB_LINK);
+        paste_and_open(cx, &s, &view, PATH_LINK);
         assert_eq!(view.read_with(cx, |v, _| v.step()), Step::Review);
         assert!(labelled(
             cx,
@@ -1631,7 +1641,7 @@ mod gpui_tests {
             "open-shared-summary",
             "12 requests · rates, labels, tracking · updated 3 days ago"
         ));
-        assert!(labelled(cx, &s, "open-shared-from", WEB_LINK));
+        assert!(labelled(cx, &s, "open-shared-from", PATH_LINK));
         click(cx, &s, "open-shared-continue");
         assert_eq!(view.read_with(cx, |v, _| v.step()), Step::Credentials);
         // Required first; BASE_URL comes filled in from Acme.
@@ -1764,7 +1774,7 @@ mod gpui_tests {
         dev.expire_links(true);
         let view = open_flow(cx, &s);
         paste_and_open(cx, &s, &view, DEEP_LINK);
-        let expired = "This link has expired. Ask Acme for a new one.";
+        let expired = "This link has expired. Ask whoever shared it for a new one.";
         assert_eq!(
             view.read_with(cx, |v, _| v.error().map(String::from))
                 .as_deref(),
@@ -1790,7 +1800,13 @@ mod gpui_tests {
         fill(cx, &s, &view, "API_TOKEN", TOKEN);
         dev.expire_links(true);
         click(cx, &s, "open-shared-add");
-        assert!(labelled(cx, &s, "open-shared-error", expired));
+        // By now the collection's org is known.
+        assert!(labelled(
+            cx,
+            &s,
+            "open-shared-error",
+            "This link has expired. Ask Acme for a new one."
+        ));
         assert_eq!(view.read_with(cx, |v, _| v.step()), Step::Credentials);
         assert!(!s.shared_dir().exists());
         assert!(s.backend.received().is_empty());
@@ -1806,7 +1822,7 @@ mod gpui_tests {
             cx,
             &s,
             "open-shared-error",
-            "This link doesn't work."
+            "That isn't a curl-runner share link."
         ));
         let resolved = |b: &Arc<dyn Backend>| {
             b.dev()
@@ -1818,7 +1834,12 @@ mod gpui_tests {
         };
         assert_eq!(resolved(&s.backend), 0, "never sent");
         // Typing clears it; a well-formed link the server doesn't know.
-        paste_and_open(cx, &s, &view, "https://studio.example.com/s/nothing-here9");
+        paste_and_open(
+            cx,
+            &s,
+            &view,
+            "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_nothing9",
+        );
         assert_eq!(resolved(&s.backend), 1);
         assert!(labelled(
             cx,
@@ -1851,7 +1872,10 @@ mod gpui_tests {
         assert!(labelled(cx, &s, "open-shared-from", DEEP_LINK));
         assert!(dialog_open(cx, &s));
         // A second link while it is open replaces the first, in place.
-        handler(vec!["curl-runner://open/acme/nope?share=zz9".into()]);
+        handler(vec![
+            "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_zz9"
+                .into(),
+        ]);
         cx.run_until_parked();
         let again = s.ws.read_with(cx, |ws, _| ws.open_shared_view()).unwrap();
         assert_eq!(again, view);
@@ -2007,6 +2031,33 @@ mod gpui_tests {
         }
         assert_eq!(s.secrets.len(), 0, "no Keychain items");
         assert!(s.ws.read_with(cx, |ws, _| ws.state.collection.is_none()));
+    }
+
+    #[cfg(feature = "server")]
+    #[gpui_kit::test]
+    fn open_urls_routes_callbacks_to_sign_in(cx: &mut TestAppContext) {
+        let s = studio(cx);
+        let ws = s.ws.clone();
+        let callback = "curl-runner://auth/callback?code=crh_abc123&server=https%3A%2F%2Fapi.mock.curl-runner.test";
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.open_urls(vec![callback.into()], window, cx));
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(
+            s.ws.read_with(cx, |ws, _| ws.open_shared_view().is_none()
+                && ws.pending_link.is_none()),
+            "a callback never reaches the share flow"
+        );
+        // A share link still does.
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.open_urls(vec![DEEP_LINK.into()], window, cx)
+            });
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(s.ws.read_with(cx, |ws, _| ws.open_shared_view().is_some()));
     }
 
     #[cfg(feature = "server")]
