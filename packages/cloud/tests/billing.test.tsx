@@ -456,6 +456,45 @@ describe('BillingView', () => {
       summary: { ...TEAM, plan_source: 'override', has_subscription: true },
     });
     expect(screen.queryByRole('button', { name: 'Manage billing' })).toBeNull();
+    expect(screen.getAllByText(/An owner can cancel it under Manage billing./)).toHaveLength(2);
+    expect(screen.queryByText(/Manage billing to cancel/)).toBeNull();
+  });
+
+  it('granted over a live subscription labels the amount as the next invoice', () => {
+    view({
+      summary: { ...TEAM, plan_source: 'override', has_subscription: true, seats: 3 },
+    });
+    expect(screen.getByText('Next invoice')).toBeInTheDocument();
+    expect(screen.queryByText('Cost')).toBeNull();
+    // 3 members on the annual price.
+    expect(screen.getByText('Next invoice').nextElementSibling).toHaveTextContent('$288 a year');
+  });
+
+  it('a Free override over a live subscription keeps the portal and hides Upgrade', async () => {
+    const { user, onPortal } = view({
+      summary: { ...FREE, plan_source: 'override', has_subscription: true, seats: 2 },
+    });
+    expect(
+      screen.getByText('Stripe still bills this team. Manage billing to cancel the subscription.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Upgrade to Team' })).toBeNull();
+    expect(screen.queryByText('Ask a team owner to upgrade.')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Manage billing' }));
+    expect(onPortal).toHaveBeenCalled();
+  });
+
+  it('a Free override over a live subscription tells non-owners an owner can cancel', () => {
+    view({
+      owner: false,
+      summary: { ...FREE, plan_source: 'override', has_subscription: true },
+    });
+    expect(
+      screen.getByText(
+        'Stripe still bills this team. An owner can cancel it under Manage billing.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Manage billing' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Upgrade to Team' })).toBeNull();
   });
 
   it('granted with no end date says so', () => {

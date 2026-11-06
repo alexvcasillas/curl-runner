@@ -7,6 +7,9 @@ vi.mock('next/headers', () => ({
   headers: async () => new Headers(),
 }));
 vi.mock('next/navigation', () => ({
+  notFound: () => {
+    throw new Error('NEXT_NOT_FOUND');
+  },
   redirect: (url: string) => {
     throw new Error(`NEXT_REDIRECT ${url}`);
   },
@@ -27,6 +30,9 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
 });
 
+const ME = { role: 'support', permissions: [] };
+const me = (url: string) => new URL(url).pathname === '/v1/admin/me';
+
 const call = (q: string) =>
   GET(new Request(`http://localhost:3000/admin/search?q=${encodeURIComponent(q)}`));
 
@@ -34,8 +40,11 @@ describe('GET /admin/search', () => {
   it('asks for five of each and keeps only what the palette shows', async () => {
     const urls: string[] = [];
     fetchMock.mockImplementation(async (url: string) => {
-      urls.push(url);
       const u = new URL(url);
+      if (u.pathname === '/v1/admin/me') {
+        return json(ME);
+      }
+      urls.push(url);
       if (u.pathname === '/v1/admin/users') {
         return json({
           items: [{ id: 'u1', email: 'a@b.co', name: null, teams: [], methods: ['email'] }],
@@ -65,13 +74,22 @@ describe('GET /admin/search', () => {
 
   it('is a 404 for a non-admin', async () => {
     fetchMock.mockImplementation(async () => json({ error: 'not_found', message: '' }, 404));
-    expect((await call('x')).status).toBe(404);
+    await expect(call('x')).rejects.toThrow('NEXT_NOT_FOUND');
   });
 
-  it('answers an empty query without calling the API', async () => {
+  it('is a 404 for a non-admin even with an empty query', async () => {
+    fetchMock.mockImplementation(async () => json({ error: 'not_found', message: '' }, 404));
+    await expect(call('  ')).rejects.toThrow('NEXT_NOT_FOUND');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(me(String(fetchMock.mock.calls[0][0]))).toBe(true);
+  });
+
+  it('answers an empty query from an admin without searching', async () => {
+    fetchMock.mockImplementation(async () => json(ME));
     const res = await call('  ');
     expect(await res.json()).toEqual({ users: [], teams: [], collections: [] });
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(me(String(fetchMock.mock.calls[0][0]))).toBe(true);
   });
 
   it('passes an API outage on as a 503', async () => {

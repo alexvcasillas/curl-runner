@@ -142,7 +142,10 @@ export function CommandSearch() {
       setActive((i) => (i - 1 + rows.length) % rows.length);
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      go(rows[active].href);
+      // The rows on screen may be for an earlier term while the next search runs.
+      if (state.kind === 'done' && state.query === term) {
+        go(rows[active].href);
+      }
     }
   }
 

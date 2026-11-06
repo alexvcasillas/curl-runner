@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { SearchResults } from '@/lib/admin';
+import { getAdminMe } from '@/lib/admin-data';
 import { api } from '@/lib/api';
 import { ApiError } from '@/lib/errors';
 
@@ -14,11 +15,13 @@ const EMPTY: SearchResults = { users: [], teams: [], collections: [] };
  */
 export async function GET(request: Request) {
   const q = new URL(request.url).searchParams.get('q')?.trim() ?? '';
-  if (!q) {
-    return NextResponse.json(EMPTY);
-  }
   const query = `?q=${encodeURIComponent(q)}&limit=5`;
   try {
+    // First, even for an empty `q`: a non-admin always gets the 404.
+    await getAdminMe();
+    if (!q) {
+      return NextResponse.json(EMPTY);
+    }
     const [users, teams, collections] = await Promise.all([
       api<Page<SearchResults['users'][number]>>(`/v1/admin/users${query}`),
       api<Page<SearchResults['teams'][number]>>(`/v1/admin/teams${query}`),
