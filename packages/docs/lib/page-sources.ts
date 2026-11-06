@@ -16,6 +16,8 @@ export const MARKETING_PAGES: { path: string; sources: string[] }[] = [
   { path: '/changelog', sources: ['app/(marketing)/changelog/page.tsx', CLI_CHANGELOG] },
   // The sitemap adds every post's MDX file: a new post changes the index.
   { path: '/blog', sources: ['app/(marketing)/blog/page.tsx'] },
+  { path: '/privacy', sources: ['app/(marketing)/privacy/page.tsx', 'lib/legal.ts'] },
+  { path: '/terms', sources: ['app/(marketing)/terms/page.tsx', 'lib/legal.ts'] },
 ];
 
 export const FEATURE_SOURCES = ['app/(marketing)/features/[slug]/page.tsx', 'lib/features-data.ts'];
