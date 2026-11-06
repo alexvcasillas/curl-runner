@@ -288,6 +288,9 @@ fn admin_routes(some_user: &str) -> Vec<(&'static str, String, Option<String>)> 
             "/v1/admin/emails/log?kind=broadcast&status=failed&q=a".into(),
             None,
         ),
+        ("GET", "/v1/admin/overview".into(), None),
+        ("GET", "/v1/admin/health".into(), None),
+        ("GET", "/v1/admin/stripe".into(), None),
     ]
 }
 

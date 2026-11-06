@@ -14,6 +14,7 @@ use crate::admin::emails::{Audience, Recipient, copy_for, recipients_sql};
 use crate::clock::Clock;
 use crate::config::Config;
 use crate::error::ApiError;
+use crate::metrics::Metrics;
 use crate::state::AppState;
 
 /// Rows handled per batch.
@@ -56,13 +57,16 @@ pub async fn run(
     transport: Arc<dyn Transport>,
     clock: Arc<dyn Clock>,
     config: Arc<Config>,
+    metrics: Arc<Metrics>,
     shutdown: impl Future<Output = ()>,
 ) {
     tokio::pin!(shutdown);
     loop {
-        if let Err(err) = run_once(&db, transport.as_ref(), clock.as_ref(), &config).await {
+        let result = run_once(&db, transport.as_ref(), clock.as_ref(), &config).await;
+        if let Err(err) = &result {
             tracing::error!("mail worker: {err}");
         }
+        metrics.job_ran("mail_worker", clock.now(), result.is_ok());
         tokio::select! {
             () = &mut shutdown => return,
             () = tokio::time::sleep(POLL) => {},
@@ -255,6 +259,14 @@ pub async fn run_broadcasts(state: AppState, shutdown: impl Future<Output = ()>)
 /// broadcast that is `sending`: new ones, and any a crash left half done.
 /// Returns how many finished.
 pub async fn fan_out_due(state: &AppState, now: DateTime<Utc>) -> Result<usize, ApiError> {
+    let result = fan_out_inner(state, now).await;
+    state
+        .metrics
+        .job_ran("broadcast_fanout", now, result.is_ok());
+    result
+}
+
+async fn fan_out_inner(state: &AppState, now: DateTime<Utc>) -> Result<usize, ApiError> {
     // A due broadcast with nothing to send goes back to draft instead.
     // (The API refuses to leave a scheduled one empty; this is the backstop.)
     let emptied: Vec<Uuid> = sqlx::query_scalar(

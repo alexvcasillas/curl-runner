@@ -12,6 +12,7 @@ pub mod extract;
 pub mod hash;
 pub mod info;
 pub mod mail;
+pub mod metrics;
 pub mod plans;
 pub mod settings;
 pub mod state;
@@ -38,6 +39,7 @@ const DEFAULT_PORT: u16 = 8080;
 /// The application router.
 pub fn app(state: AppState) -> Router {
     let cors = cors(&state.config.app_url);
+    let tracked = (state.metrics.clone(), state.clock.clone());
     Router::new()
         .route("/", get(health))
         .route("/health", get(health))
@@ -53,6 +55,10 @@ pub fn app(state: AppState) -> Router {
         .fallback(not_found)
         .with_state(state)
         .layer(cors)
+        .layer(axum::middleware::from_fn_with_state(
+            tracked,
+            metrics::track,
+        ))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(make_span)

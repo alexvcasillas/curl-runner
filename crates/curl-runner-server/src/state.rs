@@ -13,6 +13,7 @@ use crate::clock::Clock;
 use crate::config::Config;
 use crate::error::ApiError;
 use crate::mail::Mailer;
+use crate::metrics::Metrics;
 use crate::settings::{Settings, SettingsCache};
 
 #[derive(Clone)]
@@ -28,17 +29,21 @@ pub struct AppState {
     pub price_cache: PriceCache,
     /// The `server_settings` row behind a 5 second cache.
     pub settings_cache: SettingsCache,
+    /// In-process numbers for the admin health page. Reset on restart.
+    pub metrics: Arc<Metrics>,
 }
 
 impl AppState {
     pub fn new(db: PgPool, config: Config, clock: Arc<dyn Clock>) -> Self {
+        let metrics = Arc::new(Metrics::new(clock.now()));
         Self {
             mailer: Mailer::new(clock.clone()),
             oauth: Arc::new(RealProviders::new(
                 config.github.clone(),
                 config.google.clone(),
             )),
-            limiter: RateLimiter::new(clock.clone()),
+            limiter: RateLimiter::new(clock.clone()).with_metrics(metrics.clone()),
+            metrics,
             billing: config
                 .billing
                 .clone()
@@ -64,6 +69,8 @@ impl AppState {
 pub struct RateLimiter {
     clock: Arc<dyn Clock>,
     windows: Arc<Mutex<HashMap<String, Window>>>,
+    /// Counts refusals per key prefix, when set.
+    metrics: Option<Arc<Metrics>>,
 }
 
 struct Window {
@@ -79,7 +86,13 @@ impl RateLimiter {
         Self {
             clock,
             windows: Arc::default(),
+            metrics: None,
         }
+    }
+
+    pub fn with_metrics(mut self, metrics: Arc<Metrics>) -> Self {
+        self.metrics = Some(metrics);
+        self
     }
 
     /// Count one hit for `key`. Fails with `429 rate_limited` once `key` has
@@ -103,6 +116,9 @@ impl RateLimiter {
             }
         };
         if entry.count >= limit {
+            if let Some(metrics) = &self.metrics {
+                metrics.rate_limited(key, now);
+            }
             let left_ms = (entry.ends_at - now)
                 .num_milliseconds()
                 .max(1)

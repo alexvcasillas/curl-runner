@@ -12,7 +12,9 @@ use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
 
 use super::effective::{PlanChange, PlanRow, effective_plan, parse_plan};
-use super::{BillingError, Subscription, stripe_down_log};
+use super::mrr::Billed;
+use super::routes::current_prices;
+use super::{BillingError, Prices, Subscription, stripe_down_log};
 use crate::error::ApiError;
 use crate::mail::Mail;
 use crate::state::AppState;
@@ -74,6 +76,8 @@ struct TeamRow {
     billing_status: Option<String>,
     override_plan: Option<String>,
     override_until: Option<DateTime<Utc>>,
+    billing_interval: Option<String>,
+    seats_synced: Option<i32>,
 }
 
 impl TeamRow {
@@ -90,7 +94,8 @@ impl TeamRow {
 }
 
 const TEAM_COLUMNS: &str = "id, name, slug::text AS slug, plan, past_due_since, \
-                            stripe_subscription_id, billing_status, override_plan, override_until";
+                            stripe_subscription_id, billing_status, override_plan, override_until, \
+                            billing_interval, seats_synced";
 
 fn plan_str(plan: &str) -> &'static str {
     if plan == "team" { "team" } else { "free" }
@@ -187,6 +192,81 @@ async fn cancel_extra(state: &AppState, id: &str) -> Result<(), ApiError> {
     }
 }
 
+/// What applying a Stripe event did to a team, for the Stripe page's event list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Applied {
+    pub team_id: Uuid,
+    /// A short human line such as "Team annual, 3 seats" or "Cancelled".
+    pub summary: String,
+    /// The team's MRR after minus before, in cents. `None` when the prices
+    /// could not be read.
+    pub mrr_delta_cents: Option<i64>,
+}
+
+fn seats_word(n: i64) -> String {
+    format!("{n} seat{}", if n == 1 { "" } else { "s" })
+}
+
+/// The line for an event that moved a team from `was_paying` at `seats_before`
+/// on `interval_before` to `status` at `seats` on `interval`.
+fn summary_line(
+    status: &str,
+    was_paying: bool,
+    (interval_before, seats_before): (Option<&str>, i64),
+    (interval, seats): (Option<&str>, i64),
+) -> String {
+    if is_terminal(status) {
+        return "Cancelled".to_owned();
+    }
+    if matches!(status, "past_due" | "unpaid") {
+        return format!("Payment failed, {}", seats_word(seats));
+    }
+    let plan = |interval: Option<&str>| match interval {
+        Some(i) => format!("Team {i}"),
+        None => "Team".to_owned(),
+    };
+    if was_paying && interval_before != interval && interval.is_some() {
+        format!(
+            "Switched to {}, {}",
+            interval.unwrap_or_default(),
+            seats_word(seats)
+        )
+    } else if was_paying && seats_before != seats {
+        format!("Seats {seats_before} to {seats}")
+    } else {
+        format!("{}, {}", plan(interval), seats_word(seats))
+    }
+}
+
+/// The team's billed seats: what Stripe last had, else its members.
+async fn billed_seats(
+    tx: &mut PgConnection,
+    team_id: Uuid,
+    synced: Option<i32>,
+) -> Result<i64, ApiError> {
+    let seats = match synced {
+        Some(n) => i64::from(n),
+        None => {
+            sqlx::query_scalar("SELECT count(*) FROM memberships WHERE team_id = $1")
+                .bind(team_id)
+                .fetch_one(tx)
+                .await?
+        }
+    };
+    Ok(seats.max(1))
+}
+
+/// The prices, for a delta. A failure costs the delta, never the event.
+async fn prices_or_log(state: &AppState) -> Option<Prices> {
+    match current_prices(state).await {
+        Ok(prices) => prices,
+        Err(err) => {
+            stripe_down_log(&err);
+            None
+        }
+    }
+}
+
 /// Write what Stripe says about `sub` onto its team, in the caller's
 /// transaction. A subscription with no team here is ignored.
 pub async fn apply_subscription(
@@ -194,7 +274,7 @@ pub async fn apply_subscription(
     tx: &mut PgConnection,
     sub: &Subscription,
     now: DateTime<Utc>,
-) -> Result<(), ApiError> {
+) -> Result<Option<Applied>, ApiError> {
     let mut team = match sub.team_id {
         Some(id) => lock_team_by_id(tx, id).await?,
         None => None,
@@ -215,7 +295,7 @@ pub async fn apply_subscription(
         } else {
             tracing::warn!("stripe subscription {} matches no team", sub.id);
         }
-        return Ok(());
+        return Ok(None);
     };
     // A late event for a subscription the team has since replaced.
     if terminal
@@ -224,7 +304,7 @@ pub async fn apply_subscription(
             .as_deref()
             .is_some_and(|current| current != sub.id)
     {
-        return Ok(());
+        return Ok(None);
     }
     // A second live subscription for the team: keep the first, cancel this one.
     if !terminal
@@ -241,9 +321,11 @@ pub async fn apply_subscription(
             sub.id
         );
         cancel_extra(state, &sub.id).await?;
-        return Ok(());
+        return Ok(None);
     }
 
+    let prices = prices_or_log(state).await;
+    let seats_before = billed_seats(tx, team.id, team.seats_synced).await?;
     let was = plan_str(&team.plan);
     let next = outcome(&sub.status, was, team.past_due_since, now);
     sqlx::query(
@@ -306,7 +388,42 @@ pub async fn apply_subscription(
     if before == Plan::Team && after == Plan::Free {
         mail_plan_changed(state, tx, &team).await?;
     }
-    Ok(())
+
+    let overridden = PlanRow {
+        plan: String::new(),
+        stripe_subscription_id: None,
+        override_plan: team.override_plan.clone(),
+        override_until: team.override_until,
+    }
+    .override_active(now);
+    let interval_after = interval_of(state, &sub.price).or(team.billing_interval.as_deref());
+    let seats_after = i64::from(sub.quantity).max(1);
+    let billed_before = Billed {
+        subscribed: team.stripe_subscription_id.is_some(),
+        status: team.billing_status.as_deref(),
+        interval: team.billing_interval.as_deref(),
+        seats: seats_before,
+        overridden,
+    };
+    let billed_after = Billed {
+        subscribed: !terminal,
+        status: Some(&sub.status),
+        interval: interval_after,
+        seats: seats_after,
+        overridden,
+    };
+    Ok(Some(Applied {
+        team_id: team.id,
+        summary: summary_line(
+            &sub.status,
+            billed_before.is_revenue(),
+            (team.billing_interval.as_deref(), seats_before),
+            (interval_after, seats_after),
+        ),
+        mrr_delta_cents: prices
+            .as_ref()
+            .map(|p| billed_after.mrr(p) - billed_before.mrr(p)),
+    }))
 }
 
 /// Stripe no longer knows `subscription`: its team is on Free.
@@ -315,9 +432,30 @@ pub async fn apply_missing(
     tx: &mut PgConnection,
     subscription: &str,
     now: DateTime<Utc>,
-) -> Result<(), ApiError> {
+) -> Result<Option<Applied>, ApiError> {
     let Some(team) = lock_team_by_subscription(tx, subscription).await? else {
-        return Ok(());
+        return Ok(None);
+    };
+    let delta = match prices_or_log(state).await {
+        Some(prices) => {
+            let overridden = PlanRow {
+                plan: String::new(),
+                stripe_subscription_id: None,
+                override_plan: team.override_plan.clone(),
+                override_until: team.override_until,
+            }
+            .override_active(now);
+            let seats = billed_seats(tx, team.id, team.seats_synced).await?;
+            let before = Billed {
+                subscribed: true,
+                status: team.billing_status.as_deref(),
+                interval: team.billing_interval.as_deref(),
+                seats,
+                overridden,
+            };
+            Some(-before.mrr(&prices))
+        }
+        None => None,
     };
     sqlx::query(
         "UPDATE teams SET plan = 'free', stripe_subscription_id = NULL, \
@@ -346,30 +484,51 @@ pub async fn apply_missing(
             mail_plan_changed(state, tx, &team).await?;
         }
     }
-    Ok(())
+    Ok(Some(Applied {
+        team_id: team.id,
+        summary: "Cancelled".to_owned(),
+        mrr_delta_cents: delta,
+    }))
 }
 
 /// One pass of background work: move teams that stayed past due for the grace period
 /// to Free, end plan overrides that ran out and remind owners 14 days before
-/// one does, push changed seat counts to Stripe, and delete admin events
-/// older than 2 years (an indexed delete that almost always finds nothing). A
-/// failure is logged and the next tick tries again.
+/// one does, push changed seat counts to Stripe, write the day's MRR
+/// snapshot (once per UTC day) and delete admin events older than 2 years (an
+/// indexed delete that almost always finds nothing). A failure is logged and
+/// the next tick tries again. Each job's end is recorded for the health page.
 pub async fn tick(state: &AppState, now: DateTime<Utc>) {
+    let m = &state.metrics;
+    let mut billing_ok = true;
     if let Err(err) = downgrade_past_due(state, now).await {
         tracing::error!("past-due downgrade: {err}");
+        billing_ok = false;
     }
+    let mut overrides_ok = true;
     if let Err(err) = expire_overrides(state, now).await {
         tracing::error!("override expiry: {err}");
+        overrides_ok = false;
     }
     if let Err(err) = remind_overrides(state, now).await {
         tracing::error!("override reminder: {err}");
+        overrides_ok = false;
     }
     if let Err(err) = sync_seats(state, now).await {
         tracing::error!("seat sync: {err}");
+        billing_ok = false;
     }
-    if let Err(err) = crate::admin::events::prune(&state.db, now).await {
+    m.job_ran("billing_sync", now, billing_ok);
+    m.job_ran("override_expiry", now, overrides_ok);
+    let snapshot = super::mrr::snapshot(state, now).await;
+    if let Err(err) = &snapshot {
+        tracing::error!("mrr snapshot: {err}");
+    }
+    m.job_ran("mrr_snapshot", now, snapshot.is_ok());
+    let retention = crate::admin::events::prune(&state.db, now).await;
+    if let Err(err) = &retention {
         tracing::error!("audit log retention: {err}");
     }
+    m.job_ran("audit_retention", now, retention.is_ok());
 }
 
 /// `tick` every minute until `shutdown` resolves.

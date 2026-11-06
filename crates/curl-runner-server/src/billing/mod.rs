@@ -2,6 +2,7 @@
 //! billing endpoints. Billing is off unless all four `STRIPE_*` variables are set.
 
 pub mod effective;
+pub mod mrr;
 pub mod routes;
 pub mod stripe;
 pub mod sync;

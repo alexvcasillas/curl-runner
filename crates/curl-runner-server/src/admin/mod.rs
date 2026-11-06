@@ -11,6 +11,7 @@ pub mod csv;
 pub mod emails;
 pub mod events;
 pub mod settings;
+pub mod stats;
 pub mod teams;
 pub mod users;
 
@@ -110,6 +111,9 @@ pub fn routes() -> Router<AppState> {
         .route("/v1/admin/broadcasts/{id}/preview", get(emails::preview))
         .route("/v1/admin/audience-count", get(emails::audience_count))
         .route("/v1/admin/emails/log", get(emails::log))
+        .route("/v1/admin/overview", get(stats::overview))
+        .route("/v1/admin/health", get(stats::health))
+        .route("/v1/admin/stripe", get(stats::stripe))
         // A wrong method is a 404 too: a 405 would confirm the path exists.
         .method_not_allowed_fallback(not_found)
 }
