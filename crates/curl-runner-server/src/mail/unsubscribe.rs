@@ -3,9 +3,16 @@
 //! The token is `base64url(user_id || HMAC-SHA256(SECRET_KEY, "unsubscribe:" || user_id))`
 //! with the id's 16 raw bytes. It never expires and needs no sign-in: it can
 //! only turn product emails off, and doing it twice is the same as once.
+//!
+//! `GET` only shows a confirm page, so a link scanner that fetches the link
+//! changes nothing. `POST` (the page's button, or a mail client's RFC 8058
+//! one-click `List-Unsubscribe=One-Click` form post, token in the query)
+//! turns them off. Every answer is an HTML page, and a bad token gets the
+//! same page as a good one, so tokens cannot be probed.
 
 use axum::Router;
-use axum::extract::State;
+use axum::extract::rejection::QueryRejection;
+use axum::extract::{Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -17,10 +24,9 @@ use serde::Deserialize;
 use sha2::Sha256;
 use uuid::Uuid;
 
-use super::templates::notice_page;
+use super::templates::{confirm_page, notice_page};
 use crate::config::Config;
-use crate::error::ApiError;
-use crate::extract::{ApiQuery, ClientIp};
+use crate::extract::ClientIp;
 use crate::state::AppState;
 
 const PREFIX: &[u8] = b"unsubscribe:";
@@ -63,7 +69,7 @@ pub fn link(config: &Config, user_id: Uuid) -> String {
 }
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/v1/unsubscribe", get(unsubscribe))
+    Router::new().route("/v1/unsubscribe", get(confirm).post(unsubscribe))
 }
 
 #[derive(Deserialize)]
@@ -71,50 +77,114 @@ pub struct UnsubscribeQuery {
     token: Option<String>,
 }
 
-fn page(status: StatusCode, heading: &str, body: &str) -> Response {
+fn html(status: StatusCode, page: String) -> Response {
     (
         status,
         [
             (header::CONTENT_TYPE, "text/html; charset=utf-8"),
             (header::CACHE_CONTROL, "no-store"),
+            (header::REFERRER_POLICY, "no-referrer"),
         ],
-        notice_page(heading, body),
+        page,
     )
         .into_response()
 }
 
-/// `GET /v1/unsubscribe?token=`: turn product emails off for the token's
-/// user and answer a small page. A deleted user gets the same page.
+/// The per-IP limit: the page to answer once it is hit.
+fn limited(state: &AppState, ip: &str) -> Option<Response> {
+    state
+        .limiter
+        .check(
+            &format!("unsubscribe:ip:{ip}"),
+            PER_MINUTE,
+            Duration::minutes(1),
+        )
+        .map_err(|err| {
+            let mut res = html(
+                StatusCode::TOO_MANY_REQUESTS,
+                notice_page(
+                    "Too many tries.",
+                    "Wait a minute, then open the link from the email again.",
+                ),
+            );
+            if let Some(secs) = err.retry_after
+                && let Ok(value) = secs.to_string().parse()
+            {
+                res.headers_mut().insert(header::RETRY_AFTER, value);
+            }
+            res
+        })
+        .err()
+}
+
+/// The token from the query, or `None` for a missing or unreadable one.
+fn token_of(q: Result<Query<UnsubscribeQuery>, QueryRejection>) -> Option<String> {
+    q.ok().and_then(|Query(q)| q.token)
+}
+
+/// `GET /v1/unsubscribe?token=`: asks first, changes nothing.
+async fn confirm(
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    q: Result<Query<UnsubscribeQuery>, QueryRejection>,
+) -> Response {
+    if let Some(res) = limited(&state, &ip) {
+        return res;
+    }
+    // Only base64url characters go back into the form's URL.
+    let token: String = token_of(q)
+        .unwrap_or_default()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+        .take(128)
+        .collect();
+    html(
+        StatusCode::OK,
+        confirm_page(
+            "Stop product emails from curl-runner?",
+            "You\u{2019}ll still get sign-in codes, invites and billing emails.",
+            &format!("{}/v1/unsubscribe?token={token}", state.config.api_url),
+            "Unsubscribe",
+        ),
+    )
+}
+
+/// `POST /v1/unsubscribe?token=`: turn product emails off. The body is
+/// ignored: the confirm page's form sends none, a one-click client sends
+/// `List-Unsubscribe=One-Click`.
 async fn unsubscribe(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
-    ApiQuery(q): ApiQuery<UnsubscribeQuery>,
-) -> Result<Response, ApiError> {
-    state.limiter.check(
-        &format!("unsubscribe:ip:{ip}"),
-        PER_MINUTE,
-        Duration::minutes(1),
-    )?;
-    let user_id = q
-        .token
-        .as_deref()
-        .and_then(|t| verify(state.config.secret_key.as_bytes(), t));
-    let Some(user_id) = user_id else {
-        return Ok(page(
-            StatusCode::BAD_REQUEST,
-            "This unsubscribe link doesn't work.",
-            "Copy the whole link from the email and try again, or reply to the email to ask us.",
-        ));
-    };
-    sqlx::query("UPDATE users SET product_emails = false WHERE id = $1 AND product_emails")
-        .bind(user_id)
-        .execute(&state.db)
-        .await?;
-    Ok(page(
+    q: Result<Query<UnsubscribeQuery>, QueryRejection>,
+) -> Response {
+    if let Some(res) = limited(&state, &ip) {
+        return res;
+    }
+    if let Some(user_id) = token_of(q).and_then(|t| verify(state.config.secret_key.as_bytes(), &t))
+    {
+        let done =
+            sqlx::query("UPDATE users SET product_emails = false WHERE id = $1 AND product_emails")
+                .bind(user_id)
+                .execute(&state.db)
+                .await;
+        if let Err(err) = done {
+            tracing::error!("unsubscribe: {err}");
+            return html(
+                StatusCode::SERVICE_UNAVAILABLE,
+                notice_page(
+                    "We couldn't do that right now.",
+                    "Try the link again in a few minutes.",
+                ),
+            );
+        }
+    }
+    html(
         StatusCode::OK,
-        "You won't get product emails from curl-runner anymore.",
-        "Sign-in codes, invites and billing emails still reach you.",
-    ))
+        notice_page(
+            "You won't get product emails from curl-runner anymore.",
+            "Sign-in codes, invites and billing emails still reach you.",
+        ),
+    )
 }
 
 #[cfg(test)]

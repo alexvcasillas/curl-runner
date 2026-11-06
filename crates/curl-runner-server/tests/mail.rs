@@ -37,6 +37,7 @@ impl Transport for FakeTransport {
         subject: &'a str,
         _text: &'a str,
         _html: Option<&'a str>,
+        _headers: &'a curl_runner_server::mail::transport::Headers,
     ) -> SendFuture<'a> {
         Box::pin(async move {
             let mut failures = self.failures.lock().unwrap();
@@ -78,7 +79,7 @@ async fn enqueue_in_rolled_back_tx_sends_nothing(pool: PgPool) {
 
     let transport = FakeTransport::new(0);
     assert_eq!(
-        run_once(&pool, &transport, app.clock.as_ref())
+        run_once(&pool, &transport, app.clock.as_ref(), &app.state.config)
             .await
             .unwrap(),
         0
@@ -100,7 +101,7 @@ async fn worker_sends_and_marks_sent(pool: PgPool) {
 
     let transport = FakeTransport::new(0);
     assert_eq!(
-        run_once(&pool, &transport, app.clock.as_ref())
+        run_once(&pool, &transport, app.clock.as_ref(), &app.state.config)
             .await
             .unwrap(),
         1
@@ -128,7 +129,7 @@ async fn worker_sends_and_marks_sent(pool: PgPool) {
     );
     // Already sent: a second pass does nothing.
     assert_eq!(
-        run_once(&pool, &transport, app.clock.as_ref())
+        run_once(&pool, &transport, app.clock.as_ref(), &app.state.config)
             .await
             .unwrap(),
         0
@@ -149,7 +150,7 @@ async fn worker_backs_off_on_failure(pool: PgPool) {
 
     let transport = FakeTransport::new(1);
     assert_eq!(
-        run_once(&pool, &transport, app.clock.as_ref())
+        run_once(&pool, &transport, app.clock.as_ref(), &app.state.config)
             .await
             .unwrap(),
         0
@@ -167,7 +168,7 @@ async fn worker_backs_off_on_failure(pool: PgPool) {
     // Not due yet.
     app.clock.advance(Duration::seconds(29));
     assert_eq!(
-        run_once(&pool, &transport, app.clock.as_ref())
+        run_once(&pool, &transport, app.clock.as_ref(), &app.state.config)
             .await
             .unwrap(),
         0
@@ -176,7 +177,7 @@ async fn worker_backs_off_on_failure(pool: PgPool) {
 
     app.clock.advance(Duration::seconds(2));
     assert_eq!(
-        run_once(&pool, &transport, app.clock.as_ref())
+        run_once(&pool, &transport, app.clock.as_ref(), &app.state.config)
             .await
             .unwrap(),
         1
@@ -218,7 +219,7 @@ async fn worker_gives_up_after_max_attempts(pool: PgPool) {
 
     let transport = FakeTransport::new(u32::MAX);
     for _ in 0..MAX_ATTEMPTS {
-        run_once(&pool, &transport, app.clock.as_ref())
+        run_once(&pool, &transport, app.clock.as_ref(), &app.state.config)
             .await
             .unwrap();
         app.clock.advance(Duration::hours(2));
@@ -248,7 +249,7 @@ async fn worker_gives_up_after_max_attempts(pool: PgPool) {
         ("", "", Some(""))
     );
     // Stopped: another pass leaves it alone.
-    run_once(&pool, &transport, app.clock.as_ref())
+    run_once(&pool, &transport, app.clock.as_ref(), &app.state.config)
         .await
         .unwrap();
     let attempts: i32 = sqlx::query_scalar("SELECT attempts FROM outbox_emails")
@@ -275,8 +276,8 @@ async fn concurrent_workers_send_each_mail_once(pool: PgPool) {
     let transport = FakeTransport::new(0);
     let clock = app.clock.as_ref();
     let (a, b) = tokio::join!(
-        run_once(&pool, &transport, clock),
-        run_once(&pool, &transport, clock)
+        run_once(&pool, &transport, clock, &app.state.config),
+        run_once(&pool, &transport, clock, &app.state.config)
     );
     assert_eq!(a.unwrap() + b.unwrap(), 2);
     let mut to: Vec<String> = transport.sent().into_iter().map(|(to, _)| to).collect();

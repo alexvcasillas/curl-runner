@@ -102,15 +102,15 @@ pub fn render(md: &str, vars: Option<&Vars>) -> Rendered {
 
 /// `s` with the variables replaced, as plain text (for a subject).
 pub fn substitute(s: &str, vars: Option<&Vars>) -> String {
-    let chars: Vec<char> = s.chars().collect();
+    let line = Line::new(s);
     let mut out = String::new();
     let mut i = 0;
-    while i < chars.len() {
-        if let Some((value, next)) = variable(&chars, i, vars) {
+    while i < line.chars.len() {
+        if let Some((value, next)) = line.variable(i, line.chars.len(), vars) {
             out.push_str(value);
             i = next;
         } else {
-            out.push(chars[i]);
+            out.push(line.chars[i]);
             i += 1;
         }
     }
@@ -118,61 +118,184 @@ pub fn substitute(s: &str, vars: Option<&Vars>) -> String {
 }
 
 fn inline_str(s: &str, vars: Option<&Vars>, links: bool) -> (String, String) {
-    let chars: Vec<char> = s.chars().collect();
+    let line = Line::new(s);
     let mut html = String::new();
     let mut text = String::new();
-    inline(&chars, vars, links, &mut html, &mut text);
+    line.inline(0, line.chars.len(), vars, links, &mut html, &mut text);
     (html, text)
 }
 
-/// The value of a `{{name}}` starting at `i`, and the index after it.
-fn variable<'a>(chars: &[char], i: usize, vars: Option<&'a Vars>) -> Option<(&'a str, usize)> {
-    let vars = vars?;
-    if !starts_with(chars, i, "{{") {
-        return None;
-    }
-    let close = find(chars, i + 2, "}}")?;
-    let name: String = chars[i + 2..close].iter().collect();
-    Some((vars.get(name.trim())?, close + 2))
+/// One line of inline Markdown, with where each marker next occurs, built
+/// once. Every lookup is O(1) and each character is consumed by exactly one
+/// span, so rendering is linear in the line's length however the markers
+/// are (un)balanced.
+struct Line {
+    chars: Vec<char>,
+    /// The first index at or after `i` where `**` starts.
+    next_double: Vec<usize>,
+    /// The first lone `*` at or after `i`: not part of `**`, not after a space.
+    next_single: Vec<usize>,
+    /// The first index at or after `i` where `}}` starts.
+    next_vclose: Vec<usize>,
+    /// The first `)` at or after `i`.
+    next_paren: Vec<usize>,
+    /// For a `[`, the `]` that closes it, counting nested brackets.
+    bracket_close: Vec<Option<usize>>,
 }
 
-fn starts_with(chars: &[char], i: usize, pat: &str) -> bool {
-    (i..)
-        .zip(pat.chars())
-        .all(|(j, p)| chars.get(j) == Some(&p))
-}
-
-/// The first index at or after `from` where `pat` starts.
-fn find(chars: &[char], from: usize, pat: &str) -> Option<usize> {
-    (from..chars.len()).find(|&j| starts_with(chars, j, pat))
-}
-
-/// A lone `*` at or after `from`: not part of `**`, not right after a space.
-fn find_single_star(chars: &[char], from: usize) -> Option<usize> {
-    (from..chars.len()).find(|&j| {
-        chars[j] == '*'
-            && chars.get(j + 1) != Some(&'*')
-            && (j == 0 || chars[j - 1] != '*')
-            && (j == 0 || !chars[j - 1].is_whitespace())
-    })
-}
-
-/// The `]` closing the `[` at `open`, counting nested brackets.
-fn matching_bracket(chars: &[char], open: usize) -> Option<usize> {
-    let mut depth = 0usize;
-    for (j, &c) in chars.iter().enumerate().skip(open) {
-        match c {
-            '[' => depth += 1,
-            ']' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(j);
+impl Line {
+    fn new(s: &str) -> Self {
+        let chars: Vec<char> = s.chars().collect();
+        let n = chars.len();
+        let at = |j: usize| chars.get(j).copied();
+        let mut next_double = vec![n; n + 2];
+        let mut next_single = vec![n; n + 2];
+        let mut next_vclose = vec![n; n + 2];
+        let mut next_paren = vec![n; n + 2];
+        for i in (0..n).rev() {
+            next_double[i] = if chars[i] == '*' && at(i + 1) == Some('*') {
+                i
+            } else {
+                next_double[i + 1]
+            };
+            let lone = chars[i] == '*'
+                && at(i + 1) != Some('*')
+                && (i == 0 || (chars[i - 1] != '*' && !chars[i - 1].is_whitespace()));
+            next_single[i] = if lone { i } else { next_single[i + 1] };
+            next_vclose[i] = if chars[i] == '}' && at(i + 1) == Some('}') {
+                i
+            } else {
+                next_vclose[i + 1]
+            };
+            next_paren[i] = if chars[i] == ')' {
+                i
+            } else {
+                next_paren[i + 1]
+            };
+        }
+        let mut bracket_close = vec![None; n];
+        let mut open = Vec::new();
+        for (i, &c) in chars.iter().enumerate() {
+            match c {
+                '[' => open.push(i),
+                ']' => {
+                    if let Some(o) = open.pop() {
+                        bracket_close[o] = Some(i);
+                    }
                 }
+                _ => {}
             }
-            _ => {}
+        }
+        Self {
+            chars,
+            next_double,
+            next_single,
+            next_vclose,
+            next_paren,
+            bracket_close,
         }
     }
-    None
+
+    /// `table[from]` if it is before `end`.
+    fn within(table: &[usize], from: usize, end: usize) -> Option<usize> {
+        table.get(from).copied().filter(|&j| j < end)
+    }
+
+    fn starts_with(&self, i: usize, pat: &str) -> bool {
+        (i..)
+            .zip(pat.chars())
+            .all(|(j, p)| self.chars.get(j) == Some(&p))
+    }
+
+    /// The value of a `{{name}}` starting at `i` (closing before `end`), and
+    /// the index after it.
+    fn variable<'a>(
+        &self,
+        i: usize,
+        end: usize,
+        vars: Option<&'a Vars>,
+    ) -> Option<(&'a str, usize)> {
+        let vars = vars?;
+        if !self.starts_with(i, "{{") {
+            return None;
+        }
+        let close = Self::within(&self.next_vclose, i + 2, end)?;
+        let name: String = self.chars[i + 2..close].iter().collect();
+        Some((vars.get(name.trim())?, close + 2))
+    }
+
+    fn inline(
+        &self,
+        start: usize,
+        end: usize,
+        vars: Option<&Vars>,
+        links: bool,
+        html: &mut String,
+        text: &mut String,
+    ) {
+        let chars = &self.chars;
+        let mut i = start;
+        while i < end {
+            if let Some((value, next)) = self.variable(i, end, vars) {
+                html.push_str(&esc(value));
+                text.push_str(value);
+                i = next;
+                continue;
+            }
+            if self.starts_with(i, "**")
+                && i + 2 < end
+                && !chars[i + 2].is_whitespace()
+                && let Some(close) = Self::within(&self.next_double, i + 2, end)
+                && close > i + 2
+            {
+                html.push_str("<strong>");
+                self.inline(i + 2, close, vars, links, html, text);
+                html.push_str("</strong>");
+                i = close + 2;
+                continue;
+            }
+            if chars[i] == '*'
+                && i + 1 < end
+                && chars[i + 1] != '*'
+                && !chars[i + 1].is_whitespace()
+                && let Some(close) = Self::within(&self.next_single, i + 1, end)
+            {
+                html.push_str("<em>");
+                self.inline(i + 1, close, vars, links, html, text);
+                html.push_str("</em>");
+                i = close + 1;
+                continue;
+            }
+            if chars[i] == '['
+                && links
+                && let Some(close) = self.bracket_close[i].filter(|&c| c < end)
+                && close + 1 < end
+                && chars[close + 1] == '('
+                && let Some(paren) = Self::within(&self.next_paren, close + 2, end)
+            {
+                let url: String = chars[close + 2..paren].iter().collect();
+                if safe_url(&url) {
+                    let mut label_html = String::new();
+                    let mut label_text = String::new();
+                    self.inline(i + 1, close, vars, false, &mut label_html, &mut label_text);
+                    html.push_str(&format!(
+                        "<a href=\"{}\" style=\"{LINK_STYLE}\">{label_html}</a>",
+                        esc(&url)
+                    ));
+                    if label_text == url {
+                        text.push_str(&url);
+                    } else {
+                        text.push_str(&format!("{label_text} ({url})"));
+                    }
+                    i = paren + 1;
+                    continue;
+                }
+            }
+            html.push_str(&esc_char(chars[i]));
+            text.push(chars[i]);
+            i += 1;
+        }
+    }
 }
 
 /// Only `https://host…` and `mailto:…`, with nothing that could leave the
@@ -190,74 +313,6 @@ fn safe_url(url: &str) -> bool {
         && !url.chars().any(|c| {
             c.is_whitespace() || c.is_control() || matches!(c, '"' | '\'' | '<' | '>' | '`' | '\\')
         })
-}
-
-fn inline(chars: &[char], vars: Option<&Vars>, links: bool, html: &mut String, text: &mut String) {
-    let mut i = 0;
-    while i < chars.len() {
-        if let Some((value, next)) = variable(chars, i, vars) {
-            html.push_str(&esc(value));
-            text.push_str(value);
-            i = next;
-            continue;
-        }
-        if starts_with(chars, i, "**")
-            && let Some(close) = find(chars, i + 2, "**")
-            && close > i + 2
-            && !chars[i + 2].is_whitespace()
-        {
-            html.push_str("<strong>");
-            inline(&chars[i + 2..close], vars, links, html, text);
-            html.push_str("</strong>");
-            i = close + 2;
-            continue;
-        }
-        if chars[i] == '*'
-            && chars
-                .get(i + 1)
-                .is_some_and(|c| *c != '*' && !c.is_whitespace())
-            && let Some(close) = find_single_star(chars, i + 1)
-        {
-            html.push_str("<em>");
-            inline(&chars[i + 1..close], vars, links, html, text);
-            html.push_str("</em>");
-            i = close + 1;
-            continue;
-        }
-        if chars[i] == '['
-            && links
-            && let Some(close) = matching_bracket(chars, i)
-            && chars.get(close + 1) == Some(&'(')
-            && let Some(end) = (close + 2..chars.len()).find(|&j| chars[j] == ')')
-        {
-            let url: String = chars[close + 2..end].iter().collect();
-            if safe_url(&url) {
-                let mut label_html = String::new();
-                let mut label_text = String::new();
-                inline(
-                    &chars[i + 1..close],
-                    vars,
-                    false,
-                    &mut label_html,
-                    &mut label_text,
-                );
-                html.push_str(&format!(
-                    "<a href=\"{}\" style=\"{LINK_STYLE}\">{label_html}</a>",
-                    esc(&url)
-                ));
-                if label_text == url {
-                    text.push_str(&url);
-                } else {
-                    text.push_str(&format!("{label_text} ({url})"));
-                }
-                i = end + 1;
-                continue;
-            }
-        }
-        html.push_str(&esc_char(chars[i]));
-        text.push(chars[i]);
-        i += 1;
-    }
 }
 
 fn esc_char(c: char) -> String {
@@ -423,5 +478,28 @@ mod tests {
             "News for Ada"
         );
         assert_eq!(substitute("{{plan}}", None), "{{plan}}");
+    }
+
+    #[test]
+    fn pathological_input_renders_quickly() {
+        let v = vars("Ada", "Acme");
+        let n = 20_000;
+        let inputs = [
+            "{{".repeat(n / 2),
+            "[".repeat(n),
+            "[a](".repeat(n / 4),
+            "*a".repeat(n / 2),
+            "** ".repeat(n / 3),
+            "[[[]".repeat(n / 4) + "](https://x.io)",
+            "{{plan}".repeat(n / 7),
+        ];
+        let start = std::time::Instant::now();
+        for input in &inputs {
+            let out = render(input, Some(&v));
+            assert!(!out.text.is_empty());
+            let _ = substitute(input, Some(&v));
+        }
+        let took = start.elapsed();
+        assert!(took < std::time::Duration::from_millis(500), "{took:?}");
     }
 }

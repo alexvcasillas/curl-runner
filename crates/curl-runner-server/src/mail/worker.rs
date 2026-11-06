@@ -12,6 +12,7 @@ use uuid::Uuid;
 use super::{SECRET_SUBJECT_KINDS, Transport, templates, unsubscribe};
 use crate::admin::emails::{Audience, Recipient, copy_for, recipients_sql};
 use crate::clock::Clock;
+use crate::config::Config;
 use crate::error::ApiError;
 use crate::state::AppState;
 
@@ -35,7 +36,13 @@ struct Row {
     text_body: String,
     html_body: Option<String>,
     attempts: i32,
+    kind: String,
+    user_id: Option<Uuid>,
 }
+
+/// `last_error` of a broadcast copy dropped at send time.
+pub const SKIPPED_OPTED_OUT: &str = "Skipped: they turned off product emails before it was sent.";
+pub const SKIPPED_NO_ACCOUNT: &str = "Skipped: the account was deleted before it was sent.";
 
 /// Delay before the next try after `attempts` failures so far (0 for the first).
 pub fn backoff(attempts: i32) -> ChronoDuration {
@@ -48,11 +55,12 @@ pub async fn run(
     db: PgPool,
     transport: Arc<dyn Transport>,
     clock: Arc<dyn Clock>,
+    config: Arc<Config>,
     shutdown: impl Future<Output = ()>,
 ) {
     tokio::pin!(shutdown);
     loop {
-        if let Err(err) = run_once(&db, transport.as_ref(), clock.as_ref()).await {
+        if let Err(err) = run_once(&db, transport.as_ref(), clock.as_ref(), &config).await {
             tracing::error!("mail worker: {err}");
         }
         tokio::select! {
@@ -69,10 +77,11 @@ pub async fn run_once(
     db: &PgPool,
     transport: &dyn Transport,
     clock: &dyn Clock,
+    config: &Config,
 ) -> Result<usize, sqlx::Error> {
     let mut sent = 0;
     for _ in 0..BATCH {
-        match send_next(db, transport, clock).await? {
+        match send_next(db, transport, clock, config).await? {
             Some(true) => sent += 1,
             Some(false) => {}
             None => break,
@@ -81,27 +90,93 @@ pub async fn run_once(
     Ok(sent)
 }
 
+/// Due rows: `{extra}` narrows the pick. Both picks walk the pending index
+/// on `next_attempt_at`.
+fn pick_sql(extra: &str) -> String {
+    format!(
+        "SELECT id, to_addr, subject, text_body, html_body, attempts, kind, user_id \
+         FROM outbox_emails \
+         WHERE sent_at IS NULL AND failed_at IS NULL AND attempts < $1 \
+           AND next_attempt_at <= $2 {extra} \
+         ORDER BY next_attempt_at LIMIT 1 FOR UPDATE SKIP LOCKED"
+    )
+}
+
 /// Lock one due message, try it and record the outcome. `None` when nothing
 /// is due, else whether the send succeeded.
+///
+/// Everything else goes before broadcast copies, so a large broadcast never
+/// holds back a sign-in code: first the oldest due non-broadcast row, and
+/// only when there is none, the oldest due row of any kind.
+///
+/// A broadcast copy whose recipient has since turned product emails off, or
+/// whose account is gone, is not sent: it is marked failed with
+/// [`SKIPPED_OPTED_OUT`] or [`SKIPPED_NO_ACCOUNT`]. Copies that go out carry
+/// `List-Unsubscribe` (RFC 2369) and `List-Unsubscribe-Post` (RFC 8058).
 async fn send_next(
     db: &PgPool,
     transport: &dyn Transport,
     clock: &dyn Clock,
+    config: &Config,
 ) -> Result<Option<bool>, sqlx::Error> {
     let now = clock.now();
     let mut tx = db.begin().await?;
-    let row: Option<Row> = sqlx::query_as(
-        "SELECT id, to_addr, subject, text_body, html_body, attempts FROM outbox_emails \
-         WHERE sent_at IS NULL AND attempts < $1 AND next_attempt_at <= $2 \
-         ORDER BY kind = 'broadcast', next_attempt_at LIMIT 1 FOR UPDATE SKIP LOCKED",
-    )
-    .bind(MAX_ATTEMPTS)
-    .bind(now)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let mut row: Option<Row> = sqlx::query_as(&pick_sql("AND kind <> 'broadcast'"))
+        .bind(MAX_ATTEMPTS)
+        .bind(now)
+        .fetch_optional(&mut *tx)
+        .await?;
+    if row.is_none() {
+        row = sqlx::query_as(&pick_sql(""))
+            .bind(MAX_ATTEMPTS)
+            .bind(now)
+            .fetch_optional(&mut *tx)
+            .await?;
+    }
     let Some(row) = row else {
         return Ok(None);
     };
+
+    let mut headers = Vec::new();
+    if row.kind == "broadcast" {
+        let opted_in: Option<bool> = match row.user_id {
+            Some(user_id) => {
+                sqlx::query_scalar("SELECT product_emails FROM users WHERE id = $1")
+                    .bind(user_id)
+                    .fetch_optional(&mut *tx)
+                    .await?
+            }
+            None => None,
+        };
+        let skip = match (row.user_id, opted_in) {
+            (Some(user_id), Some(true)) => {
+                headers.push((
+                    "List-Unsubscribe",
+                    format!("<{}>", unsubscribe::link(config, user_id)),
+                ));
+                headers.push((
+                    "List-Unsubscribe-Post",
+                    "List-Unsubscribe=One-Click".to_owned(),
+                ));
+                None
+            }
+            (Some(_), Some(false)) => Some(SKIPPED_OPTED_OUT),
+            _ => Some(SKIPPED_NO_ACCOUNT),
+        };
+        if let Some(reason) = skip {
+            sqlx::query(
+                "UPDATE outbox_emails SET failed_at = $2, last_error = $3, \
+                 text_body = '', html_body = '' WHERE id = $1",
+            )
+            .bind(row.id)
+            .bind(now)
+            .bind(reason)
+            .execute(&mut *tx)
+            .await?;
+            tx.commit().await?;
+            return Ok(Some(false));
+        }
+    }
 
     let result = transport
         .send(
@@ -109,6 +184,7 @@ async fn send_next(
             &row.subject,
             &row.text_body,
             row.html_body.as_deref(),
+            &headers,
         )
         .await;
     let ok = result.is_ok();
@@ -179,6 +255,19 @@ pub async fn run_broadcasts(state: AppState, shutdown: impl Future<Output = ()>)
 /// broadcast that is `sending`: new ones, and any a crash left half done.
 /// Returns how many finished.
 pub async fn fan_out_due(state: &AppState, now: DateTime<Utc>) -> Result<usize, ApiError> {
+    // A due broadcast with nothing to send goes back to draft instead.
+    // (The API refuses to leave a scheduled one empty; this is the backstop.)
+    let emptied: Vec<Uuid> = sqlx::query_scalar(
+        "UPDATE broadcasts SET status = 'draft', scheduled_at = NULL, updated_at = $1 \
+         WHERE status = 'scheduled' AND scheduled_at <= $1 \
+           AND (btrim(subject) = '' OR btrim(body_md) = '') RETURNING id",
+    )
+    .bind(now)
+    .fetch_all(&state.db)
+    .await?;
+    for id in emptied {
+        tracing::warn!("broadcast {id} was due with no subject or message: back to draft");
+    }
     sqlx::query(
         "UPDATE broadcasts SET status = 'sending', updated_at = $1 \
          WHERE status = 'scheduled' AND scheduled_at <= $1",
@@ -193,8 +282,11 @@ pub async fn fan_out_due(state: &AppState, now: DateTime<Utc>) -> Result<usize, 
     .await?;
     let mut done = 0;
     for id in sending {
-        if expand_broadcast(state, id, usize::MAX).await? {
-            done += 1;
+        // One broadcast failing must not hold up the others.
+        match expand_broadcast(state, id, usize::MAX).await {
+            Ok(true) => done += 1,
+            Ok(false) => {}
+            Err(err) => tracing::error!("broadcast {id}: cannot expand it: {err:?}"),
         }
     }
     Ok(done)

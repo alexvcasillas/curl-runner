@@ -449,7 +449,8 @@ pub async fn create(
 }
 
 /// `PATCH /v1/admin/broadcasts/{id}`, perm `emails`. A draft or a scheduled
-/// broadcast; `409` once it is sending or sent.
+/// broadcast; `409` once it is sending or sent. A scheduled one cannot be
+/// left without a subject or message (`400`).
 pub async fn update(
     admin: AdminAuth,
     State(state): State<AppState>,
@@ -472,6 +473,10 @@ pub async fn update(
     .bind(tx.at())
     .execute(&mut *tx)
     .await?;
+    if current.status == "scheduled" {
+        // A scheduled broadcast must stay sendable.
+        ensure_complete(&lock(&mut tx, id).await?)?;
+    }
     let body = load(&mut tx, id).await?;
     let mut changed = Vec::new();
     if d.subject.is_some() {

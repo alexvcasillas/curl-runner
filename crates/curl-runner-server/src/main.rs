@@ -94,6 +94,7 @@ async fn main() -> std::process::ExitCode {
         state.db.clone(),
         transport,
         state.clock.clone(),
+        state.config.clone(),
         async move {
             let _ = stop_rx.wait_for(|stop| *stop).await;
         },

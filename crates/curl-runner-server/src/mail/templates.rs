@@ -410,7 +410,24 @@ fn long_date(at: DateTime<Utc>) -> String {
 /// A small web page in the email's light layout: a heading and one line.
 /// Both are plain text.
 pub(crate) fn notice_page(heading: &str, body: &str) -> String {
-    layout(&esc(heading), &[Block::Muted(esc(body))]).replace(
+    web_page(layout(&esc(heading), &[Block::Muted(esc(body))]))
+}
+
+/// [`notice_page`] with a button that POSTs to `action` (a URL, escaped here).
+pub(crate) fn confirm_page(
+    heading: &str,
+    body: &str,
+    action: &str,
+    button: &'static str,
+) -> String {
+    web_page(layout(
+        &esc(heading),
+        &[Block::Muted(esc(body)), Block::Form(button, esc(action))],
+    ))
+}
+
+fn web_page(html: String) -> String {
+    html.replace(
         "<title>curl-runner</title>",
         "<title>curl-runner</title><meta name=\"robots\" content=\"noindex\">",
     )
@@ -466,6 +483,9 @@ enum Block {
     List(Vec<String>),
     /// Label and escaped URL.
     Button(&'static str, String),
+    /// A submit button POSTing to an escaped URL. Web pages only: mail
+    /// clients do not submit forms.
+    Form(&'static str, String),
     Fine(String),
 }
 
@@ -514,6 +534,12 @@ fn layout(heading: &str, blocks: &[Block]) -> String {
                  <a href=\"{url}\" style=\"display:inline-block;padding:9px 18px;\
                  font-weight:500;font-size:14px;line-height:22px;color:#ffffff;\
                  text-decoration:none;\">{label}</a></td></tr></table>"
+            )),
+            Block::Form(label, action) => row(&format!(
+                "<form method=\"post\" action=\"{action}\" style=\"margin:0;\">\
+                 <button type=\"submit\" style=\"padding:9px 18px;border:0;border-radius:6px;\
+                 background:#171717;color:#ffffff;font-family:{FONT};font-weight:500;\
+                 font-size:14px;line-height:22px;cursor:pointer;\">{label}</button></form>"
             )),
             Block::Fine(t) => row(&format!(
                 "<p style=\"margin:0;font-size:12px;line-height:18px;color:#666666;\">{t}</p>"

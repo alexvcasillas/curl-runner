@@ -363,75 +363,133 @@ async fn unsubscribe_token_hmac_and_idempotent(pool: PgPool) {
             .await
             .unwrap()
     };
+    let get = |t: String| {
+        let c = &c;
+        async move {
+            c.app
+                .request(
+                    "GET".parse().unwrap(),
+                    &format!("/v1/unsubscribe?token={t}"),
+                    None,
+                    None,
+                )
+                .await
+        }
+    };
+    let post = |t: String, body: &'static str, content_type: Option<&'static str>| {
+        let c = &c;
+        async move {
+            let headers: Vec<(&str, &str)> = content_type
+                .map(|ct| ("content-type", ct))
+                .into_iter()
+                .collect();
+            c.app
+                .post_raw(&format!("/v1/unsubscribe?token={t}"), body, &headers)
+                .await
+        }
+    };
+    const DONE: &str = "You won't get product emails from curl-runner anymore.";
 
-    // Tampered: another user's id under bob's MAC, a truncated token, junk.
+    // GET only asks: a link scanner changes nothing.
+    for _ in 0..2 {
+        let (status, body) = get(token.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+        let page = body.as_str().unwrap();
+        assert!(
+            page.contains("Stop product emails from curl-runner?"),
+            "{page}"
+        );
+        assert!(
+            page.contains(&format!(
+                "<form method=\"post\" action=\"http://localhost:8080/v1/unsubscribe?token={token}\""
+            )),
+            "{page}"
+        );
+        assert!(page.contains("&gt;_"), "the light layout");
+        assert!(!page.contains('\u{2014}'));
+    }
+    assert!(opted_in().await);
+
+    // Tampered, truncated, junk and missing tokens get the same pages as a
+    // good one, and change nothing.
     let other = c.user("other@example.com", None).await;
     let mut forged = other.as_bytes().to_vec();
     forged.extend_from_slice(&base64_decode(&token)[16..]);
+    let (_, good_confirm) = get(token.clone()).await;
     for bad in [
         base64_encode(&forged),
         token[..token.len() - 2].to_owned(),
         "nope".to_owned(),
         String::new(),
+        "%ZZ&token=".to_owned(),
     ] {
-        let (status, body) = c
-            .app
-            .request(
-                "GET".parse().unwrap(),
-                &format!("/v1/unsubscribe?token={bad}"),
-                None,
-                None,
-            )
-            .await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
-        assert!(
-            body.as_str()
-                .unwrap()
-                .contains("This unsubscribe link doesn"),
-            "{body}"
+        let (status, body) = get(bad.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{bad}");
+        let page = body.as_str().unwrap();
+        assert!(page.contains("Stop product emails"), "{bad}: {page}");
+        assert_eq!(
+            without_token(page),
+            without_token(good_confirm.as_str().unwrap()),
+            "{bad}"
         );
+        let (status, body) = post(bad.clone(), "", None).await;
+        assert_eq!(status, StatusCode::OK, "{bad}");
+        assert!(body.as_str().unwrap().contains(DONE), "{bad}");
     }
     assert!(opted_in().await);
+    let other_in: bool = sqlx::query_scalar("SELECT product_emails FROM users WHERE id = $1")
+        .bind(other)
+        .fetch_one(c.db())
+        .await
+        .unwrap();
+    assert!(other_in, "a forged token does nothing");
 
-    for _ in 0..2 {
-        let (status, body) = c
-            .app
-            .request(
-                "GET".parse().unwrap(),
-                &format!("/v1/unsubscribe?token={token}"),
-                None,
-                None,
-            )
-            .await;
-        assert_eq!(status, StatusCode::OK);
-        let page = body.as_str().unwrap();
-        assert!(
-            page.contains("You won't get product emails from curl-runner anymore."),
-            "{page}"
-        );
-        assert!(!page.contains('\u{2014}'));
-        assert!(page.contains("&gt;_"), "the light layout");
-        assert!(!opted_in().await);
-    }
+    // The confirm page's form posts no fields.
+    let (status, body) = post(token.clone(), "", Some("application/x-www-form-urlencoded")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.as_str().unwrap().contains(DONE));
+    assert!(!opted_in().await);
+    // Again is the same.
+    let (status, body) = post(token.clone(), "", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.as_str().unwrap().contains(DONE));
+    assert!(!opted_in().await);
 
-    // Limited per IP.
-    let mut limited = false;
+    // RFC 8058 one-click, from a mail client.
+    let carol = c.user("carol@example.com", None).await;
+    let (status, body) = post(
+        unsubscribe::token(SECRET.as_bytes(), carol),
+        "List-Unsubscribe=One-Click",
+        Some("application/x-www-form-urlencoded"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.as_str().unwrap().contains(DONE));
+    let carol_in: bool = sqlx::query_scalar("SELECT product_emails FROM users WHERE id = $1")
+        .bind(carol)
+        .fetch_one(c.db())
+        .await
+        .unwrap();
+    assert!(!carol_in);
+
+    // Limited per IP, answered as a page too.
+    let mut limited = None;
     for _ in 0..40 {
-        let (status, _) = c
-            .app
-            .request(
-                "GET".parse().unwrap(),
-                &format!("/v1/unsubscribe?token={token}"),
-                None,
-                None,
-            )
-            .await;
+        let (status, body) = get(token.clone()).await;
         if status == StatusCode::TOO_MANY_REQUESTS {
-            limited = true;
+            limited = Some(body);
             break;
         }
     }
-    assert!(limited);
+    let page = limited.expect("rate limited");
+    assert!(page.as_str().unwrap().contains("Too many tries."), "{page}");
+}
+
+/// `page` with the form's token value cut out.
+fn without_token(page: &str) -> String {
+    let (head, tail) = page.split_once("token=").expect("a token in the form");
+    let rest = &tail[tail.find('"').unwrap()..];
+    format!("{head}token={rest}")
 }
 
 fn base64_decode(s: &str) -> Vec<u8> {
@@ -885,9 +943,23 @@ async fn delivery_log_filters_and_cursor(pool: PgPool) {
     assert_eq!(seen, to);
 }
 
-/// Records who was sent what, in order.
+/// Records who was sent mail, with its extra headers, in order.
 #[derive(Default)]
-struct Recorder(std::sync::Mutex<Vec<String>>);
+struct Recorder(std::sync::Mutex<Vec<Sent>>);
+
+/// One sent message: the recipient and its extra headers.
+type Sent = (String, Vec<(&'static str, String)>);
+
+impl Recorder {
+    fn to(&self) -> Vec<String> {
+        self.0.lock().unwrap().iter().map(|s| s.0.clone()).collect()
+    }
+
+    fn headers_of(&self, to: &str) -> Vec<(&'static str, String)> {
+        let sent = self.0.lock().unwrap();
+        sent.iter().find(|s| s.0 == to).expect("sent").1.clone()
+    }
+}
 
 impl curl_runner_server::mail::Transport for Recorder {
     fn send<'a>(
@@ -896,9 +968,13 @@ impl curl_runner_server::mail::Transport for Recorder {
         _subject: &'a str,
         _text: &'a str,
         _html: Option<&'a str>,
+        headers: &'a curl_runner_server::mail::transport::Headers,
     ) -> curl_runner_server::mail::transport::SendFuture<'a> {
         Box::pin(async move {
-            self.0.lock().unwrap().push(to.to_owned());
+            self.0
+                .lock()
+                .unwrap()
+                .push((to.to_owned(), headers.to_vec()));
             Ok(())
         })
     }
@@ -923,10 +999,15 @@ async fn sign_in_codes_jump_the_broadcast_queue(pool: PgPool) {
     c.app.clock.advance(Duration::seconds(1));
     let (code, _) = c.app.start_email("late@example.com", "web").await;
     assert_eq!(code.len(), 6);
-    curl_runner_server::mail::worker::run_once(c.db(), &transport, c.app.clock.as_ref())
-        .await
-        .unwrap();
-    let sent = transport.0.lock().unwrap().clone();
+    curl_runner_server::mail::worker::run_once(
+        c.db(),
+        &transport,
+        c.app.clock.as_ref(),
+        &c.app.state.config,
+    )
+    .await
+    .unwrap();
+    let sent = transport.to();
     assert_eq!(sent.len(), 20);
     let late = sent.iter().position(|t| t == "late@example.com");
     assert!(late.is_some_and(|i| i <= 1), "{sent:?}");
@@ -946,4 +1027,183 @@ async fn sign_in_codes_jump_the_broadcast_queue(pool: PgPool) {
             .await
             .unwrap();
     assert_eq!(subject, "");
+}
+
+async fn send_all(c: &Ctx, transport: &Recorder) {
+    while curl_runner_server::mail::worker::run_once(
+        c.db(),
+        transport,
+        c.app.clock.as_ref(),
+        &c.app.state.config,
+    )
+    .await
+    .unwrap()
+        > 0
+    {}
+}
+
+#[sqlx::test]
+async fn list_unsubscribe_headers_on_broadcasts_only(pool: PgPool) {
+    let c = setup(pool).await;
+    let ada = c.user("Ada@Example.com", None).await;
+    let id = c.create("News", "Hello", "everyone").await;
+    c.send_now(&id).await;
+    fan_out_due(&c.app.state, c.now()).await.unwrap();
+    let transport = Recorder::default();
+    send_all(&c, &transport).await;
+    let link = format!(
+        "<http://localhost:8080/v1/unsubscribe?token={}>",
+        unsubscribe::token(SECRET.as_bytes(), ada)
+    );
+    assert_eq!(
+        transport.headers_of("ada@example.com"),
+        [
+            ("List-Unsubscribe", link),
+            (
+                "List-Unsubscribe-Post",
+                "List-Unsubscribe=One-Click".to_owned()
+            ),
+        ]
+    );
+    // The root got a sign-in code and a broadcast copy; the code has none.
+    let sent = transport.0.lock().unwrap().clone();
+    let root: Vec<_> = sent.iter().filter(|s| s.0 == ROOT).collect();
+    assert_eq!(root.len(), 2);
+    assert!(root[0].1.is_empty(), "the sign-in code goes first, bare");
+    assert_eq!(root[1].1.len(), 2);
+    // A test copy is not a broadcast row: no headers either.
+    let (status, _) = c
+        .req(
+            "POST",
+            &format!("/v1/admin/broadcasts/{id}/test"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let tests = Recorder::default();
+    send_all(&c, &tests).await;
+    assert_eq!(tests.to(), [ROOT]);
+    assert!(tests.headers_of(ROOT).is_empty());
+}
+
+#[sqlx::test]
+async fn opt_out_mid_send_skips_the_queued_copy(pool: PgPool) {
+    let c = setup(pool).await;
+    let ada = c.user("ada@example.com", None).await;
+    let bob = c.user("bob@example.com", None).await;
+    sqlx::query("DELETE FROM outbox_emails")
+        .execute(c.db())
+        .await
+        .unwrap();
+    let id = c.create("News", "Hello", "everyone").await;
+    c.send_now(&id).await;
+    fan_out_due(&c.app.state, c.now()).await.unwrap();
+    assert_eq!(c.rows(&id).await.len(), 3);
+    // Ada unsubscribes from the first copy before hers goes out, and bob's
+    // account is deleted.
+    let (status, _) = c
+        .app
+        .post_raw(
+            &format!(
+                "/v1/unsubscribe?token={}",
+                unsubscribe::token(SECRET.as_bytes(), ada)
+            ),
+            "List-Unsubscribe=One-Click",
+            &[("content-type", "application/x-www-form-urlencoded")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(bob)
+        .execute(c.db())
+        .await
+        .unwrap();
+    let transport = Recorder::default();
+    send_all(&c, &transport).await;
+    assert_eq!(transport.to(), [ROOT]);
+    let skipped: Vec<(String, Option<String>, bool, String)> = sqlx::query_as(
+        "SELECT to_addr, last_error, failed_at IS NOT NULL, text_body FROM outbox_emails \
+         WHERE broadcast_id = $1 AND sent_at IS NULL ORDER BY to_addr",
+    )
+    .bind(Uuid::parse_str(&id).unwrap())
+    .fetch_all(c.db())
+    .await
+    .unwrap();
+    assert_eq!(
+        skipped,
+        [
+            (
+                "ada@example.com".to_owned(),
+                Some(curl_runner_server::mail::worker::SKIPPED_OPTED_OUT.to_owned()),
+                true,
+                String::new()
+            ),
+            (
+                "bob@example.com".to_owned(),
+                Some(curl_runner_server::mail::worker::SKIPPED_NO_ACCOUNT.to_owned()),
+                true,
+                String::new()
+            ),
+        ]
+    );
+    // They show as failed, with the reason, in the log and the counts.
+    let (_, log) = c
+        .req("GET", "/v1/admin/emails/log?status=failed", None)
+        .await;
+    assert_eq!(log["items"].as_array().unwrap().len(), 2);
+    let b = c.broadcast(&id).await;
+    assert_eq!(
+        (b["delivered"].as_i64(), b["failed"].as_i64()),
+        (Some(1), Some(2))
+    );
+    // A second pass leaves them alone.
+    let again = Recorder::default();
+    send_all(&c, &again).await;
+    assert!(again.to().is_empty());
+}
+
+#[sqlx::test]
+async fn scheduled_broadcast_stays_complete(pool: PgPool) {
+    let c = setup(pool).await;
+    let id = c.create("Later", "Hi", "everyone").await;
+    let at = c.now() + Duration::hours(1);
+    let (status, _) = c
+        .req(
+            "POST",
+            &format!("/v1/admin/broadcasts/{id}/send"),
+            Some(json!({"at": at})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    for body in [json!({"subject": "  "}), json!({"body_md": ""})] {
+        let (status, _) = c
+            .req(
+                "PATCH",
+                &format!("/v1/admin/broadcasts/{id}"),
+                Some(body.clone()),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    }
+    let b = c.broadcast(&id).await;
+    assert_eq!(
+        (b["subject"].as_str(), b["body_md"].as_str()),
+        (Some("Later"), Some("Hi"))
+    );
+    assert_eq!(c.events("broadcast.update").await, 0);
+
+    // The worker's backstop: emptied behind the API's back, it goes back to
+    // draft instead of sending, and other broadcasts still go out.
+    sqlx::query("UPDATE broadcasts SET body_md = '' WHERE id = $1")
+        .bind(Uuid::parse_str(&id).unwrap())
+        .execute(c.db())
+        .await
+        .unwrap();
+    let other = c.create("Now", "Hi", "everyone").await;
+    c.send_now(&other).await;
+    c.app.clock.advance(Duration::hours(2));
+    fan_out_due(&c.app.state, c.now()).await.unwrap();
+    assert_eq!(c.broadcast(&id).await["status"], "draft");
+    assert!(c.rows(&id).await.is_empty());
+    assert_eq!(c.broadcast(&other).await["status"], "sent");
 }
