@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { ActionResult } from '@/lib/action-result';
 import { routes } from '@/lib/routes';
 import { Button } from './Button';
+import { ButtonLink } from './ButtonLink';
 import { Card, CardBody, CardFooter, CardTitle } from './Card';
 import { ConfirmDialog } from './ConfirmDialog';
 import { inputClasses } from './field-styles';
@@ -146,10 +147,16 @@ export function TeamSettings({
               Leave {name}
             </CardTitle>
             <p className="m-0 leading-normal text-fg-muted">
-              You lose access to its collections and tokens. An owner can invite you again.
+              {soleOwner
+                ? 'You’re the only owner. Make someone else an owner before you leave.'
+                : 'You lose access to its collections and tokens. An owner can invite you again.'}
             </p>
           </div>
-          <Button onClick={() => setLeaving(true)}>Leave team</Button>
+          {soleOwner ? (
+            <ButtonLink href={routes.teamTab(team, 'members')}>Go to members</ButtonLink>
+          ) : (
+            <Button onClick={() => setLeaving(true)}>Leave team</Button>
+          )}
         </CardBody>
       </Card>
 
@@ -180,9 +187,7 @@ export function TeamSettings({
         onClose={() => setLeaving(false)}
         teamName={name}
         email={me.email}
-        soleOwner={soleOwner}
         onLeave={onLeave}
-        membersHref={routes.teamTab(team, 'members')}
       />
 
       <ConfirmDialog

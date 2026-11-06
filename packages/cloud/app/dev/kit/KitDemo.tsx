@@ -10,7 +10,6 @@ import { Card, CardBody, CardFooter, CardTitle } from '@/components/Card';
 import { Checkbox } from '@/components/Checkbox';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CopyField } from '@/components/CopyField';
-import { Dialog } from '@/components/Dialog';
 import { EmptyState } from '@/components/EmptyState';
 import { Field } from '@/components/Field';
 import { ClockIcon, LockIcon, PeopleIcon } from '@/components/icons';
@@ -85,16 +84,7 @@ const ROWS = [
   },
 ] as const;
 
-type DialogId =
-  | 'delete'
-  | 'revoke'
-  | 'access'
-  | 'member'
-  | 'invite'
-  | 'leave'
-  | 'owner'
-  | 'device'
-  | null;
+type DialogId = 'delete' | 'revoke' | 'access' | 'member' | 'invite' | 'leave' | 'device' | null;
 
 function Section({
   id,
@@ -447,7 +437,6 @@ export function KitDemo() {
             <Button onClick={() => setDialog('member')}>Remove member</Button>
             <Button onClick={() => setDialog('invite')}>Cancel invite</Button>
             <Button onClick={() => setDialog('leave')}>Leave team</Button>
-            <Button onClick={() => setDialog('owner')}>Last owner</Button>
             <Button onClick={() => setDialog('device')}>Sign out device</Button>
           </Row>
         </Section>
@@ -639,24 +628,6 @@ export function KitDemo() {
           Collections shared with ada@acme.example still open for you, from Shared with me.
         </p>
       </ConfirmDialog>
-      <Dialog
-        open={dialog === 'owner'}
-        onClose={close}
-        title="Make someone else an owner first"
-        description="A team needs at least one owner, and you’re the only one in Acme."
-        footer={
-          <>
-            <Button onClick={close}>Close</Button>
-            <ButtonLink href="/t/acme/members" variant="primary">
-              Go to members
-            </ButtonLink>
-          </>
-        }
-      >
-        <p className="m-0 text-[12px] text-fg-subtle">
-          Change a member’s role to Owner on the Members page, then leave.
-        </p>
-      </Dialog>
       <ConfirmDialog
         open={dialog === 'device'}
         onClose={close}

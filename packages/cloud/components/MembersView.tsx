@@ -240,9 +240,11 @@ export function MembersView({
               </TableCell>
               <TableCell width={112} className="flex justify-end">
                 {you ? (
-                  <Button size="sm" onClick={() => setLeaving(true)}>
-                    Leave team
-                  </Button>
+                  soleOwner ? null : (
+                    <Button size="sm" onClick={() => setLeaving(true)}>
+                      Leave team
+                    </Button>
+                  )
                 ) : owner ? (
                   <Button size="sm" aria-label={`Remove ${who}`} onClick={() => setRemoving(m)}>
                     Remove
@@ -373,7 +375,6 @@ export function MembersView({
         onClose={() => setLeaving(false)}
         teamName={teamName}
         email={me.email}
-        soleOwner={soleOwner}
         onLeave={onLeave}
       />
     </>
