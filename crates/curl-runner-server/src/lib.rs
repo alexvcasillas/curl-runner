@@ -1,5 +1,6 @@
 //! curl-runner server: the Cloud backend (accounts, teams, publish, sharing).
 
+pub mod admin;
 pub mod auth;
 pub mod billing;
 pub mod clock;
@@ -11,7 +12,9 @@ pub mod extract;
 pub mod hash;
 pub mod info;
 pub mod mail;
+pub mod metrics;
 pub mod plans;
+pub mod settings;
 pub mod state;
 pub mod teams;
 pub mod tokens;
@@ -36,19 +39,26 @@ const DEFAULT_PORT: u16 = 8080;
 /// The application router.
 pub fn app(state: AppState) -> Router {
     let cors = cors(&state.config.app_url);
+    let tracked = (state.metrics.clone(), state.clock.clone());
     Router::new()
         .route("/", get(health))
         .route("/health", get(health))
         .route("/v1/info", get(info::info))
+        .merge(admin::routes())
         .merge(auth::routes())
         .merge(teams::routes())
         .merge(billing::routes::routes())
         .merge(billing::webhook::routes())
         .merge(tokens::routes())
         .merge(collections::routes())
+        .merge(mail::unsubscribe::routes())
         .fallback(not_found)
         .with_state(state)
         .layer(cors)
+        .layer(axum::middleware::from_fn_with_state(
+            tracked,
+            metrics::track,
+        ))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(make_span)

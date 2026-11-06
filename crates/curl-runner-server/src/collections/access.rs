@@ -69,6 +69,15 @@ type Row = (
     DateTime<Utc>,
 );
 
+/// SQL: whether the share link of the `collections` row aliased `collection`,
+/// of the `teams` row aliased `team`, is blocked by an admin. A blocked link
+/// answers 404 to everyone and drops out of "shared with me" and the admin
+/// counts. Every share read goes through this one condition: the team is
+/// suspended, or an admin took the link down.
+pub(crate) fn share_blocked(team: &str, collection: &str) -> String {
+    format!("({team}.suspended_at IS NOT NULL OR {collection}.link_disabled_at IS NOT NULL)")
+}
+
 /// Find the collection behind `token` and decide whether `auth` may read it.
 async fn resolve(
     state: &AppState,
@@ -85,15 +94,16 @@ async fn resolve(
         return Err(ApiError::not_found());
     }
     let hash = crate::hash::secret_hash(state.config.secret_key.as_bytes(), token);
-    let row: Option<Row> = sqlx::query_as(
+    let row: Option<Row> = sqlx::query_as(&format!(
         "SELECT c.id, c.team_id, t.name, t.slug::text, c.slug::text, c.name, c.description, c.access, \
                 v.number, v.id, v.hash, v.created_at \
          FROM collections c \
          JOIN teams t ON t.id = c.team_id \
          JOIN versions v ON v.collection_id = c.id AND v.number = c.current_version \
          WHERE c.link_hash = $1 AND c.access <> 'off' \
-           AND (c.link_expires_at IS NULL OR c.link_expires_at > $2)",
-    )
+           AND (c.link_expires_at IS NULL OR c.link_expires_at > $2) AND NOT {}",
+        share_blocked("t", "c")
+    ))
     .bind(&hash)
     .bind(state.clock.now())
     .fetch_optional(&state.db)
@@ -195,15 +205,17 @@ async fn matching_entry(
 }
 
 #[derive(Serialize)]
-pub(super) struct SharedWithMe {
-    team: String,
-    team_slug: String,
-    collection: String,
-    name: String,
-    version: u32,
-    updated_at: DateTime<Utc>,
-    access: Access,
-    link: String,
+pub(crate) struct SharedWithMe {
+    pub(crate) team: String,
+    pub(crate) team_slug: String,
+    pub(crate) collection: String,
+    pub(crate) name: String,
+    pub(crate) version: u32,
+    pub(crate) updated_at: DateTime<Utc>,
+    pub(crate) access: Access,
+    /// The share link. `None` when the reader (the admin panel) must not see it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) link: Option<String>,
 }
 
 type SharedRow = (
@@ -217,34 +229,49 @@ type SharedRow = (
     Option<String>,
 );
 
-/// Collections shared with the caller by teams they are not in: a live link,
-/// a published version, and either an access-list entry covering them
-/// (restricted) or a recorded open (public). A restricted collection the
-/// caller opened but is no longer listed on is left out, since they cannot
-/// open it now.
-pub(super) async fn shared_with_me(
-    State(state): State<AppState>,
-    auth: UserAuth,
-) -> Result<Json<Vec<SharedWithMe>>, ApiError> {
-    let (email, domain) = entry_keys(&auth.email);
-    let rows: Vec<SharedRow> = sqlx::query_as(&format!(
-        "SELECT t.name, t.slug::text, c.slug::text, c.name, v.number, v.created_at, c.access, c.link_token_enc \
-         FROM collections c \
+/// SQL `FROM ... WHERE` (aliases `c`, `t`, `v`) for the collections shared
+/// with a user by teams they are not in: a live link that is not
+/// [`share_blocked`], a published version, and either an access-list entry
+/// covering them (restricted) or a recorded open (public). The arguments are
+/// SQL expressions: the user's id, their lowercased email, the `*@domain`
+/// form of it, and the current time.
+pub(crate) fn shared_from(user: &str, email: &str, domain: &str, now: &str) -> String {
+    format!(
+        "FROM collections c \
          JOIN teams t ON t.id = c.team_id \
          JOIN versions v ON v.collection_id = c.id AND v.number = c.current_version \
          WHERE c.access <> 'off' AND c.link_hash IS NOT NULL \
-           AND (c.link_expires_at IS NULL OR c.link_expires_at > $4) \
+           AND (c.link_expires_at IS NULL OR c.link_expires_at > {now}) \
+           AND NOT {blocked} \
            AND NOT EXISTS (SELECT 1 FROM memberships m \
-                           WHERE m.team_id = c.team_id AND m.user_id = $1) \
+                           WHERE m.team_id = c.team_id AND m.user_id = {user}) \
            AND ((c.access = 'restricted' AND EXISTS ( \
                     SELECT 1 FROM access_entries e WHERE e.collection_id = c.id AND {})) \
                 OR (c.access = 'public' AND EXISTS ( \
                     SELECT 1 FROM share_opens o \
-                    WHERE o.collection_id = c.id AND o.user_id = $1))) \
-         ORDER BY v.created_at DESC, t.name, c.slug",
-        entry_covers("e", "$2", "$3")
+                    WHERE o.collection_id = c.id AND o.user_id = {user})))",
+        entry_covers("e", email, domain),
+        blocked = share_blocked("t", "c"),
+    )
+}
+
+/// The collections shared with `user_id` (whose account email is `email`),
+/// newest first. A restricted collection the user opened but is no longer
+/// listed on is left out, since they cannot open it now. With `with_link`
+/// false the share link is neither decrypted nor returned.
+pub(crate) async fn shared_for(
+    state: &AppState,
+    user_id: Uuid,
+    email: &str,
+    with_link: bool,
+) -> Result<Vec<SharedWithMe>, ApiError> {
+    let (email, domain) = entry_keys(email);
+    let rows: Vec<SharedRow> = sqlx::query_as(&format!(
+        "SELECT t.name, t.slug::text, c.slug::text, c.name, v.number, v.created_at, c.access, c.link_token_enc \
+         {} ORDER BY v.created_at DESC, t.name, c.slug",
+        shared_from("$1", "$2", "$3", "$4")
     ))
-    .bind(auth.user_id)
+    .bind(user_id)
     .bind(&email)
     .bind(&domain)
     .bind(state.clock.now())
@@ -252,12 +279,17 @@ pub(super) async fn shared_with_me(
     .await?;
     let mut out = Vec::with_capacity(rows.len());
     for (team, team_slug, collection, name, version, updated_at, access, enc) in rows {
-        let Some(token) = enc
-            .as_deref()
-            .and_then(|enc| decrypt_link_token(state.config.secret_key.as_bytes(), enc))
-        else {
-            tracing::error!("collection {team}/{collection} has no readable share link token");
-            continue;
+        let link = if with_link {
+            let Some(token) = enc
+                .as_deref()
+                .and_then(|enc| decrypt_link_token(state.config.secret_key.as_bytes(), enc))
+            else {
+                tracing::error!("collection {team}/{collection} has no readable share link token");
+                continue;
+            };
+            Some(format!("{}/s/{token}", state.config.app_url))
+        } else {
+            None
         };
         out.push(SharedWithMe {
             team,
@@ -267,10 +299,20 @@ pub(super) async fn shared_with_me(
             version: u32::try_from(version).unwrap_or_default(),
             updated_at,
             access: column_enum(access)?,
-            link: format!("{}/s/{token}", state.config.app_url),
+            link,
         });
     }
-    Ok(Json(out))
+    Ok(out)
+}
+
+/// `GET /v1/me/shared`: [`shared_for`] the caller, with links.
+pub(super) async fn shared_with_me(
+    State(state): State<AppState>,
+    auth: UserAuth,
+) -> Result<Json<Vec<SharedWithMe>>, ApiError> {
+    Ok(Json(
+        shared_for(&state, auth.user_id, &auth.email, true).await?,
+    ))
 }
 
 /// Record that `auth` opened the collection, at most once per user per UTC

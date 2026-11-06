@@ -20,7 +20,7 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::versions::diff;
-use crate::auth::session::column_enum;
+use crate::billing::effective::team_plan;
 use crate::crypto::encrypt_link_token;
 use crate::error::ApiError;
 use crate::hash::{new_token, secret_hash};
@@ -39,6 +39,12 @@ const TOO_LARGE: &str = "The request body is larger than 51 MiB.";
 const MAX_NAME_CHARS: usize = 100;
 const PUBLISHES_PER_TEAM: u32 = 60;
 const PUBLISH_WINDOW: chrono::Duration = chrono::Duration::minutes(1);
+/// What a publish gets while an admin has paused publishing.
+pub const PUBLISHING_PAUSED: &str =
+    "Publishing is paused for maintenance. Try again in a few minutes.";
+/// What a publish to a suspended team gets.
+pub const TEAM_SUSPENDED: &str =
+    "This team is suspended, so publishing is turned off. Contact support.";
 const MAX_DESCRIPTION_CHARS: usize = 500;
 
 fn invalid_bundle(message: impl Into<String>) -> ApiError {
@@ -170,6 +176,19 @@ pub(super) async fn publish(
     headers: HeaderMap,
     body: Body,
 ) -> Result<(StatusCode, Json<PublishResponse>), ApiError> {
+    // First, so a paused server reads nothing and creates nothing.
+    let settings = state.settings().await?;
+    if settings.publishing_paused {
+        return Err(ApiError::new(ErrorCode::Unavailable, PUBLISHING_PAUSED));
+    }
+    let suspended: bool =
+        sqlx::query_scalar("SELECT suspended_at IS NOT NULL FROM teams WHERE id = $1")
+            .bind(auth.team_id)
+            .fetch_one(&state.db)
+            .await?;
+    if suspended {
+        return Err(ApiError::new(ErrorCode::TeamSuspended, TEAM_SUSPENDED));
+    }
     state.limiter.check(
         &format!("publish:team:{}", auth.team_id),
         PUBLISHES_PER_TEAM,
@@ -194,6 +213,17 @@ pub(super) async fn publish(
     let now = state.clock.now();
 
     let mut tx = state.db.begin().await?;
+    // Again under a share lock on the team row: a suspension (which takes the
+    // row for update) either waits for this publish to commit or is seen here.
+    // The check above only spares a suspended team the body read.
+    let suspended: bool =
+        sqlx::query_scalar("SELECT suspended_at IS NOT NULL FROM teams WHERE id = $1 FOR SHARE")
+            .bind(auth.team_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    if suspended {
+        return Err(ApiError::new(ErrorCode::TeamSuspended, TEAM_SUSPENDED));
+    }
     let locked = match lock_collection(&mut tx, auth.team_id, &slug).await? {
         Some(locked) => locked,
         None => {
@@ -228,11 +258,8 @@ pub(super) async fn publish(
         ));
     }
     if locked.access == "restricted" {
-        let plan: String = sqlx::query_scalar("SELECT plan FROM teams WHERE id = $1")
-            .bind(auth.team_id)
-            .fetch_one(&mut *tx)
-            .await?;
-        if !limits(column_enum(plan)?).restricted {
+        let (plan, _) = team_plan(&mut tx, auth.team_id, now, false).await?;
+        if !limits(plan, &settings).restricted {
             return Err(ApiError::new(
                 ErrorCode::PlanLimit,
                 format!(

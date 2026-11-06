@@ -1,6 +1,8 @@
 //! Stripe billing: the [`Billing`] seam, the REST client behind it and the
 //! billing endpoints. Billing is off unless all four `STRIPE_*` variables are set.
 
+pub mod effective;
+pub mod mrr;
 pub mod routes;
 pub mod stripe;
 pub mod sync;
@@ -84,6 +86,10 @@ pub trait Billing: Send + Sync {
     /// Cancel immediately (`DELETE /v1/subscriptions/{id}`).
     async fn cancel_subscription(&self, id: &str) -> Result<(), BillingError>;
     async fn price(&self, id: &str) -> Result<Price, BillingError>;
+    /// Email the customer's newest open invoice again
+    /// (`GET /v1/invoices?customer=&status=open&limit=1`, then
+    /// `POST /v1/invoices/{id}/send`). Its id, or `None` when there is none.
+    async fn send_latest_invoice(&self, customer: &str) -> Result<Option<String>, BillingError>;
 }
 
 /// Log a Stripe failure from background work.

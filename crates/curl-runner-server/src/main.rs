@@ -2,9 +2,10 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use curl_runner_server::billing::sync;
-use curl_runner_server::clock::SystemClock;
+use curl_runner_server::clock::{Clock, SystemClock};
 use curl_runner_server::config::Config;
 use curl_runner_server::mail::{LogTransport, SmtpTransport, Transport, worker};
+use curl_runner_server::settings;
 use curl_runner_server::{AppState, healthcheck, port_from_env, serve};
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
@@ -53,6 +54,25 @@ async fn main() -> std::process::ExitCode {
         tracing::error!("migrations failed: {err}");
         return std::process::ExitCode::FAILURE;
     }
+    match settings::seed(&pool, &config, SystemClock.now()).await {
+        Ok(outcome) => {
+            if outcome.inserted {
+                tracing::info!(
+                    "server settings created from SIGNUP, SIGNUP_DOMAINS and DEFAULT_PLAN"
+                );
+            }
+            for var in outcome.drifted {
+                tracing::warn!(
+                    "{var} changed since the server settings were created and is ignored. \
+                     Change it on the admin settings page instead."
+                );
+            }
+        }
+        Err(err) => {
+            tracing::error!("cannot seed the server settings: {err:?}");
+            return std::process::ExitCode::FAILURE;
+        }
+    }
     let transport: Arc<dyn Transport> = match &config.smtp {
         Some(smtp) => match SmtpTransport::new(smtp, &config.mail_from) {
             Ok(transport) => Arc::new(transport),
@@ -69,10 +89,13 @@ async fn main() -> std::process::ExitCode {
     let state = AppState::new(pool, config, Arc::new(SystemClock));
     let (stop_tx, mut stop_rx) = tokio::sync::watch::channel(false);
     let mut sync_stop = stop_rx.clone();
+    let mut broadcast_stop = stop_rx.clone();
     let mail_worker = tokio::spawn(worker::run(
         state.db.clone(),
         transport,
         state.clock.clone(),
+        state.config.clone(),
+        state.metrics.clone(),
         async move {
             let _ = stop_rx.wait_for(|stop| *stop).await;
         },
@@ -80,6 +103,9 @@ async fn main() -> std::process::ExitCode {
 
     let seat_worker = tokio::spawn(sync::run(state.clone(), async move {
         let _ = sync_stop.wait_for(|stop| *stop).await;
+    }));
+    let broadcast_worker = tokio::spawn(worker::run_broadcasts(state.clone(), async move {
+        let _ = broadcast_stop.wait_for(|stop| *stop).await;
     }));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
@@ -99,6 +125,7 @@ async fn main() -> std::process::ExitCode {
     .await;
     let _ = mail_worker.await;
     let _ = seat_worker.await;
+    let _ = broadcast_worker.await;
     match result {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(err) => {

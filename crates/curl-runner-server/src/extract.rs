@@ -38,6 +38,48 @@ fn json_rejection(rejection: &JsonRejection) -> ApiError {
     ApiError::new(ErrorCode::InvalidRequest, message)
 }
 
+/// `Query<T>` whose rejections are `400 invalid_request` in the API error shape.
+pub struct ApiQuery<T>(pub T);
+
+impl<S, T> FromRequestParts<S> for ApiQuery<T>
+where
+    S: Send + Sync,
+    T: DeserializeOwned,
+{
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        match axum::extract::Query::<T>::from_request_parts(parts, state).await {
+            Ok(axum::extract::Query(value)) => Ok(Self(value)),
+            Err(_) => Err(ApiError::new(
+                ErrorCode::InvalidRequest,
+                "The query string is not valid for this endpoint.",
+            )),
+        }
+    }
+}
+
+/// `Path<T>` whose rejections are `400 invalid_request` in the API error shape.
+pub struct ApiPath<T>(pub T);
+
+impl<S, T> FromRequestParts<S> for ApiPath<T>
+where
+    S: Send + Sync,
+    T: DeserializeOwned + Send,
+{
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        match axum::extract::Path::<T>::from_request_parts(parts, state).await {
+            Ok(axum::extract::Path(value)) => Ok(Self(value)),
+            Err(_) => Err(ApiError::new(
+                ErrorCode::InvalidRequest,
+                "The URL is not valid for this endpoint.",
+            )),
+        }
+    }
+}
+
 /// The caller's IP. Behind `TRUSTED_PROXY_HOPS` proxies it is the entry that
 /// many places from the right of `X-Forwarded-For` (earlier entries are
 /// client-controlled). With too few entries, or 0 hops, it is the socket peer;

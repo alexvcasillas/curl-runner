@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 
 use crate::auth::email::Client;
 use crate::auth::providers::Provider;
-use crate::auth::session::{UserBody, create_session};
+use crate::auth::session::{UserBody, create_session, ensure_not_suspended};
 use crate::error::ApiError;
 use crate::extract::{ApiJson, ClientIp};
 use crate::hash::{new_token, secret_hash};
@@ -236,6 +236,7 @@ pub async fn callback(
             user
         }
     };
+    ensure_not_suspended(&mut tx, user.id).await?;
     let session = create_session(&mut tx, &state, user.id, "web", None).await?;
     tx.commit().await?;
     Ok(Json(CallbackBody {

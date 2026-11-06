@@ -116,8 +116,12 @@ async fn webhook(
     let signature = headers
         .get("stripe-signature")
         .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| invalid("Missing signature."))?;
+        .ok_or_else(|| {
+            state.metrics.bad_signature(now);
+            invalid("Missing signature.")
+        })?;
     if !verify_signature(signature, &body, &config.webhook_secret, now.timestamp()) {
+        state.metrics.bad_signature(now);
         return Err(invalid("Invalid signature."));
     }
     let event: Value =
@@ -148,6 +152,7 @@ async fn webhook(
     .rows_affected()
         == 1;
     if !fresh {
+        state.metrics.duplicate_event(now);
         return Ok(Json(json!({})));
     }
     let object = event.pointer("/data/object").unwrap_or(&Value::Null);
@@ -159,16 +164,29 @@ async fn webhook(
             .bind(&id)
             .execute(&mut *tx)
             .await?;
-        match billing.subscription(&id).await {
+        let applied = match billing.subscription(&id).await {
             Ok(sub) => apply_subscription(&state, &mut tx, &sub, now).await?,
             // Stripe no longer knows it: as good as canceled.
             Err(BillingError::Api { status: 404, .. }) => {
-                apply_missing(&state, &mut tx, &id).await?;
+                apply_missing(&state, &mut tx, &id, now).await?
             }
             Err(err) => {
                 tracing::warn!("webhook {kind} {event_id}: {err}");
                 return Err(ApiError::unavailable());
             }
+        };
+        if let Some(applied) = applied {
+            sqlx::query(
+                "UPDATE stripe_events SET team_id = $2, summary = $3, mrr_delta_cents = $4, \
+                 mrr_before_cents = $5 WHERE id = $1",
+            )
+            .bind(event_id)
+            .bind(applied.team_id)
+            .bind(&applied.summary)
+            .bind(applied.mrr_delta_cents)
+            .bind(applied.mrr_before_cents)
+            .execute(&mut *tx)
+            .await?;
         }
     }
     tx.commit().await?;

@@ -20,6 +20,7 @@ async fn info_lists_email_only_without_oauth(pool: PgPool) {
             "signup": "domains",
             "billing": false,
             "app_url": "http://localhost:3000",
+            "banner": null,
         })
     );
 }
@@ -73,15 +74,21 @@ async fn migrations_create_every_table(pool: PgPool) {
         tables,
         [
             "access_entries",
+            "admin_events",
+            "admins",
             "auth_handoffs",
             "blobs",
+            "broadcasts",
             "collections",
             "email_codes",
             "identities",
             "member_invites",
             "memberships",
+            "mrr_snapshots",
             "oauth_states",
             "outbox_emails",
+            "plan_history",
+            "server_settings",
             "sessions",
             "settings",
             "share_opens",
@@ -110,4 +117,42 @@ async fn users_email_is_case_insensitive(pool: PgPool) {
         .execute(&pool)
         .await;
     assert!(dup.is_err(), "citext unique must reject a case variant");
+}
+
+/// Discovery answers with the last settings read while the database is down,
+/// never a 503.
+#[sqlx::test]
+async fn info_uses_the_last_settings_when_the_db_is_down(pool: PgPool) {
+    use chrono::Duration;
+
+    let app = test_app_with(pool.clone(), test_config(&[("SIGNUP", "domains")])).await;
+    // The row is seeded on the first read; set it, then read it once.
+    let (status, _) = app.request(Method::GET, "/v1/info", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    sqlx::query("UPDATE server_settings SET signup_mode = 'open', banner_message = 'Maintenance'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    app.state.settings_cache.invalidate();
+    let (_, body) = app.request(Method::GET, "/v1/info", None, None).await;
+    assert_eq!(body["signup"], "open");
+
+    // Past the cache's life, with the database gone.
+    app.clock.advance(Duration::seconds(10));
+    pool.close().await;
+    let (status, body) = app.request(Method::GET, "/v1/info", None, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["signup"], "open");
+    assert_eq!(body["banner"]["message"], "Maintenance");
+}
+
+/// With nothing read yet and the database down, the env's values.
+#[sqlx::test]
+async fn info_falls_back_to_the_env_when_nothing_was_read(pool: PgPool) {
+    let app = test_app_with(pool.clone(), test_config(&[("SIGNUP", "closed")])).await;
+    pool.close().await;
+    let (status, body) = app.request(Method::GET, "/v1/info", None, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["signup"], "closed");
+    assert_eq!(body["banner"], json!(null));
 }

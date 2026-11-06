@@ -1,6 +1,10 @@
 //! Email copy. Short sentences, no em dashes.
 
+use chrono::{DateTime, Utc};
+use curl_runner_cloud_proto::Plan;
+
 use super::Mail;
+use super::markdown::{self, MdBlock};
 
 const SIGN_IN_FOOTER: &str =
     "It expires in 10 minutes. If you didn't ask for it, ignore this email.";
@@ -148,18 +152,232 @@ fn render_parts(mail: &Mail) -> (String, String, String) {
                 ),
             )
         }
+        Mail::TestEmail { .. } => (
+            "curl-runner test email".into(),
+            "This is a test email from your curl-runner server.\n\n\
+             If you can read it, sending works. Nothing else to do.\n"
+                .into(),
+            layout(
+                "This is a test email from your curl-runner server.",
+                &[Block::Text(
+                    "If you can read it, sending works. Nothing else to do.".into(),
+                )],
+            ),
+        ),
+        Mail::AccountSuspended { reason, .. } => {
+            let how = "You can't sign in while it is suspended. Teams, tokens and collections \
+                       keep working. If you think this is a mistake, reply to this email or \
+                       contact support.";
+            let reason_text = reason
+                .as_deref()
+                .map(|r| format!("\n\nReason: {r}"))
+                .unwrap_or_default();
+            let mut blocks = vec![Block::Muted(how.into())];
+            if let Some(r) = reason {
+                blocks.push(Block::Callout(format!("Reason: {}", esc(r))));
+            }
+            (
+                "Your curl-runner account is suspended".into(),
+                format!("Your curl-runner account is suspended.\n\n{how}{reason_text}\n"),
+                layout("Your curl-runner account is suspended.", &blocks),
+            )
+        }
+        Mail::PlanGranted {
+            team_name,
+            slug,
+            plan,
+            until,
+            app_url,
+            ..
+        } => {
+            let name = plan_name(*plan);
+            let link = format!("{app_url}/t/{slug}");
+            let subject = match plan {
+                Plan::Team => format!("curl-runner gave {team_name} the Team plan"),
+                Plan::Free => format!("curl-runner moved {team_name} to the Free plan"),
+            };
+            let (text_end, html_end) = match until {
+                Some(until) => {
+                    let date = long_date(*until);
+                    (
+                        format!(" until {date}."),
+                        format!(" until <b>{}</b>.", esc(&date)),
+                    )
+                }
+                None => (
+                    ", with no end date.".to_owned(),
+                    ", with no end date.".to_owned(),
+                ),
+            };
+            let after = match plan {
+                Plan::Team => {
+                    "Members, restricted collections and everything else on Team work as usual."
+                }
+                Plan::Free => "Nothing was deleted.",
+            };
+            (
+                subject.clone(),
+                format!(
+                    "{subject}.\n\n{team_name} is on the {name} plan{text_end}\n\n{after}\n\n\
+                     Open the team:\n{link}\n"
+                ),
+                layout(
+                    &format!("{}.", esc(&subject)),
+                    &[
+                        Block::Text(format!(
+                            "{} is on the {name} plan{html_end}",
+                            esc(team_name)
+                        )),
+                        Block::Muted(after.into()),
+                        Block::Button("Open the team", esc(&link)),
+                    ],
+                ),
+            )
+        }
+        Mail::OverrideEnding {
+            team_name,
+            slug,
+            plan,
+            until,
+            app_url,
+            ..
+        } => {
+            let name = plan_name(*plan);
+            let date = long_date(*until);
+            let link = format!("{app_url}/t/{slug}/billing");
+            let next = format!(
+                "After that, {team_name} goes back to its Stripe subscription, or to Free if \
+                 it has none. Nothing is deleted."
+            );
+            (
+                format!("{team_name}'s granted plan ends on {date}"),
+                format!(
+                    "The {name} plan curl-runner gave {team_name} ends on {date}.\n\n{next}\n\n\
+                     Go to billing:\n{link}\n"
+                ),
+                layout(
+                    &format!(
+                        "The {name} plan curl-runner gave {} ends on <b>{}</b>.",
+                        esc(team_name),
+                        esc(&date)
+                    ),
+                    &[
+                        Block::Muted(esc(&next)),
+                        Block::Button("Go to billing", esc(&link)),
+                    ],
+                ),
+            )
+        }
+        Mail::TeamSuspended {
+            team_name, reason, ..
+        } => {
+            let how = "Publishing is refused and its share links no longer work. Nothing is \
+                       deleted. Members can still sign in. If you think this is a mistake, \
+                       reply to this email or contact support.";
+            let reason_text = reason
+                .as_deref()
+                .map(|r| format!("\n\nReason: {r}"))
+                .unwrap_or_default();
+            let mut blocks = vec![Block::Muted(how.into())];
+            if let Some(r) = reason {
+                blocks.push(Block::Callout(format!("Reason: {}", esc(r))));
+            }
+            (
+                format!("{team_name} is suspended on curl-runner"),
+                format!("{team_name} is suspended on curl-runner.\n\n{how}{reason_text}\n"),
+                layout(
+                    &format!("<b>{}</b> is suspended on curl-runner.", esc(team_name)),
+                    &blocks,
+                ),
+            )
+        }
+        Mail::LinkDisabled {
+            team,
+            collection,
+            reason,
+            ..
+        } => {
+            let how = "Anyone who opens it sees that the link no longer works. The collection \
+                       and its versions are untouched, and the link can't be turned back on \
+                       from the dashboard. If you think this is a mistake, reply to this \
+                       email or contact support.";
+            let reason_text = reason
+                .as_deref()
+                .map(|r| format!("\n\nReason: {r}"))
+                .unwrap_or_default();
+            let mut blocks = vec![Block::Muted(how.into())];
+            if let Some(r) = reason {
+                blocks.push(Block::Callout(format!("Reason: {}", esc(r))));
+            }
+            (
+                format!("The share link of {collection} was turned off"),
+                format!(
+                    "The share link of {collection} ({team}) was turned off by an admin.\n\n{how}{reason_text}\n"
+                ),
+                layout(
+                    &format!(
+                        "The share link of <b>{}</b> ({}) was turned off by an admin.",
+                        esc(collection),
+                        esc(team)
+                    ),
+                    &blocks,
+                ),
+            )
+        }
+        Mail::AdminMessage { subject, body, .. } => {
+            let body = markdown::render(body, None);
+            (
+                subject.clone(),
+                format!("{}\n", body.text),
+                layout(&esc(&one_line(subject)), &md_blocks(body.blocks)),
+            )
+        }
+        Mail::Broadcast {
+            subject,
+            body_md,
+            vars,
+            unsubscribe,
+            test,
+            ..
+        } => {
+            let subject = markdown::substitute(subject, Some(vars));
+            let subject = if *test {
+                format!("[Test] {subject}")
+            } else {
+                subject
+            };
+            let body = markdown::render(body_md, Some(vars));
+            let mut blocks = md_blocks(body.blocks);
+            blocks.push(Block::Fine(format!(
+                "{BROADCAST_FOOTER} <a href=\"{}\" style=\"color:#666666;\
+                 text-decoration:underline;\">Unsubscribe from product emails</a>.",
+                esc(unsubscribe)
+            )));
+            (
+                subject.clone(),
+                format!(
+                    "{}\n\n{BROADCAST_FOOTER}\nUnsubscribe from product emails:\n{unsubscribe}\n",
+                    body.text
+                ),
+                layout(&esc(&one_line(&subject)), &blocks),
+            )
+        }
         Mail::PlanChanged {
             team_name,
             slug,
             app_url,
+            free_member_limit,
+            free_restricted,
             ..
         } => {
             let link = format!("{app_url}/t/{slug}/billing");
+            let items = free_limits(*free_member_limit, *free_restricted);
+            let bullets: String = items.iter().map(|i| format!("- {i}\n")).collect();
             (
                 format!("{team_name} moved to the Free plan"),
                 format!(
                     "{team_name} is on the Free plan now. Nothing was deleted.\n\n\
-                     - {FREE_KEEPS_SERVING}\n- {FREE_RESTRICTED}\n- {FREE_OR_PUBLIC}\n\n\
+                     {bullets}\n\
                      Go to billing:\n{link}\n"
                 ),
                 layout(
@@ -168,7 +386,7 @@ fn render_parts(mail: &Mail) -> (String, String, String) {
                         esc(team_name)
                     ),
                     &[
-                        Block::List(&[FREE_KEEPS_SERVING, FREE_RESTRICTED, FREE_OR_PUBLIC]),
+                        Block::List(items.iter().map(|i| esc(i)).collect()),
                         Block::Button("Go to billing", esc(&link)),
                     ],
                 ),
@@ -177,14 +395,81 @@ fn render_parts(mail: &Mail) -> (String, String, String) {
     }
 }
 
+fn plan_name(plan: Plan) -> &'static str {
+    match plan {
+        Plan::Free => "Free",
+        Plan::Team => "Team",
+    }
+}
+
+/// `Mar 31, 2027`.
+fn long_date(at: DateTime<Utc>) -> String {
+    at.format("%b %-d, %Y").to_string()
+}
+
+/// A small web page in the email's light layout: a heading and one line.
+/// Both are plain text.
+pub(crate) fn notice_page(heading: &str, body: &str) -> String {
+    web_page(layout(&esc(heading), &[Block::Muted(esc(body))]))
+}
+
+/// [`notice_page`] with a button that POSTs to `action` (a URL, escaped here).
+pub(crate) fn confirm_page(
+    heading: &str,
+    body: &str,
+    action: &str,
+    button: &'static str,
+) -> String {
+    web_page(layout(
+        &esc(heading),
+        &[Block::Muted(esc(body)), Block::Form(button, esc(action))],
+    ))
+}
+
+fn web_page(html: String) -> String {
+    html.replace(
+        "<title>curl-runner</title>",
+        "<title>curl-runner</title><meta name=\"robots\" content=\"noindex\">",
+    )
+}
+
+/// Rendered Markdown as layout blocks.
+fn md_blocks(blocks: Vec<MdBlock>) -> Vec<Block> {
+    blocks
+        .into_iter()
+        .map(|b| match b {
+            MdBlock::Para(html) => Block::Text(html),
+            MdBlock::List(items) => Block::List(items),
+        })
+        .collect()
+}
+
+const BROADCAST_FOOTER: &str = "You\u{2019}re getting this because you have a curl-runner account.";
+
 const MEMBER_ROLE: &str = "Members publish collections, share them and make publish tokens.";
 const INVITE_FOOTER: &str = "The invite expires in 7 days. Not expecting it? Ignore this email.";
 const FREE_KEEPS_SERVING: &str =
     "Restricted collections keep serving the people already on their lists.";
-const FREE_RESTRICTED: &str = "Until you upgrade, you can\u{2019}t publish to them, add people to \
-                               them, or add members past 3.";
 const FREE_OR_PUBLIC: &str =
     "Or make those collections public or off, and everything works on Free.";
+
+/// What changes on Free, from the limits in force. With restricted
+/// collections allowed there is nothing to say about them.
+fn free_limits(member_limit: u32, restricted_allowed: bool) -> Vec<String> {
+    if restricted_allowed {
+        return vec![format!(
+            "Free allows up to {member_limit} members. Upgrade to add more."
+        )];
+    }
+    vec![
+        FREE_KEEPS_SERVING.to_owned(),
+        format!(
+            "Until you upgrade, you can\u{2019}t publish to them, add people to them, \
+             or add members past {member_limit}."
+        ),
+        FREE_OR_PUBLIC.to_owned(),
+    ]
+}
 
 const FONT: &str = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
 const MONO: &str = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace";
@@ -195,9 +480,12 @@ enum Block {
     Muted(String),
     Code(String),
     Callout(String),
-    List(&'static [&'static str]),
+    List(Vec<String>),
     /// Label and escaped URL.
     Button(&'static str, String),
+    /// A submit button POSTing to an escaped URL. Web pages only: mail
+    /// clients do not submit forms.
+    Form(&'static str, String),
     Fine(String),
 }
 
@@ -246,6 +534,12 @@ fn layout(heading: &str, blocks: &[Block]) -> String {
                  <a href=\"{url}\" style=\"display:inline-block;padding:9px 18px;\
                  font-weight:500;font-size:14px;line-height:22px;color:#ffffff;\
                  text-decoration:none;\">{label}</a></td></tr></table>"
+            )),
+            Block::Form(label, action) => row(&format!(
+                "<form method=\"post\" action=\"{action}\" style=\"margin:0;\">\
+                 <button type=\"submit\" style=\"padding:9px 18px;border:0;border-radius:6px;\
+                 background:#171717;color:#ffffff;font-family:{FONT};font-weight:500;\
+                 font-size:14px;line-height:22px;cursor:pointer;\">{label}</button></form>"
             )),
             Block::Fine(t) => row(&format!(
                 "<p style=\"margin:0;font-size:12px;line-height:18px;color:#666666;\">{t}</p>"
@@ -409,8 +703,237 @@ mod tests {
                 team_name: "Acme".into(),
                 slug: "acme".into(),
                 app_url: "https://app.example.com".into(),
+                free_member_limit: 3,
+                free_restricted: false,
             },
+            Mail::TestEmail {
+                to: "ada@example.com".into(),
+            },
+            Mail::LinkDisabled {
+                to: "ada@example.com".into(),
+                team: "Acme".into(),
+                collection: "payments-api".into(),
+                reason: Some("Spam".into()),
+            },
+            Mail::AccountSuspended {
+                to: "ada@example.com".into(),
+                reason: Some("Chargeback dispute".into()),
+            },
+            Mail::AdminMessage {
+                to: "ada@example.com".into(),
+                subject: "About your account".into(),
+                body: "First line\nsecond line\n\nNext paragraph".into(),
+            },
+            plan_granted(Plan::Team, Some(deadline)),
+            plan_granted(Plan::Free, None),
+            override_ending(Plan::Team),
+            override_ending(Plan::Free),
+            team_suspended(Some("Phishing pages")),
+            team_suspended(None),
+            broadcast(false),
+            broadcast(true),
         ]
+    }
+
+    fn broadcast(test: bool) -> Mail {
+        Mail::Broadcast {
+            to: "ada@example.com".into(),
+            subject: "News for {{first_name}}\r\nBcc: x".into(),
+            body_md: "Hi {{first_name}},\n\n**{{team_name}}** is on {{plan}}.\n- one\n- two".into(),
+            vars: markdown::Vars {
+                first_name: "<Ada>".into(),
+                team_name: "Acme & Co".into(),
+                plan: "Team".into(),
+            },
+            unsubscribe: "https://api.example.com/v1/unsubscribe?token=abc".into(),
+            test,
+        }
+    }
+
+    #[test]
+    fn broadcast_fills_variables_and_links_unsubscribe() {
+        let (subject, text, html) = render(&broadcast(false));
+        assert_eq!(subject, "News for <Ada>  Bcc: x");
+        assert!(
+            text.starts_with("Hi <Ada>,\n\nAcme & Co is on Team.\n- one\n- two\n"),
+            "{text}"
+        );
+        assert!(text.contains(
+            "Unsubscribe from product emails:\nhttps://api.example.com/v1/unsubscribe?token=abc"
+        ));
+        assert!(html.contains("Hi &lt;Ada&gt;,"), "{html}");
+        assert!(
+            html.contains("<strong>Acme &amp; Co</strong> is on Team."),
+            "{html}"
+        );
+        assert!(html.contains("href=\"https://api.example.com/v1/unsubscribe?token=abc\""));
+        assert!(html.contains("News for &lt;Ada&gt;  Bcc: x</h1>"), "{html}");
+        let (subject, _, _) = render(&broadcast(true));
+        assert!(subject.starts_with("[Test] News for"));
+        assert_eq!(broadcast(false).kind(), "broadcast");
+        assert_eq!(broadcast(true).kind(), "broadcast_test");
+        assert!(!format!("{:?}", broadcast(false)).contains("token=abc"));
+    }
+
+    #[test]
+    fn admin_message_takes_markdown() {
+        let (_, text, html) = render(&Mail::AdminMessage {
+            to: "a@example.com".into(),
+            subject: "Hi".into(),
+            body: "See **this** and [docs](https://example.com) or [x](javascript:alert(1))\n- a"
+                .into(),
+        });
+        assert!(html.contains("<strong>this</strong>"), "{html}");
+        assert!(html.contains("<a href=\"https://example.com\""), "{html}");
+        assert!(!html.contains("javascript:alert(1)\""), "{html}");
+        assert!(html.contains("<li style=\"margin:0;\">a</li>"), "{html}");
+        assert!(
+            text.contains("See this and docs (https://example.com)"),
+            "{text}"
+        );
+        // Variables are not filled in a one-off message.
+        let (_, text, _) = render(&Mail::AdminMessage {
+            to: "a@example.com".into(),
+            subject: "Hi".into(),
+            body: "{{first_name}}".into(),
+        });
+        assert_eq!(text, "{{first_name}}\n");
+    }
+
+    fn plan_granted(plan: Plan, until: Option<DateTime<Utc>>) -> Mail {
+        Mail::PlanGranted {
+            to: "ada@example.com".into(),
+            team_name: "Acme".into(),
+            slug: "acme".into(),
+            plan,
+            until,
+            app_url: "https://app.example.com".into(),
+        }
+    }
+
+    fn override_ending(plan: Plan) -> Mail {
+        Mail::OverrideEnding {
+            to: "ada@example.com".into(),
+            team_name: "Acme".into(),
+            slug: "acme".into(),
+            plan,
+            until: "2027-03-31T00:00:00Z".parse().unwrap(),
+            app_url: "https://app.example.com".into(),
+        }
+    }
+
+    fn team_suspended(reason: Option<&str>) -> Mail {
+        Mail::TeamSuspended {
+            to: "ada@example.com".into(),
+            team_name: "Acme".into(),
+            reason: reason.map(Into::into),
+        }
+    }
+
+    #[test]
+    fn link_disabled_names_the_collection_and_reason() {
+        let mail = Mail::LinkDisabled {
+            to: "ada@example.com".into(),
+            team: "Acme".into(),
+            collection: "payments-api".into(),
+            reason: Some("Spam <b>".into()),
+        };
+        let (subject, text, html) = render(&mail);
+        assert_eq!(subject, "The share link of payments-api was turned off");
+        assert!(text.contains("payments-api (Acme)"), "{text}");
+        assert!(text.contains("Reason: Spam <b>"), "{text}");
+        assert!(html.contains("Reason: Spam &lt;b&gt;"), "{html}");
+        let (_, text, html) = render(&Mail::LinkDisabled {
+            to: "ada@example.com".into(),
+            team: "Acme".into(),
+            collection: "payments-api".into(),
+            reason: None,
+        });
+        assert!(!text.contains("Reason"), "{text}");
+        assert!(!html.contains("Reason"), "{html}");
+    }
+
+    #[test]
+    fn plan_granted_names_the_plan_and_end() {
+        let (subject, text, html) = render(&plan_granted(
+            Plan::Team,
+            Some("2027-03-31T00:00:00Z".parse().unwrap()),
+        ));
+        assert_eq!(subject, "curl-runner gave Acme the Team plan");
+        assert!(
+            text.contains("Acme is on the Team plan until Mar 31, 2027."),
+            "{text}"
+        );
+        assert!(html.contains("<b>Mar 31, 2027</b>"), "{html}");
+        for s in [&text, &html] {
+            assert!(s.contains("https://app.example.com/t/acme"), "{s}");
+        }
+        let (subject, text, _) = render(&plan_granted(Plan::Free, None));
+        assert_eq!(subject, "curl-runner moved Acme to the Free plan");
+        assert!(
+            text.contains("Acme is on the Free plan, with no end date."),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn override_ending_says_what_comes_next() {
+        let (subject, text, html) = render(&override_ending(Plan::Team));
+        assert_eq!(subject, "Acme's granted plan ends on Mar 31, 2027");
+        assert!(
+            text.contains("The Team plan curl-runner gave Acme ends on Mar 31, 2027."),
+            "{text}"
+        );
+        assert!(
+            text.contains("goes back to its Stripe subscription, or to Free"),
+            "{text}"
+        );
+        assert!(text.contains("Nothing is deleted."), "{text}");
+        for s in [&text, &html] {
+            assert!(s.contains("https://app.example.com/t/acme/billing"), "{s}");
+        }
+    }
+
+    #[test]
+    fn team_suspended_explains_and_names_the_reason_when_given() {
+        let (subject, text, html) = render(&team_suspended(Some("Spam <b>")));
+        assert_eq!(subject, "Acme is suspended on curl-runner");
+        assert!(text.contains("Publishing is refused and its share links no longer work."));
+        assert!(text.contains("Nothing is deleted."));
+        assert!(text.contains("Reason: Spam <b>"));
+        assert!(html.contains("Reason: Spam &lt;b&gt;"));
+        let (_, text, html) = render(&team_suspended(None));
+        assert!(!text.contains("Reason") && !html.contains("Reason"));
+    }
+
+    #[test]
+    fn suspension_notice_names_the_reason_only_when_given() {
+        let (subject, text, html) = render(&Mail::AccountSuspended {
+            to: "a@example.com".into(),
+            reason: Some("Spam <b>".into()),
+        });
+        assert_eq!(subject, "Your curl-runner account is suspended");
+        assert!(text.contains("Reason: Spam <b>"));
+        assert!(html.contains("Reason: Spam &lt;b&gt;"));
+        let (_, text, html) = render(&Mail::AccountSuspended {
+            to: "a@example.com".into(),
+            reason: None,
+        });
+        assert!(!text.contains("Reason") && !html.contains("Reason"));
+    }
+
+    #[test]
+    fn admin_message_is_escaped_paragraphs() {
+        let (subject, text, html) = render(&Mail::AdminMessage {
+            to: "a@example.com".into(),
+            subject: "Hi\r\nBcc: x".into(),
+            body: "A <i>&</i>\nB\r\n\r\nC".into(),
+        });
+        assert_eq!(subject, "Hi  Bcc: x");
+        assert!(text.contains("A <i>&</i>"));
+        assert!(html.contains("A &lt;i&gt;&amp;&lt;/i&gt;<br>B"));
+        assert!(html.contains(">C</p>"));
+        assert!(!html.contains("<i>"));
     }
 
     #[test]
@@ -456,9 +979,42 @@ mod tests {
         assert_eq!(subject, "Acme moved to the Free plan");
         assert!(text.contains("Nothing was deleted."));
         assert!(text.contains("Restricted collections keep serving the people already"));
-        assert!(text.contains("add members past 3"));
+        assert!(text.contains("add members past 3."));
         for s in [&text, &html] {
             assert!(s.contains("https://app.example.com/t/acme/billing"), "{s}");
+        }
+    }
+
+    fn plan_changed(limit: u32, restricted: bool) -> (String, String, String) {
+        render(&Mail::PlanChanged {
+            to: "ada@example.com".into(),
+            team_name: "Acme".into(),
+            slug: "acme".into(),
+            app_url: "https://app.example.com".into(),
+            free_member_limit: limit,
+            free_restricted: restricted,
+        })
+    }
+
+    #[test]
+    fn plan_changed_states_the_configured_limit() {
+        let (_, text, html) = plan_changed(7, false);
+        for s in [&text, &html] {
+            assert!(s.contains("add members past 7."), "{s}");
+            assert!(!s.contains("past 3"), "{s}");
+            assert!(s.contains("publish to them"), "{s}");
+            assert!(!s.contains('\u{2014}'), "{s}");
+        }
+    }
+
+    #[test]
+    fn plan_changed_drops_the_restricted_clause_when_allowed() {
+        let (_, text, html) = plan_changed(5, true);
+        for s in [&text, &html] {
+            assert!(s.contains("Free allows up to 5 members."), "{s}");
+            assert!(!s.contains("publish to them"), "{s}");
+            assert!(!s.contains("Restricted collections"), "{s}");
+            assert!(!s.contains('\u{2014}'), "{s}");
         }
     }
 }

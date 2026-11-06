@@ -12,10 +12,11 @@ use serde::Serialize;
 use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
 
+use crate::billing::effective::{PlanRow, effective_plan, plan_columns};
 use crate::error::ApiError;
 use crate::hash::{new_token, secret_hash};
 use crate::state::AppState;
-use crate::teams::is_operator;
+use crate::teams::admin_role;
 
 /// Sessions slide: each use pushes expiry to this far from now.
 pub const SESSION_TTL: Duration = Duration::days(90);
@@ -87,7 +88,8 @@ pub(crate) async fn validate_session(state: &AppState, token: &str) -> Result<Us
     let row: Option<(Uuid, Uuid, String, DateTime<Utc>)> = sqlx::query_as(
         "SELECT s.id, s.user_id, u.email::text, s.last_used_at \
          FROM sessions s JOIN users u ON u.id = s.user_id \
-         WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > $2",
+         WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > $2 \
+           AND u.suspended_at IS NULL",
     )
     .bind(&hash)
     .bind(now)
@@ -107,6 +109,47 @@ pub(crate) async fn validate_session(state: &AppState, token: &str) -> Result<Us
         session_id,
         email,
     })
+}
+
+/// `403 account_suspended`, for every way of signing in.
+pub(crate) fn account_suspended() -> ApiError {
+    ApiError::new(
+        ErrorCode::AccountSuspended,
+        "This account is suspended. Contact support.",
+    )
+}
+
+/// Refuse a suspended account. No account with that email yet is fine.
+pub(crate) async fn ensure_email_not_suspended(
+    conn: &mut PgConnection,
+    email: &str,
+) -> Result<(), ApiError> {
+    let suspended: Option<bool> = sqlx::query_scalar(
+        "SELECT suspended_at IS NOT NULL FROM users WHERE email = $1::citext FOR SHARE",
+    )
+    .bind(email)
+    .fetch_optional(conn)
+    .await?;
+    if suspended == Some(true) {
+        return Err(account_suspended());
+    }
+    Ok(())
+}
+
+/// Refuse a suspended account.
+pub(crate) async fn ensure_not_suspended(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<(), ApiError> {
+    let suspended: Option<bool> =
+        sqlx::query_scalar("SELECT suspended_at IS NOT NULL FROM users WHERE id = $1 FOR SHARE")
+            .bind(user_id)
+            .fetch_optional(conn)
+            .await?;
+    if suspended == Some(true) {
+        return Err(account_suspended());
+    }
+    Ok(())
 }
 
 /// Insert a session for `user_id` and return the clear token (shown once).
@@ -147,6 +190,8 @@ struct TeamBody {
     name: String,
     role: Role,
     plan: Plan,
+    /// An admin suspended the team (no reason or admin: those are admin notes).
+    suspended: bool,
 }
 
 /// A role or plan column (checked by the schema) as its proto enum.
@@ -157,11 +202,21 @@ pub(crate) fn column_enum<T: serde::de::DeserializeOwned>(value: String) -> Resu
     })
 }
 
+#[derive(FromRow)]
+struct MeTeamRow {
+    slug: String,
+    name: String,
+    role: String,
+    suspended: bool,
+    #[sqlx(flatten)]
+    plan: PlanRow,
+}
+
 #[derive(Serialize)]
 pub struct MeBody {
     user: UserBody,
     teams: Vec<TeamBody>,
-    /// The user is a server operator (the dashboard shows its admin section).
+    /// The user is a server owner or admin (the dashboard shows its admin panel).
     admin: bool,
 }
 
@@ -171,26 +226,31 @@ pub async fn me(State(state): State<AppState>, auth: UserAuth) -> Result<Json<Me
             .bind(auth.user_id)
             .fetch_one(&state.db)
             .await?;
-    let rows: Vec<(String, String, String, String)> = sqlx::query_as(
-        "SELECT t.slug::text, t.name, m.role, t.plan \
+    let rows: Vec<MeTeamRow> = sqlx::query_as(&format!(
+        "SELECT t.slug::text AS slug, t.name, m.role, t.suspended_at IS NOT NULL AS suspended, {} \
          FROM memberships m JOIN teams t ON t.id = m.team_id \
          WHERE m.user_id = $1 ORDER BY t.name, t.slug",
-    )
+        plan_columns("t")
+    ))
     .bind(auth.user_id)
     .fetch_all(&state.db)
     .await?;
+    let now = state.clock.now();
     let teams = rows
         .into_iter()
-        .map(|(slug, name, role, plan)| {
+        .map(|r| {
             Ok(TeamBody {
-                slug,
-                name,
-                role: column_enum(role)?,
-                plan: column_enum(plan)?,
+                plan: effective_plan(&r.plan, now).0,
+                slug: r.slug,
+                name: r.name,
+                role: column_enum(r.role)?,
+                suspended: r.suspended,
             })
         })
         .collect::<Result<_, ApiError>>()?;
-    let admin = is_operator(&state.db, &state.config, &user.email).await?;
+    let admin = admin_role(&state.db, &state.config, user.id, &user.email)
+        .await?
+        .is_some();
     Ok(Json(MeBody { user, teams, admin }))
 }
 

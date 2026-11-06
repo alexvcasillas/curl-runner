@@ -53,7 +53,11 @@ impl ApiError {
             ErrorCode::Unauthorized | ErrorCode::CodeInvalid | ErrorCode::CodeExpired => {
                 StatusCode::UNAUTHORIZED
             }
-            ErrorCode::Forbidden | ErrorCode::SignupClosed => StatusCode::FORBIDDEN,
+            ErrorCode::Forbidden
+            | ErrorCode::SignupClosed
+            | ErrorCode::AccountSuspended
+            | ErrorCode::TeamSuspended
+            | ErrorCode::LinkDisabled => StatusCode::FORBIDDEN,
             ErrorCode::NotFound => StatusCode::NOT_FOUND,
             ErrorCode::Conflict | ErrorCode::WrongSource => StatusCode::CONFLICT,
             ErrorCode::PlanLimit => StatusCode::PAYMENT_REQUIRED,
@@ -111,6 +115,9 @@ mod tests {
             (ErrorCode::CodeExpired, 401),
             (ErrorCode::Forbidden, 403),
             (ErrorCode::SignupClosed, 403),
+            (ErrorCode::AccountSuspended, 403),
+            (ErrorCode::TeamSuspended, 403),
+            (ErrorCode::LinkDisabled, 403),
             (ErrorCode::NotFound, 404),
             (ErrorCode::Conflict, 409),
             (ErrorCode::WrongSource, 409),

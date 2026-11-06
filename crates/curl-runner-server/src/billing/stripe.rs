@@ -141,6 +141,16 @@ struct PriceResponse {
 }
 
 #[derive(Deserialize)]
+struct InvoiceList {
+    data: Vec<InvoiceId>,
+}
+
+#[derive(Deserialize)]
+struct InvoiceId {
+    id: String,
+}
+
+#[derive(Deserialize)]
 struct Recurring {
     interval: String,
 }
@@ -259,6 +269,24 @@ impl Billing for StripeBilling {
             currency: res.currency,
             interval: res.recurring.map(|r| r.interval).unwrap_or_default(),
         })
+    }
+
+    async fn send_latest_invoice(&self, customer: &str) -> Result<Option<String>, BillingError> {
+        // Only for its form encoding of the query.
+        let mut url = reqwest::Url::parse("http://stripe.invalid/v1/invoices").expect("static url");
+        // Open invoices only: drafts can't be sent, and paid ones are receipts.
+        url.query_pairs_mut()
+            .append_pair("customer", customer)
+            .append_pair("status", "open")
+            .append_pair("limit", "1");
+        let path = format!("{}?{}", url.path(), url.query().unwrap_or_default());
+        let list: InvoiceList = self.call(Method::GET, &path, None).await?;
+        let Some(invoice) = list.data.into_iter().next() else {
+            return Ok(None);
+        };
+        let path = format!("/v1/invoices/{}/send", invoice.id);
+        let _: serde_json::Value = self.call(Method::POST, &path, Some(Vec::new())).await?;
+        Ok(Some(invoice.id))
     }
 }
 
@@ -385,6 +413,47 @@ mod tests {
         assert_eq!(
             (method.as_str(), path.as_str()),
             ("DELETE", "/v1/subscriptions/sub_9")
+        );
+    }
+
+    #[tokio::test]
+    async fn send_latest_invoice_lists_one_then_sends_it() {
+        let (server, seen) = stub(|method, _| match method {
+            "GET" => (200, r#"{"data":[{"id":"in_7"}]}"#.into()),
+            _ => (200, r#"{"id":"in_7"}"#.into()),
+        });
+        let billing = StripeBilling::with_base_url("k".into(), &server.base_url);
+        let sent = billing.send_latest_invoice("cus_1").await.unwrap();
+        assert_eq!(sent.as_deref(), Some("in_7"));
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(
+            (seen[0].0.as_str(), seen[0].1.as_str()),
+            ("GET", "/v1/invoices?customer=cus_1&status=open&limit=1")
+        );
+        assert_eq!(
+            (seen[1].0.as_str(), seen[1].1.as_str()),
+            ("POST", "/v1/invoices/in_7/send")
+        );
+    }
+
+    #[tokio::test]
+    async fn send_latest_invoice_without_invoices_sends_nothing() {
+        let (server, seen) = stub(|_, _| (200, r#"{"data":[]}"#.into()));
+        let billing = StripeBilling::with_base_url("k".into(), &server.base_url);
+        assert_eq!(billing.send_latest_invoice("cus_1").await.unwrap(), None);
+        assert_eq!(seen.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn send_latest_invoice_encodes_the_customer() {
+        let (server, seen) = stub(|_, _| (200, r#"{"data":[]}"#.into()));
+        let billing = StripeBilling::with_base_url("k".into(), &server.base_url);
+        billing.send_latest_invoice("cus_1&limit=99").await.unwrap();
+        let url = seen.lock().unwrap()[0].1.clone();
+        assert_eq!(
+            url,
+            "/v1/invoices?customer=cus_1%26limit%3D99&status=open&limit=1"
         );
     }
 

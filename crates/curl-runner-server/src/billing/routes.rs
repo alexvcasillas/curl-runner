@@ -10,9 +10,10 @@ use curl_runner_cloud_proto::{ErrorCode, Plan};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::effective::{PlanRow, PlanSource, effective_plan, plan_columns};
+use super::mrr::is_live_subscription;
 use super::{Billing, BillingError, CheckoutRequest, Price, Prices};
 use crate::auth::UserAuth;
-use crate::auth::session::column_enum;
 use crate::config::BillingConfig;
 use crate::error::ApiError;
 use crate::extract::ApiJson;
@@ -37,7 +38,7 @@ fn enabled(state: &AppState) -> Result<(&Arc<dyn Billing>, &BillingConfig), ApiE
 
 /// `503` for any Stripe failure. The body goes to the log (the key is already
 /// scrubbed from it); the caller sees a fixed sentence.
-fn stripe_down(err: BillingError) -> ApiError {
+pub(crate) fn stripe_down(err: BillingError) -> ApiError {
     tracing::warn!("stripe request failed: {err}");
     ApiError::new(
         ErrorCode::Unavailable,
@@ -66,27 +67,31 @@ impl From<Price> for PriceBody {
     }
 }
 
+/// The price list, from memory when fetched within the last hour, so at
+/// most one pair of Stripe reads an hour. `None` when billing is off.
+pub(crate) async fn current_prices(state: &AppState) -> Result<Option<Prices>, BillingError> {
+    let (Some(billing), Some(config)) = (&state.billing, &state.config.billing) else {
+        return Ok(None);
+    };
+    let now = state.clock.now();
+    if let Some(cached) = state.price_cache.get(now) {
+        return Ok(Some(cached));
+    }
+    let fresh = Prices {
+        monthly: billing.price(&config.price_monthly).await?,
+        annual: billing.price(&config.price_annual).await?,
+    };
+    state.price_cache.put(now, fresh.clone());
+    Ok(Some(fresh))
+}
+
 /// Public. Served from memory for an hour.
 async fn prices(State(state): State<AppState>) -> Result<Json<PricesBody>, ApiError> {
-    let (billing, config) = enabled(&state)?;
-    let now = state.clock.now();
-    let prices = match state.price_cache.get(now) {
-        Some(cached) => cached,
-        None => {
-            let fresh = Prices {
-                monthly: billing
-                    .price(&config.price_monthly)
-                    .await
-                    .map_err(stripe_down)?,
-                annual: billing
-                    .price(&config.price_annual)
-                    .await
-                    .map_err(stripe_down)?,
-            };
-            state.price_cache.put(now, fresh.clone());
-            fresh
-        }
-    };
+    enabled(&state)?;
+    let prices = current_prices(&state)
+        .await
+        .map_err(stripe_down)?
+        .ok_or_else(ApiError::not_found)?;
     Ok(Json(PricesBody {
         monthly: prices.monthly.into(),
         annual: prices.annual.into(),
@@ -95,22 +100,23 @@ async fn prices(State(state): State<AppState>) -> Result<Json<PricesBody>, ApiEr
 
 #[derive(sqlx::FromRow)]
 struct BillingRow {
-    plan: String,
+    #[sqlx(flatten)]
+    plan: PlanRow,
     billing_interval: Option<String>,
     billing_status: Option<String>,
     past_due_since: Option<DateTime<Utc>>,
     cancel_at: Option<DateTime<Utc>>,
     current_period_end: Option<DateTime<Utc>>,
     stripe_customer_id: Option<String>,
-    stripe_subscription_id: Option<String>,
 }
 
 async fn billing_row(state: &AppState, team_id: Uuid) -> Result<BillingRow, ApiError> {
-    Ok(sqlx::query_as(
-        "SELECT plan, billing_interval, billing_status, past_due_since, cancel_at, \
-         current_period_end, stripe_customer_id, stripe_subscription_id \
-         FROM teams WHERE id = $1",
-    )
+    Ok(sqlx::query_as(&format!(
+        "SELECT {}, t.billing_interval, t.billing_status, t.past_due_since, t.cancel_at, \
+         t.current_period_end, t.stripe_customer_id \
+         FROM teams t WHERE t.id = $1",
+        plan_columns("t")
+    ))
     .bind(team_id)
     .fetch_one(&state.db)
     .await?)
@@ -134,8 +140,14 @@ struct SummaryBody {
     can_manage: bool,
     cancel_at: Option<DateTime<Utc>>,
     current_period_end: Option<DateTime<Utc>>,
-    /// `stripe` when a Stripe subscription backs the plan, else `none`.
-    plan_source: &'static str,
+    /// `override` while an admin's override is in force, else `stripe` when
+    /// a Stripe subscription backs the plan, else `none`.
+    plan_source: PlanSource,
+    /// When the override ends; `null` with no override or no end date.
+    override_until: Option<DateTime<Utc>>,
+    /// A live Stripe subscription exists, whatever `plan_source` says: an
+    /// override can sit on top of one that keeps billing.
+    has_subscription: bool,
 }
 
 /// Members only.
@@ -147,8 +159,14 @@ async fn summary(
     enabled(&state)?;
     let access = team_access(&state.db, auth.user_id, &slug).await?;
     let row = billing_row(&state, access.team_id).await?;
+    let now = state.clock.now();
+    let (plan, plan_source) = effective_plan(&row.plan, now);
+    let has_subscription = is_live_subscription(
+        row.plan.stripe_subscription_id.as_deref(),
+        row.billing_status.as_deref(),
+    );
     Ok(Json(SummaryBody {
-        plan: column_enum(row.plan)?,
+        plan,
         interval: row.billing_interval,
         status: row.billing_status,
         seats: member_count(&state, access.team_id).await?,
@@ -156,11 +174,13 @@ async fn summary(
         can_manage: access.role == curl_runner_cloud_proto::Role::Owner,
         cancel_at: row.cancel_at,
         current_period_end: row.current_period_end,
-        plan_source: if row.stripe_subscription_id.is_some() {
-            "stripe"
+        plan_source,
+        override_until: if plan_source == PlanSource::Override {
+            row.plan.override_until
         } else {
-            "none"
+            None
         },
+        has_subscription,
     }))
 }
 
@@ -181,11 +201,6 @@ struct UrlBody {
     url: String,
 }
 
-/// Statuses after which a subscription is gone for good.
-fn is_live(status: Option<&str>) -> bool {
-    !matches!(status, Some("canceled" | "incomplete_expired"))
-}
-
 /// Owner only.
 async fn checkout(
     State(state): State<AppState>,
@@ -197,7 +212,10 @@ async fn checkout(
     let access = team_access(&state.db, auth.user_id, &slug).await?;
     access.require_owner()?;
     let row = billing_row(&state, access.team_id).await?;
-    if row.stripe_subscription_id.is_some() && is_live(row.billing_status.as_deref()) {
+    if is_live_subscription(
+        row.plan.stripe_subscription_id.as_deref(),
+        row.billing_status.as_deref(),
+    ) {
         return Err(ApiError::new(
             ErrorCode::Conflict,
             "This team already has a subscription. Manage it from the portal.",

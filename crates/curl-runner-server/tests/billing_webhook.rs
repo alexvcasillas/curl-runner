@@ -301,6 +301,28 @@ async fn old_subscription_cancel_does_not_end_a_newer_one(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn grace_period_comes_from_the_settings(pool: PgPool) {
+    let (app, fake, _team) = setup(pool).await;
+    // A 7 day grace, set the way the admin page does.
+    app.state.settings().await.unwrap();
+    sqlx::query("UPDATE server_settings SET grace_days = 7")
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    app.state.settings_cache.invalidate();
+    deliver(&app, &checkout("evt_1")).await;
+    set_status(&fake, "past_due");
+    deliver(&app, &invoice("evt_2", "invoice.payment_failed")).await;
+
+    app.clock.advance(Duration::days(6));
+    tick(&app.state, app.clock.now()).await;
+    assert_eq!(row(&app).await.plan, "team", "+6 days");
+    app.clock.advance(Duration::days(1));
+    tick(&app.state, app.clock.now()).await;
+    assert_eq!(row(&app).await.plan, "free", "+7 days");
+}
+
+#[sqlx::test]
 async fn past_due_14_days_downgrades_and_mails_owners(pool: PgPool) {
     let (app, fake, team) = setup(pool).await;
     let bob = app.sign_in("bob@example.com").await;

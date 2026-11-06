@@ -12,6 +12,7 @@ export const ERROR_CODES = [
   'code_expired',
   'code_invalid',
   'signup_closed',
+  'account_suspended',
   'unavailable',
   'unknown',
 ] as const;
@@ -56,6 +57,7 @@ const FALLBACK: Record<ErrorCode, string> = {
   code_expired: 'That code expired. Ask for a new one.',
   code_invalid: 'That code isn’t right. Check it and try again.',
   signup_closed: 'Sign-up is closed on this server.',
+  account_suspended: 'This account is suspended. Contact support.',
   unavailable: 'Cloud isn’t answering right now. Try again in a minute.',
   unknown: 'Something went wrong. Try again in a minute.',
 };

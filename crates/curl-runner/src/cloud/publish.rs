@@ -343,7 +343,9 @@ pub(super) fn api_failure(status: u16, body: &[u8]) -> Fail {
         };
     };
     let code = match b.error {
-        ErrorCode::Unauthorized | ErrorCode::Forbidden => EXIT_AUTH,
+        // A suspended team is refused like a token that may not publish:
+        // nothing in the bundle can fix it.
+        ErrorCode::Unauthorized | ErrorCode::Forbidden | ErrorCode::TeamSuspended => EXIT_AUTH,
         ErrorCode::PlanLimit => EXIT_PLAN_LIMIT,
         ErrorCode::WrongSource => EXIT_WRONG_SOURCE,
         ErrorCode::Unavailable | ErrorCode::RateLimited => EXIT_UNREACHABLE,
@@ -742,6 +744,7 @@ mod tests {
         for (code, exit) in [
             ("unauthorized", 2),
             ("forbidden", 2),
+            ("team_suspended", 2),
             ("plan_limit", 3),
             ("wrong_source", 4),
             ("unavailable", 5),

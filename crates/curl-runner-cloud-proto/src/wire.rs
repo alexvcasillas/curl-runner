@@ -150,6 +150,28 @@ pub struct ServerInfo {
     /// The dashboard's public URL. Absent from servers that predate it.
     #[serde(default)]
     pub app_url: Option<String>,
+    /// An announcement from the server's admins. Absent from servers that
+    /// predate it, and `null` when none is showing to this caller.
+    #[serde(default)]
+    pub banner: Option<Banner>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BannerTone {
+    Info,
+    Warning,
+}
+
+/// The announcement banner. `version` changes whenever an admin saves it, so
+/// a client that hid it can show it again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct Banner {
+    pub message: String,
+    pub tone: BannerTone,
+    pub link: Option<String>,
+    pub version: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -162,6 +184,23 @@ pub struct ErrorBody {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn server_info_banner_is_optional_on_the_wire() {
+        let old = r#"{"version":"1","sign_in":["email"],"signup":"open","billing":false}"#;
+        assert_eq!(
+            serde_json::from_str::<ServerInfo>(old).unwrap().banner,
+            None
+        );
+        let new = r#"{"version":"1","sign_in":[],"signup":"open","billing":false,
+            "banner":{"message":"Hi","tone":"warning","link":null,"version":2}}"#;
+        let banner = serde_json::from_str::<ServerInfo>(new)
+            .unwrap()
+            .banner
+            .unwrap();
+        assert_eq!(banner.tone, BannerTone::Warning);
+        assert_eq!(banner.version, 2);
+    }
 
     #[test]
     fn publish_request_roundtrip() {

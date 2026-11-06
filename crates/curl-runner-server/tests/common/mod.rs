@@ -249,6 +249,10 @@ pub struct FakeBilling {
     pub portals: Mutex<Vec<(String, String)>>,
     pub quantities: Mutex<Vec<(String, u32)>>,
     pub cancelled: Mutex<Vec<String>>,
+    /// The customer of each `send_latest_invoice` call.
+    pub invoices_sent: Mutex<Vec<String>>,
+    /// `send_latest_invoice` finds no invoice.
+    pub no_invoice: AtomicBool,
     pub price_calls: AtomicU32,
     pub subscription_calls: AtomicU32,
     /// Make every call fail like an unreachable Stripe.
@@ -270,6 +274,8 @@ impl FakeBilling {
             portals: Mutex::default(),
             quantities: Mutex::default(),
             cancelled: Mutex::default(),
+            invoices_sent: Mutex::default(),
+            no_invoice: AtomicBool::new(false),
             price_calls: AtomicU32::new(0),
             subscription_calls: AtomicU32::new(0),
             fail: AtomicBool::new(false),
@@ -354,6 +360,15 @@ impl Billing for FakeBilling {
         Ok(())
     }
 
+    async fn send_latest_invoice(&self, customer: &str) -> Result<Option<String>, BillingError> {
+        self.check()?;
+        if self.no_invoice.load(Ordering::SeqCst) {
+            return Ok(None);
+        }
+        self.invoices_sent.lock().unwrap().push(customer.to_owned());
+        Ok(Some("in_1".into()))
+    }
+
     async fn price(&self, id: &str) -> Result<Price, BillingError> {
         self.check()?;
         self.price_calls.fetch_add(1, Ordering::SeqCst);
@@ -368,7 +383,12 @@ impl Billing for FakeBilling {
 
 /// The app with billing configured and a [`FakeBilling`] behind it.
 pub async fn test_app_billing(pool: PgPool) -> (TestApp, Arc<FakeBilling>) {
-    let app = test_app_with(pool, test_config(&BILLING_ENV)).await;
+    test_app_billing_with(pool, test_config(&BILLING_ENV)).await
+}
+
+/// Like [`test_app_billing`] with a custom config, which must turn billing on.
+pub async fn test_app_billing_with(pool: PgPool, config: Config) -> (TestApp, Arc<FakeBilling>) {
+    let app = test_app_with(pool, config).await;
     let fake = Arc::new(FakeBilling::new());
     let mut state = app.state.clone();
     state.billing = Some(fake.clone());

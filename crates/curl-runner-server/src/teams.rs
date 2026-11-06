@@ -1,18 +1,22 @@
-//! Teams, members, invites and the operator endpoints.
+//! Teams, members and invites, and who is a server owner or admin.
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::routing::{delete, get, post, put};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Duration, Utc};
 use curl_runner_cloud_proto::{ErrorCode, Plan, Role, SignupMode};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
+use crate::admin::events::{AdminTx, Event};
+use crate::admin::{AdminAuth, Perm, Role as AdminRole};
 use crate::auth::UserAuth;
 use crate::auth::session::column_enum;
 use crate::billing::BillingError;
+use crate::billing::effective::{PlanChange, team_plan};
 use crate::collections::parse_email;
 use crate::config::Config;
 use crate::error::ApiError;
@@ -20,6 +24,7 @@ use crate::extract::{ApiJson, ClientIp};
 use crate::hash::{new_token, secret_hash};
 use crate::mail::Mail;
 use crate::plans::limits;
+use crate::settings::Settings;
 use crate::state::AppState;
 
 /// Member invites last this long.
@@ -43,7 +48,6 @@ pub fn routes() -> Router<AppState> {
             "/v1/teams/{team}/members/{user_id}",
             delete(remove_member).patch(set_role),
         )
-        .route("/v1/admin/teams/{team}/plan", put(set_plan))
 }
 
 /// A slug: `^[a-z0-9][a-z0-9-]{0,62}$`. Shared by teams and collections.
@@ -94,7 +98,8 @@ pub async fn team_access(db: &PgPool, user_id: Uuid, slug: &str) -> Result<TeamA
     })
 }
 
-async fn first_operator(db: &PgPool) -> Result<Option<String>, ApiError> {
+/// The recorded first operator's email, if any.
+pub(crate) async fn first_operator(db: &PgPool) -> Result<Option<String>, ApiError> {
     Ok(
         sqlx::query_scalar("SELECT value FROM settings WHERE key = $1")
             .bind(FIRST_OPERATOR)
@@ -114,25 +119,50 @@ pub async fn is_operator(db: &PgPool, config: &Config, email: &str) -> Result<bo
         .is_some_and(|op| op.to_lowercase() == email))
 }
 
+/// The caller's standing in the admin panel: an owner (`OPERATOR_EMAILS` or
+/// the first operator) has every permission, an admin has the permissions in
+/// `admins`, anyone else is `None`.
+pub async fn admin_role(
+    db: &PgPool,
+    config: &Config,
+    user_id: Uuid,
+    email: &str,
+) -> Result<Option<(AdminRole, Vec<Perm>)>, ApiError> {
+    if is_operator(db, config, email).await? {
+        return Ok(Some((AdminRole::Owner, Perm::ALL.to_vec())));
+    }
+    let perms: Option<Vec<String>> =
+        sqlx::query_scalar("SELECT permissions FROM admins WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(db)
+            .await?;
+    Ok(perms.map(|p| (AdminRole::Admin, Perm::from_column(&p))))
+}
+
 /// Whether `email` may create a team under the signup mode.
 ///
 /// With `domains` and no domains listed, the earliest account on the server
 /// is recorded as the first operator and may create teams.
-pub async fn can_create_team(db: &PgPool, config: &Config, email: &str) -> Result<bool, ApiError> {
+pub async fn can_create_team(
+    db: &PgPool,
+    config: &Config,
+    settings: &Settings,
+    email: &str,
+) -> Result<bool, ApiError> {
     if is_operator(db, config, email).await? {
         return Ok(true);
     }
     let email = email.to_lowercase();
-    match config.signup {
+    match settings.signup_mode {
         SignupMode::Open => Ok(true),
         SignupMode::Closed => Ok(false),
         SignupMode::Domains => {
             if let Some((_, domain)) = email.rsplit_once('@')
-                && config.signup_domains.iter().any(|d| d == domain)
+                && settings.signup_domains.iter().any(|d| d == domain)
             {
                 return Ok(true);
             }
-            if !config.signup_domains.is_empty() {
+            if !settings.signup_domains.is_empty() {
                 return Ok(false);
             }
             let earliest: Option<String> =
@@ -155,7 +185,7 @@ pub async fn can_create_team(db: &PgPool, config: &Config, email: &str) -> Resul
 }
 
 /// The snake_case string the database stores for a proto enum.
-fn enum_str<T: Serialize>(value: T) -> String {
+pub(crate) fn enum_str<T: Serialize>(value: T) -> String {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(s)) => s,
         _ => unreachable!("proto enums serialise to strings"),
@@ -202,13 +232,14 @@ async fn create_team(
             "The slug must be lowercase letters, digits and dashes, up to 63 characters.",
         ));
     }
-    if !can_create_team(&state.db, &state.config, &auth.email).await? {
+    let settings = state.settings().await?;
+    if !can_create_team(&state.db, &state.config, &settings, &auth.email).await? {
         return Err(ApiError::new(
             ErrorCode::SignupClosed,
             "Creating teams is closed on this server.",
         ));
     }
-    let plan = state.config.default_plan;
+    let plan = settings.default_plan;
     let now = state.clock.now();
     let mut tx = state.db.begin().await?;
     let team_id: Option<Uuid> = sqlx::query_scalar(
@@ -230,6 +261,17 @@ async fn create_team(
     .bind(auth.user_id)
     .bind(now)
     .execute(&mut *tx)
+    .await?;
+    PlanChange {
+        team_id,
+        at: now,
+        source: "default",
+        plan,
+        admin: None,
+        reason: None,
+        detail: json!({}),
+    }
+    .record(&mut tx)
     .await?;
     tx.commit().await?;
     Ok((
@@ -266,10 +308,11 @@ async fn rename_team(
     access.require_owner()?;
     let name = valid_team_name(&req.name)?;
     let mut tx = state.db.begin().await?;
-    let (_, locked) = lock_as(&mut tx, access.team_id, auth.user_id).await?;
+    let now = state.clock.now();
+    let (plan, locked) = lock_as(&mut tx, access.team_id, auth.user_id, now).await?;
     locked.require_owner()?;
-    let (slug, name, plan): (String, String, String) =
-        sqlx::query_as("UPDATE teams SET name = $2 WHERE id = $1 RETURNING slug::text, name, plan")
+    let (slug, name): (String, String) =
+        sqlx::query_as("UPDATE teams SET name = $2 WHERE id = $1 RETURNING slug::text, name")
             .bind(access.team_id)
             .bind(&name)
             .fetch_one(&mut *tx)
@@ -278,14 +321,12 @@ async fn rename_team(
     Ok(Json(TeamSummary {
         slug,
         name,
-        plan: column_enum(plan)?,
+        plan,
         role: locked.role,
     }))
 }
 
-/// Owner only. Memberships, invites, tokens, collections (with their versions,
-/// files, access entries and opens) all go with the team through
-/// `ON DELETE CASCADE`. Blobs stay: they are shared by content hash.
+/// Owner only. See [`delete_team_row`].
 async fn delete_team(
     State(state): State<AppState>,
     auth: UserAuth,
@@ -294,24 +335,41 @@ async fn delete_team(
     let access = team_access(&state.db, auth.user_id, &slug).await?;
     access.require_owner()?;
     let mut tx = state.db.begin().await?;
-    let (_, locked) = lock_as(&mut tx, access.team_id, auth.user_id).await?;
+    let (_, locked) = lock_as(&mut tx, access.team_id, auth.user_id, state.clock.now()).await?;
     locked.require_owner()?;
-    // Stop the billing first: a team that is gone must not keep being charged.
-    // If Stripe cannot be reached the team stays and the owner can retry.
+    delete_team_row(&state, &mut tx, access.team_id, &slug).await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Delete a team whose row the caller has locked, in the caller's
+/// transaction. Its Stripe subscription is cancelled first: a team that is
+/// gone must not keep being charged, so if Stripe cannot be reached this
+/// fails with `503` and the team stays. Memberships, invites, tokens,
+/// collections (with their versions, files, access entries and opens) all go
+/// with the team through `ON DELETE CASCADE`. Blobs stay: they are shared by
+/// content hash. Returns the subscription that was cancelled, if any.
+pub(crate) async fn delete_team_row(
+    state: &AppState,
+    conn: &mut PgConnection,
+    team_id: Uuid,
+    slug: &str,
+) -> Result<Option<String>, ApiError> {
     let subscription: Option<String> =
         sqlx::query_scalar("SELECT stripe_subscription_id FROM teams WHERE id = $1")
-            .bind(access.team_id)
-            .fetch_one(&mut *tx)
+            .bind(team_id)
+            .fetch_one(&mut *conn)
             .await?;
     if state.billing.is_none()
         && let Some(id) = &subscription
     {
         tracing::warn!("billing is off: subscription {id} of team {slug} was not cancelled");
     }
+    let mut cancelled = None;
     if let (Some(billing), Some(id)) = (&state.billing, subscription) {
         match billing.cancel_subscription(&id).await {
             // Already gone on Stripe's side.
-            Ok(()) | Err(BillingError::Api { status: 404, .. }) => {}
+            Ok(()) | Err(BillingError::Api { status: 404, .. }) => cancelled = Some(id),
             Err(err) => {
                 tracing::warn!("cannot cancel subscription {id} for team {slug}: {err}");
                 return Err(ApiError::new(
@@ -322,11 +380,10 @@ async fn delete_team(
         }
     }
     sqlx::query("DELETE FROM teams WHERE id = $1")
-        .bind(access.team_id)
-        .execute(&mut *tx)
+        .bind(team_id)
+        .execute(conn)
         .await?;
-    tx.commit().await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(cancelled)
 }
 
 #[derive(Serialize)]
@@ -351,6 +408,10 @@ pub struct TeamDetail {
     name: String,
     plan: Plan,
     role: Role,
+    /// An admin suspended the team. Members see that and when; the reason
+    /// and who did it are admin notes and stay out.
+    suspended: bool,
+    suspended_at: Option<DateTime<Utc>>,
     members: Vec<MemberBody>,
     pending_invites: Vec<PendingInviteBody>,
 }
@@ -361,11 +422,14 @@ async fn get_team(
     Path(slug): Path<String>,
 ) -> Result<Json<TeamDetail>, ApiError> {
     let access = team_access(&state.db, auth.user_id, &slug).await?;
-    let (slug, name, plan): (String, String, String) =
-        sqlx::query_as("SELECT slug::text, name, plan FROM teams WHERE id = $1")
+    let (slug, name, suspended_at): (String, String, Option<DateTime<Utc>>) =
+        sqlx::query_as("SELECT slug::text, name, suspended_at FROM teams WHERE id = $1")
             .bind(access.team_id)
             .fetch_one(&state.db)
             .await?;
+    let mut conn = state.db.acquire().await?;
+    let (plan, _) = team_plan(&mut conn, access.team_id, state.clock.now(), false).await?;
+    drop(conn);
     let members: Vec<(Uuid, String, Option<String>, String)> = sqlx::query_as(
         "SELECT u.id, u.email::text, u.name, m.role FROM memberships m \
          JOIN users u ON u.id = m.user_id WHERE m.team_id = $1 \
@@ -386,8 +450,10 @@ async fn get_team(
     Ok(Json(TeamDetail {
         slug,
         name,
-        plan: column_enum(plan)?,
+        plan,
         role: access.role,
+        suspended: suspended_at.is_some(),
+        suspended_at,
         members: members
             .into_iter()
             .map(|(user_id, email, name, role)| {
@@ -413,20 +479,20 @@ async fn get_team(
     }))
 }
 
-fn plan_limit() -> ApiError {
+fn plan_limit(max: u32) -> ApiError {
     ApiError::new(
         ErrorCode::PlanLimit,
-        "The Free plan allows 3 members. Upgrade to add more.",
+        format!("The Free plan allows {max} members. Upgrade to add more."),
     )
 }
 
-/// Lock the team row (serialising member changes) and return its plan.
-async fn lock_team(conn: &mut PgConnection, team_id: Uuid) -> Result<Plan, ApiError> {
-    let plan: String = sqlx::query_scalar("SELECT plan FROM teams WHERE id = $1 FOR UPDATE")
-        .bind(team_id)
-        .fetch_one(conn)
-        .await?;
-    column_enum(plan)
+/// Lock the team row (serialising member changes) and return its effective plan at `now`.
+async fn lock_team(
+    conn: &mut PgConnection,
+    team_id: Uuid,
+    now: DateTime<Utc>,
+) -> Result<Plan, ApiError> {
+    Ok(team_plan(conn, team_id, now, true).await?.0)
 }
 
 /// Lock the team row, then read the caller's current role under the lock, so
@@ -436,8 +502,9 @@ pub(crate) async fn lock_as(
     conn: &mut PgConnection,
     team_id: Uuid,
     user_id: Uuid,
+    now: DateTime<Utc>,
 ) -> Result<(Plan, TeamAccess), ApiError> {
-    let plan = lock_team(&mut *conn, team_id).await?;
+    let plan = lock_team(&mut *conn, team_id, now).await?;
     let role: Option<String> =
         sqlx::query_scalar("SELECT role FROM memberships WHERE team_id = $1 AND user_id = $2")
             .bind(team_id)
@@ -456,7 +523,10 @@ pub(crate) async fn lock_as(
 
 /// The seat count changed: the background tick must tell Stripe. Called in the
 /// same transaction as the membership change.
-async fn mark_seats_dirty(conn: &mut PgConnection, team_id: Uuid) -> Result<(), ApiError> {
+pub(crate) async fn mark_seats_dirty(
+    conn: &mut PgConnection,
+    team_id: Uuid,
+) -> Result<(), ApiError> {
     sqlx::query("UPDATE teams SET seats_synced = NULL WHERE id = $1")
         .bind(team_id)
         .execute(conn)
@@ -495,6 +565,7 @@ async fn invite(
 ) -> Result<(StatusCode, Json<InviteCreated>), ApiError> {
     let access = team_access(&state.db, auth.user_id, &slug).await?;
     access.require_owner()?;
+    let settings = state.settings().await?;
     let email = parse_email(&req.email)
         .filter(|e| e.len() <= 254)
         .ok_or_else(|| invalid("Enter a valid email address."))?;
@@ -502,7 +573,7 @@ async fn invite(
     let expires_at = now + INVITE_TTL;
     let token = new_token("cri_");
     let mut tx = state.db.begin().await?;
-    let (plan, locked) = lock_as(&mut tx, access.team_id, auth.user_id).await?;
+    let (plan, locked) = lock_as(&mut tx, access.team_id, auth.user_id, now).await?;
     locked.require_owner()?;
     let taken: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id \
@@ -521,7 +592,7 @@ async fn invite(
             "That email is already a member or has a pending invite.",
         ));
     }
-    if let Some(max) = limits(plan).members {
+    if let Some(max) = limits(plan, &settings).members {
         let pending: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM member_invites \
              WHERE team_id = $1 AND accepted_at IS NULL AND expires_at > $2",
@@ -531,7 +602,7 @@ async fn invite(
         .fetch_one(&mut *tx)
         .await?;
         if member_count(&mut tx, access.team_id).await? + pending >= i64::from(max) {
-            return Err(plan_limit());
+            return Err(plan_limit(max));
         }
     }
     let id: Uuid = sqlx::query_scalar(
@@ -587,7 +658,7 @@ async fn revoke_invite(
     let access = team_access(&state.db, auth.user_id, &slug).await?;
     access.require_owner()?;
     let mut tx = state.db.begin().await?;
-    let (_, locked) = lock_as(&mut tx, access.team_id, auth.user_id).await?;
+    let (_, locked) = lock_as(&mut tx, access.team_id, auth.user_id, state.clock.now()).await?;
     locked.require_owner()?;
     let done = sqlx::query(
         "DELETE FROM member_invites WHERE id = $1 AND team_id = $2 AND accepted_at IS NULL",
@@ -690,6 +761,7 @@ async fn accept_invite(
     Path(token): Path<String>,
 ) -> Result<Json<Joined>, ApiError> {
     let now = state.clock.now();
+    let settings = state.settings().await?;
     let OpenInvite {
         id: invite_id,
         team_id,
@@ -697,7 +769,7 @@ async fn accept_invite(
         ..
     } = open_invite(&state, &token).await?;
     let mut tx = state.db.begin().await?;
-    let plan = lock_team(&mut tx, team_id).await?;
+    let plan = lock_team(&mut tx, team_id, now).await?;
     // Re-read under the lock: a concurrent accept may have used it.
     let still_open: Option<Uuid> = sqlx::query_scalar(
         "SELECT id FROM member_invites WHERE id = $1 AND accepted_at IS NULL AND expires_at > $2",
@@ -721,10 +793,10 @@ async fn accept_invite(
             "You are already a member of this team.",
         ));
     }
-    if let Some(max) = limits(plan).members
+    if let Some(max) = limits(plan, &settings).members
         && member_count(&mut tx, team_id).await? >= i64::from(max)
     {
-        return Err(plan_limit());
+        return Err(plan_limit(max));
     }
     sqlx::query(
         "INSERT INTO memberships (team_id, user_id, role, created_at) VALUES ($1, $2, $3, $4)",
@@ -754,7 +826,7 @@ async fn accept_invite(
     }))
 }
 
-fn last_owner() -> ApiError {
+pub(crate) fn last_owner() -> ApiError {
     ApiError::new(
         ErrorCode::Conflict,
         "A team needs at least one owner. Make someone else an owner first.",
@@ -762,7 +834,7 @@ fn last_owner() -> ApiError {
 }
 
 /// Under the team lock: whether `user_id` is the team's only owner.
-async fn is_last_owner(
+pub(crate) async fn is_last_owner(
     conn: &mut PgConnection,
     team_id: Uuid,
     user_id: Uuid,
@@ -782,7 +854,7 @@ async fn remove_member(
 ) -> Result<StatusCode, ApiError> {
     let access = team_access(&state.db, auth.user_id, &slug).await?;
     let mut tx = state.db.begin().await?;
-    let (_, locked) = lock_as(&mut tx, access.team_id, auth.user_id).await?;
+    let (_, locked) = lock_as(&mut tx, access.team_id, auth.user_id, state.clock.now()).await?;
     if user_id != auth.user_id {
         locked.require_owner()?;
     }
@@ -822,7 +894,7 @@ async fn set_role(
     let access = team_access(&state.db, auth.user_id, &slug).await?;
     access.require_owner()?;
     let mut tx = state.db.begin().await?;
-    let (_, locked) = lock_as(&mut tx, access.team_id, auth.user_id).await?;
+    let (_, locked) = lock_as(&mut tx, access.team_id, auth.user_id, state.clock.now()).await?;
     locked.require_owner()?;
     if req.role != Role::Owner && is_last_owner(&mut tx, access.team_id, user_id).await? {
         return Err(last_owner());
@@ -851,26 +923,55 @@ pub struct SetPlan {
 #[derive(Serialize)]
 pub struct TeamPlan {
     slug: String,
+    /// The stored plan just set. An active override still beats it.
     plan: Plan,
 }
 
-async fn set_plan(
+/// `PUT /v1/admin/teams/{team}/plan`, perm `billing`: set the stored plan.
+pub(crate) async fn set_plan(
+    admin: AdminAuth,
     State(state): State<AppState>,
-    auth: UserAuth,
     Path(slug): Path<String>,
     ApiJson(req): ApiJson<SetPlan>,
 ) -> Result<Json<TeamPlan>, ApiError> {
-    if !is_operator(&state.db, &state.config, &auth.email).await? {
-        return Err(ApiError::not_found());
-    }
-    let done = sqlx::query("UPDATE teams SET plan = $2 WHERE slug = $1")
-        .bind(&slug)
-        .bind(enum_str(req.plan))
-        .execute(&state.db)
+    admin.require(Perm::Billing)?;
+    let mut tx = AdminTx::begin(&state, &admin).await?;
+    let team: Option<(Uuid, String)> =
+        sqlx::query_as("SELECT id, slug::text FROM teams WHERE slug = $1 FOR UPDATE")
+            .bind(&slug)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let (team_id, slug) = team.ok_or_else(ApiError::not_found)?;
+    let before: String = sqlx::query_scalar("SELECT plan FROM teams WHERE id = $1")
+        .bind(team_id)
+        .fetch_one(&mut *tx)
         .await?;
-    if done.rows_affected() == 0 {
-        return Err(ApiError::not_found());
+    let plan = enum_str(req.plan);
+    sqlx::query("UPDATE teams SET plan = $2 WHERE id = $1")
+        .bind(team_id)
+        .bind(&plan)
+        .execute(&mut *tx)
+        .await?;
+    let at = tx.at();
+    if before != plan {
+        PlanChange {
+            team_id,
+            at,
+            source: "admin",
+            plan: req.plan,
+            admin: Some(admin.user_id),
+            reason: None,
+            detail: json!({"from": before}),
+        }
+        .record(&mut tx)
+        .await?;
     }
+    tx.commit(
+        Event::new("team.plan.set")
+            .target("team", team_id, &slug)
+            .detail(json!({"from": before, "to": plan})),
+    )
+    .await?;
     Ok(Json(TeamPlan {
         slug,
         plan: req.plan,

@@ -7,7 +7,7 @@ use chrono::Duration;
 use curl_runner_cloud_proto::ErrorCode;
 use serde::{Deserialize, Serialize};
 
-use crate::auth::session::{UserAuth, UserBody, create_session};
+use crate::auth::session::{UserAuth, UserBody, create_session, ensure_not_suspended};
 use crate::error::ApiError;
 use crate::extract::{ApiJson, ClientIp};
 use crate::hash::{new_token, secret_hash};
@@ -131,6 +131,7 @@ pub async fn redeem(
     .await?;
     let user =
         user.ok_or_else(|| ApiError::new(ErrorCode::CodeInvalid, "That code is not right."))?;
+    ensure_not_suspended(&mut tx, user.id).await?;
     let session = create_session(&mut tx, &state, user.id, "device", label.as_deref()).await?;
     tx.commit().await?;
     Ok(Json(RedeemBody { session, user }))
