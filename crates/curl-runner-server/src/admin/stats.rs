@@ -2,7 +2,8 @@
 //! them. The overview and health work with billing off (revenue figures are
 //! then `null`); the Stripe page answers `404`.
 //!
-//! Granted teams are counted apart from revenue. The overview always carries
+//! Granted teams (an override and no live subscription) are counted apart
+//! from revenue; a paying team with an override is still revenue. The overview always carries
 //! `granted_teams` and `granted_seats`, so they show with billing off too;
 //! the Stripe page lists them as the `granted` row of `by_source`.
 //!
@@ -34,10 +35,6 @@ const STRIPE_EVENTS: i64 = 20;
 /// An override "ends soon" when it ends within this many days.
 const ENDING_DAYS: i64 = 30;
 
-/// The summary of an event that starts or keeps a plan (see
-/// `billing::sync::summary_line`): a rise in MRR with it is "new", else "seats".
-const NEW_SUMMARY: &str = "Team %";
-
 #[derive(Serialize, FromRow)]
 pub struct Day {
     day: String,
@@ -45,21 +42,29 @@ pub struct Day {
 }
 
 /// `days` UTC days ending today, oldest first, zero-filled, counting the rows
-/// of `table` by their `created_at`.
+/// of `table` by their `created_at`. The range filter uses the `created_at`
+/// index; the rows in range are bucketed by UTC day.
 async fn per_day(
     db: &PgPool,
     table: &'static str,
     today: NaiveDate,
     days: i32,
 ) -> Result<Vec<Day>, ApiError> {
+    let start = day_start(today - Duration::days(i64::from(days) - 1));
+    let end = day_start(today + Duration::days(1));
     Ok(sqlx::query_as(&format!(
-        "SELECT s.d::text AS day, count(t.created_at)::bigint AS n \
-         FROM (SELECT ($1::date - g) AS d FROM generate_series(0, $2 - 1) g) s \
-         LEFT JOIN {table} t ON (t.created_at AT TIME ZONE 'UTC')::date = s.d \
-         GROUP BY s.d ORDER BY s.d"
+        "SELECT s.d::text AS day, COALESCE(c.n, 0)::bigint AS n \
+         FROM (SELECT ($1::date + g) AS d FROM generate_series(0, $3 - 1) g) s \
+         LEFT JOIN (SELECT date_trunc('day', t.created_at AT TIME ZONE 'UTC')::date AS d, \
+                           count(*) AS n \
+                    FROM {table} t WHERE t.created_at >= $2 AND t.created_at < $4 \
+                    GROUP BY 1) c ON c.d = s.d \
+         ORDER BY s.d"
     ))
-    .bind(today)
+    .bind(start.date_naive())
+    .bind(start)
     .bind(days)
+    .bind(end)
     .fetch_all(db)
     .await?)
 }
@@ -218,7 +223,7 @@ pub async fn overview(
     .await?;
     let granted = mrr::granted(db, now).await?;
     let totals = match prices_or_log(&state).await {
-        Some(prices) => Some(mrr::totals(db, &prices, now).await?),
+        Some(prices) => Some(mrr::totals(db, &prices).await?),
         None => None,
     };
 
@@ -527,7 +532,8 @@ pub struct StripeStats {
     /// MRR per paying team, rounded down; 0 with none.
     arpa: i64,
     past_due: StripePastDue,
-    /// One point per day that has a snapshot, plus today's live figure.
+    /// One point per day from the first snapshot to today (a missing day
+    /// repeats the one before), ending on today's live figure.
     mrr_90d: Vec<MrrPoint>,
     net_new: NetNew,
     by_source: Vec<Source>,
@@ -543,6 +549,23 @@ fn source(source: &'static str, g: Group) -> Source {
     }
 }
 
+/// One point per day from the first snapshot to today: a day with no
+/// snapshot (the server was down at midnight) repeats the day before.
+fn carry_forward(points: Vec<(NaiveDate, i64)>) -> Vec<(NaiveDate, i64)> {
+    let mut out: Vec<(NaiveDate, i64)> = Vec::with_capacity(points.len());
+    for (day, mrr) in points {
+        if let Some(&(prev_day, prev)) = out.last() {
+            let mut gap = prev_day + Duration::days(1);
+            while gap < day {
+                out.push((gap, prev));
+                gap += Duration::days(1);
+            }
+        }
+        out.push((day, mrr));
+    }
+    out
+}
+
 pub async fn stripe(
     _admin: AdminAuth,
     State(state): State<AppState>,
@@ -554,7 +577,7 @@ pub async fn stripe(
     let now = state.clock.now();
     let today = now.date_naive();
     let db = &state.db;
-    let totals: Totals = mrr::totals(db, &prices, now).await?;
+    let totals: Totals = mrr::totals(db, &prices).await?;
     let granted = mrr::granted(db, now).await?;
 
     let mut mrr_90d: Vec<(NaiveDate, i64)> = sqlx::query_as(
@@ -566,18 +589,19 @@ pub async fn stripe(
     .await?;
     // Today's point is always the live figure, so the line ends on the headline.
     mrr_90d.push((today, totals.mrr_cents));
+    let mrr_90d = carry_forward(mrr_90d);
 
     let month = today.with_day(1).unwrap_or(today);
     let (new_cents, expansion_cents, churned_cents, cancelled_teams): (i64, i64, i64, i64) =
-        sqlx::query_as(&format!(
+        sqlx::query_as(
             "SELECT COALESCE(sum(mrr_delta_cents) FILTER \
-                        (WHERE mrr_delta_cents > 0 AND COALESCE(summary, '') LIKE '{NEW_SUMMARY}'), 0)::bigint, \
+                        (WHERE mrr_delta_cents > 0 AND mrr_before_cents = 0), 0)::bigint, \
                     COALESCE(sum(mrr_delta_cents) FILTER \
-                        (WHERE mrr_delta_cents > 0 AND COALESCE(summary, '') NOT LIKE '{NEW_SUMMARY}'), 0)::bigint, \
+                        (WHERE mrr_delta_cents > 0 AND mrr_before_cents > 0), 0)::bigint, \
                     COALESCE(sum(mrr_delta_cents) FILTER (WHERE mrr_delta_cents < 0), 0)::bigint, \
                     count(DISTINCT team_id) FILTER (WHERE summary = 'Cancelled')::bigint \
-             FROM stripe_events WHERE received_at >= $1"
-        ))
+             FROM stripe_events WHERE received_at >= $1",
+        )
         .bind(day_start(month))
         .fetch_one(db)
         .await?;
@@ -652,4 +676,27 @@ pub async fn stripe(
             })
             .collect(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn d(s: &str) -> NaiveDate {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn missing_days_repeat_the_previous_value() {
+        let got = carry_forward(vec![(d("2026-11-01"), 100), (d("2026-11-04"), 400)]);
+        assert_eq!(
+            got,
+            [
+                (d("2026-11-01"), 100),
+                (d("2026-11-02"), 100),
+                (d("2026-11-03"), 100),
+                (d("2026-11-04"), 400)
+            ]
+        );
+    }
 }

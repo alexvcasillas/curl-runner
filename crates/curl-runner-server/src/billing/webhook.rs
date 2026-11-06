@@ -177,13 +177,14 @@ async fn webhook(
         };
         if let Some(applied) = applied {
             sqlx::query(
-                "UPDATE stripe_events SET team_id = $2, summary = $3, mrr_delta_cents = $4 \
-                 WHERE id = $1",
+                "UPDATE stripe_events SET team_id = $2, summary = $3, mrr_delta_cents = $4, \
+                 mrr_before_cents = $5 WHERE id = $1",
             )
             .bind(event_id)
             .bind(applied.team_id)
             .bind(&applied.summary)
             .bind(applied.mrr_delta_cents)
+            .bind(applied.mrr_before_cents)
             .execute(&mut *tx)
             .await?;
         }

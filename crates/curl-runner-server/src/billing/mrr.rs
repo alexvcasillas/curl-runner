@@ -1,8 +1,10 @@
 //! Monthly recurring revenue, from the `teams` table and the cached Stripe
 //! prices: seats times the price of the team's interval, an annual price
 //! counting as a twelfth. Only a team that pays through Stripe is revenue
-//! (`active` or `past_due`, with a known interval) and has no override in
-//! force. A team an admin granted Team is counted apart and is not revenue.
+//! (`active` or `past_due`, with a known interval). An override does not
+//! change that: Stripe keeps billing the team, so it stays revenue. A team an
+//! admin granted Team with no live subscription is counted apart ("granted")
+//! and is not revenue.
 
 use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgPool};
@@ -30,8 +32,6 @@ pub struct Billed<'a> {
     pub status: Option<&'a str>,
     pub interval: Option<&'a str>,
     pub seats: i64,
-    /// An override is in force.
-    pub overridden: bool,
 }
 
 impl Billed<'_> {
@@ -40,7 +40,6 @@ impl Billed<'_> {
         self.subscribed
             && matches!(self.status, Some("active" | "past_due"))
             && self.interval.is_some()
-            && !self.overridden
     }
 
     pub fn mrr(&self, prices: &Prices) -> i64 {
@@ -52,14 +51,10 @@ impl Billed<'_> {
     }
 }
 
-/// Teams that count as revenue, as a `teams t` predicate; `$1` is now.
-fn revenue_where() -> String {
-    format!(
-        "t.stripe_subscription_id IS NOT NULL AND t.billing_status IN ('active', 'past_due') \
-         AND t.billing_interval IS NOT NULL AND NOT {}",
-        override_active_sql("t", "$1")
-    )
-}
+/// Teams that count as revenue, as a `teams t` predicate. An override in
+/// force is no reason to leave one out: Stripe still bills it.
+const REVENUE_WHERE: &str = "t.stripe_subscription_id IS NOT NULL \
+     AND t.billing_status IN ('active', 'past_due') AND t.billing_interval IS NOT NULL";
 
 /// What the team is billed for: the seats Stripe last had, else its members.
 const SEATS: &str = "GREATEST(COALESCE(t.seats_synced, \
@@ -92,17 +87,15 @@ struct Line {
     mrr: i64,
 }
 
-pub async fn totals(db: &PgPool, prices: &Prices, now: DateTime<Utc>) -> Result<Totals, ApiError> {
+pub async fn totals(db: &PgPool, prices: &Prices) -> Result<Totals, ApiError> {
     let lines: Vec<Line> = sqlx::query_as(&format!(
         "SELECT x.interval, x.past_due, count(*)::bigint AS teams, sum(x.seats)::bigint AS seats, \
-                sum(x.seats * CASE x.interval WHEN 'annual' THEN $3 ELSE $2 END \
+                sum(x.seats * CASE x.interval WHEN 'annual' THEN $2 ELSE $1 END \
                     / CASE x.interval WHEN 'annual' THEN 12 ELSE 1 END)::bigint AS mrr \
          FROM (SELECT t.billing_interval AS interval, t.billing_status = 'past_due' AS past_due, \
-                      {SEATS} AS seats FROM teams t WHERE {}) x \
-         GROUP BY 1, 2",
-        revenue_where()
+                      {SEATS} AS seats FROM teams t WHERE {REVENUE_WHERE}) x \
+         GROUP BY 1, 2"
     ))
-    .bind(now)
     .bind(prices.monthly.unit_amount)
     .bind(prices.annual.unit_amount)
     .fetch_all(db)
@@ -127,12 +120,15 @@ pub async fn totals(db: &PgPool, prices: &Prices, now: DateTime<Utc>) -> Result<
     Ok(out)
 }
 
-/// Teams an admin granted Team (an override in force), and their members.
+/// Teams an admin granted Team: an override in force and no live Stripe
+/// subscription (one that is still billed counts as revenue instead), and
+/// their members.
 pub async fn granted(db: &PgPool, now: DateTime<Utc>) -> Result<Group, ApiError> {
     let (teams, seats): (i64, i64) = sqlx::query_as(&format!(
         "SELECT count(*)::bigint, COALESCE(sum((SELECT count(*) FROM memberships m \
                 WHERE m.team_id = t.id)), 0)::bigint \
-         FROM teams t WHERE {} AND t.override_plan = 'team'",
+         FROM teams t WHERE {} AND t.override_plan = 'team' \
+           AND t.stripe_subscription_id IS NULL",
         override_active_sql("t", "$1")
     ))
     .bind(now)
@@ -159,7 +155,7 @@ pub async fn snapshot(state: &AppState, now: DateTime<Utc>) -> Result<(), ApiErr
     let Some(prices) = current_prices(state).await.map_err(stripe_down)? else {
         return Ok(());
     };
-    let totals = totals(&state.db, &prices, now).await?;
+    let totals = totals(&state.db, &prices).await?;
     sqlx::query(
         "INSERT INTO mrr_snapshots (day, mrr_cents, teams, seats) VALUES ($1, $2, $3, $4) \
          ON CONFLICT (day) DO NOTHING",

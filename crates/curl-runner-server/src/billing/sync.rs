@@ -201,6 +201,9 @@ pub struct Applied {
     /// The team's MRR after minus before, in cents. `None` when the prices
     /// could not be read.
     pub mrr_delta_cents: Option<i64>,
+    /// The team's MRR before the event, so a rise from 0 is "new" and any
+    /// other rise is "expansion". `None` with the delta.
+    pub mrr_before_cents: Option<i64>,
 }
 
 fn seats_word(n: i64) -> String {
@@ -218,6 +221,8 @@ fn summary_line(
     if is_terminal(status) {
         return "Cancelled".to_owned();
     }
+    // `unpaid` is not revenue (only active and past_due are), so its delta
+    // counts as churn.
     if matches!(status, "past_due" | "unpaid") {
         return format!("Payment failed, {}", seats_word(seats));
     }
@@ -389,13 +394,6 @@ pub async fn apply_subscription(
         mail_plan_changed(state, tx, &team).await?;
     }
 
-    let overridden = PlanRow {
-        plan: String::new(),
-        stripe_subscription_id: None,
-        override_plan: team.override_plan.clone(),
-        override_until: team.override_until,
-    }
-    .override_active(now);
     let interval_after = interval_of(state, &sub.price).or(team.billing_interval.as_deref());
     let seats_after = i64::from(sub.quantity).max(1);
     let billed_before = Billed {
@@ -403,14 +401,12 @@ pub async fn apply_subscription(
         status: team.billing_status.as_deref(),
         interval: team.billing_interval.as_deref(),
         seats: seats_before,
-        overridden,
     };
     let billed_after = Billed {
         subscribed: !terminal,
         status: Some(&sub.status),
         interval: interval_after,
         seats: seats_after,
-        overridden,
     };
     Ok(Some(Applied {
         team_id: team.id,
@@ -423,6 +419,7 @@ pub async fn apply_subscription(
         mrr_delta_cents: prices
             .as_ref()
             .map(|p| billed_after.mrr(p) - billed_before.mrr(p)),
+        mrr_before_cents: prices.as_ref().map(|p| billed_before.mrr(p)),
     }))
 }
 
@@ -436,24 +433,16 @@ pub async fn apply_missing(
     let Some(team) = lock_team_by_subscription(tx, subscription).await? else {
         return Ok(None);
     };
-    let delta = match prices_or_log(state).await {
+    let before_mrr = match prices_or_log(state).await {
         Some(prices) => {
-            let overridden = PlanRow {
-                plan: String::new(),
-                stripe_subscription_id: None,
-                override_plan: team.override_plan.clone(),
-                override_until: team.override_until,
-            }
-            .override_active(now);
             let seats = billed_seats(tx, team.id, team.seats_synced).await?;
             let before = Billed {
                 subscribed: true,
                 status: team.billing_status.as_deref(),
                 interval: team.billing_interval.as_deref(),
                 seats,
-                overridden,
             };
-            Some(-before.mrr(&prices))
+            Some(before.mrr(&prices))
         }
         None => None,
     };
@@ -487,7 +476,8 @@ pub async fn apply_missing(
     Ok(Some(Applied {
         team_id: team.id,
         summary: "Cancelled".to_owned(),
-        mrr_delta_cents: delta,
+        mrr_delta_cents: before_mrr.map(|b| -b),
+        mrr_before_cents: before_mrr,
     }))
 }
 

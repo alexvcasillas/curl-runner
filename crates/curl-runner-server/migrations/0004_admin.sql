@@ -138,5 +138,11 @@ CREATE TABLE mrr_snapshots (
 ALTER TABLE stripe_events
     ADD COLUMN team_id uuid REFERENCES teams (id) ON DELETE SET NULL,
     ADD COLUMN summary text,
-    ADD COLUMN mrr_delta_cents bigint;
+    ADD COLUMN mrr_delta_cents bigint,
+    -- The team's MRR before the event: a rise from 0 is new, any other expansion.
+    ADD COLUMN mrr_before_cents bigint;
+-- The overview's day buckets filter these by a created_at range.
+CREATE INDEX users_created_at ON users (created_at);
+CREATE INDEX teams_created_at ON teams (created_at);
+CREATE INDEX versions_created_at ON versions (created_at);
 CREATE INDEX stripe_events_received_at ON stripe_events (received_at DESC);

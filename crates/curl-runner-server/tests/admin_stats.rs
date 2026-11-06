@@ -253,7 +253,7 @@ async fn granted_not_revenue(pool: PgPool) {
     pay(&app, "acme", "monthly", 2).await;
     // Granted, with no Stripe subscription: not revenue.
     grant(&app, "globex", None).await;
-    // Its override ended yesterday: back on its Stripe plan, which is revenue.
+    // Its override ended yesterday: still on its Stripe plan, which is revenue.
     pay(&app, "initech", "monthly", 1).await;
     grant(&app, "initech", Some(now() - Duration::days(1))).await;
 
@@ -270,13 +270,61 @@ async fn granted_not_revenue(pool: PgPool) {
     assert_eq!(granted["teams"], 1);
     assert_eq!(granted["seats"], 1);
 
-    // An active override on a paying team moves it to "granted" too.
+    // An active override on a paying team does not make it "granted": Stripe
+    // still bills it.
     grant(&app, "acme", None).await;
     let body = ok(&app, "/v1/admin/stripe", &root).await;
-    assert_eq!(body["mrr_cents"], 900);
+    assert_eq!(body["mrr_cents"], 2700);
     let overview = ok(&app, "/v1/admin/overview", &root).await;
-    assert_eq!(overview["counts"]["granted_teams"], 2);
-    assert_eq!(overview["counts"]["mrr_cents"], 900);
+    assert_eq!(overview["counts"]["granted_teams"], 1);
+    assert_eq!(overview["counts"]["mrr_cents"], 2700);
+}
+
+#[sqlx::test]
+async fn overridden_paying_team_is_still_revenue(pool: PgPool) {
+    let (app, fake) = billing(pool).await;
+    let root = app.sign_in(ROOT).await;
+    let ada = app.sign_in(ADA).await;
+    app.create_team(&ada, "acme").await;
+    let team = team_id(&app, "acme").await;
+    members(&app, "acme", 3).await;
+    pay(&app, "acme", "annual", 3).await;
+    sqlx::query("UPDATE teams SET stripe_subscription_id = 'sub_1' WHERE slug = 'acme'")
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    grant(&app, "acme", None).await;
+
+    let body = ok(&app, "/v1/admin/stripe", &root).await;
+    assert_eq!(body["mrr_cents"], 2250);
+    assert_eq!(body["paying_teams"], 1);
+    let overview = ok(&app, "/v1/admin/overview", &root).await;
+    assert_eq!(overview["counts"]["paying_teams"], 1);
+    assert_eq!(overview["counts"]["granted_teams"], 0);
+
+    tick(&app.state, now()).await;
+    let snap: i64 = sqlx::query_scalar("SELECT mrr_cents FROM mrr_snapshots")
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(snap, 2250);
+
+    // Its seats change while the override is in force: a real delta.
+    subscription(&fake, team, "active", "price_annual", 5);
+    assert_eq!(
+        deliver(&app, "evt_1", "customer.subscription.updated").await,
+        StatusCode::OK
+    );
+    let row: (Option<i64>, Option<i64>) = sqlx::query_as(
+        "SELECT mrr_delta_cents, mrr_before_cents FROM stripe_events WHERE id = 'evt_1'",
+    )
+    .fetch_one(&app.state.db)
+    .await
+    .unwrap();
+    assert_eq!(row, (Some(1500), Some(2250)));
+    let body = ok(&app, "/v1/admin/stripe", &root).await;
+    assert_eq!(body["net_new"]["expansion_cents"], 1500);
+    assert_eq!(body["net_new"]["new_cents"], 0);
 }
 
 #[sqlx::test]
