@@ -100,11 +100,23 @@ describe('prices', () => {
     expect(lib.billedNote(PRICES, 'annual')).toBe('billed $96 a year');
     expect(lib.billedNote(PRICES, 'monthly')).toBe('billed monthly');
   });
-  it('totals for the seats and counts the free months', () => {
+  it('totals for the seats and works out the annual saving', () => {
     expect(lib.total(PRICES, 'annual', 2)).toBe('$192 a year');
     expect(lib.total(PRICES, 'monthly', 2)).toBe('$20 a month');
-    expect(lib.monthsFree(PRICES)).toBe(2);
-    expect(lib.monthsFree({ ...PRICES, annual: { unit_amount: 11_800, currency: 'usd' } })).toBe(0);
+    // $96 against 12 x $10 is 20% off, not "two months free" (that would be $100).
+    expect(lib.annualSavingPercent(PRICES)).toBe(20);
+    expect(
+      lib.annualSavingPercent({ ...PRICES, annual: { unit_amount: 10_000, currency: 'usd' } }),
+    ).toBe(17);
+    expect(
+      lib.annualSavingPercent({ ...PRICES, annual: { unit_amount: 12_000, currency: 'usd' } }),
+    ).toBe(0);
+    expect(
+      lib.annualSavingPercent({ ...PRICES, annual: { unit_amount: 13_000, currency: 'usd' } }),
+    ).toBe(0);
+    expect(
+      lib.annualSavingPercent({ ...PRICES, monthly: { unit_amount: 0, currency: 'usd' } }),
+    ).toBe(0);
   });
   it('dates the card deadline 14 days after the first failure', () => {
     expect(lib.dueBy('2026-11-05T10:00:00Z')).toBe('Nov 19');
@@ -326,9 +338,7 @@ describe('BillingView', () => {
     await user.click(screen.getByRole('button', { name: 'Upgrade to Team' }));
     const dialog = await screen.findByRole('dialog', { name: 'Upgrade Acme to Team' });
     expect(within(dialog).getByText('Annual · $8 per member a month')).toBeInTheDocument();
-    expect(
-      within(dialog).getByText('Billed $96 per member a year. Two months free.'),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText('Billed $96 per member a year. Save 20%.')).toBeInTheDocument();
     expect(within(dialog).getByText('Monthly · $10 per member a month')).toBeInTheDocument();
     expect(within(dialog).getByText('1, billed when accepted')).toBeInTheDocument();
     expect(within(dialog).getByText('$192 a year')).toBeInTheDocument();

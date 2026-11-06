@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { ActionResult } from '@/lib/action-result';
-import { dollars, type Interval, monthsFree, perMonth, total } from '@/lib/billing';
+import { annualSavingPercent, dollars, type Interval, perMonth, total } from '@/lib/billing';
 import type { Prices } from '@/lib/types';
 import { Button } from './Button';
 import { CopyField } from './CopyField';
@@ -10,8 +10,6 @@ import { Dialog } from './Dialog';
 import { Notice } from './Notice';
 import { RadioCard } from './RadioCard';
 import type { UpgradeReason } from './UpgradeProvider';
-
-const WORDS = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
 
 const REASON: Record<UpgradeReason, (team: string) => string> = {
   sharing: () =>
@@ -107,9 +105,8 @@ export function UpgradeDialog(p: UpgradeDialogProps) {
   }
 
   const { prices } = p;
-  const free = prices ? monthsFree(prices) : 0;
-  const freeNote =
-    free > 0 ? ` ${WORDS[free] ?? free} ${free === 1 ? 'month' : 'months'} free.` : '';
+  const saving = prices ? annualSavingPercent(prices) : 0;
+  const savingNote = saving > 0 ? ` Save ${saving}%.` : '';
   return (
     <Dialog
       open={p.open}
@@ -140,7 +137,7 @@ export function UpgradeDialog(p: UpgradeDialogProps) {
                   checked={interval === 'annual'}
                   onChange={() => setPeriod('annual')}
                   title={`Annual · ${perMonth(prices, 'annual')} per member a month`}
-                  description={`Billed ${dollars(prices.annual.unit_amount, prices.annual.currency)} per member a year.${freeNote}`}
+                  description={`Billed ${dollars(prices.annual.unit_amount, prices.annual.currency)} per member a year.${savingNote}`}
                 />
                 <RadioCard
                   name="upgrade-interval"

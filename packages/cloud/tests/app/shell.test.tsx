@@ -166,6 +166,16 @@ describe('/new-team', () => {
     expect(screen.queryByText('Make a publish token')).toBeNull();
   });
 
+  it('an admin who already has a team gets no admin notice', async () => {
+    byPath({
+      '/v1/me': meBody([{ slug: 'acme', name: 'Acme', role: 'owner', plan: 'free' }], true),
+      '/v1/info': infoBody(),
+    });
+    render(await NewTeamPage());
+    expect(screen.getByRole('heading', { name: 'Create a team' })).toBeInTheDocument();
+    expect(screen.queryByText(/its admin|admin of this server/)).toBeNull();
+  });
+
   it('shows the slug prefix from PUBLIC_APP_URL', async () => {
     vi.stubEnv('PUBLIC_APP_URL', 'https://studio.acme.test:8443');
     resetEnv();
@@ -178,9 +188,7 @@ describe('/new-team', () => {
   it('shows the admin notice and the self-hosted plan note', async () => {
     byPath({ '/v1/me': meBody([], true), '/v1/info': infoBody(false) });
     render(await NewTeamPage());
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'You’re the first account on this server, so you’re its admin.',
-    );
+    expect(screen.getByRole('status')).toHaveTextContent('You’re an admin of this server.');
     expect(screen.getByText(/every feature is on, no plans or limits/)).toBeInTheDocument();
   });
 });
