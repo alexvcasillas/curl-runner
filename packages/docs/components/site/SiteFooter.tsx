@@ -25,6 +25,13 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
       { label: 'Issues', href: `${GITHUB_URL}/issues` },
     ],
   },
+  {
+    title: 'Legal',
+    links: [
+      { label: 'Privacy', href: '/privacy' },
+      { label: 'Terms', href: '/terms' },
+    ],
+  },
 ];
 
 // The ::before extends each 20px line to a 44px touch target.
