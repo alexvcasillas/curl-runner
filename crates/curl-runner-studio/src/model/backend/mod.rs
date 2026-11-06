@@ -23,7 +23,7 @@ pub mod pending;
 
 // Only the macOS app constructs the mock; off macOS the UI isn't built.
 /// The server the mock's links name.
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 pub use mock::MOCK_SERVER;
 #[cfg(any(test, feature = "server"))]
 #[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
