@@ -14,6 +14,8 @@ pub mod received;
 pub mod result_view;
 pub mod run;
 pub mod secrets;
+#[allow(dead_code)] // consumed by the Cloud backend (plan 3a, task 5)
+pub mod sessions;
 pub mod settings;
 pub mod shared_copy;
 pub mod sync_base;
