@@ -576,6 +576,9 @@ fn tag(label: &'static str) -> Div {
     neutral_pill().text_size(px(11.)).px(px(7.)).child(label)
 }
 
+/// The Cloud card's text; the methods line below it names the providers.
+const CLOUD_BLURB: &str = "Nothing to run. Sign in and start sharing.";
+
 pub(super) fn option_text() -> Div {
     div()
         .text_size(px(12.))
@@ -606,11 +609,7 @@ impl SignInView {
                         "curl-runner Cloud",
                         tag("Managed"),
                     ))
-                    .child(
-                        option_text().child(
-                            "Nothing to run. Sign in with GitHub or email and start sharing.",
-                        ),
-                    ),
+                    .child(option_text().child(CLOUD_BLURB)),
             )
     }
 
@@ -1273,6 +1272,41 @@ mod tests {
         });
     }
 
+    /// A callback for a server that is no longer the current one: its
+    /// session is kept, the screen and the connection are left alone.
+    #[cfg(feature = "server")]
+    #[gpui_kit::test]
+    fn late_callback_for_another_server_keeps_its_session_only(cx: &mut TestAppContext) {
+        use crate::model::backend::Server;
+        let state = tempfile::tempdir().unwrap();
+        let store = StateStore::at(state.path());
+        let backend = browser_backend();
+        let (window, ws) = open(cx, store.clone(), backend.clone());
+        assert!(sign_in_shown(cx, &ws));
+        // A sign-in starts on server A; the person switches to Cloud.
+        let a = Server::SelfHosted {
+            url: "https://studio.api.example.com".into(),
+        };
+        futures::executor::block_on(backend.set_server(a.clone())).unwrap();
+        futures::executor::block_on(backend.sign_in_url(&a)).unwrap();
+        futures::executor::block_on(backend.set_server(Server::Cloud)).unwrap();
+        // A's callback arrives.
+        open_url(
+            cx,
+            window,
+            &ws,
+            "curl-runner://auth/callback?code=crh_mock&server=https://studio.api.example.com/",
+        );
+        assert_eq!(
+            backend.account_on(a.url()).unwrap().email,
+            "jamie@acme.dev",
+            "A's session is kept"
+        );
+        assert!(backend.account().is_none(), "Cloud is still signed out");
+        assert!(sign_in_shown(cx, &ws));
+        assert_ne!(store.connection(), Some(Connection::Online));
+    }
+
     #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn cancel_stops_waiting_for_the_browser(cx: &mut TestAppContext) {
@@ -1283,6 +1317,15 @@ mod tests {
         assert!(sign_in_shown(cx, &ws));
         assert!(!shows(cx, window, "Waiting for the browser…"));
         assert!(shows(cx, window, "Continue in browser"));
+    }
+
+    #[test]
+    fn cloud_card_leaves_the_providers_to_the_methods_line() {
+        assert_eq!(
+            super::CLOUD_BLURB,
+            "Nothing to run. Sign in and start sharing."
+        );
+        assert!(!super::CLOUD_BLURB.contains("GitHub"));
     }
 
     #[test]

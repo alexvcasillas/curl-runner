@@ -620,7 +620,8 @@ impl Workspace {
                 if url.starts_with("curl-runner://") {
                     match crate::model::backend::AuthCallback::parse(url) {
                         Some(callback) => self.complete_sign_in(callback, window, cx),
-                        None => log::warn!("not a sign-in callback: {url}"),
+                        // The URL can carry a handoff code: never logged.
+                        None => log::warn!("ignored a malformed sign-in callback"),
                     }
                 } else {
                     cx.open_url(url);

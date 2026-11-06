@@ -1389,13 +1389,14 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let server = callback.server.trim_end_matches('/').to_string();
         let call = backend_call(cx, &self.backend, move |b| b.complete_sign_in(&callback));
         // Detached: a later callback (a foreign one, say) must not cancel
         // this one's redemption.
         cx.spawn_in(window, async move |this, cx| {
             let result = call.await;
             this.update_in(cx, |this, window, cx| {
-                this.sign_in_completed(result.map(|_| ()), window, cx);
+                this.sign_in_completed(&server, result.map(|_| ()), window, cx);
             })
             .ok();
         })
@@ -1404,11 +1405,19 @@ impl Workspace {
 
     fn sign_in_completed(
         &mut self,
+        server: &str,
         result: Result<(), BackendError>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match result {
+            // A late callback for a server that isn't the current one: its
+            // session is kept (it is valid), the screen is left as it is.
+            Ok(()) if self.backend.server().url().trim_end_matches('/') != server => {
+                if let Some(view) = &self.app_settings {
+                    view.update(cx, |_, cx| cx.notify());
+                }
+            }
             Ok(()) => {
                 self.signed_in_as(Connection::Online);
                 if self.sign_in.is_some() {

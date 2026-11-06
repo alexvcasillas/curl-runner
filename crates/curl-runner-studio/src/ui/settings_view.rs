@@ -37,6 +37,9 @@ use std::sync::Arc;
 pub const NAV_WIDTH: f32 = 248.;
 /// The pages' column.
 const CONTENT_WIDTH: f32 = 760.;
+/// What the Server card says: sessions are per server, so switching signs
+/// nothing out.
+const SERVER_NOTE: &str = "Your team publishes to this server. You stay signed in to the others.";
 /// The studio's own version, and the CLI's it runs requests with.
 pub const STUDIO_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Accounts & sync without the server: one card in place of Server,
@@ -1312,10 +1315,15 @@ impl SettingsView {
             .child(
                 card_body()
                     .child(card_title("Server"))
-                    .child(card_text(
-                        "Collections and sharing links live on this server. Switching servers signs you out.",
-                    ))
-                    .child(div().flex().items_center().gap(px(8.)).child(kind).child(url))
+                    .child(card_text(SERVER_NOTE))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .child(kind)
+                            .child(url),
+                    )
                     .children(self.server_error.clone().map(|e| {
                         div()
                             .id("server-error")
@@ -1565,6 +1573,12 @@ fn render_updates() -> impl IntoElement {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn server_note_says_sessions_are_per_server() {
+        assert!(super::SERVER_NOTE.contains("stay signed in to the others"));
+        assert!(!super::SERVER_NOTE.contains("signs you out"));
+    }
+
     use super::{AppPage, Credential, Stored, credential_rows, keys_text, rows_of, shortcut_rows};
     use crate::model::secrets::{MemorySecrets, SecretStore, service_for, service_name};
     use gpui_kit::KeyBinding;
