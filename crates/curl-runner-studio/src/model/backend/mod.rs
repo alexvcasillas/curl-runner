@@ -782,6 +782,11 @@ pub mod testing {
         /// When set, `sign_in_url` (still started on the inner backend)
         /// answers with this page, as a real server does.
         pub browser_url: Mutex<Option<String>>,
+        /// When set, every share has this snapshot as its latest version
+        /// (asked of the inner backend first, so offline still fails).
+        pub newer: Mutex<Option<SharedSnapshot>>,
+        /// How many times `latest_version` was asked.
+        pub checks: std::sync::atomic::AtomicUsize,
     }
 
     impl Spy {
@@ -791,6 +796,8 @@ pub mod testing {
                 sent: Mutex::default(),
                 fail_share_settings: Default::default(),
                 browser_url: Mutex::default(),
+                newer: Mutex::default(),
+                checks: Default::default(),
             }
         }
     }
@@ -862,10 +869,21 @@ pub mod testing {
             self.inner.resolve_link(link)
         }
         fn fetch_shared(&self, link: &ShareLink) -> BoxFut<'_, SharedSnapshot> {
-            self.inner.fetch_shared(link)
+            let asked = self.inner.fetch_shared(link);
+            Box::pin(async move {
+                let snapshot = asked.await?;
+                Ok(self.newer.lock().unwrap().clone().unwrap_or(snapshot))
+            })
         }
         fn latest_version(&self, link: &ShareLink) -> BoxFut<'_, u32> {
-            self.inner.latest_version(link)
+            self.checks
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let asked = self.inner.latest_version(link);
+            Box::pin(async move {
+                let version = asked.await?;
+                let newer = self.newer.lock().unwrap().as_ref().map(|s| s.version);
+                Ok(newer.unwrap_or(version))
+            })
         }
         fn received(&self) -> Vec<ReceivedShare> {
             self.inner.received()

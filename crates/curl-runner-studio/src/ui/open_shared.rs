@@ -22,7 +22,7 @@ use crate::model::backend::{
 use crate::model::environments::is_secret;
 use crate::model::history::relative_time;
 use crate::model::secrets::SecretStore;
-use crate::model::shared_copy::{add_shared, already_added};
+use crate::model::shared_copy::{add_shared, already_added, save_inputs};
 use chrono::Local;
 use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -107,6 +107,8 @@ pub enum OpenSharedEvent {
     Open(PathBuf),
     /// A restricted link: sign in to its server, then open it again.
     SignIn(ShareLink),
+    /// The inputs an update asked for are saved.
+    Saved,
 }
 
 /// One variable's input.
@@ -157,6 +159,9 @@ pub struct OpenSharedView {
     /// Dev screenshots: once resolved, go to the credentials step with
     /// these values.
     dev_fill: Option<Vec<(String, String)>>,
+    /// Asking for an updated copy's new inputs (no link, no Add): its
+    /// folder and Keychain service, where **Save** writes them.
+    inputs_for: Option<(PathBuf, String)>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -206,6 +211,7 @@ impl OpenSharedView {
             workspace,
             sign_in_for: None,
             dev_fill: None,
+            inputs_for: None,
             _subscriptions: vec![events],
         }
     }
@@ -218,6 +224,15 @@ impl OpenSharedView {
     #[cfg(test)]
     pub fn error(&self) -> Option<&str> {
         self.error.as_deref()
+    }
+
+    /// Each field's variable name and whether it is masked.
+    #[cfg(all(test, feature = "server"))]
+    pub fn fields(&self) -> Vec<(String, bool)> {
+        self.fields
+            .iter()
+            .map(|f| (f.var.name.clone(), f.secret()))
+            .collect()
     }
 
     /// A link from outside (a `curl-runner://` event): shown and opened.
@@ -291,7 +306,47 @@ impl OpenSharedView {
 
     fn resolved(&mut self, shared: SharedCollection, window: &mut Window, cx: &mut Context<Self>) {
         self.existing = already_added(&*self.backend, self.base.as_deref(), &shared.link.token);
-        let mut vars = shared.variables.clone();
+        self.inputs_for = None;
+        self.set_fields(shared.variables.clone(), window, cx);
+        self.shared = Some(shared);
+        self.step = Step::Review;
+        if let Some(fill) = self.dev_fill.take() {
+            self.continue_to_credentials(window, cx);
+            for (name, value) in fill {
+                self.fill(&name, &value, window, cx);
+            }
+            if let Some(f) = self.fields.iter().find(|f| f.secret()) {
+                f.input.read(cx).focus_handle(cx).focus(window, cx);
+            }
+        }
+    }
+
+    /// After an update, the inputs its new version requires, in the
+    /// Credentials step: **Save** writes them into the copy at `root`
+    /// (secrets to `service` in the Keychain, the rest to its `.env`), as
+    /// an Add does.
+    pub fn ask_inputs(
+        &mut self,
+        shared: SharedCollection,
+        root: PathBuf,
+        service: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.busy {
+            return;
+        }
+        self.set_fields(shared.variables.clone(), window, cx);
+        self.shared = Some(shared);
+        self.existing = None;
+        self.error = None;
+        self.inputs_for = Some((root, service));
+        self.continue_to_credentials(window, cx);
+    }
+
+    /// One field per variable, the required ones first.
+    fn set_fields(&mut self, vars: Vec<SharedVar>, window: &mut Window, cx: &mut Context<Self>) {
+        let mut vars = vars;
         vars.sort_by_key(|v| !v.required);
         self._subscriptions.truncate(1);
         self.fields = vars
@@ -329,17 +384,6 @@ impl OpenSharedView {
                 }
             })
             .collect();
-        self.shared = Some(shared);
-        self.step = Step::Review;
-        if let Some(fill) = self.dev_fill.take() {
-            self.continue_to_credentials(window, cx);
-            for (name, value) in fill {
-                self.fill(&name, &value, window, cx);
-            }
-            if let Some(f) = self.fields.iter().find(|f| f.secret()) {
-                f.input.read(cx).focus_handle(cx).focus(window, cx);
-            }
-        }
     }
 
     /// `Continue`: to the credentials, the first empty required field
@@ -362,7 +406,7 @@ impl OpenSharedView {
     }
 
     pub fn back(&mut self, cx: &mut Context<Self>) {
-        if self.busy {
+        if self.busy || self.inputs_for.is_some() {
             return;
         }
         self.error = None;
@@ -418,6 +462,9 @@ impl OpenSharedView {
         if self.busy || self.step != Step::Credentials || !self.ready(cx) {
             return;
         }
+        if self.inputs_for.is_some() {
+            return self.save_inputs(cx);
+        }
         let Some(shared) = self.shared.clone() else {
             return;
         };
@@ -428,15 +475,7 @@ impl OpenSharedView {
             return;
         };
         // A locked default is the owner's: nothing goes to `.env` for it.
-        let values: Vec<(String, String)> = self
-            .fields
-            .iter()
-            .filter(|f| !f.locked())
-            .map(|f| {
-                let v = f.input.read(cx).value();
-                (f.var.name.clone(), v.trim().to_string())
-            })
-            .collect();
+        let values = self.values(cx);
         self.busy = true;
         self.error = None;
         let (backend, secrets) = (self.backend.clone(), self.secrets.clone());
@@ -460,6 +499,56 @@ impl OpenSharedView {
                     ws.add_finished(outcome, shown, window, cx)
                 })
                 .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// The values typed, but a locked default's (the owner's).
+    fn values(&self, cx: &App) -> Vec<(String, String)> {
+        self.fields
+            .iter()
+            .filter(|f| !f.locked())
+            .map(|f| {
+                let v = f.input.read(cx).value();
+                (f.var.name.clone(), v.trim().to_string())
+            })
+            .collect()
+    }
+
+    /// **Save**, for an updated copy's new inputs: written as the form
+    /// masked them (a masked field's value only ever to the Keychain).
+    fn save_inputs(&mut self, cx: &mut Context<Self>) {
+        let Some((root, service)) = self.inputs_for.clone() else {
+            return;
+        };
+        let vars: Vec<SharedVar> = self
+            .fields
+            .iter()
+            .map(|f| SharedVar {
+                secret: f.secret(),
+                ..f.var.clone()
+            })
+            .collect();
+        let values = self.values(cx);
+        self.busy = true;
+        self.error = None;
+        let secrets = self.secrets.clone();
+        let job =
+            cx.background_spawn(
+                async move { save_inputs(&root, &service, &vars, &values, &*secrets) },
+            );
+        cx.spawn(async move |this, cx| {
+            let saved = job.await;
+            this.update(cx, |this, cx| {
+                this.busy = false;
+                match saved {
+                    Ok(()) => cx.emit(OpenSharedEvent::Saved),
+                    Err(e) => this.error = Some(e),
+                }
+                cx.notify();
+            })
+            .ok();
         })
         .detach();
         cx.notify();
@@ -1163,7 +1252,7 @@ impl OpenSharedView {
     }
 
     fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let back = (self.step != Step::Paste).then(|| {
+        let back = (self.step != Step::Paste && self.inputs_for.is_none()).then(|| {
             Button::new("open-shared-back")
                 .ghost()
                 .h(px(32.))
@@ -1194,6 +1283,12 @@ impl OpenSharedView {
             Step::Review => dialog_button("open-shared-continue", "Continue").on_click(
                 cx.listener(|this, _, window, cx| this.continue_to_credentials(window, cx)),
             ),
+            Step::Credentials if self.inputs_for.is_some() => dialog_button(
+                "open-shared-save",
+                if self.busy { "Saving…" } else { "Save" },
+            )
+            .disabled(self.busy || !self.ready(cx))
+            .on_click(cx.listener(|this, _, window, cx| this.add(window, cx))),
             Step::Credentials => dialog_button(
                 "open-shared-add",
                 if self.busy {
@@ -1332,8 +1427,15 @@ impl Workspace {
                 if this.link_sign_in.take().is_some() {
                     this.pending_link = None;
                 }
-                if let OpenSharedEvent::Open(root) = event {
-                    this.open_received(root.clone(), window, cx);
+                match event {
+                    OpenSharedEvent::Open(root) => this.open_received(root.clone(), window, cx),
+                    // An updated copy's new inputs: the runs read them now.
+                    OpenSharedEvent::Saved => {
+                        this.invalidate_secrets();
+                        this.refresh_vars(cx);
+                        cx.notify();
+                    }
+                    _ => {}
                 }
             },
         ));

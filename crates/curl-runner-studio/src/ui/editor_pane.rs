@@ -83,6 +83,7 @@ impl Workspace {
         let Some(active) = self.state.active else {
             return pane
                 .child(self.render_tabs(cx))
+                .children(self.render_update_banner(cx))
                 .child(render_nothing_open());
         };
         let doc = &self.state.open[active];
@@ -135,9 +136,11 @@ impl Workspace {
                     this.release_hover(cx);
                 }
             }));
-        let header = match self.read_only_org() {
-            Some(org) => self.render_read_only_note(org, cx).into_any_element(),
-            None => self.render_breadcrumb(doc).into_any_element(),
+        // A newer version waiting takes the read-only note's place.
+        let header = match (self.render_update_banner(cx), self.read_only_org()) {
+            (Some(banner), _) => banner,
+            (None, Some(org)) => self.render_read_only_note(org, cx).into_any_element(),
+            (None, None) => self.render_breadcrumb(doc).into_any_element(),
         };
         pane.child(self.render_tabs(cx))
             .child(header)

@@ -45,7 +45,7 @@ use gpui_kit::component::select::{SelectEvent, SelectState};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::cell::Cell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -212,8 +212,12 @@ pub struct Workspace {
     /// Every received copy with a server record and a folder still here
     /// (the sidebar's Shared with me), read on open rather than each frame.
     pub(super) received_all: Vec<crate::model::received::ReceivedCopy>,
-    /// `Check for updates` in flight (the fetch, then the confirm).
+    /// An update check in flight (the latest version, then the snapshot).
     pub(super) update_check: Option<Task<()>>,
+    /// A newer version of a received copy, by share token: the banner.
+    pub(super) update_offers: HashMap<String, super::update_banner::UpdateOffer>,
+    /// Checks the open received copy every `UPDATE_EVERY`.
+    pub(super) _update_timer: Option<Task<()>>,
     /// Every read-only toast and update prompt shown (tests read them).
     #[cfg(test)]
     pub(super) toasts: Vec<String>,
@@ -338,6 +342,8 @@ impl Workspace {
             received: None,
             received_all: Vec::new(),
             update_check: None,
+            update_offers: HashMap::new(),
+            _update_timer: None,
             #[cfg(test)]
             toasts: Vec::new(),
             status,
@@ -351,6 +357,7 @@ impl Workspace {
             _status_events: status_events,
         };
         this.refresh_recent();
+        this.start_update_timer(window, cx);
         this.tour_status = this.store.tour_status();
         if let Some(folder) = folder {
             this.open_collection(&folder, window, cx);
@@ -451,6 +458,8 @@ impl Workspace {
         self.load_environments(window, cx);
         self.watch(root, window, cx);
         self.start_sync(window, cx);
+        // A received copy asks for a newer version as it opens.
+        self.check_open_received(window, cx);
         self.sync_chrome(window, cx);
         true
     }

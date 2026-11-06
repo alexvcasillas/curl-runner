@@ -1,6 +1,8 @@
 //! A received (shared-with-me) collection, board ReadOnly: every write
-//! refused with `Read only · shared by {org}`, `Check for updates` from the
-//! owner, and `Duplicate to my workspace` for an editable copy.
+//! refused with `Read only · shared by {org}`, `Duplicate to my workspace`
+//! for an editable copy, and updates from the owner: checked when the copy
+//! opens, every [`UPDATE_EVERY`] and on `Check for updates`, offered in the
+//! banner ([`super::update_banner`]) and applied whole on **Update**.
 //!
 //! The lock itself sits in the model: [`Collection`] refuses to create,
 //! rename or delete files and each [`Document`] refuses edits, saves and
@@ -11,14 +13,19 @@
 //! [`Document`]: crate::model::document::Document
 
 use super::backend_call;
+use super::update_banner::{UPDATE_EVERY, UpdateOffer};
 use super::workspace::{Workspace, edit_notes, notify_error};
-use crate::model::backend::{SharedVar, SyncFile};
+use crate::model::backend::{
+    BackendError, LinkAccess, ReceivedShare, SharedCollection, SharedVar, SyncFile,
+};
 use crate::model::collection::read_only_text;
-use crate::model::environments::resolve_vars;
+use crate::model::environments::{DEFAULT_ENVIRONMENT, resolve_vars};
 use crate::model::history::relative_time;
+use crate::model::received::ReceivedCopy;
+use crate::model::secrets::service_name;
 use crate::model::shared_copy::{
     STATE_FOLDER_TEXT, UpdatePlan, apply_update, duplicate, holds_studio_state, plan_update,
-    received_from,
+    received_from, secret_in_either,
 };
 use crate::model::sync_base::SyncBase;
 use curl_runner_core::interpolate::Store;
@@ -46,29 +53,21 @@ pub fn updated_ago(
         .map_or_else(String::new, |f| f.to_lowercase().chain(c).collect())
 }
 
-/// `Acme added API_REGION — set it in Environments`.
-pub fn added_text(org: &str, name: &str) -> String {
-    format!("{org} added {name} — set it in Environments")
+/// What a manual check says when the copy holds the latest version.
+pub const UP_TO_DATE: &str = "Up to date";
+
+/// What a check found.
+enum Checked {
+    UpToDate,
+    /// Newer, and the banner already offers that version.
+    Offered,
+    Newer(UpdateOffer),
 }
 
-/// `Update 3 files from Acme?`.
-pub fn update_title(n: usize, org: &str) -> String {
-    let files = if n == 1 { "file" } else { "files" };
-    format!("Update {n} {files} from {org}?")
-}
-
-/// `2 changed · 1 added · 1 removed`, each left out at zero.
-pub fn update_detail(plan: &UpdatePlan) -> String {
-    [
-        (plan.changed.len(), "changed"),
-        (plan.added.len(), "added"),
-        (plan.removed.len(), "removed"),
-    ]
-    .into_iter()
-    .filter(|(n, _)| *n > 0)
-    .map(|(n, what)| format!("{n} {what}"))
-    .collect::<Vec<_>>()
-    .join(" · ")
+enum CheckFailed {
+    Backend(BackendError),
+    /// The new version can't be written here (a path the studio refuses).
+    Plan(String),
 }
 
 impl Workspace {
@@ -176,18 +175,13 @@ impl Workspace {
         Some(updated_ago(at, chrono::Utc::now()))
     }
 
-    /// `Check for updates`: fetches the owner's copy, counts what differs
-    /// and asks `Update 3 files from Acme?` before writing anything.
+    /// `Check for updates` (the sidebar's foot, the note): a manual check
+    /// of the open copy, which says `Up to date` or why it couldn't ask.
     pub(super) fn check_for_updates(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(c) = self
-            .state
-            .collection
-            .as_ref()
-            .filter(|c| c.read_only.is_some())
-        else {
+        if self.read_only_org().is_none() {
             return;
-        };
-        let Some(share) = self.received.as_ref().map(|r| r.share.clone()) else {
+        }
+        let Some(token) = self.received.as_ref().map(|r| r.share.link.token.clone()) else {
             // A copy with no share record (removed on the server, or a
             // folder under shared/ added by hand) has nowhere to ask.
             let text = "Couldn't check for updates: this copy has no share to ask.".to_string();
@@ -196,46 +190,94 @@ impl Workspace {
             window.push_notification(Notification::warning(text), cx);
             return;
         };
+        self.check_received(&token, true, window, cx);
+    }
+
+    /// Every [`UPDATE_EVERY`] while the window is open, a quiet check of
+    /// the open copy. A tick that finds the server offline says nothing;
+    /// the next one asks again.
+    pub(super) fn start_update_timer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !crate::features::SERVER {
+            return;
+        }
+        let timer = cx.background_executor().clone();
+        self._update_timer = Some(cx.spawn_in(window, async move |this, cx| {
+            loop {
+                timer.timer(UPDATE_EVERY).await;
+                let ticked =
+                    this.update_in(cx, |this, window, cx| this.check_open_received(window, cx));
+                if ticked.is_err() {
+                    break;
+                }
+            }
+        }));
+    }
+
+    /// The open copy, checked quietly: when it opens and every
+    /// [`UPDATE_EVERY`].
+    pub(super) fn check_open_received(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(token) = self.received.as_ref().map(|r| r.share.link.token.clone()) {
+            self.check_received(&token, false, window, cx);
+        }
+    }
+
+    /// Asks the copy's server for its latest version; only a newer one is
+    /// fetched and planned against the copy, and offered in the banner.
+    /// Nothing is written. An automatic check (`manual` false) that finds
+    /// the server offline or unavailable says nothing: the next one asks
+    /// again. A manual one says `Up to date` or why it couldn't ask.
+    pub(super) fn check_received(
+        &mut self,
+        token: &str,
+        manual: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(copy) = self
+            .received_all
+            .iter()
+            .find(|r| r.share.link.token == token)
+            .cloned()
+        else {
+            return;
+        };
         if self.update_check.is_some() {
             return;
         }
-        let root = c.root.clone();
-        let link = share.link.clone();
-        let call = backend_call(cx, &self.backend, move |b| b.fetch_shared(&link));
+        let offered = self.update_offers.get(token).map(|o| o.version);
+        let backend = self.backend.clone();
+        let (share, root) = (copy.share, copy.root);
+        let (link, held) = (share.link.clone(), share.version);
+        let job = cx.background_spawn(async move {
+            let latest = backend
+                .latest_version(&link)
+                .await
+                .map_err(CheckFailed::Backend)?;
+            if latest <= held {
+                return Ok(Checked::UpToDate);
+            }
+            if offered == Some(latest) {
+                return Ok(Checked::Offered);
+            }
+            let snapshot = backend
+                .fetch_shared(&link)
+                .await
+                .map_err(CheckFailed::Backend)?;
+            let plan = plan_update(&root, snapshot.files).map_err(CheckFailed::Plan)?;
+            Ok(Checked::Newer(UpdateOffer::new(
+                snapshot.version,
+                snapshot.published_at,
+                plan,
+                snapshot.variables,
+            )))
+        });
+        let token = token.to_string();
         self.update_check = Some(cx.spawn_in(window, async move |this, cx| {
-            let (planned, vars) = match call.await {
-                Ok(snapshot) => {
-                    let at = root.clone();
-                    let files = snapshot.files;
-                    let plan = cx
-                        .background_spawn(async move { plan_update(&at, files) })
-                        .await;
-                    (plan, Some(snapshot.variables))
-                }
-                Err(e) => (
-                    Err(format!(
-                        "Couldn't check for updates: {}",
-                        e.link_text(&share.team)
-                    )),
-                    None,
-                ),
-            };
+            let checked = job.await;
             this.update_in(cx, |this, window, cx| {
                 this.update_check = None;
-                // Another collection opened meanwhile: not this one's.
-                let same = this
-                    .state
-                    .collection
-                    .as_ref()
-                    .is_some_and(|c| c.root == root);
-                if same {
-                    // The variables need no confirm: they are the owner's
-                    // notes, never a file or a value of the user's.
-                    if let Some(vars) = vars {
-                        this.take_shared_vars(vars, window, cx);
-                    }
-                    this.update_checked(root, planned, window, cx);
-                }
+                this.update_checked(&token, &share.team, checked, manual, window, cx);
+                cx.notify();
             })
             .ok();
         }));
@@ -244,152 +286,216 @@ impl Workspace {
 
     fn update_checked(
         &mut self,
-        root: PathBuf,
-        planned: Result<UpdatePlan, String>,
+        token: &str,
+        org: &str,
+        checked: Result<Checked, CheckFailed>,
+        manual: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(org) = self.read_only_org().map(str::to_string) else {
+        match checked {
+            Ok(Checked::UpToDate) => {
+                self.update_offers.remove(token);
+                if manual {
+                    #[cfg(test)]
+                    self.toasts.push(UP_TO_DATE.into());
+                    window.push_notification(Notification::info(UP_TO_DATE), cx);
+                }
+            }
+            Ok(Checked::Offered) => {}
+            Ok(Checked::Newer(offer)) => {
+                self.update_offers.insert(token.to_string(), offer);
+            }
+            // Quiet: the next tick asks again.
+            Err(CheckFailed::Backend(BackendError::Offline | BackendError::Unavailable))
+                if !manual => {}
+            Err(e) => {
+                let why = match e {
+                    CheckFailed::Backend(e @ BackendError::Offline) => e.to_string(),
+                    CheckFailed::Backend(e) => e.link_text(org),
+                    CheckFailed::Plan(why) => why,
+                };
+                let text = format!("Couldn't check for updates: {why}");
+                #[cfg(test)]
+                self.toasts.push(text.clone());
+                notify_error(text, window, cx);
+            }
+        }
+    }
+
+    /// **Update**: the open copy takes the offered version, all or nothing
+    /// (a hidden folder swapped in: on failure the copy is as it was and
+    /// the offer stays). Saved secrets and `.env` values stay; the record
+    /// takes the new version and file hashes; inputs the version newly
+    /// requires are asked for in the Credentials step. Only the copy the
+    /// offer is for, and only while it is open.
+    pub(super) fn apply_offer(&mut self, token: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(copy) = self
+            .received
+            .clone()
+            .filter(|r| r.share.link.token == token)
+        else {
             return;
         };
-        let plan = match planned {
+        let Some(offer) = self.update_offers.get(token).cloned() else {
+            return;
+        };
+        let org = copy.share.team.clone();
+        // Planned again: the copy may have changed since the check.
+        let plan = match plan_update(&copy.root, offer.plan.files.clone()) {
             Ok(plan) => plan,
             Err(e) => return notify_error(e, window, cx),
         };
-        if plan.count() == 0 {
-            window.push_notification(Notification::info(format!("Up to date with {org}")), cx);
-            return;
-        }
-        let (title, detail) = (update_title(plan.count(), &org), update_detail(&plan));
-        #[cfg(test)]
-        self.toasts.push(title.clone());
-        let ws = cx.entity().downgrade();
-        let plan = Rc::new(plan);
-        let root = Rc::new(root);
-        window.open_alert_dialog(cx, move |alert, _, _| {
-            let (ws, plan, root) = (ws.clone(), plan.clone(), root.clone());
-            alert
-                .title(title.clone())
-                .description(format!(
-                    "{detail}. Your values in Environments stay as they are."
-                ))
-                .ok_text("Update")
-                .show_cancel(true)
-                .on_ok(move |_, window, cx| {
-                    ws.update(cx, |this, cx| {
-                        this.apply_shared_update(&root, &plan, window, cx)
-                    })
-                    .ok();
-                    true
-                })
-        });
-    }
-
-    /// Writes the confirmed update into `root`, the copy it was planned
-    /// for (refused if another collection is open by now): the YAML files
-    /// only, through the same path checks as a sync pull; then the sync
-    /// base, the notes' updated time and the tree.
-    pub(super) fn apply_shared_update(
-        &mut self,
-        root: &Path,
-        plan: &UpdatePlan,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let (Some(c), Some(org)) = (&self.state.collection, self.read_only_org()) else {
-            return;
-        };
-        if c.root != root {
-            return notify_error(
-                "Another collection is open now; nothing was updated. Check for updates again."
-                    .into(),
-                window,
-                cx,
-            );
-        }
-        let (root, org) = (c.root.clone(), org.to_string());
-        if let Err(e) = apply_update(&root, plan) {
+        if let Err(e) = apply_update(&copy.root, &plan) {
             notify_error(e, window, cx);
-            // Part may be on disk: the tree shows what is there.
-            self.disk_changed(&touched(plan), window, cx);
+            // Nothing changed; the tree shows what is there all the same.
+            self.disk_changed(&touched(&plan), window, cx);
             return;
+        }
+        self.update_offers.remove(token);
+        let hashes = || {
+            plan.files
+                .iter()
+                .map(|f| (f.rel.clone(), SyncFile::hash_of(&f.text)))
+        };
+        let share = ReceivedShare {
+            version: offer.version,
+            files: hashes().collect(),
+            ..copy.share.clone()
+        };
+        // The copy holds it now, whatever the record's write does.
+        for r in self.received_all.iter_mut().chain(self.received.as_mut()) {
+            if r.share.link.token == token {
+                r.share = share.clone();
+            }
         }
         edit_notes(&self.notes, cx, |meta| {
-            meta.received_updated = Some(chrono::Utc::now());
+            meta.received_updated = Some(offer.published_at);
         });
         // Synced as of now: nothing shows as waiting. The base goes through
         // the sync's saver, so its writes stay in order.
         let base = SyncBase {
-            files: plan
-                .files
-                .iter()
-                .map(|f| (f.rel.clone(), SyncFile::hash_of(&f.text)))
-                .collect(),
+            files: hashes().collect(),
             ..SyncBase::default()
         };
         self.synced_as(base, window, cx);
-        self.disk_changed(&touched(plan), window, cx);
-        let n = plan.count();
-        let files = if n == 1 { "file" } else { "files" };
-        window.push_notification(
-            Notification::success(format!("Updated {n} {files} from {org}")),
-            cx,
-        );
+        self.disk_changed(&touched(&plan), window, cx);
+        let asked = self.take_shared_vars(offer.variables.clone(), cx);
+        let text = format!("Updated to version {} from {org}", offer.version);
+        #[cfg(test)]
+        self.toasts.push(text.clone());
+        window.push_notification(Notification::success(text), cx);
+        let call = backend_call(cx, &self.backend, move |b| b.update_received(share));
+        cx.spawn_in(window, async move |this, cx| {
+            let recorded = call.await;
+            this.update_in(cx, |this, window, cx| match recorded {
+                Ok(()) => this.refresh_received_all(),
+                Err(e) => notify_error(
+                    format!("Updated, but the new version wasn't recorded: {e}"),
+                    window,
+                    cx,
+                ),
+            })
+            .ok();
+        })
+        .detach();
+        if !asked.is_empty() {
+            self.ask_new_inputs(&copy, &offer, asked, window, cx);
+        }
+        cx.notify();
     }
 
-    /// A received copy takes its owner's variables as shared now (from a
-    /// sync or `Check for updates`): through the notes (the workspace's one
-    /// writer, which saves them and redoes the status bar's missing count),
-    /// with new names' descriptions and secret marks. A newly required
-    /// variable with no value here yet gets `{org} added {NAME} — set it
-    /// in Environments`.
-    pub(super) fn take_shared_vars(
+    /// The new required inputs, in the Add flow's Credentials step: saved
+    /// into the copy as an Add saves them.
+    fn ask_new_inputs(
         &mut self,
+        copy: &ReceivedCopy,
+        offer: &UpdateOffer,
         vars: Vec<SharedVar>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(org) = self.read_only_org().map(str::to_string) else {
-            return;
-        };
-        let before = self.meta(cx).received_vars.clone();
-        if before == vars {
-            return;
-        }
-        let newly_required: Vec<String> = vars
-            .iter()
-            .filter(|v| v.required && !before.iter().any(|b| b.name == v.name && b.required))
-            .map(|v| v.name.clone())
-            .collect();
-        edit_notes(&self.notes, cx, |meta| {
-            for v in &vars {
-                if v.secret {
-                    meta.set_secret(&v.name, true);
-                }
-                let notes = meta.vars.entry(v.name.clone()).or_default();
-                notes.description = v.description.clone();
-                notes.required_for_shared = v.required;
-            }
-            meta.received_vars = vars;
-        });
         let Some(c) = &self.state.collection else {
             return;
         };
-        let ctx = self.env_ctx(c, cx);
-        let unset: Vec<String> = resolve_vars(
-            &newly_required,
-            &Store::default(),
-            &*self.secret_cache,
-            &ctx,
-            &[],
-        )
-        .into_iter()
-        .filter(|r| r.value.is_none())
-        .map(|r| r.name)
-        .collect();
-        for name in unset {
-            self.toast(added_text(&org, &name), window, cx);
+        let service = service_name(&c.name, DEFAULT_ENVIRONMENT, &self.meta(cx).id);
+        let shared = SharedCollection {
+            link: copy.share.link.clone(),
+            owner_org: copy.share.team.clone(),
+            team_slug: String::new(),
+            name: copy.share.name.clone(),
+            summary: String::new(),
+            updated: offer.published_at,
+            request_count: offer.plan.files.len(),
+            version: offer.version,
+            access: LinkAccess::Public,
+            variables: vars,
+        };
+        let root = copy.root.clone();
+        let view = self.open_shared(None, window, cx);
+        view.update(cx, |v, cx| v.ask_inputs(shared, root, service, window, cx));
+    }
+
+    /// A received copy takes its owner's variables as shared now (on
+    /// Update): through the notes (the workspace's one writer, which saves
+    /// them and redoes the status bar's missing count), with new names'
+    /// descriptions and secret marks. A variable secret before, or in the
+    /// new version, stays secret. The newly required variables with no
+    /// value here yet: the caller asks for them.
+    pub(super) fn take_shared_vars(
+        &mut self,
+        vars: Vec<SharedVar>,
+        cx: &mut Context<Self>,
+    ) -> Vec<SharedVar> {
+        let before = self.meta(cx).received_vars.clone();
+        let marked: Vec<SharedVar> = self
+            .meta(cx)
+            .secret_names
+            .iter()
+            .map(|name| SharedVar {
+                name: name.clone(),
+                description: String::new(),
+                required: false,
+                secret: true,
+                default: None,
+                locked: false,
+            })
+            .collect();
+        let vars = secret_in_either(secret_in_either(vars, &before), &marked);
+        let newly_required: Vec<SharedVar> = vars
+            .iter()
+            .filter(|v| v.required && !before.iter().any(|b| b.name == v.name && b.required))
+            .filter(|v| !(v.locked && v.default.is_some() && !v.secret))
+            .cloned()
+            .collect();
+        if before != vars {
+            edit_notes(&self.notes, cx, |meta| {
+                for v in &vars {
+                    if v.secret {
+                        meta.set_secret(&v.name, true);
+                    }
+                    let notes = meta.vars.entry(v.name.clone()).or_default();
+                    notes.description = v.description.clone();
+                    notes.required_for_shared = v.required;
+                }
+                meta.received_vars = vars;
+            });
         }
+        let Some(c) = &self.state.collection else {
+            return Vec::new();
+        };
+        let ctx = self.env_ctx(c, cx);
+        let names: Vec<String> = newly_required.iter().map(|v| v.name.clone()).collect();
+        let unset: Vec<String> =
+            resolve_vars(&names, &Store::default(), &*self.secret_cache, &ctx, &[])
+                .into_iter()
+                .filter(|r| r.value.is_none())
+                .map(|r| r.name)
+                .collect();
+        newly_required
+            .into_iter()
+            .filter(|v| unset.contains(&v.name))
+            .collect()
     }
 
     /// `Duplicate to my workspace`: a folder picker, then [`duplicate_to`].
@@ -477,8 +583,7 @@ fn touched(plan: &UpdatePlan) -> Vec<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{update_detail, update_title, updated_ago};
-    use crate::model::shared_copy::UpdatePlan;
+    use super::updated_ago;
 
     #[test]
     fn copy_reads_like_the_board() {
@@ -487,14 +592,6 @@ mod tests {
             updated_ago(now - chrono::Duration::days(3), now),
             "3 days ago"
         );
-        assert_eq!(update_title(3, "Acme"), "Update 3 files from Acme?");
-        assert_eq!(update_title(1, "Acme"), "Update 1 file from Acme?");
-        let plan = UpdatePlan {
-            changed: vec!["a.yaml".into(), "b.yaml".into()],
-            removed: vec!["c.yaml".into()],
-            ..UpdatePlan::default()
-        };
-        assert_eq!(update_detail(&plan), "2 changed · 1 removed");
     }
 }
 
@@ -502,11 +599,16 @@ mod tests {
 #[cfg(all(test, feature = "server"))]
 mod gpui_tests {
     use super::super::app::{Import, NewRequest, QuickFix, RunActive, SaveFile};
+    use super::super::open_shared::Step;
     use super::super::palette::PaletteAction;
     use super::super::state::StateStore;
+    use super::super::update_banner::UPDATE_EVERY;
+    use super::super::workspace::edit_notes;
     use super::super::workspace::{Workspace, test_backend, wait_for_run};
-    use super::{DUPLICATED, STATE_FOLDER_TEXT};
-    use crate::model::backend::{Backend, SyncFile, sync_files};
+    use super::{DUPLICATED, STATE_FOLDER_TEXT, UP_TO_DATE};
+    use crate::model::backend::{
+        Backend, SharedSnapshot, SharedVar, SyncFile, fixtures, sync_files,
+    };
     use crate::model::backend::{CollectionKey, ShareUpdate};
     use crate::model::collection_meta::CollectionMeta;
     use crate::model::secrets::{MemorySecrets, SecretStore, service_name};
@@ -959,8 +1061,180 @@ mod gpui_tests {
         assert!(!copied.contains(TOKEN), "{copied}");
     }
 
+    /// The owner publishes `version`, `ago`, with `files` and `vars`.
+    fn publish(
+        s: &Studio,
+        version: u32,
+        ago: chrono::Duration,
+        files: Vec<SyncFile>,
+        vars: Vec<SharedVar>,
+    ) {
+        *s.spy.newer.lock().unwrap() = Some(SharedSnapshot {
+            files,
+            variables: vars,
+            version,
+            published_at: chrono::Utc::now() - ago,
+        });
+    }
+
+    /// The fixture with three requests changed: one edited, one added,
+    /// one removed.
+    fn three_changed() -> Vec<SyncFile> {
+        let mut files: Vec<SyncFile> = fixtures::shipping_snapshot()
+            .into_iter()
+            .filter(|f| f.rel != Path::new("rates/validate-address.yaml"))
+            .map(|f| {
+                if f.rel == Path::new(RATES) {
+                    SyncFile::new(f.rel, "request:\n  url: https://v14/rates\n")
+                } else {
+                    f
+                }
+            })
+            .collect();
+        files.push(SyncFile::new(
+            "labels/new.yaml",
+            "request:\n  url: https://v14/labels\n",
+        ));
+        files
+    }
+
+    /// A quiet check (`manual` false, as on open and each tick) or
+    /// `Check for updates`.
+    fn check(cx: &mut TestAppContext, s: &Studio, manual: bool) {
+        let ws = s.ws.clone();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                if manual {
+                    ws.check_for_updates(window, cx)
+                } else {
+                    ws.check_open_received(window, cx)
+                }
+            });
+        })
+        .unwrap();
+        cx.run_until_parked();
+    }
+
+    fn label(cx: &mut TestAppContext, s: &Studio, id: &str) -> Option<String> {
+        cx.update_window(s.window, |_, window, cx| {
+            window.render_frame(cx);
+            window
+                .try_find(id.to_string())
+                .and_then(|e| e.label().map(str::to_string))
+        })
+        .unwrap()
+    }
+
+    fn fetches(s: &Studio) -> usize {
+        s.spy
+            .dev()
+            .unwrap()
+            .recorded()
+            .iter()
+            .filter(|c| c.starts_with("fetch_shared("))
+            .count()
+    }
+
     #[gpui_kit::test]
-    fn check_for_updates_replaces_files(cx: &mut TestAppContext) {
+    fn newer_version_shows_banner_with_counts(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        open_file(cx, &s, RATES);
+        let before = snapshot(&s);
+        publish(
+            &s,
+            14,
+            chrono::Duration::hours(2),
+            three_changed(),
+            fixtures::shipping_variables(),
+        );
+        check(cx, &s, false);
+        assert_eq!(
+            label(cx, &s, "update-banner-text").as_deref(),
+            Some("Version 14 available · published 2 hours ago · 3 requests changed")
+        );
+        assert_eq!(
+            label(cx, &s, "update-banner-update").as_deref(),
+            Some("Update")
+        );
+        // It takes the read-only note's place.
+        assert!(label(cx, &s, "read-only-note").is_none());
+        // Offered, not written; nothing asked.
+        assert_eq!(snapshot(&s), before);
+        assert!(!dialog_open(cx, &s));
+        assert!(toasts(cx, &s).is_empty(), "{:?}", toasts(cx, &s));
+        // The same version again: offered already, not fetched again.
+        let fetched = fetches(&s);
+        check(cx, &s, false);
+        assert_eq!(fetches(&s), fetched);
+        // What changed: the plan's files, still nothing written.
+        click(cx, s.window, "update-banner-what-changed");
+        assert!(dialog_open(cx, &s));
+        let rows: Vec<_> = (0..4)
+            .filter_map(|i| label(cx, &s, &format!("what-changed-row-{i}")))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                "Added labels/new.yaml",
+                "Changed rates/get-rates.yaml",
+                "Removed rates/validate-address.yaml"
+            ]
+        );
+        click(cx, s.window, "what-changed-close");
+        assert!(!dialog_open(cx, &s));
+        assert_eq!(snapshot(&s), before);
+    }
+
+    #[gpui_kit::test]
+    fn same_version_shows_nothing(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        open_file(cx, &s, RATES);
+        let fetched = fetches(&s);
+        check(cx, &s, false);
+        assert!(label(cx, &s, "update-banner").is_none());
+        assert!(label(cx, &s, "read-only-note").is_some());
+        assert!(toasts(cx, &s).is_empty(), "{:?}", toasts(cx, &s));
+        assert_eq!(fetches(&s), fetched, "no snapshot for the same version");
+        // Asked by hand: it says so.
+        check(cx, &s, true);
+        assert_eq!(toasts(cx, &s), [UP_TO_DATE]);
+        assert!(label(cx, &s, "update-banner").is_none());
+        assert_eq!(fetches(&s), fetched);
+    }
+
+    #[gpui_kit::test]
+    fn offline_auto_check_is_silent_manual_check_says_offline(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        open_file(cx, &s, RATES);
+        publish(
+            &s,
+            14,
+            chrono::Duration::hours(2),
+            three_changed(),
+            fixtures::shipping_variables(),
+        );
+        let dev = s.spy.dev().unwrap();
+        dev.set_offline(true);
+        check(cx, &s, false);
+        assert!(label(cx, &s, "update-banner").is_none(), "no banner");
+        assert!(toasts(cx, &s).is_empty(), "no toast: {:?}", toasts(cx, &s));
+        // The next tick asks again, and finds it.
+        dev.set_offline(false);
+        cx.executor().advance_clock(UPDATE_EVERY);
+        cx.run_until_parked();
+        assert!(label(cx, &s, "update-banner").is_some());
+        assert!(toasts(cx, &s).is_empty());
+        // By hand, offline says so.
+        dev.set_offline(true);
+        check(cx, &s, true);
+        assert_eq!(
+            toasts(cx, &s),
+            ["Couldn't check for updates: You're offline."]
+        );
+    }
+
+    #[gpui_kit::test]
+    fn update_applies_and_records_version(cx: &mut TestAppContext) {
         let s = received(cx, false, None);
         let owners = snapshot(&s);
         let env = std::fs::read_to_string(s.root().join(".env")).unwrap();
@@ -977,78 +1251,214 @@ mod gpui_tests {
             "request:\n  url: https://x\n",
         )
         .unwrap();
-        let ws = s.ws.clone();
         open_file(cx, &s, RATES);
-        cx.update_window(s.window, |_, window, cx| {
-            ws.update(cx, |ws, cx| ws.check_for_updates(window, cx));
-        })
-        .unwrap();
-        cx.run_until_parked();
-        assert!(dialog_open(cx, &s));
+        let ago = chrono::Duration::hours(5);
+        publish(&s, 4, ago, owners.clone(), fixtures::shipping_variables());
+        let published = s.spy.newer.lock().unwrap().as_ref().unwrap().published_at;
+        check(cx, &s, true);
         assert_eq!(
-            toasts(cx, &s).last().map(String::as_str),
-            Some("Update 4 files from Acme?")
+            label(cx, &s, "update-banner-text").as_deref(),
+            Some("Version 4 available · published 5 hours ago · 4 requests changed")
         );
-        // Nothing is written before the confirm.
-        assert!(s.root().join("rates/old.yaml").exists());
-        click(cx, s.window, "ok");
-        assert!(!dialog_open(cx, &s));
+        assert!(
+            s.root().join("rates/old.yaml").exists(),
+            "nothing written yet"
+        );
+        click(cx, s.window, "update-banner-update");
+        assert!(!dialog_open(cx, &s), "no input asked: all are set");
         assert_eq!(snapshot(&s), owners, "the owner's files, exactly");
         assert!(!s.root().join("rates/old.yaml").exists());
+        // Values carry over: the .env and the Keychain token.
         assert_eq!(std::fs::read_to_string(s.root().join(".env")).unwrap(), env);
         let id = s.ws.read_with(cx, |ws, cx| ws.meta(cx).id.clone());
         let service = service_name("acme-shipping-api", "Default", &id);
         assert_eq!(s.secrets.get(&service, "API_TOKEN").as_deref(), Some(TOKEN));
-        cx.run_until_parked();
+        // Nothing hidden left beside the copy.
+        let beside: Vec<_> = std::fs::read_dir(s.root().parent().unwrap())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(beside, ["acme-shipping-api"]);
+        // Recorded: the version and each file's hash as received.
+        let record = s.spy.received().into_iter().next().unwrap();
+        assert_eq!(record.version, 4);
+        let hashes: std::collections::BTreeMap<_, _> =
+            owners.iter().map(|f| (f.rel.clone(), f.hash)).collect();
+        assert_eq!(record.files, hashes);
+        assert!(label(cx, &s, "update-banner").is_none(), "the banner went");
+        assert_eq!(
+            toasts(cx, &s).last().map(String::as_str),
+            Some("Updated to version 4 from Acme")
+        );
         s.ws.read_with(cx, |ws, cx| {
             // The open tab took the new text; the tree has the old file gone.
             let ix = ws.state.position(Path::new(RATES)).unwrap();
             let theirs = owners.iter().find(|f| f.rel == Path::new(RATES)).unwrap();
             assert_eq!(ws.state.open[ix].text, theirs.text);
             assert!(ws.method_of(Path::new("rates/old.yaml")).is_none());
-            let at = ws.meta(cx).received_updated.unwrap();
-            assert!(chrono::Utc::now() - at < chrono::Duration::minutes(1));
-            assert_eq!(ws.sync.pending, 0);
+            assert_eq!(ws.meta(cx).received_updated, Some(published));
+            assert_eq!(ws.received.as_ref().unwrap().share.version, 4);
         });
         let base = crate::model::sync_base::load(Some(s.state.path()), &id);
         assert_eq!(base.files.len(), owners.len());
-        // Again: up to date, nothing asked.
-        cx.update_window(s.window, |_, window, cx| {
-            ws.update(cx, |ws, cx| ws.check_for_updates(window, cx));
-        })
-        .unwrap();
-        cx.run_until_parked();
-        assert!(!dialog_open(cx, &s));
+        // Again: up to date.
+        check(cx, &s, true);
+        assert_eq!(toasts(cx, &s).last().map(String::as_str), Some(UP_TO_DATE));
     }
 
     #[gpui_kit::test]
-    fn an_update_lands_only_in_the_copy_it_was_planned_for(cx: &mut TestAppContext) {
+    fn update_with_new_required_input_asks_for_it(cx: &mut TestAppContext) {
         let s = received(cx, false, None);
+        open_file(cx, &s, RATES);
+        let mut vars = fixtures::shipping_variables();
+        let var = |name: &str, secret| SharedVar {
+            name: name.into(),
+            description: format!("About {name}."),
+            required: true,
+            secret,
+            default: None,
+            locked: false,
+        };
+        vars.push(var("API_REGION", false));
+        vars.push(var("SIGNING_KEY", true));
+        publish(&s, 4, chrono::Duration::hours(1), three_changed(), vars);
+        check(cx, &s, false);
+        click(cx, s.window, "update-banner-update");
+        // Only what's new and unset: API_TOKEN carried over.
+        assert!(dialog_open(cx, &s));
+        let view = s.ws.read_with(cx, |ws, _| ws.open_shared_view()).unwrap();
+        assert_eq!(view.read_with(cx, |v, _| v.step()), Step::Credentials);
+        assert_eq!(
+            view.read_with(cx, |v, _| v.fields()),
+            [
+                ("API_REGION".to_string(), false),
+                ("SIGNING_KEY".to_string(), true)
+            ]
+        );
+        cx.update_window(s.window, |_, window, cx| {
+            view.update(cx, |v, cx| {
+                v.fill("API_REGION", "eu-west", window, cx);
+                v.fill("SIGNING_KEY", "sig-secret-9", window, cx);
+            });
+        })
+        .unwrap();
+        click(cx, s.window, "open-shared-save");
+        assert!(!dialog_open(cx, &s));
+        let env = std::fs::read_to_string(s.root().join(".env")).unwrap();
+        assert!(env.contains("API_REGION=eu-west"), "{env}");
+        assert!(!env.contains("sig-secret-9"), "{env}");
+        let id = s.ws.read_with(cx, |ws, cx| ws.meta(cx).id.clone());
+        let service = service_name("acme-shipping-api", "Default", &id);
+        assert_eq!(
+            s.secrets.get(&service, "SIGNING_KEY").as_deref(),
+            Some("sig-secret-9")
+        );
+        assert_eq!(s.secrets.get(&service, "API_TOKEN").as_deref(), Some(TOKEN));
+        // The toasts never carry a value.
+        assert!(toasts(cx, &s).iter().all(|t| !t.contains("sig-secret-9")));
+    }
+
+    /// A variable secret before stays secret when the new version says
+    /// otherwise: its field is masked and its value goes to the Keychain.
+    #[gpui_kit::test]
+    fn an_input_secret_before_stays_secret(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        let mut vars = fixtures::shipping_variables();
+        for v in &mut vars {
+            if v.name == "API_TOKEN" {
+                v.secret = false;
+            }
+        }
+        // Newly required and unset: ACCOUNT_ID, now required and no longer
+        // marked secret, though the user's notes mark it so.
+        s.ws.update(cx, |ws, cx| {
+            edit_notes(&ws.notes, cx, |m| m.set_secret("ACCOUNT_ID", true));
+        });
+        for v in &mut vars {
+            if v.name == "ACCOUNT_ID" {
+                v.required = true;
+            }
+        }
+        publish(&s, 4, chrono::Duration::hours(1), three_changed(), vars);
+        check(cx, &s, false);
+        click(cx, s.window, "update-banner-update");
+        let view = s.ws.read_with(cx, |ws, _| ws.open_shared_view()).unwrap();
+        assert_eq!(
+            view.read_with(cx, |v, _| v.fields()),
+            [("ACCOUNT_ID".to_string(), true)]
+        );
+        cx.update_window(s.window, |_, window, cx| {
+            view.update(cx, |v, cx| v.fill("ACCOUNT_ID", "acct-7", window, cx));
+        })
+        .unwrap();
+        click(cx, s.window, "open-shared-save");
+        let env = std::fs::read_to_string(s.root().join(".env")).unwrap();
+        assert!(!env.contains("acct-7"), "{env}");
+        s.ws.read_with(cx, |ws, cx| {
+            let meta = ws.meta(cx);
+            assert!(meta.secret_names.iter().any(|n| n == "API_TOKEN"));
+            let api = meta.received_vars.iter().find(|v| v.name == "API_TOKEN");
+            assert!(api.unwrap().secret, "still secret");
+        });
+    }
+
+    #[gpui_kit::test]
+    fn checks_every_15_minutes(cx: &mut TestAppContext) {
+        use std::sync::atomic::Ordering::SeqCst;
+        let s = received(cx, false, None);
+        // Asked once as the copy opened.
+        let opened = s.spy.checks.load(SeqCst);
+        assert!(opened >= 1);
+        cx.executor()
+            .advance_clock(UPDATE_EVERY - std::time::Duration::from_secs(1));
+        cx.run_until_parked();
+        let first = s.spy.checks.load(SeqCst);
+        cx.executor()
+            .advance_clock(std::time::Duration::from_secs(1));
+        cx.run_until_parked();
+        let second = s.spy.checks.load(SeqCst);
+        assert_eq!(second, first + 1, "a tick at 15 minutes");
+        cx.executor().advance_clock(UPDATE_EVERY);
+        cx.run_until_parked();
+        assert_eq!(s.spy.checks.load(SeqCst), second + 1, "and every 15 after");
+        // A newer version turns up on a tick, with no click.
+        publish(
+            &s,
+            14,
+            chrono::Duration::hours(2),
+            three_changed(),
+            fixtures::shipping_variables(),
+        );
+        cx.executor().advance_clock(UPDATE_EVERY);
+        cx.run_until_parked();
+        assert!(label(cx, &s, "update-banner").is_some());
+    }
+
+    #[gpui_kit::test]
+    fn an_offer_lands_only_in_its_own_copy(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        open_file(cx, &s, RATES);
+        publish(
+            &s,
+            14,
+            chrono::Duration::hours(2),
+            three_changed(),
+            fixtures::shipping_variables(),
+        );
+        check(cx, &s, false);
         let before = snapshot(&s);
-        let mut theirs = before.clone();
-        theirs[0] = SyncFile::new(theirs[0].rel.clone(), "request:\n  url: https://new\n");
-        let plan = crate::model::shared_copy::plan_update(&s.root(), theirs).unwrap();
-        assert_eq!(plan.count(), 1);
-        // Planned for another copy (one open when the check started).
-        let elsewhere = s.state.path().join("shared/acme-other");
         let ws = s.ws.clone();
+        // The offer moved to another share's token: not this copy's.
         cx.update_window(s.window, |_, window, cx| {
             ws.update(cx, |ws, cx| {
-                ws.apply_shared_update(&elsewhere, &plan, window, cx)
+                let offer = ws.update_offers.drain().next().unwrap().1;
+                ws.update_offers.insert("crsl_other".into(), offer);
+                ws.apply_offer("crsl_other", window, cx);
             });
         })
         .unwrap();
         cx.run_until_parked();
         assert_eq!(snapshot(&s), before, "nothing written here");
-        let root = s.root();
-        cx.update_window(s.window, |_, window, cx| {
-            ws.update(cx, |ws, cx| {
-                ws.apply_shared_update(&root, &plan, window, cx)
-            });
-        })
-        .unwrap();
-        cx.run_until_parked();
-        assert_ne!(snapshot(&s), before, "its own copy takes it");
     }
 
     #[gpui_kit::test]
@@ -1285,7 +1695,7 @@ mod gpui_tests {
     }
 
     #[gpui_kit::test]
-    fn shared_variables_follow_the_owner_on_check(cx: &mut TestAppContext) {
+    fn shared_variables_follow_the_owner_on_update(cx: &mut TestAppContext) {
         use crate::model::backend::SharedVar;
         use futures::executor::block_on;
         let seen: Arc<Mutex<Vec<String>>> = Arc::default();
@@ -1345,40 +1755,37 @@ mod gpui_tests {
             seen.lock().unwrap().pop().unwrap()
         };
         assert_eq!(run(cx), "eur");
-        // The owner locks a new value: Check for updates brings it, with
-        // no file to update.
-        share(vars("usd", false));
-        let ws = s.ws.clone();
-        cx.update_window(s.window, |_, window, cx| {
-            ws.update(cx, |ws, cx| ws.check_for_updates(window, cx));
-        })
-        .unwrap();
-        cx.run_until_parked();
-        assert_eq!(run(cx), "usd");
-        assert!(toasts(cx, &s).is_empty(), "{:?}", toasts(cx, &s));
-        // Then another, and a new required variable its request uses:
-        // Check for updates brings both.
+        // The owner locks a new value and adds a required variable its
+        // request uses, and publishes: the version goes up.
         share(vars("gbp", true));
         let v2 = format!("{v1}    X-Region: ${{API_REGION}}\n");
         let v2 = SyncFile::new("rates.yaml", v2).with_base(Some(SyncFile::hash_of(v1)));
         assert_eq!(block_on(inner.sync(&owner, &[v2], &[])).unwrap().pushed, 1);
-        cx.update_window(s.window, |_, window, cx| {
-            ws.update(cx, |ws, cx| ws.check_for_updates(window, cx));
-        })
-        .unwrap();
-        cx.run_until_parked();
+        // Check for updates offers it; nothing changes before Update.
+        check(cx, &s, true);
         assert_eq!(
-            toasts(cx, &s),
-            [
-                "Acme added API_REGION — set it in Environments",
-                "Update 1 file from Acme?"
-            ]
+            label(cx, &s, "update-banner-text").as_deref(),
+            Some("Version 2 available · published just now · 1 request changed")
         );
-        click(cx, s.window, "ok");
-        cx.run_until_parked();
+        assert_eq!(run(cx), "eur");
+        click(cx, s.window, "update-banner-update");
+        // The new input is asked for in the Credentials step.
+        let view = s.ws.read_with(cx, |ws, _| ws.open_shared_view()).unwrap();
+        assert_eq!(
+            view.read_with(cx, |v, _| v.fields()),
+            [("API_REGION".to_string(), false)]
+        );
         s.ws.read_with(cx, |ws, cx| {
             assert_eq!(ws.meta(cx).received_vars, vars("gbp", true));
             assert_eq!(ws.missing, ["API_REGION"], "the status bar says so");
+        });
+        cx.update_window(s.window, |_, window, cx| {
+            view.update(cx, |v, cx| v.fill("API_REGION", "eu", window, cx));
+        })
+        .unwrap();
+        click(cx, s.window, "open-shared-save");
+        s.ws.read_with(cx, |ws, _| {
+            assert!(ws.missing.is_empty(), "{:?}", ws.missing)
         });
         assert_eq!(run(cx), "gbp");
     }

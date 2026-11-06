@@ -279,16 +279,25 @@ pub fn materialize(
 /// The files, in the fresh folder `tmp`, each checked to stay inside it.
 fn stage(tmp: &Path, files: &[SyncFile]) -> std::io::Result<()> {
     std::fs::create_dir(tmp)?;
+    write_files(tmp, files)
+}
+
+/// The files into the folder `tmp`, each checked to stay inside it.
+fn write_files(tmp: &Path, files: &[SyncFile]) -> std::io::Result<()> {
     let real = tmp.canonicalize()?;
     for f in files {
         let path = tmp.join(&f.rel);
         let dir = path.parent().unwrap_or(tmp);
+        // Checked before a folder is made and again once it exists, so a
+        // symlinked folder carried over never leads a write outside.
+        let outside =
+            || std::io::Error::other(format!("{} leads outside the collection", f.rel.display()));
+        if !resolves_inside(dir, &real) {
+            return Err(outside());
+        }
         std::fs::create_dir_all(dir)?;
         if !resolves_inside(dir, &real) {
-            return Err(std::io::Error::other(format!(
-                "{} leads outside the collection",
-                f.rel.display()
-            )));
+            return Err(outside());
         }
         std::fs::write(&path, &f.text)?;
     }
@@ -330,24 +339,14 @@ fn settle(
         .map_err(|e| format!("its notes weren't saved ({e})"))?;
     // The workspace names a collection after its folder.
     done.service = service_name(folder_name, DEFAULT_ENVIRONMENT, &meta.id);
-    for (name, value) in values.iter().filter(|(_, v)| !v.is_empty()) {
-        let Some(var) = shared.variables.iter().find(|v| &v.name == name) else {
-            continue;
-        };
-        // A locked default is the owner's: nothing local stands in for it.
-        if var.locked && !secret(var) {
-            continue;
-        }
-        if secret(var) {
-            done.secrets.push(name.clone());
-            secrets
-                .set(&done.service, name, value)
-                .map_err(|e| format!("{name} wasn't saved to your keychain ({e})"))?;
-        } else {
-            write_env_var(&done.root, DEFAULT_ENVIRONMENT, name, value)
-                .map_err(|e| format!("{name} wasn't saved to .env ({e})"))?;
-        }
-    }
+    write_values(
+        &done.root,
+        &done.service,
+        &shared.variables,
+        values,
+        secrets,
+        &mut done.secrets,
+    )?;
     // Synced as of now: the first sync finds nothing waiting.
     let sync = SyncBase {
         files: files
@@ -358,6 +357,55 @@ fn settle(
     };
     sync_base::save(Some(base), &meta.id, &sync)
         .map_err(|e| format!("its sync state wasn't saved ({e})"))
+}
+
+/// The customer's `values` for `vars`: a secret one to the Keychain under
+/// `service` (its name pushed to `saved`), any other to `root`'s `.env`.
+/// Empty values, names not in `vars` and locked defaults are skipped. The
+/// error never carries a value.
+fn write_values(
+    root: &Path,
+    service: &str,
+    vars: &[SharedVar],
+    values: &[(String, String)],
+    secrets: &dyn SecretStore,
+    saved: &mut Vec<String>,
+) -> Result<(), String> {
+    let secret = |v: &SharedVar| v.secret || is_secret(&v.name, &[]);
+    for (name, value) in values.iter().filter(|(_, v)| !v.is_empty()) {
+        let Some(var) = vars.iter().find(|v| &v.name == name) else {
+            continue;
+        };
+        // A locked default is the owner's: nothing local stands in for it.
+        if var.locked && !secret(var) {
+            continue;
+        }
+        if secret(var) {
+            saved.push(name.clone());
+            secrets
+                .set(service, name, value)
+                .map_err(|e| format!("{name} wasn't saved to your keychain ({e})"))?;
+        } else {
+            write_env_var(root, DEFAULT_ENVIRONMENT, name, value)
+                .map_err(|e| format!("{name} wasn't saved to .env ({e})"))?;
+        }
+    }
+    Ok(())
+}
+
+/// After an update, the values for the inputs it newly requires, into the
+/// copy at `root` (Keychain `service`, else its `.env`), as [`materialize`]
+/// writes them. `vars` are the inputs as the form showed them: a field it
+/// masked is secret here too.
+pub fn save_inputs(
+    root: &Path,
+    service: &str,
+    vars: &[SharedVar],
+    values: &[(String, String)],
+    secrets: &dyn SecretStore,
+) -> Result<(), String> {
+    write_values(root, service, vars, values, secrets, &mut Vec::new())
+        .map_err(|why| format!("Couldn't save: {why}."))
 }
 
 /// Takes out what [`materialize`] wrote. The notes go first: their file is
@@ -432,55 +480,83 @@ pub fn plan_update(root: &Path, files: Vec<SyncFile>) -> Result<UpdatePlan, Stri
     Ok(plan)
 }
 
-/// Writes `plan` into the copy at `root`: YAML only, never its `.env`,
-/// never the Keychain, each path checked to stay inside. The caller makes
-/// the snapshot the copy's sync base. The error never carries a value.
+/// Replaces the copy at `root` with `plan`'s snapshot, all or nothing: a
+/// hidden sibling takes everything of the copy's own (`.env`, any file
+/// that isn't a replaced YAML) plus the snapshot, each path checked to stay
+/// inside, then moves into place by rename. Until then `root` is untouched;
+/// a failed swap moves the old folder back. Never the Keychain. The caller
+/// makes the snapshot the copy's sync base. The error never carries a value.
 pub fn apply_update(root: &Path, plan: &UpdatePlan) -> Result<(), String> {
-    let real_root = root
-        .canonicalize()
-        .map_err(|e| format!("Couldn't update: {e}"))?;
-    let touched: std::collections::HashSet<&Path> = plan
-        .added
-        .iter()
-        .chain(&plan.changed)
-        .map(PathBuf::as_path)
-        .collect();
-    for f in plan
+    let nothing = |e: &dyn std::fmt::Display| format!("Couldn't update: {e}. Nothing was changed.");
+    if let Some(bad) = plan.files.iter().find(|f| !writable(&f.rel)) {
+        return Err(format!(
+            "Couldn't update {}: it leads outside the collection. Nothing was changed.",
+            bad.rel.display()
+        ));
+    }
+    let (Some(parent), Some(stem)) = (root.parent(), root.file_name()) else {
+        return Err(nothing(&"the collection has no folder"));
+    };
+    let stem = stem.to_string_lossy();
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let pid = std::process::id();
+    let tmp = parent.join(format!(".{stem}.update.{pid}.{seq}.tmp"));
+    let old = parent.join(format!(".{stem}.old.{pid}.{seq}.tmp"));
+    // Replaced by the snapshot, or gone with it: not carried over.
+    let replaced: std::collections::HashSet<&Path> = plan
         .files
         .iter()
-        .filter(|f| touched.contains(f.rel.as_path()))
-    {
-        let path = root.join(&f.rel);
-        let dir = path.parent().unwrap_or(root);
-        // Checked before a folder is made and again once it exists, so
-        // nothing (a symlinked folder) leads the write outside.
-        let inside = writable(&f.rel)
-            && resolves_inside(dir, &real_root)
-            && std::fs::create_dir_all(dir).is_ok()
-            && resolves_inside(dir, &real_root);
-        if !inside {
-            return Err(format!(
-                "Couldn't update {}: it leads outside the collection.",
-                f.rel.display()
-            ));
-        }
-        crate::model::write_atomic(&path, &f.text)
-            .map_err(|e| format!("Couldn't update {}: {e}", f.rel.display()))?;
+        .map(|f| f.rel.as_path())
+        .chain(plan.removed.iter().map(PathBuf::as_path))
+        .collect();
+    let staged = std::fs::create_dir(&tmp)
+        .and_then(|()| carry_over(root, &tmp, Path::new(""), &replaced))
+        .and_then(|()| write_files(&tmp, &plan.files));
+    if let Err(e) = staged {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(nothing(&e));
     }
-    for rel in plan.removed.iter().filter(|r| writable(r)) {
-        let path = root.join(rel);
-        if !path
-            .parent()
-            .is_some_and(|d| resolves_inside(d, &real_root))
-        {
+    if let Err(e) = std::fs::rename(root, &old) {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(nothing(&e));
+    }
+    if let Err(e) = std::fs::rename(&tmp, root) {
+        // Back as it was.
+        let _ = std::fs::rename(&old, root);
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(nothing(&e));
+    }
+    let _ = std::fs::remove_dir_all(&old);
+    Ok(())
+}
+
+/// Copies `from/rel` into `to/rel`, leaving out the `skip` paths (relative
+/// to the copy). A symlink stays a link, never followed.
+fn carry_over(
+    from: &Path,
+    to: &Path,
+    rel: &Path,
+    skip: &std::collections::HashSet<&Path>,
+) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(from.join(rel))? {
+        let entry = entry?;
+        let rel = rel.join(entry.file_name());
+        if skip.contains(rel.as_path()) {
             continue;
         }
-        match std::fs::remove_file(&path) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                return Err(format!("Couldn't remove {}: {e}", rel.display()));
-            }
-            _ => {}
+        let kind = entry.file_type()?;
+        let (src, dst) = (from.join(&rel), to.join(&rel));
+        if kind.is_symlink() {
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(std::fs::read_link(&src)?, &dst)?;
+        } else if kind.is_dir() {
+            std::fs::create_dir(&dst)?;
+            carry_over(from, to, &rel, skip)?;
+        } else if kind.is_file() {
+            std::fs::copy(&src, &dst)?;
         }
+        // Anything else (a socket, a pipe) holds no data of the copy's.
     }
     Ok(())
 }
@@ -846,6 +922,57 @@ mod tests {
             "{:?}",
             entries(base.path())
         );
+    }
+
+    /// An update that fails partway leaves the copy exactly as it was,
+    /// with nothing hidden left beside it; one that lands keeps the
+    /// copy's own files (`.env`, notes of the user's) and swaps the YAML.
+    #[test]
+    fn an_update_swaps_the_whole_folder_or_changes_nothing() {
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("acme-shipping-api");
+        std::fs::create_dir_all(root.join("rates")).unwrap();
+        std::fs::write(root.join("a.yaml"), "old a\n").unwrap();
+        std::fs::write(root.join("rates/b.yaml"), "old b\n").unwrap();
+        std::fs::write(root.join("gone.yaml"), "gone\n").unwrap();
+        std::fs::write(root.join(".env"), "API=1\n").unwrap();
+        std::fs::write(root.join("notes.txt"), "mine\n").unwrap();
+        let before = super::super::backend::sync_files(&root);
+        // `a.yaml` both a file and a folder: the second write fails.
+        let bad = super::plan_update(
+            &root,
+            vec![
+                SyncFile::new("a.yaml", "new a\n"),
+                SyncFile::new("a.yaml/c.yaml", "c\n"),
+            ],
+        )
+        .unwrap();
+        assert!(super::apply_update(&root, &bad).is_err());
+        assert_eq!(super::super::backend::sync_files(&root), before);
+        assert_eq!(
+            std::fs::read_to_string(root.join(".env")).unwrap(),
+            "API=1\n"
+        );
+        assert_eq!(entries(parent.path()), ["acme-shipping-api"]);
+
+        let plan = super::plan_update(
+            &root,
+            vec![
+                SyncFile::new("a.yaml", "new a\n"),
+                SyncFile::new("rates/b.yaml", "old b\n"),
+                SyncFile::new("labels/new.yaml", "new\n"),
+            ],
+        )
+        .unwrap();
+        super::apply_update(&root, &plan).unwrap();
+        let read = |rel: &str| std::fs::read_to_string(root.join(rel)).unwrap();
+        assert_eq!(read("a.yaml"), "new a\n");
+        assert_eq!(read("rates/b.yaml"), "old b\n");
+        assert_eq!(read("labels/new.yaml"), "new\n");
+        assert!(!root.join("gone.yaml").exists());
+        assert_eq!(read(".env"), "API=1\n");
+        assert_eq!(read("notes.txt"), "mine\n");
+        assert_eq!(entries(parent.path()), ["acme-shipping-api"]);
     }
 
     #[test]
