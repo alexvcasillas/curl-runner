@@ -10,6 +10,9 @@ vi.mock('next/headers', () => ({
 const revalidatePath = vi.fn();
 vi.mock('next/cache', () => ({ revalidatePath: (p: string) => revalidatePath(p) }));
 vi.mock('next/navigation', () => ({
+  notFound: () => {
+    throw new Error('NEXT_NOT_FOUND');
+  },
   redirect: (url: string) => {
     throw new Error(`NEXT_REDIRECT ${url}`);
   },
@@ -23,24 +26,38 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const empty = (status = 204) => new Response(null, { status });
 
+const ME = (permissions: string[]) => json({ role: 'admin', permissions });
+let perms = ['users', 'emails'];
+
+/** Answers every API call with `res`, except the guard's `GET /v1/admin/me`. */
+function answer(res: Response) {
+  fetchMock.mockImplementation(async (url: string) =>
+    String(url).endsWith('/v1/admin/me') ? ME(perms) : res.clone(),
+  );
+}
+
 const calls = () =>
-  fetchMock.mock.calls.map(([url, init]) => ({
-    url: String(url).replace('http://api.test', ''),
-    method: init?.method ?? 'GET',
-    body: init?.body ? JSON.parse(init.body) : undefined,
-  }));
+  fetchMock.mock.calls
+    .filter(([url]) => !String(url).endsWith('/v1/admin/me'))
+    .map(([url, init]) => ({
+      url: String(url).replace('http://api.test', ''),
+      method: init?.method ?? 'GET',
+      body: init?.body ? JSON.parse(init.body) : undefined,
+    }));
 
 beforeEach(() => {
   vi.stubEnv('API_INTERNAL_URL', 'http://api.test');
   resetEnv();
   fetchMock.mockReset();
+  perms = ['users', 'emails'];
+  answer(empty());
   revalidatePath.mockReset();
   vi.stubGlobal('fetch', fetchMock);
 });
 
 describe('suspendUser', () => {
   it('posts the trimmed reason and notify, then refreshes the pages', async () => {
-    fetchMock.mockResolvedValue(json({ id: ADA, status: 'suspended' }));
+    answer(json({ id: ADA, status: 'suspended' }));
     const r = await actions.suspendUser(ADA, '  Chargeback  ', true);
     expect(r).toEqual({ ok: true });
     expect(calls()).toEqual([
@@ -58,11 +75,11 @@ describe('suspendUser', () => {
     expect((await actions.suspendUser('nope', '', false)).ok).toBe(false);
     const long = await actions.suspendUser(ADA, 'x'.repeat(501), false);
     expect(long).toMatchObject({ ok: false, message: 'The reason is too long.' });
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(calls()).toHaveLength(0);
   });
 
   it('shows the API message for an owner or yourself', async () => {
-    fetchMock.mockResolvedValue(
+    answer(
       json(
         {
           error: 'conflict',
@@ -79,9 +96,7 @@ describe('suspendUser', () => {
   });
 
   it('shows the API message for a missing permission', async () => {
-    fetchMock.mockResolvedValue(
-      json({ error: 'forbidden', message: 'You don’t have permission to do that.' }, 403),
-    );
+    answer(json({ error: 'forbidden', message: 'You don’t have permission to do that.' }, 403));
     expect(await actions.suspendUser(ADA, '', false)).toMatchObject({
       ok: false,
       message: 'You don’t have permission to do that.',
@@ -92,13 +107,13 @@ describe('suspendUser', () => {
 
 describe('simple actions', () => {
   it('lifts a suspension', async () => {
-    fetchMock.mockResolvedValue(json({ id: ADA, status: 'active' }));
+    answer(json({ id: ADA, status: 'active' }));
     expect(await actions.unsuspendUser(ADA)).toEqual({ ok: true });
     expect(calls()[0]).toMatchObject({ url: `/v1/admin/users/${ADA}/unsuspend`, method: 'POST' });
   });
 
   it('signs a user out everywhere', async () => {
-    fetchMock.mockResolvedValue(empty());
+    answer(empty());
     expect(await actions.signOutEverywhere(ADA)).toEqual({ ok: true });
     expect(calls()[0]).toMatchObject({
       url: `/v1/admin/users/${ADA}/sign-out-everywhere`,
@@ -107,18 +122,18 @@ describe('simple actions', () => {
   });
 
   it('revokes one device', async () => {
-    fetchMock.mockResolvedValue(empty());
+    answer(empty());
     expect(await actions.revokeSession(ADA, SESSION_A)).toEqual({ ok: true });
     expect(calls()[0]).toMatchObject({
       url: `/v1/admin/users/${ADA}/sessions/${SESSION_A}`,
       method: 'DELETE',
     });
     expect((await actions.revokeSession(ADA, '../x')).ok).toBe(false);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(calls()).toHaveLength(1);
   });
 
   it('unlinks a provider, never email, never a path trick', async () => {
-    fetchMock.mockResolvedValue(empty());
+    answer(empty());
     expect(await actions.unlinkIdentity(ADA, 'github')).toEqual({ ok: true });
     expect(calls()[0]).toMatchObject({
       url: `/v1/admin/users/${ADA}/identities/github`,
@@ -126,13 +141,13 @@ describe('simple actions', () => {
     });
     expect((await actions.unlinkIdentity(ADA, 'email')).ok).toBe(false);
     expect((await actions.unlinkIdentity(ADA, 'github/../x')).ok).toBe(false);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(calls()).toHaveLength(1);
   });
 });
 
 describe('deleteUser', () => {
   it('goes back to the list once the user is gone', async () => {
-    fetchMock.mockResolvedValue(empty());
+    answer(empty());
     await expect(actions.deleteUser(ADA, { redirectTo: 'list' })).rejects.toThrow(
       'NEXT_REDIRECT /admin/users',
     );
@@ -140,7 +155,7 @@ describe('deleteUser', () => {
   });
 
   it('stays put and refreshes when the list deletes', async () => {
-    fetchMock.mockResolvedValue(empty());
+    answer(empty());
     expect(await actions.deleteUser(ADA)).toEqual({ ok: true });
     expect(revalidatePath).toHaveBeenCalledWith('/admin/users');
   });
@@ -148,7 +163,7 @@ describe('deleteUser', () => {
   it('returns the sole-owner copy from the API', async () => {
     const message =
       'Ada is the only owner of Acme. Make someone else an owner, or delete Acme first.';
-    fetchMock.mockResolvedValue(json({ error: 'conflict', message }, 409));
+    answer(json({ error: 'conflict', message }, 409));
     expect(await actions.deleteUser(ADA, { redirectTo: 'list' })).toEqual({
       ok: false,
       message,
@@ -159,7 +174,7 @@ describe('deleteUser', () => {
 
 describe('emailUser', () => {
   it('posts a trimmed subject and the Markdown body', async () => {
-    fetchMock.mockResolvedValue(json({}, 202));
+    answer(json({}, 202));
     expect(await actions.emailUser(ADA, ' Hello ', ' **Hi** there ')).toEqual({ ok: true });
     expect(calls()[0]).toEqual({
       url: `/v1/admin/users/${ADA}/email`,
@@ -179,7 +194,7 @@ describe('emailUser', () => {
       message: 'The message must be 1 to 10000 characters.',
     });
     expect(await actions.emailUser(ADA, 'x', 'y'.repeat(10001))).toMatchObject({ ok: false });
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(calls()).toHaveLength(0);
   });
 });
 
@@ -187,7 +202,7 @@ describe('bulkUsers', () => {
   const ids = [ADA, 'a0000000-0000-4000-8000-000000000003'];
 
   it('signs out and reports done and skipped', async () => {
-    fetchMock.mockResolvedValue(json({ done: 1, skipped: [ids[1]] }));
+    answer(json({ done: 1, skipped: [ids[1]] }));
     expect(await actions.bulkUsers(ids, 'sign_out')).toEqual({
       ok: true,
       done: 1,
@@ -201,7 +216,7 @@ describe('bulkUsers', () => {
   });
 
   it('suspends with a trimmed reason', async () => {
-    fetchMock.mockResolvedValue(json({ done: 2, skipped: [] }));
+    answer(json({ done: 2, skipped: [] }));
     await actions.bulkUsers(ids, 'suspend', ' spam ');
     expect(calls()[0].body).toEqual({ ids, action: 'suspend', reason: 'spam' });
   });
@@ -216,6 +231,51 @@ describe('bulkUsers', () => {
     expect((await actions.bulkUsers(['x'], 'sign_out')).ok).toBe(false);
     expect((await actions.bulkUsers(ids, 'delete' as never)).ok).toBe(false);
     expect((await actions.bulkUsers(ids, 'suspend', 'x'.repeat(501))).ok).toBe(false);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(calls()).toHaveLength(0);
+  });
+});
+
+describe('the guard', () => {
+  const FORBIDDEN = {
+    ok: false,
+    code: 'forbidden',
+    message: 'You don’t have permission to do that.',
+  };
+
+  it('stops every write for a read-only admin before any API write', async () => {
+    perms = [];
+    const sid = SESSION_A;
+    const results = [
+      await actions.suspendUser(ADA, '', false),
+      await actions.unsuspendUser(ADA),
+      await actions.signOutEverywhere(ADA),
+      await actions.revokeSession(ADA, sid),
+      await actions.unlinkIdentity(ADA, 'github'),
+      await actions.deleteUser(ADA),
+      await actions.deleteUserAndReturn(ADA),
+      await actions.emailUser(ADA, 'Hi', 'There'),
+      await actions.bulkUsers([ADA], 'sign_out'),
+    ];
+    for (const r of results) {
+      expect(r).toEqual(FORBIDDEN);
+    }
+    expect(calls()).toHaveLength(0);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('needs emails for the email action, users for the rest', async () => {
+    perms = ['users'];
+    expect(await actions.emailUser(ADA, 'Hi', 'There')).toEqual(FORBIDDEN);
+    perms = ['emails'];
+    expect(await actions.signOutEverywhere(ADA)).toEqual(FORBIDDEN);
+    expect(calls()).toHaveLength(0);
+    answer(json({}, 202));
+    expect(await actions.emailUser(ADA, 'Hi', 'There')).toEqual({ ok: true });
+  });
+
+  it('gives a non-admin the 404 page', async () => {
+    fetchMock.mockImplementation(async () => json({ error: 'not_found', message: '' }, 404));
+    await expect(actions.suspendUser(ADA, '', false)).rejects.toThrow();
+    expect(calls()).toHaveLength(0);
   });
 });

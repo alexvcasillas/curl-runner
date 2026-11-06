@@ -63,6 +63,7 @@ export async function GET(request: Request): Promise<Response> {
   const headers = new Headers({
     'content-type': 'text/csv; charset=utf-8',
     'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
   });
   const disposition = upstream.headers.get('content-disposition');
   headers.set('content-disposition', disposition ?? 'attachment; filename="users.csv"');

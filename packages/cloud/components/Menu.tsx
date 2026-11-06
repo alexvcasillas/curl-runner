@@ -101,14 +101,14 @@ export function Menu({
     if (!open || !fixed) {
       return;
     }
-    const shut = () => setOpen(false);
+    const shut = () => close(true);
     window.addEventListener('scroll', shut, true);
     window.addEventListener('resize', shut);
     return () => {
       window.removeEventListener('scroll', shut, true);
       window.removeEventListener('resize', shut);
     };
-  }, [open, fixed]);
+  }, [open, fixed, close]);
 
   useEffect(() => {
     if (!open) {

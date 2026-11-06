@@ -44,6 +44,7 @@ describe('GET /admin/users/export', () => {
       'attachment; filename="users-2026-11-06.csv"',
     );
     expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     expect(await res.text()).toContain('ada@acme.com');
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toBe('http://api.test/v1/admin/users.csv?q=ada&filter=suspended');

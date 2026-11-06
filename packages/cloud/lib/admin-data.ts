@@ -1,7 +1,8 @@
 import 'server-only';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
-import type { AdminMe, AdminOverview } from './admin';
+import type { ActionResult } from './action-result';
+import { type AdminMe, type AdminOverview, can, type Perm } from './admin';
 import type { UserDetail, UsersPage, UsersQuery } from './admin-users';
 import { api } from './api';
 import { ApiError } from './errors';
@@ -21,6 +22,22 @@ export const getAdminMe = cache(async (): Promise<AdminMe> => {
     throw err;
   }
 });
+
+export const FORBIDDEN: Extract<ActionResult, { ok: false }> = {
+  ok: false,
+  code: 'forbidden',
+  message: 'You don’t have permission to do that.',
+};
+
+/**
+ * The guard at the top of every admin write action. A non-admin gets the 404
+ * page; an admin without `perm` gets the problem to show, and nothing is sent.
+ * The API enforces both too: this is defence in depth.
+ */
+export async function requireAdmin(perm?: Perm): Promise<typeof FORBIDDEN | null> {
+  const me = await getAdminMe();
+  return perm && !can(me.permissions, perm) ? FORBIDDEN : null;
+}
 
 export const getOverview = cache(() => api<AdminOverview>('/v1/admin/overview'));
 

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import type { ActionResult } from '@/lib/action-result';
 import { adminRoutes } from '@/lib/admin';
+import { requireAdmin } from '@/lib/admin-data';
 import { api } from '@/lib/api';
 import { INVALID_FORM } from '@/lib/errors';
 import { attempt, INVALID } from '@/lib/team-action';
@@ -52,6 +53,10 @@ export async function suspendUser(
   reason: string,
   notify: boolean,
 ): Promise<ActionResult> {
+  const denied = await requireAdmin('users');
+  if (denied) {
+    return denied;
+  }
   if (!isUuid(id)) {
     return NO_USER;
   }
@@ -74,6 +79,10 @@ export async function suspendUser(
 
 /** `POST …/{id}/unsuspend`. */
 export async function unsuspendUser(id: string): Promise<ActionResult> {
+  const denied = await requireAdmin('users');
+  if (denied) {
+    return denied;
+  }
   if (!isUuid(id)) {
     return NO_USER;
   }
@@ -87,6 +96,10 @@ export async function unsuspendUser(id: string): Promise<ActionResult> {
 
 /** `POST …/{id}/sign-out-everywhere`. */
 export async function signOutEverywhere(id: string): Promise<ActionResult> {
+  const denied = await requireAdmin('users');
+  if (denied) {
+    return denied;
+  }
   if (!isUuid(id)) {
     return NO_USER;
   }
@@ -102,6 +115,10 @@ export async function signOutEverywhere(id: string): Promise<ActionResult> {
 
 /** `DELETE …/{id}/sessions/{sid}`. */
 export async function revokeSession(id: string, sessionId: string): Promise<ActionResult> {
+  const denied = await requireAdmin('users');
+  if (denied) {
+    return denied;
+  }
   if (!isUuid(id) || !isUuid(sessionId)) {
     return INVALID;
   }
@@ -120,6 +137,10 @@ const PROVIDER = /^[a-z0-9_-]{1,32}$/;
 
 /** `DELETE …/{id}/identities/{provider}`. */
 export async function unlinkIdentity(id: string, provider: string): Promise<ActionResult> {
+  const denied = await requireAdmin('users');
+  if (denied) {
+    return denied;
+  }
   if (!isUuid(id)) {
     return NO_USER;
   }
@@ -144,6 +165,10 @@ export async function deleteUser(
   id: string,
   options?: { redirectTo?: 'list' },
 ): Promise<ActionResult> {
+  const denied = await requireAdmin('users');
+  if (denied) {
+    return denied;
+  }
   if (!isUuid(id)) {
     return NO_USER;
   }
@@ -165,6 +190,10 @@ export async function deleteUserAndReturn(id: string): Promise<ActionResult> {
 
 /** `POST …/{id}/email`. The body is Markdown. */
 export async function emailUser(id: string, subject: string, body: string): Promise<ActionResult> {
+  const denied = await requireAdmin('emails');
+  if (denied) {
+    return denied;
+  }
   if (!isUuid(id)) {
     return NO_USER;
   }
@@ -196,6 +225,10 @@ export async function bulkUsers(
   action: 'sign_out' | 'suspend',
   reason = '',
 ): Promise<BulkResult> {
+  const denied = await requireAdmin('users');
+  if (denied) {
+    return denied;
+  }
   if (
     !Array.isArray(ids) ||
     ids.length === 0 ||

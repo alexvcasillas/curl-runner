@@ -214,5 +214,6 @@ describe('Menu in a scrolling container', () => {
     expect(screen.getByRole('menu')).toBeInTheDocument();
     fireEvent.scroll(window);
     expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Open' })).toHaveFocus();
   });
 });
