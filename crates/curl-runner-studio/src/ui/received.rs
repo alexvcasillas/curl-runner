@@ -258,6 +258,10 @@ impl Workspace {
         else {
             return;
         };
+        // Its folder is being swapped: the next tick asks again.
+        if self.updating.as_deref() == Some(token) {
+            return;
+        }
         if self.update_checks.contains_key(token) {
             if manual {
                 self.manual_checks.insert(token.to_string());
@@ -356,6 +360,9 @@ impl Workspace {
     ///
     /// [`apply_offer_now`]: Workspace::apply_offer_now
     pub(super) fn apply_offer(&mut self, token: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.updating.is_some() {
+            return;
+        }
         // What the banner said when Update was clicked (a save on the way
         // recounts it).
         let Some(shown) = self.update_offers.get(token).map(|o| o.local_changes) else {
@@ -475,12 +482,16 @@ impl Workspace {
 
     /// The open copy takes the offered version, all or nothing
     /// (a hidden folder swapped in: on failure the copy is as it was and
-    /// the offer stays). Saved secrets and `.env` values stay; the record
-    /// takes the new version and file hashes; inputs the version newly
-    /// requires are asked for in the Credentials step. Only the copy the
+    /// the offer stays). The plan and the swap run in the background, the
+    /// banner busy meanwhile; then [`offer_applied`]. Only the copy the
     /// offer is for, and only while it is open. The customer's edits are
     /// replaced.
+    ///
+    /// [`offer_applied`]: Workspace::offer_applied
     fn apply_offer_now(&mut self, token: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.updating.is_some() {
+            return;
+        }
         let Some(copy) = self
             .received
             .clone()
@@ -491,22 +502,70 @@ impl Workspace {
         let Some(offer) = self.update_offers.get(token).cloned() else {
             return;
         };
-        let org = copy.share.team.clone();
-        // Planned again: the copy may have changed since the check.
-        let plan = match plan_update(&copy.root, offer.plan.files.clone()) {
+        let (root, files) = (copy.root.clone(), offer.plan.files.clone());
+        let swap = cx.background_spawn(async move {
+            // Planned again: the copy may have changed since the check.
+            let plan = plan_update(&root, files).map_err(|e| (e, Vec::new()))?;
+            match apply_update(&root, &plan) {
+                Ok(()) => Ok(plan),
+                Err(e) => Err((e, touched(&plan))),
+            }
+        });
+        self.updating = Some(token.to_string());
+        cx.notify();
+        let token = token.to_string();
+        // Detached: the swap finishes, and its record is kept, whatever
+        // the user does meanwhile.
+        cx.spawn_in(window, async move |this, cx| {
+            let swapped = swap.await;
+            this.update_in(cx, |this, window, cx| {
+                this.updating = None;
+                this.offer_applied(&token, copy, offer, swapped, window, cx);
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// The swap of [`apply_offer_now`] is done. On success: saved secrets
+    /// and `.env` values stay; the record takes the new version and file
+    /// hashes; with the copy still open, its watcher is re-armed and inputs
+    /// the version newly requires are asked for in the Credentials step.
+    ///
+    /// [`apply_offer_now`]: Workspace::apply_offer_now
+    fn offer_applied(
+        &mut self,
+        token: &str,
+        copy: ReceivedCopy,
+        offer: UpdateOffer,
+        swapped: Result<UpdatePlan, (String, Vec<PathBuf>)>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let open = self
+            .received
+            .as_ref()
+            .is_some_and(|r| r.share.link.token == token && r.root == copy.root);
+        let plan = match swapped {
             Ok(plan) => plan,
-            Err(e) => return notify_error(e, window, cx),
+            Err((e, touched)) => {
+                notify_error(e, window, cx);
+                // Nothing changed; the tree shows what is there all the same.
+                if open && !touched.is_empty() {
+                    self.disk_changed(&touched, window, cx);
+                }
+                return;
+            }
         };
-        if let Err(e) = apply_update(&copy.root, &plan) {
-            notify_error(e, window, cx);
-            // Nothing changed; the tree shows what is there all the same.
-            self.disk_changed(&touched(&plan), window, cx);
-            return;
+        // A newer offer found meanwhile stays.
+        if self
+            .update_offers
+            .get(token)
+            .is_some_and(|o| o.version == offer.version)
+        {
+            self.update_offers.remove(token);
         }
-        self.update_offers.remove(token);
-        // The folder is a new one now: a watcher on the old one (inotify
-        // follows the inode) would miss every change from here on.
-        self.watch(&copy.root, window, cx);
         let hashes = || {
             plan.files
                 .iter()
@@ -523,19 +582,28 @@ impl Workspace {
                 r.share = share.clone();
             }
         }
-        edit_notes(&self.notes, cx, |meta| {
-            meta.received_updated = Some(offer.published_at);
-        });
-        // Synced as of now: nothing shows as waiting. The base goes through
-        // the sync's saver, so its writes stay in order.
-        let base = SyncBase {
-            files: hashes().collect(),
-            ..SyncBase::default()
-        };
-        self.synced_as(base, window, cx);
-        self.disk_changed(&touched(&plan), window, cx);
-        let asked = self.take_shared_vars(offer.variables.clone(), cx);
-        let text = format!("Updated to version {} from {org}", offer.version);
+        let mut asked = Vec::new();
+        if open {
+            // The folder is a new one now: a watcher on the old one
+            // (inotify follows the inode) would miss every change from here.
+            self.watch(&copy.root, window, cx);
+            edit_notes(&self.notes, cx, |meta| {
+                meta.received_updated = Some(offer.published_at);
+            });
+            // Synced as of now: nothing shows as waiting. The base goes
+            // through the sync's saver, so its writes stay in order.
+            let base = SyncBase {
+                files: hashes().collect(),
+                ..SyncBase::default()
+            };
+            self.synced_as(base, window, cx);
+            self.disk_changed(&touched(&plan), window, cx);
+            asked = self.take_shared_vars(offer.variables.clone(), cx);
+        }
+        let text = format!(
+            "Updated to version {} from {}",
+            offer.version, copy.share.team
+        );
         #[cfg(test)]
         self.toasts.push(text.clone());
         window.push_notification(Notification::success(text), cx);
@@ -556,7 +624,6 @@ impl Workspace {
         if !asked.is_empty() {
             self.ask_new_inputs(&copy, &offer, asked, window, cx);
         }
-        cx.notify();
     }
 
     /// The new required inputs, in the Add flow's Credentials step: saved
@@ -701,6 +768,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.updating.is_some() {
+            return;
+        }
         let token = token.to_string();
         self.settle_unsaved(
             Rc::new(move |this, window, cx| {
@@ -738,6 +808,18 @@ impl Workspace {
 
     /// The open received copy's YAML and notes into `dest` ([`duplicate`]).
     fn duplicate_files(&self, dest: &Path, cx: &App) -> Result<usize, String> {
+        self.duplicate_job(dest, cx)?()
+    }
+
+    /// [`duplicate_files`] as a job to run anywhere (the background): what
+    /// it needs is taken now.
+    ///
+    /// [`duplicate_files`]: Workspace::duplicate_files
+    fn duplicate_job(
+        &self,
+        dest: &Path,
+        cx: &App,
+    ) -> Result<impl FnOnce() -> Result<usize, String> + Send + 'static, String> {
         let from = self
             .state
             .collection
@@ -745,14 +827,20 @@ impl Workspace {
             .filter(|c| c.received_from.is_some())
             .map(|c| c.root.clone())
             .ok_or("No shared collection is open.")?;
-        duplicate(self.store.base(), &from, self.meta(cx), dest)
+        let (base, meta) = (
+            self.store.base().map(Path::to_path_buf),
+            self.meta(cx).clone(),
+        );
+        let dest = dest.to_path_buf();
+        Ok(move || duplicate(base.as_deref(), &from, &meta, &dest))
     }
 
     /// **Keep my changes as a copy** into `dest`, then **Update**: the
-    /// copy's files are duplicated first, and only a duplicate that fully
-    /// worked lets the update replace them. On failure the copy is
-    /// untouched, the offer stays and the error shows. The copy stays
-    /// open; the duplicate joins My collections.
+    /// copy's files are duplicated first (in the background, the banner
+    /// busy), and only a duplicate that fully worked lets the update
+    /// replace them. On failure the copy is untouched, the offer stays and
+    /// the error shows. The copy stays open; the duplicate joins My
+    /// collections.
     pub(super) fn keep_copy_to(
         &mut self,
         token: &str,
@@ -760,6 +848,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.updating.is_some() {
+            return;
+        }
         let Some(root) = self
             .received
             .as_ref()
@@ -771,24 +862,45 @@ impl Workspace {
         if !self.update_offers.contains_key(token) {
             return;
         }
-        if let Err(e) = self.duplicate_files(dest, cx) {
-            let text = format!("Couldn't keep a copy: {e}");
-            #[cfg(test)]
-            self.toasts.push(text.clone());
-            return notify_error(text, window, cx);
-        }
-        // Recent, then the copy again: it stays the folder to reopen.
-        self.remember_folder(dest);
-        self.remember_folder(&root);
-        let name = dest.file_name().map_or_else(
-            || dest.display().to_string(),
-            |n| n.to_string_lossy().into_owned(),
-        );
-        let text = format!("Kept your changes in {name}");
+        let job = match self.duplicate_job(dest, cx) {
+            Ok(job) => job,
+            Err(e) => return self.keep_copy_failed(&e, window, cx),
+        };
+        let copied = cx.background_spawn(async move { job() });
+        self.updating = Some(token.to_string());
+        cx.notify();
+        let (token, dest) = (token.to_string(), dest.to_path_buf());
+        cx.spawn_in(window, async move |this, cx| {
+            let copied = copied.await;
+            this.update_in(cx, |this, window, cx| {
+                this.updating = None;
+                cx.notify();
+                if let Err(e) = copied {
+                    return this.keep_copy_failed(&e, window, cx);
+                }
+                // Recent, then the copy again: it stays the folder to reopen.
+                this.remember_folder(&dest);
+                this.remember_folder(&root);
+                let name = dest.file_name().map_or_else(
+                    || dest.display().to_string(),
+                    |n| n.to_string_lossy().into_owned(),
+                );
+                let text = format!("Kept your changes in {name}");
+                #[cfg(test)]
+                this.toasts.push(text.clone());
+                window.push_notification(Notification::success(text), cx);
+                this.apply_offer_now(&token, window, cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn keep_copy_failed(&mut self, e: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let text = format!("Couldn't keep a copy: {e}");
         #[cfg(test)]
         self.toasts.push(text.clone());
-        window.push_notification(Notification::success(text), cx);
-        self.apply_offer_now(token, window, cx);
+        notify_error(text, window, cx);
     }
 
     /// Opens another collection from the sidebar (Shared with me, My
@@ -1962,6 +2074,53 @@ mod gpui_tests {
             toasts(cx, &s),
             ["Couldn't keep a copy: Pick a folder outside the shared collection."]
         );
+    }
+
+    /// Clicks `id` and leaves the background work where it is.
+    fn click_only(cx: &mut TestAppContext, s: &Studio, id: &str) {
+        cx.update_window(s.window, |_, window, cx| {
+            window.render_frame(cx);
+            window.click(id.to_string(), cx);
+        })
+        .unwrap();
+    }
+
+    #[gpui_kit::test]
+    fn banner_is_busy_while_the_update_runs(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        open_file(cx, &s, "rates/list-carriers.yaml");
+        publish(
+            &s,
+            14,
+            chrono::Duration::hours(2),
+            three_changed(),
+            fixtures::shipping_variables(),
+        );
+        edit_copy(&s);
+        check(cx, &s, false);
+        assert!(label(cx, &s, "update-banner-keep").is_some());
+        let mine = snapshot(&s);
+        click_only(cx, &s, "update-banner-update");
+        // The swap waits on the background: the banner says so, and no
+        // button starts anything.
+        assert_eq!(
+            label(cx, &s, "update-banner-update").as_deref(),
+            Some("Updating…")
+        );
+        assert_eq!(snapshot(&s), mine, "nothing swapped on the UI thread");
+        click_only(cx, &s, "update-banner-update");
+        click_only(cx, &s, "update-banner-what-changed");
+        click_only(cx, &s, "update-banner-keep");
+        assert!(!dialog_open(cx, &s));
+        cx.run_until_parked();
+        assert_eq!(s.read(RATES), "request:\n  url: https://v14/rates\n");
+        assert_eq!(s.spy.received().into_iter().next().unwrap().version, 14);
+        assert!(label(cx, &s, "update-banner").is_none(), "the banner went");
+        let updated = toasts(cx, &s)
+            .into_iter()
+            .filter(|t| t.starts_with("Updated to version"))
+            .count();
+        assert_eq!(updated, 1, "one update");
     }
 
     #[gpui_kit::test]

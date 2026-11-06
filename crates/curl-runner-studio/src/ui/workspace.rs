@@ -220,6 +220,9 @@ pub struct Workspace {
     pub(super) manual_checks: HashSet<String>,
     /// A newer version of a received copy, by share token: the banner.
     pub(super) update_offers: HashMap<String, super::update_banner::UpdateOffer>,
+    /// The share token whose Update (or Keep my changes as a copy) runs in
+    /// the background: the banner is busy, its buttons do nothing.
+    pub(super) updating: Option<String>,
     /// The latest local-changes recount (see `recount_open_local_changes`):
     /// a newer one replaces (and drops) it.
     pub(super) local_recount: Option<Task<()>>,
@@ -356,6 +359,7 @@ impl Workspace {
             update_checks: HashMap::new(),
             manual_checks: HashSet::new(),
             update_offers: HashMap::new(),
+            updating: None,
             local_recount: None,
             local_recount_gen: 0,
             _update_timer: None,

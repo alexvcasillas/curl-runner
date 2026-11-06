@@ -119,6 +119,9 @@ pub fn change_lines(plan: &UpdatePlan) -> Vec<String> {
 /// The note bar's height (the ReadOnly board's).
 const BANNER_HEIGHT: f32 = 40.;
 
+/// The Update button while an update (or a kept copy) runs.
+pub const UPDATING: &str = "Updating…";
+
 impl Workspace {
     /// The offer for the open received copy, if one is waiting.
     pub(super) fn open_offer(&self) -> Option<(&str, &UpdateOffer)> {
@@ -132,6 +135,8 @@ impl Workspace {
         let text = banner_text(offer, Utc::now());
         let local = local_changes_text(offer.local_changes);
         let (update, what, keep) = (token.to_string(), token.to_string(), token.to_string());
+        // An Update (or a kept copy) runs: every button waits for it.
+        let busy = self.updating.is_some();
         Some(
             div()
                 .id("update-banner")
@@ -183,26 +188,42 @@ impl Workspace {
                 .child(div().flex_1())
                 .when(offer.local_changes > 0, |bar| {
                     bar.child(
-                        banner_button("update-banner-keep", "Keep my changes as a copy", false)
-                            .on_click(cx.listener(move |this, _, window, cx| {
+                        banner_button(
+                            "update-banner-keep",
+                            "Keep my changes as a copy",
+                            false,
+                            busy,
+                        )
+                        .when(!busy, |b| {
+                            b.on_click(cx.listener(move |this, _, window, cx| {
                                 this.keep_copy_then_update(&keep, window, cx)
                             }))
-                            .test_support(),
+                        })
+                        .test_support(),
                     )
                 })
                 .child(
-                    banner_button("update-banner-what-changed", "What changed", false)
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.show_what_changed(&what, window, cx)
-                        }))
+                    banner_button("update-banner-what-changed", "What changed", false, busy)
+                        .when(!busy, |b| {
+                            b.on_click(cx.listener(move |this, _, window, cx| {
+                                this.show_what_changed(&what, window, cx)
+                            }))
+                        })
                         .test_support(),
                 )
                 .child(
-                    banner_button("update-banner-update", "Update", true)
-                        .on_click(cx.listener(move |this, _, window, cx| {
+                    banner_button(
+                        "update-banner-update",
+                        if busy { UPDATING } else { "Update" },
+                        true,
+                        busy,
+                    )
+                    .when(!busy, |b| {
+                        b.on_click(cx.listener(move |this, _, window, cx| {
                             this.apply_offer(&update, window, cx)
                         }))
-                        .test_support(),
+                    })
+                    .test_support(),
                 )
                 .into_any_element(),
         )
@@ -270,8 +291,14 @@ impl Workspace {
     }
 }
 
-/// The note bar's 28px buttons: ghost, or `primary` for Update.
-fn banner_button(id: &'static str, label: &'static str, primary: bool) -> Stateful<Div> {
+/// The note bar's 28px buttons: ghost, or `primary` for Update; dimmed
+/// and inert (no hover, the caller adds no click) while `busy`.
+fn banner_button(
+    id: &'static str,
+    label: &'static str,
+    primary: bool,
+    busy: bool,
+) -> Stateful<Div> {
     div()
         .id(id)
         .role(Role::Button)
@@ -284,15 +311,20 @@ fn banner_button(id: &'static str, label: &'static str, primary: bool) -> Statef
         .rounded(px(6.))
         .text_size(px(12.))
         .whitespace_nowrap()
-        .cursor_pointer()
         .map(|b| {
             if primary {
-                b.bg(color("text-primary"))
-                    .text_color(color("on-primary"))
-                    .hover(|s| s.opacity(0.9))
+                b.bg(color("text-primary")).text_color(color("on-primary"))
             } else {
                 b.text_color(color("text-secondary"))
-                    .hover(|s| s.bg(color("surface-100")))
+            }
+        })
+        .map(|b| {
+            if busy {
+                b.opacity(0.55).cursor_default()
+            } else if primary {
+                b.cursor_pointer().hover(|s| s.opacity(0.9))
+            } else {
+                b.cursor_pointer().hover(|s| s.bg(color("surface-100")))
             }
         })
         .child(label)
