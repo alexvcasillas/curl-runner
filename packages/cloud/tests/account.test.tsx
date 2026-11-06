@@ -68,8 +68,14 @@ function setup(over: Partial<React.ComponentProps<typeof AccountView>> = {}) {
         ]}
         sessions={sessions}
         teams={[
-          { slug: 'acme', name: 'Acme', role: 'owner', plan: 'team' },
-          { slug: 'globex', name: 'Globex Partners', role: 'member', plan: 'free' },
+          { slug: 'acme', name: 'Acme', role: 'owner', plan: 'team', suspended: false },
+          {
+            slug: 'globex',
+            name: 'Globex Partners',
+            role: 'member',
+            plan: 'free',
+            suspended: false,
+          },
         ]}
         showPlan
         onRevoke={onRevoke}

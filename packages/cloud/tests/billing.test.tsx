@@ -55,6 +55,8 @@ const FREE = {
   cancel_at: null,
   current_period_end: null,
   plan_source: 'none',
+  override_until: null,
+  has_subscription: false,
 };
 const TEAM = {
   ...FREE,
@@ -64,6 +66,7 @@ const TEAM = {
   seats: 3,
   current_period_end: '2027-11-05T00:00:00Z',
   plan_source: 'stripe',
+  has_subscription: true,
 };
 
 describe('isStripeUrl', () => {
@@ -410,18 +413,42 @@ describe('BillingView', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Nope, try later.');
   });
 
-  it('granted: no portal, nothing to pay', () => {
+  it('granted: no portal, nothing to pay, and the end comes from override_until', () => {
     view({
       summary: {
         ...TEAM,
         plan_source: 'override',
         interval: null,
-        cancel_at: '2027-03-31T00:00:00Z',
+        has_subscription: false,
+        // A Stripe cancel date must not be read as the end of the grant.
+        cancel_at: '2026-12-03T00:00:00Z',
+        override_until: '2027-03-31T23:59:59Z',
       },
     });
     expect(screen.getByText('Granted')).toBeInTheDocument();
     expect(screen.getByText(/until Mar 31, 2027. There’s nothing to pay/)).toBeInTheDocument();
+    expect(screen.queryByText(/Dec 3/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Manage billing' })).toBeNull();
+  });
+
+  it('granted with no end date says so', () => {
+    view({
+      summary: {
+        ...TEAM,
+        plan_source: 'override',
+        interval: null,
+        has_subscription: false,
+        override_until: null,
+      },
+    });
+    expect(
+      screen.getByText(/gave Acme the Team plan with no end date. There’s nothing to pay/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'The grant has no end date. If it ever ends, Acme moves to Free unless an owner upgrades.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('says Unavailable, not a dash, when prices are missing on Team', () => {

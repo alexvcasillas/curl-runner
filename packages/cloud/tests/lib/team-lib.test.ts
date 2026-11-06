@@ -102,6 +102,8 @@ describe('seat notes', () => {
     cancel_at: null,
     current_period_end: null,
     plan_source: 'stripe',
+    override_until: null,
+    has_subscription: true,
   });
   it('prices a seat on the annual plan as a month', () => {
     expect(seatCostNote(true, 'team', prices, summary('annual'))).toBe(

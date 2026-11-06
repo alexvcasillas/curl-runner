@@ -13,6 +13,8 @@ export const ERROR_CODES = [
   'code_invalid',
   'signup_closed',
   'account_suspended',
+  'team_suspended',
+  'link_disabled',
   'unavailable',
   'unknown',
 ] as const;
@@ -58,6 +60,9 @@ const FALLBACK: Record<ErrorCode, string> = {
   code_invalid: 'That code isn’t right. Check it and try again.',
   signup_closed: 'Sign-up is closed on this server.',
   account_suspended: 'This account is suspended. Contact support.',
+  team_suspended: 'This team is suspended, so it can’t publish. Contact support.',
+  link_disabled:
+    'This share link was turned off by curl-runner and can’t be turned back on. Contact support.',
   unavailable: 'Cloud isn’t answering right now. Try again in a minute.',
   unknown: 'Something went wrong. Try again in a minute.',
 };

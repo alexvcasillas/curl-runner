@@ -40,8 +40,8 @@ import type { Me } from '@/lib/types';
 const ME: Me = {
   user: { id: 'u1', email: 'ada@acme.com', name: 'Ada Lovelace' },
   teams: [
-    { slug: 'acme', name: 'Acme', role: 'owner', plan: 'team' },
-    { slug: 'globex', name: 'Globex Partners', role: 'member', plan: 'free' },
+    { slug: 'acme', name: 'Acme', role: 'owner', plan: 'team', suspended: false },
+    { slug: 'globex', name: 'Globex Partners', role: 'member', plan: 'free', suspended: false },
   ],
   admin: true,
 };

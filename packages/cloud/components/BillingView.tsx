@@ -79,6 +79,8 @@ export function BillingView(p: BillingViewProps) {
   }
 
   const ends = s.cancel_at ? formatDate(s.cancel_at) : null;
+  // A grant's end is its own date, never Stripe's cancel date.
+  const grantEnd = s.override_until ? `until ${formatDate(s.override_until)}` : 'with no end date';
   const status: { word: string; tone: 'neutral' | 'ok' | 'err' } = {
     free: { word: 'Free', tone: 'neutral' as const },
     active: { word: 'Active', tone: 'ok' as const },
@@ -90,7 +92,7 @@ export function BillingView(p: BillingViewProps) {
   const renews = s.current_period_end ? ` Renews on ${formatDate(s.current_period_end)}.` : '';
   const line = {
     free: '3 members, counting pending invites. Public collections and publishing are unlimited.',
-    granted: `curl-runner gave ${teamName} the Team plan${ends ? ` until ${ends}` : ''}. There’s nothing to pay. Questions? Reply to your welcome email.`,
+    granted: `curl-runner gave ${teamName} the Team plan ${grantEnd}. There’s nothing to pay. Questions? Reply to your welcome email.`,
     active: `Billed ${sub === 'annual' ? 'annually' : 'monthly'}.${renews} Adding or removing a member changes the next invoice, prorated.`,
     scheduled: `Billed ${sub === 'annual' ? 'annually' : 'monthly'}. Adding or removing a member changes the next invoice, prorated.`,
     past_due: `Billed ${sub === 'annual' ? 'annually' : 'monthly'}.${renews} Adding or removing a member changes the next invoice, prorated.`,
@@ -109,7 +111,9 @@ export function BillingView(p: BillingViewProps) {
 
   const foot = {
     free: `Upgrading starts today. The first invoice covers the members ${teamName} has now.`,
-    granted: `When the grant ends, ${teamName} moves to Free unless an owner upgrades. Owners get an email 14 days before.`,
+    granted: s.override_until
+      ? `When the grant ends, ${teamName} moves to Free unless an owner upgrades. Owners get an email 14 days before.`
+      : `The grant has no end date. If it ever ends, ${teamName} moves to Free unless an owner upgrades.`,
     active: portalNote,
     scheduled: portalNote,
     past_due: portalNote,
