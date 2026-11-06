@@ -97,25 +97,14 @@ fn bad_link() -> Fail {
     )
 }
 
-/// The message for a link the client crate rejected: the insecure-server
-/// rule when that is the reason, else the generic one.
-fn link_failure(link: &str) -> Fail {
-    {
-        {
-            let server = url::Url::parse(link).ok().and_then(|u| {
-                if u.scheme() == "curl-runner" {
-                    u.query_pairs()
-                        .find(|(k, _)| k == "server")
-                        .map(|(_, v)| v.trim_end_matches('/').to_string())
-                } else {
-                    Some(link.to_string())
-                }
-            });
-            match server.map(|s| client::check_server(&s)) {
-                Some(Err(m)) => fail(EXIT_INVALID, m),
-                _ => bad_link(),
-            }
-        }
+/// The CLI's message for a link the client crate rejected.
+fn link_failure(e: LinkError) -> Fail {
+    match e {
+        LinkError::InsecureServer(server) => match client::check_server(&server) {
+            Err(m) => fail(EXIT_INVALID, m),
+            Ok(()) => bad_link(),
+        },
+        _ => bad_link(),
     }
 }
 
@@ -137,13 +126,12 @@ fn api_for_landing(origin: &str, env: Env) -> Result<String, Fail> {
                 ),
             ))
         }
-        // Only a test hook can be malformed here.
-        Err(LinkError::Malformed) => Err(link_failure(&test_hook.unwrap_or_default())),
+        Err(e) => Err(link_failure(e)),
     }
 }
 
 fn resolve_link(text: &str, env: Env) -> Result<(String, String), Fail> {
-    match link::parse(text).map_err(|_| link_failure(text))? {
+    match link::parse(text).map_err(link_failure)? {
         Link::Api { server, token } => Ok((server, token)),
         Link::Landing { origin, token } => Ok((api_for_landing(&origin, env)?, token)),
     }

@@ -14,10 +14,12 @@ pub enum Link {
     Landing { origin: String, token: String },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LinkError {
     /// Not a share link, or a link to an insecure server.
     Malformed,
+    /// The link names a server that is plain http and not loopback.
+    InsecureServer(String),
     /// The landing page didn't say where its API is.
     NoApi,
 }
@@ -26,6 +28,7 @@ impl std::fmt::Display for LinkError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             LinkError::Malformed => "That isn't a curl-runner share link.",
+            LinkError::InsecureServer(_) => "That link points to a server that isn't https.",
             LinkError::NoApi => "This link's server didn't say where its API is.",
         })
     }
@@ -58,13 +61,13 @@ pub fn parse(text: &str) -> Result<Link, LinkError> {
             return Err(LinkError::Malformed);
         };
         let server = server.trim_end_matches('/').to_string();
-        check_server(&server).map_err(|_| LinkError::Malformed)?;
+        check_server(&server).map_err(|_| LinkError::InsecureServer(server.clone()))?;
         if !valid_token(&token) {
             return Err(LinkError::Malformed);
         }
         return Ok(Link::Api { server, token });
     }
-    check_server(text).map_err(|_| LinkError::Malformed)?;
+    check_server(text).map_err(|_| LinkError::InsecureServer(text.to_string()))?;
     let segments: Vec<&str> = u
         .path_segments()
         .map(|s| s.filter(|p| !p.is_empty()).collect())
@@ -99,7 +102,7 @@ struct WellKnown {
 pub fn api_for_landing(origin: &str, test_hook: Option<&str>) -> Result<String, LinkError> {
     if let Some(s) = test_hook {
         let s = s.trim_end_matches('/').to_string();
-        check_server(&s).map_err(|_| LinkError::Malformed)?;
+        check_server(&s).map_err(|_| LinkError::InsecureServer(s.clone()))?;
         return Ok(s);
     }
     let host = url::Url::parse(origin)
@@ -166,15 +169,34 @@ mod tests {
             format!("https://h.x.test/s/{long}"),
             "https://h.x.test/s/a/b".to_string(),
             "https://h.x.test/s/".to_string(),
-            "http://h.x.test/s/tok".to_string(),
             format!("curl-runner://open?server=https%3A%2F%2Fapi.x.test&share={long}"),
             "curl-runner://open?server=https%3A%2F%2Fapi.x.test&share=".to_string(),
-            "curl-runner://open?server=http%3A%2F%2Fevil.x.test&share=t".to_string(),
             "curl-runner://close?server=https%3A%2F%2Fapi.x.test&share=t".to_string(),
             "nonsense".to_string(),
         ] {
             assert_eq!(parse(&bad), Err(LinkError::Malformed), "{bad}");
         }
+    }
+
+    #[test]
+    fn insecure_server_is_checked_in_the_old_order() {
+        // Not a share link at all: Malformed wins over the server check.
+        for text in [
+            "curl-runner://open?server=http://evil.example.com",
+            "curl-runner://close?server=http://evil.example.com&share=t",
+        ] {
+            assert_eq!(parse(text), Err(LinkError::Malformed), "{text}");
+        }
+        assert_eq!(
+            parse("curl-runner://open?server=http%3A%2F%2Fevil.example.com&share=t"),
+            Err(LinkError::InsecureServer("http://evil.example.com".into()))
+        );
+        assert_eq!(
+            parse("http://h.example.com/s/tok"),
+            Err(LinkError::InsecureServer(
+                "http://h.example.com/s/tok".into()
+            ))
+        );
     }
 
     #[test]
