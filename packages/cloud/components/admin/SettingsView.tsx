@@ -566,7 +566,7 @@ export function SettingsView({
           })}
         </div>
         <div className="flex min-h-10 items-center border-t border-hairline bg-raised px-4 py-1.5 text-[12px] text-fg-muted">
-          Change these in Coolify, then redeploy. Secrets are never shown.
+          Change these in the server’s environment, then restart it. Secrets are never shown.
         </div>
       </AdminCard>
 

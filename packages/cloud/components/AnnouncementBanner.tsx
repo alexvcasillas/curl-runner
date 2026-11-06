@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { isWebUrl } from '@/lib/admin-settings';
 import {
   type AnnouncementBanner as Announcement,
   dismissBanner,
@@ -32,7 +33,7 @@ export function AnnouncementBanner({ banner }: { banner: Announcement | null | u
       className="rounded-none border-x-0 border-t-0"
       action={
         <span className="flex items-center gap-1.5">
-          {banner.link ? (
+          {banner.link && isWebUrl(banner.link) ? (
             <a
               href={banner.link}
               target="_blank"

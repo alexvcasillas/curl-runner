@@ -43,10 +43,10 @@ export class ApiError extends Error {
   }
 }
 
-/** The copy for a form the page would never send. One place, so every action says the same. */
 /** What a suspended person reads when they try to sign in, on every sign-in path. */
 export const ACCOUNT_SUSPENDED = 'This account is suspended. Contact support.';
 
+/** The copy for a form the page would never send. One place, so every action says the same. */
 export const INVALID_FORM = 'Something in the form isn’t right. Check it and try again.';
 
 const FALLBACK: Record<ErrorCode, string> = {

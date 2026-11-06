@@ -7,6 +7,8 @@ import { requireAdmin } from '@/lib/admin-data';
 import {
   type BannerAudience,
   type BannerTone,
+  DOMAIN,
+  isWebUrl,
   MAX_BANNER,
   MAX_LINK,
   type PlanName,
@@ -52,6 +54,10 @@ export async function saveSignup(mode: SignupMode, domains: string[]): Promise<A
         .filter(Boolean),
     ),
   ];
+  const badDomain = clean.find((d) => !DOMAIN.test(d));
+  if (badDomain) {
+    return bad(`${badDomain} is not a valid domain.`);
+  }
   if (clean.length > MAX_DOMAINS) {
     return bad(`List at most ${MAX_DOMAINS} domains.`);
   }
@@ -115,6 +121,9 @@ export async function saveBanner(input: BannerInput): Promise<ActionResult> {
   const url = link.trim();
   if (length(text) > MAX_BANNER) {
     return bad(`The message must be at most ${MAX_BANNER} characters.`);
+  }
+  if (url && !isWebUrl(url)) {
+    return bad('The link must be an http or https URL.');
   }
   if (length(url) > MAX_LINK) {
     return bad(`The link must be at most ${MAX_LINK} characters.`);

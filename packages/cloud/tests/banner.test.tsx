@@ -47,6 +47,11 @@ describe('AnnouncementBanner', () => {
     expect(screen.queryByText(banner.message)).toBeNull();
   });
 
+  it('drops a link that is not http or https', () => {
+    render(<AnnouncementBanner banner={{ ...banner, link: 'javascript:alert(1)' }} />);
+    expect(screen.queryByRole('link')).toBeNull();
+  });
+
   it('comes back when the version changes', () => {
     localStorage.setItem('cr_banner_dismissed=4', '1');
     render(<AnnouncementBanner banner={{ ...banner, version: 5 }} />);

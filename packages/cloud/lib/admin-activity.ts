@@ -39,6 +39,8 @@ export type ActivityQuery = ActivityFilters & { cursor: string | undefined; trai
 
 /** The first page in a trail: it has no cursor. */
 export const FIRST_PAGE = '-';
+/** The most pages back a trail remembers. */
+const MAX_TRAIL = 50;
 const CURSOR = /^[A-Za-z0-9_-]{1,200}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -56,7 +58,10 @@ export function parseActivityQuery(sp: Raw): ActivityQuery {
     group: ACTION_GROUPS.some((g) => g.value === group) ? (group as ActionGroup) : 'all',
     since: SINCE_OPTIONS.some((s) => s.value === since) ? (since as Since) : '7d',
     cursor: cursor && CURSOR.test(cursor) ? cursor : undefined,
-    trail: (one(sp.trail) ?? '').split('.').filter((c) => CURSOR.test(c)),
+    trail: (one(sp.trail) ?? '')
+      .split('.')
+      .filter((c) => CURSOR.test(c))
+      .slice(0, MAX_TRAIL),
   };
 }
 

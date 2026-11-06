@@ -42,6 +42,13 @@ describe('parseActivityQuery', () => {
   });
 });
 
+describe('trail cap', () => {
+  it('keeps at most 50 entries', () => {
+    const trail = Array.from({ length: 80 }, (_, i) => `c${i}`).join('.');
+    expect(parseActivityQuery({ trail }).trail).toHaveLength(50);
+  });
+});
+
 describe('hrefs', () => {
   it('writes only what differs from the default', () => {
     const q: ActivityFilters & { trail: string[] } = {

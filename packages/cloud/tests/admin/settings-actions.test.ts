@@ -101,11 +101,30 @@ describe('saveSignup', () => {
 
   it('shows the API message when it says no', async () => {
     answer(json({ error: 'invalid_request', message: 'x.y is not a valid domain.' }, 400));
-    expect(await actions.saveSignup('domains', ['x'])).toEqual({
+    expect(await actions.saveSignup('domains', ['x.example'])).toEqual({
       ok: false,
       code: 'invalid_request',
       message: 'x.y is not a valid domain.',
     });
+  });
+});
+
+describe('guards', () => {
+  it('refuses a javascript: banner link and a malformed domain', async () => {
+    expect(
+      await actions.saveBanner({
+        message: 'a',
+        tone: 'info',
+        audience: 'everyone',
+        link: 'javascript:alert(1)',
+      }),
+    ).toMatchObject({ ok: false, code: 'invalid_request' });
+    expect(await actions.saveSignup('domains', ['not a domain'])).toMatchObject({
+      ok: false,
+      code: 'invalid_request',
+    });
+    expect(await actions.saveSignup('domains', ['nodot'])).toMatchObject({ ok: false });
+    expect(calls()).toEqual([]);
   });
 });
 

@@ -153,8 +153,11 @@ describe('environment', () => {
     expect(within(env).getByText('https://cloud.curl-runner.com')).toBeInTheDocument();
     expect(within(env).getByText('Set · GitHub sign-in on')).toBeInTheDocument();
     expect(within(env).getAllByText('Not set').length).toBeGreaterThan(0);
-    expect(within(env).getAllByText('Hidden').length).toBeGreaterThan(0);
-    expect(within(env).getByText('1 owner admin who can’t be removed here')).toBeInTheDocument();
+    expect(within(env).queryByText('Hidden')).toBeNull();
+    expect(within(env).getByText('Set', { exact: true })).toBeInTheDocument();
+    expect(
+      within(env).getByText('Set · 1 owner admin who can’t be removed here'),
+    ).toBeInTheDocument();
     expect(within(env).queryAllByRole('textbox')).toHaveLength(0);
   });
 
