@@ -96,6 +96,17 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// What [`seed`] would write from `config`, with the column defaults
+    /// for the rest.
+    pub fn from_env(config: &Config) -> Self {
+        Self {
+            signup_mode: config.signup,
+            signup_domains: config.signup_domains.clone(),
+            default_plan: config.default_plan,
+            ..Self::default()
+        }
+    }
+
     fn from_row(row: Row) -> Result<Self, ApiError> {
         Ok(Self {
             signup_mode: column_enum(row.signup_mode)?,
@@ -198,6 +209,9 @@ pub struct SettingsCache {
     /// Bumped by [`SettingsCache::invalidate`], so a read that began before a
     /// write cannot put its stale row back afterwards.
     generation: Arc<AtomicU64>,
+    /// The last row read, whatever its age and through invalidations: what
+    /// [`SettingsCache::get_or_last`] answers while the database is down.
+    last: Arc<Mutex<Option<Arc<Settings>>>>,
 }
 
 impl SettingsCache {
@@ -206,6 +220,7 @@ impl SettingsCache {
             clock,
             cached: Arc::default(),
             generation: Arc::default(),
+            last: Arc::default(),
         }
     }
 
@@ -236,8 +251,31 @@ impl SettingsCache {
         let mut cached = self.cached.lock().unwrap_or_else(|e| e.into_inner());
         if self.generation.load(Ordering::SeqCst) == generation {
             *cached = Some((now, settings.clone()));
+            *self.last.lock().unwrap_or_else(|e| e.into_inner()) = Some(settings.clone());
         }
         Ok(settings)
+    }
+
+    /// Like [`SettingsCache::get`], but never fails: when the database can't
+    /// be read, the last settings read (or, before any, what the env would
+    /// seed), with a warning. For discovery, which must answer while the
+    /// database is down.
+    pub async fn get_or_last(&self, db: &PgPool, config: &Config) -> Arc<Settings> {
+        match self.get(db, config).await {
+            Ok(settings) => settings,
+            Err(err) => {
+                let last = self.last.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                tracing::warn!(
+                    "server settings unreadable ({err}), using {}",
+                    if last.is_some() {
+                        "the last read"
+                    } else {
+                        "the env defaults"
+                    }
+                );
+                last.unwrap_or_else(|| Arc::new(Settings::from_env(config)))
+            }
+        }
     }
 
     /// Drop the cache. A write calls this after it commits.

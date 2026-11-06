@@ -5,12 +5,13 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use chrono::Duration;
-use curl_runner_cloud_proto::{BannerTone, ErrorCode, Plan, SignupMode};
+use curl_runner_cloud_proto::{BannerTone, Plan, SignupMode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use super::auth::{AdminAuth, Perm};
 use super::events::{AdminTx, Event};
+use super::page::invalid;
 use crate::config::Config;
 use crate::error::ApiError;
 use crate::extract::{ApiJson, ApiPath};
@@ -104,10 +105,6 @@ async fn view(state: &AppState) -> Result<Json<Value>, ApiError> {
 pub async fn get(admin: AdminAuth, State(state): State<AppState>) -> Result<Json<Value>, ApiError> {
     let _ = admin;
     view(&state).await
-}
-
-fn invalid(message: impl Into<String>) -> ApiError {
-    ApiError::new(ErrorCode::InvalidRequest, message)
 }
 
 /// A lowercase DNS name with at least one dot, such as `acme.com`.

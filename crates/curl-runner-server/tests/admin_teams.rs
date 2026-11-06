@@ -1200,6 +1200,31 @@ async fn list_filters_search_and_csv(pool: PgPool) {
     assert_eq!(lines.len(), 2, "{body}");
     assert!(lines[0].starts_with("slug,name,owner"), "{body}");
     assert!(lines[1].starts_with("acme,acme,ada@example.com"), "{body}");
+
+    // An override on top of a live subscription: still `stripe`, and not
+    // `granted`, since the team still pays.
+    let (status, _) = req(
+        &c.app,
+        "PUT",
+        "/v1/admin/teams/acme/override",
+        Some(json!({"plan": "team", "reason": "Partner", "notify": false})),
+        Some(&c.root),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(slugs(&list("?filter=stripe").await), ["acme"]);
+    assert_eq!(slugs(&list("?filter=granted").await), ["beta"]);
+    // A Free override is no grant.
+    let (status, _) = req(
+        &c.app,
+        "PUT",
+        "/v1/admin/teams/gamma/override",
+        Some(json!({"plan": "free", "reason": "Abuse", "notify": false})),
+        Some(&c.root),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(slugs(&list("?filter=granted").await), ["beta"]);
 }
 
 #[sqlx::test]
@@ -1425,4 +1450,41 @@ async fn activity_groups_cover_team_actions(pool: PgPool) {
             .collect();
         assert_eq!(got, [action], "{group}");
     }
+}
+
+/// The sync takes the webhook's per-subscription lock before it reads
+/// Stripe, so a read never lands under a webhook still applying an older one.
+#[sqlx::test]
+async fn stripe_sync_reads_under_the_subscription_lock(pool: PgPool) {
+    let c = setup(pool).await;
+    pay(&c).await;
+    let mut held = c.app.state.db.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('sub_1'))")
+        .execute(&mut *held)
+        .await
+        .unwrap();
+    let app = curl_runner_server::app(c.app.state.clone());
+    let root = c.root.clone();
+    let sync = tokio::spawn(async move {
+        app.oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(format!("{TEAM}/stripe-sync"))
+                .header(header::AUTHORIZATION, format!("Bearer {root}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+        .status()
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(
+        c.fake.subscription_calls.load(Ordering::SeqCst),
+        0,
+        "read Stripe while the lock was held"
+    );
+    held.rollback().await.unwrap();
+    assert_eq!(sync.await.unwrap(), StatusCode::OK);
+    assert_eq!(c.fake.subscription_calls.load(Ordering::SeqCst), 1);
 }

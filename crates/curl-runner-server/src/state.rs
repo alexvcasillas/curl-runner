@@ -61,6 +61,14 @@ impl AppState {
     pub async fn settings(&self) -> Result<Arc<Settings>, ApiError> {
         self.settings_cache.get(&self.db, &self.config).await
     }
+
+    /// Settings for discovery: the last ones read, or the env's, when the
+    /// database is down. See [`crate::settings::SettingsCache::get_or_last`].
+    pub async fn settings_or_last(&self) -> Arc<Settings> {
+        self.settings_cache
+            .get_or_last(&self.db, &self.config)
+            .await
+    }
 }
 
 /// In-memory fixed-window rate limiter. Single-instance by design: the server

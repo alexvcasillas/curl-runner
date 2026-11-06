@@ -125,6 +125,16 @@ ALTER TABLE outbox_emails
 ALTER TABLE outbox_emails ALTER COLUMN created_at SET DEFAULT now();
 CREATE UNIQUE INDEX outbox_emails_broadcast_recipient
     ON outbox_emails (broadcast_id, user_id) WHERE broadcast_id IS NOT NULL;
+-- The worker's two picks (mail::worker::pick_sql): the oldest due row that is
+-- not a broadcast copy, else the oldest due row of any kind. A row given up
+-- on (failed_at) is no longer pending.
+DROP INDEX outbox_emails_pending;
+CREATE INDEX outbox_emails_pending ON outbox_emails (next_attempt_at)
+    WHERE sent_at IS NULL AND failed_at IS NULL;
+CREATE INDEX outbox_emails_pending_first ON outbox_emails (next_attempt_at)
+    WHERE sent_at IS NULL AND failed_at IS NULL AND kind <> 'broadcast';
+-- The delivery log, newest first.
+CREATE INDEX outbox_emails_created_at ON outbox_emails (created_at, id);
 
 -- One row a day for the 90-day revenue chart.
 CREATE TABLE mrr_snapshots (

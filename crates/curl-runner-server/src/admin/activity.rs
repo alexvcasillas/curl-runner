@@ -3,10 +3,7 @@
 use axum::Json;
 use axum::extract::State;
 use axum::response::Response;
-use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::{DateTime, SecondsFormat, Utc};
-use curl_runner_cloud_proto::ErrorCode;
 use futures_util::{StreamExt, TryStreamExt, stream};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -15,13 +12,10 @@ use uuid::Uuid;
 
 use super::auth::AdminAuth;
 use super::csv;
+use super::page::{Cursor, EXPORT_PAGE, invalid, non_empty, page_limit};
 use crate::error::ApiError;
 use crate::extract::ApiQuery;
 use crate::state::AppState;
-
-const DEFAULT_LIMIT: i64 = 50;
-const MAX_LIMIT: i64 = 200;
-pub(super) const EXPORT_PAGE: i64 = 500;
 
 /// The regex (Postgres `~`) on `action` for each `action_group`. Later
 /// actions are named so they land in the right group.
@@ -54,36 +48,6 @@ struct Filters {
     since: Option<DateTime<Utc>>,
 }
 
-/// Position after the last row of a page: `(at, id)` of that row.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct Cursor {
-    pub(super) at: DateTime<Utc>,
-    pub(super) id: Uuid,
-}
-
-impl Cursor {
-    pub(super) fn encode(self) -> String {
-        URL_SAFE_NO_PAD.encode(format!("{}:{}", self.at.timestamp_micros(), self.id))
-    }
-
-    pub(super) fn decode(s: &str) -> Option<Self> {
-        let raw = String::from_utf8(URL_SAFE_NO_PAD.decode(s).ok()?).ok()?;
-        let (micros, id) = raw.split_once(':')?;
-        Some(Self {
-            at: DateTime::from_timestamp_micros(micros.parse().ok()?)?,
-            id: id.parse().ok()?,
-        })
-    }
-}
-
-pub(super) fn invalid(message: &str) -> ApiError {
-    ApiError::new(ErrorCode::InvalidRequest, message)
-}
-
-pub(super) fn non_empty(v: Option<&String>) -> Option<&str> {
-    v.map(|s| s.trim()).filter(|s| !s.is_empty())
-}
-
 impl ActivityQuery {
     fn filters(&self) -> Result<Filters, ApiError> {
         Ok(Filters {
@@ -110,25 +74,11 @@ impl ActivityQuery {
     }
 
     fn cursor(&self) -> Result<Option<Cursor>, ApiError> {
-        non_empty(self.cursor.as_ref())
-            .map(|c| Cursor::decode(c).ok_or_else(|| invalid("`cursor` is not valid.")))
-            .transpose()
+        Cursor::parse(self.cursor.as_ref())
     }
 
     fn limit(&self) -> Result<i64, ApiError> {
         page_limit(self.limit.as_ref())
-    }
-}
-
-/// The `limit` query value: 1 to 200, 50 when absent.
-pub(super) fn page_limit(raw: Option<&String>) -> Result<i64, ApiError> {
-    match non_empty(raw) {
-        None => Ok(DEFAULT_LIMIT),
-        Some(l) => l
-            .parse()
-            .ok()
-            .filter(|n| (1..=MAX_LIMIT).contains(n))
-            .ok_or_else(|| invalid("`limit` must be between 1 and 200.")),
     }
 }
 
@@ -316,17 +266,6 @@ pub async fn export(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn cursor_round_trips() {
-        let c = Cursor {
-            at: "2026-11-04T10:00:00.123456Z".parse().unwrap(),
-            id: Uuid::new_v4(),
-        };
-        assert_eq!(Cursor::decode(&c.encode()), Some(c));
-        assert_eq!(Cursor::decode("nope"), None);
-        assert_eq!(Cursor::decode(""), None);
-    }
 
     #[test]
     fn every_group_has_a_pattern() {

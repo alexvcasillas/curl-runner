@@ -13,17 +13,20 @@ use crate::state::AppState;
 /// `auth` is a `Result` on purpose: this route is public, and older CLIs send
 /// a publish token or an expired session to it. Only a valid session counts
 /// as signed in; anything else is an anonymous caller, never a `401`.
+///
+/// Discovery answers while the database is down: the settings fall back to
+/// the last ones read, else to the env's (logged), never a `503`.
 pub async fn info(
     State(state): State<AppState>,
     auth: Result<UserAuth, ApiError>,
-) -> Result<Json<ServerInfo>, ApiError> {
-    let settings = state.settings().await?;
-    Ok(Json(server_info(
+) -> Json<ServerInfo> {
+    let settings = state.settings_or_last().await;
+    Json(server_info(
         &state.config,
         &settings,
         state.billing.is_some(),
         auth.is_ok(),
-    )))
+    ))
 }
 
 /// Email sign-in is always on; GitHub and Google appear when configured.

@@ -81,14 +81,14 @@ async fn seeded_from_env_once(pool: PgPool) {
         pool.clone(),
         &[
             ("SIGNUP", "domains"),
-            ("SIGNUP_DOMAINS", " Acme.com ,globex.com"),
+            ("SIGNUP_DOMAINS", " Example.com ,example.org"),
             ("DEFAULT_PLAN", "free"),
         ],
     )
     .await;
     let s = get_settings(&app, &ada).await;
     assert_eq!(s["signup_mode"], "domains");
-    assert_eq!(s["signup_domains"], json!(["acme.com", "globex.com"]));
+    assert_eq!(s["signup_domains"], json!(["example.com", "example.org"]));
     assert_eq!(s["default_plan"], "free");
     assert_eq!(s["free_member_limit"], 3);
     assert_eq!(s["free_restricted"], false);
@@ -127,7 +127,7 @@ async fn env_change_after_seed_is_ignored_with_warn(pool: PgPool) {
 
     let changed = test_config(&[
         ("SIGNUP", "closed"),
-        ("SIGNUP_DOMAINS", "acme.com"),
+        ("SIGNUP_DOMAINS", "example.com"),
         ("DEFAULT_PLAN", "team"),
     ]);
     let outcome = curl_runner_server::settings::seed(&pool, &changed, now)
@@ -150,7 +150,7 @@ async fn signup_domains_mode(pool: PgPool) {
     for bad in [
         json!({"mode": "domains", "domains": ["not a host"]}),
         json!({"mode": "domains", "domains": ["nodot"]}),
-        json!({"mode": "domains", "domains": ["-a.com"]}),
+        json!({"mode": "domains", "domains": ["-x.example.com"]}),
         json!({"mode": "maybe", "domains": []}),
         json!({"mode": "domains"}),
     ] {
@@ -162,14 +162,17 @@ async fn signup_domains_mode(pool: PgPool) {
         &app,
         &ada,
         "signup",
-        json!({"mode": "domains", "domains": [" Acme.COM ", "acme.com", "Globex.io"]}),
+        json!({"mode": "domains", "domains": [" Example.COM ", "example.com", "Example.org"]}),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["signup_domains"], json!(["acme.com", "globex.io"]));
+    assert_eq!(
+        body["signup_domains"],
+        json!(["example.com", "example.org"])
+    );
 
     // The change applies at once, with no wait for the cache.
-    let ok = app.sign_in("rosa@acme.com").await;
+    let ok = app.sign_in("rosa@example.com").await;
     let (status, body) = app
         .request(
             Method::POST,
@@ -179,7 +182,7 @@ async fn signup_domains_mode(pool: PgPool) {
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
-    let no = app.sign_in("sam@other.com").await;
+    let no = app.sign_in("sam@other.example.org").await;
     let (status, body) = app
         .request(
             Method::POST,
@@ -432,7 +435,7 @@ async fn banner_validation(pool: PgPool) {
         ("tone", json!("loud")),
         ("audience", json!("nobody")),
         ("link", json!("javascript:alert(1)")),
-        ("link", json!("https://a.com/ b")),
+        ("link", json!("https://example.com/ b")),
         ("message", json!("x".repeat(281))),
     ] {
         let mut body = ok.clone();

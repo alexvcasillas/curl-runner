@@ -628,8 +628,8 @@ async fn audience_counts(pool: PgPool) {
     let hooli = c.team("hooli", "Hooli").await;
     let gone = c.team("gone", "Gone").await;
     sqlx::query(
-        "UPDATE teams SET plan = 'team', stripe_subscription_id = 'sub_1', billing_status = 'active' \
-         WHERE id = $1",
+        "UPDATE teams SET plan = 'team', stripe_subscription_id = 'sub_1', billing_status = 'active', \
+         billing_interval = 'monthly' WHERE id = $1",
     )
     .bind(acme)
     .execute(c.db())
@@ -922,7 +922,25 @@ async fn delivery_log_filters_and_cursor(pool: PgPool) {
         assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
     }
 
-    // Paging walks every row once, across the NULL created_at.
+    // Paging walks every row once, across the NULL created_at, including
+    // between two NULL rows.
+    let legacy2 = insert("older@example.com", "transactional", None)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE outbox_emails SET created_at = NULL WHERE id = $1")
+        .bind(legacy2)
+        .execute(c.db())
+        .await
+        .unwrap();
+    let (_, log) = c.req("GET", "/v1/admin/emails/log", None).await;
+    let to: Vec<String> = log["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["to"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(to.len(), 5);
+    assert_eq!(&to[..3], [ROOT, "sent@example.com", "failed@example.com"]);
     let mut seen = Vec::new();
     let mut cursor: Option<String> = None;
     loop {
@@ -1206,4 +1224,60 @@ async fn scheduled_broadcast_stays_complete(pool: PgPool) {
     assert_eq!(c.broadcast(&id).await["status"], "draft");
     assert!(c.rows(&id).await.is_empty());
     assert_eq!(c.broadcast(&other).await["status"], "sent");
+}
+
+#[sqlx::test]
+async fn paying_and_granted_audiences_match_the_stripe_page(pool: PgPool) {
+    let c = setup(pool).await;
+    let ada = c.user("ada@example.com", None).await; // pays, with a Team override on top
+    let bob = c.user("bob@example.com", None).await; // Free override, no subscription
+    let carol = c.user("carol@example.com", None).await; // trialing: live, not paying
+    let acme = c.team("acme", "Acme").await;
+    let globex = c.team("globex", "Globex").await;
+    let initech = c.team("initech", "Initech").await;
+    sqlx::query(
+        "UPDATE teams SET plan = 'team', stripe_subscription_id = 'sub_1', \
+         billing_status = 'active', billing_interval = 'monthly', override_plan = 'team' \
+         WHERE id = $1",
+    )
+    .bind(acme)
+    .execute(c.db())
+    .await
+    .unwrap();
+    sqlx::query("UPDATE teams SET override_plan = 'free' WHERE id = $1")
+        .bind(globex)
+        .execute(c.db())
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE teams SET plan = 'team', stripe_subscription_id = 'sub_3', \
+         billing_status = 'trialing', billing_interval = 'monthly' WHERE id = $1",
+    )
+    .bind(initech)
+    .execute(c.db())
+    .await
+    .unwrap();
+    c.join(acme, ada, "owner", 1).await;
+    c.join(globex, bob, "owner", 1).await;
+    c.join(initech, carol, "owner", 1).await;
+
+    let count = |audience: &'static str| {
+        let c = &c;
+        async move {
+            let (status, b) = c
+                .req(
+                    "GET",
+                    &format!("/v1/admin/audience-count?audience={audience}"),
+                    None,
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "{b}");
+            b["count"].as_i64().unwrap()
+        }
+    };
+    // Ada pays: the override on top does not make her team granted.
+    assert_eq!(count("paying_teams").await, 1, "ada");
+    // A Free override is no grant, and a trial is no grant either.
+    assert_eq!(count("granted_teams").await, 0);
+    assert_eq!(count("free_teams").await, 1, "bob");
 }

@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::effective::{PlanRow, PlanSource, effective_plan, plan_columns};
+use super::mrr::is_live_subscription;
 use super::{Billing, BillingError, CheckoutRequest, Price, Prices};
 use crate::auth::UserAuth;
 use crate::config::BillingConfig;
@@ -160,8 +161,10 @@ async fn summary(
     let row = billing_row(&state, access.team_id).await?;
     let now = state.clock.now();
     let (plan, plan_source) = effective_plan(&row.plan, now);
-    let has_subscription =
-        row.plan.stripe_subscription_id.is_some() && is_live(row.billing_status.as_deref());
+    let has_subscription = is_live_subscription(
+        row.plan.stripe_subscription_id.as_deref(),
+        row.billing_status.as_deref(),
+    );
     Ok(Json(SummaryBody {
         plan,
         interval: row.billing_interval,
@@ -198,11 +201,6 @@ struct UrlBody {
     url: String,
 }
 
-/// Statuses after which a subscription is gone for good.
-fn is_live(status: Option<&str>) -> bool {
-    !matches!(status, Some("canceled" | "incomplete_expired"))
-}
-
 /// Owner only.
 async fn checkout(
     State(state): State<AppState>,
@@ -214,7 +212,10 @@ async fn checkout(
     let access = team_access(&state.db, auth.user_id, &slug).await?;
     access.require_owner()?;
     let row = billing_row(&state, access.team_id).await?;
-    if row.plan.stripe_subscription_id.is_some() && is_live(row.billing_status.as_deref()) {
+    if is_live_subscription(
+        row.plan.stripe_subscription_id.as_deref(),
+        row.billing_status.as_deref(),
+    ) {
         return Err(ApiError::new(
             ErrorCode::Conflict,
             "This team already has a subscription. Manage it from the portal.",

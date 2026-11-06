@@ -10,6 +10,7 @@ pub mod collections;
 pub mod csv;
 pub mod emails;
 pub mod events;
+mod page;
 pub mod settings;
 pub mod stats;
 pub mod teams;

@@ -24,10 +24,12 @@ use sqlx::types::Json as Jsonb;
 use sqlx::{FromRow, PgConnection, PgPool};
 use uuid::Uuid;
 
-use super::activity::{Cursor, EXPORT_PAGE, invalid, non_empty, page_limit};
 use super::auth::{AdminAuth, Perm};
 use super::csv;
 use super::events::{AdminTx, Event};
+use super::page::{
+    Cursor, EXPORT_PAGE, invalid, non_empty, owner_emails, page_limit, search_pattern,
+};
 use crate::auth::session::column_enum;
 use crate::billing::effective::{PlanRow, PlanSource, effective_plan, plan_columns};
 use crate::collections::{SharedWithMe, shared_for, shared_from};
@@ -35,9 +37,8 @@ use crate::error::ApiError;
 use crate::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::mail::Mail;
 use crate::state::AppState;
-use crate::teams::{first_operator, mark_seats_dirty};
+use crate::teams::mark_seats_dirty;
 
-const MAX_QUERY: usize = 200;
 const MAX_REASON: usize = 500;
 const MAX_SUBJECT: usize = 200;
 const MAX_BODY: usize = 10_000;
@@ -93,41 +94,9 @@ struct Filters {
     owners: Vec<String>,
 }
 
-/// `s` as an `ILIKE` contains-pattern, with `%`, `_` and `\` taken literally.
-pub(super) fn like_pattern(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('%');
-    for c in s.chars() {
-        if matches!(c, '%' | '_' | '\\') {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out.push('%');
-    out
-}
-
-/// The owners' emails, lowercased: `OPERATOR_EMAILS` and the first operator.
-async fn owner_emails(state: &AppState) -> Result<Vec<String>, ApiError> {
-    let mut owners = state.config.operators.clone();
-    if let Some(first) = first_operator(&state.db).await? {
-        owners.push(first);
-    }
-    for o in &mut owners {
-        *o = o.to_lowercase();
-    }
-    Ok(owners)
-}
-
 impl ListQuery {
     async fn filters(&self, state: &AppState) -> Result<Filters, ApiError> {
-        let pattern = match non_empty(self.q.as_ref()) {
-            Some(q) if q.chars().count() > MAX_QUERY => {
-                return Err(invalid("`q` is too long."));
-            }
-            Some(q) => Some(like_pattern(q)),
-            None => None,
-        };
+        let pattern = search_pattern(self.q.as_ref())?;
         let filter = match non_empty(self.filter.as_ref()) {
             None => Filter::All,
             Some(f) => Filter::parse(f).ok_or_else(|| {
@@ -147,9 +116,7 @@ impl ListQuery {
     }
 
     fn cursor(&self) -> Result<Option<Cursor>, ApiError> {
-        non_empty(self.cursor.as_ref())
-            .map(|c| Cursor::decode(c).ok_or_else(|| invalid("`cursor` is not valid.")))
-            .transpose()
+        Cursor::parse(self.cursor.as_ref())
     }
 }
 
@@ -566,6 +533,8 @@ struct Target {
     id: Uuid,
     email: String,
     name: Option<String>,
+    /// Has a row in `admins`.
+    admin: bool,
 }
 
 impl Target {
@@ -578,22 +547,34 @@ impl Target {
     }
 }
 
+/// Selects `id, email, name, admin` of the `users u` rows, for a [`Target`].
+const TARGET_COLUMNS: &str = "u.id, u.email::text, u.name, \
+     EXISTS (SELECT 1 FROM admins a WHERE a.user_id = u.id)";
+
 /// The user, row-locked. Unknown: `404`.
 async fn lock_target(conn: &mut PgConnection, id: Uuid) -> Result<Target, ApiError> {
-    let row: Option<(String, Option<String>)> =
-        sqlx::query_as("SELECT email::text, name FROM users WHERE id = $1 FOR UPDATE")
-            .bind(id)
-            .fetch_optional(conn)
-            .await?;
-    let (email, name) = row.ok_or_else(ApiError::not_found)?;
-    Ok(Target { id, email, name })
+    let row: Option<(Uuid, String, Option<String>, bool)> = sqlx::query_as(&format!(
+        "SELECT {TARGET_COLUMNS} FROM users u WHERE u.id = $1 FOR UPDATE OF u"
+    ))
+    .bind(id)
+    .fetch_optional(conn)
+    .await?;
+    let (id, email, name, admin) = row.ok_or_else(ApiError::not_found)?;
+    Ok(Target {
+        id,
+        email,
+        name,
+        admin,
+    })
 }
 
 fn conflict(message: &str) -> ApiError {
     ApiError::new(ErrorCode::Conflict, message)
 }
 
-/// Suspending or deleting: not an owner, not yourself.
+/// Suspending or deleting: not an owner, not yourself (`409`), and another
+/// admin only with the `admins` permission too (`403`), so `users` alone is
+/// no way around it.
 fn guard(admin: &AdminAuth, owners: &[String], target: &Target) -> Result<(), ApiError> {
     if owners.contains(&target.email.to_lowercase()) {
         return Err(conflict(
@@ -602,6 +583,12 @@ fn guard(admin: &AdminAuth, owners: &[String], target: &Target) -> Result<(), Ap
     }
     if target.id == admin.user_id {
         return Err(conflict("You can't do that to your own account."));
+    }
+    if target.admin && !admin.permissions.contains(&Perm::Admins) {
+        return Err(ApiError::new(
+            ErrorCode::Forbidden,
+            "You need the admins permission to change another admin.",
+        ));
     }
     Ok(())
 }
@@ -956,10 +943,13 @@ pub async fn email(
     Ok((StatusCode::ACCEPTED, Json(json!({}))))
 }
 
+/// What `POST /v1/admin/users/bulk` does to each user.
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BulkAction {
+    /// Revoke every live session, like "sign out everywhere".
     SignOut,
+    /// Suspend, under the same rules as one suspension.
     Suspend,
 }
 
@@ -972,13 +962,17 @@ pub struct BulkReq {
 
 #[derive(Serialize)]
 pub struct BulkBody {
-    /// How many were changed.
+    /// How many were acted on.
     done: usize,
-    /// Ids left alone: unknown, an owner, the caller, or already suspended.
+    /// Ids left alone, never an error. Both actions skip unknown ids and the
+    /// caller. `suspend` also skips owners, anyone already suspended, and
+    /// other admins unless the caller has `admins`.
     skipped: Vec<Uuid>,
 }
 
-/// `POST /v1/admin/users/bulk`: one transaction and one `users.bulk` event.
+/// `POST /v1/admin/users/bulk`, perm `users`: 1 to 200 ids, one transaction
+/// and one event, `users.bulk.sign_out` or `users.bulk.suspend`, listing the
+/// ids done and skipped.
 pub async fn bulk(
     admin: AdminAuth,
     State(state): State<AppState>,
@@ -995,16 +989,21 @@ pub async fn bulk(
     let owners = owner_emails(&state).await?;
     let mut tx = AdminTx::begin(&state, &admin).await?;
     // Sorted by id, so two batches cannot lock in opposite orders.
-    let rows: Vec<(Uuid, String, Option<String>)> = sqlx::query_as(
-        "SELECT id, email::text, name FROM users WHERE id = ANY($1) ORDER BY id FOR UPDATE",
-    )
+    let rows: Vec<(Uuid, String, Option<String>, bool)> = sqlx::query_as(&format!(
+        "SELECT {TARGET_COLUMNS} FROM users u WHERE u.id = ANY($1) ORDER BY u.id FOR UPDATE OF u"
+    ))
     .bind(&ids)
     .fetch_all(&mut *tx)
     .await?;
     let at = tx.at();
     let mut done = Vec::new();
-    for (id, email, name) in rows {
-        let target = Target { id, email, name };
+    for (id, email, name, is_admin) in rows {
+        let target = Target {
+            id,
+            email,
+            name,
+            admin: is_admin,
+        };
         let changed = match req.action {
             // Not the caller: they would end their own session mid-request.
             BulkAction::SignOut if id == admin.user_id => false,
@@ -1050,12 +1049,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn like_patterns_take_wildcards_literally() {
-        assert_eq!(like_pattern("ada"), "%ada%");
-        assert_eq!(like_pattern("100%_\\"), "%100\\%\\_\\\\%");
-    }
-
-    #[test]
     fn filters_parse() {
         for f in ["all", "members", "customers", "suspended", "admins"] {
             assert_eq!(Filter::parse(f).unwrap().as_str(), f);
@@ -1069,6 +1062,7 @@ mod tests {
             id: Uuid::nil(),
             email: "ada@example.com".into(),
             name: name.map(str::to_owned),
+            admin: false,
         };
         assert_eq!(t(Some("Ada Lovelace")).short_name(), "Ada");
         assert_eq!(t(None).short_name(), "ada@example.com");

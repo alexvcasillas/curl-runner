@@ -960,7 +960,7 @@ async fn detail_has_everything(pool: PgPool) {
     let ada = app.sign_in(OWNER).await;
     let jane = app.sign_in("jane@example.com").await;
     app.create_team(&jane, "acme").await;
-    let owner = app.sign_in("owner@other.com").await;
+    let owner = app.sign_in("owner@example.org").await;
     app.create_team(&owner, "initech").await;
     github_sign_in(&app, "gh-77", "jane@example.com").await;
     let jane_id = uid(&app, &jane).await;
@@ -1079,7 +1079,7 @@ async fn email_user_needs_emails_perm_and_escapes(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::CREATED);
     let path = format!("/v1/admin/users/{jane_id}/email");
-    let msg = json!({"subject": "About your account\r\nBcc: x@y.com", "body_md": "Hi <b>Jane</b> & co\n\nSecond paragraph"});
+    let msg = json!({"subject": "About your account\r\nBcc: x@example.org", "body_md": "Hi <b>Jane</b> & co\n\nSecond paragraph"});
     let (status, body) = req(&app, "POST", &path, Some(msg.clone()), &rosa).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
     let _ = rosa_id;
@@ -1203,7 +1203,7 @@ async fn delete_clears_exact_email_opens(pool: PgPool) {
     let ada = app.sign_in(OWNER).await;
     let jane = app.sign_in("jane@example.com").await;
     let jane_id = uid(&app, &jane).await;
-    let owner = app.sign_in("owner@other.com").await;
+    let owner = app.sign_in("owner@example.org").await;
     app.create_team(&owner, "initech").await;
     let team_id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM teams WHERE slug = 'initech'")
         .fetch_one(&app.state.db)
@@ -1262,4 +1262,84 @@ async fn delete_clears_exact_email_opens(pool: PgPool) {
         .await,
         2
     );
+}
+
+#[sqlx::test]
+async fn changing_another_admin_needs_the_admins_perm(pool: PgPool) {
+    let app = app_with(pool).await;
+    let ada = app.sign_in(OWNER).await;
+    let rosa = app.sign_in("rosa@example.com").await;
+    let sam = app.sign_in("sam@example.com").await;
+    let sam_id = uid(&app, &sam).await;
+    for (email, perms) in [
+        ("rosa@example.com", json!(["users"])),
+        ("sam@example.com", json!(["billing"])),
+    ] {
+        let (status, _) = req(
+            &app,
+            "POST",
+            "/v1/admin/admins",
+            Some(json!({"email": email, "permissions": perms})),
+            &ada,
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+    }
+    for (method, path, body) in [
+        (
+            "POST",
+            format!("/v1/admin/users/{sam_id}/suspend"),
+            Some(json!({"notify": false})),
+        ),
+        ("DELETE", format!("/v1/admin/users/{sam_id}"), None),
+    ] {
+        let (status, out) = req(&app, method, &path, body, &rosa).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{method} {path}: {out}");
+        assert_eq!(
+            out["message"],
+            "You need the admins permission to change another admin."
+        );
+    }
+    // A bulk suspend skips them instead.
+    let (status, out) = req(
+        &app,
+        "POST",
+        "/v1/admin/users/bulk",
+        Some(json!({"ids": [sam_id], "action": "suspend"})),
+        &rosa,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{out}");
+    assert_eq!(out["done"], 0);
+    assert_eq!(out["skipped"], json!([sam_id]));
+    assert_eq!(
+        scalar(
+            &app,
+            "SELECT count(*) FROM users WHERE email = $1 AND suspended_at IS NULL",
+            "sam@example.com"
+        )
+        .await,
+        1
+    );
+
+    // With `admins` too, it goes through.
+    let rosa_id = uid(&app, &rosa).await;
+    let (status, _) = req(
+        &app,
+        "PATCH",
+        &format!("/v1/admin/admins/{rosa_id}"),
+        Some(json!({"permissions": ["users", "admins"]})),
+        &ada,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, out) = req(
+        &app,
+        "POST",
+        &format!("/v1/admin/users/{sam_id}/suspend"),
+        Some(json!({"notify": false})),
+        &rosa,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{out}");
 }

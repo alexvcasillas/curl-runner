@@ -12,10 +12,11 @@ use uuid::Uuid;
 
 use super::auth::{AdminAuth, Perm, Role};
 use super::events::{AdminTx, Event};
+use super::page::owner_emails;
 use crate::error::ApiError;
 use crate::extract::{ApiJson, ApiPath};
 use crate::state::AppState;
-use crate::teams::{first_operator, is_operator};
+use crate::teams::is_operator;
 
 #[derive(Serialize)]
 pub struct AdminMe {
@@ -115,13 +116,7 @@ pub async fn list(
     _admin: AdminAuth,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<AdminRow>>, ApiError> {
-    let mut owner_emails = state.config.operators.clone();
-    if let Some(first) = first_operator(&state.db).await? {
-        let first = first.to_lowercase();
-        if !owner_emails.contains(&first) {
-            owner_emails.push(first);
-        }
-    }
+    let owner_emails = owner_emails(&state).await?;
     let mut conn = state.db.acquire().await?;
     let mut rows = Vec::new();
     for email in &owner_emails {

@@ -22,16 +22,17 @@ use serde_json::{Value, json};
 use sqlx::{FromRow, PgConnection, PgPool};
 use uuid::Uuid;
 
-use super::activity::{Cursor, EXPORT_PAGE, invalid, non_empty, page_limit};
 use super::auth::{AdminAuth, Perm};
 use super::csv;
 use super::events::{AdminTx, Event};
-use super::users::{EmailReq, clean_reason, like_pattern};
+use super::page::{Cursor, EXPORT_PAGE, invalid, non_empty, page_limit, search_pattern};
+use super::users::{EmailReq, clean_reason};
 use crate::auth::session::column_enum;
 use crate::billing::effective::{
     PlanChange, PlanRow, PlanSource, effective_plan, effective_plan_sql, override_active_sql,
     parse_plan, plan_columns, plan_str,
 };
+use crate::billing::mrr::{Billed, granted_sql, is_live_subscription, live_subscription_sql};
 use crate::billing::routes::{current_prices, stripe_down};
 use crate::billing::sync::{OVERRIDE_REMINDER, apply_missing, apply_subscription, mail_owners};
 use crate::billing::{BillingError, Prices};
@@ -43,7 +44,6 @@ use crate::plans::limits;
 use crate::state::AppState;
 use crate::teams::{delete_team_row, enum_str, is_last_owner, last_owner};
 
-const MAX_QUERY: usize = 200;
 const HISTORY_ROWS: i64 = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,11 +98,7 @@ struct Filters {
 
 impl ListQuery {
     fn filters(&self) -> Result<Filters, ApiError> {
-        let pattern = match non_empty(self.q.as_ref()) {
-            Some(q) if q.chars().count() > MAX_QUERY => return Err(invalid("`q` is too long.")),
-            Some(q) => Some(like_pattern(q)),
-            None => None,
-        };
+        let pattern = search_pattern(self.q.as_ref())?;
         let filter = match non_empty(self.filter.as_ref()) {
             None => Filter::All,
             Some(f) => Filter::parse(f).ok_or_else(|| {
@@ -113,25 +109,25 @@ impl ListQuery {
     }
 
     fn cursor(&self) -> Result<Option<Cursor>, ApiError> {
-        non_empty(self.cursor.as_ref())
-            .map(|c| Cursor::decode(c).ok_or_else(|| invalid("`cursor` is not valid.")))
-            .transpose()
+        Cursor::parse(self.cursor.as_ref())
     }
 }
 
 /// `$1` the pattern, `$2` the filter, `$3` now. `stripe` is a live
-/// subscription with no override over it; `free` is on Free with neither an
-/// override nor a suspension.
+/// subscription, override or not; `granted` is [`granted_sql`]; `free` is on
+/// Free with neither an override nor a suspension.
 fn where_sql() -> String {
     let active = override_active_sql("t", "$3");
     let effective = effective_plan_sql("t", "$3");
+    let live = live_subscription_sql("t");
+    let granted = granted_sql("t", "$3");
     format!(
         "($1::text IS NULL OR t.name ILIKE $1 OR t.slug::text ILIKE $1 \
            OR EXISTS (SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id \
                       WHERE m.team_id = t.id AND m.role = 'owner' AND u.email::text ILIKE $1)) \
          AND (($2 = 'all') \
-           OR ($2 = 'stripe' AND t.stripe_subscription_id IS NOT NULL AND NOT {active}) \
-           OR ($2 = 'granted' AND {active}) \
+           OR ($2 = 'stripe' AND {live}) \
+           OR ($2 = 'granted' AND {granted}) \
            OR ($2 = 'past_due' AND t.past_due_since IS NOT NULL) \
            OR ($2 = 'free' AND {effective} = 'free' AND NOT {active} AND t.suspended_at IS NULL) \
            OR ($2 = 'suspended' AND t.suspended_at IS NOT NULL))"
@@ -183,14 +179,10 @@ pub struct TeamRow {
     override_until: Option<DateTime<Utc>>,
     suspended: bool,
     /// What its Stripe subscription brings in a month: seats times the cached
-    /// price, annual counted as a twelfth. `0` without a live subscription,
-    /// `null` when the price can't be read.
+    /// price, annual counted as a twelfth, as on the Stripe page. `0` when the
+    /// team is not revenue (`billing::mrr`), `null` when the price can't be
+    /// read.
     mrr_cents: Option<i64>,
-}
-
-/// A subscription that is still billing.
-fn is_live(status: Option<&str>) -> bool {
-    matches!(status, Some("active" | "trialing" | "past_due" | "unpaid"))
 }
 
 /// The unit price for `interval` (`monthly` or `annual`), and its currency.
@@ -210,17 +202,16 @@ fn seats(seats_synced: Option<i32>, members: i64) -> i64 {
 
 impl TeamSql {
     fn mrr_cents(&self, prices: Option<&Prices>) -> Option<i64> {
-        if self.plan.stripe_subscription_id.is_none() || !is_live(self.billing_status.as_deref()) {
+        let billed = Billed {
+            subscribed: self.plan.stripe_subscription_id.is_some(),
+            status: self.billing_status.as_deref(),
+            interval: self.billing_interval.as_deref(),
+            seats: seats(self.seats_synced, self.members),
+        };
+        if !billed.is_revenue() {
             return Some(0);
         }
-        let interval = self.billing_interval.as_deref();
-        let (unit, _) = unit_price(prices?, interval)?;
-        let total = unit * seats(self.seats_synced, self.members);
-        Some(if interval == Some("annual") {
-            (total + 6) / 12
-        } else {
-            total
-        })
+        Some(billed.mrr(prices?))
     }
 
     fn into_row(self, now: DateTime<Utc>, prices: Option<&Prices>) -> TeamRow {
@@ -800,7 +791,10 @@ struct Locked {
 impl Locked {
     /// Stripe is still billing the team, whatever an override says.
     fn stripe_conflict(&self) -> bool {
-        self.plan.stripe_subscription_id.is_some() && is_live(self.billing_status.as_deref())
+        is_live_subscription(
+            self.plan.stripe_subscription_id.as_deref(),
+            self.billing_status.as_deref(),
+        )
     }
 }
 
@@ -1209,18 +1203,20 @@ pub async fn stripe_sync(
     let (team_id, subscription) = found.ok_or_else(ApiError::not_found)?;
     let subscription =
         subscription.ok_or_else(|| conflict("This team has no Stripe subscription."))?;
+    let mut tx = AdminTx::begin(&state, &admin).await?;
+    let at = tx.at();
+    // The webhook's per-subscription lock, taken before the read: a webhook
+    // that applied an older read meanwhile has committed, so this newer read
+    // is the one that lands, and the two never interleave.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
+        .bind(&subscription)
+        .execute(&mut *tx)
+        .await?;
     let read = match billing.subscription(&subscription).await {
         Ok(sub) => Some(sub),
         Err(BillingError::Api { status: 404, .. }) => None,
         Err(err) => return Err(stripe_down(err)),
     };
-    let mut tx = AdminTx::begin(&state, &admin).await?;
-    let at = tx.at();
-    // The webhook's per-subscription lock: the two never interleave.
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
-        .bind(&subscription)
-        .execute(&mut *tx)
-        .await?;
     let status = match &read {
         Some(sub) => {
             apply_subscription(&state, &mut tx, sub, at).await?;

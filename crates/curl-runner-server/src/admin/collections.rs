@@ -17,11 +17,11 @@ use serde_json::json;
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
-use super::activity::{Cursor, EXPORT_PAGE, invalid, non_empty, page_limit};
 use super::auth::{AdminAuth, Perm};
 use super::csv;
 use super::events::{AdminTx, Event};
-use super::users::{clean_reason, like_pattern};
+use super::page::{Cursor, EXPORT_PAGE, invalid, non_empty, page_limit, search_pattern};
+use super::users::clean_reason;
 use crate::auth::session::column_enum;
 use crate::billing::sync::mail_owners;
 use crate::error::ApiError;
@@ -29,7 +29,6 @@ use crate::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::mail::Mail;
 use crate::state::AppState;
 
-const MAX_QUERY: usize = 200;
 /// The window of `opens_30d`.
 const OPEN_DAYS: i64 = 30;
 
@@ -79,11 +78,7 @@ struct Filters {
 
 impl ListQuery {
     fn filters(&self) -> Result<Filters, ApiError> {
-        let pattern = match non_empty(self.q.as_ref()) {
-            Some(q) if q.chars().count() > MAX_QUERY => return Err(invalid("`q` is too long.")),
-            Some(q) => Some(like_pattern(q)),
-            None => None,
-        };
+        let pattern = search_pattern(self.q.as_ref())?;
         let filter = match non_empty(self.filter.as_ref()) {
             None => Filter::All,
             Some(f) => Filter::parse(f)
@@ -93,9 +88,7 @@ impl ListQuery {
     }
 
     fn cursor(&self) -> Result<Option<Cursor>, ApiError> {
-        non_empty(self.cursor.as_ref())
-            .map(|c| Cursor::decode(c).ok_or_else(|| invalid("`cursor` is not valid.")))
-            .transpose()
+        Cursor::parse(self.cursor.as_ref())
     }
 }
 

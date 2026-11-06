@@ -11,9 +11,11 @@
 //! suspended:
 //! - `everyone`: every account;
 //! - `team_owners`: owners of any team;
-//! - `paying_teams`: owners of a team with a live Stripe subscription;
+//! - `paying_teams`: owners of a team that is revenue, as on the Stripe page
+//!   (`billing::mrr::revenue_sql`);
 //! - `free_teams`: owners of a team whose effective plan is Free;
-//! - `granted_teams`: owners of a team with an active plan override.
+//! - `granted_teams`: owners of a team an admin granted Team that is not
+//!   revenue (`billing::mrr::granted_sql`).
 //!
 //! A person gets one email. `{{team_name}}` and `{{plan}}` come from the
 //! first team they joined among those that put them in the audience (any
@@ -29,11 +31,11 @@ use serde_json::json;
 use sqlx::{FromRow, PgConnection, PgPool};
 use uuid::Uuid;
 
-use super::activity::{Cursor, invalid, non_empty, page_limit};
 use super::auth::{AdminAuth, Perm};
 use super::events::{AdminTx, Event};
-use super::users::like_pattern;
-use crate::billing::effective::{PlanRow, effective_plan, effective_plan_sql, override_active_sql};
+use super::page::{Cursor, invalid, non_empty, page_limit, search_pattern};
+use crate::billing::effective::{PlanRow, effective_plan, effective_plan_sql};
+use crate::billing::mrr::{granted_sql, revenue_sql};
 use crate::error::ApiError;
 use crate::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::mail::markdown::Vars;
@@ -43,7 +45,6 @@ use crate::state::AppState;
 
 const MAX_SUBJECT: usize = 200;
 const MAX_BODY: usize = 20_000;
-const MAX_QUERY: usize = 200;
 /// Broadcasts listed, newest first.
 const LIST_LIMIT: i64 = 100;
 /// Test sends per admin per hour.
@@ -154,11 +155,9 @@ pub(crate) fn recipients_sql(audience: Audience, include_opted_out: bool, extra:
         other => {
             let cond = match other {
                 Audience::TeamOwners | Audience::Everyone => "true".to_owned(),
-                Audience::PayingTeams => "t.stripe_subscription_id IS NOT NULL \
-                     AND t.billing_status IN ('active', 'trialing', 'past_due', 'unpaid')"
-                    .to_owned(),
+                Audience::PayingTeams => revenue_sql("t"),
                 Audience::FreeTeams => format!("{} = 'free'", effective_plan_sql("t", "$1")),
-                Audience::GrantedTeams => override_active_sql("t", "$1"),
+                Audience::GrantedTeams => granted_sql("t", "$1"),
             };
             (
                 "JOIN memberships m ON m.user_id = u.id AND m.role = 'owner' \
@@ -729,7 +728,6 @@ struct LogSql {
     next_attempt_at: DateTime<Utc>,
     attempts: i32,
     last_error: Option<String>,
-    sort_at: DateTime<Utc>,
 }
 
 #[derive(Serialize)]
@@ -761,9 +759,107 @@ pub struct LogPage {
 
 const SIGN_IN_SUBJECT: &str = "Your curl-runner sign-in code";
 
+/// The cursor time of a row with no `created_at`: the Unix epoch, which no
+/// row queued since 0004 has.
+const UNDATED: DateTime<Utc> = DateTime::UNIX_EPOCH;
+
+/// The delivery log's filters, already checked.
+struct LogFilters {
+    kind: Option<String>,
+    status: Option<String>,
+    /// `ILIKE` pattern on the recipient, already escaped.
+    pattern: Option<String>,
+}
+
+/// The select list and filters of a delivery log page. `$1` is
+/// [`MAX_ATTEMPTS`], `$2` to `$4` the filters, `$5` the limit; later
+/// placeholders are the cursor's.
+fn log_sql(section: &str, order: &str) -> String {
+    let status_sql = "(CASE WHEN o.sent_at IS NOT NULL THEN 'sent' \
+                       WHEN o.failed_at IS NOT NULL OR o.attempts >= $1 THEN 'failed' \
+                       ELSE 'queued' END)";
+    format!(
+        "SELECT o.id, o.to_addr, \
+                CASE WHEN o.kind = 'sign_in_code' OR o.subject LIKE '{SIGN_IN_SUBJECT}%' \
+                     THEN '{SIGN_IN_SUBJECT}' ELSE o.subject END AS subject, \
+                o.kind, {status_sql} AS status, o.broadcast_id, o.created_at, o.sent_at, \
+                o.failed_at, o.next_attempt_at, o.attempts, o.last_error \
+         FROM outbox_emails o \
+         WHERE {section} \
+           AND ($2::text IS NULL OR o.kind = $2) \
+           AND ($3::text IS NULL OR {status_sql} = $3) \
+           AND ($4::text IS NULL OR o.to_addr ILIKE $4) \
+         ORDER BY {order} LIMIT $5"
+    )
+}
+
+fn bind_filters<'q>(
+    sql: &'q str,
+    f: &'q LogFilters,
+    limit: i64,
+) -> sqlx::query::QueryAs<'q, sqlx::Postgres, LogSql, sqlx::postgres::PgArguments> {
+    sqlx::query_as(sql)
+        .bind(MAX_ATTEMPTS)
+        .bind(&f.kind)
+        .bind(&f.status)
+        .bind(&f.pattern)
+        .bind(limit)
+}
+
+/// Rows with a `created_at`, newest first, after `cursor`. A plain
+/// `ORDER BY created_at DESC, id DESC` with a row comparison, so it walks
+/// `outbox_emails_created_at` backwards from the cursor.
+async fn log_rows_dated(
+    db: &PgPool,
+    f: &LogFilters,
+    cursor: Option<Cursor>,
+    limit: i64,
+) -> Result<Vec<LogSql>, ApiError> {
+    let order = "o.created_at DESC, o.id DESC";
+    Ok(match cursor {
+        None => {
+            let sql = log_sql("o.created_at IS NOT NULL", order);
+            bind_filters(&sql, f, limit).fetch_all(db).await?
+        }
+        Some(c) => {
+            let sql = log_sql("(o.created_at, o.id) < ($6, $7)", order);
+            bind_filters(&sql, f, limit)
+                .bind(c.at)
+                .bind(c.id)
+                .fetch_all(db)
+                .await?
+        }
+    })
+}
+
+/// Rows from before 0004, with no `created_at`, by id, after `after`.
+async fn log_rows(
+    db: &PgPool,
+    f: &LogFilters,
+    after: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<LogSql>, ApiError> {
+    let order = "o.id DESC";
+    Ok(match after {
+        None => {
+            let sql = log_sql("o.created_at IS NULL", order);
+            bind_filters(&sql, f, limit).fetch_all(db).await?
+        }
+        Some(id) => {
+            let sql = log_sql("o.created_at IS NULL AND o.id < $6", order);
+            bind_filters(&sql, f, limit).bind(id).fetch_all(db).await?
+        }
+    })
+}
+
 /// `GET /v1/admin/emails/log?kind=&status=queued|sent|failed&q=&cursor=&limit=`:
 /// `outbox_emails`, newest first; rows from before 0004 (no `created_at`)
-/// come last. `q` matches the recipient only.
+/// come last, by id. `q` matches the recipient only.
+///
+/// The two parts are read apart instead of sorting on
+/// `COALESCE(created_at, ...)`, which no index can serve: the dated rows walk
+/// the `created_at` index, and only a page that runs past them reads the
+/// undated ones. A cursor on an undated row carries [`UNDATED`] as its time.
 pub async fn log(
     _admin: AdminAuth,
     State(state): State<AppState>,
@@ -779,47 +875,32 @@ pub async fn log(
         Some(s @ ("queued" | "sent" | "failed")) => Some(s.to_owned()),
         Some(_) => return Err(invalid("`status` must be queued, sent or failed.")),
     };
-    let pattern = match non_empty(q.q.as_ref()) {
-        Some(q) if q.chars().count() > MAX_QUERY => return Err(invalid("`q` is too long.")),
-        Some(q) => Some(like_pattern(q)),
-        None => None,
-    };
-    let cursor = non_empty(q.cursor.as_ref())
-        .map(|c| Cursor::decode(c).ok_or_else(|| invalid("`cursor` is not valid.")))
-        .transpose()?;
+    let pattern = search_pattern(q.q.as_ref())?;
+    let cursor = Cursor::parse(q.cursor.as_ref())?;
     let limit = page_limit(q.limit.as_ref())?;
-    let status_sql = "(CASE WHEN o.sent_at IS NOT NULL THEN 'sent' \
-                       WHEN o.failed_at IS NOT NULL OR o.attempts >= $1 THEN 'failed' \
-                       ELSE 'queued' END)";
-    let sort_sql = "COALESCE(o.created_at, 'epoch'::timestamptz)";
-    let rows: Vec<LogSql> = sqlx::query_as(&format!(
-        "SELECT o.id, o.to_addr, \
-                CASE WHEN o.kind = 'sign_in_code' OR o.subject LIKE '{SIGN_IN_SUBJECT}%' \
-                     THEN '{SIGN_IN_SUBJECT}' ELSE o.subject END AS subject, \
-                o.kind, {status_sql} AS status, o.broadcast_id, o.created_at, o.sent_at, \
-                o.failed_at, o.next_attempt_at, o.attempts, o.last_error, {sort_sql} AS sort_at \
-         FROM outbox_emails o \
-         WHERE ($2::text IS NULL OR o.kind = $2) \
-           AND ($3::text IS NULL OR {status_sql} = $3) \
-           AND ($4::text IS NULL OR o.to_addr ILIKE $4) \
-           AND ($5::timestamptz IS NULL OR ({sort_sql}, o.id) < ($5, $6::uuid)) \
-         ORDER BY {sort_sql} DESC, o.id DESC LIMIT $7"
-    ))
-    .bind(MAX_ATTEMPTS)
-    .bind(&kind)
-    .bind(&status)
-    .bind(&pattern)
-    .bind(cursor.map(|c| c.at))
-    .bind(cursor.map(|c| c.id))
-    .bind(limit + 1)
-    .fetch_all(&state.db)
-    .await?;
+    let filters = LogFilters {
+        kind,
+        status,
+        pattern,
+    };
+    let rows = match cursor {
+        // Already among the undated rows: only those are left.
+        Some(c) if c.at == UNDATED => log_rows(&state.db, &filters, Some(c.id), limit + 1).await?,
+        cursor => {
+            let mut rows = log_rows_dated(&state.db, &filters, cursor, limit + 1).await?;
+            let left = limit + 1 - rows.len() as i64;
+            if left > 0 {
+                rows.extend(log_rows(&state.db, &filters, None, left).await?);
+            }
+            rows
+        }
+    };
     let more = rows.len() as i64 > limit;
     let mut items = Vec::with_capacity(rows.len());
     let mut last = None;
     for r in rows.into_iter().take(usize::try_from(limit).unwrap_or(0)) {
         last = Some(Cursor {
-            at: r.sort_at,
+            at: r.created_at.unwrap_or(UNDATED),
             id: r.id,
         });
         let queued = r.status == "queued";

@@ -94,8 +94,11 @@ pub async fn run_once(
     Ok(sent)
 }
 
-/// Due rows: `{extra}` narrows the pick. Both picks walk the pending index
-/// on `next_attempt_at`.
+/// Due rows: `{extra}` narrows the pick. The `WHERE` repeats the predicates
+/// of the partial indexes in 0004, so each pick walks one on
+/// `next_attempt_at`: `outbox_emails_pending_first` for the non-broadcast
+/// pick (`extra` is `AND kind <> 'broadcast'`), `outbox_emails_pending` for
+/// the other.
 fn pick_sql(extra: &str) -> String {
     format!(
         "SELECT id, to_addr, subject, text_body, html_body, attempts, kind, user_id \

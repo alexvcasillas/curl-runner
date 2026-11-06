@@ -633,3 +633,100 @@ async fn stripe_stats_404_billing_off(pool: PgPool) {
     assert_eq!(overview["counts"]["granted_seats"], 1);
     ok(&app, "/v1/admin/health", &root).await;
 }
+
+/// Every team is exactly one of paying, granted or free for MRR purposes,
+/// whatever its subscription status and override.
+#[sqlx::test]
+async fn paying_granted_and_free_partition_the_teams(pool: PgPool) {
+    use curl_runner_server::billing::mrr::{granted_sql, live_subscription_sql, revenue_sql};
+
+    let (app, _) = billing(pool).await;
+    let root = app.sign_in(ROOT).await;
+    let ada = app.sign_in(ADA).await;
+    let statuses = [
+        None,
+        Some("active"),
+        Some("past_due"),
+        Some("trialing"),
+        Some("unpaid"),
+        Some("incomplete"),
+        Some("canceled"),
+        Some("incomplete_expired"),
+    ];
+    // (override plan, ends in days): none, Team, Team ended, Free.
+    let overrides = [
+        (None, None),
+        (Some("team"), None),
+        (Some("team"), Some(-1)),
+        (Some("free"), None),
+    ];
+    let mut n: i64 = 0;
+    for status in statuses {
+        for interval in [None, Some("monthly")] {
+            for subscribed in [false, true] {
+                for (plan, ends) in overrides {
+                    let slug = format!("team-{n}");
+                    n += 1;
+                    app.create_team(&ada, &slug).await;
+                    sqlx::query(
+                        "UPDATE teams SET stripe_subscription_id = $2, billing_status = $3, \
+                         billing_interval = $4, override_plan = $5, override_until = $6 \
+                         WHERE slug = $1",
+                    )
+                    .bind(&slug)
+                    .bind(subscribed.then(|| format!("sub_{slug}")))
+                    .bind(status)
+                    .bind(interval)
+                    .bind(plan)
+                    .bind(ends.map(|d| now() + Duration::days(d)))
+                    .execute(&app.state.db)
+                    .await
+                    .unwrap();
+                }
+            }
+        }
+    }
+    let rows: Vec<(String, bool, bool, bool)> = sqlx::query_as(&format!(
+        "SELECT t.slug::text, {}, {}, {} FROM teams t",
+        revenue_sql("t"),
+        granted_sql("t", "$1"),
+        live_subscription_sql("t"),
+    ))
+    .bind(now())
+    .fetch_all(&app.state.db)
+    .await
+    .unwrap();
+    assert_eq!(rows.len() as i64, n);
+    let (mut paying, mut granted, mut free) = (0, 0, 0);
+    for (slug, is_paying, is_granted, is_live) in rows {
+        assert!(!(is_paying && is_granted), "{slug} is paying and granted");
+        // Revenue is always a live subscription; live is wider.
+        assert!(
+            !is_paying || is_live,
+            "{slug} pays without a live subscription"
+        );
+        paying += i64::from(is_paying);
+        granted += i64::from(is_granted);
+        free += i64::from(!is_paying && !is_granted);
+    }
+    // `active` or `past_due`, with an interval and a subscription id: 2
+    // statuses, each under the 4 overrides.
+    assert_eq!(paying, 8);
+    // A Team override in force (a quarter of the teams), less the 2 of those
+    // that pay. A Free or ended override is no grant.
+    assert_eq!(granted, n / 4 - 2);
+    assert_eq!(paying + granted + free, n);
+
+    // The Stripe page counts the same teams.
+    let body = ok(&app, "/v1/admin/stripe", &root).await;
+    assert_eq!(body["paying_teams"], paying);
+    let by_source = |s: &str| {
+        body["by_source"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["source"] == s)
+            .map(|x| x["teams"].as_i64().unwrap())
+    };
+    assert_eq!(by_source("granted"), Some(granted));
+}
