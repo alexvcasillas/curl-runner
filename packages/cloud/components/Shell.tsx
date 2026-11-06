@@ -27,6 +27,8 @@ export type ShellProps = {
   tab: TeamTab | null;
   /** A banner above the page: one at a time, the most urgent. */
   banner?: React.ReactNode;
+  /** The admins' announcement, across the very top of the page. */
+  announcement?: React.ReactNode;
   children: React.ReactNode;
 };
 
@@ -35,7 +37,7 @@ export type ShellProps = {
  * with me, Docs and the account menu. Team pages get tabs underneath. On a phone
  * the tabs scroll sideways and the right side folds into a menu button.
  */
-export function Shell({ me, info, team, tab, banner, children }: ShellProps) {
+export function Shell({ me, info, team, tab, banner, announcement, children }: ShellProps) {
   const current = me.teams.find((t) => t.slug === team) ?? null;
   const tabs = current
     ? TABS.filter((t) => t.tab !== 'billing' || info.billing).map((t) => ({
@@ -47,6 +49,7 @@ export function Shell({ me, info, team, tab, banner, children }: ShellProps) {
 
   return (
     <div className="flex min-h-dvh flex-col bg-bg">
+      {announcement}
       <header className="border-b border-hairline bg-bg">
         <div className="flex min-h-14 flex-wrap items-center gap-2 px-4 max-sm:min-h-[52px] max-sm:flex-nowrap max-sm:px-3">
           <Link

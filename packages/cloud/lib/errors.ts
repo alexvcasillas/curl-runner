@@ -44,6 +44,9 @@ export class ApiError extends Error {
 }
 
 /** The copy for a form the page would never send. One place, so every action says the same. */
+/** What a suspended person reads when they try to sign in, on every sign-in path. */
+export const ACCOUNT_SUSPENDED = 'This account is suspended. Contact support.';
+
 export const INVALID_FORM = 'Something in the form isn’t right. Check it and try again.';
 
 const FALLBACK: Record<ErrorCode, string> = {
@@ -59,7 +62,7 @@ const FALLBACK: Record<ErrorCode, string> = {
   code_expired: 'That code expired. Ask for a new one.',
   code_invalid: 'That code isn’t right. Check it and try again.',
   signup_closed: 'Sign-up is closed on this server.',
-  account_suspended: 'This account is suspended. Contact support.',
+  account_suspended: ACCOUNT_SUSPENDED,
   team_suspended: 'This team is suspended, so it can’t publish. Contact support.',
   link_disabled:
     'This share link was turned off by curl-runner and can’t be turned back on. Contact support.',
@@ -84,7 +87,9 @@ export function messageFor(
   e: ApiError,
   overrides: Partial<Record<ErrorCode, string>> = {},
 ): string {
-  const override = overrides[e.code];
+  // One sentence for a suspended account, whatever wording the API sent.
+  const override =
+    overrides[e.code] ?? (e.code === 'account_suspended' ? ACCOUNT_SUSPENDED : undefined);
   if (override) {
     return override;
   }

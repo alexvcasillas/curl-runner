@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import { AnnouncementBanner } from '@/components/AnnouncementBanner';
 import { InviteCard } from '@/components/InviteCard';
 import { PublicShell } from '@/components/PublicShell';
-import { getInvite, getViewer } from '@/lib/public-data';
+import { getInvite, getPublicBanner, getViewer } from '@/lib/public-data';
 import { expiresIn } from '@/lib/time';
 import { isInviteToken } from '@/lib/tokens';
 import { acceptInvite } from './actions';
@@ -23,9 +24,10 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
     notFound();
   }
   const viewer = await getViewer();
+  const announcement = <AnnouncementBanner banner={await getPublicBanner()} />;
 
   return (
-    <PublicShell cloud width="invite">
+    <PublicShell cloud width="invite" announcement={announcement}>
       <InviteCard
         teamName={invite.team_name}
         inviter={invite.inviter_name}

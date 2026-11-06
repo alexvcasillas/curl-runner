@@ -12,15 +12,17 @@ import { Shell } from './Shell';
 export function AppShell({
   me,
   info,
+  announcement,
   children,
 }: {
   me: Me;
   info: Pick<Info, 'billing'>;
+  announcement?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const { team, tab } = parseLocation(usePathname());
   return (
-    <Shell me={me} info={info} team={team} tab={tab}>
+    <Shell me={me} info={info} team={team} tab={tab} announcement={announcement}>
       {children}
     </Shell>
   );

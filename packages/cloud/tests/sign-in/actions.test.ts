@@ -364,3 +364,40 @@ describe('oauth', () => {
     ).toHaveLength(2);
   });
 });
+
+describe('a suspended account', () => {
+  const SUSPENDED = 'This account is suspended. Contact support.';
+  const refuse = () =>
+    json(403, {
+      error: 'account_suspended',
+      message: 'This account is suspended. Contact support.',
+    });
+
+  it('code verify says so and sets no session', async () => {
+    fetchMock.mockResolvedValueOnce(refuse());
+    const r = await actions.verifyCode(form({ email: 'a@b.co', code: '123456' }));
+    expect(r).toEqual({ ok: false, kind: 'error', message: SUSPENDED });
+    expect(jar.current.sets.find((s) => s.name === 'cr_session')).toBeUndefined();
+  });
+
+  it('the emailed link says so with a way back', async () => {
+    fetchMock.mockResolvedValueOnce(refuse());
+    const r = await actions.verifyLink('tok', undefined);
+    expect(r).toMatchObject({
+      title: 'This account is suspended',
+      body: SUSPENDED,
+      actionHref: '/sign-in',
+    });
+  });
+
+  it('the OAuth callback says so with a way back', async () => {
+    jar.current = cookieJar({ cr_oauth: 'binding' });
+    fetchMock.mockResolvedValueOnce(refuse());
+    const r = await actions.finishOAuth('github', 'code', 'state');
+    expect(r).toMatchObject({
+      title: 'This account is suspended',
+      body: SUSPENDED,
+      actionHref: '/sign-in',
+    });
+  });
+});

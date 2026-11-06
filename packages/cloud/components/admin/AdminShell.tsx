@@ -20,11 +20,14 @@ export function AdminShell({
   me,
   admin,
   version,
+  announcement,
   children,
 }: {
   me: Me;
   admin: AdminMe;
   version: string;
+  /** The admins' announcement, across the very top of the page. */
+  announcement?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const [navOpen, setNavOpen] = useState(false);
@@ -39,6 +42,7 @@ export function AdminShell({
 
   return (
     <div className="min-h-dvh bg-bg">
+      {announcement}
       <header className="flex min-h-14 flex-wrap items-center gap-2 border-b border-hairline px-4 max-sm:px-3">
         <button
           type="button"

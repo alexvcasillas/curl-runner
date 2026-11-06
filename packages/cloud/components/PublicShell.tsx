@@ -9,6 +9,8 @@ export type PublicShellProps = {
   width?: 'landing' | 'invite';
   /** The line under the card. */
   footer?: React.ReactNode;
+  /** The admins' announcement, across the very top of the page. */
+  announcement?: React.ReactNode;
   children: React.ReactNode;
 };
 
@@ -18,10 +20,12 @@ export function PublicShell({
   cloud = false,
   width = 'landing',
   footer,
+  announcement,
   children,
 }: PublicShellProps) {
   return (
     <div className="flex min-h-dvh flex-col bg-bg">
+      {announcement}
       <header className="flex min-h-14 items-center gap-2.5 border-b border-hairline px-6 max-sm:px-4">
         <span className="flex items-center gap-2.5 text-[15px] font-semibold text-fg">
           <span

@@ -49,3 +49,14 @@ describe('suspension codes', () => {
     );
   });
 });
+
+describe('account_suspended', () => {
+  it('always says the one sentence, whatever the API sends', () => {
+    expect(messageFor(new ApiError(403, 'account_suspended', ''))).toBe(
+      'This account is suspended. Contact support.',
+    );
+    expect(messageFor(new ApiError(403, 'account_suspended', 'Account is disabled.'))).toBe(
+      'This account is suspended. Contact support.',
+    );
+  });
+});

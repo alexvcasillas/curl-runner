@@ -19,6 +19,13 @@ export type Info = {
   /** Stripe is configured. Off hides Billing and every plan pill. */
   billing: boolean;
   app_url?: string | null;
+  /** An announcement from the admins, already filtered to this caller. Absent on older servers. */
+  banner?: {
+    message: string;
+    tone: 'info' | 'warning';
+    link: string | null;
+    version: number;
+  } | null;
 };
 
 // Wire shapes for collections, from `/v1/teams/{team}/collections` and below.

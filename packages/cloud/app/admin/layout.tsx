@@ -1,3 +1,4 @@
+import { AnnouncementBanner } from '@/components/AnnouncementBanner';
 import { AdminShell } from '@/components/admin/AdminShell';
 import { getAdminMe } from '@/lib/admin-data';
 import { getInfo, getMe } from '@/lib/app-data';
@@ -9,7 +10,12 @@ import { getInfo, getMe } from '@/lib/app-data';
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const [admin, me, info] = await Promise.all([getAdminMe(), getMe(), getInfo()]);
   return (
-    <AdminShell me={me} admin={admin} version={info.version}>
+    <AdminShell
+      me={me}
+      admin={admin}
+      version={info.version}
+      announcement={<AnnouncementBanner banner={info.banner} />}
+    >
       {children}
     </AdminShell>
   );

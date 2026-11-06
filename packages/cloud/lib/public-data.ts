@@ -1,6 +1,7 @@
 import 'server-only';
 import { cache } from 'react';
 import { api } from './api';
+import { getPublicInfo } from './app-data';
 import { ApiError, messageFor } from './errors';
 import { getSession } from './session';
 import type { InvitePreview, Me, SharedInfo } from './types';
@@ -75,6 +76,21 @@ export const getInvite = cache(async (token: string): Promise<InvitePreview | nu
     return await api<InvitePreview>(`/v1/invites/${encodeURIComponent(token)}`, { auth: 'none' });
   } catch (e) {
     if (e instanceof ApiError && e.code === 'not_found') {
+      return null;
+    }
+    throw e;
+  }
+});
+
+/**
+ * The announcement for the public pages: only one meant for everyone, since the
+ * viewer here may be anonymous. A server that can't say just shows none.
+ */
+export const getPublicBanner = cache(async () => {
+  try {
+    return (await getPublicInfo()).banner ?? null;
+  } catch (e) {
+    if (e instanceof ApiError) {
       return null;
     }
     throw e;
