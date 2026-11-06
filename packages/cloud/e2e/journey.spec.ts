@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -9,10 +9,13 @@ import { expect, test } from '@playwright/test';
 //   E2E_API_URL   The API, started with SIGNUP=open, DEFAULT_PLAN=free and SMTP_HOST pointing at
 //                 a port nothing listens on. With no SMTP the server logs a mail and blanks its
 //                 stored body at once. A failed send keeps the body for 30 seconds, long enough to read.
+//                 Also set OPERATOR_EMAILS to E2E_OWNER_EMAIL, so the journey's user is the owner admin.
+//   E2E_OWNER_EMAIL  The journey's user. Defaults to e2e-owner@example.com.
 //   E2E_APP_URL   The dashboard (the Playwright `baseURL`).
 //   CURL_RUNNER_BIN  The CLI binary. Defaults to the release build.
 const DATABASE_URL = process.env.DATABASE_URL ?? '';
 const API_URL = process.env.E2E_API_URL ?? 'http://localhost:8090';
+const OWNER_EMAIL = process.env.E2E_OWNER_EMAIL ?? 'e2e-owner@example.com';
 const CLI =
   process.env.CURL_RUNNER_BIN ?? path.resolve(__dirname, '../../../target/release/curl-runner');
 
@@ -30,7 +33,7 @@ async function signInCode(email: string): Promise<string> {
   throw new Error(`No sign-in code for ${email} in outbox_emails.`);
 }
 
-function fixture(): string {
+function fixture(extra = false): string {
   const dir = mkdtempSync(path.join(tmpdir(), 'cloud-e2e-'));
   mkdirSync(path.join(dir, 'requests'));
   writeFileSync(
@@ -60,12 +63,25 @@ function fixture(): string {
       '',
     ].join('\n'),
   );
+  if (extra) {
+    writeFileSync(
+      path.join(dir, 'requests', 'refund-charge.yaml'),
+      [
+        'request:',
+        '  name: Refund charge',
+        '  method: POST',
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: a curl-runner variable, not a template.
+        '  url: ${BASE_URL}/v1/refunds',
+        '',
+      ].join('\n'),
+    );
+  }
   return dir;
 }
 
 test('sign in, create a team, publish, share, and open the link', async ({ page, browser }) => {
   expect(DATABASE_URL, 'Set DATABASE_URL to the API database.').not.toBe('');
-  const email = `e2e-${Date.now()}@example.com`;
+  const email = OWNER_EMAIL;
 
   // 1. Sign in by email.
   await page.goto('/sign-in');
@@ -131,4 +147,62 @@ test('sign in, create a team, publish, share, and open the link', async ({ page,
   const res = await page.request.get('/.well-known/curl-runner.json');
   expect(res.status()).toBe(200);
   expect(await res.json()).toEqual({ api: expect.stringMatching(/^https?:\/\//) });
+
+  // 9. The admin panel, as the owner.
+  await page.goto('/admin');
+  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
+
+  // 10. Grant Team to acme. Billing is off here, so read the plan off the team page.
+  await page.goto('/admin/teams/acme');
+  await expect(page.getByRole('heading', { name: 'Acme' })).toBeVisible();
+  await page.getByRole('button', { name: 'Grant a plan' }).click();
+  await page.getByText('No end date', { exact: true }).click();
+  await page.getByLabel('Reason, internal only').fill('e2e journey');
+  await page.getByRole('button', { name: 'Grant Team' }).click();
+  await expect(page.getByText('Granted, no end').first()).toBeVisible();
+  await expect(page.getByText('Effective plan: Team')).toBeVisible();
+
+  // 11. Disable the share link. A fresh visitor gets 404.
+  await page.goto('/admin/collections');
+  await page.getByLabel('Search collections').fill('payments-api');
+  await page.getByRole('button', { name: 'Disable link' }).click();
+  const takedown = page.getByRole('dialog');
+  await takedown.getByLabel(/^Reason/).fill('e2e takedown');
+  await takedown.getByRole('button', { name: 'Disable link' }).click();
+  await expect(page.getByRole('button', { name: 'Enable link' })).toBeVisible();
+  const stranger = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const gone = await stranger.newPage();
+  const goneRes = await gone.goto(new URL(shareLink).pathname);
+  expect(goneRes?.status()).toBe(404);
+  await stranger.close();
+
+  // 12. Pause publishing. The CLI gets the paused message and a non-zero exit.
+  const publish = () =>
+    spawnSync(CLI, ['publish', fixture(true), '--team', 'acme', '--server', API_URL], {
+      encoding: 'utf8',
+      env: { ...process.env, CURL_RUNNER_TOKEN: token },
+    });
+  await page.goto('/admin/settings');
+  await page.getByRole('switch', { name: 'Pause publishing' }).click();
+  await page
+    .getByRole('alertdialog', { name: 'Pause publishing?' })
+    .getByRole('button', { name: 'Pause publishing' })
+    .click();
+  await expect(page.getByRole('switch', { name: 'Pause publishing' })).toBeChecked();
+  const paused = publish();
+  expect(paused.status).not.toBe(0);
+  expect(`${paused.stdout}${paused.stderr}`).toContain('Publishing is paused');
+
+  // 13. Resume. A publish works again.
+  await page.getByRole('switch', { name: 'Pause publishing' }).click();
+  await expect(page.getByRole('switch', { name: 'Pause publishing' })).not.toBeChecked();
+  const resumed = publish();
+  expect(resumed.status, `${resumed.stdout}${resumed.stderr}`).toBe(0);
+  expect(resumed.stdout).toContain('payments-api: published v2');
+
+  // 14. Remove the override.
+  await page.goto('/admin/teams/acme');
+  await page.getByRole('button', { name: 'Remove override' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Remove override' }).click();
+  await expect(page.getByText('Effective plan: Free')).toBeVisible();
 });
