@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import type { ActionResult } from './action-result';
 import { type AdminMe, type AdminOverview, can, type Perm } from './admin';
+import type { CollectionStats, CollectionsPage, CollectionsQuery } from './admin-collections';
+import type { Audience, AudienceCount, Broadcast, LogPage, LogQuery } from './admin-emails';
 import type { TeamDetail, TeamsPage, TeamsQuery } from './admin-teams';
 import type { UserDetail, UsersPage, UsersQuery } from './admin-users';
 import { api } from './api';
@@ -105,4 +107,71 @@ export async function getTeamDetail(slug: string): Promise<TeamDetail> {
     }
     throw err;
   }
+}
+
+/** Collections per page on the list. The footer's range follows from it. */
+export const COLLECTIONS_PAGE_SIZE = 50;
+
+export function getCollections(query: CollectionsQuery): Promise<CollectionsPage> {
+  const p = new URLSearchParams({ limit: String(COLLECTIONS_PAGE_SIZE) });
+  if (query.q) {
+    p.set('q', query.q);
+  }
+  if (query.filter !== 'all') {
+    p.set('filter', query.filter);
+  }
+  if (query.cursor) {
+    p.set('cursor', query.cursor);
+  }
+  return api<CollectionsPage>(`/v1/admin/collections?${p}`);
+}
+
+/** The list footer's totals: every collection, whatever the filters. */
+export function getCollectionStats(): Promise<CollectionStats> {
+  return api<CollectionStats>('/v1/admin/collections/stats');
+}
+
+/** The latest 100 broadcasts, newest first. */
+export async function getBroadcasts(): Promise<Broadcast[]> {
+  return (await api<{ items: Broadcast[] }>('/v1/admin/broadcasts')).items;
+}
+
+/** One broadcast, or null when the id isn't a uuid or isn't there. */
+export async function getBroadcast(id: string): Promise<Broadcast | null> {
+  if (!isUuid(id)) {
+    return null;
+  }
+  try {
+    return await api<Broadcast>(`/v1/admin/broadcasts/${id}`);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+export async function getAudienceCount(audience: Audience): Promise<number> {
+  const r = await api<AudienceCount>(`/v1/admin/audience-count?audience=${audience}`);
+  return r.count;
+}
+
+/** Log rows per page. */
+export const LOG_PAGE_SIZE = 50;
+
+export function getEmailLog(query: LogQuery): Promise<LogPage> {
+  const p = new URLSearchParams({ limit: String(LOG_PAGE_SIZE) });
+  if (query.q) {
+    p.set('q', query.q);
+  }
+  if (query.status !== 'all') {
+    p.set('status', query.status);
+  }
+  if (query.kind !== 'all') {
+    p.set('kind', query.kind);
+  }
+  if (query.cursor) {
+    p.set('cursor', query.cursor);
+  }
+  return api<LogPage>(`/v1/admin/emails/log?${p}`);
 }
