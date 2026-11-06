@@ -351,7 +351,8 @@ pub fn run() {
         let server = crate::features::SERVER;
         let link = dev_string("CURL_RUNNER_STUDIO_LINK").filter(|_| server);
         let secrets: Arc<dyn SecretStore> = Arc::new(KeychainSecrets);
-        let backend = app_backend(store.base());
+        let mock = std::env::var("CURL_RUNNER_STUDIO_MOCK").ok();
+        let backend = app_backend(store.base(), mock.as_deref());
         #[cfg(feature = "server")]
         let dev_store = store.clone();
         let ws_backend = backend.clone();
@@ -539,17 +540,24 @@ pub fn run() {
 }
 
 /// The app's server. The only place the mock is named: views see a
-/// `Backend`. Without the `server` feature there is none (`NoServer`),
-/// and the mock isn't compiled in.
-pub fn app_backend(base: Option<&Path>) -> Arc<dyn Backend> {
+/// `Backend`. With the `server` feature it's the real one (`HttpBackend`,
+/// sessions in the Keychain), or the mock when `mock_env` (the value of
+/// `CURL_RUNNER_STUDIO_MOCK`) is `1`. Without the feature there is none
+/// (`NoServer`), and neither is compiled in.
+pub fn app_backend(base: Option<&Path>, mock_env: Option<&str>) -> Arc<dyn Backend> {
     #[cfg(feature = "server")]
     {
-        use crate::model::backend::{MOCK_LATENCY, MockBackend};
-        Arc::new(MockBackend::open(base, MOCK_LATENCY))
+        use crate::model::backend::{MOCK_LATENCY, MockBackend, http::HttpBackend};
+        use crate::model::sessions::KeychainSessions;
+        if mock_env == Some("1") {
+            return Arc::new(MockBackend::open(base, MOCK_LATENCY));
+        }
+        let sessions = Arc::new(KeychainSessions::new(KeychainSecrets, base));
+        Arc::new(HttpBackend::open(base, sessions))
     }
     #[cfg(not(feature = "server"))]
     {
-        let _ = base;
+        let _ = (base, mock_env);
         Arc::new(crate::model::backend::NoServer)
     }
 }
@@ -1011,12 +1019,36 @@ mod tests {
     #[test]
     fn app_backend_without_feature_is_no_server() {
         use crate::model::backend::{BackendError, Server};
-        let backend = super::app_backend(None);
+        let backend = super::app_backend(None, Some("1"));
         assert_eq!(
             futures::executor::block_on(backend.test_connection(&Server::Cloud)),
             Err(BackendError::Unavailable)
         );
         assert!(backend.dev().is_none(), "no Developer menu");
+    }
+
+    /// With the server: the real one, unless `CURL_RUNNER_STUDIO_MOCK=1`.
+    #[cfg(feature = "server")]
+    #[test]
+    fn app_backend_picks_http_unless_mock_env() {
+        use crate::model::backend::Server;
+        use futures::executor::block_on;
+        let dir = tempfile::tempdir().unwrap();
+        let picked = Server::SelfHosted {
+            url: "http://localhost:8090".into(),
+        };
+        for env in [None, Some(""), Some("0")] {
+            let backend = super::app_backend(Some(dir.path()), env);
+            assert!(backend.dev().is_none(), "{env:?}: no Developer menu");
+            // The real one keeps the server choice in the state folder,
+            // where `NoServer` answers `Unavailable`.
+            block_on(backend.set_server(picked.clone())).unwrap();
+            assert_eq!(backend.server(), picked);
+            assert!(dir.path().join("server.json").is_file());
+            std::fs::remove_file(dir.path().join("server.json")).unwrap();
+        }
+        let mock = super::app_backend(Some(dir.path()), Some("1"));
+        assert!(mock.dev().is_some(), "the mock keeps the Developer menu");
     }
 
     #[test]

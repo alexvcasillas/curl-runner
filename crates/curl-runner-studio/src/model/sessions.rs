@@ -25,6 +25,8 @@ pub trait SessionStore: Send + Sync {
     fn delete(&self, server: &str) -> io::Result<()>;
     /// The servers signed in to, from the account cache (the Keychain can't
     /// list accounts cheaply), sorted.
+    // Settings → Accounts lists them in 3b; only the tests call it now.
+    #[cfg_attr(not(test), allow(dead_code))]
     fn servers(&self) -> Vec<String>;
 }
 
@@ -110,8 +112,8 @@ impl<S: SecretStore> SessionStore for SecretSessions<S> {
     }
 }
 
-/// Sessions in the login Keychain.
-#[cfg(target_os = "macos")]
+/// Sessions in the login Keychain: the app's, with the `server` feature.
+#[cfg(all(target_os = "macos", feature = "server"))]
 pub type KeychainSessions = SecretSessions<crate::model::secrets::KeychainSecrets>;
 
 /// In-process sessions (tests, and other OSes).

@@ -125,7 +125,9 @@ impl HttpBackend {
 
     /// Asks `server` who the session on it is, and refreshes the cached
     /// account. A 401 signs out of that server only.
-    // The workspace calls it when it checks sessions (a later task of 3a).
+    // Not called by the app yet: every call's 401 already signs out through
+    // `map_error`. Settings → Accounts uses it in 3b.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn refresh_account(&self, server: &str) -> BoxFut<'_, Account> {
         let server = key(server);
         Box::pin(async move {
@@ -440,5 +442,7 @@ impl Backend for HttpBackend {
     }
 }
 
+#[cfg(test)]
+mod live;
 #[cfg(test)]
 mod tests;

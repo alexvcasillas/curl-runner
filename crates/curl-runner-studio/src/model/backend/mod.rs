@@ -13,11 +13,9 @@
 #[cfg(any(test, feature = "server"))]
 pub mod fixtures;
 #[cfg(any(test, feature = "server"))]
-mod mock;
-// Wired into `app_backend` by a later task of plan 3a.
-#[cfg(any(test, feature = "server"))]
-#[allow(dead_code)]
 pub mod http;
+#[cfg(any(test, feature = "server"))]
+mod mock;
 #[cfg(any(test, not(feature = "server")))]
 mod no_server;
 #[cfg(any(test, feature = "server"))]

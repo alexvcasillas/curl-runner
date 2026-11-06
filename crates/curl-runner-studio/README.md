@@ -4,8 +4,19 @@ A macOS desktop app for curl-runner YAML request suites. Not published.
 
 ```sh
 cargo run -p curl-runner-studio                    # local only, as released
-cargo run -p curl-runner-studio --features server  # sign-in, share and sync, on the mock
+cargo run -p curl-runner-studio --features server  # sign-in and shared links, on curl-runner Cloud
+CURL_RUNNER_STUDIO_MOCK=1 cargo run -p curl-runner-studio --features server  # the same, on the mock
 ```
+
+With `--features server` the studio talks to `https://api.curl-runner.com`
+by default. Settings › Accounts & sync points it at a self-hosted server
+instead. Sessions live in the macOS Keychain (service `curl-runner Cloud`,
+one per server).
+
+`CURL_RUNNER_STUDIO_MOCK=1` swaps in the in-process mock, with fixture data
+and, in debug builds, the App menu › Developer toggles (offline, conflicts,
+expired links, a failing sign-in). Team sync and the share settings answer
+"unavailable" on the real server until they ship; use the mock for those.
 
 ## Share links (`curl-runner://`)
 

@@ -14,8 +14,8 @@ pub mod received;
 pub mod result_view;
 pub mod run;
 pub mod secrets;
-// Used by `HttpBackend`, which `app_backend` builds in a later task of 3a.
-#[allow(dead_code)]
+// Only `HttpBackend` keeps sessions: with the `server` feature, and in tests.
+#[cfg(any(test, feature = "server"))]
 pub mod sessions;
 pub mod settings;
 pub mod shared_copy;
