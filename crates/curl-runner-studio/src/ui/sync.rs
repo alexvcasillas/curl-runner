@@ -108,8 +108,8 @@ pub enum SyncLine {
     /// The folder lists no files although some were synced: `Sync now`
     /// deletes them on the server.
     AllRemoved,
-    /// A read-only (received) copy the server has no share record for:
-    /// nothing to pull from, and it never pushes.
+    /// A received copy the server has no share record for: nothing to
+    /// take updates from, and it never pushes.
     NotLinked,
 }
 
@@ -270,23 +270,13 @@ fn really_gone(root: &Path, deleted: Vec<SyncDeletion>) -> Vec<SyncDeletion> {
         .collect()
 }
 
-/// The files a sync sends, each with its base. A received copy pulls
-/// only: it sends paths and hashes, never its text, so nothing local can
-/// reach the owner's copy.
-fn outgoing(files: Vec<SyncFile>, base: &SyncBase, pull_only: bool) -> Vec<SyncFile> {
+/// The files a sync sends, each with its base.
+fn outgoing(files: Vec<SyncFile>, base: &SyncBase) -> Vec<SyncFile> {
     files
         .into_iter()
         .map(|f| {
             let b = base.files.get(&f.rel).copied();
-            let f = f.with_base(b);
-            if pull_only {
-                SyncFile {
-                    text: String::new(),
-                    ..f
-                }
-            } else {
-                f
-            }
+            f.with_base(b)
         })
         .collect()
 }
@@ -421,6 +411,10 @@ impl Workspace {
             SyncLine::LocalOnly
         } else if self.unlinked() {
             SyncLine::NotLinked
+        } else if self.pull_only() || !self.backend.team_sync() {
+            // A received copy takes updates, it doesn't sync; nor does
+            // anything on a server without the team side yet.
+            SyncLine::LocalOnly
         } else if s.unreadable {
             SyncLine::CantRead
         } else if s.emptied {
@@ -457,9 +451,7 @@ impl Workspace {
             saver,
             ..SyncState::default()
         };
-        let key = self
-            .collection_key(cx)
-            .filter(|_| self.sync_on() && !self.unlinked());
+        let key = self.collection_key(cx).filter(|_| self.two_way());
         if let Some(key) = key {
             let id = self.sync_base_id(cx).unwrap_or_else(|| key.id.clone());
             self.sync.base = sync_base::load(self.store.base(), &id);
@@ -486,11 +478,14 @@ impl Workspace {
     }
 
     /// A tracked file changed (saved here, or on disk): recount what is
-    /// waiting and, with "Sync automatically", sync after a pause.
+    /// waiting and, with "Sync automatically", sync after a pause. A
+    /// received copy with an update waiting recounts the customer's edits
+    /// instead (the banner's warning).
     pub(super) fn mark_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.sync_on() && !self.unlinked() {
+        if self.two_way() {
             self.refresh_pending(self.settings.sync.automatic, window, cx);
         }
+        self.recount_open_local_changes(cx);
     }
 
     /// `Sync now` (Settings, the status bar): at once. After the footer
@@ -538,16 +533,24 @@ impl Workspace {
         }
     }
 
-    /// The open collection is a received copy: it pulls, never pushes or
-    /// deletes. Decided by the copy's own lock (its notes name an owner, or
-    /// it sits under `shared/`), else by a share record for it: never by
-    /// the server's list alone, which a copy can outlive.
-    pub(super) fn pull_only(&self) -> bool {
-        self.read_only_org().is_some() || self.received.is_some()
+    /// The open collection syncs both ways: not a received copy, and the
+    /// backend has the team side ([`Backend::team_sync`]).
+    ///
+    /// [`Backend::team_sync`]: crate::model::backend::Backend::team_sync
+    fn two_way(&self) -> bool {
+        self.sync_on() && !self.pull_only() && self.backend.team_sync()
     }
 
-    /// A received copy with no share record: nothing to pull from, so it
-    /// does not sync at all (`Not linked to a share`).
+    /// The open collection is a received copy: it takes updates, never
+    /// syncs. Decided by the copy itself (its notes name an owner, or it
+    /// sits under `shared/`), else by a share record for it: never by the
+    /// server's list alone, which a copy can outlive.
+    pub(super) fn pull_only(&self) -> bool {
+        self.shared_by().is_some() || self.received.is_some()
+    }
+
+    /// A received copy with no share record: nothing to take updates from
+    /// (`Not linked to a share`).
     pub(super) fn unlinked(&self) -> bool {
         self.pull_only() && self.received.is_none()
     }
@@ -605,10 +608,7 @@ impl Workspace {
     /// queues one more. A folder that can't be read sends nothing; an
     /// emptied one only after `Sync now` confirmed it.
     pub(super) fn run_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(key) = self
-            .collection_key(cx)
-            .filter(|_| self.sync_on() && !self.unlinked())
-        else {
+        let Some(key) = self.collection_key(cx).filter(|_| self.two_way()) else {
             // No sync to take a confirm: it doesn't wait for a later one.
             self.sync.confirmed = false;
             return;
@@ -621,17 +621,10 @@ impl Workspace {
         let Some(root) = root else { return };
         self.sync.running = true;
         self.sync.debounce = None;
-        let pull_only = self.pull_only();
-        // A received copy pulls from its share (never unlinked here).
-        let share = self.received.as_ref().map(|r| r.share.clone());
-        let author = share
-            .as_ref()
-            .map(|r| r.owner_org.clone())
-            .or_else(|| self.backend.account().map(|a| a.name))
-            .unwrap_or_default();
+        let author = self.backend.account().map(|a| a.name).unwrap_or_default();
         let base = self.sync.base.clone();
         let backend = self.backend.clone();
-        let confirmed = std::mem::take(&mut self.sync.confirmed) && !pull_only;
+        let confirmed = std::mem::take(&mut self.sync.confirmed);
         self.sync.task = Some(cx.spawn_in(window, async move |this, cx| {
             let (scan_root, scan_base) = (root.clone(), base.clone());
             let scanned = cx
@@ -642,12 +635,7 @@ impl Workspace {
                         Verdict::Emptied if confirmed => {}
                         refused => return Err(refused),
                     }
-                    let deleted = if pull_only {
-                        // Read-only copies never delete (Task 6).
-                        Vec::new()
-                    } else {
-                        really_gone(&scan_root, deleted_of(&scan, &scan_base))
-                    };
+                    let deleted = really_gone(&scan_root, deleted_of(&scan, &scan_base));
                     Ok((scan, deleted))
                 })
                 .await;
@@ -658,7 +646,7 @@ impl Workspace {
                         this.sync.running = false;
                         this.sync.again = false;
                         this.sync.confirmed = false;
-                        let emptied = refused == Verdict::Emptied && !pull_only;
+                        let emptied = refused == Verdict::Emptied;
                         this.sync.unreadable = !emptied;
                         this.sync.emptied = emptied;
                         this.sync_changed(cx);
@@ -670,18 +658,12 @@ impl Workspace {
             for rel in &scan.too_big {
                 log::info!("sync: {} stays local (over 1 MB)", rel.display());
             }
-            let files = outgoing(scan.files, &base, pull_only);
+            let files = outgoing(scan.files, &base);
             let sent: HashMap<PathBuf, u64> =
                 files.iter().map(|f| (f.rel.clone(), f.hash)).collect();
             let gone = deleted.clone();
-            let Ok(call) = this.update(cx, |_, cx| match share {
-                Some(share) if pull_only => backend_call(cx, &backend, move |b| {
-                    b.sync_shared(&key, &share.id, &files)
-                }),
-                // Read only with no share: unreachable (unlinked), and
-                // never a push.
-                None if pull_only => cx.background_spawn(async { Err(BackendError::NotFound) }),
-                _ => backend_call(cx, &backend, move |b| b.sync(&key, &files, &gone)),
+            let Ok(call) = this.update(cx, |_, cx| {
+                backend_call(cx, &backend, move |b| b.sync(&key, &files, &gone))
             }) else {
                 return;
             };
@@ -764,13 +746,9 @@ impl Workspace {
                 if !self.sync.share_known {
                     self.refresh_share(window, cx);
                 }
-                // A received copy takes its owner's variables as shared
-                // now; an owned, shared collection sends its own again (a
-                // synced file may use new ones).
-                match report.variables {
-                    Some(vars) if self.pull_only() => self.take_shared_vars(vars, window, cx),
-                    _ => self.variables_changed(window, cx),
-                }
+                // A shared collection sends its variables again (a synced
+                // file may use new ones).
+                self.variables_changed(window, cx);
                 let touched: Vec<PathBuf> = applied
                     .written
                     .into_iter()
@@ -1285,7 +1263,7 @@ mod gpui_tests {
     use super::super::state::StateStore;
     use super::super::workspace::{Workspace, test_backend, test_secrets};
     use super::{OFFLINE_POLL, SYNC_DELAY, SyncLine};
-    use crate::model::backend::{Backend, CollectionKey, ShareUpdate, SignInMethod, SyncStatus};
+    use crate::model::backend::{Backend, CollectionKey, ShareUpdate, SyncStatus};
     use gpui_kit::test::{TestQueryExt as _, TestWindowExt as _};
     use gpui_kit::{
         AnyWindowHandle, AppContext as _, Bounds, Entity, Point, TestAppContext, WindowBounds,
@@ -1309,7 +1287,7 @@ mod gpui_tests {
 
     fn signed_in() -> Arc<dyn Backend> {
         let backend = test_backend();
-        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        crate::model::backend::testing::sign_in(&*backend);
         backend
     }
 
@@ -1412,6 +1390,70 @@ mod gpui_tests {
             .collect()
     }
 
+    /// The real server's backend, signed in on a local test server that
+    /// answers only info and the sign-in handoff: no team side yet.
+    fn http_signed_in() -> (testkit::TestServer, Arc<dyn Backend>) {
+        use crate::model::backend::{AuthCallback, Server, http::HttpBackend};
+        use crate::model::secrets::MemorySecrets;
+        use crate::model::sessions::MemorySessions;
+        use futures::executor::block_on;
+        let srv = testkit::TestServer::with_handler(|r: testkit::Request| {
+            let json = |status: u16, body: &str| {
+                testkit::Response::from_data(body.as_bytes().to_vec())
+                    .with_status_code(status)
+                    .with_header("Content-Type", "application/json")
+            };
+            match r.url.as_str() {
+                "/v1/info" => json(
+                    200,
+                    r#"{"version":"2.1.1","sign_in":["email"],"signup":"open","billing":false,"app_url":"https://app.example.test"}"#,
+                ),
+                "/v1/auth/handoff/redeem" => json(
+                    200,
+                    r#"{"session":"crs_new","user":{"id":"u1","email":"ada@example.test","name":"Ada"}}"#,
+                ),
+                _ => json(404, r#"{"error":"not_found","message":"No."}"#),
+            }
+        });
+        let sessions = Arc::new(MemorySessions::new(MemorySecrets::default(), None));
+        let backend = HttpBackend::open(None, sessions);
+        let server = Server::SelfHosted {
+            url: srv.base_url.clone(),
+        };
+        block_on(backend.set_server(server.clone())).unwrap();
+        block_on(backend.sign_in_url(&server)).unwrap();
+        block_on(backend.complete_sign_in(&AuthCallback {
+            server: srv.base_url.clone(),
+            code: "crh_abc".into(),
+        }))
+        .unwrap();
+        (srv, Arc::new(backend))
+    }
+
+    #[gpui_kit::test]
+    fn no_team_side_reads_local_only_without_a_toast(cx: &mut TestAppContext) {
+        use gpui_kit::component::WindowExt as _;
+        let dir = collection(&[("a.yaml", REQUEST)]);
+        let (_srv, backend) = http_signed_in();
+        assert!(backend.account().is_some());
+        let (window, ws) = open(cx, dir.path(), backend);
+        save(
+            cx,
+            window,
+            &ws,
+            "a.yaml",
+            "request:\n  url: https://api.example.com/b\n",
+        );
+        cx.executor().advance_clock(SYNC_DELAY * 2);
+        cx.run_until_parked();
+        let toasts = cx
+            .update_window(window, |_, window, cx| window.notifications(cx).len())
+            .unwrap();
+        assert_eq!(toasts, 0, "no `Couldn't sync` toast");
+        assert_eq!(line(cx, &ws), SyncLine::LocalOnly);
+        assert!(shows(cx, window, "sidebar-sync", "Local only"));
+    }
+
     #[gpui_kit::test]
     fn save_marks_pending_then_syncs(cx: &mut TestAppContext) {
         let dir = collection(&[("a.yaml", REQUEST), ("rates/b.yaml", REQUEST)]);
@@ -1469,9 +1511,14 @@ mod gpui_tests {
         let files = |cx: &mut TestAppContext| ws.read_with(cx, |ws, _| ws.sync.base.files.len());
         assert_eq!(files(cx), 2, "synced as Jamie");
         let jamie = ws.read_with(cx, |ws, cx| ws.sync_base_id(cx).unwrap());
-        let switch = |cx: &mut TestAppContext, method: SignInMethod| {
-            futures::executor::block_on(backend.sign_out()).unwrap();
-            futures::executor::block_on(backend.sign_in(method)).unwrap();
+        let switch = |cx: &mut TestAppContext, by_email: bool| {
+            use crate::model::backend::testing;
+            testing::sign_out(&*backend);
+            if by_email {
+                testing::sign_in_by_email(&*backend);
+            } else {
+                testing::sign_in(&*backend);
+            }
             cx.update_window(window, |_, window, cx| {
                 ws.update(cx, |ws, cx| ws.start_sync(window, cx));
             })
@@ -1479,13 +1526,13 @@ mod gpui_tests {
             cx.run_until_parked();
         };
         // Another account: its own base, not Jamie's.
-        switch(cx, SignInMethod::Email);
+        switch(cx, true);
         let maria = ws.read_with(cx, |ws, cx| ws.sync_base_id(cx).unwrap());
         assert_ne!(maria, jamie);
         let stored = |id: &str| crate::model::sync_base::load(Some(state.path()), id);
         assert_eq!(stored(&jamie).files.len(), 2, "Jamie's base is kept");
         // Back as Jamie: the old base again, nothing to send.
-        switch(cx, SignInMethod::GitHub);
+        switch(cx, false);
         assert_eq!(
             ws.read_with(cx, |ws, cx| ws.sync_base_id(cx).unwrap()),
             jamie
@@ -1703,11 +1750,7 @@ mod gpui_tests {
         assert!(shows(cx, window, "sidebar-sync", "Resolve"));
         let key = key(&ws, cx);
         let server = || {
-            futures::executor::block_on(backend.update_share(&key, ShareUpdate::default()))
-                .unwrap();
-            let files = futures::executor::block_on(backend.fetch_shared(&key.id))
-                .unwrap()
-                .files;
+            let files = crate::model::backend::testing::server_files(&*backend, &key);
             files[0].text.clone()
         };
         let theirs = server();
@@ -1759,10 +1802,7 @@ mod gpui_tests {
         assert!(last.contains("SyncDeletion { rel: \"b.yaml\""), "{last}");
         assert!(matches!(line(cx, &ws), SyncLine::Synced(_)));
         let key = key(&ws, cx);
-        futures::executor::block_on(backend.update_share(&key, ShareUpdate::default())).unwrap();
-        let files = futures::executor::block_on(backend.fetch_shared(&key.id))
-            .unwrap()
-            .files;
+        let files = crate::model::backend::testing::server_files(&*backend, &key);
         let rels: Vec<_> = files.iter().map(|f| f.rel.clone()).collect();
         assert_eq!(rels, [std::path::PathBuf::from("a.yaml")]);
         // Not sent again.
@@ -1799,10 +1839,7 @@ mod gpui_tests {
         assert!(last.ends_with(", [])"), "no deletion: {last}");
         assert!(matches!(line(cx, &ws), SyncLine::Synced(_)));
         let key = key(&ws, cx);
-        futures::executor::block_on(backend.update_share(&key, ShareUpdate::default())).unwrap();
-        let files = futures::executor::block_on(backend.fetch_shared(&key.id))
-            .unwrap()
-            .files;
+        let files = crate::model::backend::testing::server_files(&*backend, &key);
         assert_eq!(files.len(), 2, "b.yaml stays on the server");
     }
 
@@ -1843,10 +1880,7 @@ mod gpui_tests {
             "Can't read the collection folder"
         ));
         let key = key(&ws, cx);
-        futures::executor::block_on(backend.update_share(&key, ShareUpdate::default())).unwrap();
-        let files = futures::executor::block_on(backend.fetch_shared(&key.id))
-            .unwrap()
-            .files;
+        let files = crate::model::backend::testing::server_files(&*backend, &key);
         assert_eq!(files.len(), 2, "the server copy is intact");
     }
 
@@ -1955,10 +1989,7 @@ mod gpui_tests {
         }
         assert!(matches!(line(cx, &ws), SyncLine::Synced(_)));
         let key = key(&ws, cx);
-        futures::executor::block_on(backend.update_share(&key, ShareUpdate::default())).unwrap();
-        let files = futures::executor::block_on(backend.fetch_shared(&key.id))
-            .unwrap()
-            .files;
+        let files = crate::model::backend::testing::server_files(&*backend, &key);
         assert!(files.is_empty(), "deleted on the server");
     }
 

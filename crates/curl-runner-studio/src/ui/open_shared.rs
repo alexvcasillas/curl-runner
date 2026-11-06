@@ -1,6 +1,6 @@
 //! Opening a shared link (board: OpenShared): paste one (Welcome's card,
 //! ⌘L, the palette) or receive one (`curl-runner://`, see [`link_handler`]),
-//! review what it opens, fill in your own credentials and add a read-only
+//! review what it opens, fill in your own credentials and add your own
 //! copy to this studio.
 //!
 //! Add writes nothing until the snapshot is in hand and every path in it
@@ -10,16 +10,19 @@
 //! never to disk, a log, a toast or the backend.
 
 use super::app::mono_font;
-use super::backend_call;
-use super::color;
 use super::icons::{self, glyph};
 use super::share_dialog::initials;
+use super::state::Connection;
 use super::workspace::{Workspace, notify_error};
-use crate::model::backend::{Backend, BackendError, ShareLink, SharedCollection, SharedVar};
+use super::{backend_call, color};
+use crate::model::backend::{
+    AuthCallback, Backend, BackendError, FOREIGN_CALLBACK, Server, ShareLink, SharedCollection,
+    SharedVar,
+};
 use crate::model::environments::is_secret;
 use crate::model::history::relative_time;
 use crate::model::secrets::SecretStore;
-use crate::model::shared_copy::{add_shared, already_added};
+use crate::model::shared_copy::{add_shared, already_added, save_inputs};
 use chrono::Local;
 use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -40,13 +43,19 @@ const DIALOG_W: f32 = 600.;
 const DIALOG_H: f32 = 600.;
 const FILL_LABEL: &str = "Fill in the variables these requests use";
 const PASTE_TITLE: &str = "Open a shared link";
-const PASTE_SUBTITLE: &str = "Paste a curl-runner link someone sent you. Opens read-only.";
-const PASTE_HINT: &str = "curl-runner://open/… or https://studio.example.com/s/…";
+const PASTE_SUBTITLE: &str = "Paste a curl-runner link someone sent you. Adds your own copy.";
+const PASTE_HINT: &str = "curl-runner://open?… or https://cloud.curl-runner.com/s/…";
 const ALREADY_ADDED: &str = "Already in your studio — open it?";
 
 /// `Acme shared Shipping API with you`.
 pub fn title_text(shared: &SharedCollection) -> String {
     format!("{} shared {} with you", shared.owner_org, shared.name)
+}
+
+/// What a restricted link asks first: `Sign in to api.curl-runner.com to
+/// open this collection.`
+pub fn sign_in_text(link: &ShareLink) -> String {
+    format!("Sign in to {} to open this collection.", link.host())
 }
 
 /// The header's subtitle.
@@ -78,26 +87,9 @@ pub fn summary_text(shared: &SharedCollection, now: chrono::DateTime<Local>) -> 
         .join(" · ")
 }
 
-/// The org a link names, for an error before it resolves: `acme` → `Acme`.
-/// The web form names none.
-fn org_of(link: Option<&ShareLink>) -> String {
-    let slug = link.map_or("", |l| l.owner_slug.as_str());
-    let words: Vec<String> = slug
-        .split(['-', '_'])
-        .filter(|w| !w.is_empty())
-        .map(|w| {
-            let mut c = w.chars();
-            c.next()
-                .map(|f| f.to_uppercase().chain(c).collect())
-                .unwrap_or_default()
-        })
-        .collect();
-    if words.is_empty() {
-        "whoever shared it".into()
-    } else {
-        words.join(" ")
-    }
-}
+/// Who a link came from, for an error before it resolves: the link names
+/// no one.
+const LINK_OWNER: &str = "whoever shared it";
 
 /// The flow's steps; `Paste` comes before the board's two.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,6 +105,10 @@ pub enum OpenSharedEvent {
     Close,
     /// Added (or already there): open the collection at this root.
     Open(PathBuf),
+    /// A restricted link: sign in to its server, then open it again.
+    SignIn(ShareLink),
+    /// The inputs an update asked for are saved.
+    Saved,
 }
 
 /// One variable's input.
@@ -157,9 +153,15 @@ pub struct OpenSharedView {
     queued: Option<String>,
     /// Where an Add that finished goes, even with this view gone.
     workspace: WeakEntity<Workspace>,
+    /// A restricted link and no session on its server: `Sign in to {host}
+    /// to open this collection.`
+    sign_in_for: Option<ShareLink>,
     /// Dev screenshots: once resolved, go to the credentials step with
     /// these values.
     dev_fill: Option<Vec<(String, String)>>,
+    /// Asking for an updated copy's new inputs (no link, no Add): its
+    /// folder and Keychain service, where **Save** writes them.
+    inputs_for: Option<(PathBuf, String)>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -174,15 +176,16 @@ impl OpenSharedView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let link =
-            cx.new(|cx| InputState::new(window, cx).placeholder("https://studio.example.com/s/…"));
+        let link = cx
+            .new(|cx| InputState::new(window, cx).placeholder("https://cloud.curl-runner.com/s/…"));
         let events =
             cx.subscribe_in(
                 &link,
                 window,
                 |this, _, event: &InputEvent, window, cx| match event {
                     InputEvent::Change => {
-                        if this.step == Step::Paste && this.error.take().is_some() {
+                        let had = this.error.take().is_some() | this.sign_in_for.take().is_some();
+                        if this.step == Step::Paste && had {
                             cx.notify();
                         }
                     }
@@ -206,7 +209,9 @@ impl OpenSharedView {
             task: None,
             queued: None,
             workspace,
+            sign_in_for: None,
             dev_fill: None,
+            inputs_for: None,
             _subscriptions: vec![events],
         }
     }
@@ -219,6 +224,15 @@ impl OpenSharedView {
     #[cfg(test)]
     pub fn error(&self) -> Option<&str> {
         self.error.as_deref()
+    }
+
+    /// Each field's variable name and whether it is masked.
+    #[cfg(all(test, feature = "server"))]
+    pub fn fields(&self) -> Vec<(String, bool)> {
+        self.fields
+            .iter()
+            .map(|f| (f.var.name.clone(), f.secret()))
+            .collect()
     }
 
     /// A link from outside (a `curl-runner://` event): shown and opened.
@@ -252,24 +266,34 @@ impl OpenSharedView {
         self.opened = Some(text.clone());
         self.shared = None;
         self.existing = None;
-        let Some(link) = ShareLink::parse(&text) else {
-            self.error = Some(BackendError::NotFound.link_text(&org_of(None)));
-            cx.notify();
-            return;
-        };
         self.error = None;
+        self.sign_in_for = None;
         self.busy = true;
-        let org = org_of(Some(&link));
-        let call = backend_call(cx, &self.backend, move |b| b.resolve_link(&link));
+        let org = LINK_OWNER;
+        // A landing URL asks its host where the API is: off the UI thread.
+        let backend = self.backend.clone();
+        let call = cx.background_executor().spawn(async move {
+            let link = ShareLink::parse(&text)
+                .map_err(|e| (BackendError::Invalid(e.to_string()), None))?;
+            backend
+                .resolve_link(&link)
+                .await
+                .map_err(|e| (e, Some(link)))
+        });
         self.task = Some(cx.spawn_in(window, async move |this, cx| {
             let result = call.await;
             this.update_in(cx, |this, window, cx| {
                 this.busy = false;
                 match result {
                     Ok(shared) => this.resolved(shared, window, cx),
-                    Err(e) => {
+                    // Restricted: sign in to its server first, once.
+                    Err((BackendError::SignedOut, Some(link))) => {
                         this.step = Step::Paste;
-                        this.error = Some(e.link_text(&org));
+                        this.sign_in_for = Some(link);
+                    }
+                    Err((e, _)) => {
+                        this.step = Step::Paste;
+                        this.error = Some(e.link_text(org));
                     }
                 }
                 this.take_queued(window, cx);
@@ -281,8 +305,48 @@ impl OpenSharedView {
     }
 
     fn resolved(&mut self, shared: SharedCollection, window: &mut Window, cx: &mut Context<Self>) {
-        self.existing = already_added(&*self.backend, self.base.as_deref(), &shared.id);
-        let mut vars = shared.variables.clone();
+        self.existing = already_added(&*self.backend, self.base.as_deref(), &shared.link.token);
+        self.inputs_for = None;
+        self.set_fields(shared.variables.clone(), window, cx);
+        self.shared = Some(shared);
+        self.step = Step::Review;
+        if let Some(fill) = self.dev_fill.take() {
+            self.continue_to_credentials(window, cx);
+            for (name, value) in fill {
+                self.fill(&name, &value, window, cx);
+            }
+            if let Some(f) = self.fields.iter().find(|f| f.secret()) {
+                f.input.read(cx).focus_handle(cx).focus(window, cx);
+            }
+        }
+    }
+
+    /// After an update, the inputs its new version requires, in the
+    /// Credentials step: **Save** writes them into the copy at `root`
+    /// (secrets to `service` in the Keychain, the rest to its `.env`), as
+    /// an Add does.
+    pub fn ask_inputs(
+        &mut self,
+        shared: SharedCollection,
+        root: PathBuf,
+        service: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.busy {
+            return;
+        }
+        self.set_fields(shared.variables.clone(), window, cx);
+        self.shared = Some(shared);
+        self.existing = None;
+        self.error = None;
+        self.inputs_for = Some((root, service));
+        self.continue_to_credentials(window, cx);
+    }
+
+    /// One field per variable, the required ones first.
+    fn set_fields(&mut self, vars: Vec<SharedVar>, window: &mut Window, cx: &mut Context<Self>) {
+        let mut vars = vars;
         vars.sort_by_key(|v| !v.required);
         self._subscriptions.truncate(1);
         self.fields = vars
@@ -320,17 +384,6 @@ impl OpenSharedView {
                 }
             })
             .collect();
-        self.shared = Some(shared);
-        self.step = Step::Review;
-        if let Some(fill) = self.dev_fill.take() {
-            self.continue_to_credentials(window, cx);
-            for (name, value) in fill {
-                self.fill(&name, &value, window, cx);
-            }
-            if let Some(f) = self.fields.iter().find(|f| f.secret()) {
-                f.input.read(cx).focus_handle(cx).focus(window, cx);
-            }
-        }
     }
 
     /// `Continue`: to the credentials, the first empty required field
@@ -353,7 +406,7 @@ impl OpenSharedView {
     }
 
     pub fn back(&mut self, cx: &mut Context<Self>) {
-        if self.busy {
+        if self.busy || self.inputs_for.is_some() {
             return;
         }
         self.error = None;
@@ -409,6 +462,9 @@ impl OpenSharedView {
         if self.busy || self.step != Step::Credentials || !self.ready(cx) {
             return;
         }
+        if self.inputs_for.is_some() {
+            return self.save_inputs(cx);
+        }
         let Some(shared) = self.shared.clone() else {
             return;
         };
@@ -419,15 +475,7 @@ impl OpenSharedView {
             return;
         };
         // A locked default is the owner's: nothing goes to `.env` for it.
-        let values: Vec<(String, String)> = self
-            .fields
-            .iter()
-            .filter(|f| !f.locked())
-            .map(|f| {
-                let v = f.input.read(cx).value();
-                (f.var.name.clone(), v.trim().to_string())
-            })
-            .collect();
+        let values = self.values(cx);
         self.busy = true;
         self.error = None;
         let (backend, secrets) = (self.backend.clone(), self.secrets.clone());
@@ -453,6 +501,71 @@ impl OpenSharedView {
                 .ok();
         })
         .detach();
+        cx.notify();
+    }
+
+    /// The values typed, but a locked default's (the owner's).
+    fn values(&self, cx: &App) -> Vec<(String, String)> {
+        self.fields
+            .iter()
+            .filter(|f| !f.locked())
+            .map(|f| {
+                let v = f.input.read(cx).value();
+                (f.var.name.clone(), v.trim().to_string())
+            })
+            .collect()
+    }
+
+    /// **Save**, for an updated copy's new inputs: written as the form
+    /// masked them (a masked field's value only ever to the Keychain).
+    fn save_inputs(&mut self, cx: &mut Context<Self>) {
+        let Some((root, service)) = self.inputs_for.clone() else {
+            return;
+        };
+        let vars: Vec<SharedVar> = self
+            .fields
+            .iter()
+            .map(|f| SharedVar {
+                secret: f.secret(),
+                ..f.var.clone()
+            })
+            .collect();
+        let values = self.values(cx);
+        self.busy = true;
+        self.error = None;
+        let secrets = self.secrets.clone();
+        let job =
+            cx.background_spawn(
+                async move { save_inputs(&root, &service, &vars, &values, &*secrets) },
+            );
+        cx.spawn(async move |this, cx| {
+            let saved = job.await;
+            this.update(cx, |this, cx| {
+                this.busy = false;
+                match saved {
+                    Ok(()) => cx.emit(OpenSharedEvent::Saved),
+                    Err(e) => this.error = Some(e),
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// `Sign in`, for a restricted link: the workspace signs in to the
+    /// link's server in the browser, then opens the link again.
+    pub fn sign_in(&mut self, cx: &mut Context<Self>) {
+        if let Some(link) = self.sign_in_for.clone().filter(|_| !self.busy) {
+            self.error = None;
+            cx.emit(OpenSharedEvent::SignIn(link));
+        }
+    }
+
+    /// The sign-in for a restricted link couldn't start.
+    pub fn sign_in_failed(&mut self, e: &BackendError, cx: &mut Context<Self>) {
+        self.error = Some(format!("Couldn't sign in: {e}"));
         cx.notify();
     }
 
@@ -507,7 +620,7 @@ fn disc(n: &'static str, current: bool) -> Div {
         .child(n)
 }
 
-/// The small outlined chip: `Read only`, `from Acme`.
+/// The small outlined chip: `Your own copy`, `from Acme`.
 fn chip(text: impl Into<SharedString>, fg: &str) -> Div {
     div()
         .flex_none()
@@ -770,7 +883,7 @@ impl OpenSharedView {
                             .child(summary),
                     ),
             )
-            .child(chip("Read only", "text-secondary"))
+            .child(chip("Your own copy", "text-secondary"))
     }
 
     fn render_paste(&self, window: &Window, cx: &mut Context<Self>) -> Div {
@@ -802,6 +915,32 @@ impl OpenSharedView {
                     .text_color(color("text-tertiary"))
                     .child(PASTE_HINT),
             )
+            .children(self.sign_in_for.as_ref().map(|link| {
+                let text = sign_in_text(link);
+                div()
+                    .id("open-shared-sign-in-note")
+                    .role(Role::Alert)
+                    .test_support()
+                    .aria_label(text.clone())
+                    .flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .mt(px(10.))
+                    .px(px(12.))
+                    .py(px(10.))
+                    .rounded(px(6.))
+                    .border_1()
+                    .border_color(color("info-border"))
+                    .bg(color("info-subtle"))
+                    .text_size(px(12.))
+                    .child(
+                        glyph(icons::LOCK)
+                            .size(px(13.))
+                            .flex_none()
+                            .text_color(color("accent-blue")),
+                    )
+                    .child(text)
+            }))
     }
 
     fn render_review(&self, shared: &SharedCollection) -> Div {
@@ -1113,7 +1252,7 @@ impl OpenSharedView {
     }
 
     fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let back = (self.step != Step::Paste).then(|| {
+        let back = (self.step != Step::Paste && self.inputs_for.is_none()).then(|| {
             Button::new("open-shared-back")
                 .ghost()
                 .h(px(32.))
@@ -1126,6 +1265,11 @@ impl OpenSharedView {
         });
         let empty = self.link.read(cx).value().trim().is_empty();
         let primary = match self.step {
+            Step::Paste if self.sign_in_for.is_some() => {
+                dialog_button("open-shared-sign-in", "Sign in")
+                    .disabled(self.busy)
+                    .on_click(cx.listener(|this, _, _, cx| this.sign_in(cx)))
+            }
             Step::Paste => dialog_button(
                 "open-shared-open",
                 if self.busy { "Opening…" } else { "Open link" },
@@ -1139,6 +1283,12 @@ impl OpenSharedView {
             Step::Review => dialog_button("open-shared-continue", "Continue").on_click(
                 cx.listener(|this, _, window, cx| this.continue_to_credentials(window, cx)),
             ),
+            Step::Credentials if self.inputs_for.is_some() => dialog_button(
+                "open-shared-save",
+                if self.busy { "Saving…" } else { "Save" },
+            )
+            .disabled(self.busy || !self.ready(cx))
+            .on_click(cx.listener(|this, _, window, cx| this.add(window, cx))),
             Step::Credentials => dialog_button(
                 "open-shared-add",
                 if self.busy {
@@ -1250,9 +1400,15 @@ impl Workspace {
     ) -> Entity<OpenSharedView> {
         if let Some(view) = self.open_shared_view() {
             match link {
-                // An Add in flight finishes first, open or not.
-                Some(link) if view.read(cx).adding() => self.pending_link = Some(link),
-                Some(link) => view.update(cx, |v, cx| v.receive(&link, window, cx)),
+                // An Add in flight finishes first, open or not; this link
+                // opens next.
+                Some(link) if view.read(cx).adding() => self.wait_for_link(link),
+                // The dialog shows this link now: a sign-in out for another
+                // one no longer opens that one.
+                Some(link) => {
+                    self.forget_link_sign_in();
+                    view.update(cx, |v, cx| v.receive(&link, window, cx))
+                }
                 None => {}
             }
             return view;
@@ -1265,11 +1421,27 @@ impl Workspace {
             &view,
             window,
             |this, _, event: &OpenSharedEvent, window, cx| {
+                if let OpenSharedEvent::SignIn(link) = event {
+                    this.sign_in_for_link(link.clone(), window, cx);
+                    return;
+                }
                 window.close_dialog(cx);
                 this.open_shared = None;
                 this._open_shared_events = None;
-                if let OpenSharedEvent::Open(root) = event {
-                    this.open_received(root.clone(), window, cx);
+                // Closed while a link's sign-in was out: abandoned, so a
+                // later sign-in to that server opens nothing.
+                if this.link_sign_in.take().is_some() {
+                    this.pending_link = None;
+                }
+                match event {
+                    OpenSharedEvent::Open(root) => this.open_received(root.clone(), window, cx),
+                    // An updated copy's new inputs: the runs read them now.
+                    OpenSharedEvent::Saved => {
+                        this.invalidate_secrets();
+                        this.refresh_vars(cx);
+                        cx.notify();
+                    }
+                    _ => {}
                 }
             },
         ));
@@ -1301,6 +1473,52 @@ impl Workspace {
         self.open_shared_focus = window.focused(cx);
         self.open_shared = Some(view.downgrade());
         view
+    }
+
+    /// A restricted link's `Sign in`: the browser sign-in for the link's
+    /// server (not the studio's own). The link waits in `pending_link` and
+    /// opens again once that server's callback is redeemed, while its
+    /// dialog is still open.
+    ///
+    /// Latest user action wins: a link already waiting (another link's
+    /// sign-in, or one that came in during an Add) is replaced, since the
+    /// user just asked for this one.
+    fn sign_in_for_link(&mut self, link: ShareLink, window: &mut Window, cx: &mut Context<Self>) {
+        let server = Server::for_url(&link.server);
+        self.pending_link = Some(link.url());
+        self.link_sign_in = Some(server.url().trim_end_matches('/').to_string());
+        let call = backend_call(cx, &self.backend, move |b| b.sign_in_url(&server));
+        cx.spawn_in(window, async move |this, cx| {
+            let result = call.await;
+            this.update_in(cx, |this, window, cx| {
+                let opened = result.and_then(|url| this.open_sign_in_page(&url, window, cx));
+                if let Err(e) = opened {
+                    this.link_sign_in = None;
+                    this.pending_link = None;
+                    match this.open_shared_view() {
+                        Some(view) => view.update(cx, |v, cx| v.sign_in_failed(&e, cx)),
+                        None => notify_error(format!("Couldn't sign in: {e}"), window, cx),
+                    }
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// `url` opens next (once an Add or the sign-in screen is done).
+    /// Latest user action wins: a link waiting before, and a sign-in out
+    /// for it, are dropped.
+    fn wait_for_link(&mut self, url: String) {
+        self.link_sign_in = None;
+        self.pending_link = Some(url);
+    }
+
+    /// A restricted link's sign-in no longer opens that link.
+    fn forget_link_sign_in(&mut self) {
+        if self.link_sign_in.take().is_some() {
+            self.pending_link = None;
+        }
     }
 
     /// The open flow's view.
@@ -1377,11 +1595,117 @@ impl Workspace {
             self.notify_soon(SHARED_LINKS_SOON, window, cx);
             return;
         }
+        // The dashboard's answer to a sign-in: never a share link, even when
+        // it is malformed.
+        if url.trim_start().starts_with("curl-runner://auth/") {
+            if let Some(callback) = AuthCallback::parse(&url) {
+                self.complete_sign_in(callback, window, cx);
+            }
+            return;
+        }
         // The sign-in screen answers first; the link waits for it.
         if self.sign_in_shown() {
-            self.pending_link = Some(url);
+            self.wait_for_link(url);
         } else {
             self.open_shared(Some(url), window, cx);
+        }
+    }
+}
+
+impl Workspace {
+    /// The dashboard sent the studio back with a handoff code: the backend
+    /// redeems it (or refuses a callback this studio didn't ask for), then
+    /// the sign-in screen closes and a link that waited for it opens.
+    pub(super) fn complete_sign_in(
+        &mut self,
+        callback: AuthCallback,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let server = callback.server.trim_end_matches('/').to_string();
+        let call = backend_call(cx, &self.backend, move |b| b.complete_sign_in(&callback));
+        // Detached: a later callback (a foreign one, say) must not cancel
+        // this one's redemption.
+        cx.spawn_in(window, async move |this, cx| {
+            let result = call.await;
+            this.update_in(cx, |this, window, cx| {
+                this.sign_in_completed(&server, result.map(|_| ()), window, cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn sign_in_completed(
+        &mut self,
+        server: &str,
+        result: Result<(), BackendError>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // A restricted link waited for this server's sign-in. It opens only
+        // on success with its dialog still up; refused, or the dialog gone
+        // (closed, Esc), the link is forgotten, so no later sign-in to that
+        // server pops it open.
+        let waiting = self.link_sign_in.as_deref() == Some(server);
+        if waiting {
+            self.link_sign_in = None;
+        }
+        // …and only while the dialog still asks for that very link (a link
+        // pasted or received since shows instead, and wins).
+        let shown = self.open_shared_view().is_some_and(|v| {
+            v.read(cx).sign_in_for.as_ref().map(ShareLink::url) == self.pending_link
+        });
+        let for_link = waiting && result.is_ok() && shown;
+        if waiting && !for_link {
+            self.pending_link = None;
+        }
+        if waiting
+            && let Err(e) = &result
+            && let Some(view) = self.open_shared_view()
+        {
+            view.update(cx, |v, cx| v.sign_in_failed(e, cx));
+            return;
+        }
+        match result {
+            // A callback for a server that isn't the current one (a
+            // restricted link's, or a late one): its session is kept (it is
+            // valid), the screen is left as it is; a link that waited for
+            // it opens.
+            Ok(()) if self.backend.server().url().trim_end_matches('/') != server => {
+                if let Some(view) = &self.app_settings {
+                    view.update(cx, |_, cx| cx.notify());
+                }
+                if for_link && let Some(link) = self.pending_link.take() {
+                    self.open_shared(Some(link), window, cx);
+                }
+            }
+            Ok(()) => {
+                self.signed_in_as(Connection::Online);
+                if self.sign_in.is_some() {
+                    // Back where it came from, then any waiting link.
+                    self.close_sign_in(window, cx);
+                } else if let Some(link) = self.pending_link.take() {
+                    self.open_shared(Some(link), window, cx);
+                }
+                if let Some(view) = &self.app_settings {
+                    view.update(cx, |_, cx| cx.notify());
+                }
+                self.start_sync(window, cx);
+                self.sync_chrome(window, cx);
+                cx.notify();
+            }
+            // Not ours: dropped, with a toast; a sign-in in progress still
+            // waits for its own callback.
+            Err(BackendError::Invalid(text)) if text == FOREIGN_CALLBACK => {
+                #[cfg(test)]
+                self.toasts.push(text.clone());
+                window.push_notification(Notification::error(text), cx);
+            }
+            Err(e) => match &self.sign_in {
+                Some(view) => view.update(cx, |v, cx| v.sign_in_failed(&e, cx)),
+                None => notify_error(format!("Couldn't sign in: {e}"), window, cx),
+            },
         }
     }
 }
@@ -1430,19 +1754,24 @@ pub(super) fn pump_links(
 #[cfg(test)]
 mod tests {
     use super::{
-        Local, ShareLink, SharedCollection, keychain_note, org_of, subtitle_text, summary_text,
-        title_text,
+        Local, PASTE_HINT, SharedCollection, keychain_note, subtitle_text, summary_text, title_text,
     };
     use chrono::Utc;
 
     fn shipping() -> SharedCollection {
         SharedCollection {
-            id: "acme/shipping-api".into(),
+            link: crate::model::backend::ShareLink {
+                server: "https://api.curl-runner.com".into(),
+                token: "crsl_x".into(),
+            },
             owner_org: "Acme".into(),
+            team_slug: "acme".into(),
             name: "Shipping API".into(),
             summary: "rates, labels, tracking".into(),
             updated: Utc::now() - chrono::Duration::days(3),
             request_count: 12,
+            version: 1,
+            access: crate::model::backend::LinkAccess::Public,
             variables: Vec::new(),
         }
     }
@@ -1463,9 +1792,19 @@ mod tests {
             summary_text(&s, Local::now()),
             "12 requests · rates, labels, tracking · updated 3 days ago"
         );
-        let link = ShareLink::parse("curl-runner://open/acme-labs/x?share=a1").unwrap();
-        assert_eq!(org_of(Some(&link)), "Acme Labs");
-        assert_eq!(org_of(None), "whoever shared it");
+        assert_eq!(
+            super::sign_in_text(&s.link),
+            "Sign in to api.curl-runner.com to open this collection."
+        );
+    }
+
+    #[test]
+    fn paste_hint_names_both_forms() {
+        assert!(
+            PASTE_HINT.contains("cloud.curl-runner.com/s/"),
+            "{PASTE_HINT}"
+        );
+        assert!(PASTE_HINT.contains("curl-runner://open"), "{PASTE_HINT}");
     }
 }
 
@@ -1487,8 +1826,9 @@ mod gpui_tests {
     use std::path::Path;
     use std::sync::Arc;
 
-    const WEB_LINK: &str = "https://studio.example.com/s/shipping-api-7Kx2Qm";
-    const DEEP_LINK: &str = "curl-runner://open/acme/shipping-api?share=7Kx2Qm";
+    const PATH_LINK: &str = "curl-runner://open/acme/shipping-api?share=crsl_7Kx2Qm&server=https%3A%2F%2Fapi.mock.curl-runner.test";
+    const DEEP_LINK: &str =
+        "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_7Kx2Qm";
     const TOKEN: &str = "sk-live-customer-4242";
 
     struct Studio {
@@ -1617,7 +1957,7 @@ mod gpui_tests {
         let s = studio(cx);
         let view = open_flow(cx, &s);
         assert!(labelled(cx, &s, "open-shared-title", "Open a shared link"));
-        paste_and_open(cx, &s, &view, WEB_LINK);
+        paste_and_open(cx, &s, &view, PATH_LINK);
         assert_eq!(view.read_with(cx, |v, _| v.step()), Step::Review);
         assert!(labelled(
             cx,
@@ -1631,7 +1971,7 @@ mod gpui_tests {
             "open-shared-summary",
             "12 requests · rates, labels, tracking · updated 3 days ago"
         ));
-        assert!(labelled(cx, &s, "open-shared-from", WEB_LINK));
+        assert!(labelled(cx, &s, "open-shared-from", PATH_LINK));
         click(cx, &s, "open-shared-continue");
         assert_eq!(view.read_with(cx, |v, _| v.step()), Step::Credentials);
         // Required first; BASE_URL comes filled in from Acme.
@@ -1674,13 +2014,13 @@ mod gpui_tests {
         assert_eq!(yaml.len(), 12);
         let received = s.backend.received();
         assert_eq!(received.len(), 1);
-        assert_eq!(received[0].owner_org, "Acme");
+        assert_eq!(received[0].team, "Acme");
         // Where the copy lives stays on this Mac: never in a call.
         let local = crate::model::received::load(Some(s.state.path()));
         assert_eq!(local.len(), 1);
         assert_eq!(
             (local[0].share_id.as_str(), &local[0].root),
-            (received[0].id.as_str(), &root)
+            (received[0].link.token.as_str(), &root)
         );
         let state_dir = s.state.path().to_string_lossy().into_owned();
         for call in s.backend.dev().unwrap().recorded() {
@@ -1764,7 +2104,7 @@ mod gpui_tests {
         dev.expire_links(true);
         let view = open_flow(cx, &s);
         paste_and_open(cx, &s, &view, DEEP_LINK);
-        let expired = "This link has expired. Ask Acme for a new one.";
+        let expired = "This link has expired. Ask whoever shared it for a new one.";
         assert_eq!(
             view.read_with(cx, |v, _| v.error().map(String::from))
                 .as_deref(),
@@ -1790,11 +2130,230 @@ mod gpui_tests {
         fill(cx, &s, &view, "API_TOKEN", TOKEN);
         dev.expire_links(true);
         click(cx, &s, "open-shared-add");
-        assert!(labelled(cx, &s, "open-shared-error", expired));
+        // By now the collection's org is known.
+        assert!(labelled(
+            cx,
+            &s,
+            "open-shared-error",
+            "This link has expired. Ask Acme for a new one."
+        ));
         assert_eq!(view.read_with(cx, |v, _| v.step()), Step::Credentials);
         assert!(!s.shared_dir().exists());
         assert!(s.backend.received().is_empty());
         assert!(s.ws.read_with(cx, |ws, _| ws.state.collection.is_none()));
+    }
+
+    #[gpui_kit::test]
+    fn restricted_link_asks_for_sign_in_then_continues(cx: &mut TestAppContext) {
+        use crate::model::backend::{
+            Access, CollectionKey, MOCK_SERVER, ShareLink, ShareUpdate, testing,
+        };
+        let s = studio(cx);
+        // Acme's restricted share; this studio is signed in nowhere.
+        testing::sign_in(&*s.backend);
+        let key = CollectionKey {
+            id: "a1b2c3d4".into(),
+            name: "Payments API".into(),
+        };
+        let update = ShareUpdate {
+            access: Some(Access::InvitedOnly),
+            ..Default::default()
+        };
+        let url = futures::executor::block_on(s.backend.update_share(&key, update))
+            .unwrap()
+            .link
+            .unwrap();
+        testing::sign_out(&*s.backend);
+        let link = ShareLink::parse(&url).unwrap();
+        assert_eq!(link.server, MOCK_SERVER);
+
+        let view = open_flow(cx, &s);
+        paste_and_open(cx, &s, &view, &url);
+        // Asked once, before the form: no review, no error.
+        assert_eq!(view.read_with(cx, |v, _| v.step()), Step::Paste);
+        assert!(view.read_with(cx, |v, _| v.error().is_none()));
+        assert!(labelled(
+            cx,
+            &s,
+            "open-shared-sign-in-note",
+            "Sign in to api.mock.curl-runner.test to open this collection."
+        ));
+        assert_eq!(s.backend.account_on(MOCK_SERVER), None);
+        click(cx, &s, "open-shared-sign-in");
+
+        // Signed in to the link's server (not the studio's), and the open
+        // went on with the same link.
+        assert!(s.backend.account_on(MOCK_SERVER).is_some());
+        assert_eq!(s.backend.account(), None);
+        assert_eq!(view.read_with(cx, |v, _| v.step()), Step::Review);
+        assert!(labelled(
+            cx,
+            &s,
+            "open-shared-title",
+            "Acme shared Payments API with you"
+        ));
+        assert!(s.ws.read_with(cx, |ws, _| ws.pending_link.is_none()));
+        let recorded = s.backend.dev().unwrap().recorded();
+        let resolves = recorded
+            .iter()
+            .filter(|c| c.starts_with("resolve_link("))
+            .count();
+        assert_eq!(resolves, 2, "{recorded:?}");
+        assert!(
+            recorded.iter().any(
+                |c| c.starts_with(&format!("sign_in_url(SelfHosted {{ url: \"{MOCK_SERVER}\""))
+            ),
+            "{recorded:?}"
+        );
+    }
+
+    /// A link's sign-in refused, or its dialog closed: the link and its
+    /// server are forgotten, so a later sign-in to that server opens
+    /// nothing.
+    #[cfg(feature = "server")]
+    #[gpui_kit::test]
+    fn an_abandoned_link_sign_in_never_opens_its_link_later(cx: &mut TestAppContext) {
+        use crate::model::backend::{BackendError, MOCK_SERVER};
+        let s = studio(cx);
+        let ws = s.ws.clone();
+        let resolves = |b: &Arc<dyn Backend>| {
+            b.dev()
+                .unwrap()
+                .recorded()
+                .iter()
+                .filter(|c| c.starts_with("resolve_link("))
+                .count()
+        };
+        let wait = |ws: &mut Workspace| {
+            ws.pending_link = Some(DEEP_LINK.into());
+            ws.link_sign_in = Some(MOCK_SERVER.into());
+        };
+        let forgotten = |cx: &mut TestAppContext| {
+            ws.read_with(cx, |ws, _| {
+                ws.pending_link.is_none() && ws.link_sign_in.is_none()
+            })
+        };
+        // Refused.
+        let view = open_flow(cx, &s);
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                wait(ws);
+                ws.sign_in_completed(MOCK_SERVER, Err(BackendError::Unauthorized), window, cx);
+            })
+        })
+        .unwrap();
+        assert!(forgotten(cx));
+        assert!(view.read_with(cx, |v, _| v.error().is_some()), "said so");
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.sign_in_completed(MOCK_SERVER, Ok(()), window, cx)
+            })
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(resolves(&s.backend), 0, "nothing opened");
+        // Abandoned: the dialog closed while the browser was out.
+        cx.update_window(s.window, |_, _, cx| ws.update(cx, |ws, _| wait(ws)))
+            .unwrap();
+        click(cx, &s, "open-shared-cancel");
+        assert!(!dialog_open(cx, &s));
+        assert!(forgotten(cx));
+        // Closed some other way (Esc): the callback finds no dialog.
+        open_flow(cx, &s);
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, _| wait(ws));
+            window.close_dialog(cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.sign_in_completed(MOCK_SERVER, Ok(()), window, cx)
+            })
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(forgotten(cx));
+        assert!(!dialog_open(cx, &s));
+        assert_eq!(resolves(&s.backend), 0, "nothing opened");
+    }
+
+    /// Link B's browser sign-in is out; link C comes in (a deep link, or
+    /// pasted by hand). When B's sign-in lands, C stays: B never opens
+    /// over it.
+    #[cfg(feature = "server")]
+    #[gpui_kit::test]
+    fn a_newer_link_wins_over_a_waiting_sign_in(cx: &mut TestAppContext) {
+        use crate::model::backend::{Access, CollectionKey, MOCK_SERVER, ShareUpdate, testing};
+        for by_hand in [false, true] {
+            let s = studio(cx);
+            testing::sign_in(&*s.backend);
+            let key = CollectionKey {
+                id: "a1b2c3d4".into(),
+                name: "Payments API".into(),
+            };
+            let update = ShareUpdate {
+                access: Some(Access::InvitedOnly),
+                ..Default::default()
+            };
+            let b = futures::executor::block_on(s.backend.update_share(&key, update))
+                .unwrap()
+                .link
+                .unwrap();
+            testing::sign_out(&*s.backend);
+            let view = open_flow(cx, &s);
+            paste_and_open(cx, &s, &view, &b);
+            // Sign in clicked: B waits for its server's callback.
+            let waiting = view.read_with(cx, |v, _| v.sign_in_for.clone()).unwrap();
+            let ws = s.ws.clone();
+            ws.update(cx, |ws, _| {
+                ws.pending_link = Some(waiting.url());
+                ws.link_sign_in = Some(MOCK_SERVER.into());
+            });
+            // C, the fixture's public link.
+            if by_hand {
+                cx.update_window(s.window, |_, window, cx| {
+                    view.update(cx, |v, cx| {
+                        v.paste(DEEP_LINK, window, cx);
+                        v.open_link(window, cx);
+                    })
+                })
+                .unwrap();
+                cx.run_until_parked();
+            } else {
+                cx.update_window(s.window, |_, window, cx| {
+                    ws.update(cx, |ws, cx| {
+                        ws.open_shared(Some(DEEP_LINK.into()), window, cx)
+                    });
+                })
+                .unwrap();
+                cx.run_until_parked();
+            }
+            let shipping = "Acme shared Shipping API with you";
+            assert!(labelled(cx, &s, "open-shared-title", shipping));
+            let resolves = |b: &Arc<dyn Backend>| {
+                b.dev()
+                    .unwrap()
+                    .recorded()
+                    .iter()
+                    .filter(|c| c.starts_with("resolve_link("))
+                    .count()
+            };
+            let before = resolves(&s.backend);
+            // B's sign-in lands, the dialog still up.
+            testing::sign_in(&*s.backend);
+            cx.update_window(s.window, |_, window, cx| {
+                ws.update(cx, |ws, cx| {
+                    ws.sign_in_completed(MOCK_SERVER, Ok(()), window, cx)
+                })
+            })
+            .unwrap();
+            cx.run_until_parked();
+            assert!(labelled(cx, &s, "open-shared-title", shipping), "C stays");
+            assert_eq!(resolves(&s.backend), before, "B never opened");
+            assert!(ws.read_with(cx, |ws, _| ws.pending_link.is_none()
+                && ws.link_sign_in.is_none()));
+        }
     }
 
     #[gpui_kit::test]
@@ -1806,7 +2365,7 @@ mod gpui_tests {
             cx,
             &s,
             "open-shared-error",
-            "This link doesn't work."
+            "That isn't a curl-runner share link."
         ));
         let resolved = |b: &Arc<dyn Backend>| {
             b.dev()
@@ -1818,7 +2377,12 @@ mod gpui_tests {
         };
         assert_eq!(resolved(&s.backend), 0, "never sent");
         // Typing clears it; a well-formed link the server doesn't know.
-        paste_and_open(cx, &s, &view, "https://studio.example.com/s/nothing-here9");
+        paste_and_open(
+            cx,
+            &s,
+            &view,
+            "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_nothing9",
+        );
         assert_eq!(resolved(&s.backend), 1);
         assert!(labelled(
             cx,
@@ -1851,7 +2415,10 @@ mod gpui_tests {
         assert!(labelled(cx, &s, "open-shared-from", DEEP_LINK));
         assert!(dialog_open(cx, &s));
         // A second link while it is open replaces the first, in place.
-        handler(vec!["curl-runner://open/acme/nope?share=zz9".into()]);
+        handler(vec![
+            "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_zz9"
+                .into(),
+        ]);
         cx.run_until_parked();
         let again = s.ws.read_with(cx, |ws, _| ws.open_shared_view()).unwrap();
         assert_eq!(again, view);
@@ -2007,6 +2574,42 @@ mod gpui_tests {
         }
         assert_eq!(s.secrets.len(), 0, "no Keychain items");
         assert!(s.ws.read_with(cx, |ws, _| ws.state.collection.is_none()));
+    }
+
+    #[cfg(feature = "server")]
+    #[gpui_kit::test]
+    fn open_urls_routes_callbacks_to_sign_in(cx: &mut TestAppContext) {
+        let s = studio(cx);
+        let ws = s.ws.clone();
+        let callback = "curl-runner://auth/callback?code=crh_abc123&server=https%3A%2F%2Fapi.mock.curl-runner.test";
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.open_urls(vec![callback.into()], window, cx));
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(
+            s.ws.read_with(cx, |ws, _| ws.open_shared_view().is_none()
+                && ws.pending_link.is_none()),
+            "a callback never reaches the share flow"
+        );
+        // No sign-in was started: it is refused, with a toast, and nobody
+        // is signed in.
+        s.ws.read_with(cx, |ws, _| {
+            assert_eq!(
+                ws.toasts.last().map(String::as_str),
+                Some("That sign-in link didn't come from this studio.")
+            );
+        });
+        assert!(s.backend.account().is_none());
+        // A share link still does.
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.open_urls(vec![DEEP_LINK.into()], window, cx)
+            });
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(s.ws.read_with(cx, |ws, _| ws.open_shared_view().is_some()));
     }
 
     #[cfg(feature = "server")]

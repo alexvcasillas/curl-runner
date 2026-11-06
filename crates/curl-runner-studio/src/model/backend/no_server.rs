@@ -21,13 +21,19 @@ impl Backend for NoServer {
     fn test_connection(&self, _: &Server) -> BoxFut<'_, ConnectionInfo> {
         unavailable()
     }
-    fn sign_in(&self, _: SignInMethod) -> BoxFut<'_, Account> {
+    fn sign_in_url(&self, _: &Server) -> BoxFut<'_, String> {
         unavailable()
     }
-    fn sign_out(&self) -> BoxFut<'_, ()> {
+    fn complete_sign_in(&self, _: &AuthCallback) -> BoxFut<'_, Account> {
+        unavailable()
+    }
+    fn sign_out(&self, _: &str) -> BoxFut<'_, ()> {
         unavailable()
     }
     fn account(&self) -> Option<Account> {
+        None
+    }
+    fn account_on(&self, _: &str) -> Option<Account> {
         None
     }
     fn sync_status(&self, _: &CollectionKey) -> SyncStatus {
@@ -39,9 +45,6 @@ impl Backend for NoServer {
         _: &[SyncFile],
         _: &[SyncDeletion],
     ) -> BoxFut<'_, SyncReport> {
-        unavailable()
-    }
-    fn sync_shared(&self, _: &CollectionKey, _: &str, _: &[SyncFile]) -> BoxFut<'_, SyncReport> {
         unavailable()
     }
     fn share_settings(&self, _: &CollectionKey) -> BoxFut<'_, ShareSettings> {
@@ -59,13 +62,19 @@ impl Backend for NoServer {
     fn resolve_link(&self, _: &ShareLink) -> BoxFut<'_, SharedCollection> {
         unavailable()
     }
-    fn fetch_shared(&self, _: &str) -> BoxFut<'_, SharedSnapshot> {
+    fn fetch_shared(&self, _: &ShareLink) -> BoxFut<'_, SharedSnapshot> {
+        unavailable()
+    }
+    fn latest_version(&self, _: &ShareLink) -> BoxFut<'_, u32> {
         unavailable()
     }
     fn received(&self) -> Vec<ReceivedShare> {
         Vec::new()
     }
     fn add_received(&self, _: ReceivedShare) -> BoxFut<'_, ()> {
+        unavailable()
+    }
+    fn update_received(&self, _: ReceivedShare) -> BoxFut<'_, ()> {
         unavailable()
     }
     fn dev(&self) -> Option<&dyn DevControls> {
@@ -90,25 +99,36 @@ mod tests {
         }
         assert!(unavailable(b.test_connection(&Server::Cloud)));
         assert!(unavailable(b.set_server(Server::Cloud)));
-        assert!(unavailable(b.sign_in(SignInMethod::GitHub)));
-        assert!(unavailable(b.sign_out()));
+        assert!(unavailable(b.sign_in_url(&Server::Cloud)));
+        let callback = AuthCallback {
+            server: CLOUD_URL.into(),
+            code: "crh_x".into(),
+        };
+        assert!(unavailable(b.complete_sign_in(&callback)));
+        assert!(unavailable(b.sign_out(CLOUD_URL)));
         assert!(unavailable(b.sync(&key, &[], &[])));
-        assert!(unavailable(b.sync_shared(&key, "s", &[])));
         assert!(unavailable(b.share_settings(&key)));
         assert!(unavailable(b.update_share(&key, ShareUpdate::default())));
         assert!(unavailable(b.invite(&key, "a@b.c")));
         assert!(unavailable(b.remove_person(&key, "a@b.c")));
-        let link = ShareLink::parse("curl-runner://open/acme/api?share=t").unwrap();
+        let link =
+            ShareLink::parse("curl-runner://open?server=https%3A%2F%2Fapi.x.test&share=crsl_t")
+                .unwrap();
         assert!(unavailable(b.resolve_link(&link)));
-        assert!(unavailable(b.fetch_shared("s")));
+        assert!(unavailable(b.fetch_shared(&link)));
+        assert!(unavailable(b.latest_version(&link)));
         let share = ReceivedShare {
-            id: "s".into(),
-            owner_org: "O".into(),
+            link,
+            team: "O".into(),
             name: "N".into(),
-            added: chrono::Utc::now(),
+            version: 1,
+            added: chrono::Utc::now().date_naive(),
+            files: Default::default(),
         };
-        assert!(unavailable(b.add_received(share)));
+        assert!(unavailable(b.add_received(share.clone())));
+        assert!(unavailable(b.update_received(share)));
         assert_eq!(b.account(), None);
+        assert_eq!(b.account_on(CLOUD_URL), None);
         assert_eq!(b.sync_status(&key), SyncStatus::Off);
         assert!(b.received().is_empty());
         assert!(b.dev().is_none());

@@ -106,8 +106,8 @@ mod tests {
     use super::super::state::{Connection, StateStore};
     use super::super::sync::SYNC_DELAY;
     use super::super::workspace::{Workspace, test_backend, test_secrets};
+    use crate::model::backend::Backend;
     use crate::model::backend::testing::Spy;
-    use crate::model::backend::{Backend, SignInMethod};
     use gpui_kit::component::WindowExt as _;
     use gpui_kit::test::{TestQueryExt as _, TestWindowExt as _};
     use gpui_kit::{
@@ -123,7 +123,7 @@ mod tests {
     /// syncing or sharing.
     fn signed_in() -> Arc<dyn Backend> {
         let backend = test_backend();
-        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        crate::model::backend::testing::sign_in(&*backend);
         backend
     }
 
@@ -268,7 +268,7 @@ mod tests {
 
     #[gpui_kit::test]
     fn palette_has_no_open_shared_link(_cx: &mut TestAppContext) {
-        let listed = palette_entries(None, &[], false);
+        let listed = palette_entries(None, &[]);
         assert!(
             !listed
                 .iter()
@@ -292,7 +292,8 @@ mod tests {
         let (tx, rx) = futures::channel::mpsc::unbounded();
         let mut handler = link_handler(tx);
         handler(vec![
-            "curl-runner://open/acme/shipping-api?share=7Kx2Qm".into(),
+            "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_7Kx2Qm"
+                .into(),
         ]);
         let (window, ws) = open(cx, None, store, test_backend());
         cx.update(|cx| pump_links(rx, window, ws.downgrade(), cx));
@@ -393,13 +394,18 @@ mod tests {
         // Even with a copy listed, the section isn't drawn.
         ws.update(cx, |ws, _| {
             assert!(ws.received_all.is_empty());
-            assert!(ws.read_only_org().is_none());
+            assert!(ws.shared_by().is_none());
             ws.received_all.push(ReceivedCopy {
                 share: ReceivedShare {
-                    id: "acme/x".into(),
-                    owner_org: "Acme".into(),
+                    link: crate::model::backend::ShareLink {
+                        server: "https://api.mock.curl-runner.test".into(),
+                        token: "crsl_x".into(),
+                    },
+                    team: "Acme".into(),
                     name: "Shipping API".into(),
-                    added: chrono::Utc::now(),
+                    version: 1,
+                    added: chrono::Utc::now().date_naive(),
+                    files: Default::default(),
                 },
                 root: other.path().to_path_buf(),
                 collection_id: "c".into(),

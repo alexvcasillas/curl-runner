@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::backend::{shared_vars, sync_files};
+use crate::model::backend::{FOREIGN_CALLBACK, shared_vars, sync_files, testing};
 use crate::model::collection_meta::{CollectionMeta, VarMeta};
 use crate::model::secrets::{MemorySecrets, SecretStore, service_name};
 use futures::executor::block_on;
@@ -21,7 +21,7 @@ fn key() -> CollectionKey {
 
 fn signed_in_mock(base: &Path) -> MockBackend {
     let b = mock(base);
-    block_on(b.sign_in(SignInMethod::Sso)).unwrap();
+    testing::sign_in(&b);
     b
 }
 
@@ -31,20 +31,19 @@ fn sign_in_then_account_persists_across_open() {
     let b = mock(d.path());
     assert_eq!(b.account(), None);
     assert_eq!(b.server(), Server::Cloud);
-    let account = block_on(b.sign_in(SignInMethod::Sso)).unwrap();
+    let account = testing::sign_in(&b);
     assert_eq!(account.name, "Jamie Rivera");
     assert_eq!(account.email, "jamie@acme.dev");
-    assert_eq!(account.org.as_deref(), Some("Acme"));
-    assert_eq!(account.provider, SignInMethod::Sso);
+    assert_eq!(account.provider, Some(SignInMethod::Github));
     drop(b);
     let again = mock(d.path());
     assert_eq!(again.account(), Some(account));
-    block_on(again.sign_out()).unwrap();
+    testing::sign_out(&again);
     assert_eq!(mock(d.path()).account(), None);
 }
 
 #[test]
-fn switching_server_signs_out_and_persists() {
+fn switching_server_keeps_sessions_and_persists() {
     let d = tempfile::tempdir().unwrap();
     let b = signed_in_mock(d.path());
     let own = Server::SelfHosted {
@@ -53,7 +52,7 @@ fn switching_server_signs_out_and_persists() {
     let info = block_on(b.test_connection(&own)).unwrap();
     assert_eq!(
         (info.version.as_str(), info.sign_in, info.latency_ms),
-        ("2.1.1", SignInMethod::Sso, 42)
+        ("2.1.1", vec![SignInMethod::Email, SignInMethod::Github], 42)
     );
     let bad = Server::SelfHosted { url: "nope".into() };
     assert!(matches!(
@@ -61,7 +60,8 @@ fn switching_server_signs_out_and_persists() {
         Err(BackendError::Invalid(_))
     ));
     block_on(b.set_server(own.clone())).unwrap();
-    assert_eq!(b.account(), None);
+    assert_eq!(b.account(), None, "no session on the new server");
+    assert!(b.account_on(Server::Cloud.url()).is_some(), "Cloud's stays");
     assert_eq!(mock(d.path()).server(), own);
 }
 
@@ -71,13 +71,15 @@ fn fail_next_sign_in_fails_once() {
     let b = mock(d.path());
     dev(&b).fail_next_sign_in(true);
     assert!(dev(&b).toggles().fail_next_sign_in);
+    let url = block_on(b.sign_in_url(&Server::Cloud)).unwrap();
+    let cb = AuthCallback::parse(&url).unwrap();
     assert_eq!(
-        block_on(b.sign_in(SignInMethod::GitHub)),
+        block_on(b.complete_sign_in(&cb)),
         Err(BackendError::Unauthorized)
     );
     assert_eq!(b.account(), None);
     assert!(!dev(&b).toggles().fail_next_sign_in);
-    assert!(block_on(b.sign_in(SignInMethod::GitHub)).is_ok());
+    testing::sign_in(&b);
 }
 
 #[test]
@@ -88,16 +90,15 @@ fn offline_fails_every_call_with_offline() {
     assert!(dev(&b).offline());
     assert!(mock(d.path()).offline(), "the toggle persists");
     let k = key();
-    let link = ShareLink::parse("curl-runner://open/acme/shipping-api?share=7Kx2Qm").unwrap();
+    let link = ShareLink::parse(
+        "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_7Kx2Qm",
+    )
+    .unwrap();
     let off = Err(BackendError::Offline);
     assert_eq!(block_on(b.set_server(Server::Cloud)), off);
     assert_eq!(block_on(b.test_connection(&Server::Cloud)).map(|_| ()), off);
-    assert_eq!(block_on(b.sign_in(SignInMethod::Sso)).map(|_| ()), off);
+    assert_eq!(block_on(b.sign_in_url(&Server::Cloud)).map(|_| ()), off);
     assert_eq!(block_on(b.sync(&k, &[], &[])).map(|_| ()), off);
-    assert_eq!(
-        block_on(b.sync_shared(&k, fixtures::SHIPPING_ID, &[])).map(|_| ()),
-        off
-    );
     assert_eq!(block_on(b.share_settings(&k)).map(|_| ()), off);
     assert_eq!(
         block_on(b.update_share(&k, ShareUpdate::default())).map(|_| ()),
@@ -106,21 +107,16 @@ fn offline_fails_every_call_with_offline() {
     assert_eq!(block_on(b.invite(&k, "maria@example.com")).map(|_| ()), off);
     assert_eq!(block_on(b.remove_person(&k, "maria@example.com")), off);
     assert_eq!(block_on(b.resolve_link(&link)).map(|_| ()), off);
+    assert_eq!(block_on(b.fetch_shared(&link)).map(|_| ()), off);
     assert_eq!(
-        block_on(b.fetch_shared(fixtures::SHIPPING_ID)).map(|_| ()),
-        off
+        block_on(b.latest_version(&link)),
+        Err(BackendError::Offline)
     );
-    let share = ReceivedShare {
-        id: fixtures::SHIPPING_ID.into(),
-        owner_org: "Acme".into(),
-        name: "Shipping API".into(),
-        added: Utc::now(),
-    };
-    assert_eq!(block_on(b.add_received(share)), off);
+    assert_eq!(block_on(b.add_received(received(&link, 1))), off);
     assert!(b.account().is_some(), "local state is kept");
     assert!(b.received().is_empty());
     // Signing out is local first: it works offline.
-    assert_eq!(block_on(b.sign_out()), Ok(()));
+    assert_eq!(block_on(b.sign_out(Server::Cloud.url())), Ok(()));
     assert_eq!(b.account(), None);
     assert_eq!(mock(d.path()).account(), None, "and persists");
 }
@@ -147,7 +143,7 @@ fn offline_mid_call_fails_that_call() {
     let d = tempfile::tempdir().unwrap();
     let b = MockBackend::open(Some(d.path()), Duration::from_millis(30));
     let started = Instant::now();
-    let pending = b.sign_in(SignInMethod::Sso);
+    let pending = b.sign_in_url(&Server::Cloud);
     dev(&b).set_offline(true);
     assert_eq!(block_on(pending), Err(BackendError::Offline));
     assert!(started.elapsed() >= Duration::from_millis(30), "it waited");
@@ -157,11 +153,11 @@ fn offline_mid_call_fails_that_call() {
 #[test]
 fn zero_latency_is_ready_on_first_poll() {
     let b = MockBackend::open(None, Duration::ZERO);
-    let mut fut = b.sign_in(SignInMethod::Email);
+    let mut fut = b.sign_in_url(&Server::Cloud);
     let waker = futures::task::noop_waker();
     let mut cx = Context::from_waker(&waker);
     match fut.as_mut().poll(&mut cx) {
-        Poll::Ready(Ok(a)) => assert_eq!(a.name, "Maria"),
+        Poll::Ready(Ok(url)) => assert!(url.starts_with("curl-runner://auth/callback?")),
         other => panic!("{other:?}"),
     }
 }
@@ -179,7 +175,7 @@ fn share_link_round_trip_and_invite() {
     let shared = block_on(b.update_share(&k, ShareUpdate::default())).unwrap();
     let url = shared.link.clone().expect("a link");
     assert!(
-        url.starts_with("https://studio.example.com/s/payments-api-"),
+        url.starts_with("curl-runner://open?server=https://api.mock.curl-runner.test&share=crsl_"),
         "{url}"
     );
     assert_eq!(shared.access, Access::AnyoneWithLink);
@@ -192,7 +188,8 @@ fn share_link_round_trip_and_invite() {
     let resolved = block_on(b.resolve_link(&link)).unwrap();
     assert_eq!(resolved.name, "Payments API");
     assert_eq!(resolved.owner_org, "Acme");
-    assert_eq!(resolved.id, k.id);
+    assert_eq!(resolved.link, link);
+    assert_eq!(resolved.access, LinkAccess::Public);
 
     let person = block_on(b.invite(&k, " maria@example.com ")).unwrap();
     assert_eq!(person.name, "Maria");
@@ -256,8 +253,8 @@ fn signed_out_share_and_sync_say_signed_out() {
 fn fixture_link_resolves_and_fetches() {
     let b = MockBackend::open(None, Duration::ZERO);
     for text in [
-        "curl-runner://open/acme/shipping-api?share=7Kx2Qm",
-        "https://studio.example.com/s/shipping-api-7Kx2Qm",
+        "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_7Kx2Qm",
+        "curl-runner://open/acme/shipping-api?share=crsl_7Kx2Qm&server=https%3A%2F%2Fapi.mock.curl-runner.test",
     ] {
         let c = block_on(b.resolve_link(&ShareLink::parse(text).unwrap())).unwrap();
         assert_eq!(c.owner_org, "Acme");
@@ -268,13 +265,26 @@ fn fixture_link_resolves_and_fetches() {
         let ago = Utc::now() - c.updated;
         assert_eq!(ago.num_days(), 3);
     }
-    let snap = block_on(b.fetch_shared(fixtures::SHIPPING_ID)).unwrap();
+    let fixture = ShareLink::parse(
+        "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_7Kx2Qm",
+    )
+    .unwrap();
+    let snap = block_on(b.fetch_shared(&fixture)).unwrap();
     assert_eq!(snap.files, fixtures::shipping_snapshot());
+    assert_eq!(snap.variables, fixtures::shipping_variables());
+    assert_eq!(snap.version, fixtures::SHIPPING_VERSION);
     assert_eq!(
-        block_on(b.fetch_shared("acme/nope")).map(|_| ()),
+        block_on(b.latest_version(&fixture)),
+        Ok(fixtures::SHIPPING_VERSION)
+    );
+    let unknown = ShareLink::parse(
+        "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_zzzzzz",
+    )
+    .unwrap();
+    assert_eq!(
+        block_on(b.fetch_shared(&unknown)).map(|_| ()),
         Err(BackendError::NotFound)
     );
-    let unknown = ShareLink::parse("curl-runner://open/acme/shipping-api?share=zzzzzz").unwrap();
     assert_eq!(
         block_on(b.resolve_link(&unknown)).map(|_| ()),
         Err(BackendError::NotFound)
@@ -289,7 +299,10 @@ fn expired_links_resolve_to_expired() {
         .unwrap()
         .link
         .unwrap();
-    let fixture = ShareLink::parse("curl-runner://open/acme/shipping-api?share=7Kx2Qm").unwrap();
+    let fixture = ShareLink::parse(
+        "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_7Kx2Qm",
+    )
+    .unwrap();
     let own = ShareLink::parse(&own).unwrap();
     dev(&b).expire_links(true);
     assert_eq!(
@@ -300,7 +313,10 @@ fn expired_links_resolve_to_expired() {
         block_on(b.resolve_link(&own)).map(|_| ()),
         Err(BackendError::Expired)
     );
-    let garbage = ShareLink::parse("https://studio.example.com/s/x-zzzzzz").unwrap();
+    let garbage = ShareLink::parse(
+        "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_zzzzzz",
+    )
+    .unwrap();
     assert_eq!(
         block_on(b.resolve_link(&garbage)).map(|_| ()),
         Err(BackendError::NotFound),
@@ -373,40 +389,64 @@ fn sync_pushes_and_reports_pending_counts() {
     assert_eq!(block_on(b.sync(&k, &local, &[])).unwrap().pushed, 2);
     assert!(matches!(b.sync_status(&k), SyncStatus::Synced { .. }));
 
-    block_on(b.sign_out()).unwrap();
+    testing::sign_out(&b);
     assert_eq!(b.sync_status(&k), SyncStatus::Off);
 }
 
+fn received(link: &ShareLink, version: u32) -> ReceivedShare {
+    ReceivedShare {
+        link: link.clone(),
+        team: "Acme".into(),
+        name: "Shipping API".into(),
+        version,
+        added: Utc::now().date_naive(),
+        files: BTreeMap::new(),
+    }
+}
+
 #[test]
-fn received_collection_pulls_and_never_pushes() {
-    let b = MockBackend::open(None, Duration::ZERO);
-    block_on(b.sign_in(SignInMethod::Email)).unwrap();
-    let k = CollectionKey {
-        id: "ffff0000".into(),
-        name: "Shipping API".into(),
+fn received_records_are_kept_by_token() {
+    let d = tempfile::tempdir().unwrap();
+    let b = mock(d.path());
+    let link = ShareLink {
+        server: MOCK_SERVER.into(),
+        token: fixtures::SHIPPING_TOKEN.into(),
     };
-    // Not added yet: nothing to pull from.
+    block_on(b.add_received(received(&link, 1))).unwrap();
+    block_on(b.add_received(received(&link, 2))).unwrap();
+    assert_eq!(b.received(), [received(&link, 2)]);
+    block_on(b.update_received(received(&link, 3))).unwrap();
+    assert_eq!(mock(d.path()).received(), [received(&link, 3)], "persisted");
+}
+
+#[test]
+fn a_restricted_link_needs_a_session_on_its_server() {
+    let b = signed_in_mock(tempfile::tempdir().unwrap().path());
+    let update = ShareUpdate {
+        access: Some(Access::InvitedOnly),
+        ..Default::default()
+    };
+    let url = block_on(b.update_share(&key(), update))
+        .unwrap()
+        .link
+        .unwrap();
+    let link = ShareLink::parse(&url).unwrap();
+    // Signed in to the studio's server, not the link's.
+    let signed_out = Err(BackendError::SignedOut);
+    assert_eq!(block_on(b.resolve_link(&link)).map(|_| ()), signed_out);
+    assert_eq!(block_on(b.fetch_shared(&link)).map(|_| ()), signed_out);
     assert_eq!(
-        block_on(b.sync_shared(&k, fixtures::SHIPPING_ID, &[])).map(|_| ()),
-        Err(BackendError::NotFound)
+        block_on(b.latest_version(&link)),
+        Err(BackendError::SignedOut)
     );
-    block_on(b.add_received(ReceivedShare {
-        id: fixtures::SHIPPING_ID.into(),
-        owner_org: "Acme".into(),
-        name: "Shipping API".into(),
-        added: Utc::now(),
+    block_on(b.sign_in_url(&Server::for_url(&link.server))).unwrap();
+    block_on(b.complete_sign_in(&AuthCallback {
+        server: link.server.clone(),
+        code: fixtures::MOCK_CODE.into(),
     }))
     .unwrap();
-    assert_eq!(b.received().len(), 1);
-    let mut local = fixtures::shipping_snapshot();
-    local[0] = SyncFile::new(local[0].rel.clone(), "stale");
-    let report = block_on(b.sync_shared(&k, fixtures::SHIPPING_ID, &local)).unwrap();
-    assert_eq!(report.pushed, 0);
-    assert_eq!(
-        report.pulled,
-        vec![fixtures::shipping_snapshot()[0].clone()]
-    );
-    assert_eq!(report.variables, Some(fixtures::shipping_variables()));
+    let c = block_on(b.resolve_link(&link)).unwrap();
+    assert_eq!(c.access, LinkAccess::Restricted);
 }
 
 #[test]
@@ -503,7 +543,7 @@ fn server_side_changes_one_value_deterministically() {
 #[test]
 fn shared_var_default_never_set_for_secret() {
     let b = MockBackend::open(None, Duration::ZERO);
-    block_on(b.sign_in(SignInMethod::Sso)).unwrap();
+    testing::sign_in(&b);
     let vars = vec![
         SharedVar {
             name: "API_TOKEN".into(),
@@ -572,7 +612,7 @@ fn corrupt_state_file_falls_back() {
     assert_eq!(*b.state(), State::default());
     assert_eq!(b.account(), None);
     // And recovers: the next save rewrites it.
-    block_on(b.sign_in(SignInMethod::Sso)).unwrap();
+    testing::sign_in(&b);
     assert!(mock(d.path()).account().is_some());
 }
 
@@ -681,7 +721,7 @@ fn no_secret_reaches_backend() {
     block_on(b.sync(&k, &local, &[])).unwrap();
     let link = ShareLink::parse(settings.link.as_deref().unwrap()).unwrap();
     let shared = block_on(b.resolve_link(&link)).unwrap();
-    block_on(b.fetch_shared(&shared.id)).unwrap();
+    block_on(b.fetch_shared(&shared.link)).unwrap();
 
     let recorded = dev(&b).recorded();
     assert!(recorded.len() >= 7, "{recorded:?}");
@@ -705,30 +745,23 @@ fn no_secret_reaches_backend() {
 }
 
 #[test]
-fn received_copy_of_an_owned_share_pulls_the_owners_files() {
+fn an_owned_share_publishes_each_change_as_a_version() {
     let b = MockBackend::open(None, Duration::ZERO);
-    block_on(b.sign_in(SignInMethod::Sso)).unwrap();
+    testing::sign_in(&b);
     let owner = key();
     let v1 = files(&[("charges/create.yaml", "request:\n  url: a\n")]);
     block_on(b.sync(&owner, &v1, &[])).unwrap();
-    let link = block_on(b.update_share(&owner, ShareUpdate::default()))
+    let url = block_on(b.update_share(&owner, ShareUpdate::default()))
         .unwrap()
         .link
         .unwrap();
-    let shared = block_on(b.resolve_link(&ShareLink::parse(&link).unwrap())).unwrap();
-    assert_eq!(block_on(b.fetch_shared(&shared.id)).unwrap().files, v1);
-    let copy = CollectionKey {
-        id: "c0ffee00".into(),
-        name: "Payments API".into(),
-    };
-    block_on(b.add_received(ReceivedShare {
-        id: shared.id.clone(),
-        owner_org: shared.owner_org.clone(),
-        name: shared.name.clone(),
-        added: Utc::now(),
-    }))
-    .unwrap();
-    // The owner pushes a change; the copy pulls it, not the fixture.
+    let link = ShareLink::parse(&url).unwrap();
+    let shared = block_on(b.resolve_link(&link)).unwrap();
+    assert_eq!(shared.version, 1);
+    assert_eq!(shared.summary, "charges");
+    let snap = block_on(b.fetch_shared(&link)).unwrap();
+    assert_eq!((snap.files, snap.version), (v1.clone(), 1));
+    // The owner pushes a change: a new version, with its files.
     let v2 = files(&[("charges/create.yaml", "request:\n  url: a2\n")]);
     let v2_based: Vec<SyncFile> = v2
         .iter()
@@ -736,14 +769,10 @@ fn received_copy_of_an_owned_share_pulls_the_owners_files() {
         .map(|f| f.with_base(Some(v1[0].hash)))
         .collect();
     assert_eq!(block_on(b.sync(&owner, &v2_based, &[])).unwrap().pushed, 1);
-    let report = block_on(b.sync_shared(&copy, &shared.id, &v1)).unwrap();
-    assert_eq!((report.pushed, report.pulled.clone()), (0, v2.clone()));
-    assert!(
-        block_on(b.sync_shared(&copy, &shared.id, &v2))
-            .unwrap()
-            .pulled
-            .is_empty()
-    );
+    assert_eq!(block_on(b.latest_version(&link)), Ok(2));
+    // Nothing changed: no new version.
+    block_on(b.sync(&owner, &v2, &[])).unwrap();
+    assert_eq!(block_on(b.latest_version(&link)), Ok(2));
     // The owner's variables come along, as shared now.
     let var = SharedVar {
         name: "CURRENCY".into(),
@@ -758,48 +787,46 @@ fn received_copy_of_an_owned_share_pulls_the_owners_files() {
         ..ShareUpdate::default()
     };
     block_on(b.update_share(&owner, update)).unwrap();
-    let report = block_on(b.sync_shared(&copy, &shared.id, &v2)).unwrap();
-    assert_eq!(report.variables, Some(vec![var.clone()]));
-    let snapshot = block_on(b.fetch_shared(&shared.id)).unwrap();
-    assert_eq!(snapshot.variables, [var]);
-
-    // Signed out, a received copy does not sync.
-    block_on(b.sign_out()).unwrap();
-    assert_eq!(
-        block_on(b.sync_shared(&copy, &shared.id, &v2)).map(|_| ()),
-        Err(BackendError::SignedOut)
-    );
+    let snapshot = block_on(b.fetch_shared(&link)).unwrap();
+    assert_eq!((snapshot.files, snapshot.variables), (v2, vec![var]));
+    // A public link needs no account.
+    testing::sign_out(&b);
+    assert!(block_on(b.fetch_shared(&link)).is_ok());
 }
 
 #[test]
 fn fetch_shared_honours_expiry() {
     let b = MockBackend::open(None, Duration::ZERO);
-    block_on(b.sign_in(SignInMethod::Sso)).unwrap();
+    testing::sign_in(&b);
     let k = key();
-    block_on(b.update_share(&k, ShareUpdate::default())).unwrap();
-    assert!(block_on(b.fetch_shared(&k.id)).is_ok());
+    let url = block_on(b.update_share(&k, ShareUpdate::default()))
+        .unwrap()
+        .link
+        .unwrap();
+    let own = ShareLink::parse(&url).unwrap();
+    let fixture = ShareLink {
+        server: MOCK_SERVER.into(),
+        token: fixtures::SHIPPING_TOKEN.into(),
+    };
+    assert!(block_on(b.fetch_shared(&own)).is_ok());
     dev(&b).expire_links(true);
-    for id in [k.id.as_str(), fixtures::SHIPPING_ID] {
+    for link in [&own, &fixture] {
         assert_eq!(
-            block_on(b.fetch_shared(id)).map(|_| ()),
+            block_on(b.fetch_shared(link)).map(|_| ()),
             Err(BackendError::Expired),
-            "{id}"
+            "{link:?}"
         );
     }
-    assert_eq!(
-        block_on(b.fetch_shared("acme/nope")).map(|_| ()),
-        Err(BackendError::NotFound)
-    );
     dev(&b).expire_links(false);
     b.state().shares.get_mut(&k.id).unwrap().expires =
         Some(Utc::now().date_naive() - chrono::Duration::days(1));
     assert_eq!(
-        block_on(b.fetch_shared(&k.id)).map(|_| ()),
+        block_on(b.fetch_shared(&own)).map(|_| ()),
         Err(BackendError::Expired)
     );
     // Resolving and fetching need no account.
-    block_on(b.sign_out()).unwrap();
-    assert!(block_on(b.fetch_shared(fixtures::SHIPPING_ID)).is_ok());
+    testing::sign_out(&b);
+    assert!(block_on(b.fetch_shared(&fixture)).is_ok());
 }
 
 #[test]
@@ -826,65 +853,20 @@ fn server_copy_changed_since_base_is_a_conflict_and_kept() {
 }
 
 #[test]
-fn deletions_remove_owned_files_and_received_copies_are_told() {
+fn deletions_remove_owned_files() {
     let b = MockBackend::open(None, Duration::ZERO);
-    block_on(b.sign_in(SignInMethod::Sso)).unwrap();
+    testing::sign_in(&b);
     let owner = key();
     let both = files(&[("a.yaml", "a: 1\n"), ("b.yaml", "b: 1\n")]);
     block_on(b.sync(&owner, &both, &[])).unwrap();
-    let link = block_on(b.update_share(&owner, ShareUpdate::default()))
-        .unwrap()
-        .link
-        .unwrap();
-    let shared = block_on(b.resolve_link(&ShareLink::parse(&link).unwrap())).unwrap();
-    let copy = CollectionKey {
-        id: "c0ffee00".into(),
-        name: "Payments API".into(),
+    let del = SyncDeletion {
+        rel: "b.yaml".into(),
+        base: SyncFile::hash_of("b: 1\n"),
     };
-    block_on(b.add_received(ReceivedShare {
-        id: shared.id.clone(),
-        owner_org: shared.owner_org.clone(),
-        name: shared.name.clone(),
-        added: Utc::now(),
-    }))
-    .unwrap();
-    // The owner deletes b.yaml.
-    let a = files(&[("a.yaml", "a: 1\n")]);
-    let a_based: Vec<SyncFile> = a
-        .iter()
-        .cloned()
-        .map(|f| {
-            let h = f.hash;
-            f.with_base(Some(h))
-        })
-        .collect();
-    let del = |rel: &str, text: &str| SyncDeletion {
-        rel: rel.into(),
-        base: SyncFile::hash_of(text),
-    };
-    block_on(b.sync(&owner, &a_based, &[del("b.yaml", "b: 1\n")])).unwrap();
+    block_on(b.sync(&owner, &[], &[del])).unwrap();
     assert!(!b.state().synced[&owner.id].files.contains_key("b.yaml"));
-    // The copy synced both before: told to remove b.yaml; it can't delete
-    // anything (read only: no deletions to send).
-    let copy_local: Vec<SyncFile> = both
-        .iter()
-        .cloned()
-        .map(|f| {
-            let h = f.hash;
-            f.with_base(Some(h))
-        })
-        .collect();
-    let report = block_on(b.sync_shared(&copy, &shared.id, &copy_local)).unwrap();
-    assert_eq!(report.deleted, [PathBuf::from("b.yaml")]);
     assert!(b.state().synced[&owner.id].files.contains_key("a.yaml"));
-    // A file the copy never synced is not "deleted".
-    let unsynced = files(&[("a.yaml", "a: 1\n"), ("b.yaml", "b: 1\n")]);
-    assert!(
-        block_on(b.sync_shared(&copy, &shared.id, &unsynced))
-            .unwrap()
-            .deleted
-            .is_empty()
-    );
+    assert_eq!(b.state().synced[&owner.id].version, 2);
 }
 
 #[test]
@@ -926,4 +908,120 @@ fn owned_pulls_newer_and_refuses_stale_deletions() {
         b.state().synced[&k.id].files.contains_key("b.yaml"),
         "theirs kept"
     );
+}
+
+fn callback(server: &str) -> AuthCallback {
+    AuthCallback {
+        server: server.into(),
+        code: "crh_mock".into(),
+    }
+}
+
+#[test]
+fn sign_in_round_trip() {
+    let d = tempfile::tempdir().unwrap();
+    let b = mock(d.path());
+    let url = block_on(b.sign_in_url(&Server::Cloud)).unwrap();
+    assert_eq!(
+        url,
+        format!(
+            "curl-runner://auth/callback?code=crh_mock&server={}",
+            Server::Cloud.url()
+        )
+    );
+    let cb = AuthCallback::parse(&url).unwrap();
+    let account = block_on(b.complete_sign_in(&cb)).unwrap();
+    assert_eq!(account.name, "Jamie Rivera");
+    assert_eq!(account.email, "jamie@acme.dev");
+    assert_eq!(account.provider, Some(SignInMethod::Github));
+    assert_eq!(b.account(), Some(account.clone()));
+    assert_eq!(b.account_on(Server::Cloud.url()), Some(account.clone()));
+    // A callback works once.
+    assert_eq!(
+        block_on(b.complete_sign_in(&cb)),
+        Err(BackendError::Invalid(FOREIGN_CALLBACK.into()))
+    );
+    // Sessions are per server: switching servers signs nothing out.
+    let own = Server::SelfHosted {
+        url: "https://curl-runner.example.com".into(),
+    };
+    block_on(b.set_server(own.clone())).unwrap();
+    assert_eq!(b.account(), None);
+    assert_eq!(b.account_on(Server::Cloud.url()), Some(account.clone()));
+    drop(b);
+    let again = mock(d.path());
+    assert_eq!(again.server(), own);
+    assert_eq!(again.account_on(Server::Cloud.url()), Some(account));
+    block_on(again.sign_out(Server::Cloud.url())).unwrap();
+    assert_eq!(mock(d.path()).account_on(Server::Cloud.url()), None);
+}
+
+/// Review Focus 1: a callback the studio didn't ask for (a link on a web
+/// page) is refused, and nothing is sent anywhere.
+#[test]
+fn callback_without_pending_sign_in_is_refused() {
+    let b = MockBackend::open(None, Duration::ZERO);
+    let refused = Err(BackendError::Invalid(FOREIGN_CALLBACK.into()));
+    let complete = |server: &str| block_on(b.complete_sign_in(&callback(server))).map(|_| ());
+    assert_eq!(complete(Server::Cloud.url()), refused, "nothing pending");
+    // Pending on Cloud: another server's callback is still refused.
+    block_on(b.sign_in_url(&Server::Cloud)).unwrap();
+    assert_eq!(complete("https://evil.test"), refused);
+    // Plain http, even pending, is refused: the code would travel in clear.
+    let http = Server::SelfHosted {
+        url: "http://curl-runner.example.com".into(),
+    };
+    assert!(block_on(b.sign_in_url(&http)).is_err(), "refused up front");
+    assert_eq!(complete("http://curl-runner.example.com"), refused);
+    assert_eq!(b.account_on("https://evil.test"), None);
+    assert_eq!(b.account_on("http://curl-runner.example.com"), None);
+    let sent = dev(&b).recorded();
+    assert!(
+        !sent.iter().any(|c| c.starts_with("redeem")),
+        "no code was sent: {sent:?}"
+    );
+    // Loopback http is fine (local servers), and a trailing `/` too.
+    let local = Server::SelfHosted {
+        url: "http://localhost:8080/".into(),
+    };
+    block_on(b.sign_in_url(&local)).unwrap();
+    assert_eq!(complete("http://localhost:8080"), Ok(()));
+    assert!(b.account_on("http://localhost:8080").is_some());
+    // Cloud's own sign-in still waits, and works.
+    assert_eq!(complete(Server::Cloud.url()), Ok(()));
+}
+
+#[test]
+fn pending_sign_in_expires_after_10_minutes() {
+    let now = Arc::new(Mutex::new(Instant::now()));
+    let clock = {
+        let now = now.clone();
+        Arc::new(move || *now.lock().unwrap())
+    };
+    let b = MockBackend::open(None, Duration::ZERO).with_clock(clock);
+    let advance = |secs: u64| *now.lock().unwrap() += Duration::from_secs(secs);
+    block_on(b.sign_in_url(&Server::Cloud)).unwrap();
+    advance(10 * 60 + 1);
+    assert_eq!(
+        block_on(b.complete_sign_in(&callback(Server::Cloud.url()))).map(|_| ()),
+        Err(BackendError::Invalid(FOREIGN_CALLBACK.into()))
+    );
+    assert_eq!(b.account(), None);
+    block_on(b.sign_in_url(&Server::Cloud)).unwrap();
+    advance(10 * 60 - 1);
+    assert!(block_on(b.complete_sign_in(&callback(Server::Cloud.url()))).is_ok());
+}
+
+#[test]
+fn sign_in_url_refuses_plain_http_off_loopback() {
+    let b = mock(tempfile::tempdir().unwrap().path());
+    let own = |url: &str| Server::SelfHosted { url: url.into() };
+    let err = block_on(b.sign_in_url(&own("http://curl.example.com"))).unwrap_err();
+    assert!(
+        matches!(&err, BackendError::Invalid(m) if m.contains("https")),
+        "{err:?}"
+    );
+    assert_ne!(err, BackendError::Invalid(FOREIGN_CALLBACK.into()));
+    // Loopback http is fine.
+    block_on(b.sign_in_url(&own("http://127.0.0.1:9"))).unwrap();
 }

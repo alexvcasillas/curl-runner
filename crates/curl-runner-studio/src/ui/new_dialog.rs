@@ -1025,17 +1025,13 @@ pub(super) fn display_path(dir: &Path) -> String {
 
 impl Workspace {
     /// The New dialog on the request side; `folder` (relative to the root)
-    /// is preselected, else the active file's folder. A received copy takes
-    /// no new request: `None`, with the read-only toast.
+    /// is preselected, else the active file's folder.
     pub(super) fn new_request(
         &mut self,
         folder: Option<PathBuf>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<Entity<NewDialog>> {
-        if self.refuse_read_only(window, cx) {
-            return None;
-        }
         Some(self.open_new_dialog(Kind::Request, Template::Blank, folder, window, cx))
     }
 
@@ -1118,7 +1114,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // A received copy picked by hand takes nothing.
+        // Nor does the studio's own folder (received copies live there).
         if self.refuse_received(&dir, window, cx) {
             return;
         }

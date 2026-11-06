@@ -14,35 +14,39 @@ pub const CONFLICT_AUTHOR: &str = "Sam";
 /// The org that owns the shared fixture.
 pub const SHIPPING_ORG: &str = "Acme";
 pub const SHIPPING_NAME: &str = "Shipping API";
-/// The fixture's server id ([`super::Backend::fetch_shared`]).
-pub const SHIPPING_ID: &str = "acme/shipping-api";
-pub const SHIPPING_OWNER_SLUG: &str = "acme";
-pub const SHIPPING_SLUG: &str = "shipping-api";
+/// The version Acme last published.
+pub const SHIPPING_VERSION: u32 = 3;
 /// The token of the fixture's link (board OpenShared).
-pub const SHIPPING_TOKEN: &str = "7Kx2Qm";
+pub const SHIPPING_TOKEN: &str = "crsl_7Kx2Qm";
 /// The folders the summary card names (board OpenShared).
 pub const SHIPPING_SUMMARY: &str = "rates, labels, tracking";
 /// How long ago Acme last pushed it.
 pub const SHIPPING_UPDATED_DAYS_AGO: i64 = 3;
 
-/// The account a sign-in gets: Jamie (owner at Acme) with SSO or GitHub,
-/// Maria (no org, the customer on the shared boards) with email.
-pub fn account(method: SignInMethod) -> Account {
-    match method {
-        SignInMethod::Sso | SignInMethod::GitHub => Account {
-            name: "Jamie Rivera".into(),
-            email: "jamie@acme.dev".into(),
-            org: Some("Acme".into()),
-            role: "Owner".into(),
-            provider: method,
-        },
-        SignInMethod::Email => Account {
+/// The team the signed-in account shares as. Accounts carry no team
+/// until plan 3b; the mock's shares are Acme's.
+pub const OWNER_TEAM: &str = "Acme";
+
+/// The handoff code the mock's `sign_in_url` sends back.
+pub const MOCK_CODE: &str = "crh_mock";
+/// A handoff code the mock redeems for Maria (tests).
+pub const EMAIL_CODE: &str = "crh_mock_email";
+
+/// The account a sign-in gets: Jamie (GitHub), or Maria (email, the
+/// customer on the shared boards) for [`EMAIL_CODE`].
+pub fn account(code: &str) -> Account {
+    if code == EMAIL_CODE {
+        Account {
             name: "Maria".into(),
             email: "maria@example.com".into(),
-            org: None,
-            role: "Member".into(),
-            provider: method,
-        },
+            provider: Some(SignInMethod::Email),
+        }
+    } else {
+        Account {
+            name: "Jamie Rivera".into(),
+            email: "jamie@acme.dev".into(),
+            provider: Some(SignInMethod::Github),
+        }
     }
 }
 

@@ -14,6 +14,9 @@ pub mod received;
 pub mod result_view;
 pub mod run;
 pub mod secrets;
+// Only `HttpBackend` keeps sessions: with the `server` feature, and in tests.
+#[cfg(any(test, feature = "server"))]
+pub mod sessions;
 pub mod settings;
 pub mod shared_copy;
 pub mod sync_base;

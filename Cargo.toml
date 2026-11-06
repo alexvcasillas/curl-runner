@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/curl-runner-core", "crates/curl-runner", "crates/curl-runner-studio", "crates/testkit", "crates/curl-runner-server", "crates/curl-runner-cloud-proto"]
+members = ["crates/curl-runner-core", "crates/curl-runner", "crates/curl-runner-studio", "crates/testkit", "crates/curl-runner-server", "crates/curl-runner-cloud-proto", "crates/curl-runner-cloud-client"]
 
 [workspace.package]
 # Synced from packages/cli/package.json by scripts/sync-cargo-version.sh.
@@ -13,3 +13,4 @@ homepage = "https://www.curl-runner.com"
 [workspace.dependencies]
 curl-runner-core = { path = "crates/curl-runner-core", version = "=2.7.1" }
 curl-runner-cloud-proto = { path = "crates/curl-runner-cloud-proto", version = "=2.7.1" }
+curl-runner-cloud-client = { path = "crates/curl-runner-cloud-client", version = "=2.7.1" }

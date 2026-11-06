@@ -85,7 +85,7 @@ impl Workspace {
                             .gap(px(8.))
                             .px(px(8.))
                             .child(collection)
-                            .children(self.render_read_only_pill())
+                            .children(self.render_shared_by_pill())
                             .children(self.render_shared_pill(cx))
                             .children(self.render_offline_pill()),
                     ),
@@ -124,22 +124,21 @@ impl Workspace {
         )
     }
 
-    /// The ReadOnly board's `Read only · Acme`, with its lock.
-    fn render_read_only_pill(&self) -> Option<impl IntoElement + use<>> {
-        let org = self.read_only_org()?;
-        let text = format!("Read only · {org}");
+    /// A received copy's `Shared by Acme`: where it came from (it takes
+    /// edits like any collection).
+    fn render_shared_by_pill(&self) -> Option<impl IntoElement + use<>> {
+        let org = self.shared_by()?;
+        let text = format!("Shared by {org}");
         Some(
             pill_frame(
-                "title-read-only",
+                "title-shared-by",
                 text.clone(),
                 "text-secondary",
                 "border-200",
             )
             .flex()
             .items_center()
-            .gap(px(4.))
             .test_support()
-            .child(glyph(icons::LOCK).size(px(11.)).flex_none())
             .child(text),
         )
     }

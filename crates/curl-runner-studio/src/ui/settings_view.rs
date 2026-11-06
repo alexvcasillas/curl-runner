@@ -20,7 +20,7 @@ use super::settings_kit::{
 };
 use super::sign_in::SETUP_GUIDE_URL;
 use super::workspace::notify_error;
-use crate::model::backend::{Account, Backend, CollectionKey, Server, SyncStatus};
+use crate::model::backend::{Account, Backend, CollectionKey, Server, SyncStatus, method_label};
 use crate::model::environments::{env_file, is_secret, list_environments};
 use crate::model::history::relative_time;
 use crate::model::secrets::{SecretStore, service_name};
@@ -37,6 +37,9 @@ use std::sync::Arc;
 pub const NAV_WIDTH: f32 = 248.;
 /// The pages' column.
 const CONTENT_WIDTH: f32 = 760.;
+/// What the Server card says: sessions are per server, so switching signs
+/// nothing out.
+const SERVER_NOTE: &str = "Your team publishes to this server. You stay signed in to the others.";
 /// The studio's own version, and the CLI's it runs requests with.
 pub const STUDIO_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Accounts & sync without the server: one card in place of Server,
@@ -1085,21 +1088,19 @@ fn avatar() -> Div {
         ))
 }
 
-/// `jamie@acme.dev · Owner of Acme · signed in with GitHub`, the org in
-/// `text-primary`.
-fn account_line(a: &Account) -> Div {
-    let line = div()
-        .flex()
-        .flex_wrap()
-        .text_color(color("text-secondary"))
-        .child(format!("{} · {}", a.email, a.role));
-    match &a.org {
-        Some(org) => line
-            .child("\u{a0}of\u{a0}")
-            .child(div().text_color(color("text-primary")).child(org.clone()))
-            .child(format!(" · signed in with {}", a.provider.label())),
-        None => line.child(format!(" · signed in with {}", a.provider.label())),
+/// `jamie@acme.dev · signed in with GitHub`; just the email when the
+/// server doesn't say how they signed in.
+fn account_text(a: &Account) -> String {
+    match a.provider {
+        Some(p) => format!("{} · signed in with {}", a.email, method_label(p)),
+        None => a.email.clone(),
     }
+}
+
+fn account_line(a: &Account) -> Div {
+    div()
+        .text_color(color("text-secondary"))
+        .child(account_text(a))
 }
 
 /// The Sync card's status line: its dot's token and text. What waits,
@@ -1239,7 +1240,10 @@ impl SettingsView {
             return;
         }
         self.busy = true;
-        let call = backend_call(cx, &self.accounts.backend, |b| b.sign_out());
+        let server = self.accounts.backend.server();
+        let call = backend_call(cx, &self.accounts.backend, move |b| {
+            b.sign_out(server.url())
+        });
         self.task = Some(cx.spawn_in(window, async move |this, cx| {
             let result = call.await;
             this.update_in(cx, |this, window, cx| {
@@ -1317,10 +1321,15 @@ impl SettingsView {
             .child(
                 card_body()
                     .child(card_title("Server"))
-                    .child(card_text(
-                        "Collections and sharing links live on this server. Switching servers signs you out.",
-                    ))
-                    .child(div().flex().items_center().gap(px(8.)).child(kind).child(url))
+                    .child(card_text(SERVER_NOTE))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .child(kind)
+                            .child(url),
+                    )
                     .children(self.server_error.clone().map(|e| {
                         div()
                             .id("server-error")
@@ -1570,6 +1579,28 @@ fn render_updates() -> impl IntoElement {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn account_line_omits_an_unknown_provider() {
+        use crate::model::backend::{Account, SignInMethod};
+        let mut a = Account {
+            name: "Ada".into(),
+            email: "ada@example.test".into(),
+            provider: None,
+        };
+        assert_eq!(super::account_text(&a), "ada@example.test");
+        a.provider = Some(SignInMethod::Github);
+        assert_eq!(
+            super::account_text(&a),
+            "ada@example.test · signed in with GitHub"
+        );
+    }
+
+    #[test]
+    fn server_note_says_sessions_are_per_server() {
+        assert!(super::SERVER_NOTE.contains("stay signed in to the others"));
+        assert!(!super::SERVER_NOTE.contains("signs you out"));
+    }
+
     use super::{AppPage, Credential, Stored, credential_rows, keys_text, rows_of, shortcut_rows};
     use crate::model::secrets::{MemorySecrets, SecretStore, service_for, service_name};
     use gpui_kit::KeyBinding;

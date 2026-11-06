@@ -47,9 +47,6 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.refuse_read_only(window, cx) {
-            return;
-        }
         let name = rel
             .file_name()
             .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
@@ -94,7 +91,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.refuse_read_only(window, cx) || new_name.is_empty() || new_name.contains('/') {
+        if new_name.is_empty() || new_name.contains('/') {
             return;
         }
         let Some(collection) = &mut self.state.collection else {
@@ -142,9 +139,6 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.refuse_read_only(window, cx) {
-            return;
-        }
         let name = rel
             .file_name()
             .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
@@ -165,9 +159,6 @@ impl Workspace {
     }
 
     pub(super) fn delete(&mut self, rel: &Path, window: &mut Window, cx: &mut Context<Self>) {
-        if self.refuse_read_only(window, cx) {
-            return;
-        }
         let Some(collection) = &mut self.state.collection else {
             return;
         };

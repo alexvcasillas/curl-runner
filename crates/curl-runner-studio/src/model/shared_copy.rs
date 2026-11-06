@@ -1,5 +1,5 @@
-//! A shared collection made local: the snapshot written as a read-only
-//! copy under `{base}/shared/`, its notes, and the customer's own values
+//! A shared collection made local: the snapshot written as the customer's
+//! own copy under `{base}/shared/`, its notes, and the customer's own values
 //! (secrets to the Keychain, the rest to its `.env`). All or nothing: files
 //! are staged in a hidden sibling and moved in with one rename, and a step
 //! that fails after it takes everything back out.
@@ -110,20 +110,21 @@ pub fn destination(shared_dir: &Path, org: &str, name: &str) -> PathBuf {
         .expect("a free name")
 }
 
-/// The local copy of share `id` this studio already has: the server
-/// records it, and this Mac has its folder.
-pub fn already_added(backend: &dyn Backend, base: Option<&Path>, id: &str) -> Option<PathBuf> {
+/// The local copy of the share with `token` this studio already has: it
+/// is recorded, and this Mac has its folder.
+pub fn already_added(backend: &dyn Backend, base: Option<&Path>, token: &str) -> Option<PathBuf> {
     received::join(backend.received(), &received::load(base))
         .into_iter()
-        .find(|r| r.share.id == id)
+        .find(|r| r.share.link.token == token)
         .map(|r| r.root)
 }
 
 /// `Add to my studio`, start to end, off the UI thread: fetch the snapshot,
-/// [`materialize`] it, note the copy here ([`received::record`]: share id →
-/// folder), then record the [`ReceivedShare`] on the server (its id, owner
-/// and name: never the folder). A refused record rolls the copy back. The
-/// root of the new copy, or the error to show (never a value).
+/// [`materialize`] it, note the copy here ([`received::record`]: token →
+/// folder), then record the [`ReceivedShare`] (its link, team, name, the
+/// version and the hash of each file as received: never the folder). A
+/// refused record rolls the copy back. The root of the new copy, or the
+/// error to show (never a value).
 pub async fn add_shared(
     backend: &dyn Backend,
     secrets: &dyn SecretStore,
@@ -133,12 +134,21 @@ pub async fn add_shared(
 ) -> Result<PathBuf, String> {
     let org = &shared.owner_org;
     let snapshot = backend
-        .fetch_shared(&shared.id)
+        .fetch_shared(&shared.link)
         .await
         .map_err(|e| e.link_text(org))?;
-    let done = materialize(base, shared, &snapshot.files, values, secrets)?;
+    // The copy is of the version fetched, whatever the review showed. A
+    // variable masked in the form stays secret: never written to `.env`.
+    let shared = SharedCollection {
+        variables: secret_in_either(snapshot.variables, &shared.variables),
+        updated: snapshot.published_at,
+        version: snapshot.version,
+        ..shared.clone()
+    };
+    let done = materialize(base, &shared, &snapshot.files, values, secrets)?;
+    let token = &shared.link.token;
     let local = received::LocalCopy {
-        share_id: shared.id.clone(),
+        share_id: token.clone(),
         root: done.root.clone(),
         collection_id: done.id.clone(),
     };
@@ -150,14 +160,9 @@ pub async fn add_shared(
             shared.name
         ));
     }
-    let record = ReceivedShare {
-        id: shared.id.clone(),
-        owner_org: org.clone(),
-        name: shared.name.clone(),
-        added: chrono::Utc::now(),
-    };
+    let record = received_record(&shared, &snapshot.files);
     if let Err(e) = backend.add_received(record).await {
-        let _ = received::forget(base, &shared.id);
+        let _ = received::forget(base, token);
         rollback(base, &done, secrets);
         let shared_dir = base.join("shared");
         let _ = std::fs::remove_dir(&shared_dir);
@@ -167,6 +172,32 @@ pub async fn add_shared(
         ));
     }
     Ok(done.root)
+}
+
+/// `vars` with each one secret in either list marked secret: a value typed
+/// into a masked field (the form's list) must never land in `.env`, even if
+/// the list fetched again (`vars`) says otherwise.
+pub fn secret_in_either(mut vars: Vec<SharedVar>, seen: &[SharedVar]) -> Vec<SharedVar> {
+    for v in &mut vars {
+        v.secret |= seen.iter().any(|s| s.name == v.name && s.secret);
+    }
+    vars
+}
+
+/// The record of `shared` as added today with `files`: each file's
+/// [`SyncFile::hash_of`] as received, so local edits show later.
+fn received_record(shared: &SharedCollection, files: &[SyncFile]) -> ReceivedShare {
+    ReceivedShare {
+        link: shared.link.clone(),
+        team: shared.owner_org.clone(),
+        name: shared.name.clone(),
+        version: shared.version,
+        added: chrono::Local::now().date_naive(),
+        files: files
+            .iter()
+            .map(|f| (f.rel.clone(), SyncFile::hash_of(&f.text)))
+            .collect(),
+    }
 }
 
 /// What [`materialize`] wrote: the share record's fields and what a
@@ -182,7 +213,7 @@ pub struct Materialized {
 }
 
 /// Writes the snapshot `files` of `shared` as a new collection under
-/// `{base}/shared/`, then its notes (read only, the variables as shared),
+/// `{base}/shared/`, then its notes (the sharing org, the variables as shared),
 /// the secret `values` to the Keychain and the others to its `.env`.
 ///
 /// Before the rename nothing is left behind on failure; after it,
@@ -248,16 +279,25 @@ pub fn materialize(
 /// The files, in the fresh folder `tmp`, each checked to stay inside it.
 fn stage(tmp: &Path, files: &[SyncFile]) -> std::io::Result<()> {
     std::fs::create_dir(tmp)?;
+    write_files(tmp, files)
+}
+
+/// The files into the folder `tmp`, each checked to stay inside it.
+fn write_files(tmp: &Path, files: &[SyncFile]) -> std::io::Result<()> {
     let real = tmp.canonicalize()?;
     for f in files {
         let path = tmp.join(&f.rel);
         let dir = path.parent().unwrap_or(tmp);
+        // Checked before a folder is made and again once it exists, so a
+        // symlinked folder carried over never leads a write outside.
+        let outside =
+            || std::io::Error::other(format!("{} leads outside the collection", f.rel.display()));
+        if !resolves_inside(dir, &real) {
+            return Err(outside());
+        }
         std::fs::create_dir_all(dir)?;
         if !resolves_inside(dir, &real) {
-            return Err(std::io::Error::other(format!(
-                "{} leads outside the collection",
-                f.rel.display()
-            )));
+            return Err(outside());
         }
         std::fs::write(&path, &f.text)?;
     }
@@ -299,24 +339,14 @@ fn settle(
         .map_err(|e| format!("its notes weren't saved ({e})"))?;
     // The workspace names a collection after its folder.
     done.service = service_name(folder_name, DEFAULT_ENVIRONMENT, &meta.id);
-    for (name, value) in values.iter().filter(|(_, v)| !v.is_empty()) {
-        let Some(var) = shared.variables.iter().find(|v| &v.name == name) else {
-            continue;
-        };
-        // A locked default is the owner's: nothing local stands in for it.
-        if var.locked && !secret(var) {
-            continue;
-        }
-        if secret(var) {
-            done.secrets.push(name.clone());
-            secrets
-                .set(&done.service, name, value)
-                .map_err(|e| format!("{name} wasn't saved to your keychain ({e})"))?;
-        } else {
-            write_env_var(&done.root, DEFAULT_ENVIRONMENT, name, value)
-                .map_err(|e| format!("{name} wasn't saved to .env ({e})"))?;
-        }
-    }
+    write_values(
+        &done.root,
+        &done.service,
+        &shared.variables,
+        values,
+        secrets,
+        &mut done.secrets,
+    )?;
     // Synced as of now: the first sync finds nothing waiting.
     let sync = SyncBase {
         files: files
@@ -327,6 +357,55 @@ fn settle(
     };
     sync_base::save(Some(base), &meta.id, &sync)
         .map_err(|e| format!("its sync state wasn't saved ({e})"))
+}
+
+/// The customer's `values` for `vars`: a secret one to the Keychain under
+/// `service` (its name pushed to `saved`), any other to `root`'s `.env`.
+/// Empty values, names not in `vars` and locked defaults are skipped. The
+/// error never carries a value.
+fn write_values(
+    root: &Path,
+    service: &str,
+    vars: &[SharedVar],
+    values: &[(String, String)],
+    secrets: &dyn SecretStore,
+    saved: &mut Vec<String>,
+) -> Result<(), String> {
+    let secret = |v: &SharedVar| v.secret || is_secret(&v.name, &[]);
+    for (name, value) in values.iter().filter(|(_, v)| !v.is_empty()) {
+        let Some(var) = vars.iter().find(|v| &v.name == name) else {
+            continue;
+        };
+        // A locked default is the owner's: nothing local stands in for it.
+        if var.locked && !secret(var) {
+            continue;
+        }
+        if secret(var) {
+            saved.push(name.clone());
+            secrets
+                .set(service, name, value)
+                .map_err(|e| format!("{name} wasn't saved to your keychain ({e})"))?;
+        } else {
+            write_env_var(root, DEFAULT_ENVIRONMENT, name, value)
+                .map_err(|e| format!("{name} wasn't saved to .env ({e})"))?;
+        }
+    }
+    Ok(())
+}
+
+/// After an update, the values for the inputs it newly requires, into the
+/// copy at `root` (Keychain `service`, else its `.env`), as [`materialize`]
+/// writes them. `vars` are the inputs as the form showed them: a field it
+/// masked is secret here too.
+pub fn save_inputs(
+    root: &Path,
+    service: &str,
+    vars: &[SharedVar],
+    values: &[(String, String)],
+    secrets: &dyn SecretStore,
+) -> Result<(), String> {
+    write_values(root, service, vars, values, secrets, &mut Vec::new())
+        .map_err(|why| format!("Couldn't save: {why}."))
 }
 
 /// Takes out what [`materialize`] wrote. The notes go first: their file is
@@ -401,55 +480,101 @@ pub fn plan_update(root: &Path, files: Vec<SyncFile>) -> Result<UpdatePlan, Stri
     Ok(plan)
 }
 
-/// Writes `plan` into the copy at `root`: YAML only, never its `.env`,
-/// never the Keychain, each path checked to stay inside. The caller makes
-/// the snapshot the copy's sync base. The error never carries a value.
+/// Replaces the copy at `root` with `plan`'s snapshot, all or nothing: a
+/// hidden sibling takes everything of the copy's own (`.env`, any file
+/// that isn't a replaced YAML) plus the snapshot, each path checked to stay
+/// inside, then moves into place by rename. Until then `root` is untouched;
+/// a failed swap moves the old folder back. Never the Keychain. The caller
+/// makes the snapshot the copy's sync base. The error never carries a value.
 pub fn apply_update(root: &Path, plan: &UpdatePlan) -> Result<(), String> {
-    let real_root = root
-        .canonicalize()
-        .map_err(|e| format!("Couldn't update: {e}"))?;
-    let touched: std::collections::HashSet<&Path> = plan
-        .added
-        .iter()
-        .chain(&plan.changed)
-        .map(PathBuf::as_path)
-        .collect();
-    for f in plan
+    let nothing = |e: &dyn std::fmt::Display| format!("Couldn't update: {e}. Nothing was changed.");
+    if let Some(bad) = plan.files.iter().find(|f| !writable(&f.rel)) {
+        return Err(format!(
+            "Couldn't update {}: it leads outside the collection. Nothing was changed.",
+            bad.rel.display()
+        ));
+    }
+    let (Some(parent), Some(stem)) = (root.parent(), root.file_name()) else {
+        return Err(nothing(&"the collection has no folder"));
+    };
+    let stem = stem.to_string_lossy();
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let pid = std::process::id();
+    let tmp = parent.join(format!(".{stem}.update.{pid}.{seq}.tmp"));
+    let old = parent.join(format!(".{stem}.old.{pid}.{seq}.tmp"));
+    // Replaced by the snapshot, or gone with it: not carried over.
+    let replaced: std::collections::HashSet<&Path> = plan
         .files
         .iter()
-        .filter(|f| touched.contains(f.rel.as_path()))
-    {
-        let path = root.join(&f.rel);
-        let dir = path.parent().unwrap_or(root);
-        // Checked before a folder is made and again once it exists, so
-        // nothing (a symlinked folder) leads the write outside.
-        let inside = writable(&f.rel)
-            && resolves_inside(dir, &real_root)
-            && std::fs::create_dir_all(dir).is_ok()
-            && resolves_inside(dir, &real_root);
-        if !inside {
-            return Err(format!(
-                "Couldn't update {}: it leads outside the collection.",
-                f.rel.display()
-            ));
-        }
-        crate::model::write_atomic(&path, &f.text)
-            .map_err(|e| format!("Couldn't update {}: {e}", f.rel.display()))?;
+        .map(|f| f.rel.as_path())
+        .chain(plan.removed.iter().map(PathBuf::as_path))
+        .collect();
+    let staged = std::fs::create_dir(&tmp)
+        .and_then(|()| carry_over(root, &tmp, Path::new(""), &replaced))
+        .and_then(|()| write_files(&tmp, &plan.files));
+    if let Err(e) = staged {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(nothing(&e));
     }
-    for rel in plan.removed.iter().filter(|r| writable(r)) {
-        let path = root.join(rel);
-        if !path
-            .parent()
-            .is_some_and(|d| resolves_inside(d, &real_root))
-        {
+    swap_in(&tmp, root, &old, |from, to| std::fs::rename(from, to))
+}
+
+/// Moves `root` aside to `old` and the staged `tmp` into its place with
+/// `rename`, then drops `old`. A failed second move puts `old` back; should
+/// that fail too, the error says where the copy is now.
+fn swap_in(
+    tmp: &Path,
+    root: &Path,
+    old: &Path,
+    rename: impl Fn(&Path, &Path) -> std::io::Result<()>,
+) -> Result<(), String> {
+    let nothing = |e: &std::io::Error| format!("Couldn't update: {e}. Nothing was changed.");
+    if let Err(e) = rename(root, old) {
+        let _ = std::fs::remove_dir_all(tmp);
+        return Err(nothing(&e));
+    }
+    if let Err(e) = rename(tmp, root) {
+        let _ = std::fs::remove_dir_all(tmp);
+        // Back as it was.
+        return match rename(old, root) {
+            Ok(()) => Err(nothing(&e)),
+            Err(_) => Err(format!(
+                "Couldn't update: {e}. Your copy couldn't be moved back; it is in {}.",
+                old.display()
+            )),
+        };
+    }
+    let _ = std::fs::remove_dir_all(old);
+    Ok(())
+}
+
+/// Copies `from/rel` into `to/rel`, leaving out the `skip` paths (relative
+/// to the copy). A symlink stays a link, never followed.
+fn carry_over(
+    from: &Path,
+    to: &Path,
+    rel: &Path,
+    skip: &std::collections::HashSet<&Path>,
+) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(from.join(rel))? {
+        let entry = entry?;
+        let rel = rel.join(entry.file_name());
+        if skip.contains(rel.as_path()) {
             continue;
         }
-        match std::fs::remove_file(&path) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                return Err(format!("Couldn't remove {}: {e}", rel.display()));
-            }
-            _ => {}
+        let kind = entry.file_type()?;
+        let (src, dst) = (from.join(&rel), to.join(&rel));
+        if kind.is_symlink() {
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(std::fs::read_link(&src)?, &dst)?;
+        } else if kind.is_dir() {
+            std::fs::create_dir(&dst)?;
+            carry_over(from, to, &rel, skip)?;
+        } else if kind.is_file() {
+            std::fs::copy(&src, &dst)?;
         }
+        // Anything else (a socket, a pipe) holds no data of the copy's.
     }
     Ok(())
 }
@@ -515,12 +640,18 @@ mod tests {
 
     fn shipping() -> SharedCollection {
         SharedCollection {
-            id: "acme/shipping-api".into(),
+            link: crate::model::backend::ShareLink {
+                server: "https://api.example.test".into(),
+                token: "crsl_ship".into(),
+            },
             owner_org: "Acme".into(),
+            team_slug: "acme".into(),
             name: "Shipping API".into(),
             summary: "rates, labels, tracking".into(),
             updated: Utc::now() - chrono::Duration::days(3),
             request_count: 12,
+            version: 1,
+            access: crate::model::backend::LinkAccess::Public,
             variables: variables(),
         }
     }
@@ -556,6 +687,91 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    #[test]
+    fn add_shared_records_version_and_file_hashes() {
+        use crate::model::backend::{ShareLink, fixtures, test_backend};
+        let d = tempfile::tempdir().unwrap();
+        let backend = test_backend();
+        let secrets = MemorySecrets::default();
+        let link = ShareLink {
+            server: "https://api.mock.curl-runner.test".into(),
+            token: fixtures::SHIPPING_TOKEN.into(),
+        };
+        let shared = futures::executor::block_on(backend.resolve_link(&link)).unwrap();
+        let values = [("API_TOKEN".to_string(), "sk-live-4242".to_string())];
+        let root = futures::executor::block_on(super::add_shared(
+            &*backend,
+            &secrets,
+            d.path(),
+            &shared,
+            &values,
+        ))
+        .unwrap();
+        let received = backend.received();
+        assert_eq!(received.len(), 1);
+        let r = &received[0];
+        assert_eq!(r.link, link);
+        assert_eq!((r.team.as_str(), r.name.as_str()), ("Acme", "Shipping API"));
+        assert_eq!(r.version, fixtures::SHIPPING_VERSION);
+        assert_eq!(r.added, chrono::Local::now().date_naive());
+        let want: std::collections::BTreeMap<_, _> = fixtures::shipping_snapshot()
+            .into_iter()
+            .map(|f| (f.rel, f.hash))
+            .collect();
+        assert_eq!(r.files, want);
+        assert!(!want.is_empty());
+        // Hashed as received: the same FNV hash as the file on disk.
+        for (rel, hash) in &r.files {
+            let text = std::fs::read_to_string(root.join(rel)).unwrap();
+            assert_eq!(SyncFile::hash_of(&text), *hash);
+        }
+        // The secret went to the Keychain only: no record or file has it.
+        let json = serde_json::to_string(&received).unwrap();
+        assert!(!json.contains("sk-live-4242"));
+        assert!(super::already_added(&*backend, Some(d.path()), &link.token).is_some());
+    }
+
+    /// The form masked ACCOUNT_ID (secret when reviewed); the snapshot
+    /// fetched at Add says it isn't. A masked value never lands in `.env`.
+    #[test]
+    fn a_value_masked_at_review_stays_out_of_env() {
+        use crate::model::backend::{ShareLink, fixtures, test_backend};
+        let d = tempfile::tempdir().unwrap();
+        let backend = test_backend();
+        let secrets = MemorySecrets::default();
+        let link = ShareLink {
+            server: "https://api.mock.curl-runner.test".into(),
+            token: fixtures::SHIPPING_TOKEN.into(),
+        };
+        let mut shared = futures::executor::block_on(backend.resolve_link(&link)).unwrap();
+        for v in &mut shared.variables {
+            if v.name == "ACCOUNT_ID" {
+                v.secret = true;
+            }
+        }
+        let values = [
+            ("API_TOKEN".to_string(), "sk-live-4242".to_string()),
+            ("ACCOUNT_ID".to_string(), "acct-masked-77".to_string()),
+        ];
+        let root = futures::executor::block_on(super::add_shared(
+            &*backend,
+            &secrets,
+            d.path(),
+            &shared,
+            &values,
+        ))
+        .unwrap();
+        let env = std::fs::read_to_string(root.join(".env")).unwrap_or_default();
+        assert!(!env.contains("acct-masked-77"), "{env}");
+        let meta = CollectionMeta::load(d.path(), &root);
+        assert!(meta.secret_names.iter().any(|n| n == "ACCOUNT_ID"));
+        let service = service_name("acme-shipping-api", "Default", &meta.id);
+        assert_eq!(
+            secrets.get(&service, "ACCOUNT_ID").as_deref(),
+            Some("acct-masked-77")
+        );
     }
 
     #[test]
@@ -724,6 +940,98 @@ mod tests {
             "{:?}",
             entries(base.path())
         );
+    }
+
+    /// An update that fails partway leaves the copy exactly as it was,
+    /// with nothing hidden left beside it; one that lands keeps the
+    /// copy's own files (`.env`, notes of the user's) and swaps the YAML.
+    #[test]
+    fn an_update_swaps_the_whole_folder_or_changes_nothing() {
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("acme-shipping-api");
+        std::fs::create_dir_all(root.join("rates")).unwrap();
+        std::fs::write(root.join("a.yaml"), "old a\n").unwrap();
+        std::fs::write(root.join("rates/b.yaml"), "old b\n").unwrap();
+        std::fs::write(root.join("gone.yaml"), "gone\n").unwrap();
+        std::fs::write(root.join(".env"), "API=1\n").unwrap();
+        std::fs::write(root.join("notes.txt"), "mine\n").unwrap();
+        let before = super::super::backend::sync_files(&root);
+        // `a.yaml` both a file and a folder: the second write fails.
+        let bad = super::plan_update(
+            &root,
+            vec![
+                SyncFile::new("a.yaml", "new a\n"),
+                SyncFile::new("a.yaml/c.yaml", "c\n"),
+            ],
+        )
+        .unwrap();
+        assert!(super::apply_update(&root, &bad).is_err());
+        assert_eq!(super::super::backend::sync_files(&root), before);
+        assert_eq!(
+            std::fs::read_to_string(root.join(".env")).unwrap(),
+            "API=1\n"
+        );
+        assert_eq!(entries(parent.path()), ["acme-shipping-api"]);
+
+        let plan = super::plan_update(
+            &root,
+            vec![
+                SyncFile::new("a.yaml", "new a\n"),
+                SyncFile::new("rates/b.yaml", "old b\n"),
+                SyncFile::new("labels/new.yaml", "new\n"),
+            ],
+        )
+        .unwrap();
+        super::apply_update(&root, &plan).unwrap();
+        let read = |rel: &str| std::fs::read_to_string(root.join(rel)).unwrap();
+        assert_eq!(read("a.yaml"), "new a\n");
+        assert_eq!(read("rates/b.yaml"), "old b\n");
+        assert_eq!(read("labels/new.yaml"), "new\n");
+        assert!(!root.join("gone.yaml").exists());
+        assert_eq!(read(".env"), "API=1\n");
+        assert_eq!(read("notes.txt"), "mine\n");
+        assert_eq!(entries(parent.path()), ["acme-shipping-api"]);
+    }
+
+    /// The swap's last step fails and so does putting the copy back: the
+    /// error says where the copy is, never "Nothing was changed".
+    #[test]
+    fn a_swap_that_cant_move_back_says_where_the_copy_is() {
+        let parent = tempfile::tempdir().unwrap();
+        let (root, tmp, old) = (
+            parent.path().join("copy"),
+            parent.path().join(".copy.update.tmp"),
+            parent.path().join(".copy.old.tmp"),
+        );
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("a.yaml"), "a\n").unwrap();
+        std::fs::create_dir(&tmp).unwrap();
+        let calls = std::cell::Cell::new(0);
+        let err = super::swap_in(&tmp, &root, &old, |from, to| {
+            calls.set(calls.get() + 1);
+            match calls.get() {
+                1 => std::fs::rename(from, to),
+                _ => Err(std::io::Error::other("disk full")),
+            }
+        })
+        .unwrap_err();
+        assert!(!err.contains("Nothing was changed"), "{err}");
+        assert!(err.contains(&old.display().to_string()), "{err}");
+        assert!(old.join("a.yaml").exists(), "the copy is where it says");
+        // One failure only: back in place, nothing changed.
+        std::fs::rename(&old, &root).unwrap();
+        std::fs::create_dir(&tmp).unwrap();
+        let calls = std::cell::Cell::new(0);
+        let err = super::swap_in(&tmp, &root, &old, |from, to| {
+            calls.set(calls.get() + 1);
+            match calls.get() {
+                2 => Err(std::io::Error::other("disk full")),
+                _ => std::fs::rename(from, to),
+            }
+        })
+        .unwrap_err();
+        assert!(err.ends_with("Nothing was changed."), "{err}");
+        assert!(root.join("a.yaml").exists());
     }
 
     #[test]

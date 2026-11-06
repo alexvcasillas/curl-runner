@@ -45,7 +45,7 @@ use gpui_kit::component::select::{SelectEvent, SelectState};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::cell::Cell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -203,15 +203,37 @@ pub struct Workspace {
     /// up, or while an Add was in flight: opened once the screen is
     /// answered or the Add finishes.
     pub(super) pending_link: Option<String>,
+    /// The server a restricted link's sign-in was started with: its
+    /// callback opens `pending_link`.
+    pub(super) link_sign_in: Option<String>,
     /// The open collection's share record joined with its copy here, when
     /// it is a received copy the server still records.
     pub(super) received: Option<crate::model::received::ReceivedCopy>,
     /// Every received copy with a server record and a folder still here
     /// (the sidebar's Shared with me), read on open rather than each frame.
     pub(super) received_all: Vec<crate::model::received::ReceivedCopy>,
-    /// `Check for updates` in flight (the fetch, then the confirm).
-    pub(super) update_check: Option<Task<()>>,
-    /// Every read-only toast and update prompt shown (tests read them).
+    /// Update checks in flight (the latest version, then the snapshot),
+    /// by share token.
+    pub(super) update_checks: HashMap<String, Task<()>>,
+    /// Tokens whose in-flight automatic check was asked for by hand: its
+    /// answer speaks.
+    pub(super) manual_checks: HashSet<String>,
+    /// A newer version of a received copy, by share token: the banner.
+    pub(super) update_offers: HashMap<String, super::update_banner::UpdateOffer>,
+    /// The share token whose Update (or Keep my changes as a copy) runs in
+    /// the background: the banner is busy, its buttons do nothing.
+    pub(super) updating: Option<String>,
+    /// The latest local-changes recount (see `recount_open_local_changes`):
+    /// a newer one replaces (and drops) it.
+    pub(super) local_recount: Option<Task<()>>,
+    /// Bumped by every recount; an answer from an older one is stale.
+    pub(super) local_recount_gen: u64,
+    /// Checks the open received copy every `UPDATE_EVERY`.
+    pub(super) _update_timer: Option<Task<()>>,
+    /// Every folder a watcher was started on, in order (tests).
+    #[cfg(test)]
+    pub(super) watched: Vec<PathBuf>,
+    /// Every refusal toast and update prompt shown (tests read them).
     #[cfg(test)]
     pub(super) toasts: Vec<String>,
     pub(super) status: Entity<StatusBar>,
@@ -331,9 +353,18 @@ impl Workspace {
             open_shared_focus: None,
             _open_shared_events: None,
             pending_link: None,
+            link_sign_in: None,
             received: None,
             received_all: Vec::new(),
-            update_check: None,
+            update_checks: HashMap::new(),
+            manual_checks: HashSet::new(),
+            update_offers: HashMap::new(),
+            updating: None,
+            local_recount: None,
+            local_recount_gen: 0,
+            _update_timer: None,
+            #[cfg(test)]
+            watched: Vec::new(),
             #[cfg(test)]
             toasts: Vec::new(),
             status,
@@ -347,6 +378,7 @@ impl Workspace {
             _status_events: status_events,
         };
         this.refresh_recent();
+        this.start_update_timer(window, cx);
         this.tour_status = this.store.tour_status();
         if let Some(folder) = folder {
             this.open_collection(&folder, window, cx);
@@ -390,15 +422,14 @@ impl Workspace {
             }
         };
         let meta = CollectionMeta::load_or_init(self.store.base(), root);
-        // A received copy is locked where it is written: the collection
-        // and each document refuse changes. Without the server there are
-        // no received copies, only local folders.
+        // Who shared a received copy, from its notes. Without the server
+        // there are no received copies, only local folders.
         if let Some(org) = meta
             .read_only_from
             .as_ref()
             .filter(|_| crate::features::SERVER)
         {
-            collection.read_only = Some(org.clone());
+            collection.received_from = Some(org.clone());
         }
         self.refresh_received_all();
         self.received = self
@@ -406,7 +437,6 @@ impl Workspace {
             .iter()
             .find(|r| r.collection_id == meta.id && r.root == root)
             .cloned();
-        self.update_check = None;
         self.state = AppState {
             collection: Some(collection),
             ..AppState::default()
@@ -447,6 +477,8 @@ impl Workspace {
         self.load_environments(window, cx);
         self.watch(root, window, cx);
         self.start_sync(window, cx);
+        // A received copy asks for a newer version as it opens.
+        self.check_open_received(window, cx);
         self.sync_chrome(window, cx);
         true
     }
@@ -499,9 +531,7 @@ impl Workspace {
             }),
             None => self.settings_view.as_ref().map(|v| v.read(cx).status()),
         };
-        let read_only = self.read_only_org().is_some();
         self.status.update(cx, |s, cx| {
-            s.set_read_only(read_only, cx);
             s.set(name.map(Into::into), editor, cx);
             s.set_history(usage, cx);
             s.set_environments(settings, cx);
@@ -706,7 +736,7 @@ impl Workspace {
         self.received = self.received.take().and_then(|open| {
             self.received_all
                 .iter()
-                .find(|r| r.share.id == open.share.id && r.root == open.root)
+                .find(|r| r.share.link == open.share.link && r.root == open.root)
                 .cloned()
         });
     }
@@ -857,7 +887,7 @@ impl Workspace {
             .and_then(|doc| self.runs.last.get(&doc.rel_path))
             .map(|r| r.captured_by.clone())
             .unwrap_or_default();
-        let yours = self.read_only_org().is_some();
+        let yours = self.shared_by().is_some();
         let groups = source_groups(&vars, &missing, &captured_by, yours);
         let missing_count = missing.len();
         self.missing = missing;
@@ -948,22 +978,13 @@ impl Workspace {
     fn editor_changed(
         &mut self,
         editor: &Entity<EditorState>,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let Some(ix) = self.tab_of(editor) else {
             return;
         };
         let text = editor.read(cx).value().to_string();
-        // A received copy's editor is read only; should a change get
-        // through anyway, the document refuses it and the editor goes back.
-        if self.state.open[ix].is_read_only() {
-            if text != self.state.open[ix].text {
-                set_editor_text(editor, &self.state.open[ix].text, window, cx);
-                self.refuse_read_only(window, cx);
-            }
-            return;
-        }
         // The marks and popover point into the old text.
         self.tabs[ix].diagnostics.clear();
         self.close_hover(cx);
@@ -1153,9 +1174,6 @@ impl Workspace {
 
     /// Saves tab `ix`; reports and returns `false` on failure.
     pub(super) fn save(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        if self.refuse_read_only(window, cx) {
-            return false;
-        }
         let Some(collection) = &mut self.state.collection else {
             return false;
         };
@@ -1265,7 +1283,11 @@ impl Workspace {
 
     // Disk changes.
 
-    fn watch(&mut self, root: &Path, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn watch(&mut self, root: &Path, window: &mut Window, cx: &mut Context<Self>) {
+        #[cfg(test)]
+        {
+            self.watched.push(root.to_path_buf());
+        }
         let (watcher, mut rx) = watch::start(root);
         self._watcher = watcher;
         self._watch_task = Some(cx.spawn_in(window, async move |this, cx| {
@@ -1339,9 +1361,6 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if keep_mine && self.refuse_read_only(window, cx) {
-            return;
-        }
         let Some(ix) = self.state.active else { return };
         let doc = &mut self.state.open[ix];
         doc.resolve_conflict(keep_mine);
@@ -1566,7 +1585,12 @@ fn find_file<'a>(
 }
 
 /// Replaces an editor's text from disk, keeping the cursor where it was.
-fn set_editor_text(editor: &Entity<EditorState>, text: &str, window: &mut Window, cx: &mut App) {
+pub(super) fn set_editor_text(
+    editor: &Entity<EditorState>,
+    text: &str,
+    window: &mut Window,
+    cx: &mut App,
+) {
     let text = text.to_string();
     editor.update(cx, |e, cx| {
         let cursor = e.cursor_position();

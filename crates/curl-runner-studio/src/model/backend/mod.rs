@@ -13,23 +13,39 @@
 #[cfg(any(test, feature = "server"))]
 pub mod fixtures;
 #[cfg(any(test, feature = "server"))]
+pub mod http;
+#[cfg(any(test, feature = "server"))]
 mod mock;
 #[cfg(any(test, not(feature = "server")))]
 mod no_server;
+#[cfg(any(test, feature = "server"))]
+pub mod pending;
 
 // Only the macOS app constructs the mock; off macOS the UI isn't built.
+/// The server the mock's links name.
+#[cfg(all(test, target_os = "macos"))]
+pub use mock::MOCK_SERVER;
 #[cfg(any(test, feature = "server"))]
 #[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 pub use mock::{MOCK_LATENCY, MockBackend};
 // Only the macOS app constructs it; off macOS the UI isn't built.
+/// Who a shared link opens for: `Public` needs no sign-in, `Restricted`
+/// a session on the link's server.
+pub use curl_runner_cloud_proto::wire::Access as LinkAccess;
+/// How a server lets people sign in: what `/v1/info` reports.
+pub use curl_runner_cloud_proto::wire::SignInMethod;
 #[cfg(not(feature = "server"))]
 #[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 pub use no_server::NoServer;
+#[cfg(any(test, feature = "server"))]
+pub use pending::PendingSignIns;
 
 use crate::model::collection_meta::CollectionMeta;
 use crate::model::environments::is_secret;
 use chrono::{DateTime, NaiveDate, Utc};
+use curl_runner_cloud_client::link::{self, Link, LinkError};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -87,9 +103,7 @@ impl fmt::Display for BackendError {
 impl std::error::Error for BackendError {}
 
 /// The cloud server's address.
-pub const CLOUD_URL: &str = "https://cloud.curl-runner.com";
-/// Where web share links point ([`ShareLink`]).
-pub const SHARE_HOST: &str = "https://studio.example.com";
+pub const CLOUD_URL: &str = "https://api.curl-runner.com";
 
 /// Where collections live.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -103,6 +117,16 @@ pub enum Server {
 }
 
 impl Server {
+    /// The server an API URL names: [`Server::Cloud`] for [`CLOUD_URL`].
+    pub fn for_url(url: &str) -> Server {
+        let url = url.trim().trim_end_matches('/');
+        if url == CLOUD_URL {
+            Server::Cloud
+        } else {
+            Server::SelfHosted { url: url.into() }
+        }
+    }
+
     pub fn url(&self) -> &str {
         match self {
             Server::Cloud => CLOUD_URL,
@@ -111,42 +135,56 @@ impl Server {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SignInMethod {
-    Sso,
-    GitHub,
-    Email,
-}
-
-impl SignInMethod {
-    /// `SSO`, `GitHub`, `email`: as in `sign-in via SSO`.
-    pub fn label(self) -> &'static str {
-        match self {
-            SignInMethod::Sso => "SSO",
-            SignInMethod::GitHub => "GitHub",
-            SignInMethod::Email => "email",
-        }
+/// `GitHub`, `Google`, `email`: as in `signed in with GitHub`.
+pub fn method_label(method: SignInMethod) -> &'static str {
+    match method {
+        SignInMethod::Github => "GitHub",
+        SignInMethod::Google => "Google",
+        SignInMethod::Email => "email",
     }
 }
 
+/// `methods` in the order GitHub, Google, email, joined as a sentence:
+/// `GitHub, Google or email`. `None` when there are none.
+pub fn methods_text(methods: &[SignInMethod]) -> Option<String> {
+    let labels: Vec<&str> = [
+        SignInMethod::Github,
+        SignInMethod::Google,
+        SignInMethod::Email,
+    ]
+    .into_iter()
+    .filter(|m| methods.contains(m))
+    .map(method_label)
+    .collect();
+    match labels.as_slice() {
+        [] => None,
+        [one] => Some((*one).to_string()),
+        [rest @ .., last] => Some(format!("{} or {last}", rest.join(", "))),
+    }
+}
+
+/// Who is signed in on one server. Teams arrive with plan 3b.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Account {
     pub name: String,
     pub email: String,
-    pub org: Option<String>,
-    pub role: String,
-    pub provider: SignInMethod,
+    /// How they signed in, when the server says (the API doesn't).
+    pub provider: Option<SignInMethod>,
 }
 
-/// What `Test connection` shows: `server 2.1.1 · sign-in via SSO · 42 ms`.
+/// What `Test connection` shows:
+/// `server 2.1.1 · sign-in via GitHub or email · 42 ms`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectionInfo {
     pub version: String,
-    pub sign_in: SignInMethod,
+    pub sign_in: Vec<SignInMethod>,
     pub latency_ms: u64,
 }
+
+/// What a sign-in callback gets when this studio didn't start a sign-in
+/// with its server in the last 10 minutes, or the server isn't https.
+pub const FOREIGN_CALLBACK: &str = "That sign-in link didn't come from this studio.";
 
 /// A collection as the server knows it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -205,9 +243,6 @@ pub struct SyncReport {
     /// Files the server no longer has that the client synced before
     /// (received copies): remove them locally.
     pub deleted: Vec<PathBuf>,
-    /// A received copy's variables as its owner shares them now
-    /// ([`Backend::sync_shared`] only).
-    pub variables: Option<Vec<SharedVar>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -325,86 +360,122 @@ pub struct ShareUpdate {
     pub reset_link: bool,
 }
 
-/// A share link, either form.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// A share link: the API to ask and the token to ask with.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ShareLink {
-    /// Empty for the web form, which does not carry it.
-    pub owner_slug: String,
-    pub collection_slug: String,
+    pub server: String,
     pub token: String,
 }
 
 impl ShareLink {
-    /// `curl-runner://open/{owner}/{collection}?share={token}` or
-    /// `https://studio.example.com/s/{collection}-{token}`; surrounding
-    /// whitespace is ignored.
-    pub fn parse(text: &str) -> Option<ShareLink> {
-        let text = text.trim();
-        let slug = |s: &str| {
-            !s.is_empty()
-                && s.chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-        };
-        let token = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric());
-        if let Some(rest) = text.strip_prefix("curl-runner://open/") {
-            let (path, query) = rest.split_once('?')?;
-            let (owner, collection) = path.trim_end_matches('/').split_once('/')?;
-            let t = query.split('&').find_map(|kv| kv.strip_prefix("share="))?;
-            return (slug(owner) && slug(collection) && token(t)).then(|| ShareLink {
-                owner_slug: owner.into(),
-                collection_slug: collection.into(),
-                token: t.into(),
-            });
+    /// `curl-runner://open[/team/collection]?server=&share=` or
+    /// `https://{host}/s/{token}`; surrounding whitespace is ignored.
+    ///
+    /// A landing URL asks its host where the API is, so this blocks on the
+    /// network for that form: call it off the UI thread.
+    pub fn parse(text: &str) -> Result<ShareLink, LinkError> {
+        match link::parse(text.trim())? {
+            Link::Api { server, token } => Ok(ShareLink { server, token }),
+            Link::Landing { origin, token } => Ok(ShareLink {
+                server: link::api_for_landing(&origin, None)?,
+                token,
+            }),
         }
-        let rest = text.strip_prefix(SHARE_HOST)?.strip_prefix("/s/")?;
-        let rest = rest.trim_end_matches('/');
-        let (collection, t) = rest.rsplit_once('-')?;
-        (slug(collection) && token(t)).then(|| ShareLink {
-            owner_slug: String::new(),
-            collection_slug: collection.into(),
-            token: t.into(),
-        })
     }
 
-    /// The web form, as the Share dialog shows it.
-    #[cfg_attr(not(feature = "server"), allow(dead_code))]
-    pub fn web(collection_slug: &str, token: &str) -> String {
-        format!("{}/s/{collection_slug}-{token}", SHARE_HOST)
+    /// The link's server host, as the sign-in prompt names it:
+    /// `api.curl-runner.com`.
+    pub fn host(&self) -> String {
+        url::Url::parse(&self.server)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_string))
+            .unwrap_or_else(|| self.server.clone())
+    }
+
+    /// The deep link that opens it again.
+    pub fn url(&self) -> String {
+        let mut u = url::Url::parse("curl-runner://open").expect("a valid URL");
+        u.query_pairs_mut()
+            .append_pair("server", &self.server)
+            .append_pair("share", &self.token);
+        u.into()
+    }
+}
+
+/// The dashboard's answer to `Continue in browser`:
+/// `curl-runner://auth/callback?code=crh_…&server={api}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthCallback {
+    pub server: String,
+    pub code: String,
+}
+
+impl AuthCallback {
+    /// `None` unless the URL is an auth callback with both a `crh_` code and
+    /// a server.
+    pub fn parse(url: &str) -> Option<AuthCallback> {
+        let u = url::Url::parse(url.trim()).ok()?;
+        if u.scheme() != "curl-runner" || u.host_str() != Some("auth") || u.path() != "/callback" {
+            return None;
+        }
+        let get = |k: &str| {
+            u.query_pairs()
+                .find(|(name, _)| name == k)
+                .map(|(_, v)| v.into_owned())
+        };
+        let code = get("code").filter(|c| c.starts_with("crh_") && link::valid_token(c))?;
+        let server = get("server")
+            .map(|s| s.trim_end_matches('/').to_string())
+            .filter(|s| !s.is_empty())?;
+        Some(AuthCallback { server, code })
     }
 }
 
 /// What a link opens, before it is added (board OpenShared).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SharedCollection {
-    /// For [`Backend::fetch_shared`].
-    pub id: String,
+    /// For [`Backend::fetch_shared`] and the update checks.
+    pub link: ShareLink,
+    /// The team's name: `Acme`.
     pub owner_org: String,
+    pub team_slug: String,
     pub name: String,
     /// The folders line: `rates, labels, tracking`.
     pub summary: String,
     pub updated: DateTime<Utc>,
     pub request_count: usize,
+    /// The published version it opens.
+    pub version: u32,
+    pub access: LinkAccess,
+    /// The snapshot's inputs, one for one.
     pub variables: Vec<SharedVar>,
 }
 
+/// A shared collection's current version, files and all.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SharedSnapshot {
     pub files: Vec<SyncFile>,
     /// The variables as the owner shares them now.
     pub variables: Vec<SharedVar>,
+    pub version: u32,
+    pub published_at: DateTime<Utc>,
 }
 
-/// A shared collection this account added, as the server records it:
-/// nothing about where the copy lives on this Mac (that mapping is local,
-/// [`crate::model::received`]).
+/// A shared collection this studio added, kept on this Mac (the server
+/// records nothing): nothing about where the copy lives (that mapping is
+/// [`crate::model::received`]). Keyed by `link.token`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReceivedShare {
-    /// [`SharedCollection::id`].
-    pub id: String,
-    pub owner_org: String,
+    pub link: ShareLink,
+    /// The team that shares it: `Acme`.
+    pub team: String,
     pub name: String,
-    pub added: DateTime<Utc>,
+    /// The version the copy holds.
+    pub version: u32,
+    pub added: NaiveDate,
+    /// [`SyncFile::hash_of`] each file as received.
+    pub files: BTreeMap<PathBuf, u64>,
 }
 
 /// The mock's developer toggles (App menu › Developer, debug builds with
@@ -447,13 +518,34 @@ pub struct DevToggles {
 /// The server, as the studio sees it. Calls that need the network return a
 /// [`BoxFut`]; the rest read what the backend already knows.
 pub trait Backend: Send + Sync {
+    /// The server this person's own team publishes to (Settings ›
+    /// Accounts & sync). Received collections carry their own.
     fn server(&self) -> Server;
-    /// Switching servers signs out.
+    /// Sessions are per server: switching signs nothing out.
     fn set_server(&self, server: Server) -> BoxFut<'_, ()>;
     fn test_connection(&self, server: &Server) -> BoxFut<'_, ConnectionInfo>;
-    fn sign_in(&self, method: SignInMethod) -> BoxFut<'_, Account>;
-    fn sign_out(&self) -> BoxFut<'_, ()>;
+    /// Starts a sign-in with `server`: records it as pending for 10
+    /// minutes and returns the page to open, `{app_url}/sign-in?client=studio`.
+    fn sign_in_url(&self, server: &Server) -> BoxFut<'_, String>;
+    /// Redeems the dashboard's callback. Refused with
+    /// `Invalid(`[`FOREIGN_CALLBACK`]`)`, sending nothing, unless a sign-in
+    /// with `callback.server` is pending ([`PendingSignIns`]).
+    fn complete_sign_in(&self, callback: &AuthCallback) -> BoxFut<'_, Account>;
+    /// Ends the session on `server` only.
+    fn sign_out(&self, server: &str) -> BoxFut<'_, ()>;
+    /// The account on [`Backend::server`].
     fn account(&self) -> Option<Account>;
+    /// The account on `server` (an API URL).
+    // Received collections, each on its own server, ask (Task 7 of 3a).
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn account_on(&self, server: &str) -> Option<Account>;
+    /// Whether this backend syncs team collections at all ([`Backend::sync`]
+    /// works). The real server's answers `false` until its team side ships
+    /// (plan 3b): the studio then keeps collections local, without a sync
+    /// call or a toast.
+    fn team_sync(&self) -> bool {
+        true
+    }
     fn sync_status(&self, collection: &CollectionKey) -> SyncStatus;
     /// Reconciles `local` (each with its `base`) and `deleted` with the
     /// server's copy, file by file:
@@ -465,24 +557,13 @@ pub trait Backend: Send + Sync {
     /// - server and local already agree (whatever the base): nothing at
     ///   all, not a push, a pull nor a conflict.
     ///
-    /// Only for collections this account owns: a received copy calls
-    /// [`Backend::sync_shared`], which can't push.
+    /// Only for collections this account owns: a received copy takes
+    /// updates instead ([`Backend::latest_version`]).
     fn sync(
         &self,
         collection: &CollectionKey,
         local: &[SyncFile],
         deleted: &[SyncDeletion],
-    ) -> BoxFut<'_, SyncReport>;
-    /// A received copy's pull from share `share_id` (one this account
-    /// added): `local` carries paths, hashes and bases only (no text).
-    /// The owner's newer files come back in `pulled`, the files the owner
-    /// removed (that this copy synced before) in `deleted`, the variables
-    /// as shared now in `variables`. Nothing is ever pushed or deleted.
-    fn sync_shared(
-        &self,
-        collection: &CollectionKey,
-        share_id: &str,
-        local: &[SyncFile],
     ) -> BoxFut<'_, SyncReport>;
     fn share_settings(&self, collection: &CollectionKey) -> BoxFut<'_, ShareSettings>;
     fn update_share(
@@ -493,10 +574,23 @@ pub trait Backend: Send + Sync {
     /// Gives the collection a link first if it has none.
     fn invite(&self, collection: &CollectionKey, email: &str) -> BoxFut<'_, Person>;
     fn remove_person(&self, collection: &CollectionKey, email: &str) -> BoxFut<'_, ()>;
+    /// What `link` opens, sending the session for `link.server` when there
+    /// is one. A restricted collection without one is `SignedOut`.
     fn resolve_link(&self, link: &ShareLink) -> BoxFut<'_, SharedCollection>;
-    fn fetch_shared(&self, id: &str) -> BoxFut<'_, SharedSnapshot>;
+    /// The current version's files and variables.
+    fn fetch_shared(&self, link: &ShareLink) -> BoxFut<'_, SharedSnapshot>;
+    /// The current version number, without the files.
+    // The update checks call it (Task 7 of 3a).
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn latest_version(&self, link: &ShareLink) -> BoxFut<'_, u32>;
+    /// The collections this studio added.
     fn received(&self) -> Vec<ReceivedShare>;
+    /// Records `share`, replacing one with the same token.
     fn add_received(&self, share: ReceivedShare) -> BoxFut<'_, ()>;
+    /// Replaces the record with `share`'s token (an update taken).
+    // An update taken calls it (Task 7 of 3a).
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn update_received(&self, share: ReceivedShare) -> BoxFut<'_, ()>;
     /// The developer toggles, when the backend has them (the mock).
     fn dev(&self) -> Option<&dyn DevControls>;
 }
@@ -643,12 +737,64 @@ pub mod testing {
     use super::*;
     use std::sync::{Arc, Mutex};
 
+    /// Signs `b` in on its server as the studio does: `sign_in_url`, then
+    /// the dashboard's callback. The mock signs in Jamie (GitHub).
+    pub fn sign_in(b: &dyn Backend) -> Account {
+        sign_in_with(b, fixtures::MOCK_CODE)
+    }
+
+    /// [`sign_in`], as the mock's email account (Maria).
+    pub fn sign_in_by_email(b: &dyn Backend) -> Account {
+        sign_in_with(b, fixtures::EMAIL_CODE)
+    }
+
+    fn sign_in_with(b: &dyn Backend, code: &str) -> Account {
+        use futures::executor::block_on;
+        let server = b.server();
+        block_on(b.sign_in_url(&server)).unwrap();
+        let callback = AuthCallback {
+            server: server.url().trim_end_matches('/').to_string(),
+            code: code.into(),
+        };
+        block_on(b.complete_sign_in(&callback)).unwrap()
+    }
+
+    /// The files the server holds for `key`, read through its share link
+    /// (made if it has none).
+    // The sync tests, which need the server feature.
+    #[cfg_attr(not(feature = "server"), allow(dead_code))]
+    pub fn server_files(b: &dyn Backend, key: &CollectionKey) -> Vec<SyncFile> {
+        use futures::executor::block_on;
+        let url = block_on(b.update_share(key, ShareUpdate::default()))
+            .unwrap()
+            .link
+            .unwrap();
+        let link = ShareLink::parse(&url).unwrap();
+        block_on(b.fetch_shared(&link)).unwrap().files
+    }
+
+    /// Signs `b` out of its server.
+    pub fn sign_out(b: &dyn Backend) {
+        futures::executor::block_on(b.sign_out(b.server().url())).unwrap();
+    }
+
     /// The backend, recording every file a sync sends (text included).
     pub struct Spy {
         pub inner: Arc<dyn Backend>,
         pub sent: Mutex<Vec<SyncFile>>,
         /// `share_settings` fails as offline while set.
         pub fail_share_settings: std::sync::atomic::AtomicBool,
+        /// When set, `sign_in_url` (still started on the inner backend)
+        /// answers with this page, as a real server does.
+        pub browser_url: Mutex<Option<String>>,
+        /// When set, every share has this snapshot as its latest version
+        /// (asked of the inner backend first, so offline still fails).
+        pub newer: Mutex<Option<SharedSnapshot>>,
+        /// How many times `latest_version` was asked.
+        pub checks: std::sync::atomic::AtomicUsize,
+        /// While set, the spy is not the mock to the studio: no
+        /// Developer controls, as a real server's backend.
+        pub hide_dev: std::sync::atomic::AtomicBool,
     }
 
     impl Spy {
@@ -657,6 +803,10 @@ pub mod testing {
                 inner,
                 sent: Mutex::default(),
                 fail_share_settings: Default::default(),
+                browser_url: Mutex::default(),
+                newer: Mutex::default(),
+                checks: Default::default(),
+                hide_dev: Default::default(),
             }
         }
     }
@@ -671,14 +821,27 @@ pub mod testing {
         fn test_connection(&self, server: &Server) -> BoxFut<'_, ConnectionInfo> {
             self.inner.test_connection(server)
         }
-        fn sign_in(&self, method: SignInMethod) -> BoxFut<'_, Account> {
-            self.inner.sign_in(method)
+        fn sign_in_url(&self, server: &Server) -> BoxFut<'_, String> {
+            let started = self.inner.sign_in_url(server);
+            Box::pin(async move {
+                let url = started.await?;
+                Ok(self.browser_url.lock().unwrap().clone().unwrap_or(url))
+            })
         }
-        fn sign_out(&self) -> BoxFut<'_, ()> {
-            self.inner.sign_out()
+        fn complete_sign_in(&self, callback: &AuthCallback) -> BoxFut<'_, Account> {
+            self.inner.complete_sign_in(callback)
+        }
+        fn sign_out(&self, server: &str) -> BoxFut<'_, ()> {
+            self.inner.sign_out(server)
         }
         fn account(&self) -> Option<Account> {
             self.inner.account()
+        }
+        fn account_on(&self, server: &str) -> Option<Account> {
+            self.inner.account_on(server)
+        }
+        fn team_sync(&self) -> bool {
+            self.inner.team_sync()
         }
         fn sync_status(&self, collection: &CollectionKey) -> SyncStatus {
             self.inner.sync_status(collection)
@@ -691,15 +854,6 @@ pub mod testing {
         ) -> BoxFut<'_, SyncReport> {
             self.sent.lock().unwrap().extend(local.iter().cloned());
             self.inner.sync(collection, local, deleted)
-        }
-        fn sync_shared(
-            &self,
-            collection: &CollectionKey,
-            share_id: &str,
-            local: &[SyncFile],
-        ) -> BoxFut<'_, SyncReport> {
-            self.sent.lock().unwrap().extend(local.iter().cloned());
-            self.inner.sync_shared(collection, share_id, local)
         }
         fn share_settings(&self, collection: &CollectionKey) -> BoxFut<'_, ShareSettings> {
             if self
@@ -726,8 +880,22 @@ pub mod testing {
         fn resolve_link(&self, link: &ShareLink) -> BoxFut<'_, SharedCollection> {
             self.inner.resolve_link(link)
         }
-        fn fetch_shared(&self, id: &str) -> BoxFut<'_, SharedSnapshot> {
-            self.inner.fetch_shared(id)
+        fn fetch_shared(&self, link: &ShareLink) -> BoxFut<'_, SharedSnapshot> {
+            let asked = self.inner.fetch_shared(link);
+            Box::pin(async move {
+                let snapshot = asked.await?;
+                Ok(self.newer.lock().unwrap().clone().unwrap_or(snapshot))
+            })
+        }
+        fn latest_version(&self, link: &ShareLink) -> BoxFut<'_, u32> {
+            self.checks
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let asked = self.inner.latest_version(link);
+            Box::pin(async move {
+                let version = asked.await?;
+                let newer = self.newer.lock().unwrap().as_ref().map(|s| s.version);
+                Ok(newer.unwrap_or(version))
+            })
         }
         fn received(&self) -> Vec<ReceivedShare> {
             self.inner.received()
@@ -735,7 +903,13 @@ pub mod testing {
         fn add_received(&self, share: ReceivedShare) -> BoxFut<'_, ()> {
             self.inner.add_received(share)
         }
+        fn update_received(&self, share: ReceivedShare) -> BoxFut<'_, ()> {
+            self.inner.update_received(share)
+        }
         fn dev(&self) -> Option<&dyn DevControls> {
+            if self.hide_dev.load(std::sync::atomic::Ordering::SeqCst) {
+                return None;
+            }
             self.inner.dev()
         }
     }
@@ -745,43 +919,88 @@ pub mod testing {
 mod tests {
     use super::*;
 
+    const API: &str = "https://api.x.test";
+
     #[test]
-    fn parse_both_link_forms() {
-        let deep = ShareLink::parse("curl-runner://open/acme/shipping-api?share=7Kx2Qm").unwrap();
-        assert_eq!(
-            deep,
-            ShareLink {
-                owner_slug: "acme".into(),
-                collection_slug: "shipping-api".into(),
-                token: "7Kx2Qm".into(),
+    fn share_link_from_deep_link() {
+        let want = ShareLink {
+            server: API.into(),
+            token: "crsl_Ab-9_".into(),
+        };
+        for text in [
+            "curl-runner://open?server=https%3A%2F%2Fapi.x.test&share=crsl_Ab-9_",
+            "  curl-runner://open/acme/pay?share=crsl_Ab-9_&server=https%3A%2F%2Fapi.x.test\n",
+        ] {
+            assert_eq!(ShareLink::parse(text).unwrap(), want, "{text}");
+        }
+    }
+
+    #[test]
+    fn share_link_from_landing_url_asks_the_well_known() {
+        let server = testkit::TestServer::with_handler(|req| {
+            if req.url == "/.well-known/curl-runner.json" {
+                testkit::Response::from_data(br#"{"api":"https://api.x.test"}"#.to_vec())
+            } else {
+                testkit::Response::from_data(Vec::new()).with_status_code(404)
             }
-        );
-        let web = ShareLink::parse("  https://studio.example.com/s/shipping-api-7Kx2Qm\n").unwrap();
-        assert_eq!(web.owner_slug, "");
-        assert_eq!(web.collection_slug, "shipping-api");
-        assert_eq!(web.token, "7Kx2Qm");
+        });
+        let link = ShareLink::parse(&format!("{}/s/crsl_Ab-9_", server.base_url)).unwrap();
+        assert_eq!(link.server, API);
+        assert_eq!(link.token, "crsl_Ab-9_");
+        let none = testkit::TestServer::with_handler(|_| {
+            testkit::Response::from_data(Vec::new()).with_status_code(404)
+        });
         assert_eq!(
-            ShareLink::web("shipping-api", "7Kx2Qm"),
-            "https://studio.example.com/s/shipping-api-7Kx2Qm"
+            ShareLink::parse(&format!("{}/s/crsl_Ab-9_", none.base_url)),
+            Err(LinkError::NoApi)
         );
     }
 
     #[test]
-    fn garbage_link_is_none() {
+    fn share_link_rejects_bad_tokens() {
+        let open =
+            |t: &str| ShareLink::parse(&format!("curl-runner://open?server={API}&share={t}"));
+        let max = "a_-".repeat(85) + "z";
+        assert_eq!(max.len(), 256);
+        assert_eq!(open(&max).unwrap().token, max);
+        assert_eq!(open(&(max + "z")), Err(LinkError::Malformed));
+        for bad in ["", "7K/x", "7K x", "a.b"] {
+            assert_eq!(open(bad), Err(LinkError::Malformed), "{bad:?}");
+        }
         for bad in [
             "",
             "hello",
-            "https://example.com/s/shipping-api-7Kx2Qm",
-            "https://studio.example.com/s/",
-            "https://studio.example.com/s/shippingapi",
-            "https://studio.example.com/s/shipping-api-",
-            "curl-runner://open/acme?share=7Kx2Qm",
-            "curl-runner://open/acme/shipping-api",
-            "curl-runner://open/acme/shipping-api?share=",
-            "curl-runner://open/acme/ship ping?share=7Kx2Qm",
-            "curl-runner://open/acme/shipping-api?share=7K/x",
+            "curl-runner://open?server=https%3A%2F%2Fapi.x.test",
+            "curl-runner://open?share=crsl_abc",
+            "curl-runner://auth/callback?share=crsl_abc&server=https%3A%2F%2Fapi.x.test",
         ] {
-            assert_eq!(ShareLink::parse(bad), None, "{bad:?}");
+            assert_eq!(ShareLink::parse(bad), Err(LinkError::Malformed), "{bad:?}");
+        }
+        assert_eq!(
+            ShareLink::parse("curl-runner://open?server=http%3A%2F%2Fevil.test&share=crsl_a"),
+            Err(LinkError::InsecureServer("http://evil.test".into()))
+        );
+    }
+
+    #[test]
+    fn auth_callback_parse() {
+        assert_eq!(
+            AuthCallback::parse(
+                "curl-runner://auth/callback?code=crh_abc123&server=https%3A%2F%2Fapi.x.test"
+            ),
+            Some(AuthCallback {
+                server: API.into(),
+                code: "crh_abc123".into()
+            })
+        );
+        for bad in [
+            "curl-runner://auth/callback?code=crh_abc123",
+            "curl-runner://auth/callback?server=https%3A%2F%2Fapi.x.test",
+            "curl-runner://auth/callback?code=abc123&server=https%3A%2F%2Fapi.x.test",
+            "curl-runner://open?code=crh_abc123&server=https%3A%2F%2Fapi.x.test",
+            "https://x.test/auth/callback?code=crh_abc123&server=https%3A%2F%2Fapi.x.test",
+        ] {
+            assert_eq!(AuthCallback::parse(bad), None, "{bad:?}");
         }
     }
 
@@ -881,12 +1100,16 @@ mod tests {
 
     #[test]
     fn server_and_sign_in_copy() {
-        assert_eq!(Server::Cloud.url(), "https://cloud.curl-runner.com");
+        assert_eq!(Server::Cloud.url(), "https://api.curl-runner.com");
         let own = Server::SelfHosted {
             url: "https://curl-runner.example.com".into(),
         };
         assert_eq!(own.url(), "https://curl-runner.example.com");
-        assert_eq!(SignInMethod::Sso.label(), "SSO");
+        assert_eq!(method_label(SignInMethod::Github), "GitHub");
+        assert_eq!(
+            methods_text(&[SignInMethod::Email, SignInMethod::Github]).as_deref(),
+            Some("GitHub or email")
+        );
         assert_eq!(MOCK_LATENCY, std::time::Duration::from_millis(120));
         let b: Box<dyn Backend> = Box::new(MockBackend::open(None, MOCK_LATENCY));
         assert_eq!(b.server(), Server::Cloud);

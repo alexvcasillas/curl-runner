@@ -38,7 +38,8 @@ pub struct CollectionMeta {
     pub vars: BTreeMap<String, VarMeta>,
     /// The environment the collection was last set up for, if any.
     pub environment: Option<String>,
-    /// A received copy: the org that shared it. Read only.
+    /// A received copy: the org that shared it (informational; the copy
+    /// takes edits). Kept under its old name so saved notes still load.
     pub read_only_from: Option<String>,
     /// A received copy's variables as the owner shared them: their
     /// non-secret defaults are `Shared by {org}` and locked.

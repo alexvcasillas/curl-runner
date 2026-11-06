@@ -9,12 +9,14 @@
 //!
 //! Exit codes: 0 ok, 1 user or data problem, 2 auth, 5 unreachable.
 
-use super::client::{self, Client};
+use super::client;
 use super::credentials::Credentials;
 use super::publish::{Api, EXIT_AUTH, EXIT_INVALID, Fail, api_failure, fail};
 use super::{Env, credentials, escape_control, login};
 use crate::output::Console;
 use crate::version_check::{HOOKS_ENABLED, hook};
+use curl_runner_cloud_client::Latest;
+use curl_runner_cloud_client::link::{self, Link, LinkError, valid_token};
 use curl_runner_cloud_proto::{
     BundleError, BundleFile, Input, Snapshot, file_hash, validate_bundle, validate_inputs,
     validate_path,
@@ -25,8 +27,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
-const HOSTED_LANDING_HOST: &str = "cloud.curl-runner.com";
-const HOSTED_API: &str = "https://api.curl-runner.com";
 const STATE_DIR: &str = ".curl-runner";
 const STATE_FILE: &str = "pull.json";
 const STAGING_DIR: &str = "staging";
@@ -42,11 +42,6 @@ struct State {
     version: u32,
     /// Path to `file_hash` of what was written.
     files: BTreeMap<String, String>,
-}
-
-#[derive(Deserialize)]
-struct Latest {
-    version: u32,
 }
 
 #[derive(Debug, PartialEq)]
@@ -95,14 +90,6 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
     Ok(Options { target, force })
 }
 
-/// A share token goes into a URL path, so it is plain URL-safe characters.
-fn valid_token(t: &str) -> bool {
-    !t.is_empty()
-        && t.len() <= 256
-        && t.chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-}
-
 fn bad_link() -> Fail {
     fail(
         EXIT_INVALID,
@@ -110,99 +97,41 @@ fn bad_link() -> Fail {
     )
 }
 
-/// A parsed link: the API base to call, or a landing page that must be asked
-/// where its API is.
-#[derive(Debug, PartialEq)]
-enum Link {
-    Api { server: String, token: String },
-    Landing { origin: String, token: String },
-}
-
-fn parse_link(link: &str) -> Result<Link, Fail> {
-    let u = url::Url::parse(link).map_err(|_| bad_link())?;
-    if u.scheme() == "curl-runner" {
-        if u.host_str() != Some("open") {
-            return Err(bad_link());
-        }
-        let get = |k: &str| {
-            u.query_pairs()
-                .find(|(name, _)| name == k)
-                .map(|(_, v)| v.into_owned())
-        };
-        let (Some(server), Some(token)) = (get("server"), get("share")) else {
-            return Err(bad_link());
-        };
-        let server = server.trim_end_matches('/').to_string();
-        client::check_server(&server).map_err(|m| fail(EXIT_INVALID, m))?;
-        if !valid_token(&token) {
-            return Err(bad_link());
-        }
-        return Ok(Link::Api { server, token });
+/// The CLI's message for a link the client crate rejected.
+fn link_failure(e: LinkError) -> Fail {
+    match e {
+        LinkError::InsecureServer(server) => match client::check_server(&server) {
+            Err(m) => fail(EXIT_INVALID, m),
+            Ok(()) => bad_link(),
+        },
+        _ => bad_link(),
     }
-    client::check_server(link).map_err(|m| fail(EXIT_INVALID, m))?;
-    let segments: Vec<&str> = u
-        .path_segments()
-        .map(|s| s.filter(|p| !p.is_empty()).collect())
-        .unwrap_or_default();
-    let ["s", token] = segments.as_slice() else {
-        return Err(bad_link());
-    };
-    if !valid_token(token) {
-        return Err(bad_link());
-    }
-    let host = u.host_str().ok_or_else(bad_link)?;
-    let origin = match u.port() {
-        Some(p) if host.contains(':') => format!("{}://[{host}]:{p}", u.scheme()),
-        Some(p) => format!("{}://{host}:{p}", u.scheme()),
-        None if host.contains(':') => format!("{}://[{host}]", u.scheme()),
-        None => format!("{}://{host}", u.scheme()),
-    };
-    Ok(Link::Landing {
-        origin,
-        token: token.to_string(),
-    })
 }
 
-#[derive(Deserialize)]
-struct WellKnown {
-    api: String,
-}
-
-/// The API base for a landing page: the test hook, else the host's
-/// `/.well-known/curl-runner.json` (no redirects), else, for the hosted
-/// landing host only, the hosted API.
+/// The API base for a landing page, through the client crate's lookup.
 fn api_for_landing(origin: &str, env: Env) -> Result<String, Fail> {
-    if let Some(s) = hook(env, client::TEST_SERVER_ENV, HOOKS_ENABLED) {
-        let s = s.trim_end_matches('/').to_string();
-        client::check_server(&s).map_err(|m| fail(EXIT_INVALID, m))?;
-        return Ok(s);
-    }
-    let host = url::Url::parse(origin)
-        .ok()
-        .and_then(|u| u.host_str().map(str::to_string))
-        .unwrap_or_default();
-    let found = Client::new(origin, None)
-        .send("GET", "/.well-known/curl-runner.json", None, false)
-        .ok()
-        .filter(|(status, _)| *status == 200)
-        .and_then(|(_, body)| serde_json::from_slice::<WellKnown>(&body).ok())
-        .map(|w| w.api.trim_end_matches('/').to_string())
-        .filter(|api| !api.chars().any(char::is_control) && client::check_server(api).is_ok());
-    match found {
-        Some(api) => Ok(api),
-        None if host == HOSTED_LANDING_HOST => Ok(HOSTED_API.to_string()),
-        None => Err(fail(
-            EXIT_INVALID,
-            format!(
-                "Couldn't find the curl-runner server for {}.",
-                escape_control(&host)
-            ),
-        )),
+    let test_hook = hook(env, client::TEST_SERVER_ENV, HOOKS_ENABLED);
+    match link::api_for_landing(origin, test_hook.as_deref()) {
+        Ok(api) => Ok(api),
+        Err(LinkError::NoApi) => {
+            let host = url::Url::parse(origin)
+                .ok()
+                .and_then(|u| u.host_str().map(str::to_string))
+                .unwrap_or_default();
+            Err(fail(
+                EXIT_INVALID,
+                format!(
+                    "Couldn't find the curl-runner server for {}.",
+                    escape_control(&host)
+                ),
+            ))
+        }
+        Err(e) => Err(link_failure(e)),
     }
 }
 
-fn resolve_link(link: &str, env: Env) -> Result<(String, String), Fail> {
-    match parse_link(link)? {
+fn resolve_link(text: &str, env: Env) -> Result<(String, String), Fail> {
+    match link::parse(text).map_err(link_failure)? {
         Link::Api { server, token } => Ok((server, token)),
         Link::Landing { origin, token } => Ok((api_for_landing(&origin, env)?, token)),
     }
@@ -861,21 +790,21 @@ mod tests {
     #[test]
     fn links_parse() {
         assert_eq!(
-            parse_link("https://cloud.example.com/s/abc_DEF-1/").unwrap(),
+            link::parse("https://cloud.example.com/s/abc_DEF-1/").unwrap(),
             Link::Landing {
                 origin: "https://cloud.example.com".into(),
                 token: "abc_DEF-1".into()
             }
         );
         assert_eq!(
-            parse_link("http://127.0.0.1:9/s/tok").unwrap(),
+            link::parse("http://127.0.0.1:9/s/tok").unwrap(),
             Link::Landing {
                 origin: "http://127.0.0.1:9".into(),
                 token: "tok".into()
             }
         );
         assert_eq!(
-            parse_link("curl-runner://open?server=http%3A%2F%2F127.0.0.1%3A9%2F&share=tok")
+            link::parse("curl-runner://open?server=http%3A%2F%2F127.0.0.1%3A9%2F&share=tok")
                 .unwrap(),
             Link::Api {
                 server: "http://127.0.0.1:9".into(),
@@ -893,7 +822,7 @@ mod tests {
             "curl-runner://close?server=https://h.example.com&share=t",
             "nonsense",
         ] {
-            assert!(parse_link(bad).is_err(), "{bad}");
+            assert!(link::parse(bad).is_err(), "{bad}");
         }
     }
 

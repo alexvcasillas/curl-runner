@@ -83,16 +83,14 @@ impl Workspace {
         let Some(active) = self.state.active else {
             return pane
                 .child(self.render_tabs(cx))
+                .children(self.render_update_banner(cx))
                 .child(render_nothing_open());
         };
         let doc = &self.state.open[active];
         let state = self.tabs[active].editor.clone();
         // The Editor settings' size, read every frame so a change shows at once.
         let text_size = px(f32::from(self.settings.editor.font_size));
-        // A received copy's editor reads, selects and copies, but takes no
-        // edit (the document refuses them too).
         let editor = Editor::new(&state)
-            .readonly(doc.is_read_only())
             .bordered(false)
             .h_full()
             .text_size(text_size)
@@ -135,9 +133,11 @@ impl Workspace {
                     this.release_hover(cx);
                 }
             }));
-        let header = match self.read_only_org() {
-            Some(org) => self.render_read_only_note(org, cx).into_any_element(),
-            None => self.render_breadcrumb(doc).into_any_element(),
+        // A newer version waiting takes the shared note's place.
+        let header = match (self.render_update_banner(cx), self.shared_by()) {
+            (Some(banner), _) => banner,
+            (None, Some(org)) => self.render_shared_note(org, cx).into_any_element(),
+            (None, None) => self.render_breadcrumb(doc).into_any_element(),
         };
         pane.child(self.render_tabs(cx))
             .child(header)
@@ -214,14 +214,6 @@ impl Workspace {
                 })
                 .child(method_badge(self.method_of(&doc.rel_path).as_deref()).w_auto())
                 .child(name)
-                .when(doc.is_read_only(), |tab| {
-                    tab.child(
-                        glyph(icons::LOCK)
-                            .size(px(11.))
-                            .flex_none()
-                            .text_color(color("text-tertiary")),
-                    )
-                })
                 .child(close)
                 .on_click(cx.listener(move |this, _, window, cx| this.activate_tab(ix, window, cx)))
         });
@@ -309,20 +301,26 @@ impl Workspace {
 const NOTE_HEIGHT: f32 = 40.;
 
 impl Workspace {
-    /// The ReadOnly board's bar in the breadcrumb's place: `Read only ·
-    /// shared by Acme · updated 3 days ago`, `Check for updates` and
-    /// `Duplicate to my workspace to edit`.
-    fn render_read_only_note(&self, org: &str, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let mut tail = format!("· shared by {org}");
+    /// The ReadOnly board's bar in the breadcrumb's place, for a received
+    /// copy: `Shared by Acme · updated 3 days ago`, `Check for updates`
+    /// and `Duplicate to my workspace`. Where it came from, not a lock: the
+    /// copy takes edits.
+    fn render_shared_note(&self, org: &str, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let mut text = format!("Shared by {org}");
         if let Some(ago) = self.received_updated(cx) {
-            tail.push_str(&format!(" · updated {ago}"));
+            text.push_str(&format!(" · updated {ago}"));
         }
-        let checking = self.update_check.is_some();
+        let checking = self.checking_open();
+        let check = if checking {
+            super::received::CHECKING
+        } else {
+            "Check for updates"
+        };
         div()
-            .id("read-only-note")
+            .id("shared-note")
             .role(Role::Note)
             .test_support()
-            .aria_label(format!("Read only {tail}"))
+            .aria_label(text.clone())
             .flex()
             .flex_none()
             .items_center()
@@ -336,56 +334,40 @@ impl Workspace {
             .text_size(px(12.))
             .text_color(color("text-secondary"))
             .child(
-                glyph(icons::LOCK)
+                glyph(icons::LINK)
                     .size(px(13.))
                     .flex_none()
                     .text_color(color("text-primary")),
             )
             .child(
                 div()
-                    .flex()
                     .min_w_0()
-                    .gap(px(4.))
                     .whitespace_nowrap()
                     .overflow_hidden()
-                    .child(
-                        div()
-                            .flex_none()
-                            .text_color(color("text-primary"))
-                            .child("Read only"),
-                    )
-                    .child(div().min_w_0().text_ellipsis().child(tail)),
+                    .text_ellipsis()
+                    .child(text),
             )
             .child(div().flex_1())
             .child(
-                note_button("read-only-check", "Check for updates", false)
+                note_button("shared-note-check", check, false)
                     .when(checking, |b| b.text_color(color("text-disabled")))
-                    .when(!checking, |b| {
-                        b.cursor_pointer()
-                            .hover(|s| s.bg(color("surface-100")))
-                            .on_click(
-                                cx.listener(|this, _, window, cx| {
-                                    this.check_for_updates(window, cx)
-                                }),
-                            )
-                    })
-                    .child("Check for updates")
+                    .cursor_pointer()
+                    .hover(|s| s.bg(color("surface-100")))
+                    // While checking, a click makes that check's answer speak.
+                    .on_click(cx.listener(|this, _, window, cx| this.check_for_updates(window, cx)))
+                    .child(check)
                     .test_support(),
             )
             .child(
-                note_button(
-                    "read-only-duplicate",
-                    "Duplicate to my workspace to edit",
-                    true,
-                )
-                .cursor_pointer()
-                .hover(|s| s.bg(color("surface-100")))
-                .on_click(
-                    cx.listener(|this, _, window, cx| this.duplicate_to_workspace(window, cx)),
-                )
-                .child(glyph(icons::COPY).size(px(13.)).flex_none())
-                .child("Duplicate to my workspace to edit")
-                .test_support(),
+                note_button("shared-note-duplicate", "Duplicate to my workspace", true)
+                    .cursor_pointer()
+                    .hover(|s| s.bg(color("surface-100")))
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.duplicate_to_workspace(window, cx)),
+                    )
+                    .child(glyph(icons::COPY).size(px(13.)).flex_none())
+                    .child("Duplicate to my workspace")
+                    .test_support(),
             )
     }
 }

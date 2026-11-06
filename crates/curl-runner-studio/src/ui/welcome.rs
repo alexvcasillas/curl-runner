@@ -66,7 +66,7 @@ const CARDS: [Card; 4] = [
         icon: icons::LINK,
         keys: "⌘L",
         title: "Open a shared link",
-        detail: "Paste a curl-runner link someone sent you. Opens read-only.",
+        detail: "Paste a curl-runner link someone sent you. Adds your own copy.",
         action: Some(|ws, window, cx| {
             ws.open_shared(None, window, cx);
         }),
@@ -122,7 +122,7 @@ impl Workspace {
                     .text_color(color("text-secondary"))
                     .child(if crate::features::SERVER {
                         "Write requests as YAML, run them as tests, and share collections \
-                         read-only with the people who call your API."
+                         with the people who call your API."
                     } else {
                         WELCOME_LEDE_LOCAL
                     }),

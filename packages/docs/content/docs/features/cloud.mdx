@@ -260,6 +260,24 @@ They fill in the inputs on their own machine. Secret values never go back to you
 Everything the dashboard does is also an API call. Sessions and tokens go in `Authorization: Bearer ...`. See `GET /v1/me` on your server for the teams your account is in.
 </Callout>
 
+## Open it in the studio [#studio]
+
+It needs the curl-runner studio for macOS with Cloud support.
+
+To open a shared collection, choose **Open in curl-runner studio** on the link's page. You can also paste the link into the studio: **Open a shared link** on the welcome screen, or ⌘L. Both link forms work: `https://cloud.curl-runner.com/s/<token>` and `curl-runner://open?server=<api-url>&share=<token>`.
+
+The studio shows the collection name, the team, the request count and the version. A Public collection opens at once. A Restricted one asks you to sign in first. **Sign in** opens the sign-in page in your browser. Once you're signed in, the browser sends you back to the studio, and the collection opens. You sign in once per server, and the studio keeps the session in your macOS Keychain.
+
+Next comes a short form with the collection's inputs. Secret values go into your Keychain, never into the collection folder, and never back to the team. **Add to my studio** saves your copy and opens it.
+
+### Updates [#studio-updates]
+
+The studio checks for a new version when you open the collection, every 15 minutes while it's open, and when you choose **Check for updates**. When there is one, a banner shows the version, when it was published and how many requests changed. **What changed** lists the files added, changed and removed. **Update** brings your copy up to date. Saved secrets and filled-in values carry over. If the new version needs a new input, the studio asks for it in the same short form.
+
+### Your changes [#studio-edits]
+
+Your copy is yours to edit. If you changed files and a new version comes out, the banner says how many. Updating replaces those files. To keep your work, choose **Keep my changes as a copy**. It saves your edited files as a separate collection in a folder you pick, then updates the shared copy. You don't need to choose **Update** after it.
+
 ## Pull a shared collection [#pull]
 
 If someone shared a collection with you, pull it:

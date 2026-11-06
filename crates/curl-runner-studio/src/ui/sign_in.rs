@@ -1,6 +1,7 @@
 //! The sign-in screen (board: SignIn): where collections live (curl-runner
-//! Cloud or a self-hosted server, with `Test connection`), the sign-in
-//! buttons and `Continue offline`. Shown on first launch, before Welcome,
+//! Cloud or a self-hosted server, with `Test connection`), `Continue in
+//! browser` (the dashboard signs you in and sends the studio a callback)
+//! and `Continue offline`. Shown on first launch, before Welcome,
 //! and from Welcome's `Change` and Settings' `Sign in` / `Switch account`.
 
 use super::app::{CloseSettings, mono_font};
@@ -9,7 +10,9 @@ use super::color;
 use super::icons::{self, glyph};
 use super::settings_kit::{neutral_pill, small_button};
 use super::state::Connection;
-use crate::model::backend::{Backend, BackendError, ConnectionInfo, Server, SignInMethod};
+use crate::model::backend::{
+    Backend, BackendError, ConnectionInfo, Server, SignInMethod, methods_text,
+};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
@@ -23,12 +26,26 @@ pub const SETUP_GUIDE_URL: &str = env!("CARGO_PKG_REPOSITORY");
 const URL_PLACEHOLDER: &str = "https://curl-runner.example.com";
 
 /// What the screen asks of the workspace.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SignInEvent {
-    /// Signed in (`Online`) or `Continue offline`: remember it, move on.
+    /// `Continue offline`: remember it, move on. (A sign-in finishes in
+    /// the workspace, which gets the callback.)
     Done(Connection),
     /// Esc, when the screen was opened from elsewhere.
     Back,
+    /// The sign-in page to open: the browser's, or a `curl-runner://`
+    /// callback the studio answers itself (the mock).
+    OpenUrl(String),
+}
+
+/// Where `Continue in browser` is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Phase {
+    Idle,
+    /// Testing the server and asking it for the sign-in page.
+    Opening,
+    /// The page is open: the callback finishes it.
+    Waiting,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,14 +68,16 @@ pub struct SignInView {
     pick: Pick,
     url: Entity<InputState>,
     test: Test,
-    /// The sign-in in flight, by method.
-    busy: Option<SignInMethod>,
+    phase: Phase,
+    /// What Cloud reports it signs in with, once asked.
+    cloud_methods: Option<Vec<SignInMethod>>,
     /// The last sign-in's error, under the primary button.
     error: Option<String>,
     /// Esc leaves (not on first launch, where there is nowhere to go).
     can_go_back: bool,
     task: Option<Task<()>>,
     test_task: Option<Task<()>>,
+    methods_task: Option<Task<()>>,
     focus: FocusHandle,
     _url_changes: Subscription,
 }
@@ -95,19 +114,43 @@ impl SignInView {
                 cx.notify();
             }
         });
-        SignInView {
+        let mut view = SignInView {
             backend,
             pick,
             url,
             test: Test::Idle,
-            busy: None,
+            phase: Phase::Idle,
+            cloud_methods: None,
             error: None,
             can_go_back,
             task: None,
             test_task: None,
+            methods_task: None,
             focus: cx.focus_handle(),
             _url_changes: url_changes,
+        };
+        view.fetch_cloud_methods(cx);
+        view
+    }
+
+    /// Asks Cloud how it signs people in, for the methods line. A failure
+    /// leaves the line out.
+    fn fetch_cloud_methods(&mut self, cx: &mut Context<Self>) {
+        if self.cloud_methods.is_some() || self.methods_task.is_some() {
+            return;
         }
+        let call = backend_call(cx, &self.backend, |b| b.test_connection(&Server::Cloud));
+        self.methods_task = Some(cx.spawn(async move |this, cx| {
+            let result = call.await;
+            this.update(cx, |this, cx| {
+                this.methods_task = None;
+                if let Ok(info) = result {
+                    this.cloud_methods = Some(info.sign_in);
+                    cx.notify();
+                }
+            })
+            .ok();
+        }));
     }
 
     /// The server the picked card names.
@@ -124,6 +167,9 @@ impl SignInView {
         if self.pick != pick {
             self.pick = pick;
             self.error = None;
+            if pick == Pick::Cloud {
+                self.fetch_cloud_methods(cx);
+            }
             cx.notify();
         }
     }
@@ -146,31 +192,38 @@ impl SignInView {
         cx.notify();
     }
 
-    /// Chooses the picked server and signs in with `method`. A self-hosted
-    /// address is tested first, so a typo fails here, not on first sync.
-    pub fn continue_with(&mut self, method: SignInMethod, cx: &mut Context<Self>) {
-        if self.busy.is_some() {
+    /// `Continue in browser`: chooses the picked server and opens its
+    /// sign-in page. A self-hosted address is tested first, so a typo
+    /// fails here, not on first sync. The callback finishes it
+    /// ([`SignInView::sign_in_failed`] when it fails).
+    pub fn continue_in_browser(&mut self, cx: &mut Context<Self>) {
+        if self.phase != Phase::Idle {
             return;
         }
         let server = self.server(cx);
-        self.busy = Some(method);
+        self.phase = Phase::Opening;
         self.error = None;
         let call = backend_call(cx, &self.backend, move |b| {
             Box::pin(async move {
                 if matches!(server, Server::SelfHosted { .. }) {
                     b.test_connection(&server).await?;
                 }
-                b.set_server(server).await?;
-                b.sign_in(method).await
+                b.set_server(server.clone()).await?;
+                b.sign_in_url(&server).await
             })
         });
         self.task = Some(cx.spawn(async move |this, cx| {
             let result = call.await;
             this.update(cx, |this, cx| {
-                this.busy = None;
                 match result {
-                    Ok(_) => cx.emit(SignInEvent::Done(Connection::Online)),
-                    Err(e) => this.error = Some(sign_in_error(&e)),
+                    Ok(url) => {
+                        this.phase = Phase::Waiting;
+                        cx.emit(SignInEvent::OpenUrl(url));
+                    }
+                    Err(e) => {
+                        this.phase = Phase::Idle;
+                        this.error = Some(sign_in_error(&e));
+                    }
                 }
                 cx.notify();
             })
@@ -179,18 +232,36 @@ impl SignInView {
         cx.notify();
     }
 
+    /// `Cancel`: stops waiting for the browser.
+    pub fn cancel(&mut self, cx: &mut Context<Self>) {
+        self.phase = Phase::Idle;
+        self.task = None;
+        cx.notify();
+    }
+
+    /// The callback came back and its sign-in failed: the error, under the
+    /// button, and the button again.
+    pub fn sign_in_failed(&mut self, e: &BackendError, cx: &mut Context<Self>) {
+        self.phase = Phase::Idle;
+        self.task = None;
+        self.error = Some(sign_in_error(e));
+        cx.notify();
+    }
+
     /// `Continue offline`: no account either, so a signed-in studio signs
     /// out first. A failed sign-out (the mock's Offline toggle) is logged
     /// and does not keep you here.
     pub fn continue_offline(&mut self, cx: &mut Context<Self>) {
-        if self.busy.is_some() {
+        if self.phase == Phase::Opening {
             return;
         }
+        self.phase = Phase::Idle;
         if self.backend.account().is_none() {
             cx.emit(SignInEvent::Done(Connection::Offline));
             return;
         }
-        let call = backend_call(cx, &self.backend, |b| b.sign_out());
+        let server = self.backend.server();
+        let call = backend_call(cx, &self.backend, move |b| b.sign_out(server.url()));
         self.task = Some(cx.spawn(async move |this, cx| {
             if let Err(e) = call.await {
                 log::warn!("sign-out before going offline failed: {e}");
@@ -202,17 +273,15 @@ impl SignInView {
 
     /// `CURL_RUNNER_STUDIO_SUBMIT`: presses the primary button.
     pub fn dev_submit(&mut self, cx: &mut Context<Self>) {
-        let method = self.primary_method();
-        self.continue_with(method, cx);
+        self.continue_in_browser(cx);
     }
 
-    /// The primary button's method: what the tested server signs in with,
-    /// SSO for an untested self-hosted one, GitHub on Cloud.
-    fn primary_method(&self) -> SignInMethod {
+    /// What the picked server reports it signs in with, once known.
+    fn methods(&self) -> Option<&[SignInMethod]> {
         match (&self.pick, &self.test) {
-            (Pick::Cloud, _) => SignInMethod::GitHub,
-            (Pick::SelfHosted, Test::Connected(info)) => info.sign_in,
-            (Pick::SelfHosted, _) => SignInMethod::Sso,
+            (Pick::Cloud, _) => self.cloud_methods.as_deref(),
+            (Pick::SelfHosted, Test::Connected(info)) => Some(&info.sign_in),
+            (Pick::SelfHosted, _) => None,
         }
     }
 
@@ -250,14 +319,23 @@ impl SignInView {
     }
 }
 
-/// `Connected · server 2.1.1 · sign-in via SSO · 42 ms`.
+/// `Connected · server 2.1.1 · sign-in via GitHub or email · 42 ms`.
 pub fn connected_text(info: &ConnectionInfo) -> String {
-    format!(
-        "Connected · server {} · sign-in via {} · {} ms",
-        info.version,
-        info.sign_in.label(),
-        info.latency_ms
-    )
+    match methods_text(&info.sign_in) {
+        Some(methods) => format!(
+            "Connected · server {} · sign-in via {methods} · {} ms",
+            info.version, info.latency_ms
+        ),
+        None => format!(
+            "Connected · server {} · {} ms",
+            info.version, info.latency_ms
+        ),
+    }
+}
+
+/// `Sign in with GitHub, Google or email`, from what a server reports.
+pub fn methods_line(methods: &[SignInMethod]) -> Option<String> {
+    methods_text(methods).map(|m| format!("Sign in with {m}"))
 }
 
 /// What a failed sign-in says under the button.
@@ -321,17 +399,19 @@ impl Render for SignInView {
             .gap(px(10.))
             .child(self.render_cloud(cx))
             .child(self.render_self_hosted(cx));
-        let method = self.primary_method();
-        let label = match self.busy {
-            Some(_) => "Signing in…".to_string(),
-            None => format!("Continue with {}", method.label()),
+        let idle = self.phase == Phase::Idle;
+        let label = if idle {
+            "Continue in browser"
+        } else {
+            "Waiting for the browser…"
         };
-        let primary = div()
+        let button = div()
             .id("sign-in-continue")
             .role(Role::Button)
             .test_support()
-            .aria_label(label.clone())
+            .aria_label(label)
             .flex()
+            .flex_1()
             .items_center()
             .justify_center()
             .h(px(40.))
@@ -342,13 +422,23 @@ impl Render for SignInView {
             .text_color(color("on-primary"))
             .text_size(px(14.))
             .font_weight(FontWeight::MEDIUM)
-            .when(self.busy.is_some(), |d| d.opacity(0.6))
-            .when(self.busy.is_none(), |d| {
+            .when(!idle, |d| d.opacity(0.6))
+            .when(idle, |d| {
                 d.cursor_pointer()
                     .hover(|s| s.bg(color("primary-hover")))
-                    .on_click(cx.listener(move |this, _, _, cx| this.continue_with(method, cx)))
+                    .on_click(cx.listener(|this, _, _, cx| this.continue_in_browser(cx)))
             })
             .child(label);
+        let primary = div().flex().gap(px(8.)).child(button).when(!idle, |d| {
+            d.child(
+                small_button("sign-in-cancel", "Cancel")
+                    .h(px(40.))
+                    .px(px(16.))
+                    .text_size(px(14.))
+                    .on_click(cx.listener(|this, _, _, cx| this.cancel(cx)))
+                    .child("Cancel"),
+            )
+        });
         let error = self.error.clone().map(|e| {
             div()
                 .id("sign-in-error")
@@ -383,7 +473,7 @@ impl Render for SignInView {
             .children(error)
             .child(or)
             .child(self.render_offline(cx))
-            .child(self.render_cloud_methods(cx));
+            .children(self.render_methods());
         div()
             .id("sign-in")
             .key_context("SignIn")
@@ -486,6 +576,9 @@ fn tag(label: &'static str) -> Div {
     neutral_pill().text_size(px(11.)).px(px(7.)).child(label)
 }
 
+/// The Cloud card's text; the methods line below it names the providers.
+const CLOUD_BLURB: &str = "Nothing to run. Sign in and start sharing.";
+
 pub(super) fn option_text() -> Div {
     div()
         .text_size(px(12.))
@@ -516,11 +609,7 @@ impl SignInView {
                         "curl-runner Cloud",
                         tag("Managed"),
                     ))
-                    .child(
-                        option_text().child(
-                            "Nothing to run. Sign in with GitHub or email and start sharing.",
-                        ),
-                    ),
+                    .child(option_text().child(CLOUD_BLURB)),
             )
     }
 
@@ -646,8 +735,9 @@ impl SignInView {
                     .child(sep())
                     .child(format!("server {}", info.version))
                     .child(sep())
-                    .child(format!("sign-in via {}", info.sign_in.label()))
-                    .child(sep())
+                    .when_some(methods_text(&info.sign_in), |d, methods| {
+                        d.child(format!("sign-in via {methods}")).child(sep())
+                    })
                     .child(format!("{} ms", info.latency_ms)),
             ),
             Test::Failed(e) => Some(
@@ -715,52 +805,21 @@ impl SignInView {
             )
     }
 
-    /// `Picked Cloud?` GitHub · Email: signs in to Cloud.
-    fn render_cloud_methods(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let method = |id: &'static str,
-                      icon: &'static str,
-                      label: &'static str,
-                      m: SignInMethod,
-                      cx: &mut Context<Self>| {
-            small_button(id, label)
-                .gap(px(6.))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.pick(Pick::Cloud, cx);
-                    this.continue_with(m, cx);
-                }))
-                .child(glyph(icon).size(px(15.)))
-                .child(label)
-        };
-        div()
-            .flex()
-            .items_center()
-            .justify_center()
-            .gap(px(16.))
-            .text_size(px(12.))
-            .child(
-                div()
-                    .text_color(color("text-tertiary"))
-                    .child("Picked Cloud?"),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap(px(8.))
-                    .child(method(
-                        "sign-in-github",
-                        icons::GITHUB,
-                        "GitHub",
-                        SignInMethod::GitHub,
-                        cx,
-                    ))
-                    .child(method(
-                        "sign-in-email",
-                        icons::MAIL,
-                        "Email",
-                        SignInMethod::Email,
-                        cx,
-                    )),
-            )
+    /// `Sign in with GitHub, Google or email`: what the picked server
+    /// reports. The dashboard asks which one.
+    fn render_methods(&self) -> Option<impl IntoElement + use<>> {
+        let line = methods_line(self.methods()?)?;
+        Some(
+            div()
+                .id("sign-in-methods")
+                .role(Role::Status)
+                .test_support()
+                .aria_label(line.clone())
+                .text_center()
+                .text_size(px(12.))
+                .text_color(color("text-tertiary"))
+                .child(line),
+        )
     }
 }
 
@@ -770,7 +829,7 @@ mod tests {
     use super::super::settings_view::AppPage;
     use super::super::state::{Connection, StateStore};
     use super::super::workspace::{Workspace, test_secrets};
-    use crate::model::backend::{Backend, SignInMethod, test_backend};
+    use crate::model::backend::{Backend, test_backend};
     use gpui_kit::test::TestWindowExt as _;
     use gpui_kit::{
         AnyWindowHandle, AppContext as _, Bounds, Entity, Point, TestAppContext, WindowBounds,
@@ -904,13 +963,13 @@ mod tests {
         })
         .unwrap();
         click(cx, window, "test-connection");
-        let connected = "Connected · server 2.1.1 · sign-in via SSO · 42 ms";
+        let connected = "Connected · server 2.1.1 · sign-in via GitHub or email · 42 ms";
         assert_eq!(
             view.read_with(cx, |v, _| v.test_text()),
             Some(connected.into())
         );
         assert!(shows(cx, window, connected));
-        assert!(shows(cx, window, "Continue with SSO"));
+        assert!(shows(cx, window, "Sign in with GitHub or email"));
         // Not a server address: the error, in place of the facts.
         cx.update_window(window, |_, window, cx| {
             view.update(cx, |v, cx| v.set_self_hosted("studio", window, cx));
@@ -936,7 +995,7 @@ mod tests {
         backend.dev().unwrap().fail_next_sign_in(true);
         let (window, ws) = open(cx, StateStore::none(), backend.clone());
         let view = open_sign_in(cx, window, &ws);
-        click(cx, window, "sign-in-github");
+        click(cx, window, "sign-in-continue");
         assert!(sign_in_shown(cx, &ws));
         assert_eq!(
             view.read_with(cx, |v, _| v.error().map(String::from)),
@@ -944,10 +1003,11 @@ mod tests {
         );
         assert!(shows(cx, window, "Sign-in failed. Try again."));
         assert!(backend.account().is_none());
+        assert!(shows(cx, window, "Continue in browser"), "not waiting");
         // The toggle clears itself: the retry works.
-        click(cx, window, "sign-in-email");
+        click(cx, window, "sign-in-continue");
         assert!(!sign_in_shown(cx, &ws));
-        assert_eq!(backend.account().unwrap().name, "Maria");
+        assert_eq!(backend.account().unwrap().name, "Jamie Rivera");
     }
 
     #[cfg(feature = "server")]
@@ -957,7 +1017,7 @@ mod tests {
         let store = StateStore::at(state.path());
         store.set_connection(Some(Connection::Online));
         let backend = test_backend();
-        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        crate::model::backend::testing::sign_in(&*backend);
         let (window, ws) = open(cx, store, backend.clone());
         cx.update_window(window, |_, window, cx| {
             ws.update(cx, |ws, cx| {
@@ -1028,7 +1088,7 @@ mod tests {
         let store = StateStore::at(state.path());
         store.set_connection(Some(Connection::Online));
         let backend = test_backend();
-        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        crate::model::backend::testing::sign_in(&*backend);
         let (window, ws) = open(cx, store.clone(), backend.clone());
         assert!(shows(cx, window, "Connected to curl-runner Cloud"));
         click(cx, window, "sidebar-cloud-change");
@@ -1118,17 +1178,22 @@ mod tests {
         let store = StateStore::at(base);
         store.set_connection(Some(Connection::Online));
         let backend = test_backend();
-        futures::executor::block_on(backend.sign_in(SignInMethod::Email)).unwrap();
+        crate::model::backend::testing::sign_in_by_email(&*backend);
         let share = ReceivedShare {
-            id: "acme/shipping-api".into(),
-            owner_org: "Acme".into(),
+            link: crate::model::backend::ShareLink {
+                server: "https://api.mock.curl-runner.test".into(),
+                token: "crsl_7Kx2Qm".into(),
+            },
+            team: "Acme".into(),
             name: "Shipping API".into(),
-            added: chrono::Utc::now(),
+            version: 1,
+            added: chrono::Utc::now().date_naive(),
+            files: Default::default(),
         };
         futures::executor::block_on(backend.add_received(share.clone())).unwrap();
         let copy = tempfile::tempdir().unwrap();
         let local = LocalCopy {
-            share_id: share.id.clone(),
+            share_id: share.link.token.clone(),
             root: copy.path().to_path_buf(),
             collection_id: "c".into(),
         };
@@ -1147,6 +1212,199 @@ mod tests {
         assert_eq!(before("received.json"), received_json);
         assert_eq!(std::fs::read_to_string(&mock_state).unwrap(), "{}");
         assert_eq!(store.connection(), Some(Connection::Online));
+    }
+
+    /// What the dashboard opens in the browser, in these tests.
+    #[cfg(feature = "server")]
+    const BROWSER: &str = "https://app.curl-runner.test/sign-in?client=studio";
+
+    /// The mock behind a spy whose `sign_in_url` answers with a browser
+    /// page, as a real server does.
+    #[cfg(feature = "server")]
+    fn browser_backend() -> Arc<dyn Backend> {
+        let spy = crate::model::backend::testing::Spy::new(test_backend());
+        *spy.browser_url.lock().unwrap() = Some(BROWSER.into());
+        Arc::new(spy)
+    }
+
+    #[cfg(feature = "server")]
+    fn open_url(
+        cx: &mut TestAppContext,
+        window: AnyWindowHandle,
+        ws: &Entity<Workspace>,
+        url: &str,
+    ) {
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.open_urls(vec![url.into()], window, cx))
+        })
+        .unwrap();
+        cx.run_until_parked();
+    }
+
+    #[cfg(feature = "server")]
+    #[gpui_kit::test]
+    fn continue_in_browser_then_callback_signs_in_and_resumes_link(cx: &mut TestAppContext) {
+        use crate::model::backend::Server;
+        let state = tempfile::tempdir().unwrap();
+        let store = StateStore::at(state.path());
+        let backend = browser_backend();
+        let (window, ws) = open(cx, store.clone(), backend.clone());
+        assert!(sign_in_shown(cx, &ws));
+        // A shared link that comes in now waits for the sign-in.
+        let link =
+            "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_7Kx2Qm";
+        open_url(cx, window, &ws, link);
+        assert!(ws.read_with(cx, |ws, _| ws.pending_link.is_some()));
+        assert!(shows(cx, window, "Continue in browser"));
+        click(cx, window, "sign-in-continue");
+        assert_eq!(cx.opened_url().as_deref(), Some(BROWSER));
+        assert!(shows(cx, window, "Waiting for the browser…"));
+        assert!(shows(cx, window, "Cancel"));
+        assert!(sign_in_shown(cx, &ws));
+        assert!(backend.account().is_none());
+        // The dashboard's answer.
+        let callback = format!(
+            "curl-runner://auth/callback?code=crh_mock&server={}",
+            Server::Cloud.url()
+        );
+        open_url(cx, window, &ws, &callback);
+        assert!(!sign_in_shown(cx, &ws));
+        assert_eq!(store.connection(), Some(Connection::Online));
+        assert_eq!(backend.account().unwrap().email, "jamie@acme.dev");
+        ws.read_with(cx, |ws, _| {
+            assert!(ws.pending_link.is_none());
+            assert!(ws.open_shared_view().is_some(), "the link opens");
+        });
+    }
+
+    /// A callback for a server that is no longer the current one: its
+    /// session is kept, the screen and the connection are left alone.
+    #[cfg(feature = "server")]
+    #[gpui_kit::test]
+    fn late_callback_for_another_server_keeps_its_session_only(cx: &mut TestAppContext) {
+        use crate::model::backend::Server;
+        let state = tempfile::tempdir().unwrap();
+        let store = StateStore::at(state.path());
+        let backend = browser_backend();
+        let (window, ws) = open(cx, store.clone(), backend.clone());
+        assert!(sign_in_shown(cx, &ws));
+        // A sign-in starts on server A; the person switches to Cloud.
+        let a = Server::SelfHosted {
+            url: "https://studio.api.example.com".into(),
+        };
+        futures::executor::block_on(backend.set_server(a.clone())).unwrap();
+        futures::executor::block_on(backend.sign_in_url(&a)).unwrap();
+        futures::executor::block_on(backend.set_server(Server::Cloud)).unwrap();
+        // A's callback arrives.
+        open_url(
+            cx,
+            window,
+            &ws,
+            "curl-runner://auth/callback?code=crh_mock&server=https://studio.api.example.com/",
+        );
+        assert_eq!(
+            backend.account_on(a.url()).unwrap().email,
+            "jamie@acme.dev",
+            "A's session is kept"
+        );
+        assert!(backend.account().is_none(), "Cloud is still signed out");
+        assert!(sign_in_shown(cx, &ws));
+        assert_ne!(store.connection(), Some(Connection::Online));
+    }
+
+    /// A server whose sign-in page is not a web page: nothing opens and no
+    /// callback is taken from it, outside the mock.
+    #[cfg(feature = "server")]
+    #[gpui_kit::test]
+    fn only_web_pages_open_for_sign_in(cx: &mut TestAppContext) {
+        use crate::model::backend::Server;
+        let hostile = [
+            "smb://host/share".to_string(),
+            format!(
+                "curl-runner://auth/callback?code=crh_mock&server={}",
+                Server::Cloud.url()
+            ),
+        ];
+        for url in hostile {
+            let spy = crate::model::backend::testing::Spy::new(test_backend());
+            *spy.browser_url.lock().unwrap() = Some(url.clone());
+            spy.hide_dev
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            let backend: Arc<dyn Backend> = Arc::new(spy);
+            let (window, ws) = open(cx, StateStore::none(), backend.clone());
+            click(cx, window, "sign-in-continue");
+            assert_eq!(cx.opened_url(), None, "{url}");
+            assert!(backend.account().is_none(), "{url}");
+            assert!(sign_in_shown(cx, &ws), "{url}");
+            assert!(!shows(cx, window, "Waiting for the browser…"), "{url}");
+            assert!(
+                shows(
+                    cx,
+                    window,
+                    "Use an https:// server. Plain http is only allowed for localhost."
+                ),
+                "{url}"
+            );
+        }
+    }
+
+    #[cfg(feature = "server")]
+    #[gpui_kit::test]
+    fn cancel_stops_waiting_for_the_browser(cx: &mut TestAppContext) {
+        let (window, ws) = open(cx, StateStore::none(), browser_backend());
+        click(cx, window, "sign-in-continue");
+        assert!(shows(cx, window, "Waiting for the browser…"));
+        click(cx, window, "sign-in-cancel");
+        assert!(sign_in_shown(cx, &ws));
+        assert!(!shows(cx, window, "Waiting for the browser…"));
+        assert!(shows(cx, window, "Continue in browser"));
+    }
+
+    #[test]
+    fn cloud_card_leaves_the_providers_to_the_methods_line() {
+        assert_eq!(
+            super::CLOUD_BLURB,
+            "Nothing to run. Sign in and start sharing."
+        );
+        assert!(!super::CLOUD_BLURB.contains("GitHub"));
+    }
+
+    #[test]
+    fn methods_read_github_google_email() {
+        use super::methods_line;
+        use crate::model::backend::SignInMethod::{Email, Github, Google};
+        assert_eq!(
+            methods_line(&[Email, Github]).as_deref(),
+            Some("Sign in with GitHub or email")
+        );
+        assert_eq!(
+            methods_line(&[Email, Google, Github]).as_deref(),
+            Some("Sign in with GitHub, Google or email")
+        );
+        assert_eq!(
+            methods_line(&[Google]).as_deref(),
+            Some("Sign in with Google")
+        );
+        assert_eq!(methods_line(&[]), None);
+    }
+
+    #[gpui_kit::test]
+    fn sign_in_lists_reported_methods(cx: &mut TestAppContext) {
+        let (window, ws) = open(cx, StateStore::none(), test_backend());
+        let view = open_sign_in(cx, window, &ws);
+        cx.run_until_parked();
+        // Cloud reports all three.
+        assert!(shows(cx, window, "Sign in with GitHub, Google or email"));
+        // The mock's self-hosted server reports `[email, github]`.
+        cx.update_window(window, |_, window, cx| {
+            view.update(cx, |v, cx| {
+                v.set_self_hosted("https://studio.api.example.com", window, cx)
+            });
+        })
+        .unwrap();
+        click(cx, window, "test-connection");
+        assert!(shows(cx, window, "Sign in with GitHub or email"));
+        assert!(!shows(cx, window, "Sign in with GitHub, Google or email"));
     }
 
     /// Views reach the server through `Backend` only; in `app.rs` only

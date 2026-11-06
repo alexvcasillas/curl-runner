@@ -32,14 +32,12 @@ impl AppState {
             self.active = Some(i);
             return Ok((i, false));
         }
-        let (root, read_only) = self
+        let root = self
             .collection
             .as_ref()
-            .map(|c| (c.root.clone(), c.read_only.clone()))
+            .map(|c| c.root.clone())
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no collection is open"))?;
-        let mut doc = Document::open(&root, rel)?;
-        // A received copy's files are locked from the start.
-        doc.set_read_only(read_only);
+        let doc = Document::open(&root, rel)?;
         self.open.push(doc);
         let i = self.open.len() - 1;
         self.active = Some(i);
