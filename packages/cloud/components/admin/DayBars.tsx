@@ -7,6 +7,9 @@ const H = 150;
 
 /** One bar a day, today in the bright colour. Each bar has a native tooltip and a row in the table. */
 export function DayBars({ days, label }: { days: Day[]; label: string }) {
+  if (days.length === 0) {
+    return <p className="m-0 px-4 py-6 text-fg-muted">No publishes yet.</p>;
+  }
   const max = Math.max(1, ...days.map((d) => d.n));
   const slot = W / Math.max(1, days.length);
   const gap = 6;

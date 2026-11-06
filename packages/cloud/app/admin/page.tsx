@@ -5,6 +5,8 @@ import { getAdminMe, getOverview } from '@/lib/admin-data';
 export const metadata: Metadata = { title: 'Admin overview' };
 
 export default async function AdminOverviewPage() {
-  const [admin, overview] = await Promise.all([getAdminMe(), getOverview()]);
+  // The guard first: a non-admin gets a 404 before any overview request goes out.
+  const admin = await getAdminMe();
+  const overview = await getOverview();
   return <OverviewView overview={overview} permissions={admin.permissions} />;
 }

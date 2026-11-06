@@ -85,6 +85,25 @@ describe('command search', () => {
     expect(screen.getAllByRole('option')[2]).toHaveAttribute('aria-selected', 'true');
   });
 
+  it('keeps the previous results while the next search runs', async () => {
+    const { user, input } = await open();
+    await user.type(input, 'umb');
+    await screen.findByText('sam@umbrella.dev');
+    let release: (r: Response) => void = () => {};
+    fetchMock.mockImplementation(
+      () =>
+        new Promise<Response>((r) => {
+          release = r;
+        }),
+    );
+    await user.type(input, 'r');
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('sam@umbrella.dev')).toBeInTheDocument();
+    expect(screen.queryByText('Searching…')).toBeNull();
+    release(json({ users: [], teams: [], collections: [] }));
+    expect(await screen.findByText('Nothing found for “umbr”.')).toBeInTheDocument();
+  });
+
   it('says when nothing matches', async () => {
     fetchMock.mockImplementation(async () => json({ users: [], teams: [], collections: [] }));
     const { user, input } = await open();

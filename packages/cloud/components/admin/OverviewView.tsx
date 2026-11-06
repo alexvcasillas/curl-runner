@@ -18,6 +18,15 @@ import { StatTile, type StatTone } from './StatTile';
 
 const DAY_MS = 86_400_000;
 
+const LG_SPAN = ['', '', 'lg:col-span-2', 'lg:col-span-3'];
+
+/** The last tile stretches over the cells a short final row leaves empty, so the grid fills evenly. */
+function lastTileSpan(n: number): string {
+  const cols = n % 4 === 0 ? 4 : 3;
+  const rem = n % cols;
+  return cx(n % 2 === 1 && 'sm:col-span-2', rem > 0 && LG_SPAN[cols - rem + 1]);
+}
+
 function sum(days: { n: number }[]): number {
   return days.reduce((n, d) => n + d.n, 0);
 }
@@ -208,8 +217,8 @@ export function OverviewView({
       perm: 'settings',
     },
     {
-      title: 'Invite an admin',
-      sub: 'Pick what they can see and change',
+      title: 'Add an admin',
+      sub: 'Pick an account and what it can change',
       d: 'M8 1.5l5 2v4c0 3.2-2.2 5.6-5 7-2.8-1.4-5-3.8-5-7v-4zM8 6v4M6 8h4',
       href: adminRoutes.admins,
       perm: 'admins',
@@ -253,9 +262,19 @@ export function OverviewView({
         aria-label="Key numbers"
         className="overflow-hidden rounded-[8px] border border-hairline bg-bg"
       >
-        <div className="-mr-px -mb-px grid grid-cols-[repeat(auto-fit,minmax(min(100%,200px),1fr))]">
-          {tiles.map((t) => (
-            <StatTile key={t.label} {...t} />
+        <div
+          data-tiles={tiles.length}
+          className={cx(
+            '-mr-px -mb-px grid grid-cols-1 sm:grid-cols-2',
+            tiles.length % 4 === 0 ? 'lg:grid-cols-4' : 'lg:grid-cols-3',
+          )}
+        >
+          {tiles.map((t, i) => (
+            <StatTile
+              key={t.label}
+              {...t}
+              className={i === tiles.length - 1 ? lastTileSpan(tiles.length) : undefined}
+            />
           ))}
         </div>
       </section>

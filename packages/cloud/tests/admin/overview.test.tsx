@@ -139,10 +139,32 @@ describe('overview', () => {
       'href',
       '/admin/settings',
     );
-    expect(within(card).getByRole('link', { name: /Invite an admin/ })).toHaveAttribute(
+    expect(within(card).getByRole('link', { name: /Add an admin/ })).toHaveAttribute(
       'href',
       '/admin/admins',
     );
+  });
+
+  it('fills the tile grid evenly with billing off', () => {
+    const { container } = show({ ...overview, billing: false });
+    const grid = container.querySelector('[data-tiles]') as HTMLElement;
+    expect(grid.dataset.tiles).toBe('5');
+    expect(grid.className).toContain('lg:grid-cols-3');
+    const last = grid.lastElementChild as HTMLElement;
+    expect(last.className).toContain('lg:col-span-2');
+    expect(last.className).toContain('sm:col-span-2');
+  });
+
+  it('needs no stretched tile with billing on', () => {
+    const { container } = show();
+    const grid = container.querySelector('[data-tiles]') as HTMLElement;
+    expect(grid.className).toContain('lg:grid-cols-4');
+    expect((grid.lastElementChild as HTMLElement).className).not.toContain('col-span');
+  });
+
+  it('shows an empty state for a publishes series with no days', () => {
+    show({ ...overview, publishes_14d: [] });
+    expect(screen.getByText('No publishes yet.')).toBeInTheDocument();
   });
 
   it('disables quick actions the admin cannot use', () => {

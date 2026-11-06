@@ -59,6 +59,7 @@ export function CommandSearch() {
   const [query, setQuery] = useState('');
   const [state, setState] = useState<State>({ kind: 'idle' });
   const [active, setActive] = useState(0);
+  const [pending, setPending] = useState(false);
   const listId = useId();
 
   useEffect(() => {
@@ -75,12 +76,15 @@ export function CommandSearch() {
   const term = query.trim();
   useEffect(() => {
     if (!open || !term) {
+      setPending(false);
       setState({ kind: 'idle' });
       return;
     }
     const ctrl = new AbortController();
     const timer = setTimeout(async () => {
-      setState({ kind: 'loading' });
+      // Keep the last results on screen while the next ones load.
+      setState((s) => (s.kind === 'done' ? s : { kind: 'loading' }));
+      setPending(true);
       try {
         const res = await fetch(`/admin/search?q=${encodeURIComponent(term)}`, {
           signal: ctrl.signal,
@@ -95,9 +99,11 @@ export function CommandSearch() {
         }
         const groups = toGroups((await res.json()) as SearchResults);
         setActive(0);
+        setPending(false);
         setState({ kind: 'done', query: term, groups });
       } catch {
         if (!ctrl.signal.aborted) {
+          setPending(false);
           setState({ kind: 'error' });
         }
       }
@@ -185,7 +191,8 @@ export function CommandSearch() {
             id={listId}
             role="listbox"
             aria-label="Results"
-            className="max-h-[360px] min-h-[96px] overflow-auto py-2"
+            aria-busy={pending}
+            className={cx(pending && 'opacity-60', 'max-h-[360px] min-h-[96px] overflow-auto py-2')}
           >
             {state.kind === 'idle' ? (
               <Note>Type to search users, teams and collections.</Note>
