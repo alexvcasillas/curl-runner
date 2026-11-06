@@ -1,9 +1,9 @@
-//! Where this Mac keeps each received copy: share id → the copy's folder
-//! and its [`CollectionMeta::id`], in `{base}/received.json`. Local only:
-//! the server's record ([`ReceivedShare`]) never carries a path.
+//! Where this Mac keeps each received copy: share token → the copy's
+//! folder and its [`CollectionMeta::id`], in `{base}/received.json`. The
+//! backend's record ([`ReceivedShare`]) never carries a path.
 //!
 //! The sidebar's Shared with me (and everything that asks "which share is
-//! this copy?") is the server's records joined with this mapping. A record
+//! this copy?") is the backend's records joined with this mapping. A record
 //! with no copy on this Mac (added on another one, or its folder gone) is
 //! left out: there is nothing here to open.
 //!
@@ -19,7 +19,7 @@ const FILE: &str = "received.json";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalCopy {
-    /// [`ReceivedShare::id`].
+    /// The share's token ([`ReceivedShare::link`]).
     pub share_id: String,
     pub root: PathBuf,
     /// The copy's `CollectionMeta::id`.
@@ -56,7 +56,8 @@ pub fn record(base: &Path, copy: LocalCopy) -> std::io::Result<()> {
     save(base, &copies)
 }
 
-/// Forgets the copy of share `share_id`; none is not an error.
+/// Forgets the copy of the share with token `share_id`; none is not an
+/// error.
 pub fn forget(base: &Path, share_id: &str) -> std::io::Result<()> {
     let mut copies = load(Some(base));
     let before = copies.len();
@@ -67,7 +68,7 @@ pub fn forget(base: &Path, share_id: &str) -> std::io::Result<()> {
     save(base, &copies)
 }
 
-/// The server's `records` that have a copy here whose folder is still
+/// The backend's `records` that have a copy here whose folder is still
 /// there, in the records' order.
 pub fn join(records: Vec<ReceivedShare>, local: &[LocalCopy]) -> Vec<ReceivedCopy> {
     records
@@ -75,7 +76,7 @@ pub fn join(records: Vec<ReceivedShare>, local: &[LocalCopy]) -> Vec<ReceivedCop
         .filter_map(|share| {
             let copy = local
                 .iter()
-                .find(|c| c.share_id == share.id && c.root.is_dir())?;
+                .find(|c| c.share_id == share.link.token && c.root.is_dir())?;
             Some(ReceivedCopy {
                 root: copy.root.clone(),
                 collection_id: copy.collection_id.clone(),
@@ -89,12 +90,17 @@ pub fn join(records: Vec<ReceivedShare>, local: &[LocalCopy]) -> Vec<ReceivedCop
 mod tests {
     use super::*;
 
-    fn share(id: &str) -> ReceivedShare {
+    fn share(token: &str) -> ReceivedShare {
         ReceivedShare {
-            id: id.into(),
-            owner_org: "Acme".into(),
+            link: crate::model::backend::ShareLink {
+                server: "https://api.x.test".into(),
+                token: token.into(),
+            },
+            team: "Acme".into(),
             name: "Shipping API".into(),
-            added: chrono::Utc::now(),
+            version: 1,
+            added: chrono::Utc::now().date_naive(),
+            files: Default::default(),
         }
     }
 
@@ -138,7 +144,7 @@ mod tests {
         ];
         let joined = join(vec![share("elsewhere"), share("a"), share("gone")], &local);
         assert_eq!(joined.len(), 1);
-        assert_eq!(joined[0].share.id, "a");
+        assert_eq!(joined[0].share.link.token, "a");
         assert_eq!(joined[0].root, here);
         assert_eq!(joined[0].collection_id, "c0ffee00");
     }

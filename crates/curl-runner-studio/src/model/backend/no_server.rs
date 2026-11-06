@@ -47,9 +47,6 @@ impl Backend for NoServer {
     ) -> BoxFut<'_, SyncReport> {
         unavailable()
     }
-    fn sync_shared(&self, _: &CollectionKey, _: &str, _: &[SyncFile]) -> BoxFut<'_, SyncReport> {
-        unavailable()
-    }
     fn share_settings(&self, _: &CollectionKey) -> BoxFut<'_, ShareSettings> {
         unavailable()
     }
@@ -65,13 +62,19 @@ impl Backend for NoServer {
     fn resolve_link(&self, _: &ShareLink) -> BoxFut<'_, SharedCollection> {
         unavailable()
     }
-    fn fetch_shared(&self, _: &str) -> BoxFut<'_, SharedSnapshot> {
+    fn fetch_shared(&self, _: &ShareLink) -> BoxFut<'_, SharedSnapshot> {
+        unavailable()
+    }
+    fn latest_version(&self, _: &ShareLink) -> BoxFut<'_, u32> {
         unavailable()
     }
     fn received(&self) -> Vec<ReceivedShare> {
         Vec::new()
     }
     fn add_received(&self, _: ReceivedShare) -> BoxFut<'_, ()> {
+        unavailable()
+    }
+    fn update_received(&self, _: ReceivedShare) -> BoxFut<'_, ()> {
         unavailable()
     }
     fn dev(&self) -> Option<&dyn DevControls> {
@@ -104,7 +107,6 @@ mod tests {
         assert!(unavailable(b.complete_sign_in(&callback)));
         assert!(unavailable(b.sign_out(CLOUD_URL)));
         assert!(unavailable(b.sync(&key, &[], &[])));
-        assert!(unavailable(b.sync_shared(&key, "s", &[])));
         assert!(unavailable(b.share_settings(&key)));
         assert!(unavailable(b.update_share(&key, ShareUpdate::default())));
         assert!(unavailable(b.invite(&key, "a@b.c")));
@@ -113,14 +115,18 @@ mod tests {
             ShareLink::parse("curl-runner://open?server=https%3A%2F%2Fapi.x.test&share=crsl_t")
                 .unwrap();
         assert!(unavailable(b.resolve_link(&link)));
-        assert!(unavailable(b.fetch_shared("s")));
+        assert!(unavailable(b.fetch_shared(&link)));
+        assert!(unavailable(b.latest_version(&link)));
         let share = ReceivedShare {
-            id: "s".into(),
-            owner_org: "O".into(),
+            link,
+            team: "O".into(),
             name: "N".into(),
-            added: chrono::Utc::now(),
+            version: 1,
+            added: chrono::Utc::now().date_naive(),
+            files: Default::default(),
         };
-        assert!(unavailable(b.add_received(share)));
+        assert!(unavailable(b.add_received(share.clone())));
+        assert!(unavailable(b.update_received(share)));
         assert_eq!(b.account(), None);
         assert_eq!(b.account_on(CLOUD_URL), None);
         assert_eq!(b.sync_status(&key), SyncStatus::Off);

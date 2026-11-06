@@ -1180,15 +1180,20 @@ mod tests {
         let backend = test_backend();
         crate::model::backend::testing::sign_in_by_email(&*backend);
         let share = ReceivedShare {
-            id: "acme/shipping-api".into(),
-            owner_org: "Acme".into(),
+            link: crate::model::backend::ShareLink {
+                server: "https://api.mock.curl-runner.test".into(),
+                token: "crsl_7Kx2Qm".into(),
+            },
+            team: "Acme".into(),
             name: "Shipping API".into(),
-            added: chrono::Utc::now(),
+            version: 1,
+            added: chrono::Utc::now().date_naive(),
+            files: Default::default(),
         };
         futures::executor::block_on(backend.add_received(share.clone())).unwrap();
         let copy = tempfile::tempdir().unwrap();
         let local = LocalCopy {
-            share_id: share.id.clone(),
+            share_id: share.link.token.clone(),
             root: copy.path().to_path_buf(),
             collection_id: "c".into(),
         };

@@ -615,17 +615,7 @@ impl Workspace {
     ) {
         match event {
             SignInEvent::OpenUrl(url) => {
-                // The mock's sign-in page is its own callback: the studio
-                // answers it as it would the browser's.
-                if url.starts_with("curl-runner://") {
-                    match crate::model::backend::AuthCallback::parse(url) {
-                        Some(callback) => self.complete_sign_in(callback, window, cx),
-                        // The URL can carry a handoff code: never logged.
-                        None => log::warn!("ignored a malformed sign-in callback"),
-                    }
-                } else {
-                    cx.open_url(url);
-                }
+                self.open_sign_in_page(url, window, cx);
                 return;
             }
             SignInEvent::Done(connection) => self.signed_in_as(*connection),
@@ -633,6 +623,25 @@ impl Workspace {
         }
         self.close_sign_in(window, cx);
         self.start_sync(window, cx);
+    }
+
+    /// Opens a server's sign-in page in the browser. The mock's page is
+    /// its own callback: the studio answers it as it would the browser's.
+    pub(in crate::ui) fn open_sign_in_page(
+        &mut self,
+        url: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if url.starts_with("curl-runner://") {
+            match crate::model::backend::AuthCallback::parse(url) {
+                Some(callback) => self.complete_sign_in(callback, window, cx),
+                // The URL can carry a handoff code: never logged.
+                None => log::warn!("ignored a malformed sign-in callback"),
+            }
+        } else {
+            cx.open_url(url);
+        }
     }
 
     /// The sign-in screen's answer, remembered.

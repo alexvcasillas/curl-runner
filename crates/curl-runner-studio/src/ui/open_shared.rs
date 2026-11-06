@@ -16,7 +16,8 @@ use super::state::Connection;
 use super::workspace::{Workspace, notify_error};
 use super::{backend_call, color};
 use crate::model::backend::{
-    AuthCallback, Backend, BackendError, FOREIGN_CALLBACK, ShareLink, SharedCollection, SharedVar,
+    AuthCallback, Backend, BackendError, FOREIGN_CALLBACK, Server, ShareLink, SharedCollection,
+    SharedVar,
 };
 use crate::model::environments::is_secret;
 use crate::model::history::relative_time;
@@ -49,6 +50,12 @@ const ALREADY_ADDED: &str = "Already in your studio — open it?";
 /// `Acme shared Shipping API with you`.
 pub fn title_text(shared: &SharedCollection) -> String {
     format!("{} shared {} with you", shared.owner_org, shared.name)
+}
+
+/// What a restricted link asks first: `Sign in to api.curl-runner.com to
+/// open this collection.`
+pub fn sign_in_text(link: &ShareLink) -> String {
+    format!("Sign in to {} to open this collection.", link.host())
 }
 
 /// The header's subtitle.
@@ -98,6 +105,8 @@ pub enum OpenSharedEvent {
     Close,
     /// Added (or already there): open the collection at this root.
     Open(PathBuf),
+    /// A restricted link: sign in to its server, then open it again.
+    SignIn(ShareLink),
 }
 
 /// One variable's input.
@@ -142,6 +151,9 @@ pub struct OpenSharedView {
     queued: Option<String>,
     /// Where an Add that finished goes, even with this view gone.
     workspace: WeakEntity<Workspace>,
+    /// A restricted link and no session on its server: `Sign in to {host}
+    /// to open this collection.`
+    sign_in_for: Option<ShareLink>,
     /// Dev screenshots: once resolved, go to the credentials step with
     /// these values.
     dev_fill: Option<Vec<(String, String)>>,
@@ -167,7 +179,8 @@ impl OpenSharedView {
                 window,
                 |this, _, event: &InputEvent, window, cx| match event {
                     InputEvent::Change => {
-                        if this.step == Step::Paste && this.error.take().is_some() {
+                        let had = this.error.take().is_some() | this.sign_in_for.take().is_some();
+                        if this.step == Step::Paste && had {
                             cx.notify();
                         }
                     }
@@ -191,6 +204,7 @@ impl OpenSharedView {
             task: None,
             queued: None,
             workspace,
+            sign_in_for: None,
             dev_fill: None,
             _subscriptions: vec![events],
         }
@@ -238,13 +252,18 @@ impl OpenSharedView {
         self.shared = None;
         self.existing = None;
         self.error = None;
+        self.sign_in_for = None;
         self.busy = true;
         let org = LINK_OWNER;
         // A landing URL asks its host where the API is: off the UI thread.
         let backend = self.backend.clone();
         let call = cx.background_executor().spawn(async move {
-            let link = ShareLink::parse(&text).map_err(|e| BackendError::Invalid(e.to_string()))?;
-            backend.resolve_link(&link).await
+            let link = ShareLink::parse(&text)
+                .map_err(|e| (BackendError::Invalid(e.to_string()), None))?;
+            backend
+                .resolve_link(&link)
+                .await
+                .map_err(|e| (e, Some(link)))
         });
         self.task = Some(cx.spawn_in(window, async move |this, cx| {
             let result = call.await;
@@ -252,7 +271,12 @@ impl OpenSharedView {
                 this.busy = false;
                 match result {
                     Ok(shared) => this.resolved(shared, window, cx),
-                    Err(e) => {
+                    // Restricted: sign in to its server first, once.
+                    Err((BackendError::SignedOut, Some(link))) => {
+                        this.step = Step::Paste;
+                        this.sign_in_for = Some(link);
+                    }
+                    Err((e, _)) => {
                         this.step = Step::Paste;
                         this.error = Some(e.link_text(org));
                     }
@@ -266,7 +290,7 @@ impl OpenSharedView {
     }
 
     fn resolved(&mut self, shared: SharedCollection, window: &mut Window, cx: &mut Context<Self>) {
-        self.existing = already_added(&*self.backend, self.base.as_deref(), &shared.id);
+        self.existing = already_added(&*self.backend, self.base.as_deref(), &shared.link.token);
         let mut vars = shared.variables.clone();
         vars.sort_by_key(|v| !v.required);
         self._subscriptions.truncate(1);
@@ -438,6 +462,21 @@ impl OpenSharedView {
                 .ok();
         })
         .detach();
+        cx.notify();
+    }
+
+    /// `Sign in`, for a restricted link: the workspace signs in to the
+    /// link's server in the browser, then opens the link again.
+    pub fn sign_in(&mut self, cx: &mut Context<Self>) {
+        if let Some(link) = self.sign_in_for.clone().filter(|_| !self.busy) {
+            self.error = None;
+            cx.emit(OpenSharedEvent::SignIn(link));
+        }
+    }
+
+    /// The sign-in for a restricted link couldn't start.
+    pub fn sign_in_failed(&mut self, e: &BackendError, cx: &mut Context<Self>) {
+        self.error = Some(format!("Couldn't sign in: {e}"));
         cx.notify();
     }
 
@@ -787,6 +826,32 @@ impl OpenSharedView {
                     .text_color(color("text-tertiary"))
                     .child(PASTE_HINT),
             )
+            .children(self.sign_in_for.as_ref().map(|link| {
+                let text = sign_in_text(link);
+                div()
+                    .id("open-shared-sign-in-note")
+                    .role(Role::Alert)
+                    .test_support()
+                    .aria_label(text.clone())
+                    .flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .mt(px(10.))
+                    .px(px(12.))
+                    .py(px(10.))
+                    .rounded(px(6.))
+                    .border_1()
+                    .border_color(color("info-border"))
+                    .bg(color("info-subtle"))
+                    .text_size(px(12.))
+                    .child(
+                        glyph(icons::LOCK)
+                            .size(px(13.))
+                            .flex_none()
+                            .text_color(color("accent-blue")),
+                    )
+                    .child(text)
+            }))
     }
 
     fn render_review(&self, shared: &SharedCollection) -> Div {
@@ -1111,6 +1176,11 @@ impl OpenSharedView {
         });
         let empty = self.link.read(cx).value().trim().is_empty();
         let primary = match self.step {
+            Step::Paste if self.sign_in_for.is_some() => {
+                dialog_button("open-shared-sign-in", "Sign in")
+                    .disabled(self.busy)
+                    .on_click(cx.listener(|this, _, _, cx| this.sign_in(cx)))
+            }
             Step::Paste => dialog_button(
                 "open-shared-open",
                 if self.busy { "Opening…" } else { "Open link" },
@@ -1250,6 +1320,10 @@ impl Workspace {
             &view,
             window,
             |this, _, event: &OpenSharedEvent, window, cx| {
+                if let OpenSharedEvent::SignIn(link) = event {
+                    this.sign_in_for_link(link.clone(), window, cx);
+                    return;
+                }
                 window.close_dialog(cx);
                 this.open_shared = None;
                 this._open_shared_events = None;
@@ -1286,6 +1360,32 @@ impl Workspace {
         self.open_shared_focus = window.focused(cx);
         self.open_shared = Some(view.downgrade());
         view
+    }
+
+    /// A restricted link's `Sign in`: the browser sign-in for the link's
+    /// server (not the studio's own). The link waits in `pending_link` and
+    /// opens again once that server's callback is redeemed.
+    fn sign_in_for_link(&mut self, link: ShareLink, window: &mut Window, cx: &mut Context<Self>) {
+        let server = Server::for_url(&link.server);
+        self.pending_link = Some(link.url());
+        self.link_sign_in = Some(server.url().trim_end_matches('/').to_string());
+        let call = backend_call(cx, &self.backend, move |b| b.sign_in_url(&server));
+        cx.spawn_in(window, async move |this, cx| {
+            let result = call.await;
+            this.update_in(cx, |this, window, cx| match result {
+                Ok(url) => this.open_sign_in_page(&url, window, cx),
+                Err(e) => {
+                    this.link_sign_in = None;
+                    this.pending_link = None;
+                    match this.open_shared_view() {
+                        Some(view) => view.update(cx, |v, cx| v.sign_in_failed(&e, cx)),
+                        None => notify_error(format!("Couldn't sign in: {e}"), window, cx),
+                    }
+                }
+            })
+            .ok();
+        })
+        .detach();
     }
 
     /// The open flow's view.
@@ -1410,12 +1510,22 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A restricted link waited for this server's sign-in.
+        let for_link = result.is_ok() && self.link_sign_in.as_deref() == Some(server);
+        if for_link {
+            self.link_sign_in = None;
+        }
         match result {
-            // A late callback for a server that isn't the current one: its
-            // session is kept (it is valid), the screen is left as it is.
+            // A callback for a server that isn't the current one (a
+            // restricted link's, or a late one): its session is kept (it is
+            // valid), the screen is left as it is; a link that waited for
+            // it opens.
             Ok(()) if self.backend.server().url().trim_end_matches('/') != server => {
                 if let Some(view) = &self.app_settings {
                     view.update(cx, |_, cx| cx.notify());
+                }
+                if for_link && let Some(link) = self.pending_link.take() {
+                    self.open_shared(Some(link), window, cx);
                 }
             }
             Ok(()) => {
@@ -1498,12 +1608,18 @@ mod tests {
 
     fn shipping() -> SharedCollection {
         SharedCollection {
-            id: "acme/shipping-api".into(),
+            link: crate::model::backend::ShareLink {
+                server: "https://api.curl-runner.com".into(),
+                token: "crsl_x".into(),
+            },
             owner_org: "Acme".into(),
+            team_slug: "acme".into(),
             name: "Shipping API".into(),
             summary: "rates, labels, tracking".into(),
             updated: Utc::now() - chrono::Duration::days(3),
             request_count: 12,
+            version: 1,
+            access: crate::model::backend::LinkAccess::Public,
             variables: Vec::new(),
         }
     }
@@ -1523,6 +1639,10 @@ mod tests {
         assert_eq!(
             summary_text(&s, Local::now()),
             "12 requests · rates, labels, tracking · updated 3 days ago"
+        );
+        assert_eq!(
+            super::sign_in_text(&s.link),
+            "Sign in to api.curl-runner.com to open this collection."
         );
     }
 
@@ -1742,13 +1862,13 @@ mod gpui_tests {
         assert_eq!(yaml.len(), 12);
         let received = s.backend.received();
         assert_eq!(received.len(), 1);
-        assert_eq!(received[0].owner_org, "Acme");
+        assert_eq!(received[0].team, "Acme");
         // Where the copy lives stays on this Mac: never in a call.
         let local = crate::model::received::load(Some(s.state.path()));
         assert_eq!(local.len(), 1);
         assert_eq!(
             (local[0].share_id.as_str(), &local[0].root),
-            (received[0].id.as_str(), &root)
+            (received[0].link.token.as_str(), &root)
         );
         let state_dir = s.state.path().to_string_lossy().into_owned();
         for call in s.backend.dev().unwrap().recorded() {
@@ -1869,6 +1989,70 @@ mod gpui_tests {
         assert!(!s.shared_dir().exists());
         assert!(s.backend.received().is_empty());
         assert!(s.ws.read_with(cx, |ws, _| ws.state.collection.is_none()));
+    }
+
+    #[gpui_kit::test]
+    fn restricted_link_asks_for_sign_in_then_continues(cx: &mut TestAppContext) {
+        use crate::model::backend::{
+            Access, CollectionKey, MOCK_SERVER, ShareLink, ShareUpdate, testing,
+        };
+        let s = studio(cx);
+        // Acme's restricted share; this studio is signed in nowhere.
+        testing::sign_in(&*s.backend);
+        let key = CollectionKey {
+            id: "a1b2c3d4".into(),
+            name: "Payments API".into(),
+        };
+        let update = ShareUpdate {
+            access: Some(Access::InvitedOnly),
+            ..Default::default()
+        };
+        let url = futures::executor::block_on(s.backend.update_share(&key, update))
+            .unwrap()
+            .link
+            .unwrap();
+        testing::sign_out(&*s.backend);
+        let link = ShareLink::parse(&url).unwrap();
+        assert_eq!(link.server, MOCK_SERVER);
+
+        let view = open_flow(cx, &s);
+        paste_and_open(cx, &s, &view, &url);
+        // Asked once, before the form: no review, no error.
+        assert_eq!(view.read_with(cx, |v, _| v.step()), Step::Paste);
+        assert!(view.read_with(cx, |v, _| v.error().is_none()));
+        assert!(labelled(
+            cx,
+            &s,
+            "open-shared-sign-in-note",
+            "Sign in to api.mock.curl-runner.test to open this collection."
+        ));
+        assert_eq!(s.backend.account_on(MOCK_SERVER), None);
+        click(cx, &s, "open-shared-sign-in");
+
+        // Signed in to the link's server (not the studio's), and the open
+        // went on with the same link.
+        assert!(s.backend.account_on(MOCK_SERVER).is_some());
+        assert_eq!(s.backend.account(), None);
+        assert_eq!(view.read_with(cx, |v, _| v.step()), Step::Review);
+        assert!(labelled(
+            cx,
+            &s,
+            "open-shared-title",
+            "Acme shared Payments API with you"
+        ));
+        assert!(s.ws.read_with(cx, |ws, _| ws.pending_link.is_none()));
+        let recorded = s.backend.dev().unwrap().recorded();
+        let resolves = recorded
+            .iter()
+            .filter(|c| c.starts_with("resolve_link("))
+            .count();
+        assert_eq!(resolves, 2, "{recorded:?}");
+        assert!(
+            recorded.iter().any(
+                |c| c.starts_with(&format!("sign_in_url(SelfHosted {{ url: \"{MOCK_SERVER}\""))
+            ),
+            "{recorded:?}"
+        );
     }
 
     #[gpui_kit::test]

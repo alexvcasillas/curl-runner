@@ -14,8 +14,8 @@ pub const CONFLICT_AUTHOR: &str = "Sam";
 /// The org that owns the shared fixture.
 pub const SHIPPING_ORG: &str = "Acme";
 pub const SHIPPING_NAME: &str = "Shipping API";
-/// The fixture's server id ([`super::Backend::fetch_shared`]).
-pub const SHIPPING_ID: &str = "acme/shipping-api";
+/// The version Acme last published.
+pub const SHIPPING_VERSION: u32 = 3;
 /// The token of the fixture's link (board OpenShared).
 pub const SHIPPING_TOKEN: &str = "crsl_7Kx2Qm";
 /// The folders the summary card names (board OpenShared).

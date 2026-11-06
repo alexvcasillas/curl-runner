@@ -99,10 +99,6 @@ fn offline_fails_every_call_with_offline() {
     assert_eq!(block_on(b.test_connection(&Server::Cloud)).map(|_| ()), off);
     assert_eq!(block_on(b.sign_in_url(&Server::Cloud)).map(|_| ()), off);
     assert_eq!(block_on(b.sync(&k, &[], &[])).map(|_| ()), off);
-    assert_eq!(
-        block_on(b.sync_shared(&k, fixtures::SHIPPING_ID, &[])).map(|_| ()),
-        off
-    );
     assert_eq!(block_on(b.share_settings(&k)).map(|_| ()), off);
     assert_eq!(
         block_on(b.update_share(&k, ShareUpdate::default())).map(|_| ()),
@@ -111,17 +107,12 @@ fn offline_fails_every_call_with_offline() {
     assert_eq!(block_on(b.invite(&k, "maria@example.com")).map(|_| ()), off);
     assert_eq!(block_on(b.remove_person(&k, "maria@example.com")), off);
     assert_eq!(block_on(b.resolve_link(&link)).map(|_| ()), off);
+    assert_eq!(block_on(b.fetch_shared(&link)).map(|_| ()), off);
     assert_eq!(
-        block_on(b.fetch_shared(fixtures::SHIPPING_ID)).map(|_| ()),
-        off
+        block_on(b.latest_version(&link)),
+        Err(BackendError::Offline)
     );
-    let share = ReceivedShare {
-        id: fixtures::SHIPPING_ID.into(),
-        owner_org: "Acme".into(),
-        name: "Shipping API".into(),
-        added: Utc::now(),
-    };
-    assert_eq!(block_on(b.add_received(share)), off);
+    assert_eq!(block_on(b.add_received(received(&link, 1))), off);
     assert!(b.account().is_some(), "local state is kept");
     assert!(b.received().is_empty());
     // Signing out is local first: it works offline.
@@ -197,7 +188,8 @@ fn share_link_round_trip_and_invite() {
     let resolved = block_on(b.resolve_link(&link)).unwrap();
     assert_eq!(resolved.name, "Payments API");
     assert_eq!(resolved.owner_org, "Acme");
-    assert_eq!(resolved.id, k.id);
+    assert_eq!(resolved.link, link);
+    assert_eq!(resolved.access, LinkAccess::Public);
 
     let person = block_on(b.invite(&k, " maria@example.com ")).unwrap();
     assert_eq!(person.name, "Maria");
@@ -273,16 +265,26 @@ fn fixture_link_resolves_and_fetches() {
         let ago = Utc::now() - c.updated;
         assert_eq!(ago.num_days(), 3);
     }
-    let snap = block_on(b.fetch_shared(fixtures::SHIPPING_ID)).unwrap();
+    let fixture = ShareLink::parse(
+        "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_7Kx2Qm",
+    )
+    .unwrap();
+    let snap = block_on(b.fetch_shared(&fixture)).unwrap();
     assert_eq!(snap.files, fixtures::shipping_snapshot());
+    assert_eq!(snap.variables, fixtures::shipping_variables());
+    assert_eq!(snap.version, fixtures::SHIPPING_VERSION);
     assert_eq!(
-        block_on(b.fetch_shared("acme/nope")).map(|_| ()),
-        Err(BackendError::NotFound)
+        block_on(b.latest_version(&fixture)),
+        Ok(fixtures::SHIPPING_VERSION)
     );
     let unknown = ShareLink::parse(
         "curl-runner://open?server=https%3A%2F%2Fapi.mock.curl-runner.test&share=crsl_zzzzzz",
     )
     .unwrap();
+    assert_eq!(
+        block_on(b.fetch_shared(&unknown)).map(|_| ()),
+        Err(BackendError::NotFound)
+    );
     assert_eq!(
         block_on(b.resolve_link(&unknown)).map(|_| ()),
         Err(BackendError::NotFound)
@@ -391,36 +393,60 @@ fn sync_pushes_and_reports_pending_counts() {
     assert_eq!(b.sync_status(&k), SyncStatus::Off);
 }
 
+fn received(link: &ShareLink, version: u32) -> ReceivedShare {
+    ReceivedShare {
+        link: link.clone(),
+        team: "Acme".into(),
+        name: "Shipping API".into(),
+        version,
+        added: Utc::now().date_naive(),
+        files: BTreeMap::new(),
+    }
+}
+
 #[test]
-fn received_collection_pulls_and_never_pushes() {
-    let b = MockBackend::open(None, Duration::ZERO);
-    testing::sign_in_by_email(&b);
-    let k = CollectionKey {
-        id: "ffff0000".into(),
-        name: "Shipping API".into(),
+fn received_records_are_kept_by_token() {
+    let d = tempfile::tempdir().unwrap();
+    let b = mock(d.path());
+    let link = ShareLink {
+        server: MOCK_SERVER.into(),
+        token: fixtures::SHIPPING_TOKEN.into(),
     };
-    // Not added yet: nothing to pull from.
+    block_on(b.add_received(received(&link, 1))).unwrap();
+    block_on(b.add_received(received(&link, 2))).unwrap();
+    assert_eq!(b.received(), [received(&link, 2)]);
+    block_on(b.update_received(received(&link, 3))).unwrap();
+    assert_eq!(mock(d.path()).received(), [received(&link, 3)], "persisted");
+}
+
+#[test]
+fn a_restricted_link_needs_a_session_on_its_server() {
+    let b = signed_in_mock(tempfile::tempdir().unwrap().path());
+    let update = ShareUpdate {
+        access: Some(Access::InvitedOnly),
+        ..Default::default()
+    };
+    let url = block_on(b.update_share(&key(), update))
+        .unwrap()
+        .link
+        .unwrap();
+    let link = ShareLink::parse(&url).unwrap();
+    // Signed in to the studio's server, not the link's.
+    let signed_out = Err(BackendError::SignedOut);
+    assert_eq!(block_on(b.resolve_link(&link)).map(|_| ()), signed_out);
+    assert_eq!(block_on(b.fetch_shared(&link)).map(|_| ()), signed_out);
     assert_eq!(
-        block_on(b.sync_shared(&k, fixtures::SHIPPING_ID, &[])).map(|_| ()),
-        Err(BackendError::NotFound)
+        block_on(b.latest_version(&link)),
+        Err(BackendError::SignedOut)
     );
-    block_on(b.add_received(ReceivedShare {
-        id: fixtures::SHIPPING_ID.into(),
-        owner_org: "Acme".into(),
-        name: "Shipping API".into(),
-        added: Utc::now(),
+    block_on(b.sign_in_url(&Server::for_url(&link.server))).unwrap();
+    block_on(b.complete_sign_in(&AuthCallback {
+        server: link.server.clone(),
+        code: fixtures::MOCK_CODE.into(),
     }))
     .unwrap();
-    assert_eq!(b.received().len(), 1);
-    let mut local = fixtures::shipping_snapshot();
-    local[0] = SyncFile::new(local[0].rel.clone(), "stale");
-    let report = block_on(b.sync_shared(&k, fixtures::SHIPPING_ID, &local)).unwrap();
-    assert_eq!(report.pushed, 0);
-    assert_eq!(
-        report.pulled,
-        vec![fixtures::shipping_snapshot()[0].clone()]
-    );
-    assert_eq!(report.variables, Some(fixtures::shipping_variables()));
+    let c = block_on(b.resolve_link(&link)).unwrap();
+    assert_eq!(c.access, LinkAccess::Restricted);
 }
 
 #[test]
@@ -695,7 +721,7 @@ fn no_secret_reaches_backend() {
     block_on(b.sync(&k, &local, &[])).unwrap();
     let link = ShareLink::parse(settings.link.as_deref().unwrap()).unwrap();
     let shared = block_on(b.resolve_link(&link)).unwrap();
-    block_on(b.fetch_shared(&shared.id)).unwrap();
+    block_on(b.fetch_shared(&shared.link)).unwrap();
 
     let recorded = dev(&b).recorded();
     assert!(recorded.len() >= 7, "{recorded:?}");
@@ -719,30 +745,23 @@ fn no_secret_reaches_backend() {
 }
 
 #[test]
-fn received_copy_of_an_owned_share_pulls_the_owners_files() {
+fn an_owned_share_publishes_each_change_as_a_version() {
     let b = MockBackend::open(None, Duration::ZERO);
     testing::sign_in(&b);
     let owner = key();
     let v1 = files(&[("charges/create.yaml", "request:\n  url: a\n")]);
     block_on(b.sync(&owner, &v1, &[])).unwrap();
-    let link = block_on(b.update_share(&owner, ShareUpdate::default()))
+    let url = block_on(b.update_share(&owner, ShareUpdate::default()))
         .unwrap()
         .link
         .unwrap();
-    let shared = block_on(b.resolve_link(&ShareLink::parse(&link).unwrap())).unwrap();
-    assert_eq!(block_on(b.fetch_shared(&shared.id)).unwrap().files, v1);
-    let copy = CollectionKey {
-        id: "c0ffee00".into(),
-        name: "Payments API".into(),
-    };
-    block_on(b.add_received(ReceivedShare {
-        id: shared.id.clone(),
-        owner_org: shared.owner_org.clone(),
-        name: shared.name.clone(),
-        added: Utc::now(),
-    }))
-    .unwrap();
-    // The owner pushes a change; the copy pulls it, not the fixture.
+    let link = ShareLink::parse(&url).unwrap();
+    let shared = block_on(b.resolve_link(&link)).unwrap();
+    assert_eq!(shared.version, 1);
+    assert_eq!(shared.summary, "charges");
+    let snap = block_on(b.fetch_shared(&link)).unwrap();
+    assert_eq!((snap.files, snap.version), (v1.clone(), 1));
+    // The owner pushes a change: a new version, with its files.
     let v2 = files(&[("charges/create.yaml", "request:\n  url: a2\n")]);
     let v2_based: Vec<SyncFile> = v2
         .iter()
@@ -750,14 +769,10 @@ fn received_copy_of_an_owned_share_pulls_the_owners_files() {
         .map(|f| f.with_base(Some(v1[0].hash)))
         .collect();
     assert_eq!(block_on(b.sync(&owner, &v2_based, &[])).unwrap().pushed, 1);
-    let report = block_on(b.sync_shared(&copy, &shared.id, &v1)).unwrap();
-    assert_eq!((report.pushed, report.pulled.clone()), (0, v2.clone()));
-    assert!(
-        block_on(b.sync_shared(&copy, &shared.id, &v2))
-            .unwrap()
-            .pulled
-            .is_empty()
-    );
+    assert_eq!(block_on(b.latest_version(&link)), Ok(2));
+    // Nothing changed: no new version.
+    block_on(b.sync(&owner, &v2, &[])).unwrap();
+    assert_eq!(block_on(b.latest_version(&link)), Ok(2));
     // The owner's variables come along, as shared now.
     let var = SharedVar {
         name: "CURRENCY".into(),
@@ -772,17 +787,11 @@ fn received_copy_of_an_owned_share_pulls_the_owners_files() {
         ..ShareUpdate::default()
     };
     block_on(b.update_share(&owner, update)).unwrap();
-    let report = block_on(b.sync_shared(&copy, &shared.id, &v2)).unwrap();
-    assert_eq!(report.variables, Some(vec![var.clone()]));
-    let snapshot = block_on(b.fetch_shared(&shared.id)).unwrap();
-    assert_eq!(snapshot.variables, [var]);
-
-    // Signed out, a received copy does not sync.
+    let snapshot = block_on(b.fetch_shared(&link)).unwrap();
+    assert_eq!((snapshot.files, snapshot.variables), (v2, vec![var]));
+    // A public link needs no account.
     testing::sign_out(&b);
-    assert_eq!(
-        block_on(b.sync_shared(&copy, &shared.id, &v2)).map(|_| ()),
-        Err(BackendError::SignedOut)
-    );
+    assert!(block_on(b.fetch_shared(&link)).is_ok());
 }
 
 #[test]
@@ -790,30 +799,34 @@ fn fetch_shared_honours_expiry() {
     let b = MockBackend::open(None, Duration::ZERO);
     testing::sign_in(&b);
     let k = key();
-    block_on(b.update_share(&k, ShareUpdate::default())).unwrap();
-    assert!(block_on(b.fetch_shared(&k.id)).is_ok());
+    let url = block_on(b.update_share(&k, ShareUpdate::default()))
+        .unwrap()
+        .link
+        .unwrap();
+    let own = ShareLink::parse(&url).unwrap();
+    let fixture = ShareLink {
+        server: MOCK_SERVER.into(),
+        token: fixtures::SHIPPING_TOKEN.into(),
+    };
+    assert!(block_on(b.fetch_shared(&own)).is_ok());
     dev(&b).expire_links(true);
-    for id in [k.id.as_str(), fixtures::SHIPPING_ID] {
+    for link in [&own, &fixture] {
         assert_eq!(
-            block_on(b.fetch_shared(id)).map(|_| ()),
+            block_on(b.fetch_shared(link)).map(|_| ()),
             Err(BackendError::Expired),
-            "{id}"
+            "{link:?}"
         );
     }
-    assert_eq!(
-        block_on(b.fetch_shared("acme/nope")).map(|_| ()),
-        Err(BackendError::NotFound)
-    );
     dev(&b).expire_links(false);
     b.state().shares.get_mut(&k.id).unwrap().expires =
         Some(Utc::now().date_naive() - chrono::Duration::days(1));
     assert_eq!(
-        block_on(b.fetch_shared(&k.id)).map(|_| ()),
+        block_on(b.fetch_shared(&own)).map(|_| ()),
         Err(BackendError::Expired)
     );
     // Resolving and fetching need no account.
     testing::sign_out(&b);
-    assert!(block_on(b.fetch_shared(fixtures::SHIPPING_ID)).is_ok());
+    assert!(block_on(b.fetch_shared(&fixture)).is_ok());
 }
 
 #[test]
@@ -840,65 +853,20 @@ fn server_copy_changed_since_base_is_a_conflict_and_kept() {
 }
 
 #[test]
-fn deletions_remove_owned_files_and_received_copies_are_told() {
+fn deletions_remove_owned_files() {
     let b = MockBackend::open(None, Duration::ZERO);
     testing::sign_in(&b);
     let owner = key();
     let both = files(&[("a.yaml", "a: 1\n"), ("b.yaml", "b: 1\n")]);
     block_on(b.sync(&owner, &both, &[])).unwrap();
-    let link = block_on(b.update_share(&owner, ShareUpdate::default()))
-        .unwrap()
-        .link
-        .unwrap();
-    let shared = block_on(b.resolve_link(&ShareLink::parse(&link).unwrap())).unwrap();
-    let copy = CollectionKey {
-        id: "c0ffee00".into(),
-        name: "Payments API".into(),
+    let del = SyncDeletion {
+        rel: "b.yaml".into(),
+        base: SyncFile::hash_of("b: 1\n"),
     };
-    block_on(b.add_received(ReceivedShare {
-        id: shared.id.clone(),
-        owner_org: shared.owner_org.clone(),
-        name: shared.name.clone(),
-        added: Utc::now(),
-    }))
-    .unwrap();
-    // The owner deletes b.yaml.
-    let a = files(&[("a.yaml", "a: 1\n")]);
-    let a_based: Vec<SyncFile> = a
-        .iter()
-        .cloned()
-        .map(|f| {
-            let h = f.hash;
-            f.with_base(Some(h))
-        })
-        .collect();
-    let del = |rel: &str, text: &str| SyncDeletion {
-        rel: rel.into(),
-        base: SyncFile::hash_of(text),
-    };
-    block_on(b.sync(&owner, &a_based, &[del("b.yaml", "b: 1\n")])).unwrap();
+    block_on(b.sync(&owner, &[], &[del])).unwrap();
     assert!(!b.state().synced[&owner.id].files.contains_key("b.yaml"));
-    // The copy synced both before: told to remove b.yaml; it can't delete
-    // anything (read only: no deletions to send).
-    let copy_local: Vec<SyncFile> = both
-        .iter()
-        .cloned()
-        .map(|f| {
-            let h = f.hash;
-            f.with_base(Some(h))
-        })
-        .collect();
-    let report = block_on(b.sync_shared(&copy, &shared.id, &copy_local)).unwrap();
-    assert_eq!(report.deleted, [PathBuf::from("b.yaml")]);
     assert!(b.state().synced[&owner.id].files.contains_key("a.yaml"));
-    // A file the copy never synced is not "deleted".
-    let unsynced = files(&[("a.yaml", "a: 1\n"), ("b.yaml", "b: 1\n")]);
-    assert!(
-        block_on(b.sync_shared(&copy, &shared.id, &unsynced))
-            .unwrap()
-            .deleted
-            .is_empty()
-    );
+    assert_eq!(b.state().synced[&owner.id].version, 2);
 }
 
 #[test]

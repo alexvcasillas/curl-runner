@@ -1058,7 +1058,7 @@ mod tests {
     use super::super::state::StateStore;
     use super::super::sync::{SYNC_DELAY, SyncLine};
     use super::super::workspace::{Workspace, test_backend, test_secrets};
-    use crate::model::backend::{Backend, Conflict, ShareUpdate, SyncFile};
+    use crate::model::backend::{Backend, Conflict, SyncFile};
     use gpui_kit::component::WindowExt as _;
     use gpui_kit::test::{TestQueryExt as _, TestWindowExt as _};
     use gpui_kit::{
@@ -1141,11 +1141,7 @@ mod tests {
             let key = self
                 .ws
                 .read_with(cx, |ws, cx| ws.collection_key(cx).unwrap());
-            futures::executor::block_on(self.backend.update_share(&key, ShareUpdate::default()))
-                .unwrap();
-            futures::executor::block_on(self.backend.fetch_shared(&key.id))
-                .unwrap()
-                .files
+            crate::model::backend::testing::server_files(&*self.backend, &key)
         }
 
         fn server_text(&self, cx: &mut TestAppContext, rel: &str) -> Option<String> {

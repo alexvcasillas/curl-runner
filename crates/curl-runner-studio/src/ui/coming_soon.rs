@@ -397,10 +397,15 @@ mod tests {
             assert!(ws.read_only_org().is_none());
             ws.received_all.push(ReceivedCopy {
                 share: ReceivedShare {
-                    id: "acme/x".into(),
-                    owner_org: "Acme".into(),
+                    link: crate::model::backend::ShareLink {
+                        server: "https://api.mock.curl-runner.test".into(),
+                        token: "crsl_x".into(),
+                    },
+                    team: "Acme".into(),
                     name: "Shipping API".into(),
-                    added: chrono::Utc::now(),
+                    version: 1,
+                    added: chrono::Utc::now().date_naive(),
+                    files: Default::default(),
                 },
                 root: other.path().to_path_buf(),
                 collection_id: "c".into(),

@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::backend::{FOREIGN_CALLBACK, SignInMethod};
+use crate::model::backend::{FOREIGN_CALLBACK, LinkAccess, SharedVar, SignInMethod};
 use crate::model::secrets::MemorySecrets;
 use crate::model::sessions::{AccountCache, MemorySessions};
 use curl_runner_cloud_client::CloudError;
@@ -366,4 +366,231 @@ fn http_accounts_carry_no_provider() {
     block_on(b.sign_in_url(&own(&srv.base_url))).unwrap();
     let a = block_on(b.complete_sign_in(&callback(&srv.base_url))).unwrap();
     assert_eq!(a.provider, None);
+}
+
+const TOKEN: &str = "crsl_Ab-9_";
+
+fn shared_info(access: &str, version: u32) -> String {
+    format!(
+        r#"{{"team":"Acme","team_slug":"acme","collection":"shipping-api","name":"Shipping API","description":null,"version":{version},"updated_at":"2026-11-01T10:00:00Z","request_count":2,"access":"{access}"}}"#
+    )
+}
+
+/// A server sharing one collection with `access`. A restricted one
+/// answers only `Bearer crs_ok`; the log is (method, path, bearer).
+fn shared_server(access: &'static str) -> (TestServer, Log) {
+    let log: Log = Log::default();
+    let l = log.clone();
+    let srv = TestServer::with_handler(move |r: Request| {
+        let auth = r.header("authorization").map(str::to_string);
+        l.lock()
+            .unwrap()
+            .push((r.method.clone(), r.url.clone(), auth.clone()));
+        let allowed = access == "public" || auth.as_deref() == Some("Bearer crs_ok");
+        if !allowed {
+            return json(
+                401,
+                r#"{"error":"unauthorized","message":"Sign in to open this collection."}"#,
+            );
+        }
+        let info = shared_info(access, 4);
+        match r.url.strip_prefix(&format!("/v1/shared/{TOKEN}")) {
+            Some("") => json(200, &info),
+            Some("/snapshot") => json(
+                200,
+                &format!(
+                    r#"{{"info":{info},"files":[{{"path":"rates/get.yaml","text":"a: 1\n"}},{{"path":"labels/make.yaml","text":"b: 2\n"}}],"inputs":[{{"name":"API_TOKEN","description":"Your own token.","secret":true,"required":true,"locked":false,"default":null}},{{"name":"CURRENCY","description":null,"secret":false,"required":false,"locked":true,"default":"EUR"}}]}}"#
+                ),
+            ),
+            Some("/versions/latest") => json(200, r#"{"version":5,"hash":"abc"}"#),
+            _ => json(404, r#"{"error":"not_found","message":"No."}"#),
+        }
+    });
+    (srv, log)
+}
+
+fn link(srv: &TestServer) -> ShareLink {
+    ShareLink {
+        server: srv.base_url.clone(),
+        token: TOKEN.into(),
+    }
+}
+
+#[test]
+fn resolve_public_without_session() {
+    let (srv, log) = shared_server("public");
+    let (b, _) = backend(None);
+    let c = block_on(b.resolve_link(&link(&srv))).unwrap();
+    assert_eq!(c.link, link(&srv));
+    assert_eq!(c.owner_org, "Acme");
+    assert_eq!(c.team_slug, "acme");
+    assert_eq!(c.name, "Shipping API");
+    assert_eq!(c.version, 4);
+    assert_eq!(c.access, LinkAccess::Public);
+    assert_eq!(c.request_count, 2);
+    assert_eq!(c.summary, "rates, labels");
+    assert_eq!(c.variables.len(), 2);
+    let log = log.lock().unwrap();
+    assert!(
+        log.iter()
+            .any(|(m, p, _)| m == "GET" && p == &format!("/v1/shared/{TOKEN}")),
+        "{log:?}"
+    );
+    assert!(log.iter().all(|(_, _, auth)| auth.is_none()), "{log:?}");
+}
+
+#[test]
+fn resolve_restricted_needs_sign_in() {
+    let (srv, log) = shared_server("restricted");
+    let (b, sessions) = backend(None);
+    let err = block_on(b.resolve_link(&link(&srv))).unwrap_err();
+    assert_eq!(err, BackendError::SignedOut);
+    assert_eq!(log.lock().unwrap().len(), 1, "it stops at the card");
+    // Signed in to that server, the session goes with it.
+    sessions.set(&srv.base_url, "crs_ok").unwrap();
+    let c = block_on(b.resolve_link(&link(&srv))).unwrap();
+    assert_eq!(c.access, LinkAccess::Restricted);
+    assert!(
+        log.lock()
+            .unwrap()
+            .iter()
+            .skip(1)
+            .all(|(_, _, auth)| auth.as_deref() == Some("Bearer crs_ok"))
+    );
+}
+
+#[test]
+fn a_rejected_session_on_a_link_signs_out_of_that_server_only() {
+    let (srv, _) = shared_server("restricted");
+    let (b, sessions) = backend(None);
+    sessions.set(&srv.base_url, "crs_stale").unwrap();
+    sessions
+        .set("https://other.example.test", "crs_other")
+        .unwrap();
+    let err = block_on(b.fetch_shared(&link(&srv))).unwrap_err();
+    assert_eq!(err, BackendError::SignedOut);
+    assert_eq!(sessions.get(&srv.base_url).unwrap(), None);
+    assert!(
+        sessions
+            .get("https://other.example.test")
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[test]
+fn fetch_shared_maps_inputs_to_variables() {
+    let (srv, _) = shared_server("public");
+    let (b, _) = backend(None);
+    let snap = block_on(b.fetch_shared(&link(&srv))).unwrap();
+    assert_eq!(snap.version, 4);
+    assert_eq!(
+        snap.published_at,
+        "2026-11-01T10:00:00Z"
+            .parse::<chrono::DateTime<chrono::Utc>>()
+            .unwrap()
+    );
+    assert_eq!(
+        snap.files,
+        [
+            SyncFile::new("rates/get.yaml", "a: 1\n"),
+            SyncFile::new("labels/make.yaml", "b: 2\n"),
+        ]
+    );
+    assert_eq!(
+        snap.variables,
+        [
+            SharedVar {
+                name: "API_TOKEN".into(),
+                description: "Your own token.".into(),
+                required: true,
+                secret: true,
+                default: None,
+                locked: false,
+            },
+            SharedVar {
+                name: "CURRENCY".into(),
+                description: String::new(),
+                required: false,
+                secret: false,
+                default: Some("EUR".into()),
+                locked: true,
+            },
+        ]
+    );
+}
+
+#[test]
+fn latest_version_asks_without_the_files() {
+    let (srv, log) = shared_server("public");
+    let (b, _) = backend(None);
+    assert_eq!(block_on(b.latest_version(&link(&srv))).unwrap(), 5);
+    let log = log.lock().unwrap();
+    assert_eq!(log.len(), 1);
+    assert_eq!(log[0].1, format!("/v1/shared/{TOKEN}/versions/latest"));
+}
+
+#[test]
+fn shared_calls_read_a_locked_keychain_as_an_error() {
+    struct Locked;
+    impl SessionStore for Locked {
+        fn get(&self, _: &str) -> std::io::Result<Option<String>> {
+            Err(std::io::Error::other("locked"))
+        }
+        fn set(&self, _: &str, _: &str) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn delete(&self, _: &str) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn servers(&self) -> Vec<String> {
+            Vec::new()
+        }
+    }
+    let (srv, log) = shared_server("public");
+    let b = HttpBackend::open(None, Arc::new(Locked));
+    let err = block_on(b.resolve_link(&link(&srv))).unwrap_err();
+    assert_eq!(
+        err,
+        BackendError::Invalid("Couldn't read your sign-in from the Keychain.".into())
+    );
+    assert!(log.lock().unwrap().is_empty());
+}
+
+fn record(token: &str, version: u32) -> ReceivedShare {
+    ReceivedShare {
+        link: ShareLink {
+            server: "https://api.example.test".into(),
+            token: token.into(),
+        },
+        team: "Acme".into(),
+        name: "Shipping API".into(),
+        version,
+        added: chrono::NaiveDate::from_ymd_opt(2026, 11, 6).unwrap(),
+        files: [(PathBuf::from("rates/get.yaml"), 42)].into(),
+    }
+}
+
+#[test]
+fn received_shares_persist_by_token() {
+    let d = tempfile::tempdir().unwrap();
+    let (b, _) = backend(Some(d.path()));
+    assert!(b.received().is_empty());
+    block_on(b.add_received(record("crsl_a", 1))).unwrap();
+    block_on(b.add_received(record("crsl_b", 1))).unwrap();
+    block_on(b.add_received(record("crsl_a", 2))).unwrap();
+    block_on(b.update_received(record("crsl_b", 3))).unwrap();
+    let want = [record("crsl_b", 3), record("crsl_a", 2)];
+    let mut got = b.received();
+    got.sort_by(|x, y| y.link.token.cmp(&x.link.token));
+    assert_eq!(got, want);
+    let text = std::fs::read_to_string(d.path().join("received-shares.json")).unwrap();
+    assert!(
+        text.contains("crsl_a") && text.contains("rates/get.yaml"),
+        "{text}"
+    );
+    let (b2, _) = backend(Some(d.path()));
+    let mut again = b2.received();
+    again.sort_by(|x, y| y.link.token.cmp(&x.link.token));
+    assert_eq!(again, want);
 }

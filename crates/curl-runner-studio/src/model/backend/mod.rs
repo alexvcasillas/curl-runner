@@ -24,10 +24,16 @@ mod no_server;
 pub mod pending;
 
 // Only the macOS app constructs the mock; off macOS the UI isn't built.
+/// The server the mock's links name.
+#[cfg(test)]
+pub use mock::MOCK_SERVER;
 #[cfg(any(test, feature = "server"))]
 #[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 pub use mock::{MOCK_LATENCY, MockBackend};
 // Only the macOS app constructs it; off macOS the UI isn't built.
+/// Who a shared link opens for: `Public` needs no sign-in, `Restricted`
+/// a session on the link's server.
+pub use curl_runner_cloud_proto::wire::Access as LinkAccess;
 /// How a server lets people sign in: what `/v1/info` reports.
 pub use curl_runner_cloud_proto::wire::SignInMethod;
 #[cfg(not(feature = "server"))]
@@ -41,6 +47,7 @@ use crate::model::environments::is_secret;
 use chrono::{DateTime, NaiveDate, Utc};
 use curl_runner_cloud_client::link::{self, Link, LinkError};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -112,6 +119,16 @@ pub enum Server {
 }
 
 impl Server {
+    /// The server an API URL names: [`Server::Cloud`] for [`CLOUD_URL`].
+    pub fn for_url(url: &str) -> Server {
+        let url = url.trim().trim_end_matches('/');
+        if url == CLOUD_URL {
+            Server::Cloud
+        } else {
+            Server::SelfHosted { url: url.into() }
+        }
+    }
+
     pub fn url(&self) -> &str {
         match self {
             Server::Cloud => CLOUD_URL,
@@ -228,9 +245,6 @@ pub struct SyncReport {
     /// Files the server no longer has that the client synced before
     /// (received copies): remove them locally.
     pub deleted: Vec<PathBuf>,
-    /// A received copy's variables as its owner shares them now
-    /// ([`Backend::sync_shared`] only).
-    pub variables: Option<Vec<SharedVar>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -349,7 +363,7 @@ pub struct ShareUpdate {
 }
 
 /// A share link: the API to ask and the token to ask with.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ShareLink {
     pub server: String,
     pub token: String,
@@ -369,6 +383,24 @@ impl ShareLink {
                 token,
             }),
         }
+    }
+
+    /// The link's server host, as the sign-in prompt names it:
+    /// `api.curl-runner.com`.
+    pub fn host(&self) -> String {
+        url::Url::parse(&self.server)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_string))
+            .unwrap_or_else(|| self.server.clone())
+    }
+
+    /// The deep link that opens it again.
+    pub fn url(&self) -> String {
+        let mut u = url::Url::parse("curl-runner://open").expect("a valid URL");
+        u.query_pairs_mut()
+            .append_pair("server", &self.server)
+            .append_pair("share", &self.token);
+        u.into()
     }
 }
 
@@ -404,35 +436,48 @@ impl AuthCallback {
 /// What a link opens, before it is added (board OpenShared).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SharedCollection {
-    /// For [`Backend::fetch_shared`].
-    pub id: String,
+    /// For [`Backend::fetch_shared`] and the update checks.
+    pub link: ShareLink,
+    /// The team's name: `Acme`.
     pub owner_org: String,
+    pub team_slug: String,
     pub name: String,
     /// The folders line: `rates, labels, tracking`.
     pub summary: String,
     pub updated: DateTime<Utc>,
     pub request_count: usize,
+    /// The published version it opens.
+    pub version: u32,
+    pub access: LinkAccess,
+    /// The snapshot's inputs, one for one.
     pub variables: Vec<SharedVar>,
 }
 
+/// A shared collection's current version, files and all.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SharedSnapshot {
     pub files: Vec<SyncFile>,
     /// The variables as the owner shares them now.
     pub variables: Vec<SharedVar>,
+    pub version: u32,
+    pub published_at: DateTime<Utc>,
 }
 
-/// A shared collection this account added, as the server records it:
-/// nothing about where the copy lives on this Mac (that mapping is local,
-/// [`crate::model::received`]).
+/// A shared collection this studio added, kept on this Mac (the server
+/// records nothing): nothing about where the copy lives (that mapping is
+/// [`crate::model::received`]). Keyed by `link.token`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReceivedShare {
-    /// [`SharedCollection::id`].
-    pub id: String,
-    pub owner_org: String,
+    pub link: ShareLink,
+    /// The team that shares it: `Acme`.
+    pub team: String,
     pub name: String,
-    pub added: DateTime<Utc>,
+    /// The version the copy holds.
+    pub version: u32,
+    pub added: NaiveDate,
+    /// [`SyncFile::hash_of`] each file as received.
+    pub files: BTreeMap<PathBuf, u64>,
 }
 
 /// The mock's developer toggles (App menu › Developer, debug builds with
@@ -507,24 +552,13 @@ pub trait Backend: Send + Sync {
     /// - server and local already agree (whatever the base): nothing at
     ///   all, not a push, a pull nor a conflict.
     ///
-    /// Only for collections this account owns: a received copy calls
-    /// [`Backend::sync_shared`], which can't push.
+    /// Only for collections this account owns: a received copy takes
+    /// updates instead ([`Backend::latest_version`]).
     fn sync(
         &self,
         collection: &CollectionKey,
         local: &[SyncFile],
         deleted: &[SyncDeletion],
-    ) -> BoxFut<'_, SyncReport>;
-    /// A received copy's pull from share `share_id` (one this account
-    /// added): `local` carries paths, hashes and bases only (no text).
-    /// The owner's newer files come back in `pulled`, the files the owner
-    /// removed (that this copy synced before) in `deleted`, the variables
-    /// as shared now in `variables`. Nothing is ever pushed or deleted.
-    fn sync_shared(
-        &self,
-        collection: &CollectionKey,
-        share_id: &str,
-        local: &[SyncFile],
     ) -> BoxFut<'_, SyncReport>;
     fn share_settings(&self, collection: &CollectionKey) -> BoxFut<'_, ShareSettings>;
     fn update_share(
@@ -535,10 +569,23 @@ pub trait Backend: Send + Sync {
     /// Gives the collection a link first if it has none.
     fn invite(&self, collection: &CollectionKey, email: &str) -> BoxFut<'_, Person>;
     fn remove_person(&self, collection: &CollectionKey, email: &str) -> BoxFut<'_, ()>;
+    /// What `link` opens, sending the session for `link.server` when there
+    /// is one. A restricted collection without one is `SignedOut`.
     fn resolve_link(&self, link: &ShareLink) -> BoxFut<'_, SharedCollection>;
-    fn fetch_shared(&self, id: &str) -> BoxFut<'_, SharedSnapshot>;
+    /// The current version's files and variables.
+    fn fetch_shared(&self, link: &ShareLink) -> BoxFut<'_, SharedSnapshot>;
+    /// The current version number, without the files.
+    // The update checks call it (Task 7 of 3a).
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn latest_version(&self, link: &ShareLink) -> BoxFut<'_, u32>;
+    /// The collections this studio added.
     fn received(&self) -> Vec<ReceivedShare>;
+    /// Records `share`, replacing one with the same token.
     fn add_received(&self, share: ReceivedShare) -> BoxFut<'_, ()>;
+    /// Replaces the record with `share`'s token (an update taken).
+    // An update taken calls it (Task 7 of 3a).
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn update_received(&self, share: ReceivedShare) -> BoxFut<'_, ()>;
     /// The developer toggles, when the backend has them (the mock).
     fn dev(&self) -> Option<&dyn DevControls>;
 }
@@ -707,6 +754,20 @@ pub mod testing {
         block_on(b.complete_sign_in(&callback)).unwrap()
     }
 
+    /// The files the server holds for `key`, read through its share link
+    /// (made if it has none).
+    // The sync tests, which need the server feature.
+    #[cfg_attr(not(feature = "server"), allow(dead_code))]
+    pub fn server_files(b: &dyn Backend, key: &CollectionKey) -> Vec<SyncFile> {
+        use futures::executor::block_on;
+        let url = block_on(b.update_share(key, ShareUpdate::default()))
+            .unwrap()
+            .link
+            .unwrap();
+        let link = ShareLink::parse(&url).unwrap();
+        block_on(b.fetch_shared(&link)).unwrap().files
+    }
+
     /// Signs `b` out of its server.
     pub fn sign_out(b: &dyn Backend) {
         futures::executor::block_on(b.sign_out(b.server().url())).unwrap();
@@ -775,15 +836,6 @@ pub mod testing {
             self.sent.lock().unwrap().extend(local.iter().cloned());
             self.inner.sync(collection, local, deleted)
         }
-        fn sync_shared(
-            &self,
-            collection: &CollectionKey,
-            share_id: &str,
-            local: &[SyncFile],
-        ) -> BoxFut<'_, SyncReport> {
-            self.sent.lock().unwrap().extend(local.iter().cloned());
-            self.inner.sync_shared(collection, share_id, local)
-        }
         fn share_settings(&self, collection: &CollectionKey) -> BoxFut<'_, ShareSettings> {
             if self
                 .fail_share_settings
@@ -809,14 +861,20 @@ pub mod testing {
         fn resolve_link(&self, link: &ShareLink) -> BoxFut<'_, SharedCollection> {
             self.inner.resolve_link(link)
         }
-        fn fetch_shared(&self, id: &str) -> BoxFut<'_, SharedSnapshot> {
-            self.inner.fetch_shared(id)
+        fn fetch_shared(&self, link: &ShareLink) -> BoxFut<'_, SharedSnapshot> {
+            self.inner.fetch_shared(link)
+        }
+        fn latest_version(&self, link: &ShareLink) -> BoxFut<'_, u32> {
+            self.inner.latest_version(link)
         }
         fn received(&self) -> Vec<ReceivedShare> {
             self.inner.received()
         }
         fn add_received(&self, share: ReceivedShare) -> BoxFut<'_, ()> {
             self.inner.add_received(share)
+        }
+        fn update_received(&self, share: ReceivedShare) -> BoxFut<'_, ()> {
+            self.inner.update_received(share)
         }
         fn dev(&self) -> Option<&dyn DevControls> {
             self.inner.dev()

@@ -200,8 +200,8 @@ impl Workspace {
             return;
         }
         let root = c.root.clone();
-        let id = share.id.clone();
-        let call = backend_call(cx, &self.backend, move |b| b.fetch_shared(&id));
+        let link = share.link.clone();
+        let call = backend_call(cx, &self.backend, move |b| b.fetch_shared(&link));
         self.update_check = Some(cx.spawn_in(window, async move |this, cx| {
             let (planned, vars) = match call.await {
                 Ok(snapshot) => {
@@ -215,7 +215,7 @@ impl Workspace {
                 Err(e) => (
                     Err(format!(
                         "Couldn't check for updates: {}",
-                        e.link_text(&share.owner_org)
+                        e.link_text(&share.team)
                     )),
                     None,
                 ),
@@ -1166,41 +1166,36 @@ mod gpui_tests {
     }
 
     #[gpui_kit::test]
-    fn a_received_copy_never_pushes(cx: &mut TestAppContext) {
+    fn a_received_copy_never_syncs(cx: &mut TestAppContext) {
+        use crate::ui::sync::SyncLine;
         let s = received(cx, true, None);
-        let owners = s.read(RATES);
-        // Changed on disk behind the studio's back, then synced.
-        std::fs::write(s.root().join(RATES), "request:\n  url: https://mine\n").unwrap();
-        std::fs::write(
-            s.root().join("rates/mine.yaml"),
-            "request:\n  url: https://x\n",
-        )
-        .unwrap();
+        // Changed on disk behind the studio's back, then `Sync now`.
+        let mine = "request:\n  url: https://mine\n";
+        std::fs::write(s.root().join(RATES), mine).unwrap();
         s.spy.sent.lock().unwrap().clear();
+        let dev = s.spy.dev().unwrap();
+        let calls = dev.recorded().len();
         let ws = s.ws.clone();
         cx.update_window(s.window, |_, window, cx| {
-            ws.update(cx, |ws, cx| ws.sync_now(window, cx));
+            ws.update(cx, |ws, cx| {
+                ws.mark_changed(window, cx);
+                ws.sync_now(window, cx);
+            });
         })
         .unwrap();
         cx.run_until_parked();
-        let sent = s.spy.sent.lock().unwrap().clone();
-        assert!(!sent.is_empty(), "the sync ran");
+        assert!(s.spy.sent.lock().unwrap().is_empty(), "nothing sent");
+        let since = &dev.recorded()[calls..];
         assert!(
-            sent.iter().all(|f| f.text.is_empty()),
-            "no text left the studio: {:?}",
-            sent.iter().map(|f| &f.rel).collect::<Vec<_>>()
+            !since.iter().any(|c| c.starts_with("sync")),
+            "no sync at all: {since:?}"
         );
-        // The owner's copy wins on pull.
-        assert_eq!(s.read(RATES), owners);
-        assert!(
-            !s.spy
-                .dev()
-                .unwrap()
-                .recorded()
-                .iter()
-                .any(|c| c.starts_with("sync(") && c.contains("SyncDeletion")),
-            "no deletions"
-        );
+        // It takes updates instead: the file stays as edited.
+        assert_eq!(s.read(RATES), mine);
+        s.ws.read_with(cx, |ws, _| {
+            assert!(ws.received.is_some());
+            assert_eq!(ws.sync_line(), SyncLine::LocalOnly);
+        });
     }
 
     #[gpui_kit::test]
@@ -1290,7 +1285,7 @@ mod gpui_tests {
     }
 
     #[gpui_kit::test]
-    fn shared_variables_follow_the_owner_on_sync_and_check(cx: &mut TestAppContext) {
+    fn shared_variables_follow_the_owner_on_check(cx: &mut TestAppContext) {
         use crate::model::backend::SharedVar;
         use futures::executor::block_on;
         let seen: Arc<Mutex<Vec<String>>> = Arc::default();
@@ -1350,11 +1345,12 @@ mod gpui_tests {
             seen.lock().unwrap().pop().unwrap()
         };
         assert_eq!(run(cx), "eur");
-        // The owner locks a new value: the next sync brings it.
+        // The owner locks a new value: Check for updates brings it, with
+        // no file to update.
         share(vars("usd", false));
         let ws = s.ws.clone();
         cx.update_window(s.window, |_, window, cx| {
-            ws.update(cx, |ws, cx| ws.sync_now(window, cx));
+            ws.update(cx, |ws, cx| ws.check_for_updates(window, cx));
         })
         .unwrap();
         cx.run_until_parked();

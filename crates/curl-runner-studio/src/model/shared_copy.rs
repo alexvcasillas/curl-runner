@@ -110,20 +110,21 @@ pub fn destination(shared_dir: &Path, org: &str, name: &str) -> PathBuf {
         .expect("a free name")
 }
 
-/// The local copy of share `id` this studio already has: the server
-/// records it, and this Mac has its folder.
-pub fn already_added(backend: &dyn Backend, base: Option<&Path>, id: &str) -> Option<PathBuf> {
+/// The local copy of the share with `token` this studio already has: it
+/// is recorded, and this Mac has its folder.
+pub fn already_added(backend: &dyn Backend, base: Option<&Path>, token: &str) -> Option<PathBuf> {
     received::join(backend.received(), &received::load(base))
         .into_iter()
-        .find(|r| r.share.id == id)
+        .find(|r| r.share.link.token == token)
         .map(|r| r.root)
 }
 
 /// `Add to my studio`, start to end, off the UI thread: fetch the snapshot,
-/// [`materialize`] it, note the copy here ([`received::record`]: share id →
-/// folder), then record the [`ReceivedShare`] on the server (its id, owner
-/// and name: never the folder). A refused record rolls the copy back. The
-/// root of the new copy, or the error to show (never a value).
+/// [`materialize`] it, note the copy here ([`received::record`]: token →
+/// folder), then record the [`ReceivedShare`] (its link, team, name, the
+/// version and the hash of each file as received: never the folder). A
+/// refused record rolls the copy back. The root of the new copy, or the
+/// error to show (never a value).
 pub async fn add_shared(
     backend: &dyn Backend,
     secrets: &dyn SecretStore,
@@ -133,12 +134,20 @@ pub async fn add_shared(
 ) -> Result<PathBuf, String> {
     let org = &shared.owner_org;
     let snapshot = backend
-        .fetch_shared(&shared.id)
+        .fetch_shared(&shared.link)
         .await
         .map_err(|e| e.link_text(org))?;
-    let done = materialize(base, shared, &snapshot.files, values, secrets)?;
+    // The copy is of the version fetched, whatever the review showed.
+    let shared = SharedCollection {
+        variables: snapshot.variables,
+        updated: snapshot.published_at,
+        version: snapshot.version,
+        ..shared.clone()
+    };
+    let done = materialize(base, &shared, &snapshot.files, values, secrets)?;
+    let token = &shared.link.token;
     let local = received::LocalCopy {
-        share_id: shared.id.clone(),
+        share_id: token.clone(),
         root: done.root.clone(),
         collection_id: done.id.clone(),
     };
@@ -150,14 +159,9 @@ pub async fn add_shared(
             shared.name
         ));
     }
-    let record = ReceivedShare {
-        id: shared.id.clone(),
-        owner_org: org.clone(),
-        name: shared.name.clone(),
-        added: chrono::Utc::now(),
-    };
+    let record = received_record(&shared, &snapshot.files);
     if let Err(e) = backend.add_received(record).await {
-        let _ = received::forget(base, &shared.id);
+        let _ = received::forget(base, token);
         rollback(base, &done, secrets);
         let shared_dir = base.join("shared");
         let _ = std::fs::remove_dir(&shared_dir);
@@ -167,6 +171,22 @@ pub async fn add_shared(
         ));
     }
     Ok(done.root)
+}
+
+/// The record of `shared` as added today with `files`: each file's
+/// [`SyncFile::hash_of`] as received, so local edits show later.
+fn received_record(shared: &SharedCollection, files: &[SyncFile]) -> ReceivedShare {
+    ReceivedShare {
+        link: shared.link.clone(),
+        team: shared.owner_org.clone(),
+        name: shared.name.clone(),
+        version: shared.version,
+        added: chrono::Local::now().date_naive(),
+        files: files
+            .iter()
+            .map(|f| (f.rel.clone(), SyncFile::hash_of(&f.text)))
+            .collect(),
+    }
 }
 
 /// What [`materialize`] wrote: the share record's fields and what a
@@ -515,12 +535,18 @@ mod tests {
 
     fn shipping() -> SharedCollection {
         SharedCollection {
-            id: "acme/shipping-api".into(),
+            link: crate::model::backend::ShareLink {
+                server: "https://api.example.test".into(),
+                token: "crsl_ship".into(),
+            },
             owner_org: "Acme".into(),
+            team_slug: "acme".into(),
             name: "Shipping API".into(),
             summary: "rates, labels, tracking".into(),
             updated: Utc::now() - chrono::Duration::days(3),
             request_count: 12,
+            version: 1,
+            access: crate::model::backend::LinkAccess::Public,
             variables: variables(),
         }
     }
@@ -556,6 +582,50 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    #[test]
+    fn add_shared_records_version_and_file_hashes() {
+        use crate::model::backend::{ShareLink, fixtures, test_backend};
+        let d = tempfile::tempdir().unwrap();
+        let backend = test_backend();
+        let secrets = MemorySecrets::default();
+        let link = ShareLink {
+            server: "https://api.mock.curl-runner.test".into(),
+            token: fixtures::SHIPPING_TOKEN.into(),
+        };
+        let shared = futures::executor::block_on(backend.resolve_link(&link)).unwrap();
+        let values = [("API_TOKEN".to_string(), "sk-live-4242".to_string())];
+        let root = futures::executor::block_on(super::add_shared(
+            &*backend,
+            &secrets,
+            d.path(),
+            &shared,
+            &values,
+        ))
+        .unwrap();
+        let received = backend.received();
+        assert_eq!(received.len(), 1);
+        let r = &received[0];
+        assert_eq!(r.link, link);
+        assert_eq!((r.team.as_str(), r.name.as_str()), ("Acme", "Shipping API"));
+        assert_eq!(r.version, fixtures::SHIPPING_VERSION);
+        assert_eq!(r.added, chrono::Local::now().date_naive());
+        let want: std::collections::BTreeMap<_, _> = fixtures::shipping_snapshot()
+            .into_iter()
+            .map(|f| (f.rel, f.hash))
+            .collect();
+        assert_eq!(r.files, want);
+        assert!(!want.is_empty());
+        // Hashed as received: the same FNV hash as the file on disk.
+        for (rel, hash) in &r.files {
+            let text = std::fs::read_to_string(root.join(rel)).unwrap();
+            assert_eq!(SyncFile::hash_of(&text), *hash);
+        }
+        // The secret went to the Keychain only: no record or file has it.
+        let json = serde_json::to_string(&received).unwrap();
+        assert!(!json.contains("sk-live-4242"));
+        assert!(super::already_added(&*backend, Some(d.path()), &link.token).is_some());
     }
 
     #[test]

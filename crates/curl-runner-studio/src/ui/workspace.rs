@@ -203,6 +203,9 @@ pub struct Workspace {
     /// up, or while an Add was in flight: opened once the screen is
     /// answered or the Add finishes.
     pub(super) pending_link: Option<String>,
+    /// The server a restricted link's sign-in was started with: its
+    /// callback opens `pending_link`.
+    pub(super) link_sign_in: Option<String>,
     /// The open collection's share record joined with its copy here, when
     /// it is a received copy the server still records.
     pub(super) received: Option<crate::model::received::ReceivedCopy>,
@@ -331,6 +334,7 @@ impl Workspace {
             open_shared_focus: None,
             _open_shared_events: None,
             pending_link: None,
+            link_sign_in: None,
             received: None,
             received_all: Vec::new(),
             update_check: None,
@@ -706,7 +710,7 @@ impl Workspace {
         self.received = self.received.take().and_then(|open| {
             self.received_all
                 .iter()
-                .find(|r| r.share.id == open.share.id && r.root == open.root)
+                .find(|r| r.share.link == open.share.link && r.root == open.root)
                 .cloned()
         });
     }

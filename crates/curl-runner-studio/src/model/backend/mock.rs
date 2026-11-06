@@ -9,9 +9,9 @@
 use super::fixtures::{self, CONFLICT_AUTHOR};
 use super::{
     Access, Account, AuthCallback, Backend, BackendError, BoxFut, CollectionKey, Conflict,
-    ConnectionInfo, DevControls, DevToggles, Expiry, PendingSignIns, Person, ReceivedShare, Role,
-    Server, ShareLink, ShareSettings, ShareUpdate, SharedCollection, SharedSnapshot, SharedVar,
-    SignInMethod, SyncDeletion, SyncFile, SyncReport, SyncStatus,
+    ConnectionInfo, DevControls, DevToggles, Expiry, LinkAccess, PendingSignIns, Person,
+    ReceivedShare, Role, Server, ShareLink, ShareSettings, ShareUpdate, SharedCollection,
+    SharedSnapshot, SharedVar, SignInMethod, SyncDeletion, SyncFile, SyncReport, SyncStatus,
 };
 use chrono::{DateTime, Days, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
@@ -121,6 +121,9 @@ struct ServerCollection {
     /// By `/`-joined relative path.
     files: BTreeMap<String, ServerFile>,
     synced_at: Option<DateTime<Utc>>,
+    /// Bumped by each sync that changes a file: what a share of it
+    /// publishes.
+    version: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -383,51 +386,74 @@ pub(super) fn server_side(local: &str) -> String {
     out
 }
 
-/// The variables share `id` holds now: the fixture's, else the owner's
-/// last sent.
-fn shared_variables(s: &State, id: &str) -> Vec<SharedVar> {
-    if id == fixtures::SHIPPING_ID {
-        return fixtures::shipping_variables();
-    }
-    s.shares
-        .get(id)
-        .map(|sh| sh.variables.clone())
-        .unwrap_or_default()
+/// What a link's token opens.
+enum Found<'s> {
+    Fixture,
+    Owned(&'s str, &'s OwnedShare),
 }
 
-/// What the share `id` holds: the fixture for [`fixtures::SHIPPING_ID`],
-/// else the owner's synced files. No expiry check: a copy already added
-/// keeps getting updates.
-fn shared_files(s: &State, id: &str) -> Result<Vec<SyncFile>, BackendError> {
-    if id == fixtures::SHIPPING_ID {
-        return Ok(fixtures::shipping_snapshot());
+/// The share behind `link`, if the caller may open it: not expired, and a
+/// restricted one (`InvitedOnly`) only with a session on `link.server`.
+fn open_share<'s>(s: &'s State, link: &ShareLink) -> Result<Found<'s>, BackendError> {
+    online(s)?;
+    let found = if link.token == fixtures::SHIPPING_TOKEN {
+        Found::Fixture
+    } else {
+        let (id, share) = s
+            .shares
+            .iter()
+            .find(|(_, sh)| sh.token == link.token)
+            .ok_or(BackendError::NotFound)?;
+        Found::Owned(id, share)
+    };
+    let expired = match &found {
+        Found::Fixture => false,
+        Found::Owned(_, share) => share.expires.is_some_and(|d| d < Utc::now().date_naive()),
+    };
+    if s.toggles.expire_links || expired {
+        return Err(BackendError::Expired);
     }
-    if !s.shares.contains_key(id) {
-        return Err(BackendError::NotFound);
+    let restricted = matches!(&found, Found::Owned(_, sh) if sh.access == Access::InvitedOnly);
+    if restricted && !s.accounts.contains_key(&server_key(&link.server)) {
+        return Err(BackendError::SignedOut);
     }
-    let files = s.synced.get(id).map(|c| &c.files);
-    Ok(files
-        .into_iter()
-        .flatten()
-        .map(|(rel, f)| SyncFile {
-            rel: rel.into(),
-            hash: f.hash,
-            text: f.text.clone(),
-            base: None,
-        })
-        .collect())
+    Ok(found)
 }
 
-fn fixture_collection() -> SharedCollection {
-    let files = fixtures::shipping_snapshot();
-    SharedCollection {
-        id: fixtures::SHIPPING_ID.into(),
-        owner_org: fixtures::SHIPPING_ORG.into(),
-        name: fixtures::SHIPPING_NAME.into(),
-        summary: fixtures::SHIPPING_SUMMARY.into(),
-        updated: Utc::now() - chrono::Duration::days(fixtures::SHIPPING_UPDATED_DAYS_AGO),
-        request_count: files.len(),
-        variables: fixtures::shipping_variables(),
+/// What `found` holds now: its version, files and variables.
+fn snapshot_of(s: &State, found: &Found<'_>) -> SharedSnapshot {
+    match found {
+        Found::Fixture => SharedSnapshot {
+            files: fixtures::shipping_snapshot(),
+            variables: fixtures::shipping_variables(),
+            version: fixtures::SHIPPING_VERSION,
+            published_at: Utc::now() - chrono::Duration::days(fixtures::SHIPPING_UPDATED_DAYS_AGO),
+        },
+        Found::Owned(id, share) => {
+            let col = s.synced.get(*id);
+            SharedSnapshot {
+                files: col
+                    .into_iter()
+                    .flat_map(|c| &c.files)
+                    .map(|(rel, f)| SyncFile {
+                        rel: rel.into(),
+                        hash: f.hash,
+                        text: f.text.clone(),
+                        base: None,
+                    })
+                    .collect(),
+                variables: share.variables.clone(),
+                version: col.map_or(0, |c| c.version),
+                published_at: col.and_then(|c| c.synced_at).unwrap_or_else(Utc::now),
+            }
+        }
+    }
+}
+
+fn link_access(access: Access) -> LinkAccess {
+    match access {
+        Access::AnyoneWithLink => LinkAccess::Public,
+        Access::InvitedOnly => LinkAccess::Restricted,
     }
 }
 
@@ -605,6 +631,7 @@ impl Backend for MockBackend {
                 .cloned();
             let changed: Vec<SyncFile> = changed.into_iter().cloned().collect();
             let col = s.synced.entry(key.id.clone()).or_default();
+            let before = col.files.clone();
             for d in &deleted {
                 let k = rel_key(&d.rel);
                 match col.files.get(&k) {
@@ -686,66 +713,11 @@ impl Backend for MockBackend {
                     server_deleted: false,
                 });
             }
+            if col.files != before {
+                col.version += 1;
+            }
             col.synced_at = Some(now);
             s.toggles.conflict_next_sync = false;
-            Ok(report)
-        })
-    }
-
-    fn sync_shared(
-        &self,
-        collection: &CollectionKey,
-        share_id: &str,
-        local: &[SyncFile],
-    ) -> BoxFut<'_, SyncReport> {
-        let files: Vec<_> = local.iter().map(|f| (&f.rel, f.hash, f.base)).collect();
-        self.record(format!(
-            "sync_shared({collection:?}, {share_id:?}, {files:?})"
-        ));
-        let (key, share_id, local) = (collection.clone(), share_id.to_string(), local.to_vec());
-        self.call(true, move |s| {
-            signed_in(s)?;
-            let owner_org = s
-                .received
-                .iter()
-                .find(|r| r.id == share_id)
-                .map(|r| r.owner_org.clone())
-                .ok_or(BackendError::NotFound)?;
-            let now = Utc::now();
-            // Read only: the owner's copy wins; nothing is pushed or
-            // deleted.
-            let by_rel: BTreeMap<String, &SyncFile> =
-                local.iter().map(|f| (rel_key(&f.rel), f)).collect();
-            let snapshot = shared_files(s, &share_id)?;
-            let mut report = SyncReport {
-                variables: Some(shared_variables(s, &share_id)),
-                ..SyncReport::default()
-            };
-            report.pulled = snapshot
-                .iter()
-                .filter(|f| by_rel.get(&rel_key(&f.rel)).map(|l| l.hash) != Some(f.hash))
-                .cloned()
-                .collect();
-            let on_server: Vec<String> = snapshot.iter().map(|f| rel_key(&f.rel)).collect();
-            report.deleted = local
-                .iter()
-                .filter(|f| f.base.is_some() && !on_server.contains(&rel_key(&f.rel)))
-                .map(|f| f.rel.clone())
-                .collect();
-            let col = s.synced.entry(key.id.clone()).or_default();
-            col.files = snapshot
-                .into_iter()
-                .map(|f| {
-                    let file = ServerFile {
-                        hash: f.hash,
-                        text: f.text,
-                        author: owner_org.clone(),
-                        at: now,
-                    };
-                    (rel_key(&f.rel), file)
-                })
-                .collect();
-            col.synced_at = Some(now);
             Ok(report)
         })
     }
@@ -861,59 +833,63 @@ impl Backend for MockBackend {
         })
     }
 
-    /// Anyone with a link may resolve it: the mock does not check
-    /// `InvitedOnly` against the caller.
+    /// A restricted link (`InvitedOnly`) needs a session on its server;
+    /// the mock does not check the invite list against it.
     fn resolve_link(&self, link: &ShareLink) -> BoxFut<'_, SharedCollection> {
         self.record(format!("resolve_link({link:?})"));
         let link = link.clone();
         self.call(false, move |s| {
-            online(s)?;
-            if link.token == fixtures::SHIPPING_TOKEN {
-                if s.toggles.expire_links {
-                    return Err(BackendError::Expired);
+            let found = open_share(s, &link)?;
+            let snap = snapshot_of(s, &found);
+            let (owner_org, name, access) = match found {
+                Found::Fixture => (
+                    fixtures::SHIPPING_ORG.to_string(),
+                    fixtures::SHIPPING_NAME.to_string(),
+                    LinkAccess::Public,
+                ),
+                Found::Owned(_, share) => (
+                    share.owner_org.clone(),
+                    share.name.clone(),
+                    link_access(share.access),
+                ),
+            };
+            let summary = match found {
+                Found::Fixture => fixtures::SHIPPING_SUMMARY.to_string(),
+                Found::Owned(..) => {
+                    let rels: Vec<String> = snap.files.iter().map(|f| rel_key(&f.rel)).collect();
+                    folders_line(rels.iter())
                 }
-                return Ok(fixture_collection());
-            }
-            let (id, share) = s
-                .shares
-                .iter()
-                .find(|(_, sh)| sh.token == link.token)
-                .ok_or(BackendError::NotFound)?;
-            let today = Utc::now().date_naive();
-            if s.toggles.expire_links || share.expires.is_some_and(|d| d < today) {
-                return Err(BackendError::Expired);
-            }
-            let col = s.synced.get(id);
-            let files = col.map(|c| &c.files);
+            };
             Ok(SharedCollection {
-                id: id.clone(),
-                owner_org: share.owner_org.clone(),
-                name: share.name.clone(),
-                summary: files.map(|f| folders_line(f.keys())).unwrap_or_default(),
-                updated: col.and_then(|c| c.synced_at).unwrap_or_else(Utc::now),
-                request_count: files.map_or(0, BTreeMap::len),
-                variables: share.variables.clone(),
+                team_slug: crate::model::shared_copy::slug(&owner_org),
+                owner_org,
+                name,
+                summary,
+                updated: snap.published_at,
+                request_count: snap.files.len(),
+                version: snap.version,
+                access,
+                variables: snap.variables,
+                link,
             })
         })
     }
 
-    fn fetch_shared(&self, id: &str) -> BoxFut<'_, SharedSnapshot> {
-        self.record(format!("fetch_shared({id:?})"));
-        let id = id.to_string();
+    fn fetch_shared(&self, link: &ShareLink) -> BoxFut<'_, SharedSnapshot> {
+        self.record(format!("fetch_shared({link:?})"));
+        let link = link.clone();
         self.call(false, move |s| {
-            online(s)?;
-            let files = shared_files(s, &id)?;
-            let expired = id != fixtures::SHIPPING_ID
-                && s.shares[&id]
-                    .expires
-                    .is_some_and(|d| d < Utc::now().date_naive());
-            if s.toggles.expire_links || expired {
-                return Err(BackendError::Expired);
-            }
-            Ok(SharedSnapshot {
-                files,
-                variables: shared_variables(s, &id),
-            })
+            let found = open_share(s, &link)?;
+            Ok(snapshot_of(s, &found))
+        })
+    }
+
+    fn latest_version(&self, link: &ShareLink) -> BoxFut<'_, u32> {
+        self.record(format!("latest_version({link:?})"));
+        let link = link.clone();
+        self.call(false, move |s| {
+            let found = open_share(s, &link)?;
+            Ok(snapshot_of(s, &found).version)
         })
     }
 
@@ -930,11 +906,26 @@ impl Backend for MockBackend {
             gate.await;
             self.call(true, move |s| {
                 online(s)?;
-                s.received.retain(|r| r.id != share.id);
+                s.received.retain(|r| r.link.token != share.link.token);
                 s.received.push(share);
                 Ok(())
             })
             .await
+        })
+    }
+
+    fn update_received(&self, share: ReceivedShare) -> BoxFut<'_, ()> {
+        self.record(format!("update_received({share:?})"));
+        self.call(true, move |s| {
+            match s
+                .received
+                .iter_mut()
+                .find(|r| r.link.token == share.link.token)
+            {
+                Some(r) => *r = share,
+                None => s.received.push(share),
+            }
+            Ok(())
         })
     }
 

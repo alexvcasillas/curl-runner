@@ -1,24 +1,28 @@
 //! [`HttpBackend`]: the studio's Backend over the curl-runner Cloud API:
-//! server info, browser sign-in, accounts. Calls run the blocking client
-//! inside a boxed future, polled on GPUI's background executor.
+//! server info, browser sign-in, accounts, and the shared collections
+//! this studio opens and adds. Calls run the blocking client inside a
+//! boxed future, polled on GPUI's background executor.
 //!
 //! The team side (`sync`, sharing, people) answers `Unavailable` until
-//! plan 3b; shared collections arrive in Task 6.
+//! plan 3b.
 
 use super::{
     Account, AuthCallback, Backend, BackendError, BoxFut, CollectionKey, ConnectionInfo,
     DevControls, PendingSignIns, Person, ReceivedShare, Server, ShareLink, ShareSettings,
-    ShareUpdate, SharedCollection, SharedSnapshot, SyncDeletion, SyncFile, SyncReport, SyncStatus,
+    ShareUpdate, SharedCollection, SharedSnapshot, SharedVar, SyncDeletion, SyncFile, SyncReport,
+    SyncStatus,
 };
 use crate::model::sessions::{AccountCache, CachedAccount, SessionStore};
-use curl_runner_cloud_client::{Client, CloudError, check_server, describe};
-use curl_runner_cloud_proto::ErrorCode;
+use curl_runner_cloud_client::{Client, CloudError, check_server, describe, escape_control};
+use curl_runner_cloud_proto::{ErrorCode, Input, Snapshot};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
 /// Where the server choice is kept, under the state folder.
 const SERVER_FILE: &str = "server.json";
+/// The collections this studio added, under the state folder.
+const RECEIVED_FILE: &str = "received-shares.json";
 
 pub struct HttpBackend {
     state: Option<PathBuf>,
@@ -28,6 +32,8 @@ pub struct HttpBackend {
     /// `{state}/accounts.json`.
     accounts: Mutex<AccountCache>,
     pending: PendingSignIns,
+    /// Mirrored in `{state}/received-shares.json`.
+    received: Mutex<Vec<ReceivedShare>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -61,7 +67,51 @@ impl HttpBackend {
             server: Mutex::new(server),
             accounts: Mutex::new(AccountCache::load(state)),
             pending: PendingSignIns::default(),
+            received: Mutex::new(
+                state
+                    .and_then(|s| std::fs::read(s.join(RECEIVED_FILE)).ok())
+                    .and_then(|b| serde_json::from_slice(&b).ok())
+                    .unwrap_or_default(),
+            ),
         }
+    }
+
+    /// `call` on a client for `server`, with its session when there is one
+    /// (none: anonymous, no `Authorization` at all). Every error goes
+    /// through [`HttpBackend::map_error`], so a 401 forgets that server's
+    /// session. A 403 says why in the server's words (not on the list).
+    fn authed<T>(
+        &self,
+        server: &str,
+        call: impl FnOnce(&Client) -> Result<T, CloudError>,
+    ) -> Result<T, BackendError> {
+        let server = key(server);
+        let token = self
+            .sessions
+            .get(&server)
+            .map_err(|_| keychain_unreadable())?;
+        call(&Client::new(&server, token)).map_err(|e| match e {
+            CloudError::Api(b, _) if b.error == ErrorCode::Forbidden => {
+                BackendError::Invalid(escape_control(&b.message))
+            }
+            e => self.map_error(&server, e),
+        })
+    }
+
+    /// Changes the received records with `f`, then writes them (atomic).
+    fn edit_received(&self, f: impl FnOnce(&mut Vec<ReceivedShare>)) -> Result<(), BackendError> {
+        let mut received = lock(&self.received);
+        let mut next = received.clone();
+        f(&mut next);
+        if let Some(state) = &self.state {
+            let json = serde_json::to_string_pretty(&next)
+                .map_err(|e| BackendError::Invalid(format!("Couldn't save it: {e}")))?;
+            std::fs::create_dir_all(state)
+                .and_then(|()| crate::model::write_atomic(&state.join(RECEIVED_FILE), &json))
+                .map_err(|e| BackendError::Invalid(format!("Couldn't save it: {e}")))?;
+        }
+        *received = next;
+        Ok(())
     }
 
     /// Asks `server` who the session on it is, and refreshes the cached
@@ -145,6 +195,51 @@ impl HttpBackend {
 
 fn keychain_unreadable() -> BackendError {
     BackendError::Invalid("Couldn't read your sign-in from the Keychain.".into())
+}
+
+/// An owner's input as the studio's variable, one for one.
+fn variable_of(input: Input) -> SharedVar {
+    SharedVar {
+        name: input.name,
+        description: input.description.unwrap_or_default(),
+        required: input.required,
+        secret: input.secret,
+        default: input.default,
+        locked: input.locked,
+    }
+}
+
+fn snapshot_of(snap: Snapshot) -> SharedSnapshot {
+    SharedSnapshot {
+        files: snap
+            .files
+            .into_iter()
+            .map(|f| SyncFile::new(f.path, f.text))
+            .collect(),
+        variables: snap.inputs.into_iter().map(variable_of).collect(),
+        version: snap.info.version,
+        published_at: snap.info.updated_at,
+    }
+}
+
+/// The top folders of `files`, in order of first use, at most three:
+/// `rates, labels, tracking`.
+fn folders_line(files: &[SyncFile]) -> String {
+    let mut tops: Vec<String> = Vec::new();
+    for f in files {
+        let mut parts = f.rel.components();
+        let (Some(top), Some(_)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        let top = top.as_os_str().to_string_lossy().into_owned();
+        if !tops.contains(&top) {
+            tops.push(top);
+        }
+        if tops.len() == 3 {
+            break;
+        }
+    }
+    tops.join(", ")
 }
 
 fn ready<'a, T: Send + 'a>(r: Result<T, BackendError>) -> BoxFut<'a, T> {
@@ -262,9 +357,6 @@ impl Backend for HttpBackend {
     ) -> BoxFut<'_, SyncReport> {
         unavailable()
     }
-    fn sync_shared(&self, _: &CollectionKey, _: &str, _: &[SyncFile]) -> BoxFut<'_, SyncReport> {
-        unavailable()
-    }
     fn share_settings(&self, _: &CollectionKey) -> BoxFut<'_, ShareSettings> {
         unavailable()
     }
@@ -277,18 +369,62 @@ impl Backend for HttpBackend {
     fn remove_person(&self, _: &CollectionKey, _: &str) -> BoxFut<'_, ()> {
         unavailable()
     }
-    // Task 6: shared collections.
-    fn resolve_link(&self, _: &ShareLink) -> BoxFut<'_, SharedCollection> {
-        unavailable()
+    /// The card first (a restricted link without a session stops there,
+    /// before any file is sent), then the snapshot for its inputs.
+    fn resolve_link(&self, link: &ShareLink) -> BoxFut<'_, SharedCollection> {
+        let link = link.clone();
+        Box::pin(async move {
+            let info = self.authed(&link.server, |c| c.shared_info(&link.token))?;
+            let snap = snapshot_of(self.authed(&link.server, |c| c.snapshot(&link.token))?);
+            Ok(SharedCollection {
+                summary: folders_line(&snap.files),
+                owner_org: info.team,
+                team_slug: info.team_slug,
+                name: info.name,
+                updated: info.updated_at,
+                request_count: usize::try_from(info.request_count).unwrap_or(usize::MAX),
+                version: info.version,
+                access: info.access,
+                variables: snap.variables,
+                link,
+            })
+        })
     }
-    fn fetch_shared(&self, _: &str) -> BoxFut<'_, SharedSnapshot> {
-        unavailable()
+
+    fn fetch_shared(&self, link: &ShareLink) -> BoxFut<'_, SharedSnapshot> {
+        let link = link.clone();
+        Box::pin(async move {
+            self.authed(&link.server, |c| c.snapshot(&link.token))
+                .map(snapshot_of)
+        })
     }
+
+    fn latest_version(&self, link: &ShareLink) -> BoxFut<'_, u32> {
+        let link = link.clone();
+        Box::pin(async move {
+            self.authed(&link.server, |c| c.latest(&link.token))
+                .map(|l| l.version)
+        })
+    }
+
     fn received(&self) -> Vec<ReceivedShare> {
-        Vec::new()
+        lock(&self.received).clone()
     }
-    fn add_received(&self, _: ReceivedShare) -> BoxFut<'_, ()> {
-        unavailable()
+
+    fn add_received(&self, share: ReceivedShare) -> BoxFut<'_, ()> {
+        ready(self.edit_received(|all| {
+            all.retain(|r| r.link.token != share.link.token);
+            all.push(share);
+        }))
+    }
+
+    fn update_received(&self, share: ReceivedShare) -> BoxFut<'_, ()> {
+        ready(self.edit_received(|all| {
+            match all.iter_mut().find(|r| r.link.token == share.link.token) {
+                Some(r) => *r = share,
+                None => all.push(share),
+            }
+        }))
     }
     fn dev(&self) -> Option<&dyn DevControls> {
         None
