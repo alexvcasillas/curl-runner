@@ -27,7 +27,8 @@ const commit = (path: string, content = String(Math.random())) => {
 const run = (env: Record<string, string> = {}) =>
   spawnSync('sh', [script], {
     cwd: join(repo, 'packages/docs'),
-    env: { PATH: process.env.PATH, ...env },
+    // A clean environment, so Vercel's variables from the real one can't leak in.
+    env: { NODE_ENV: 'test', PATH: process.env.PATH, ...env },
   }).status;
 
 beforeEach(() => {
