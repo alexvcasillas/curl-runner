@@ -29,8 +29,8 @@ use super::page::{Cursor, EXPORT_PAGE, invalid, non_empty, page_limit, search_pa
 use super::users::{EmailReq, clean_reason};
 use crate::auth::session::column_enum;
 use crate::billing::effective::{
-    PlanChange, PlanRow, PlanSource, effective_plan, effective_plan_sql, override_active_sql,
-    parse_plan, plan_columns, plan_str,
+    PlanChange, PlanRow, PlanSource, effective_plan, effective_plan_sql, parse_plan, plan_columns,
+    plan_str,
 };
 use crate::billing::mrr::{Billed, granted_sql, is_live_subscription, live_subscription_sql};
 use crate::billing::routes::{current_prices, stripe_down};
@@ -114,10 +114,9 @@ impl ListQuery {
 }
 
 /// `$1` the pattern, `$2` the filter, `$3` now. `stripe` is a live
-/// subscription, override or not; `granted` is [`granted_sql`]; `free` is on
-/// Free with neither an override nor a suspension.
+/// subscription, override or not; `granted` is [`granted_sql`]; `free` is an
+/// effective plan of Free, a Free override included, and no suspension.
 fn where_sql() -> String {
-    let active = override_active_sql("t", "$3");
     let effective = effective_plan_sql("t", "$3");
     let live = live_subscription_sql("t");
     let granted = granted_sql("t", "$3");
@@ -129,7 +128,7 @@ fn where_sql() -> String {
            OR ($2 = 'stripe' AND {live}) \
            OR ($2 = 'granted' AND {granted}) \
            OR ($2 = 'past_due' AND t.past_due_since IS NOT NULL) \
-           OR ($2 = 'free' AND {effective} = 'free' AND NOT {active} AND t.suspended_at IS NULL) \
+           OR ($2 = 'free' AND {effective} = 'free' AND t.suspended_at IS NULL) \
            OR ($2 = 'suspended' AND t.suspended_at IS NOT NULL))"
     )
 }

@@ -1225,6 +1225,21 @@ async fn list_filters_search_and_csv(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(slugs(&list("?filter=granted").await), ["beta"]);
+    // A Free override puts a paying team under `free`, and it stays `stripe`.
+    let (status, _) = req(
+        &c.app,
+        "PUT",
+        "/v1/admin/teams/acme/override",
+        Some(json!({"plan": "free", "reason": "Review", "notify": false})),
+        Some(&c.root),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        slugs(&list("?filter=free").await),
+        ["epsilon", "gamma", "acme"]
+    );
+    assert_eq!(slugs(&list("?filter=stripe").await), ["acme"]);
 }
 
 #[sqlx::test]
