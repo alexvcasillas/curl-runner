@@ -106,5 +106,19 @@ fn live_server_round_trip() {
             .collect(),
     };
     block_on(b.add_received(record.clone())).expect("add_received");
-    assert_eq!(b.received(), [record]);
+    // Field by field: a failure never prints the share token.
+    let got = b.received();
+    assert_eq!(got.len(), 1, "one received record");
+    let got = &got[0];
+    assert!(got.link == record.link, "the record keeps the link");
+    assert_eq!(
+        (&got.team, &got.name, got.version, got.added, &got.files),
+        (
+            &record.team,
+            &record.name,
+            record.version,
+            record.added,
+            &record.files
+        )
+    );
 }
