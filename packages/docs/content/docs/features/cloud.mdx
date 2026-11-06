@@ -99,7 +99,7 @@ Publishing records the commit, ref and repository from GitHub Actions or GitLab 
 | --- | --- |
 | `0` | Published, or nothing to change. |
 | `1` | Invalid files, or a bad option or `--server`. Nothing was sent. |
-| `2` | Not signed in, or the token can't publish to that team. |
+| `2` | Not signed in, the token can't publish to that team, or the team is suspended. |
 | `3` | Your plan's limit was reached. |
 | `4` | The collection's source is the studio, not git. Switch its source to git, then publish again. |
 | `5` | The server could not be reached. |
@@ -110,7 +110,7 @@ With more than one folder, a refusal from the server for one folder does not sto
 
 A config file named `.curl-runner.yaml` is not published, so `publish` stops with exit `1` and asks you to rename it to `curl-runner.yaml`.
 
-`login`, `logout`, `publish` and `pull` all exit `1` for a bad option, a missing value or a bad `--server`. Exit `2` is only for sign-in problems.
+`login`, `logout`, `publish` and `pull` all exit `1` for a bad option, a missing value or a bad `--server`. Exit `2` is only for sign-in and access problems.
 
 ### GitHub Action [#github-action]
 

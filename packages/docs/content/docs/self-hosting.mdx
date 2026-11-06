@@ -188,6 +188,10 @@ curl -X POST https://api.example.com/v1/teams \
 
 You can also do this in the dashboard. Sign in at your `PUBLIC_APP_URL` and create the team from the new team page.
 
+<Callout title="Set on the first start only">
+`SIGNUP`, `SIGNUP_DOMAINS` and `DEFAULT_PLAN` seed the server settings the first time the server starts. After that, the server ignores changes to them and logs a warning. To change these settings later, use the admin settings. The admin panel is coming soon. Until then, call `PUT /v1/admin/settings/{section}` as an operator, with `signup` or `plans` as the section.
+</Callout>
+
 ### Plans [#plans]
 
 `DEFAULT_PLAN` sets the plan of a new team: `team` or `free`. The default is `team`, which has no member limits and allows restricted sharing. Leave it unset when you self-host. The managed service sets `DEFAULT_PLAN=free`.
