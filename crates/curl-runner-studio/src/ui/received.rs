@@ -19,7 +19,7 @@ use crate::model::received::{ReceivedCopy, local_changes};
 use crate::model::secrets::service_name;
 use crate::model::shared_copy::{
     STATE_FOLDER_TEXT, UpdatePlan, apply_update, duplicate, holds_studio_state, plan_update,
-    secret_in_either,
+    resolves_inside, secret_in_either,
 };
 use crate::model::sync_base::SyncBase;
 use curl_runner_core::interpolate::Store;
@@ -110,13 +110,32 @@ impl Workspace {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<String> {
-        let open = self.state.collection.as_ref().map(|c| c.root.as_path());
-        if open.is_some_and(|root| dir.starts_with(root)) {
+        if self.in_open_collection(dir) {
             return None;
         }
         let text = self.refusal_of(dir)?;
         self.toast(text.clone(), window, cx);
         Some(text)
+    }
+
+    /// `dir` resolves (canonically: no symlink out) inside the open
+    /// collection, and that collection doesn't hold the studio's own
+    /// folder (a `~` root), unless it is a received copy in it.
+    fn in_open_collection(&self, dir: &Path) -> bool {
+        let Some(root) = self.state.collection.as_ref().map(|c| c.root.as_path()) else {
+            return false;
+        };
+        let Ok(real_root) = root.canonicalize() else {
+            return false;
+        };
+        if !resolves_inside(dir, &real_root) {
+            return false;
+        }
+        let base = self.store.base();
+        let a_copy = base
+            .and_then(|b| b.join("shared").canonicalize().ok())
+            .is_some_and(|shared| real_root.starts_with(&shared) && real_root != shared);
+        a_copy || !holds_studio_state(base, root)
     }
 
     fn toast(&mut self, text: String, window: &mut Window, cx: &mut App) {
@@ -310,9 +329,7 @@ impl Workspace {
                     window.push_notification(Notification::info(UP_TO_DATE), cx);
                 }
             }
-            Ok(Checked::Offered) => {
-                self.recount_local_changes(token);
-            }
+            Ok(Checked::Offered) => self.recount_in_background(token.to_string(), cx),
             Ok(Checked::Newer(offer)) => {
                 self.update_offers.insert(token.to_string(), offer);
             }
@@ -333,9 +350,9 @@ impl Workspace {
     }
 
     /// **Update**, once unsaved edits are settled as before closing a
-    /// collection (saved, or dropped on `Don't save`). Edits that only now
-    /// show on disk stop it once: the banner says how many files it
-    /// replaces before anything goes. Then [`apply_offer_now`].
+    /// collection (saved, or dropped on `Don't save`). More changed files
+    /// than the banner showed stop it once: the banner says how many files
+    /// it replaces before anything goes. Then [`apply_offer_now`].
     ///
     /// [`apply_offer_now`]: Workspace::apply_offer_now
     pub(super) fn apply_offer(&mut self, token: &str, window: &mut Window, cx: &mut Context<Self>) {
@@ -348,8 +365,10 @@ impl Workspace {
         self.settle_unsaved(
             Rc::new(move |this, window, cx| {
                 this.drop_unsaved(window, cx);
+                // More than the banner said (edits just saved): it says
+                // the new count first.
                 let now = this.recount_local_changes(&token);
-                if shown == 0 && now > 0 {
+                if now > shown {
                     cx.notify();
                     return;
                 }
@@ -374,8 +393,14 @@ impl Workspace {
         }
     }
 
-    /// Counts again the files the customer changed in the copy an offer
-    /// for `token` is waiting on, and returns the count (0 with no offer).
+    /// Counts again, on the UI thread, the files the customer changed in
+    /// the copy an offer for `token` is waiting on, and returns the count
+    /// (0 with no offer). Only for the one-off guard right before Update
+    /// replaces files: it must see the disk as it is then, so it can't
+    /// wait for a background answer. Everything else recounts in the
+    /// background ([`recount_open_local_changes`]).
+    ///
+    /// [`recount_open_local_changes`]: Workspace::recount_open_local_changes
     pub(super) fn recount_local_changes(&mut self, token: &str) -> usize {
         let Some(copy) = self
             .received_all
@@ -389,18 +414,63 @@ impl Workspace {
             return 0;
         };
         offer.local_changes = local_changes(&copy.root, &copy.share).len();
+        // Newer than any recount still in flight.
+        self.local_recount_gen += 1;
+        self.local_recount = None;
         offer.local_changes
     }
 
-    /// The open copy's offer, recounted after a save or a change on disk.
+    /// A background recount for `token` landed with `n` files: taken
+    /// unless a newer recount (or the click-time one) started since.
+    pub(super) fn local_counted(
+        &mut self,
+        token: &str,
+        generation: u64,
+        n: usize,
+        cx: &mut Context<Self>,
+    ) {
+        if generation != self.local_recount_gen {
+            return;
+        }
+        if let Some(offer) = self.update_offers.get_mut(token)
+            && offer.local_changes != n
+        {
+            offer.local_changes = n;
+            cx.notify();
+        }
+    }
+
+    /// The open copy's offer, recounted after a save or a change on disk:
+    /// the scan runs in the background; a newer recount drops this one.
     pub(super) fn recount_open_local_changes(&mut self, cx: &mut Context<Self>) {
         let Some(token) = self.open_offer().map(|(t, _)| t.to_string()) else {
             return;
         };
-        let before = self.update_offers.get(&token).map(|o| o.local_changes);
-        if before != Some(self.recount_local_changes(&token)) {
-            cx.notify();
-        }
+        self.recount_in_background(token, cx);
+    }
+
+    /// [`local_changes`] of the copy an offer for `token` waits on, off the
+    /// UI thread, then [`local_counted`].
+    ///
+    /// [`local_counted`]: Workspace::local_counted
+    fn recount_in_background(&mut self, token: String, cx: &mut Context<Self>) {
+        let Some(copy) = self
+            .received_all
+            .iter()
+            .chain(self.received.as_ref())
+            .find(|r| r.share.link.token == token)
+        else {
+            return;
+        };
+        let (root, share) = (copy.root.clone(), copy.share.clone());
+        self.local_recount_gen += 1;
+        let generation = self.local_recount_gen;
+        let count = cx.background_spawn(async move { local_changes(&root, &share).len() });
+        self.local_recount = Some(cx.spawn(async move |this, cx| {
+            let n = count.await;
+            this.update(cx, |this, cx| this.local_counted(&token, generation, n, cx))
+                .ok();
+        }));
     }
 
     /// The open copy takes the offered version, all or nothing
@@ -1783,6 +1853,7 @@ mod gpui_tests {
             });
         })
         .unwrap();
+        cx.run_until_parked();
         assert_eq!(
             label(cx, &s, "update-banner-local").as_deref(),
             Some("You've changed 2 files. Updating replaces them.")
@@ -1961,6 +2032,162 @@ mod gpui_tests {
             assert_eq!(doc.text, v14, "the tab shows the new version");
             assert!(!doc.is_dirty() && !doc.disk_conflict);
         });
+    }
+
+    fn offered_local_changes(cx: &mut TestAppContext, s: &Studio) -> usize {
+        s.ws.read_with(cx, |ws, _| ws.open_offer().unwrap().1.local_changes)
+    }
+
+    #[gpui_kit::test]
+    fn local_changes_recount_off_the_ui_thread(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        open_file(cx, &s, "rates/list-carriers.yaml");
+        publish(
+            &s,
+            14,
+            chrono::Duration::hours(2),
+            three_changed(),
+            fixtures::shipping_variables(),
+        );
+        check(cx, &s, false);
+        assert_eq!(offered_local_changes(cx, &s), 0);
+        edit_copy(&s);
+        let ws = s.ws.clone();
+        let token = token_of(cx, &s);
+        let generation = cx
+            .update_window(s.window, |_, window, cx| {
+                ws.update(cx, |ws, cx| {
+                    ws.disk_changed(&[RATES.into(), "mine.yaml".into()], window, cx);
+                    let generation = ws.local_recount_gen;
+                    // A second recount starts: the first one's answer is stale.
+                    ws.recount_open_local_changes(cx);
+                    generation
+                })
+            })
+            .unwrap();
+        // Nothing counted on the UI thread.
+        assert_eq!(offered_local_changes(cx, &s), 0);
+        // A stale answer is dropped.
+        s.ws.update(cx, |ws, cx| ws.local_counted(&token, generation, 99, cx));
+        assert_eq!(offered_local_changes(cx, &s), 0);
+        cx.run_until_parked();
+        assert_eq!(offered_local_changes(cx, &s), 2);
+    }
+
+    #[gpui_kit::test]
+    fn writes_into_the_open_collection_skip_only_its_own_folder(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        // The open received copy takes an import into one of its folders.
+        let (copy, ws) = (s.root(), s.ws.clone());
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                assert_eq!(ws.refuse_write_into(&copy.join("rates"), window, cx), None);
+                assert_eq!(ws.refuse_write_into(&copy.join("new"), window, cx), None);
+            })
+        })
+        .unwrap();
+        // A studio whose state folder sits in a `~`-like root.
+        let home = tempfile::tempdir().unwrap();
+        let state = home.path().join("state");
+        let other = state.join("shared/acme-other");
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(home.path().join("a.yaml"), "request:\n  url: https://a\n").unwrap();
+        let (secrets, backend) = (
+            super::super::workspace::test_secrets(),
+            test_backend() as Arc<dyn Backend>,
+        );
+        let store = StateStore::at(state.clone());
+        let (window, ws) = cx.update(|cx| {
+            gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
+                cx.new(|cx| Workspace::new(None, store, secrets, backend, window, cx))
+            })
+            .unwrap()
+        });
+        cx.run_until_parked();
+        let mine = tempfile::tempdir().unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&state, home.path().join("link")).unwrap();
+            std::os::unix::fs::symlink(&other, mine.path().join("link")).unwrap();
+        }
+        std::fs::write(mine.path().join("b.yaml"), "request:\n  url: https://b\n").unwrap();
+        let (root, mine_root) = (home.path().to_path_buf(), mine.path().to_path_buf());
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                assert!(ws.open_collection(&root, window, cx));
+                // Holding the state folder: its own folders still check.
+                assert_eq!(
+                    ws.refuse_write_into(&other, window, cx).as_deref(),
+                    Some(STATE_FOLDER_TEXT)
+                );
+                assert_eq!(
+                    ws.refuse_write_into(&state, window, cx).as_deref(),
+                    Some(STATE_FOLDER_TEXT)
+                );
+                #[cfg(unix)]
+                assert_eq!(
+                    ws.refuse_write_into(&root.join("link/x"), window, cx)
+                        .as_deref(),
+                    Some(STATE_FOLDER_TEXT)
+                );
+                assert!(ws.open_collection(&mine_root, window, cx));
+                assert_eq!(
+                    ws.refuse_write_into(&mine_root.join("sub"), window, cx),
+                    None
+                );
+                // A symlink in an ordinary collection into a received copy.
+                #[cfg(unix)]
+                assert_eq!(
+                    ws.refuse_write_into(&mine_root.join("link"), window, cx)
+                        .as_deref(),
+                    Some(STATE_FOLDER_TEXT)
+                );
+            })
+        })
+        .unwrap();
+        assert!(std::fs::read_dir(&other).unwrap().next().is_none());
+    }
+
+    #[gpui_kit::test]
+    fn update_stops_when_save_all_adds_changes(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        // One file edited on disk: the banner says 1.
+        std::fs::write(s.root().join(RATES), MINE).unwrap();
+        open_file(cx, &s, "rates/list-carriers.yaml");
+        publish(
+            &s,
+            14,
+            chrono::Duration::hours(2),
+            three_changed(),
+            fixtures::shipping_variables(),
+        );
+        check(cx, &s, false);
+        assert_eq!(
+            label(cx, &s, "update-banner-local").as_deref(),
+            Some("You've changed 1 file. Updating replaces it.")
+        );
+        let held = s.spy.received().into_iter().next().unwrap().version;
+        // A second file edited, unsaved.
+        cx.update_window(s.window, |_, window, cx| {
+            window.render_frame(cx);
+            window.input("# mine\n", cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+        let typed = s.ws.read_with(cx, |ws, _| {
+            let ix = ws.state.active.unwrap();
+            ws.state.open[ix].text.clone()
+        });
+        click(cx, s.window, "update-banner-update");
+        click(cx, s.window, "unsaved-save");
+        // Saved, not replaced: the banner shows the new count first.
+        assert_eq!(s.read("rates/list-carriers.yaml"), typed);
+        assert_eq!(s.read(RATES), MINE);
+        assert_eq!(
+            label(cx, &s, "update-banner-local").as_deref(),
+            Some("You've changed 2 files. Updating replaces them.")
+        );
+        assert_eq!(s.spy.received().into_iter().next().unwrap().version, held);
     }
 
     #[gpui_kit::test]

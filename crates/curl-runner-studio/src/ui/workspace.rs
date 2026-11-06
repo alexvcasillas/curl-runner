@@ -220,6 +220,11 @@ pub struct Workspace {
     pub(super) manual_checks: HashSet<String>,
     /// A newer version of a received copy, by share token: the banner.
     pub(super) update_offers: HashMap<String, super::update_banner::UpdateOffer>,
+    /// The latest local-changes recount (see `recount_open_local_changes`):
+    /// a newer one replaces (and drops) it.
+    pub(super) local_recount: Option<Task<()>>,
+    /// Bumped by every recount; an answer from an older one is stale.
+    pub(super) local_recount_gen: u64,
     /// Checks the open received copy every `UPDATE_EVERY`.
     pub(super) _update_timer: Option<Task<()>>,
     /// Every folder a watcher was started on, in order (tests).
@@ -351,6 +356,8 @@ impl Workspace {
             update_checks: HashMap::new(),
             manual_checks: HashSet::new(),
             update_offers: HashMap::new(),
+            local_recount: None,
+            local_recount_gen: 0,
             _update_timer: None,
             #[cfg(test)]
             watched: Vec::new(),
