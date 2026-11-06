@@ -284,9 +284,10 @@ impl Backend for HttpBackend {
         }
         Box::pin(async move {
             let started = Instant::now();
+            // No session sent: a 401 here signs no one out.
             let info = Client::new(&url, None)
                 .info()
-                .map_err(|e| self.map_error(&url, e))?;
+                .map_err(|e| Self::describe_error(&url, e))?;
             Ok(ConnectionInfo {
                 version: info.version,
                 sign_in: info.sign_in,
@@ -304,12 +305,15 @@ impl Backend for HttpBackend {
         Box::pin(async move {
             let info = Client::new(&url, None)
                 .info()
-                .map_err(|e| self.map_error(&url, e))?;
+                .map_err(|e| Self::describe_error(&url, e))?;
             let app = info
                 .app_url
                 .map(|a| key(&a))
                 .filter(|a| !a.is_empty())
                 .ok_or_else(|| BackendError::Invalid("This server has no sign-in page.".into()))?;
+            // The server names the page the browser opens: only a web page
+            // (no other scheme, no `curl-runner://` callback of its own).
+            check_server(&app).map_err(BackendError::Invalid)?;
             self.pending.start(&url);
             Ok(format!("{app}/sign-in?client=studio"))
         })
@@ -356,6 +360,10 @@ impl Backend for HttpBackend {
 
     fn account_on(&self, server: &str) -> Option<Account> {
         lock(&self.accounts).0.get(&key(server)).map(account_of)
+    }
+    /// Until 3b: `sync` answers `Unavailable`.
+    fn team_sync(&self) -> bool {
+        false
     }
     fn sync_status(&self, _: &CollectionKey) -> SyncStatus {
         SyncStatus::Off

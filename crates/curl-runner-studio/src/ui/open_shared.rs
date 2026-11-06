@@ -1490,9 +1490,9 @@ impl Workspace {
         let call = backend_call(cx, &self.backend, move |b| b.sign_in_url(&server));
         cx.spawn_in(window, async move |this, cx| {
             let result = call.await;
-            this.update_in(cx, |this, window, cx| match result {
-                Ok(url) => this.open_sign_in_page(&url, window, cx),
-                Err(e) => {
+            this.update_in(cx, |this, window, cx| {
+                let opened = result.and_then(|url| this.open_sign_in_page(&url, window, cx));
+                if let Err(e) = opened {
                     this.link_sign_in = None;
                     this.pending_link = None;
                     match this.open_shared_view() {

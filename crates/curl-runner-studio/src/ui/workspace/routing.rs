@@ -615,7 +615,11 @@ impl Workspace {
     ) {
         match event {
             SignInEvent::OpenUrl(url) => {
-                self.open_sign_in_page(url, window, cx);
+                if let Err(e) = self.open_sign_in_page(url, window, cx)
+                    && let Some(view) = &self.sign_in
+                {
+                    view.update(cx, |v, cx| v.sign_in_failed(&e, cx));
+                }
                 return;
             }
             SignInEvent::Done(connection) => self.signed_in_as(*connection),
@@ -625,23 +629,31 @@ impl Workspace {
         self.start_sync(window, cx);
     }
 
-    /// Opens a server's sign-in page in the browser. The mock's page is
-    /// its own callback: the studio answers it as it would the browser's.
+    /// Opens a server's sign-in page in the browser: only a web page
+    /// (https, or http on loopback). The mock's page is its own callback:
+    /// the studio answers it as it would the browser's. From any other
+    /// backend, a `curl-runner://` page is refused like any other scheme.
     pub(in crate::ui) fn open_sign_in_page(
         &mut self,
         url: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
-        if url.starts_with("curl-runner://") {
+    ) -> Result<(), crate::model::backend::BackendError> {
+        if url.starts_with("curl-runner://") && self.backend.dev().is_some() {
             match crate::model::backend::AuthCallback::parse(url) {
                 Some(callback) => self.complete_sign_in(callback, window, cx),
                 // The URL can carry a handoff code: never logged.
                 None => log::warn!("ignored a malformed sign-in callback"),
             }
-        } else {
-            cx.open_url(url);
+            return Ok(());
         }
+        curl_runner_cloud_client::check_server(url).map_err(|why| {
+            // Could carry a handoff code: never logged.
+            log::warn!("refused to open a sign-in page that isn't a web page");
+            crate::model::backend::BackendError::Invalid(why)
+        })?;
+        cx.open_url(url);
+        Ok(())
     }
 
     /// The sign-in screen's answer, remembered.

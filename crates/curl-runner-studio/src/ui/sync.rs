@@ -411,8 +411,9 @@ impl Workspace {
             SyncLine::LocalOnly
         } else if self.unlinked() {
             SyncLine::NotLinked
-        } else if self.pull_only() {
-            // A received copy takes updates, it doesn't sync.
+        } else if self.pull_only() || !self.backend.team_sync() {
+            // A received copy takes updates, it doesn't sync; nor does
+            // anything on a server without the team side yet.
             SyncLine::LocalOnly
         } else if s.unreadable {
             SyncLine::CantRead
@@ -450,9 +451,7 @@ impl Workspace {
             saver,
             ..SyncState::default()
         };
-        let key = self
-            .collection_key(cx)
-            .filter(|_| self.sync_on() && !self.pull_only());
+        let key = self.collection_key(cx).filter(|_| self.two_way());
         if let Some(key) = key {
             let id = self.sync_base_id(cx).unwrap_or_else(|| key.id.clone());
             self.sync.base = sync_base::load(self.store.base(), &id);
@@ -483,7 +482,7 @@ impl Workspace {
     /// received copy with an update waiting recounts the customer's edits
     /// instead (the banner's warning).
     pub(super) fn mark_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.sync_on() && !self.pull_only() {
+        if self.two_way() {
             self.refresh_pending(self.settings.sync.automatic, window, cx);
         }
         self.recount_open_local_changes(cx);
@@ -532,6 +531,14 @@ impl Workspace {
         } else {
             None
         }
+    }
+
+    /// The open collection syncs both ways: not a received copy, and the
+    /// backend has the team side ([`Backend::team_sync`]).
+    ///
+    /// [`Backend::team_sync`]: crate::model::backend::Backend::team_sync
+    fn two_way(&self) -> bool {
+        self.sync_on() && !self.pull_only() && self.backend.team_sync()
     }
 
     /// The open collection is a received copy: it takes updates, never
@@ -601,10 +608,7 @@ impl Workspace {
     /// queues one more. A folder that can't be read sends nothing; an
     /// emptied one only after `Sync now` confirmed it.
     pub(super) fn run_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(key) = self
-            .collection_key(cx)
-            .filter(|_| self.sync_on() && !self.pull_only())
-        else {
+        let Some(key) = self.collection_key(cx).filter(|_| self.two_way()) else {
             // No sync to take a confirm: it doesn't wait for a later one.
             self.sync.confirmed = false;
             return;
@@ -1384,6 +1388,70 @@ mod gpui_tests {
             .into_iter()
             .filter(|c| c.starts_with("sync("))
             .collect()
+    }
+
+    /// The real server's backend, signed in on a local test server that
+    /// answers only info and the sign-in handoff: no team side yet.
+    fn http_signed_in() -> (testkit::TestServer, Arc<dyn Backend>) {
+        use crate::model::backend::{AuthCallback, Server, http::HttpBackend};
+        use crate::model::secrets::MemorySecrets;
+        use crate::model::sessions::MemorySessions;
+        use futures::executor::block_on;
+        let srv = testkit::TestServer::with_handler(|r: testkit::Request| {
+            let json = |status: u16, body: &str| {
+                testkit::Response::from_data(body.as_bytes().to_vec())
+                    .with_status_code(status)
+                    .with_header("Content-Type", "application/json")
+            };
+            match r.url.as_str() {
+                "/v1/info" => json(
+                    200,
+                    r#"{"version":"2.1.1","sign_in":["email"],"signup":"open","billing":false,"app_url":"https://app.example.test"}"#,
+                ),
+                "/v1/auth/handoff/redeem" => json(
+                    200,
+                    r#"{"session":"crs_new","user":{"id":"u1","email":"ada@example.test","name":"Ada"}}"#,
+                ),
+                _ => json(404, r#"{"error":"not_found","message":"No."}"#),
+            }
+        });
+        let sessions = Arc::new(MemorySessions::new(MemorySecrets::default(), None));
+        let backend = HttpBackend::open(None, sessions);
+        let server = Server::SelfHosted {
+            url: srv.base_url.clone(),
+        };
+        block_on(backend.set_server(server.clone())).unwrap();
+        block_on(backend.sign_in_url(&server)).unwrap();
+        block_on(backend.complete_sign_in(&AuthCallback {
+            server: srv.base_url.clone(),
+            code: "crh_abc".into(),
+        }))
+        .unwrap();
+        (srv, Arc::new(backend))
+    }
+
+    #[gpui_kit::test]
+    fn no_team_side_reads_local_only_without_a_toast(cx: &mut TestAppContext) {
+        use gpui_kit::component::WindowExt as _;
+        let dir = collection(&[("a.yaml", REQUEST)]);
+        let (_srv, backend) = http_signed_in();
+        assert!(backend.account().is_some());
+        let (window, ws) = open(cx, dir.path(), backend);
+        save(
+            cx,
+            window,
+            &ws,
+            "a.yaml",
+            "request:\n  url: https://api.example.com/b\n",
+        );
+        cx.executor().advance_clock(SYNC_DELAY * 2);
+        cx.run_until_parked();
+        let toasts = cx
+            .update_window(window, |_, window, cx| window.notifications(cx).len())
+            .unwrap();
+        assert_eq!(toasts, 0, "no `Couldn't sync` toast");
+        assert_eq!(line(cx, &ws), SyncLine::LocalOnly);
+        assert!(shows(cx, window, "sidebar-sync", "Local only"));
     }
 
     #[gpui_kit::test]

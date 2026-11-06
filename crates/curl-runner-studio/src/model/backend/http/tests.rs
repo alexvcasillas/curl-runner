@@ -339,6 +339,7 @@ fn team_side_calls_are_unavailable_until_3b() {
     un(block_on(b.invite(&key, "a@b.c")).unwrap_err());
     un(block_on(b.remove_person(&key, "a@b.c")).unwrap_err());
     assert_eq!(b.sync_status(&key), SyncStatus::Off);
+    assert!(!b.team_sync());
     assert!(b.dev().is_none());
 }
 
@@ -659,4 +660,47 @@ fn a_restricted_link_refused_twice_is_signed_out() {
     assert_eq!(log.len(), 2, "{log:?}");
     assert_eq!(log[0].2.as_deref(), Some("Bearer crs_stale"));
     assert_eq!(log[1].2, None);
+}
+
+/// A server whose `/v1/info` names `app_url` as its dashboard.
+fn info_server(app_url: &'static str) -> TestServer {
+    TestServer::with_handler(move |_| json(200, &info_body(Some(app_url))))
+}
+
+#[test]
+fn sign_in_url_refuses_a_dashboard_off_https() {
+    let check = "Use an https:// server. Plain http is only allowed for localhost.";
+    for app in [
+        "smb://host/share",
+        "curl-runner://auth/callback?code=crh_x&server=https://evil.example",
+        "http://app.example.test",
+    ] {
+        let srv = info_server(app);
+        let (b, _) = backend(None);
+        let err = block_on(b.sign_in_url(&own(&srv.base_url))).unwrap_err();
+        assert_eq!(err, BackendError::Invalid(check.into()), "{app}");
+        // Nothing pending: no callback for it is redeemed.
+        let err = block_on(b.complete_sign_in(&callback(&srv.base_url))).unwrap_err();
+        assert_eq!(err, BackendError::Invalid(FOREIGN_CALLBACK.into()), "{app}");
+    }
+    // A dashboard on loopback http is fine (a local server).
+    let srv = info_server("http://127.0.0.1:3000");
+    let (b, _) = backend(None);
+    let url = block_on(b.sign_in_url(&own(&srv.base_url))).unwrap();
+    assert_eq!(url, "http://127.0.0.1:3000/sign-in?client=studio");
+}
+
+#[test]
+fn info_calls_never_sign_out() {
+    let srv =
+        TestServer::with_handler(|_| json(401, r#"{"error":"unauthorized","message":"No."}"#));
+    let (b, sessions) = backend(None);
+    sessions.set(&srv.base_url, "crs_kept").unwrap();
+    let err = block_on(b.test_connection(&own(&srv.base_url))).unwrap_err();
+    assert_eq!(err, BackendError::SignedOut);
+    assert!(block_on(b.sign_in_url(&own(&srv.base_url))).is_err());
+    assert_eq!(
+        sessions.get(&srv.base_url).unwrap().as_deref(),
+        Some("crs_kept")
+    );
 }

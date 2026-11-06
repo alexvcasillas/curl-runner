@@ -1312,6 +1312,42 @@ mod tests {
         assert_ne!(store.connection(), Some(Connection::Online));
     }
 
+    /// A server whose sign-in page is not a web page: nothing opens and no
+    /// callback is taken from it, outside the mock.
+    #[cfg(feature = "server")]
+    #[gpui_kit::test]
+    fn only_web_pages_open_for_sign_in(cx: &mut TestAppContext) {
+        use crate::model::backend::Server;
+        let hostile = [
+            "smb://host/share".to_string(),
+            format!(
+                "curl-runner://auth/callback?code=crh_mock&server={}",
+                Server::Cloud.url()
+            ),
+        ];
+        for url in hostile {
+            let spy = crate::model::backend::testing::Spy::new(test_backend());
+            *spy.browser_url.lock().unwrap() = Some(url.clone());
+            spy.hide_dev
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            let backend: Arc<dyn Backend> = Arc::new(spy);
+            let (window, ws) = open(cx, StateStore::none(), backend.clone());
+            click(cx, window, "sign-in-continue");
+            assert_eq!(cx.opened_url(), None, "{url}");
+            assert!(backend.account().is_none(), "{url}");
+            assert!(sign_in_shown(cx, &ws), "{url}");
+            assert!(!shows(cx, window, "Waiting for the browser…"), "{url}");
+            assert!(
+                shows(
+                    cx,
+                    window,
+                    "Use an https:// server. Plain http is only allowed for localhost."
+                ),
+                "{url}"
+            );
+        }
+    }
+
     #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn cancel_stops_waiting_for_the_browser(cx: &mut TestAppContext) {

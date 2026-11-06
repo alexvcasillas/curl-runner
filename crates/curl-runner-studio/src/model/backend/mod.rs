@@ -539,6 +539,13 @@ pub trait Backend: Send + Sync {
     // Received collections, each on its own server, ask (Task 7 of 3a).
     #[cfg_attr(not(test), allow(dead_code))]
     fn account_on(&self, server: &str) -> Option<Account>;
+    /// Whether this backend syncs team collections at all ([`Backend::sync`]
+    /// works). The real server's answers `false` until its team side ships
+    /// (plan 3b): the studio then keeps collections local, without a sync
+    /// call or a toast.
+    fn team_sync(&self) -> bool {
+        true
+    }
     fn sync_status(&self, collection: &CollectionKey) -> SyncStatus;
     /// Reconciles `local` (each with its `base`) and `deleted` with the
     /// server's copy, file by file:
@@ -785,6 +792,9 @@ pub mod testing {
         pub newer: Mutex<Option<SharedSnapshot>>,
         /// How many times `latest_version` was asked.
         pub checks: std::sync::atomic::AtomicUsize,
+        /// While set, the spy is not the mock to the studio: no
+        /// Developer controls, as a real server's backend.
+        pub hide_dev: std::sync::atomic::AtomicBool,
     }
 
     impl Spy {
@@ -796,6 +806,7 @@ pub mod testing {
                 browser_url: Mutex::default(),
                 newer: Mutex::default(),
                 checks: Default::default(),
+                hide_dev: Default::default(),
             }
         }
     }
@@ -828,6 +839,9 @@ pub mod testing {
         }
         fn account_on(&self, server: &str) -> Option<Account> {
             self.inner.account_on(server)
+        }
+        fn team_sync(&self) -> bool {
+            self.inner.team_sync()
         }
         fn sync_status(&self, collection: &CollectionKey) -> SyncStatus {
             self.inner.sync_status(collection)
@@ -893,6 +907,9 @@ pub mod testing {
             self.inner.update_received(share)
         }
         fn dev(&self) -> Option<&dyn DevControls> {
+            if self.hide_dev.load(std::sync::atomic::Ordering::SeqCst) {
+                return None;
+            }
             self.inner.dev()
         }
     }
