@@ -1327,6 +1327,11 @@ impl Workspace {
                 window.close_dialog(cx);
                 this.open_shared = None;
                 this._open_shared_events = None;
+                // Closed while a link's sign-in was out: abandoned, so a
+                // later sign-in to that server opens nothing.
+                if this.link_sign_in.take().is_some() {
+                    this.pending_link = None;
+                }
                 if let OpenSharedEvent::Open(root) = event {
                     this.open_received(root.clone(), window, cx);
                 }
@@ -1364,7 +1369,12 @@ impl Workspace {
 
     /// A restricted link's `Sign in`: the browser sign-in for the link's
     /// server (not the studio's own). The link waits in `pending_link` and
-    /// opens again once that server's callback is redeemed.
+    /// opens again once that server's callback is redeemed, while its
+    /// dialog is still open.
+    ///
+    /// Latest user action wins: a link already waiting (another link's
+    /// sign-in, or one that came in during an Add) is replaced, since the
+    /// user just asked for this one.
     fn sign_in_for_link(&mut self, link: ShareLink, window: &mut Window, cx: &mut Context<Self>) {
         let server = Server::for_url(&link.server);
         self.pending_link = Some(link.url());
@@ -1510,10 +1520,24 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // A restricted link waited for this server's sign-in.
-        let for_link = result.is_ok() && self.link_sign_in.as_deref() == Some(server);
-        if for_link {
+        // A restricted link waited for this server's sign-in. It opens only
+        // on success with its dialog still up; refused, or the dialog gone
+        // (closed, Esc), the link is forgotten, so no later sign-in to that
+        // server pops it open.
+        let waiting = self.link_sign_in.as_deref() == Some(server);
+        if waiting {
             self.link_sign_in = None;
+        }
+        let for_link = waiting && result.is_ok() && self.open_shared_view().is_some();
+        if waiting && !for_link {
+            self.pending_link = None;
+        }
+        if waiting
+            && let Err(e) = &result
+            && let Some(view) = self.open_shared_view()
+        {
+            view.update(cx, |v, cx| v.sign_in_failed(e, cx));
+            return;
         }
         match result {
             // A callback for a server that isn't the current one (a
@@ -2053,6 +2077,77 @@ mod gpui_tests {
             ),
             "{recorded:?}"
         );
+    }
+
+    /// A link's sign-in refused, or its dialog closed: the link and its
+    /// server are forgotten, so a later sign-in to that server opens
+    /// nothing.
+    #[cfg(feature = "server")]
+    #[gpui_kit::test]
+    fn an_abandoned_link_sign_in_never_opens_its_link_later(cx: &mut TestAppContext) {
+        use crate::model::backend::{BackendError, MOCK_SERVER};
+        let s = studio(cx);
+        let ws = s.ws.clone();
+        let resolves = |b: &Arc<dyn Backend>| {
+            b.dev()
+                .unwrap()
+                .recorded()
+                .iter()
+                .filter(|c| c.starts_with("resolve_link("))
+                .count()
+        };
+        let wait = |ws: &mut Workspace| {
+            ws.pending_link = Some(DEEP_LINK.into());
+            ws.link_sign_in = Some(MOCK_SERVER.into());
+        };
+        let forgotten = |cx: &mut TestAppContext| {
+            ws.read_with(cx, |ws, _| {
+                ws.pending_link.is_none() && ws.link_sign_in.is_none()
+            })
+        };
+        // Refused.
+        let view = open_flow(cx, &s);
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                wait(ws);
+                ws.sign_in_completed(MOCK_SERVER, Err(BackendError::Unauthorized), window, cx);
+            })
+        })
+        .unwrap();
+        assert!(forgotten(cx));
+        assert!(view.read_with(cx, |v, _| v.error().is_some()), "said so");
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.sign_in_completed(MOCK_SERVER, Ok(()), window, cx)
+            })
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(resolves(&s.backend), 0, "nothing opened");
+        // Abandoned: the dialog closed while the browser was out.
+        cx.update_window(s.window, |_, _, cx| ws.update(cx, |ws, _| wait(ws)))
+            .unwrap();
+        click(cx, &s, "open-shared-cancel");
+        assert!(!dialog_open(cx, &s));
+        assert!(forgotten(cx));
+        // Closed some other way (Esc): the callback finds no dialog.
+        open_flow(cx, &s);
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, _| wait(ws));
+            window.close_dialog(cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.sign_in_completed(MOCK_SERVER, Ok(()), window, cx)
+            })
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(forgotten(cx));
+        assert!(!dialog_open(cx, &s));
+        assert_eq!(resolves(&s.backend), 0, "nothing opened");
     }
 
     #[gpui_kit::test]

@@ -137,9 +137,10 @@ pub async fn add_shared(
         .fetch_shared(&shared.link)
         .await
         .map_err(|e| e.link_text(org))?;
-    // The copy is of the version fetched, whatever the review showed.
+    // The copy is of the version fetched, whatever the review showed. A
+    // variable masked in the form stays secret: never written to `.env`.
     let shared = SharedCollection {
-        variables: snapshot.variables,
+        variables: secret_in_either(snapshot.variables, &shared.variables),
         updated: snapshot.published_at,
         version: snapshot.version,
         ..shared.clone()
@@ -171,6 +172,16 @@ pub async fn add_shared(
         ));
     }
     Ok(done.root)
+}
+
+/// `vars` with each one secret in either list marked secret: a value typed
+/// into a masked field (the form's list) must never land in `.env`, even if
+/// the list fetched again (`vars`) says otherwise.
+pub fn secret_in_either(mut vars: Vec<SharedVar>, seen: &[SharedVar]) -> Vec<SharedVar> {
+    for v in &mut vars {
+        v.secret |= seen.iter().any(|s| s.name == v.name && s.secret);
+    }
+    vars
 }
 
 /// The record of `shared` as added today with `files`: each file's
@@ -626,6 +637,47 @@ mod tests {
         let json = serde_json::to_string(&received).unwrap();
         assert!(!json.contains("sk-live-4242"));
         assert!(super::already_added(&*backend, Some(d.path()), &link.token).is_some());
+    }
+
+    /// The form masked ACCOUNT_ID (secret when reviewed); the snapshot
+    /// fetched at Add says it isn't. A masked value never lands in `.env`.
+    #[test]
+    fn a_value_masked_at_review_stays_out_of_env() {
+        use crate::model::backend::{ShareLink, fixtures, test_backend};
+        let d = tempfile::tempdir().unwrap();
+        let backend = test_backend();
+        let secrets = MemorySecrets::default();
+        let link = ShareLink {
+            server: "https://api.mock.curl-runner.test".into(),
+            token: fixtures::SHIPPING_TOKEN.into(),
+        };
+        let mut shared = futures::executor::block_on(backend.resolve_link(&link)).unwrap();
+        for v in &mut shared.variables {
+            if v.name == "ACCOUNT_ID" {
+                v.secret = true;
+            }
+        }
+        let values = [
+            ("API_TOKEN".to_string(), "sk-live-4242".to_string()),
+            ("ACCOUNT_ID".to_string(), "acct-masked-77".to_string()),
+        ];
+        let root = futures::executor::block_on(super::add_shared(
+            &*backend,
+            &secrets,
+            d.path(),
+            &shared,
+            &values,
+        ))
+        .unwrap();
+        let env = std::fs::read_to_string(root.join(".env")).unwrap_or_default();
+        assert!(!env.contains("acct-masked-77"), "{env}");
+        let meta = CollectionMeta::load(d.path(), &root);
+        assert!(meta.secret_names.iter().any(|n| n == "ACCOUNT_ID"));
+        let service = service_name("acme-shipping-api", "Default", &meta.id);
+        assert_eq!(
+            secrets.get(&service, "ACCOUNT_ID").as_deref(),
+            Some("acct-masked-77")
+        );
     }
 
     #[test]

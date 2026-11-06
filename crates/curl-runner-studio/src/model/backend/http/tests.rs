@@ -594,3 +594,69 @@ fn received_shares_persist_by_token() {
     again.sort_by(|x, y| y.link.token.cmp(&x.link.token));
     assert_eq!(again, want);
 }
+
+/// A public collection on a server that refuses a stale session (401 on
+/// any bearer but `crs_ok`) yet answers without one.
+fn stale_public_server() -> (TestServer, Log) {
+    let log: Log = Log::default();
+    let l = log.clone();
+    let srv = TestServer::with_handler(move |r: Request| {
+        let auth = r.header("authorization").map(str::to_string);
+        l.lock()
+            .unwrap()
+            .push((r.method.clone(), r.url.clone(), auth.clone()));
+        if auth.is_some_and(|a| a != "Bearer crs_ok") {
+            return json(
+                401,
+                r#"{"error":"unauthorized","message":"Session expired."}"#,
+            );
+        }
+        let info = shared_info("public", 4);
+        match r.url.strip_prefix(&format!("/v1/shared/{TOKEN}")) {
+            Some("") => json(200, &info),
+            Some("/snapshot") => json(200, &format!(r#"{{"info":{info},"files":[],"inputs":[]}}"#)),
+            Some("/versions/latest") => json(200, r#"{"version":5,"hash":"abc"}"#),
+            _ => json(404, r#"{"error":"not_found","message":"No."}"#),
+        }
+    });
+    (srv, log)
+}
+
+#[test]
+fn a_stale_session_on_a_public_link_retries_without_it() {
+    let (srv, log) = stale_public_server();
+    let (b, sessions) = backend(None);
+    sessions.set(&srv.base_url, "crs_stale").unwrap();
+    let c = block_on(b.resolve_link(&link(&srv))).unwrap();
+    assert_eq!(c.name, "Shipping API");
+    // The stale session is forgotten; the retry carried none.
+    assert_eq!(sessions.get(&srv.base_url).unwrap(), None);
+    {
+        let log = log.lock().unwrap();
+        assert_eq!(log[0].2.as_deref(), Some("Bearer crs_stale"));
+        assert!(log[1..].iter().all(|(_, _, a)| a.is_none()), "{log:?}");
+    }
+    // fetch_shared and latest_version get the same retry.
+    for call in 0..2 {
+        sessions.set(&srv.base_url, "crs_stale").unwrap();
+        match call {
+            0 => assert!(block_on(b.fetch_shared(&link(&srv))).is_ok()),
+            _ => assert_eq!(block_on(b.latest_version(&link(&srv))).unwrap(), 5),
+        }
+        assert_eq!(sessions.get(&srv.base_url).unwrap(), None);
+    }
+}
+
+#[test]
+fn a_restricted_link_refused_twice_is_signed_out() {
+    let (srv, log) = shared_server("restricted");
+    let (b, sessions) = backend(None);
+    sessions.set(&srv.base_url, "crs_stale").unwrap();
+    let err = block_on(b.resolve_link(&link(&srv))).unwrap_err();
+    assert_eq!(err, BackendError::SignedOut);
+    let log = log.lock().unwrap();
+    // Once with the session, once without: then it stops.
+    assert_eq!(log.len(), 2, "{log:?}");
+    assert_eq!(log[0].2.as_deref(), Some("Bearer crs_stale"));
+    assert_eq!(log[1].2, None);
+}

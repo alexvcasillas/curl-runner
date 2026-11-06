@@ -80,22 +80,31 @@ impl HttpBackend {
     /// (none: anonymous, no `Authorization` at all). Every error goes
     /// through [`HttpBackend::map_error`], so a 401 forgets that server's
     /// session. A 403 says why in the server's words (not on the list).
+    ///
+    /// A session the server refuses (stale, expired) is forgotten and the
+    /// call made once more without one: a public collection needs no
+    /// sign-in at any point. Only a second refusal is `SignedOut`.
     fn authed<T>(
         &self,
         server: &str,
-        call: impl FnOnce(&Client) -> Result<T, CloudError>,
+        call: impl Fn(&Client) -> Result<T, CloudError>,
     ) -> Result<T, BackendError> {
         let server = key(server);
         let token = self
             .sessions
             .get(&server)
             .map_err(|_| keychain_unreadable())?;
-        call(&Client::new(&server, token)).map_err(|e| match e {
+        let sent = token.is_some();
+        let map = |e| match e {
             CloudError::Api(b, _) if b.error == ErrorCode::Forbidden => {
                 BackendError::Invalid(escape_control(&b.message))
             }
             e => self.map_error(&server, e),
-        })
+        };
+        match call(&Client::new(&server, token)).map_err(map) {
+            Err(BackendError::SignedOut) if sent => call(&Client::new(&server, None)).map_err(map),
+            other => other,
+        }
     }
 
     /// Changes the received records with `f`, then writes them (atomic).
