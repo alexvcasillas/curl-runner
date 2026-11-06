@@ -49,7 +49,8 @@ const byPath = (routes: Record<string, () => Response>) =>
     return make();
   });
 
-const collections = [
+// A function, so `updated_at` is computed after the clock is pinned in beforeEach.
+const collections = () => [
   {
     slug: 'payments-api',
     name: 'Payments API',
@@ -85,6 +86,9 @@ const infoBody =
     json(200, { ...info, billing });
 
 beforeEach(() => {
+  // Pin the clock to midday UTC: "2 hours ago" must not cross a calendar day.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-11-04T12:00:00Z'));
   resetEnv();
   vi.stubEnv('API_INTERNAL_URL', 'http://api.internal:8080');
   vi.stubGlobal('fetch', fetchMock);
@@ -92,6 +96,7 @@ beforeEach(() => {
   jar.current = cookieJar({ cr_session: 'crs_ok' });
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   resetEnv();
@@ -104,7 +109,7 @@ describe('collections list', () => {
     byPath({
       '/v1/me': () => json(200, me),
       '/v1/info': infoBody(),
-      '/v1/teams/acme/collections': () => json(200, collections),
+      '/v1/teams/acme/collections': () => json(200, collections()),
     });
     render(await TeamPage(params()));
     expect(screen.getByRole('heading', { name: 'Collections' })).toBeInTheDocument();
@@ -141,7 +146,7 @@ describe('collections list', () => {
     byPath({
       '/v1/me': () => json(200, me),
       '/v1/info': infoBody(),
-      '/v1/teams/acme/collections': () => json(200, collections),
+      '/v1/teams/acme/collections': () => json(200, collections()),
     });
     const user = userEvent.setup();
     render(await TeamPage(params()));
@@ -161,7 +166,7 @@ describe('collections list', () => {
     const routes = (billing: boolean, plan: 'free' | 'team') => ({
       '/v1/me': () => json(200, { ...me, teams: [{ ...me.teams[0], plan }] }),
       '/v1/info': infoBody(billing),
-      '/v1/teams/acme/collections': () => json(200, [collections[2]]),
+      '/v1/teams/acme/collections': () => json(200, [collections()[2]]),
     });
     byPath(routes(true, 'free'));
     const free = render(await TeamPage(params()));

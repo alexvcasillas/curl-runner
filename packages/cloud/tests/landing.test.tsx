@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cookieJar } from './cookies';
 
 const jar = { current: cookieJar() };
@@ -69,6 +69,9 @@ function routes(map: { shared: () => Response; me?: () => Response }) {
 const params = (token = TOKEN) => ({ params: Promise.resolve({ token }) });
 
 beforeEach(() => {
+  // Pin the clock to midday UTC: "2 hours ago" must not cross a calendar day.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-11-04T12:00:00Z'));
   resetEnv();
   vi.stubEnv('API_INTERNAL_URL', 'http://api.internal:8080');
   vi.stubEnv('PUBLIC_API_URL', 'https://api.example.com');
@@ -76,6 +79,9 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockReset();
   jar.current = cookieJar();
+});
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('/s/[token]', () => {
