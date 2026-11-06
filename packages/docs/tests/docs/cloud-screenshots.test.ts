@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { CLOUD_SCREENSHOTS } from '@/lib/cloud-screenshots';
 
 const PUBLIC_DIR = join(__dirname, '../../public');
-const CLOUD_MDX = readFileSync(join(__dirname, '../../content/docs/features/cloud.mdx'), 'utf8');
+const CLOUD_MDX = ['cloud', 'cloud-admin']
+  .map((page) => readFileSync(join(__dirname, `../../content/docs/features/${page}.mdx`), 'utf8'))
+  .join('\n');
 
 function pngSize(file: string) {
   const b = readFileSync(file);
@@ -21,7 +23,7 @@ describe('cloud screenshots', () => {
     }
   });
 
-  it('ships no image nothing references, and every one is used in the Cloud page', () => {
+  it('ships no image nothing references, and every one is used in the Cloud pages', () => {
     const referenced = new Set<string>(Object.values(CLOUD_SCREENSHOTS).map((s) => s.src));
     for (const file of readdirSync(join(PUBLIC_DIR, 'cloud'))) {
       expect(referenced.has(`/cloud/${file}`), file).toBe(true);

@@ -168,13 +168,13 @@ Anyone can sign in with an email code. A signed-in person who isn't in a team ca
 | --- | --- |
 | `domains` | The default. Only emails on a domain in `SIGNUP_DOMAINS` can create a team. |
 | `open` | Anyone who signs in can create a team. |
-| `closed` | Nobody can create a team, except operators. |
+| `closed` | Nobody can create a team, except owners. |
 
 `SIGNUP_DOMAINS` is a comma-separated list, such as `example.com,acme.dev`.
 
-With `SIGNUP=domains` and an empty list, the first account becomes the operator and can create teams. Sign in yourself right after the first start, before you share the address.
+With `SIGNUP=domains` and an empty list, the first account becomes an owner and can create teams. Sign in yourself right after the first start, before you share the address.
 
-`OPERATOR_EMAILS` is a comma-separated list of operators. Operators can always create teams and can change a team's plan.
+`OPERATOR_EMAILS` is a comma-separated list of owners. Owners can always create teams and open the [admin panel](#admins).
 
 To create the first team, sign in with `curl-runner login --server https://api.example.com`, then call the API with that session:
 
@@ -189,21 +189,14 @@ curl -X POST https://api.example.com/v1/teams \
 You can also do this in the dashboard. Sign in at your `PUBLIC_APP_URL` and create the team from the new team page.
 
 <Callout title="Set on the first start only">
-`SIGNUP`, `SIGNUP_DOMAINS` and `DEFAULT_PLAN` seed the server settings the first time the server starts. After that, the server ignores changes to them and logs a warning. To change these settings later, use the admin settings. The admin panel is coming soon. Until then, call `PUT /v1/admin/settings/{section}` as an operator, with `signup` or `plans` as the section.
+`SIGNUP`, `SIGNUP_DOMAINS` and `DEFAULT_PLAN` seed the server settings the first time the server starts. After that, the settings live in the database. The server ignores changes to these variables and logs a warning. Change them in the admin panel, under **Settings**. See [Settings](#admin-settings).
 </Callout>
 
 ### Plans [#plans]
 
 `DEFAULT_PLAN` sets the plan of a new team: `team` or `free`. The default is `team`, which has no member limits and allows restricted sharing. Leave it unset when you self-host. The managed service sets `DEFAULT_PLAN=free`.
 
-An operator can change a team's plan later:
-
-```bash
-curl -X PUT https://api.example.com/v1/admin/teams/acme/plan \
-  -H "Authorization: Bearer $SESSION" \
-  -H "Content-Type: application/json" \
-  -d '{"plan": "team"}'
-```
+An owner can give a team a plan later from the admin panel. See [Teams and plan overrides](/docs/features/cloud-admin#teams).
 
 ```bash title="Example .env"
 POSTGRES_PASSWORD=<password>
@@ -240,6 +233,37 @@ Set billing up in Stripe like this:
 With billing on, `GET /v1/info` reports `"billing": true`. The dashboard then shows a **Billing** page, where team owners start a checkout or open the Stripe customer portal. Without it, the page doesn't exist.
 
 The dashboard needs no Stripe settings of its own. It asks the API, which holds the keys.
+
+## The admin panel [#admins]
+
+The dashboard has an admin panel at `/admin`. See [Cloud admin panel](/docs/features/cloud-admin) for what it does.
+
+There are two roles:
+
+- **Owners** are the emails in `OPERATOR_EMAILS`, plus the first account on a server with `SIGNUP=domains` and an empty list. They have every permission. You can't remove them in the panel.
+- **Admins** are people an owner adds under **Admins**, each with the permissions they need: users, teams, plans, emails, settings and admins. Every admin can read every page.
+
+A person who isn't an owner or admin gets a 404 on `/admin`, not a "forbidden" page. The panel doesn't show that it exists.
+
+To make someone an owner, add their email to `OPERATOR_EMAILS` and restart the server.
+
+### Settings [#admin-settings]
+
+Owners and admins with the settings permission change these in the panel, and they apply at once:
+
+- who can create a team, and the allowed domains;
+- the plan for new teams, the Free member limit, restricted sharing on Free, and the grace period after a failed payment;
+- the banner and pause publishing.
+
+Every change goes in the activity log, which the server keeps for 2 years.
+
+### Pause publishing [#pause]
+
+Turn on **Pause publishing** before a migration. Publishes and studio syncs get `503` with "Publishing is paused for maintenance. Try again in a few minutes." The CLI exits non-zero. Share links and pulls keep working. Turn it off to resume.
+
+### The banner [#banner]
+
+A banner shows a message at the top of every dashboard page. Pick the tone, info or warning, who sees it, everyone or signed-in people, and an optional link. People can dismiss it. It comes back when you change the message.
 
 ## Behind a proxy [#proxy]
 
