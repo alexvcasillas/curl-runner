@@ -56,20 +56,9 @@ pub struct Collection {
     pub root: PathBuf,
     pub name: String,
     pub tree: Vec<TreeNode>,
-    /// A received copy: the org that shared it. Its files are never
-    /// created, renamed or deleted here (see [`read_only_error`]).
-    pub read_only: Option<String>,
-}
-
-/// `Read only · shared by Acme`: what a refused write of a received copy
-/// says.
-pub fn read_only_text(org: &str) -> String {
-    format!("Read only · shared by {org}")
-}
-
-/// The error a write to a received copy fails with.
-pub fn read_only_error(org: &str) -> io::Error {
-    io::Error::new(io::ErrorKind::PermissionDenied, read_only_text(org))
+    /// A received copy: the org that shared it. Informational only
+    /// (`Shared by Acme`): the customer edits their copy like any other.
+    pub received_from: Option<String>,
 }
 
 impl Collection {
@@ -88,21 +77,21 @@ impl Collection {
             root: root.to_path_buf(),
             name,
             tree: Vec::new(),
-            read_only: None,
+            received_from: None,
         };
         c.refresh();
         Ok(c)
     }
 
-    /// [`Collection::open`], locked when `root` is a received copy (see
-    /// [`received_from`](crate::model::shared_copy::received_from)), so
-    /// the model refuses writes into a folder picked by hand. A build
-    /// without the server has no received copies: such a folder is an
-    /// ordinary local collection.
+    /// [`Collection::open`], noting who shared `root` when it is a
+    /// received copy (see
+    /// [`received_from`](crate::model::shared_copy::received_from)). A
+    /// build without the server has no received copies: such a folder is
+    /// an ordinary local collection.
     pub fn open_in(root: &Path, base: Option<&Path>) -> io::Result<Collection> {
         let mut c = Collection::open(root)?;
         if crate::features::SERVER {
-            c.read_only = crate::model::shared_copy::received_from(base, root);
+            c.received_from = crate::model::shared_copy::received_from(base, root);
         }
         Ok(c)
     }
@@ -130,7 +119,6 @@ impl Collection {
 
     /// Writes a new file; an existing `rel` fails with `AlreadyExists`.
     pub fn create_file(&mut self, rel: &Path, contents: &str) -> io::Result<()> {
-        self.writable()?;
         let path = self.root.join(rel);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -148,7 +136,6 @@ impl Collection {
     /// unless it is `from` itself under another letter case (a case-only
     /// rename on a case-insensitive disk).
     pub fn rename(&mut self, from: &Path, to: &Path) -> io::Result<()> {
-        self.writable()?;
         let src = self.root.join(from);
         let dest = self.root.join(to);
         if dest.symlink_metadata().is_ok() && !is_same_file(&src, &dest) {
@@ -166,7 +153,6 @@ impl Collection {
     }
 
     pub fn delete(&mut self, rel: &Path) -> io::Result<()> {
-        self.writable()?;
         let path = self.root.join(rel);
         if path.is_dir() {
             std::fs::remove_dir_all(path)?;
@@ -175,14 +161,6 @@ impl Collection {
         }
         self.refresh();
         Ok(())
-    }
-
-    /// Fails for a received copy.
-    fn writable(&self) -> io::Result<()> {
-        match &self.read_only {
-            Some(org) => Err(read_only_error(org)),
-            None => Ok(()),
-        }
     }
 }
 
@@ -452,7 +430,7 @@ mod tests {
         let base = tempfile::tempdir().unwrap();
         for root in received_copies(base.path()) {
             let mut c = Collection::open_in(&root, Some(base.path())).unwrap();
-            assert_eq!(c.read_only, None, "{}", root.display());
+            assert_eq!(c.received_from, None, "{}", root.display());
             c.create_file(Path::new("b.yaml"), "request:\n  url: https://b\n")
                 .unwrap();
             assert!(root.join("b.yaml").is_file());
@@ -465,9 +443,9 @@ mod tests {
         let base = tempfile::tempdir().unwrap();
         let [noted, placed] = received_copies(base.path());
         let c = Collection::open_in(&noted, Some(base.path())).unwrap();
-        assert_eq!(c.read_only.as_deref(), Some("Acme"));
+        assert_eq!(c.received_from.as_deref(), Some("Acme"));
         let c = Collection::open_in(&placed, Some(base.path())).unwrap();
-        assert_eq!(c.read_only.as_deref(), Some("its owner"));
+        assert_eq!(c.received_from.as_deref(), Some("its owner"));
     }
 
     #[test]
@@ -692,24 +670,19 @@ mod tests {
     }
 
     #[test]
-    fn a_read_only_collection_refuses_every_write() {
+    fn received_copy_accepts_edits() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.yaml"), "request:\n  url: a\n").unwrap();
         let mut c = Collection::open(dir.path()).unwrap();
-        c.read_only = Some("Acme".into());
-        for e in [
-            c.create_file(Path::new("b.yaml"), "x").unwrap_err(),
-            c.rename(Path::new("a.yaml"), Path::new("c.yaml"))
-                .unwrap_err(),
-            c.delete(Path::new("a.yaml")).unwrap_err(),
-        ] {
-            assert_eq!(e.kind(), io::ErrorKind::PermissionDenied);
-            assert_eq!(e.to_string(), "Read only · shared by Acme");
-        }
+        c.received_from = Some("Acme".into());
+        c.create_file(Path::new("b.yaml"), "request:\n  url: b\n")
+            .unwrap();
+        c.rename(Path::new("a.yaml"), Path::new("c.yaml")).unwrap();
+        c.delete(Path::new("b.yaml")).unwrap();
         let names: Vec<_> = std::fs::read_dir(dir.path())
             .unwrap()
             .map(|e| e.unwrap().file_name())
             .collect();
-        assert_eq!(names, ["a.yaml"]);
+        assert_eq!(names, ["c.yaml"]);
     }
 }

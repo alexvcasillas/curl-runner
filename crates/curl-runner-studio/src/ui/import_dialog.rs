@@ -388,9 +388,9 @@ impl ImportDialog {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // A received copy (or the studio's own folder) is never a target:
-        // the pick is refused, and an earlier one goes with it, so the
-        // dialog asks for a folder again.
+        // The studio's own folder (where received copies live) is never a
+        // target: the pick is refused, and an earlier one goes with it, so
+        // the dialog asks for a folder again.
         let refused = dir.as_ref().is_some_and(|d| {
             self.ws
                 .update(cx, |ws, cx| ws.refuse_received(d, window, cx))
@@ -769,8 +769,8 @@ impl ImportDialog {
             .target_root()
             .map(Path::to_path_buf)
             .ok_or("Choose a folder for the requests.")?;
-        // Again right before writing: the open collection or the pick may
-        // be a received copy by now.
+        // Again right before writing: the pick may be in the studio's own
+        // folder by now.
         let refused = self
             .ws
             .update(cx, |ws, cx| ws.refuse_write_into(&root, window, cx))
@@ -2151,16 +2151,12 @@ fn spec_key(line: &str) -> bool {
 }
 
 impl Workspace {
-    /// The Import dialog (⌘I), adding to the active file's folder. A
-    /// received copy takes no import: `None`, with the read-only toast.
+    /// The Import dialog (⌘I), adding to the active file's folder.
     pub(super) fn import(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<Entity<ImportDialog>> {
-        if self.refuse_read_only(window, cx) {
-            return None;
-        }
         let folder = self.default_folder();
         let ws = cx.entity().downgrade();
         let env = self.import_context(cx);

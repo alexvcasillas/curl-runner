@@ -17,7 +17,7 @@
 //! the conflict again with the new text.
 
 use super::backend::{Conflict, SyncDeletion, SyncFile};
-use super::shared_copy::{is_received, resolves_inside, writable};
+use super::shared_copy::{resolves_inside, writable};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,14 +28,12 @@ pub enum Choice {
 }
 
 impl Choice {
-    /// Whether `c` offers this choice. A received copy takes the owner's
-    /// version only; with the server's copy deleted there is nothing to
-    /// keep both of.
-    pub fn offered(self, c: &Conflict, read_only: bool) -> bool {
+    /// Whether `c` offers this choice: with the server's copy deleted
+    /// there is nothing to keep both of.
+    pub fn offered(self, c: &Conflict) -> bool {
         match self {
-            Choice::TakeTheirs => true,
-            Choice::KeepMine => !read_only,
-            Choice::KeepBoth => !read_only && !c.server_deleted,
+            Choice::TakeTheirs | Choice::KeepMine => true,
+            Choice::KeepBoth => !c.server_deleted,
         }
     }
 }
@@ -181,23 +179,15 @@ fn keep_mine(c: &Conflict) -> Push {
 
 /// Does `choice`'s disk part for `c` under `root`, after checking the disk
 /// still holds `c.local`. Blocking: run it off the UI thread.
-///
-/// A read-only (received) collection takes the owner's copy only: `Keep
-/// mine` and `Keep both` (which writes a `.server.yaml` copy) are refused
-/// when `read_only` says so, or when the folder itself is a received copy
-/// ([`is_received`] under `base`), whatever the caller thought.
 pub fn resolve_on_disk(
     root: &Path,
     c: &Conflict,
     choice: Choice,
-    read_only: bool,
-    base: Option<&Path>,
 ) -> Result<Resolved, ResolveError> {
     if !writable(&c.rel) {
         return Err(ResolveError::Refused);
     }
-    let read_only = read_only || is_received(base, root);
-    if !choice.offered(c, read_only) {
+    if !choice.offered(c) {
         return Err(ResolveError::Refused);
     }
     if !unchanged_since(root, c)? {
@@ -461,7 +451,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         std::fs::write(d.path().join("a.yaml"), "a: mine\n").unwrap();
         let c = conflict("a.yaml", "a: mine\n", "a: theirs\n");
-        let r = resolve_on_disk(d.path(), &c, Choice::KeepMine, false, None).unwrap();
+        let r = resolve_on_disk(d.path(), &c, Choice::KeepMine).unwrap();
         let Some(Push::File(f)) = r.push else {
             panic!()
         };
@@ -480,7 +470,7 @@ mod tests {
         std::fs::write(d.path().join("a.yaml"), "a: mine\n").unwrap();
         let theirs = "a: theirs\r\n# no trailing newline";
         let c = conflict("a.yaml", "a: mine\n", theirs);
-        let r = resolve_on_disk(d.path(), &c, Choice::TakeTheirs, false, None).unwrap();
+        let r = resolve_on_disk(d.path(), &c, Choice::TakeTheirs).unwrap();
         assert_eq!(r.push, None);
         assert_eq!(r.base, Some(SyncFile::hash_of(theirs)));
         assert_eq!(
@@ -496,7 +486,7 @@ mod tests {
         std::fs::write(d.path().join("rates/get.yaml"), "a: mine\n").unwrap();
         std::fs::write(d.path().join("rates/get.server.yaml"), "other\n").unwrap();
         let c = conflict("rates/get.yaml", "a: mine\n", "a: theirs\n");
-        let r = resolve_on_disk(d.path(), &c, Choice::KeepBoth, false, None).unwrap();
+        let r = resolve_on_disk(d.path(), &c, Choice::KeepBoth).unwrap();
         assert_eq!(r.copy, Some(PathBuf::from("rates/get.server-2.yaml")));
         let read = |rel: &str| std::fs::read_to_string(d.path().join(rel)).unwrap();
         assert_eq!(read("rates/get.server.yaml"), "other\n");
@@ -504,7 +494,7 @@ mod tests {
         assert_eq!(read("rates/get.yaml"), "a: mine\n");
         assert!(matches!(r.push, Some(Push::File(_))));
         // Again (a retry after a failed push): the same copy, no third.
-        let r = resolve_on_disk(d.path(), &c, Choice::KeepBoth, false, None).unwrap();
+        let r = resolve_on_disk(d.path(), &c, Choice::KeepBoth).unwrap();
         assert_eq!(r.copy, Some(PathBuf::from("rates/get.server-2.yaml")));
         assert!(!d.path().join("rates/get.server-3.yaml").exists());
         assert_eq!(
@@ -520,7 +510,7 @@ mod tests {
         let c = conflict("a.yaml", "a: mine\n", "a: theirs\n");
         for choice in [Choice::KeepMine, Choice::TakeTheirs, Choice::KeepBoth] {
             assert_eq!(
-                resolve_on_disk(d.path(), &c, choice, false, None),
+                resolve_on_disk(d.path(), &c, choice),
                 Err(ResolveError::ChangedSince)
             );
         }
@@ -540,7 +530,7 @@ mod tests {
             ..c
         };
         assert_eq!(
-            resolve_on_disk(d.path(), &gone, Choice::KeepMine, false, None),
+            resolve_on_disk(d.path(), &gone, Choice::KeepMine),
             Err(ResolveError::ChangedSince)
         );
     }
@@ -552,7 +542,7 @@ mod tests {
             local_deleted: true,
             ..conflict("a.yaml", "", "a: theirs\n")
         };
-        let r = resolve_on_disk(d.path(), &c, Choice::KeepMine, false, None).unwrap();
+        let r = resolve_on_disk(d.path(), &c, Choice::KeepMine).unwrap();
         assert_eq!(
             r.push,
             Some(Push::Delete(SyncDeletion {
@@ -562,7 +552,7 @@ mod tests {
         );
         assert_eq!(r.base, None);
         assert!(!d.path().join("a.yaml").exists());
-        let r = resolve_on_disk(d.path(), &c, Choice::KeepBoth, false, None).unwrap();
+        let r = resolve_on_disk(d.path(), &c, Choice::KeepBoth).unwrap();
         assert!(matches!(r.push, Some(Push::Delete(_))));
         assert_eq!(
             std::fs::read_to_string(d.path().join("a.server.yaml")).unwrap(),
@@ -570,7 +560,7 @@ mod tests {
         );
         assert!(!d.path().join("a.yaml").exists());
         std::fs::remove_file(d.path().join("a.server.yaml")).unwrap();
-        resolve_on_disk(d.path(), &c, Choice::TakeTheirs, false, None).unwrap();
+        resolve_on_disk(d.path(), &c, Choice::TakeTheirs).unwrap();
         assert_eq!(
             std::fs::read_to_string(d.path().join("a.yaml")).unwrap(),
             "a: theirs\n"
@@ -585,55 +575,16 @@ mod tests {
             server_deleted: true,
             ..conflict("a.yaml", "a: mine\n", "")
         };
-        assert!(!Choice::KeepBoth.offered(&c, false));
-        let r = resolve_on_disk(d.path(), &c, Choice::KeepMine, false, None).unwrap();
+        assert!(!Choice::KeepBoth.offered(&c));
+        let r = resolve_on_disk(d.path(), &c, Choice::KeepMine).unwrap();
         let Some(Push::File(f)) = r.push else {
             panic!()
         };
         assert_eq!((f.text.as_str(), f.base), ("a: mine\n", None));
         assert!(d.path().join("a.yaml").exists());
-        let r = resolve_on_disk(d.path(), &c, Choice::TakeTheirs, false, None).unwrap();
+        let r = resolve_on_disk(d.path(), &c, Choice::TakeTheirs).unwrap();
         assert_eq!((r.push, r.base), (None, None));
         assert!(!d.path().join("a.yaml").exists());
-    }
-
-    #[test]
-    fn read_only_copies_only_take_theirs() {
-        let c = conflict("a.yaml", "a\n", "b\n");
-        assert!(Choice::TakeTheirs.offered(&c, true));
-        assert!(!Choice::KeepMine.offered(&c, true));
-        assert!(!Choice::KeepBoth.offered(&c, true));
-        assert!(Choice::KeepBoth.offered(&c, false));
-    }
-
-    #[test]
-    fn read_only_collections_refuse_keep_both_and_mine_on_disk() {
-        let base = tempfile::tempdir().unwrap();
-        let root = base.path().join("shared/acme-shipping-api");
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::write(root.join("a.yaml"), "a: mine\n").unwrap();
-        let c = conflict("a.yaml", "a: mine\n", "a: theirs\n");
-        // Told it is read only, or found under `{base}/shared/`.
-        for (read_only, base) in [(true, None), (false, Some(base.path()))] {
-            for choice in [Choice::KeepBoth, Choice::KeepMine] {
-                assert_eq!(
-                    resolve_on_disk(&root, &c, choice, read_only, base),
-                    Err(ResolveError::Refused),
-                    "{choice:?} {read_only}"
-                );
-            }
-        }
-        assert!(!root.join("a.server.yaml").exists(), "no copy written");
-        assert_eq!(
-            std::fs::read_to_string(root.join("a.yaml")).unwrap(),
-            "a: mine\n"
-        );
-        let r = resolve_on_disk(&root, &c, Choice::TakeTheirs, true, Some(base.path())).unwrap();
-        assert_eq!(r.push, None);
-        assert_eq!(
-            std::fs::read_to_string(root.join("a.yaml")).unwrap(),
-            "a: theirs\n"
-        );
     }
 
     #[test]
@@ -646,7 +597,7 @@ mod tests {
             };
             for choice in [Choice::TakeTheirs, Choice::KeepBoth] {
                 assert_eq!(
-                    resolve_on_disk(d.path(), &c, choice, false, None),
+                    resolve_on_disk(d.path(), &c, choice),
                     Err(ResolveError::Refused),
                     "{rel} {choice:?}"
                 );

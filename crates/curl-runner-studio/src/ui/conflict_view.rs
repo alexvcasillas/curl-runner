@@ -38,8 +38,6 @@ pub(super) struct ConflictView {
     root: PathBuf,
     conflicts: Vec<Conflict>,
     ix: usize,
-    /// A received copy: only `Take theirs`.
-    read_only: bool,
     /// A resolution or a sync is in flight: the choices wait.
     busy: bool,
     /// Why the last resolution did not happen.
@@ -72,14 +70,9 @@ fn file_name(rel: &Path) -> String {
 }
 
 /// The line under the diff: what Keep both leaves behind (a file that
-/// runs with the collection like any other), or why there is one choice.
-fn note_text(c: &Conflict, read_only: bool) -> String {
-    if read_only {
-        format!(
-            "Shared with you: {}'s version is the one kept.",
-            c.server_author
-        )
-    } else if c.server_deleted {
+/// runs with the collection like any other).
+fn note_text(c: &Conflict) -> String {
+    if c.server_deleted {
         String::new()
     } else {
         let copy = server_copy_name(&c.rel, 1);
@@ -102,7 +95,6 @@ impl ConflictView {
             root,
             conflicts: Vec::new(),
             ix: 0,
-            read_only: false,
             busy: false,
             error: None,
             rows: Rc::default(),
@@ -119,7 +111,6 @@ impl ConflictView {
     pub(super) fn set_conflicts(
         &mut self,
         conflicts: Vec<Conflict>,
-        read_only: bool,
         busy: bool,
         cx: &mut Context<Self>,
     ) {
@@ -129,7 +120,6 @@ impl ConflictView {
             .unwrap_or(self.ix)
             .min(conflicts.len().saturating_sub(1));
         self.conflicts = conflicts;
-        self.read_only = read_only;
         self.busy = busy;
         self.refresh_rows(cx);
         cx.notify();
@@ -212,8 +202,7 @@ impl ConflictView {
     }
 
     fn offered(&self, choice: Choice) -> bool {
-        self.current()
-            .is_some_and(|c| choice.offered(c, self.read_only))
+        self.current().is_some_and(|c| choice.offered(c))
     }
 }
 
@@ -484,13 +473,8 @@ impl Render for ConflictView {
         let keep_mine = self
             .offered(Choice::KeepMine)
             .then(|| choice("conflict-keep-mine", "Keep mine", Choice::KeepMine).primary());
-        let theirs = choice("conflict-take-theirs", "Take theirs", Choice::TakeTheirs);
-        let theirs = if self.read_only {
-            theirs.primary()
-        } else {
-            theirs.outline()
-        };
-        let note = note_text(&c, self.read_only);
+        let theirs = choice("conflict-take-theirs", "Take theirs", Choice::TakeTheirs).outline();
+        let note = note_text(&c);
         let nav = |id: &'static str, svg: &'static str, by: isize| {
             div()
                 .id(id)
@@ -731,9 +715,8 @@ impl Workspace {
             return;
         };
         let conflicts = self.sync.conflicts.clone();
-        let read_only = self.pull_only();
         let busy = self.sync.running;
-        view.update(cx, |v, cx| v.set_conflicts(conflicts, read_only, busy, cx));
+        view.update(cx, |v, cx| v.set_conflicts(conflicts, busy, cx));
     }
 
     fn on_conflict_event(
@@ -778,8 +761,7 @@ impl Workspace {
         ) else {
             return;
         };
-        let read_only = self.pull_only();
-        if self.sync.running || !choice.offered(&c, read_only) {
+        if self.sync.running || !choice.offered(&c) {
             return;
         }
         let again: Then =
@@ -798,7 +780,6 @@ impl Workspace {
         view.update(cx, |v, cx| v.set_busy(true, cx));
         self.sync_changed(cx);
         let backend = self.backend.clone();
-        let base = self.store.base().map(Path::to_path_buf);
         let id = key.id.clone();
         // Another collection opened meanwhile: its sync state is not ours.
         let same =
@@ -806,10 +787,7 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let (disk_root, disk_c) = (root.clone(), c.clone());
             let disk = cx
-                .background_spawn(async move {
-                    let base = base.as_deref();
-                    resolve_on_disk(&disk_root, &disk_c, choice, read_only, base)
-                })
+                .background_spawn(async move { resolve_on_disk(&disk_root, &disk_c, choice) })
                 .await;
             let resolved = match disk {
                 Ok(r) => r,
@@ -1041,13 +1019,9 @@ mod note_tests {
             server_deleted: false,
         };
         assert_eq!(
-            note_text(&c, false),
+            note_text(&c),
             "Keep both saves Sam's version as get.server.yaml next to it. It runs with the \
              collection until you remove it."
-        );
-        assert_eq!(
-            note_text(&c, true),
-            "Shared with you: Sam's version is the one kept."
         );
     }
 }

@@ -39,8 +39,6 @@ pub struct StatusBar {
     environments: Option<EnvStatus>,
     /// The sidebar footer's sync state, when it asks for attention.
     sync: Option<SyncLine>,
-    /// A received copy: `YAML · read only` in place of the cursor.
-    read_only: bool,
     _cursor_watch: Option<Subscription>,
 }
 
@@ -194,16 +192,6 @@ impl StatusBar {
 }
 
 impl StatusBar {
-    /// A received copy is open (the ReadOnly board's `YAML · read only`).
-    pub fn set_read_only(&mut self, read_only: bool, cx: &mut Context<Self>) {
-        if self.read_only != read_only {
-            self.read_only = read_only;
-            cx.notify();
-        }
-    }
-}
-
-impl StatusBar {
     /// Shows (or with `None` hides) the sync item.
     pub fn set_sync(&mut self, line: Option<SyncLine>, cx: &mut Context<Self>) {
         if self.sync != line {
@@ -300,17 +288,7 @@ impl Render for StatusBar {
             )
             .when(self.history.is_none(), |bar| {
                 bar.children(config).when_some(self.cursor, |bar, cursor| {
-                    if self.read_only {
-                        bar.child(
-                            div()
-                                .id("status-language")
-                                .test_support()
-                                .aria_label("YAML · read only")
-                                .child("YAML · read only"),
-                        )
-                    } else {
-                        bar.child("YAML").child(cursor_label(cursor))
-                    }
+                    bar.child("YAML").child(cursor_label(cursor))
                 })
             })
             .child(format!("curl-runner {}", curl_runner_core::VERSION))

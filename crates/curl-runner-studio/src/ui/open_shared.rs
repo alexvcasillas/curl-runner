@@ -1,6 +1,6 @@
 //! Opening a shared link (board: OpenShared): paste one (Welcome's card,
 //! ⌘L, the palette) or receive one (`curl-runner://`, see [`link_handler`]),
-//! review what it opens, fill in your own credentials and add a read-only
+//! review what it opens, fill in your own credentials and add your own
 //! copy to this studio.
 //!
 //! Add writes nothing until the snapshot is in hand and every path in it
@@ -43,7 +43,7 @@ const DIALOG_W: f32 = 600.;
 const DIALOG_H: f32 = 600.;
 const FILL_LABEL: &str = "Fill in the variables these requests use";
 const PASTE_TITLE: &str = "Open a shared link";
-const PASTE_SUBTITLE: &str = "Paste a curl-runner link someone sent you. Opens read-only.";
+const PASTE_SUBTITLE: &str = "Paste a curl-runner link someone sent you. Adds your own copy.";
 const PASTE_HINT: &str = "curl-runner://open?… or https://cloud.curl-runner.com/s/…";
 const ALREADY_ADDED: &str = "Already in your studio — open it?";
 
@@ -620,7 +620,7 @@ fn disc(n: &'static str, current: bool) -> Div {
         .child(n)
 }
 
-/// The small outlined chip: `Read only`, `from Acme`.
+/// The small outlined chip: `Your own copy`, `from Acme`.
 fn chip(text: impl Into<SharedString>, fg: &str) -> Div {
     div()
         .flex_none()
@@ -883,7 +883,7 @@ impl OpenSharedView {
                             .child(summary),
                     ),
             )
-            .child(chip("Read only", "text-secondary"))
+            .child(chip("Your own copy", "text-secondary"))
     }
 
     fn render_paste(&self, window: &Window, cx: &mut Context<Self>) -> Div {

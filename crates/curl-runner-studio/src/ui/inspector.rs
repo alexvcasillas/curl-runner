@@ -806,7 +806,7 @@ impl Workspace {
                                 // A received copy says whose credentials ran
                                 // it, unless retries need telling.
                                 let ran = ran_with(&run.keychain_names)
-                                    .filter(|_| attempts == 1 && self.read_only_org().is_some());
+                                    .filter(|_| attempts == 1 && self.shared_by().is_some());
                                 let (text, runs) = match &ran {
                                     Some(ran) => summary_with(&summary, ran),
                                     None => summary_text(&summary, attempts),

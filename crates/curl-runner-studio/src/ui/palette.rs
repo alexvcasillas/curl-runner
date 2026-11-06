@@ -238,32 +238,21 @@ impl PaletteAction {
 
 /// Every palette entry for a collection named `name` with `tree`: its
 /// requests (each request of a multi-request file on its own row), its
-/// folders, then the actions. A `read_only` (received) collection lists
-/// none of the actions that write into it.
-pub fn palette_entries(
-    name: Option<&str>,
-    tree: &[TreeNode],
-    read_only: bool,
-) -> Vec<(PaletteItem, Target)> {
+/// folders, then the actions.
+pub fn palette_entries(name: Option<&str>, tree: &[TreeNode]) -> Vec<(PaletteItem, Target)> {
     let mut out = Vec::new();
     collect_requests(tree, &mut out);
     if let Some(name) = name {
         collect_folders(name, tree, Path::new(""), &mut out);
     }
-    let writes = |a: &PaletteAction| matches!(a, PaletteAction::NewRequest | PaletteAction::Import);
-    out.extend(
-        PaletteAction::ALL
-            .iter()
-            .filter(|a| a.listed() && !(read_only && writes(a)))
-            .map(|&a| {
-                let item = PaletteItem {
-                    group: Group::Actions,
-                    label: a.label().into(),
-                    detail: String::new(),
-                };
-                (item, Target::Action(a))
-            }),
-    );
+    out.extend(PaletteAction::ALL.iter().filter(|a| a.listed()).map(|&a| {
+        let item = PaletteItem {
+            group: Group::Actions,
+            label: a.label().into(),
+            detail: String::new(),
+        };
+        (item, Target::Action(a))
+    }));
     out
 }
 
@@ -374,11 +363,10 @@ impl Palette {
         ws: WeakEntity<Workspace>,
         scope: Option<&str>,
         tree: &[TreeNode],
-        read_only: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let (items, targets) = palette_entries(scope, tree, read_only).into_iter().unzip();
+        let (items, targets) = palette_entries(scope, tree).into_iter().unzip();
         let input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Search requests and actions"));
         let _subscription = cx.subscribe_in(&input, window, |this, input, event, _, cx| {
@@ -834,13 +822,14 @@ impl Workspace {
     ) -> Entity<Palette> {
         // A received copy is scoped by its shared name.
         let title = self.collection_title();
-        let (tree, read_only) = match &self.state.collection {
-            Some(c) => (&c.tree[..], c.read_only.is_some()),
-            None => (&[][..], false),
-        };
+        let tree = self
+            .state
+            .collection
+            .as_ref()
+            .map_or(&[][..], |c| &c.tree[..]);
         let ws = cx.entity().downgrade();
         let scope = title.as_deref();
-        let palette = cx.new(|cx| Palette::new(ws, scope, tree, read_only, window, cx));
+        let palette = cx.new(|cx| Palette::new(ws, scope, tree, window, cx));
         let first_build = std::cell::Cell::new(true);
         let content = palette.clone();
         window.open_dialog(cx, move |dialog, window, cx| {
@@ -998,7 +987,7 @@ mod tests {
 
     #[test]
     fn entries_list_requests_folders_then_actions() {
-        let entries = palette_entries(Some("Examples"), &tree(), false);
+        let entries = palette_entries(Some("Examples"), &tree());
         let rows: Vec<_> = entries
             .iter()
             .map(|(i, _)| (i.group, i.label.as_str(), i.detail.as_str()))
@@ -1040,7 +1029,7 @@ mod tests {
         assert_eq!(actions, listed);
         // No collection: no folders.
         assert!(
-            palette_entries(None, &tree(), false)
+            palette_entries(None, &tree())
                 .iter()
                 .all(|(i, _)| i.group != Group::Folders)
         );
@@ -1078,7 +1067,7 @@ mod tests {
 
     #[test]
     fn history_is_an_action() {
-        let entries = palette_entries(None, &[], false);
+        let entries = palette_entries(None, &[]);
         let items: Vec<_> = entries.iter().map(|(i, _)| i.clone()).collect();
         let top = palette_matches("history", &items)[0].0;
         assert_eq!(items[top].label, "Open history");

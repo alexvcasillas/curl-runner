@@ -1,5 +1,5 @@
-//! A shared collection made local: the snapshot written as a read-only
-//! copy under `{base}/shared/`, its notes, and the customer's own values
+//! A shared collection made local: the snapshot written as the customer's
+//! own copy under `{base}/shared/`, its notes, and the customer's own values
 //! (secrets to the Keychain, the rest to its `.env`). All or nothing: files
 //! are staged in a hidden sibling and moved in with one rename, and a step
 //! that fails after it takes everything back out.
@@ -213,7 +213,7 @@ pub struct Materialized {
 }
 
 /// Writes the snapshot `files` of `shared` as a new collection under
-/// `{base}/shared/`, then its notes (read only, the variables as shared),
+/// `{base}/shared/`, then its notes (the sharing org, the variables as shared),
 /// the secret `values` to the Keychain and the others to its `.env`.
 ///
 /// Before the rename nothing is left behind on failure; after it,

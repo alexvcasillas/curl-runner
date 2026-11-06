@@ -12,10 +12,6 @@ impl CollectionSettings {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // A received copy's list is the owner's: no new names.
-        if name.is_none() && self.received(cx) {
-            return;
-        }
         let row = name
             .and_then(|n| self.rows.iter().find(|r| r.name == n))
             .cloned();
@@ -147,10 +143,10 @@ impl CollectionSettings {
     }
 
     pub(super) fn toggle_secret(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.received(cx) {
+        let name = self.drawer_name(cx).unwrap_or_default();
+        if self.owner_var(&name, cx) {
             return;
         }
-        let name = self.drawer_name(cx).unwrap_or_default();
         let Some(d) = &mut self.drawer else { return };
         // A `SECRET_` name always is one.
         if name.starts_with("SECRET_") {
@@ -164,7 +160,8 @@ impl CollectionSettings {
     }
 
     pub(super) fn toggle_required(&mut self, cx: &mut Context<Self>) {
-        if self.received(cx) {
+        let name = self.drawer_name(cx).unwrap_or_default();
+        if self.owner_var(&name, cx) {
             return;
         }
         if let Some(d) = &mut self.drawer {
@@ -206,8 +203,8 @@ impl CollectionSettings {
         let name = self.drawer_name(cx).unwrap_or_default();
         let secret = d.secret || name.starts_with("SECRET_");
         let prefix_secret = name.starts_with("SECRET_");
-        // A received copy's notes are the owner's: shown, not changed.
-        let received = self.received(cx);
+        // An owner's variable's notes are the owner's: shown, not changed.
+        let received = self.owner_var(&name, cx);
         let header = div()
             .flex()
             .flex_none()

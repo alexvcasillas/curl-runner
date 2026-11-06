@@ -108,8 +108,8 @@ pub enum SyncLine {
     /// The folder lists no files although some were synced: `Sync now`
     /// deletes them on the server.
     AllRemoved,
-    /// A read-only (received) copy the server has no share record for:
-    /// nothing to pull from, and it never pushes.
+    /// A received copy the server has no share record for: nothing to
+    /// take updates from, and it never pushes.
     NotLinked,
 }
 
@@ -479,11 +479,14 @@ impl Workspace {
     }
 
     /// A tracked file changed (saved here, or on disk): recount what is
-    /// waiting and, with "Sync automatically", sync after a pause.
+    /// waiting and, with "Sync automatically", sync after a pause. A
+    /// received copy with an update waiting recounts the customer's edits
+    /// instead (the banner's warning).
     pub(super) fn mark_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.sync_on() && !self.pull_only() {
             self.refresh_pending(self.settings.sync.automatic, window, cx);
         }
+        self.recount_open_local_changes(cx);
     }
 
     /// `Sync now` (Settings, the status bar): at once. After the footer
@@ -532,11 +535,11 @@ impl Workspace {
     }
 
     /// The open collection is a received copy: it takes updates, never
-    /// syncs. Decided by the copy's own lock (its notes name an owner, or
-    /// it sits under `shared/`), else by a share record for it: never by
-    /// the server's list alone, which a copy can outlive.
+    /// syncs. Decided by the copy itself (its notes name an owner, or it
+    /// sits under `shared/`), else by a share record for it: never by the
+    /// server's list alone, which a copy can outlive.
     pub(super) fn pull_only(&self) -> bool {
-        self.read_only_org().is_some() || self.received.is_some()
+        self.shared_by().is_some() || self.received.is_some()
     }
 
     /// A received copy with no share record: nothing to take updates from

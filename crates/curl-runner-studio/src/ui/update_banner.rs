@@ -1,7 +1,9 @@
 //! The update banner over a received copy's editor: `Version 14 available ·
 //! published 2 hours ago · 3 requests changed`, with **Update** and **What
-//! changed**. Styled as the ReadOnly board's note bar it takes the place
-//! of. The checks that fill it live in [`super::received`].
+//! changed**. When the customer edited their copy it adds `You've changed 2
+//! files. Updating replaces them.` and **Keep my changes as a copy**.
+//! Styled as the ReadOnly board's note bar it takes the place of. The
+//! checks that fill it live in [`super::received`].
 
 use super::color;
 use super::icons::{self, glyph};
@@ -31,7 +33,10 @@ pub struct UpdateOffer {
     pub plan: UpdatePlan,
     /// Request files added, changed or removed.
     pub requests_changed: usize,
-    /// Files the customer changed since the version they hold (Task 8).
+    /// Files the customer changed since the version they hold
+    /// ([`local_changes`]): the banner warns, and offers a copy first.
+    ///
+    /// [`local_changes`]: crate::model::received::local_changes
     pub local_changes: usize,
     /// The inputs as the new version shares them.
     pub variables: Vec<SharedVar>,
@@ -89,6 +94,16 @@ pub fn banner_text(offer: &UpdateOffer, now: DateTime<Utc>) -> String {
     )
 }
 
+/// `You've changed 2 files. Updating replaces them.`: what the banner
+/// adds when the customer edited their copy. `None` for no edits.
+pub fn local_changes_text(n: usize) -> Option<String> {
+    match n {
+        0 => None,
+        1 => Some("You've changed 1 file. Updating replaces it.".into()),
+        n => Some(format!("You've changed {n} files. Updating replaces them.")),
+    }
+}
+
 /// What changed, a line per file: `Added labels/new.yaml`, then the
 /// changed and the removed ones.
 pub fn change_lines(plan: &UpdatePlan) -> Vec<String> {
@@ -115,7 +130,8 @@ impl Workspace {
     pub(super) fn render_update_banner(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let (token, offer) = self.open_offer()?;
         let text = banner_text(offer, Utc::now());
-        let (update, what) = (token.to_string(), token.to_string());
+        let local = local_changes_text(offer.local_changes);
+        let (update, what, keep) = (token.to_string(), token.to_string(), token.to_string());
         Some(
             div()
                 .id("update-banner")
@@ -152,7 +168,28 @@ impl Workspace {
                         .text_color(color("text-primary"))
                         .child(text),
                 )
+                .children(local.map(|local| {
+                    div()
+                        .id("update-banner-local")
+                        .test_support()
+                        .aria_label(local.clone())
+                        .min_w_0()
+                        .whitespace_nowrap()
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .text_color(color("warning"))
+                        .child(local)
+                }))
                 .child(div().flex_1())
+                .when(offer.local_changes > 0, |bar| {
+                    bar.child(
+                        banner_button("update-banner-keep", "Keep my changes as a copy", false)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.keep_copy_then_update(&keep, window, cx)
+                            }))
+                            .test_support(),
+                    )
+                })
                 .child(
                     banner_button("update-banner-what-changed", "What changed", false)
                         .on_click(cx.listener(move |this, _, window, cx| {
@@ -263,7 +300,22 @@ fn banner_button(id: &'static str, label: &'static str, primary: bool) -> Statef
 
 #[cfg(test)]
 mod tests {
-    use super::{UpdateOffer, UpdatePlan, Utc, banner_text, change_lines, published_ago};
+    use super::{
+        UpdateOffer, UpdatePlan, Utc, banner_text, change_lines, local_changes_text, published_ago,
+    };
+
+    #[test]
+    fn banner_warns_about_local_changes() {
+        assert_eq!(
+            local_changes_text(2).as_deref(),
+            Some("You've changed 2 files. Updating replaces them.")
+        );
+        assert_eq!(
+            local_changes_text(1).as_deref(),
+            Some("You've changed 1 file. Updating replaces it.")
+        );
+        assert_eq!(local_changes_text(0), None);
+    }
 
     #[test]
     fn banner_reads_like_the_spec() {

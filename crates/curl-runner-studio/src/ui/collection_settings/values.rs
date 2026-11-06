@@ -18,7 +18,7 @@ impl CollectionSettings {
             return;
         }
         let new = d.name.is_none();
-        let received = self.received(cx);
+        let received = self.owner_var(&name, cx);
         if new && received {
             return;
         }
@@ -110,7 +110,8 @@ impl CollectionSettings {
         }
         let description = d.description.read(cx).value().trim().to_string();
         let required = d.required;
-        // A received copy's notes are the owner's: only the value changed.
+        // An owner's variable's notes are the owner's: only the value
+        // changed.
         let edit_meta = !received;
         // Into the shared notes, read as they are now (the share may have
         // ticked a flag, an import marked a secret, since the drawer
@@ -260,13 +261,14 @@ impl CollectionSettings {
     }
 
     pub(super) fn confirm_delete(&self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.received(cx) {
-            return;
-        }
         let Some(name) = self.drawer.as_ref().and_then(|d| d.name.clone()) else {
             // A new variable has nothing to delete.
             return;
         };
+        // The owner's comes back with the next update.
+        if self.owner_var(&name, cx) {
+            return;
+        }
         let file = self.file_name();
         let env = env_label(&self.environment);
         let this = cx.entity().downgrade();
@@ -289,7 +291,7 @@ impl CollectionSettings {
     }
 
     pub(super) fn delete(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if self.received(cx) {
+        if self.owner_var(name, cx) {
             return;
         }
         let service = self.service(cx);

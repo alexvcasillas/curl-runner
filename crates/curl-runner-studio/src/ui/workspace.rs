@@ -225,7 +225,7 @@ pub struct Workspace {
     /// Every folder a watcher was started on, in order (tests).
     #[cfg(test)]
     pub(super) watched: Vec<PathBuf>,
-    /// Every read-only toast and update prompt shown (tests read them).
+    /// Every refusal toast and update prompt shown (tests read them).
     #[cfg(test)]
     pub(super) toasts: Vec<String>,
     pub(super) status: Entity<StatusBar>,
@@ -411,15 +411,14 @@ impl Workspace {
             }
         };
         let meta = CollectionMeta::load_or_init(self.store.base(), root);
-        // A received copy is locked where it is written: the collection
-        // and each document refuse changes. Without the server there are
-        // no received copies, only local folders.
+        // Who shared a received copy, from its notes. Without the server
+        // there are no received copies, only local folders.
         if let Some(org) = meta
             .read_only_from
             .as_ref()
             .filter(|_| crate::features::SERVER)
         {
-            collection.read_only = Some(org.clone());
+            collection.received_from = Some(org.clone());
         }
         self.refresh_received_all();
         self.received = self
@@ -521,9 +520,7 @@ impl Workspace {
             }),
             None => self.settings_view.as_ref().map(|v| v.read(cx).status()),
         };
-        let read_only = self.read_only_org().is_some();
         self.status.update(cx, |s, cx| {
-            s.set_read_only(read_only, cx);
             s.set(name.map(Into::into), editor, cx);
             s.set_history(usage, cx);
             s.set_environments(settings, cx);
@@ -879,7 +876,7 @@ impl Workspace {
             .and_then(|doc| self.runs.last.get(&doc.rel_path))
             .map(|r| r.captured_by.clone())
             .unwrap_or_default();
-        let yours = self.read_only_org().is_some();
+        let yours = self.shared_by().is_some();
         let groups = source_groups(&vars, &missing, &captured_by, yours);
         let missing_count = missing.len();
         self.missing = missing;
@@ -970,22 +967,13 @@ impl Workspace {
     fn editor_changed(
         &mut self,
         editor: &Entity<EditorState>,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let Some(ix) = self.tab_of(editor) else {
             return;
         };
         let text = editor.read(cx).value().to_string();
-        // A received copy's editor is read only; should a change get
-        // through anyway, the document refuses it and the editor goes back.
-        if self.state.open[ix].is_read_only() {
-            if text != self.state.open[ix].text {
-                set_editor_text(editor, &self.state.open[ix].text, window, cx);
-                self.refuse_read_only(window, cx);
-            }
-            return;
-        }
         // The marks and popover point into the old text.
         self.tabs[ix].diagnostics.clear();
         self.close_hover(cx);
@@ -1175,9 +1163,6 @@ impl Workspace {
 
     /// Saves tab `ix`; reports and returns `false` on failure.
     pub(super) fn save(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        if self.refuse_read_only(window, cx) {
-            return false;
-        }
         let Some(collection) = &mut self.state.collection else {
             return false;
         };
@@ -1365,9 +1350,6 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if keep_mine && self.refuse_read_only(window, cx) {
-            return;
-        }
         let Some(ix) = self.state.active else { return };
         let doc = &mut self.state.open[ix];
         doc.resolve_conflict(keep_mine);
@@ -1592,7 +1574,12 @@ fn find_file<'a>(
 }
 
 /// Replaces an editor's text from disk, keeping the cursor where it was.
-fn set_editor_text(editor: &Entity<EditorState>, text: &str, window: &mut Window, cx: &mut App) {
+pub(super) fn set_editor_text(
+    editor: &Entity<EditorState>,
+    text: &str,
+    window: &mut Window,
+    cx: &mut App,
+) {
     let text = text.to_string();
     editor.update(cx, |e, cx| {
         let cursor = e.cursor_position();

@@ -567,14 +567,19 @@ impl CollectionSettings {
         }
     }
 
-    /// The collection's notes (the workspace's).
-    /// A received copy: its variables are the owner's (no new, deleted or
-    /// re-described ones); only their values are the customer's.
-    /// Without the server there are none.
-    fn received(&self, cx: &App) -> bool {
-        crate::features::SERVER && self.meta(cx).read_only_from.is_some()
+    /// `name` is one of the variables a received copy's owner shares: its
+    /// notes (description, secret, required) are the owner's, refreshed on
+    /// each update; only its value is the customer's. The customer's own
+    /// variables are theirs to add, change and delete. Without the server
+    /// there are none.
+    fn owner_var(&self, name: &str, cx: &App) -> bool {
+        let meta = self.meta(cx);
+        crate::features::SERVER
+            && meta.read_only_from.is_some()
+            && meta.received_vars.iter().any(|v| v.name == name)
     }
 
+    /// The collection's notes (the workspace's).
     pub fn meta<'a>(&self, cx: &'a App) -> &'a CollectionMeta {
         self.notes.read(cx)
     }
@@ -690,9 +695,6 @@ impl CollectionSettings {
     }
 
     fn import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.received(cx) {
-            return;
-        }
         let picked = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -1159,22 +1161,20 @@ impl CollectionSettings {
                     ),
             )
             .child(div().flex_1())
-            .when(!self.received(cx), |bar| {
-                bar.child(
-                    small_button("import-env", "Import .env")
-                        .child("Import .env")
-                        .on_click(cx.listener(|this, _, window, cx| this.import(window, cx))),
-                )
-                .child(
-                    primary_button("add-variable", "Add variable")
-                        .ml(px(4.))
-                        .child(glyph(icons::PLUS).size(px(13.)))
-                        .child("Add variable")
-                        .on_click(
-                            cx.listener(|this, _, window, cx| this.open_variable(None, window, cx)),
-                        ),
-                )
-            })
+            .child(
+                small_button("import-env", "Import .env")
+                    .child("Import .env")
+                    .on_click(cx.listener(|this, _, window, cx| this.import(window, cx))),
+            )
+            .child(
+                primary_button("add-variable", "Add variable")
+                    .ml(px(4.))
+                    .child(glyph(icons::PLUS).size(px(13.)))
+                    .child("Add variable")
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.open_variable(None, window, cx)),
+                    ),
+            )
     }
 
     fn render_table(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -1233,29 +1233,27 @@ impl CollectionSettings {
             .child(head)
             .children(rows)
             .children(empty)
-            .when(!self.received(cx), |table| {
-                table.child(
-                    div()
-                        .id("add-variable-row")
-                        .role(Role::Button)
-                        .test_support()
-                        .aria_label("Add variable")
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .h(px(ROW_HEIGHT))
-                        .px(px(16.))
-                        .text_size(px(13.))
-                        .text_color(color("text-secondary"))
-                        .cursor_pointer()
-                        .hover(|s| s.text_color(color("text-primary")))
-                        .child(glyph(icons::PLUS).size(px(13.)))
-                        .child("Add variable")
-                        .on_click(
-                            cx.listener(|this, _, window, cx| this.open_variable(None, window, cx)),
-                        ),
-                )
-            })
+            .child(
+                div()
+                    .id("add-variable-row")
+                    .role(Role::Button)
+                    .test_support()
+                    .aria_label("Add variable")
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .h(px(ROW_HEIGHT))
+                    .px(px(16.))
+                    .text_size(px(13.))
+                    .text_color(color("text-secondary"))
+                    .cursor_pointer()
+                    .hover(|s| s.text_color(color("text-primary")))
+                    .child(glyph(icons::PLUS).size(px(13.)))
+                    .child("Add variable")
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.open_variable(None, window, cx)),
+                    ),
+            )
     }
 
     fn render_row(

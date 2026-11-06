@@ -268,7 +268,7 @@ mod tests {
 
     #[gpui_kit::test]
     fn palette_has_no_open_shared_link(_cx: &mut TestAppContext) {
-        let listed = palette_entries(None, &[], false);
+        let listed = palette_entries(None, &[]);
         assert!(
             !listed
                 .iter()
@@ -394,7 +394,7 @@ mod tests {
         // Even with a copy listed, the section isn't drawn.
         ws.update(cx, |ws, _| {
             assert!(ws.received_all.is_empty());
-            assert!(ws.read_only_org().is_none());
+            assert!(ws.shared_by().is_none());
             ws.received_all.push(ReceivedCopy {
                 share: ReceivedShare {
                     link: crate::model::backend::ShareLink {

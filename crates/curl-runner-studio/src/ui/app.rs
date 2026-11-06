@@ -28,7 +28,7 @@ actions!(
         Quit,
         /// Pick a folder and open it as the collection (⌘O).
         OpenFolder,
-        /// Open a shared link: paste it, review, add a read-only copy (⌘L).
+        /// Open a shared link: paste it, review, add your own copy (⌘L).
         OpenSharedLink,
         /// Save the active file (⌘S).
         SaveFile,

@@ -1,31 +1,25 @@
-//! A received (shared-with-me) collection, board ReadOnly: every write
-//! refused with `Read only · shared by {org}`, `Duplicate to my workspace`
-//! for an editable copy, and updates from the owner: checked when the copy
-//! opens, every [`UPDATE_EVERY`] and on `Check for updates`, offered in the
-//! banner ([`super::update_banner`]) and applied whole on **Update**.
-//!
-//! The lock itself sits in the model: [`Collection`] refuses to create,
-//! rename or delete files and each [`Document`] refuses edits, saves and
-//! fixes. The workspace checks first, so the user gets the toast instead of
-//! an error.
-//!
-//! [`Collection`]: crate::model::collection::Collection
-//! [`Document`]: crate::model::document::Document
+//! A received (shared-with-me) collection: the customer's own copy, which
+//! they may edit like any collection (`Shared by {org}` only says where it
+//! came from), `Duplicate to my workspace` for a copy of their own, and
+//! updates from the owner: checked when the copy opens, every
+//! [`UPDATE_EVERY`] and on `Check for updates`, offered in the banner
+//! ([`super::update_banner`]) and applied whole on **Update**, which
+//! replaces the customer's edits (the banner says how many first, and
+//! offers **Keep my changes as a copy**). No merge.
 
 use super::backend_call;
 use super::update_banner::{UPDATE_EVERY, UpdateOffer};
-use super::workspace::{Workspace, edit_notes, notify_error};
+use super::workspace::{Workspace, edit_notes, notify_error, set_editor_text};
 use crate::model::backend::{
     BackendError, LinkAccess, ReceivedShare, SharedCollection, SharedVar, SyncFile,
 };
-use crate::model::collection::read_only_text;
 use crate::model::environments::{DEFAULT_ENVIRONMENT, resolve_vars};
 use crate::model::history::relative_time;
-use crate::model::received::ReceivedCopy;
+use crate::model::received::{ReceivedCopy, local_changes};
 use crate::model::secrets::service_name;
 use crate::model::shared_copy::{
     STATE_FOLDER_TEXT, UpdatePlan, apply_update, duplicate, holds_studio_state, plan_update,
-    received_from, secret_in_either,
+    secret_in_either,
 };
 use crate::model::sync_base::SyncBase;
 use curl_runner_core::interpolate::Store;
@@ -74,26 +68,16 @@ enum CheckFailed {
 }
 
 impl Workspace {
-    /// The org a received copy came from, while one is open: it is read
-    /// only.
-    pub(super) fn read_only_org(&self) -> Option<&str> {
-        self.state.collection.as_ref()?.read_only.as_deref()
-    }
-
-    /// For a received copy, shows `Read only · shared by {org}` and returns
-    /// `true`: the caller does nothing.
-    pub(super) fn refuse_read_only(&mut self, window: &mut Window, cx: &mut App) -> bool {
-        let Some(org) = self.read_only_org().map(str::to_string) else {
-            return false;
-        };
-        self.toast_read_only(&org, window, cx);
-        true
+    /// The org a received copy came from, while one is open. Informational
+    /// only (`Shared by Acme`): the copy takes edits like any collection.
+    pub(super) fn shared_by(&self) -> Option<&str> {
+        self.state.collection.as_ref()?.received_from.as_deref()
     }
 
     /// For a folder picked to write into (an import target, a new
-    /// collection) that is a received copy, shows `Read only · shared by
-    /// {org}` (or, for the studio's own folder, [`STATE_FOLDER_TEXT`]) and
-    /// returns `true`: nothing is written.
+    /// collection) that is the studio's own folder or holds it (received
+    /// copies live there), shows [`STATE_FOLDER_TEXT`] and returns `true`:
+    /// nothing is written.
     pub(super) fn refuse_received(
         &mut self,
         dir: &Path,
@@ -109,25 +93,16 @@ impl Workspace {
         }
     }
 
-    /// Why a folder picked by hand can't take files: a received copy (or a
-    /// folder in one), or the studio's own data folder or one holding it.
+    /// Why a folder picked by hand can't take files: the studio's own data
+    /// folder, one inside it or one holding it.
     fn refusal_of(&self, dir: &Path) -> Option<String> {
-        let base = self.store.base();
-        // Without the server there are no received copies to protect.
-        let received = received_from(base, dir).filter(|_| crate::features::SERVER);
-        if let Some(org) = received {
-            Some(read_only_text(&org))
-        } else if holds_studio_state(base, dir) {
-            Some(STATE_FOLDER_TEXT.to_string())
-        } else {
-            None
-        }
+        holds_studio_state(self.store.base(), dir).then(|| STATE_FOLDER_TEXT.to_string())
     }
 
-    /// [`refuse_read_only`] or [`refuse_received`] for writing into
-    /// `dir`: the refusal's text, toasted, or `None` to go ahead.
+    /// [`refuse_received`] for writing into `dir`, unless `dir` is in the
+    /// open collection (a received copy takes imports like any other): the
+    /// refusal's text, toasted, or `None` to go ahead.
     ///
-    /// [`refuse_read_only`]: Workspace::refuse_read_only
     /// [`refuse_received`]: Workspace::refuse_received
     pub(super) fn refuse_write_into(
         &mut self,
@@ -135,16 +110,13 @@ impl Workspace {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<String> {
-        let text = self
-            .read_only_org()
-            .map(read_only_text)
-            .or_else(|| self.refusal_of(dir))?;
+        let open = self.state.collection.as_ref().map(|c| c.root.as_path());
+        if open.is_some_and(|root| dir.starts_with(root)) {
+            return None;
+        }
+        let text = self.refusal_of(dir)?;
         self.toast(text.clone(), window, cx);
         Some(text)
-    }
-
-    fn toast_read_only(&mut self, org: &str, window: &mut Window, cx: &mut App) {
-        self.toast(read_only_text(org), window, cx);
     }
 
     fn toast(&mut self, text: String, window: &mut Window, cx: &mut App) {
@@ -158,7 +130,7 @@ impl Workspace {
     pub(super) fn collection_title(&self) -> Option<String> {
         let c = self.state.collection.as_ref()?;
         Some(match &self.received {
-            Some(r) if c.read_only.is_some() => r.share.name.clone(),
+            Some(r) if c.received_from.is_some() => r.share.name.clone(),
             _ => c.name.clone(),
         })
     }
@@ -166,7 +138,7 @@ impl Workspace {
     /// Where a received copy's exports start: the user's Documents (else
     /// home), never the copy's own folder. `None`: the collection root.
     pub(super) fn export_dir(&self) -> Option<PathBuf> {
-        self.read_only_org()?;
+        self.shared_by()?;
         let home = std::env::home_dir()?;
         let documents = home.join("Documents");
         Some(if documents.is_dir() { documents } else { home })
@@ -181,7 +153,7 @@ impl Workspace {
     /// `Check for updates` (the sidebar's foot, the note): a manual check
     /// of the open copy, which says `Up to date` or why it couldn't ask.
     pub(super) fn check_for_updates(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.read_only_org().is_none() {
+        if self.shared_by().is_none() {
             return;
         }
         let Some(token) = self.received.as_ref().map(|r| r.share.link.token.clone()) else {
@@ -277,6 +249,7 @@ impl Workspace {
         let backend = self.backend.clone();
         let (share, root) = (copy.share, copy.root);
         let (link, held) = (share.link.clone(), share.version);
+        let received = share.clone();
         let job = cx.background_spawn(async move {
             let latest = backend
                 .latest_version(&link)
@@ -293,12 +266,15 @@ impl Workspace {
                 .await
                 .map_err(CheckFailed::Backend)?;
             let plan = plan_update(&root, snapshot.files).map_err(CheckFailed::Plan)?;
-            Ok(Checked::Newer(UpdateOffer::new(
-                snapshot.version,
-                snapshot.published_at,
-                plan,
-                snapshot.variables,
-            )))
+            Ok(Checked::Newer(UpdateOffer {
+                local_changes: local_changes(&root, &received).len(),
+                ..UpdateOffer::new(
+                    snapshot.version,
+                    snapshot.published_at,
+                    plan,
+                    snapshot.variables,
+                )
+            }))
         });
         let key = token.to_string();
         let token = key.clone();
@@ -334,7 +310,9 @@ impl Workspace {
                     window.push_notification(Notification::info(UP_TO_DATE), cx);
                 }
             }
-            Ok(Checked::Offered) => {}
+            Ok(Checked::Offered) => {
+                self.recount_local_changes(token);
+            }
             Ok(Checked::Newer(offer)) => {
                 self.update_offers.insert(token.to_string(), offer);
             }
@@ -354,13 +332,85 @@ impl Workspace {
         }
     }
 
-    /// **Update**: the open copy takes the offered version, all or nothing
+    /// **Update**, once unsaved edits are settled as before closing a
+    /// collection (saved, or dropped on `Don't save`). Edits that only now
+    /// show on disk stop it once: the banner says how many files it
+    /// replaces before anything goes. Then [`apply_offer_now`].
+    ///
+    /// [`apply_offer_now`]: Workspace::apply_offer_now
+    pub(super) fn apply_offer(&mut self, token: &str, window: &mut Window, cx: &mut Context<Self>) {
+        // What the banner said when Update was clicked (a save on the way
+        // recounts it).
+        let Some(shown) = self.update_offers.get(token).map(|o| o.local_changes) else {
+            return;
+        };
+        let token = token.to_string();
+        self.settle_unsaved(
+            Rc::new(move |this, window, cx| {
+                this.drop_unsaved(window, cx);
+                let now = this.recount_local_changes(&token);
+                if shown == 0 && now > 0 {
+                    cx.notify();
+                    return;
+                }
+                this.apply_offer_now(&token, window, cx);
+            }),
+            window,
+            cx,
+        );
+    }
+
+    /// Every tab still unsaved (the user chose `Don't save`) goes back to
+    /// its file's text.
+    fn drop_unsaved(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for ix in 0..self.state.open.len() {
+            let doc = &mut self.state.open[ix];
+            if !doc.is_dirty() {
+                continue;
+            }
+            doc.set_text(doc.saved_text.clone());
+            set_editor_text(&self.tabs[ix].editor, &doc.text, window, cx);
+            self.text_replaced(ix, cx);
+        }
+    }
+
+    /// Counts again the files the customer changed in the copy an offer
+    /// for `token` is waiting on, and returns the count (0 with no offer).
+    pub(super) fn recount_local_changes(&mut self, token: &str) -> usize {
+        let Some(copy) = self
+            .received_all
+            .iter()
+            .chain(self.received.as_ref())
+            .find(|r| r.share.link.token == token)
+        else {
+            return 0;
+        };
+        let Some(offer) = self.update_offers.get_mut(token) else {
+            return 0;
+        };
+        offer.local_changes = local_changes(&copy.root, &copy.share).len();
+        offer.local_changes
+    }
+
+    /// The open copy's offer, recounted after a save or a change on disk.
+    pub(super) fn recount_open_local_changes(&mut self, cx: &mut Context<Self>) {
+        let Some(token) = self.open_offer().map(|(t, _)| t.to_string()) else {
+            return;
+        };
+        let before = self.update_offers.get(&token).map(|o| o.local_changes);
+        if before != Some(self.recount_local_changes(&token)) {
+            cx.notify();
+        }
+    }
+
+    /// The open copy takes the offered version, all or nothing
     /// (a hidden folder swapped in: on failure the copy is as it was and
     /// the offer stays). Saved secrets and `.env` values stay; the record
     /// takes the new version and file hashes; inputs the version newly
     /// requires are asked for in the Credentials step. Only the copy the
-    /// offer is for, and only while it is open.
-    pub(super) fn apply_offer(&mut self, token: &str, window: &mut Window, cx: &mut Context<Self>) {
+    /// offer is for, and only while it is open. The customer's edits are
+    /// replaced.
+    fn apply_offer_now(&mut self, token: &str, window: &mut Window, cx: &mut Context<Self>) {
         let Some(copy) = self
             .received
             .clone()
@@ -536,9 +586,21 @@ impl Workspace {
     ///
     /// [`duplicate_to`]: Workspace::duplicate_to
     pub(super) fn duplicate_to_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.read_only_org().is_none() {
+        if self.shared_by().is_none() {
             return;
         }
+        self.pick_duplicate_folder(window, cx, |this, dest, window, cx| {
+            this.duplicate_to(dest, window, cx)
+        });
+    }
+
+    /// The `Duplicate here` folder picker; `then` gets the folder.
+    fn pick_duplicate_folder(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        then: impl FnOnce(&mut Self, &Path, &mut Window, &mut Context<Self>) + 'static,
+    ) {
         let picked = cx.prompt_for_paths(PathPromptOptions {
             files: false,
             directories: true,
@@ -552,10 +614,35 @@ impl Workspace {
             let Some(dest) = paths.into_iter().next() else {
                 return;
             };
-            this.update_in(cx, |this, window, cx| this.duplicate_to(&dest, window, cx))
+            this.update_in(cx, |this, window, cx| then(this, &dest, window, cx))
                 .ok();
         })
         .detach();
+    }
+
+    /// **Keep my changes as a copy**: unsaved edits settled first (so the
+    /// copy holds what the user sees), then the `Duplicate here` picker,
+    /// then [`keep_copy_to`].
+    ///
+    /// [`keep_copy_to`]: Workspace::keep_copy_to
+    pub(super) fn keep_copy_then_update(
+        &mut self,
+        token: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let token = token.to_string();
+        self.settle_unsaved(
+            Rc::new(move |this, window, cx| {
+                this.drop_unsaved(window, cx);
+                let token = token.clone();
+                this.pick_duplicate_folder(window, cx, move |this, dest, window, cx| {
+                    this.keep_copy_to(&token, dest, window, cx)
+                });
+            }),
+            window,
+            cx,
+        );
     }
 
     /// Copies the open received copy's YAML into `dest` (no `.env`, no
@@ -567,17 +654,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(c) = self
-            .state
-            .collection
-            .as_ref()
-            .filter(|c| c.read_only.is_some())
-        else {
-            return;
-        };
-        let from = c.root.clone();
-        let meta = self.meta(cx).clone();
-        if let Err(e) = duplicate(self.store.base(), &from, &meta, dest) {
+        if let Err(e) = self.duplicate_files(dest, cx) {
             return notify_error(e, window, cx);
         }
         let dest: PathBuf = dest.to_path_buf();
@@ -587,6 +664,61 @@ impl Workspace {
             self.toasts.push(DUPLICATED.into());
             window.push_notification(Notification::success(DUPLICATED), cx);
         }
+    }
+
+    /// The open received copy's YAML and notes into `dest` ([`duplicate`]).
+    fn duplicate_files(&self, dest: &Path, cx: &App) -> Result<usize, String> {
+        let from = self
+            .state
+            .collection
+            .as_ref()
+            .filter(|c| c.received_from.is_some())
+            .map(|c| c.root.clone())
+            .ok_or("No shared collection is open.")?;
+        duplicate(self.store.base(), &from, self.meta(cx), dest)
+    }
+
+    /// **Keep my changes as a copy** into `dest`, then **Update**: the
+    /// copy's files are duplicated first, and only a duplicate that fully
+    /// worked lets the update replace them. On failure the copy is
+    /// untouched, the offer stays and the error shows. The copy stays
+    /// open; the duplicate joins My collections.
+    pub(super) fn keep_copy_to(
+        &mut self,
+        token: &str,
+        dest: &Path,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(root) = self
+            .received
+            .as_ref()
+            .filter(|r| r.share.link.token == token)
+            .map(|r| r.root.clone())
+        else {
+            return;
+        };
+        if !self.update_offers.contains_key(token) {
+            return;
+        }
+        if let Err(e) = self.duplicate_files(dest, cx) {
+            let text = format!("Couldn't keep a copy: {e}");
+            #[cfg(test)]
+            self.toasts.push(text.clone());
+            return notify_error(text, window, cx);
+        }
+        // Recent, then the copy again: it stays the folder to reopen.
+        self.remember_folder(dest);
+        self.remember_folder(&root);
+        let name = dest.file_name().map_or_else(
+            || dest.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        );
+        let text = format!("Kept your changes in {name}");
+        #[cfg(test)]
+        self.toasts.push(text.clone());
+        window.push_notification(Notification::success(text), cx);
+        self.apply_offer_now(token, window, cx);
     }
 
     /// Opens another collection from the sidebar (Shared with me, My
@@ -683,7 +815,7 @@ mod gpui_tests {
     }
 
     /// A studio with Acme's Shipping API added from its link (the Add
-    /// flow, `BASE_URL` as given) and open: a received, read-only copy.
+    /// flow, `BASE_URL` as given) and open: a received copy.
     fn received(cx: &mut TestAppContext, signed_in: bool, base_url: Option<&str>) -> Studio {
         let inner = test_backend();
         if signed_in {
@@ -741,7 +873,7 @@ mod gpui_tests {
         s.ws.read_with(cx, |ws, _| {
             let c = ws.state.collection.as_ref().expect("the copy is open");
             assert_eq!(c.root, s.root());
-            assert_eq!(c.read_only.as_deref(), Some("Acme"));
+            assert_eq!(c.received_from.as_deref(), Some("Acme"));
         });
         s
     }
@@ -821,7 +953,7 @@ mod gpui_tests {
     }
 
     #[gpui_kit::test]
-    fn read_only_blocks_every_write_path(cx: &mut TestAppContext) {
+    fn received_copy_accepts_edits(cx: &mut TestAppContext) {
         let s = received(cx, false, None);
         // A file with a quick fix, as the owner could have shared it.
         let typo = "request:\n  url: https://api.example.com\n  timout: 5000\n";
@@ -833,18 +965,8 @@ mod gpui_tests {
             });
         })
         .unwrap();
-        let before = snapshot(&s);
-        let refused = "Read only · shared by Acme";
-        let mut expected = 0;
-        let mut refused_once = |cx: &mut TestAppContext, what: &str| {
-            expected += 1;
-            let told = toasts(cx, &s);
-            assert_eq!(told.len(), expected, "{what}: {told:?}");
-            assert_eq!(told.last().map(String::as_str), Some(refused), "{what}");
-            assert!(!dialog_open(cx, &s), "{what} opened a dialog");
-        };
 
-        // Typing into the editor.
+        // Typing into the editor, then ⌘S: written to disk.
         open_file(cx, &s, RATES);
         let rates = s.read(RATES);
         cx.update_window(s.window, |_, window, cx| {
@@ -853,30 +975,23 @@ mod gpui_tests {
         })
         .unwrap();
         cx.run_until_parked();
-        s.ws.read_with(cx, |ws, cx| {
-            let doc = &ws.state.open[0];
-            assert_eq!(doc.text, rates);
-            assert!(!doc.is_dirty());
-            assert_eq!(ws.tabs[0].editor.read(cx).value().as_ref(), rates);
-        });
-
-        // ⌘S.
+        let typed = s.ws.read_with(cx, |ws, _| ws.state.open[0].text.clone());
+        assert!(typed.contains("# mine"), "{typed}");
         dispatch(cx, &s, &SaveFile);
-        refused_once(cx, "⌘S");
+        assert_eq!(s.read(RATES), typed, "saved");
+        assert_ne!(s.read(RATES), rates);
 
-        // Rename and delete, as the tree's menu would ask.
+        // Rename and delete ask, as for any collection.
         cx.update_window(s.window, |_, window, cx| {
             ws.update(cx, |ws, cx| ws.prompt_rename(RATES.into(), window, cx));
         })
         .unwrap();
-        refused_once(cx, "rename");
-        cx.update_window(s.window, |_, window, cx| {
-            ws.update(cx, |ws, cx| ws.prompt_delete("rates".into(), window, cx));
-        })
-        .unwrap();
-        refused_once(cx, "delete");
+        assert!(dialog_open(cx, &s), "rename asks for a name");
+        cx.update_window(s.window, |_, window, cx| window.close_dialog(cx))
+            .unwrap();
+        cx.run_until_parked();
 
-        // Quick fix (⌘.), and the editor offers no code action.
+        // Quick fix (⌘.): offered and applied.
         open_file(cx, &s, "rates/typo.yaml");
         cx.update_window(s.window, |_, window, cx| {
             ws.update(cx, |ws, cx| {
@@ -890,89 +1005,76 @@ mod gpui_tests {
                 });
                 let editor = ws.tabs[ix].editor.clone();
                 let at = typo.find("timout").unwrap() + 2;
-                assert!(ws.code_actions(&editor, at..at, cx).is_empty());
+                assert!(!ws.code_actions(&editor, at..at, cx).is_empty());
             });
         })
         .unwrap();
         dispatch(cx, &s, &QuickFix);
-        refused_once(cx, "quick fix");
-        cx.update_window(s.window, |_, window, cx| {
-            ws.update(cx, |ws, cx| {
-                let ix = ws.state.active.unwrap();
-                let fix = ws.state.open[ix].diagnostics[0].fix.clone().unwrap();
-                let path = ws.state.open[ix].diagnostics[0].path.clone();
-                ws.apply_named_fix(ix, &path, &fix, window, cx);
-            });
-        })
-        .unwrap();
-        refused_once(cx, "the popover's fix");
+        s.ws.read_with(cx, |ws, _| {
+            let ix = ws.state.active.unwrap();
+            assert!(ws.state.open[ix].text.contains("timeout"), "fixed");
+        });
 
-        // New request: ⌘N and the palette (which doesn't list it).
+        // New request (⌘N) and Import (⌘I) open their dialogs; the palette
+        // lists them.
         dispatch(cx, &s, &NewRequest);
-        refused_once(cx, "⌘N");
+        assert!(dialog_open(cx, &s), "⌘N");
+        cx.update_window(s.window, |_, window, cx| window.close_dialog(cx))
+            .unwrap();
+        cx.run_until_parked();
+        dispatch(cx, &s, &Import);
+        assert!(dialog_open(cx, &s), "⌘I");
+        cx.update_window(s.window, |_, window, cx| window.close_dialog(cx))
+            .unwrap();
+        cx.run_until_parked();
         let palette = cx
             .update_window(s.window, |_, window, cx| {
                 ws.update(cx, |ws, cx| ws.open_palette(window, cx))
             })
             .unwrap();
         palette.read_with(cx, |p, _| {
-            assert!(!p.lists(PaletteAction::NewRequest));
-            assert!(!p.lists(PaletteAction::Import));
-            assert!(p.lists(PaletteAction::Environments));
+            assert!(p.lists(PaletteAction::NewRequest));
+            assert!(p.lists(PaletteAction::Import));
         });
         cx.update_window(s.window, |_, window, cx| window.close_dialog(cx))
             .unwrap();
         cx.run_until_parked();
 
-        // Import (⌘I).
-        dispatch(cx, &s, &Import);
-        refused_once(cx, "import");
-
-        // An edit on disk reloads (the owner's copy wins); Keep mine is
-        // refused and changes nothing.
-        let theirs = rates.replace("Get rates", "Get quotes");
+        // A disk change under an unsaved edit is a conflict; Keep mine
+        // keeps the buffer.
+        let theirs = typed.replace("Get rates", "Get quotes");
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                let ix = ws.state.position(Path::new(RATES)).unwrap();
+                ws.activate_tab(ix, window, cx);
+                ws.state.open[ix].set_text("request:\n  url: https://edited\n".into());
+            });
+        })
+        .unwrap();
         std::fs::write(s.root().join(RATES), &theirs).unwrap();
         cx.update_window(s.window, |_, window, cx| {
             ws.update(cx, |ws, cx| {
                 ws.disk_changed(&[RATES.into()], window, cx);
                 let ix = ws.state.position(Path::new(RATES)).unwrap();
-                ws.activate_tab(ix, window, cx);
-                assert!(!ws.state.open[ix].disk_conflict);
-                assert_eq!(ws.state.open[ix].text, theirs);
+                assert!(ws.state.open[ix].disk_conflict);
                 ws.resolve_conflict(true, window, cx);
-            });
-        })
-        .unwrap();
-        refused_once(cx, "keep mine");
-
-        // The model refuses even when asked directly.
-        cx.update_window(s.window, |_, window, cx| {
-            ws.update(cx, |ws, cx| {
-                let ix = ws.state.active.unwrap();
-                ws.state.open[ix].set_text("mine\n".into());
-                assert!(!ws.save(ix, window, cx));
+                assert_eq!(ws.state.open[ix].text, "request:\n  url: https://edited\n");
+                assert!(ws.save(ix, window, cx));
+                // The model takes new files too.
                 let c = ws.state.collection.as_mut().unwrap();
-                assert!(c.create_file(Path::new("x.yaml"), "x").is_err());
-                assert!(c.delete(Path::new("rates")).is_err());
+                c.create_file(Path::new("mine.yaml"), "request:\n  url: https://m\n")
+                    .unwrap();
             });
         })
         .unwrap();
-        assert_eq!(s.read(RATES), theirs, "nothing was saved");
-        let after = snapshot(&s);
-        let changed: Vec<_> = after
-            .iter()
-            .filter(|f| !before.contains(f))
-            .map(|f| f.rel.clone())
-            .collect();
-        assert_eq!(changed, [PathBuf::from(RATES)], "only the disk edit");
-        assert_eq!(after.len(), before.len());
-        // Typing said nothing (the editor took no change); the direct
-        // save above was the ninth refusal.
-        assert_eq!(toasts(cx, &s).len(), 9);
+        assert_eq!(s.read(RATES), "request:\n  url: https://edited\n");
+        assert!(s.root().join("mine.yaml").exists());
+        // Nothing was refused along the way.
+        assert!(toasts(cx, &s).is_empty(), "{:?}", toasts(cx, &s));
     }
 
     #[gpui_kit::test]
-    fn read_only_view_reads_like_the_board(cx: &mut TestAppContext) {
+    fn shared_view_reads_like_the_board(cx: &mut TestAppContext) {
         let s = received(cx, false, None);
         open_file(cx, &s, RATES);
         let label = |cx: &mut TestAppContext, id: &str| {
@@ -985,23 +1087,26 @@ mod gpui_tests {
             .unwrap()
         };
         assert_eq!(
-            label(cx, "read-only-note").as_deref(),
-            Some("Read only · shared by Acme · updated 3 days ago")
+            label(cx, "shared-note").as_deref(),
+            Some("Shared by Acme · updated 3 days ago")
         );
         assert_eq!(
-            label(cx, "title-read-only").as_deref(),
-            Some("Read only · Acme")
+            label(cx, "title-shared-by").as_deref(),
+            Some("Shared by Acme")
         );
         assert_eq!(label(cx, "sidebar-title").as_deref(), Some("Shipping API"));
         assert_eq!(
             label(cx, "sidebar-updated").as_deref(),
             Some("Updated 3 days ago")
         );
-        assert_eq!(
-            label(cx, "status-language").as_deref(),
-            Some("YAML · read only")
-        );
-        assert!(label(cx, "sidebar-new-request").is_none());
+        // Editable: no lock, New request as anywhere.
+        assert!(label(cx, "status-language").is_none());
+        let new_request = cx
+            .update_window(s.window, |_, window, _| {
+                window.try_find("sidebar-new-request").is_some()
+            })
+            .unwrap();
+        assert!(new_request, "New request in the sidebar");
         // Back in a collection of the user's own: Shared with me lists it.
         let mine = tempfile::tempdir().unwrap();
         std::fs::write(mine.path().join("a.yaml"), "request:\n  url: https://a\n").unwrap();
@@ -1022,7 +1127,7 @@ mod gpui_tests {
             label(cx, "other-collection-0").as_deref(),
             Some("Shipping API")
         );
-        assert!(label(cx, "read-only-note").is_none());
+        assert!(label(cx, "shared-note").is_none());
         click(cx, s.window, "other-collection-0");
         s.ws.read_with(cx, |ws, _| {
             assert_eq!(ws.state.collection.as_ref().unwrap().root, s.root());
@@ -1042,7 +1147,7 @@ mod gpui_tests {
     }
 
     #[gpui_kit::test]
-    fn run_works_in_read_only(cx: &mut TestAppContext) {
+    fn run_works_in_a_received_copy(cx: &mut TestAppContext) {
         let seen: Arc<Mutex<Vec<String>>> = Arc::default();
         let log = seen.clone();
         let srv = testkit::TestServer::with_handler(move |req| {
@@ -1201,8 +1306,8 @@ mod gpui_tests {
             label(cx, &s, "update-banner-update").as_deref(),
             Some("Update")
         );
-        // It takes the read-only note's place.
-        assert!(label(cx, &s, "read-only-note").is_none());
+        // It takes the shared note's place.
+        assert!(label(cx, &s, "shared-note").is_none());
         // Offered, not written; nothing asked.
         assert_eq!(snapshot(&s), before);
         assert!(!dialog_open(cx, &s));
@@ -1237,7 +1342,7 @@ mod gpui_tests {
         let fetched = fetches(&s);
         check(cx, &s, false);
         assert!(label(cx, &s, "update-banner").is_none());
-        assert!(label(cx, &s, "read-only-note").is_some());
+        assert!(label(cx, &s, "shared-note").is_some());
         assert!(toasts(cx, &s).is_empty(), "{:?}", toasts(cx, &s));
         assert_eq!(fetches(&s), fetched, "no snapshot for the same version");
         // Asked by hand: it says so.
@@ -1637,6 +1742,227 @@ mod gpui_tests {
         assert_eq!(snapshot(&s), before, "nothing written here");
     }
 
+    /// The share token of the open copy.
+    fn token_of(cx: &mut TestAppContext, s: &Studio) -> String {
+        s.ws.read_with(cx, |ws, _| {
+            ws.received.as_ref().unwrap().share.link.token.clone()
+        })
+    }
+
+    /// The customer's edits: `rates/get-rates.yaml` changed, `mine.yaml`
+    /// added.
+    const MINE: &str = "request:\n  url: https://mine\n";
+
+    fn edit_copy(s: &Studio) {
+        std::fs::write(s.root().join(RATES), MINE).unwrap();
+        std::fs::write(s.root().join("mine.yaml"), MINE).unwrap();
+    }
+
+    #[gpui_kit::test]
+    fn banner_warns_about_local_changes_and_offers_a_copy(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        open_file(cx, &s, "rates/list-carriers.yaml");
+        publish(
+            &s,
+            14,
+            chrono::Duration::hours(2),
+            three_changed(),
+            fixtures::shipping_variables(),
+        );
+        check(cx, &s, false);
+        // No edits: no warning, no copy offered.
+        assert!(label(cx, &s, "update-banner-local").is_none());
+        assert!(label(cx, &s, "update-banner-keep").is_none());
+        edit_copy(&s);
+        // Offered again on the next check (the edits show at once on a
+        // change on disk too).
+        let ws = s.ws.clone();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.disk_changed(&[RATES.into(), "mine.yaml".into()], window, cx)
+            });
+        })
+        .unwrap();
+        assert_eq!(
+            label(cx, &s, "update-banner-local").as_deref(),
+            Some("You've changed 2 files. Updating replaces them.")
+        );
+        assert_eq!(
+            label(cx, &s, "update-banner-keep").as_deref(),
+            Some("Keep my changes as a copy")
+        );
+        assert_eq!(
+            label(cx, &s, "update-banner-text").as_deref(),
+            Some("Version 14 available · published 2 hours ago · 3 requests changed")
+        );
+    }
+
+    #[gpui_kit::test]
+    fn keep_copy_duplicates_then_updates(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        open_file(cx, &s, "rates/list-carriers.yaml");
+        publish(
+            &s,
+            14,
+            chrono::Duration::hours(2),
+            three_changed(),
+            fixtures::shipping_variables(),
+        );
+        edit_copy(&s);
+        check(cx, &s, false);
+        assert_eq!(
+            label(cx, &s, "update-banner-local").as_deref(),
+            Some("You've changed 2 files. Updating replaces them.")
+        );
+        let mine = snapshot(&s);
+        let dest = tempfile::tempdir().unwrap();
+        let (token, path) = (token_of(cx, &s), dest.path().to_path_buf());
+        let ws = s.ws.clone();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.keep_copy_to(&token, &path, window, cx));
+        })
+        .unwrap();
+        cx.run_until_parked();
+        // The duplicate holds the customer's files, edits and all.
+        let kept = sync_files(dest.path());
+        assert_eq!(kept, mine);
+        assert_eq!(
+            std::fs::read_to_string(dest.path().join(RATES)).unwrap(),
+            MINE
+        );
+        // Then the copy took version 14.
+        assert_eq!(s.read(RATES), "request:\n  url: https://v14/rates\n");
+        assert!(!s.root().join("mine.yaml").exists());
+        assert!(s.root().join("labels/new.yaml").exists());
+        let record = s.spy.received().into_iter().next().unwrap();
+        assert_eq!(record.version, 14);
+        assert!(label(cx, &s, "update-banner").is_none(), "the banner went");
+        // Still on the copy; the duplicate is one of My collections.
+        s.ws.read_with(cx, |ws, _| {
+            assert_eq!(ws.state.collection.as_ref().unwrap().root, s.root());
+            assert!(ws.recent.iter().any(|(r, _)| r.path == dest.path()));
+        });
+        let told = toasts(cx, &s);
+        let name = dest
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            told.iter()
+                .any(|t| t == &format!("Kept your changes in {name}")),
+            "{told:?}"
+        );
+        assert_eq!(
+            told.last().map(String::as_str),
+            Some("Updated to version 14 from Acme")
+        );
+    }
+
+    #[gpui_kit::test]
+    fn keep_copy_stops_when_duplicate_fails(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        open_file(cx, &s, "rates/list-carriers.yaml");
+        publish(
+            &s,
+            14,
+            chrono::Duration::hours(2),
+            three_changed(),
+            fixtures::shipping_variables(),
+        );
+        edit_copy(&s);
+        check(cx, &s, false);
+        let before = snapshot(&s);
+        let held = s.spy.received().into_iter().next().unwrap().version;
+        // The shared folder (holding the copy) takes no duplicate.
+        let (token, dest) = (token_of(cx, &s), s.state.path().join("shared"));
+        let ws = s.ws.clone();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.keep_copy_to(&token, &dest, window, cx));
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(snapshot(&s), before, "the copy is untouched");
+        assert_eq!(s.read(RATES), MINE);
+        assert_eq!(s.spy.received().into_iter().next().unwrap().version, held);
+        assert!(label(cx, &s, "update-banner").is_some(), "still offered");
+        assert_eq!(
+            toasts(cx, &s),
+            ["Couldn't keep a copy: Pick a folder outside the shared collection."]
+        );
+    }
+
+    #[gpui_kit::test]
+    fn update_saves_unsaved_edits_first(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        open_file(cx, &s, RATES);
+        publish(
+            &s,
+            14,
+            chrono::Duration::hours(2),
+            three_changed(),
+            fixtures::shipping_variables(),
+        );
+        check(cx, &s, false);
+        assert!(label(cx, &s, "update-banner-local").is_none());
+        let held = s.spy.received().into_iter().next().unwrap().version;
+        // An unsaved edit in the open tab.
+        cx.update_window(s.window, |_, window, cx| {
+            window.render_frame(cx);
+            window.input("# mine\n", cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+        let typed = s.ws.read_with(cx, |ws, _| ws.state.open[0].text.clone());
+        click(cx, s.window, "update-banner-update");
+        // Asked first, as before closing a collection; saved.
+        assert!(dialog_open(cx, &s));
+        click(cx, s.window, "unsaved-save");
+        assert_eq!(s.read(RATES), typed, "saved, not replaced");
+        // Now a local change: the banner says so before anything goes.
+        assert_eq!(
+            label(cx, &s, "update-banner-local").as_deref(),
+            Some("You've changed 1 file. Updating replaces it.")
+        );
+        assert_eq!(s.spy.received().into_iter().next().unwrap().version, held);
+        // Update again: replaced, as the banner said.
+        click(cx, s.window, "update-banner-update");
+        assert_eq!(s.read(RATES), "request:\n  url: https://v14/rates\n");
+        assert_eq!(s.spy.received().into_iter().next().unwrap().version, 14);
+    }
+
+    #[gpui_kit::test]
+    fn update_after_dont_save_drops_the_unsaved_edit(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        open_file(cx, &s, RATES);
+        publish(
+            &s,
+            14,
+            chrono::Duration::hours(2),
+            three_changed(),
+            fixtures::shipping_variables(),
+        );
+        check(cx, &s, false);
+        cx.update_window(s.window, |_, window, cx| {
+            window.render_frame(cx);
+            window.input("# mine\n", cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+        click(cx, s.window, "update-banner-update");
+        assert!(dialog_open(cx, &s));
+        click(cx, s.window, "unsaved-discard");
+        let v14 = "request:\n  url: https://v14/rates\n";
+        assert_eq!(s.read(RATES), v14);
+        s.ws.read_with(cx, |ws, _| {
+            let ix = ws.state.position(Path::new(RATES)).unwrap();
+            let doc = &ws.state.open[ix];
+            assert_eq!(doc.text, v14, "the tab shows the new version");
+            assert!(!doc.is_dirty() && !doc.disk_conflict);
+        });
+    }
+
     #[gpui_kit::test]
     fn duplicate_copies_yaml_not_env_and_is_editable(cx: &mut TestAppContext) {
         let s = received(cx, false, None);
@@ -1650,7 +1976,7 @@ mod gpui_tests {
             ws.update(cx, |ws, cx| ws.duplicate_to(&inside, window, cx));
         })
         .unwrap();
-        assert!(s.ws.read_with(cx, |ws, _| ws.read_only_org().is_some()));
+        assert!(s.ws.read_with(cx, |ws, _| ws.shared_by().is_some()));
         assert_eq!(snapshot(&s), before, "nothing copied into itself");
         let path = dest.path().to_path_buf();
         cx.update_window(s.window, |_, window, cx| {
@@ -1685,9 +2011,8 @@ mod gpui_tests {
             ws.update(cx, |ws, cx| {
                 let c = ws.state.collection.as_ref().unwrap();
                 assert_eq!(c.root, dest.path());
-                assert_eq!(c.read_only, None);
+                assert_eq!(c.received_from, None);
                 let ix = ws.state.active.unwrap();
-                assert!(!ws.state.open[ix].is_read_only());
                 ws.state.open[ix].set_text("request:\n  url: https://mine\n".into());
                 assert!(ws.save(ix, window, cx));
             });
@@ -1698,57 +2023,6 @@ mod gpui_tests {
             "request:\n  url: https://mine\n"
         );
         assert_ne!(s.read(RATES), "request:\n  url: https://mine\n");
-    }
-
-    #[gpui_kit::test]
-    fn a_received_copy_resolves_only_by_taking_theirs(cx: &mut TestAppContext) {
-        let s = received(cx, true, None);
-        let owners = s.read(RATES);
-        let mine = "request:\n  url: https://mine\n";
-        std::fs::write(s.root().join(RATES), mine).unwrap();
-        let conflict = crate::model::backend::Conflict {
-            rel: RATES.into(),
-            local: mine.into(),
-            server: owners.clone(),
-            server_author: "Acme".into(),
-            server_at: chrono::Utc::now(),
-            local_deleted: false,
-            server_deleted: false,
-        };
-        let ws = s.ws.clone();
-        cx.update_window(s.window, |_, window, cx| {
-            ws.update(cx, |ws, cx| {
-                ws.sync.conflicts = vec![conflict];
-                ws.open_conflicts(window, cx);
-            });
-            window.render_frame(cx);
-            assert!(window.try_find("conflict-take-theirs").is_some());
-            assert!(
-                window.try_find("conflict-keep-mine").is_none(),
-                "the owner wins"
-            );
-            assert!(window.try_find("conflict-keep-both").is_none());
-        })
-        .unwrap();
-        // Nor by hand.
-        cx.update_window(s.window, |_, window, cx| {
-            ws.update(cx, |ws, cx| {
-                ws.resolve_shown(crate::model::conflict::Choice::KeepMine, false, window, cx)
-            })
-        })
-        .unwrap();
-        cx.run_until_parked();
-        assert_eq!(s.read(RATES), mine);
-        assert_eq!(s.ws.read_with(cx, |ws, _| ws.sync.conflicts.len()), 1);
-        s.spy.sent.lock().unwrap().clear();
-        click(cx, s.window, "conflict-take-theirs");
-        assert_eq!(s.read(RATES), owners);
-        assert!(s.ws.read_with(cx, |ws, _| ws.sync.conflicts.is_empty()));
-        let sent = s.spy.sent.lock().unwrap().clone();
-        assert!(
-            sent.iter().all(|f| f.text.is_empty()),
-            "no text left the studio"
-        );
     }
 
     #[gpui_kit::test]
@@ -1785,11 +2059,9 @@ mod gpui_tests {
     }
 
     #[gpui_kit::test]
-    fn a_copy_the_server_forgot_never_pushes_and_only_takes_theirs(cx: &mut TestAppContext) {
-        use crate::model::conflict::{Choice, ResolveError, resolve_on_disk};
+    fn a_copy_the_server_forgot_never_pushes(cx: &mut TestAppContext) {
         use crate::ui::sync::SyncLine;
         let s = received(cx, true, None);
-        let owners = s.read(RATES);
         let mine = "request:\n  url: https://mine\n";
         // Reset mock: the server forgets the share (and the sign-in); the
         // folder stays. Signed in again, the copy is opened as before.
@@ -1825,49 +2097,6 @@ mod gpui_tests {
             !since.iter().any(|c| c.starts_with("sync")),
             "nothing synced, nothing deleted: {since:?}"
         );
-        // A conflict kept from before: only Take theirs, by click or hand.
-        let conflict = crate::model::backend::Conflict {
-            rel: RATES.into(),
-            local: mine.into(),
-            server: owners.clone(),
-            server_author: "Acme".into(),
-            server_at: chrono::Utc::now(),
-            local_deleted: false,
-            server_deleted: false,
-        };
-        let c = conflict.clone();
-        cx.update_window(s.window, |_, window, cx| {
-            ws.update(cx, |ws, cx| {
-                ws.sync.conflicts = vec![c];
-                ws.open_conflicts(window, cx);
-            });
-            window.render_frame(cx);
-            assert!(window.try_find("conflict-take-theirs").is_some());
-            assert!(window.try_find("conflict-keep-mine").is_none());
-            assert!(window.try_find("conflict-keep-both").is_none());
-            ws.update(cx, |ws, cx| {
-                ws.resolve_shown(Choice::KeepBoth, false, window, cx)
-            });
-        })
-        .unwrap();
-        cx.run_until_parked();
-        assert!(!s.root().join("rates/get-rates.server.yaml").exists());
-        assert_eq!(s.ws.read_with(cx, |ws, _| ws.sync.conflicts.len()), 1);
-        // The model refuses on its own: the folder is a received copy.
-        assert_eq!(
-            resolve_on_disk(
-                &s.root(),
-                &conflict,
-                Choice::KeepBoth,
-                false,
-                Some(s.state.path())
-            ),
-            Err(ResolveError::Refused)
-        );
-        assert!(!s.root().join("rates/get-rates.server.yaml").exists());
-        click(cx, s.window, "conflict-take-theirs");
-        assert_eq!(s.read(RATES), owners);
-        assert!(s.spy.sent.lock().unwrap().is_empty());
     }
 
     #[gpui_kit::test]
@@ -1988,7 +2217,8 @@ mod gpui_tests {
         let s = received(cx, false, None);
         let before = snapshot(&s);
         let (window, ws) = nothing_open(cx, &s);
-        let refused = "Read only · shared by Acme";
+        // Received copies live in the studio's own folder.
+        let refused = STATE_FOLDER_TEXT;
         let told = |cx: &mut TestAppContext| ws.read_with(cx, |ws, _| ws.toasts.clone());
         // Import: the copy can't be picked as the target…
         let dialog = cx
@@ -2033,10 +2263,6 @@ mod gpui_tests {
         assert_eq!(told(cx).len(), 4);
         assert!(told(cx).iter().all(|t| t == refused));
         ws.read_with(cx, |ws, _| assert!(ws.state.collection.is_none()));
-        // The model refuses on its own too.
-        let base = Some(s.state.path());
-        let mut c = crate::model::collection::Collection::open_in(&s.root(), base).unwrap();
-        assert!(c.create_file(Path::new("x.yaml"), "x").is_err());
         assert_eq!(snapshot(&s), before, "nothing was written");
         assert!(!s.root().join("new-folder").exists());
         // An ordinary folder still takes a new collection.
@@ -2134,7 +2360,7 @@ mod gpui_tests {
         cx.update_window(s.window, |_, window, cx| {
             ws.update(cx, |ws, cx| {
                 assert!(ws.open_collection(&orphan, window, cx));
-                assert_eq!(ws.read_only_org(), Some("its owner"));
+                assert_eq!(ws.shared_by(), Some("its owner"));
                 ws.check_for_updates(window, cx);
             });
         })

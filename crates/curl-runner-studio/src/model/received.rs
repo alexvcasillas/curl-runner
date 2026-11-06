@@ -86,6 +86,37 @@ pub fn join(records: Vec<ReceivedShare>, local: &[LocalCopy]) -> Vec<ReceivedCop
         .collect()
 }
 
+/// The files of the copy at `root` the customer changed since the version
+/// `share` records: a YAML file whose hash differs from the one received,
+/// one added, one removed, by the same scan sync uses. Sorted.
+pub fn local_changes(root: &Path, share: &ReceivedShare) -> Vec<PathBuf> {
+    use std::collections::BTreeSet;
+    let scan = crate::model::backend::scan_sync_files(root);
+    // Unreadable or too big to hash: there, and changed to be safe.
+    let unhashed = scan.unreadable.iter().chain(&scan.too_big);
+    let present: BTreeSet<&Path> = scan
+        .files
+        .iter()
+        .map(|f| f.rel.as_path())
+        .chain(unhashed.clone().map(PathBuf::as_path))
+        .collect();
+    let mut changed: BTreeSet<PathBuf> = scan
+        .files
+        .iter()
+        .filter(|f| share.files.get(&f.rel) != Some(&f.hash))
+        .map(|f| f.rel.clone())
+        .chain(unhashed.cloned())
+        .collect();
+    changed.extend(
+        share
+            .files
+            .keys()
+            .filter(|rel| !present.contains(rel.as_path()))
+            .cloned(),
+    );
+    changed.into_iter().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,5 +178,46 @@ mod tests {
         assert_eq!(joined[0].share.link.token, "a");
         assert_eq!(joined[0].root, here);
         assert_eq!(joined[0].collection_id, "c0ffee00");
+    }
+
+    #[test]
+    fn local_changes_counts_edits_adds_and_removes() {
+        use crate::model::backend::SyncFile;
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path();
+        let files = [
+            ("a.yaml", "request:\n  url: https://a\n"),
+            ("rates/b.yaml", "request:\n  url: https://b\n"),
+            ("rates/c.yaml", "request:\n  url: https://c\n"),
+            ("curl-runner.yaml", "timeout: 5000\n"),
+        ];
+        std::fs::create_dir(root.join("rates")).unwrap();
+        let mut received = share("a");
+        for (rel, text) in files {
+            std::fs::write(root.join(rel), text).unwrap();
+            received
+                .files
+                .insert(PathBuf::from(rel), SyncFile::hash_of(text));
+        }
+        // As received: nothing changed. The .env and hidden files never count.
+        std::fs::write(root.join(".env"), "API_TOKEN=x\n").unwrap();
+        assert!(local_changes(root, &received).is_empty());
+        // One edited, one removed, one added (in a new folder).
+        std::fs::write(root.join("rates/b.yaml"), "request:\n  url: https://mine\n").unwrap();
+        std::fs::remove_file(root.join("a.yaml")).unwrap();
+        std::fs::create_dir(root.join("mine")).unwrap();
+        std::fs::write(root.join("mine/new.yml"), "request:\n  url: https://n\n").unwrap();
+        std::fs::write(root.join(".hidden.yaml"), "x: 1\n").unwrap();
+        assert_eq!(
+            local_changes(root, &received),
+            [
+                PathBuf::from("a.yaml"),
+                PathBuf::from("mine/new.yml"),
+                PathBuf::from("rates/b.yaml"),
+            ]
+        );
+        // Changed back: no longer counted.
+        std::fs::write(root.join("rates/b.yaml"), "request:\n  url: https://b\n").unwrap();
+        assert_eq!(local_changes(root, &received).len(), 2);
     }
 }
