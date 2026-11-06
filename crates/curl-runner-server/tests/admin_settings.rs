@@ -506,7 +506,7 @@ async fn env_listing_hides_secrets(pool: PgPool) {
     for (key, value) in shown {
         assert_eq!(
             find(key),
-            &json!({"key": key, "value": value, "secret": false})
+            &json!({"key": key, "value": value, "secret": false, "set": true})
         );
     }
     // Every other variable config.rs reads is listed by name only.
@@ -531,10 +531,21 @@ async fn env_listing_hides_secrets(pool: PgPool) {
         "STRIPE_SECRET_KEY",
         "STRIPE_WEBHOOK_SECRET",
     ] {
-        assert_eq!(
-            find(key),
-            &json!({"key": key, "value": null, "secret": true})
-        );
+        let e = find(key);
+        assert_eq!(e["value"], json!(null), "{key}");
+        assert_eq!(e["secret"], json!(true), "{key}");
+        assert!(e["set"].is_boolean(), "{key}");
+    }
+    // `set` follows what the server holds, and a secret never carries a value.
+    for (key, set) in [
+        ("SMTP_PASSWORD", true),
+        ("GITHUB_CLIENT_ID", true),
+        ("GITHUB_CLIENT_SECRET", true),
+        ("STRIPE_SECRET_KEY", true),
+        ("GOOGLE_CLIENT_ID", false),
+        ("GOOGLE_CLIENT_SECRET", false),
+    ] {
+        assert_eq!(find(key)["set"], json!(set), "{key}");
     }
     let text = s.to_string();
     for secret in [
