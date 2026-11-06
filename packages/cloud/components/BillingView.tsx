@@ -65,7 +65,12 @@ export function BillingView(p: BillingViewProps) {
   const [problem, setProblem] = useState<string | null>(null);
   const mode = modeOf(s);
   const sub: Interval = s.interval === 'monthly' ? 'monthly' : 'annual';
-  const canPortal = p.owner && s.plan_source === 'stripe' && mode !== 'free' && mode !== 'granted';
+  // A grant doesn't stop a live subscription: Stripe still bills, so owners keep the portal.
+  const stillBilled = mode === 'granted' && s.has_subscription;
+  const canPortal =
+    p.owner &&
+    mode !== 'free' &&
+    (mode === 'granted' ? s.has_subscription : s.plan_source === 'stripe');
 
   async function portal() {
     setBusy(true);
@@ -92,14 +97,16 @@ export function BillingView(p: BillingViewProps) {
   const renews = s.current_period_end ? ` Renews on ${formatDate(s.current_period_end)}.` : '';
   const line = {
     free: '3 members, counting pending invites. Public collections and publishing are unlimited.',
-    granted: `curl-runner gave ${teamName} the Team plan ${grantEnd}. There’s nothing to pay. Questions? Reply to your welcome email.`,
+    granted: stillBilled
+      ? `curl-runner gave ${teamName} the Team plan ${grantEnd}. Stripe still bills this team. Manage billing to cancel the subscription.`
+      : `curl-runner gave ${teamName} the Team plan ${grantEnd}. There’s nothing to pay. Questions? Reply to your welcome email.`,
     active: `Billed ${sub === 'annual' ? 'annually' : 'monthly'}.${renews} Adding or removing a member changes the next invoice, prorated.`,
     scheduled: `Billed ${sub === 'annual' ? 'annually' : 'monthly'}. Adding or removing a member changes the next invoice, prorated.`,
     past_due: `Billed ${sub === 'annual' ? 'annually' : 'monthly'}.${renews} Adding or removing a member changes the next invoice, prorated.`,
   }[mode];
 
   const cost =
-    mode === 'free' || mode === 'granted'
+    mode === 'free' || (mode === 'granted' && !stillBilled)
       ? '$0'
       : mode === 'scheduled'
         ? 'None'
@@ -111,9 +118,11 @@ export function BillingView(p: BillingViewProps) {
 
   const foot = {
     free: `Upgrading starts today. The first invoice covers the members ${teamName} has now.`,
-    granted: s.override_until
-      ? `When the grant ends, ${teamName} moves to Free unless an owner upgrades. Owners get an email 14 days before.`
-      : `The grant has no end date. If it ever ends, ${teamName} moves to Free unless an owner upgrades.`,
+    granted: stillBilled
+      ? 'Stripe still bills this team. Manage billing to cancel the subscription.'
+      : s.override_until
+        ? `When the grant ends, ${teamName} moves to Free unless an owner upgrades. Owners get an email 14 days before.`
+        : `The grant has no end date. If it ever ends, ${teamName} moves to Free unless an owner upgrades.`,
     active: portalNote,
     scheduled: portalNote,
     past_due: portalNote,
@@ -187,7 +196,9 @@ export function BillingView(p: BillingViewProps) {
             value={mode === 'free' ? 'Team only' : String(p.restricted)}
           />
           <Stat
-            label={mode === 'free' || mode === 'granted' ? 'Cost' : 'Next invoice'}
+            label={
+              mode === 'free' || (mode === 'granted' && !stillBilled) ? 'Cost' : 'Next invoice'
+            }
             value={cost}
             last
           />

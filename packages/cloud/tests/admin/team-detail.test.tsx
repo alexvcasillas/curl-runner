@@ -50,7 +50,7 @@ describe('Paying via Stripe', () => {
     expect(screen.getByText('acme · created Mar 2, 2026')).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Teams/Acme');
     const plan = card('Plan');
-    expect(plan).toHaveTextContent('Team · annual · 3 seats');
+    expect(plan).toHaveTextContent('Team · Annual · 3 seats');
     expect(plan).toHaveTextContent('$288 a year · renews Nov 5, 2027');
     expect(within(plan).getByRole('link', { name: 'sub_1QxN4kLm ↗' })).toHaveAttribute(
       'href',
@@ -214,6 +214,12 @@ describe('Granting a plan', () => {
       'The end date must be in the future.',
     );
     expect(actions.grant).not.toHaveBeenCalled();
+  });
+
+  it('says when the end date lands', async () => {
+    show();
+    await userEvent.click(screen.getByRole('button', { name: 'Grant a plan' }));
+    expect(within(card('Plan')).getByText('Ends at the end of that day, UTC.')).toBeInTheDocument();
   });
 
   it('follows the plan in the button and the email label', async () => {

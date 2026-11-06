@@ -104,6 +104,7 @@ export function OverrideForm({
           type="date"
           value={day}
           disabled={noEnd}
+          hint="Ends at the end of that day, UTC."
           onChange={(e) => setDay(e.target.value)}
           className="w-[150px]"
         />

@@ -306,8 +306,10 @@ export function historyLine(h: HistoryRow): string {
     case 'past_due':
       return `Payment failed: back to ${plan}`;
     case 'override': {
-      const verb = str(h.detail, 'action') === 'team.override.update' ? 'changed' : 'granted';
-      return `${who} ${verb} ${plan} ${until ? `until ${formatDate(until)}` : 'with no end date'}`;
+      const end = until ? `until ${formatDate(until)}` : 'with no end date';
+      return str(h.detail, 'action') === 'team.override.update'
+        ? `${who} changed the override to ${plan} ${end}`
+        : `${who} granted the ${plan} plan ${end}`;
     }
     case 'override_removed':
       return `${who} removed the override: back to ${plan}`;

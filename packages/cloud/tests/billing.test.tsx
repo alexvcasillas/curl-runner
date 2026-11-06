@@ -431,6 +431,33 @@ describe('BillingView', () => {
     expect(screen.queryByRole('button', { name: 'Manage billing' })).toBeNull();
   });
 
+  it('granted over a live subscription says Stripe still bills, and keeps the portal', async () => {
+    const { user, onPortal } = view({
+      summary: {
+        ...TEAM,
+        plan_source: 'override',
+        has_subscription: true,
+        override_until: '2027-03-31T23:59:59Z',
+      },
+    });
+    expect(
+      screen.getAllByText(
+        /Stripe still bills this team. Manage billing to cancel the subscription./,
+      ),
+    ).toHaveLength(2);
+    expect(screen.queryByText(/nothing to pay/)).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Manage billing' }));
+    expect(onPortal).toHaveBeenCalled();
+  });
+
+  it('granted over a live subscription hides the portal from non-owners', () => {
+    view({
+      owner: false,
+      summary: { ...TEAM, plan_source: 'override', has_subscription: true },
+    });
+    expect(screen.queryByRole('button', { name: 'Manage billing' })).toBeNull();
+  });
+
   it('granted with no end date says so', () => {
     view({
       summary: {

@@ -113,11 +113,11 @@ describe('historyLine', () => {
     expect(historyLine(h('stripe'))).toBe('Stripe set the plan to Team');
     expect(historyLine(h('past_due', { plan: 'free' }))).toBe('Payment failed: back to Free');
     expect(historyLine(h('override', { detail: { until: '2027-03-31T23:59:59Z' } }))).toBe(
-      'alex@curl-runner.com granted Team until Mar 31, 2027',
+      'alex@curl-runner.com granted the Team plan until Mar 31, 2027',
     );
     expect(
       historyLine(h('override', { detail: { until: null, action: 'team.override.update' } })),
-    ).toBe('alex@curl-runner.com changed Team with no end date');
+    ).toBe('alex@curl-runner.com changed the override to Team with no end date');
     expect(historyLine(h('override_removed', { plan: 'free' }))).toBe(
       'alex@curl-runner.com removed the override: back to Free',
     );

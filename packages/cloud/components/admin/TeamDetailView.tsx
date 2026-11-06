@@ -262,7 +262,15 @@ export function TeamDetailView({
                 <>
                   <div className="flex flex-col gap-1">
                     <span className="font-medium">
-                      {['Team', stripe.interval, plural(stripe.seats, 'seat')]
+                      {[
+                        'Team',
+                        stripe.interval === 'monthly'
+                          ? 'Monthly'
+                          : stripe.interval
+                            ? 'Annual'
+                            : null,
+                        plural(stripe.seats, 'seat'),
+                      ]
                         .filter(Boolean)
                         .join(' · ')}
                     </span>
@@ -543,9 +551,9 @@ export function TeamDetailView({
             <Empty>No plan changes yet.</Empty>
           ) : (
             <ul className="m-0 list-none p-0">
-              {history.map((h) => (
+              {history.map((h, i) => (
                 <li
-                  key={`${h.at}-${h.source}-${h.plan}`}
+                  key={`${i}-${h.at}-${h.source}-${h.plan}`}
                   className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-hairline px-4 py-1.5 last:border-b-0"
                 >
                   <span className="w-[110px] shrink-0 font-mono text-[12px] text-fg-subtle">
