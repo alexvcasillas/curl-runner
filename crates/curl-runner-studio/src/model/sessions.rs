@@ -17,7 +17,9 @@ const FILE: &str = "accounts.json";
 
 /// Where the session token of each server is kept.
 pub trait SessionStore: Send + Sync {
-    fn get(&self, server: &str) -> Option<String>;
+    /// `Ok(None)` is signed out; `Err` is a store that could not be read
+    /// (a locked Keychain), which is not the same thing.
+    fn get(&self, server: &str) -> io::Result<Option<String>>;
     fn set(&self, server: &str, token: &str) -> io::Result<()>;
     /// Signs `server` out only; a missing session is not an error.
     fn delete(&self, server: &str) -> io::Result<()>;
@@ -81,8 +83,10 @@ impl<S: SecretStore> SecretSessions<S> {
 }
 
 impl<S: SecretStore> SessionStore for SecretSessions<S> {
-    fn get(&self, server: &str) -> Option<String> {
-        self.secrets.get(SERVICE, server)
+    fn get(&self, server: &str) -> io::Result<Option<String>> {
+        self.secrets
+            .try_get(SERVICE, server)
+            .map_err(io::Error::other)
     }
 
     fn set(&self, server: &str, token: &str) -> io::Result<()> {
@@ -134,11 +138,11 @@ mod tests {
         let s = MemorySessions::new(MemorySecrets::default(), None);
         s.set(A, "crs_a").unwrap();
         s.set(B, "crs_b").unwrap();
-        assert_eq!(s.get(A).as_deref(), Some("crs_a"));
-        assert_eq!(s.get(B).as_deref(), Some("crs_b"));
-        assert_eq!(s.get("https://other.test"), None);
+        assert_eq!(s.get(A).unwrap().as_deref(), Some("crs_a"));
+        assert_eq!(s.get(B).unwrap().as_deref(), Some("crs_b"));
+        assert_eq!(s.get("https://other.test").unwrap(), None);
         s.set(A, "crs_a2").unwrap();
-        assert_eq!(s.get(A).as_deref(), Some("crs_a2"));
+        assert_eq!(s.get(A).unwrap().as_deref(), Some("crs_a2"));
     }
 
     #[test]
@@ -178,8 +182,35 @@ mod tests {
         cache.save(Some(d.path())).unwrap();
         s.delete(A).unwrap();
         s.delete(A).unwrap();
-        assert_eq!(s.get(A), None);
-        assert_eq!(s.get(B).as_deref(), Some("crs_b"));
+        assert_eq!(s.get(A).unwrap(), None);
+        assert_eq!(s.get(B).unwrap().as_deref(), Some("crs_b"));
         assert_eq!(s.servers(), [B]);
+    }
+
+    /// A Keychain that can't be read.
+    struct Locked;
+
+    impl SecretStore for Locked {
+        fn get(&self, _: &str, _: &str) -> Option<String> {
+            None
+        }
+        fn try_get(&self, _: &str, _: &str) -> Result<Option<String>, String> {
+            Err("locked".into())
+        }
+        fn set(&self, _: &str, _: &str, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn delete(&self, _: &str, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn names(&self, _: &str) -> Vec<String> {
+            vec![]
+        }
+    }
+
+    #[test]
+    fn a_locked_keychain_is_an_error_not_signed_out() {
+        let s = SecretSessions::new(Locked, None);
+        assert!(s.get(A).is_err());
     }
 }
