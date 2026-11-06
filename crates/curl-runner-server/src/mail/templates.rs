@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use curl_runner_cloud_proto::Plan;
 
 use super::Mail;
+use super::markdown::{self, MdBlock};
 
 const SIGN_IN_FOOTER: &str =
     "It expires in 10 minutes. If you didn't ask for it, ignore this email.";
@@ -323,11 +324,44 @@ fn render_parts(mail: &Mail) -> (String, String, String) {
                 ),
             )
         }
-        Mail::AdminMessage { subject, body, .. } => (
-            subject.clone(),
-            format!("{}\n", body.trim()),
-            layout(&esc(&one_line(subject)), &message_blocks(body)),
-        ),
+        Mail::AdminMessage { subject, body, .. } => {
+            let body = markdown::render(body, None);
+            (
+                subject.clone(),
+                format!("{}\n", body.text),
+                layout(&esc(&one_line(subject)), &md_blocks(body.blocks)),
+            )
+        }
+        Mail::Broadcast {
+            subject,
+            body_md,
+            vars,
+            unsubscribe,
+            test,
+            ..
+        } => {
+            let subject = markdown::substitute(subject, Some(vars));
+            let subject = if *test {
+                format!("[Test] {subject}")
+            } else {
+                subject
+            };
+            let body = markdown::render(body_md, Some(vars));
+            let mut blocks = md_blocks(body.blocks);
+            blocks.push(Block::Fine(format!(
+                "{BROADCAST_FOOTER} <a href=\"{}\" style=\"color:#666666;\
+                 text-decoration:underline;\">Unsubscribe from product emails</a>.",
+                esc(unsubscribe)
+            )));
+            (
+                subject.clone(),
+                format!(
+                    "{}\n\n{BROADCAST_FOOTER}\nUnsubscribe from product emails:\n{unsubscribe}\n",
+                    body.text
+                ),
+                layout(&esc(&one_line(&subject)), &blocks),
+            )
+        }
         Mail::PlanChanged {
             team_name,
             slug,
@@ -373,17 +407,27 @@ fn long_date(at: DateTime<Utc>) -> String {
     at.format("%b %-d, %Y").to_string()
 }
 
-/// The body of an admin's message as layout blocks: one paragraph per blank
-/// line, single line breaks kept, HTML escaped. Task 6 replaces this with a
-/// Markdown renderer; everything else about `AdminMessage` stays.
-fn message_blocks(body: &str) -> Vec<Block> {
-    body.replace("\r\n", "\n")
-        .split("\n\n")
-        .map(str::trim)
-        .filter(|p| !p.is_empty())
-        .map(|p| Block::Text(esc(p).replace('\n', "<br>")))
+/// A small web page in the email's light layout: a heading and one line.
+/// Both are plain text.
+pub(crate) fn notice_page(heading: &str, body: &str) -> String {
+    layout(&esc(heading), &[Block::Muted(esc(body))]).replace(
+        "<title>curl-runner</title>",
+        "<title>curl-runner</title><meta name=\"robots\" content=\"noindex\">",
+    )
+}
+
+/// Rendered Markdown as layout blocks.
+fn md_blocks(blocks: Vec<MdBlock>) -> Vec<Block> {
+    blocks
+        .into_iter()
+        .map(|b| match b {
+            MdBlock::Para(html) => Block::Text(html),
+            MdBlock::List(items) => Block::List(items),
+        })
         .collect()
 }
+
+const BROADCAST_FOOTER: &str = "You\u{2019}re getting this because you have a curl-runner account.";
 
 const MEMBER_ROLE: &str = "Members publish collections, share them and make publish tokens.";
 const INVITE_FOOTER: &str = "The invite expires in 7 days. Not expecting it? Ignore this email.";
@@ -660,7 +704,74 @@ mod tests {
             override_ending(Plan::Free),
             team_suspended(Some("Phishing pages")),
             team_suspended(None),
+            broadcast(false),
+            broadcast(true),
         ]
+    }
+
+    fn broadcast(test: bool) -> Mail {
+        Mail::Broadcast {
+            to: "ada@example.com".into(),
+            subject: "News for {{first_name}}\r\nBcc: x".into(),
+            body_md: "Hi {{first_name}},\n\n**{{team_name}}** is on {{plan}}.\n- one\n- two".into(),
+            vars: markdown::Vars {
+                first_name: "<Ada>".into(),
+                team_name: "Acme & Co".into(),
+                plan: "Team".into(),
+            },
+            unsubscribe: "https://api.example.com/v1/unsubscribe?token=abc".into(),
+            test,
+        }
+    }
+
+    #[test]
+    fn broadcast_fills_variables_and_links_unsubscribe() {
+        let (subject, text, html) = render(&broadcast(false));
+        assert_eq!(subject, "News for <Ada>  Bcc: x");
+        assert!(
+            text.starts_with("Hi <Ada>,\n\nAcme & Co is on Team.\n- one\n- two\n"),
+            "{text}"
+        );
+        assert!(text.contains(
+            "Unsubscribe from product emails:\nhttps://api.example.com/v1/unsubscribe?token=abc"
+        ));
+        assert!(html.contains("Hi &lt;Ada&gt;,"), "{html}");
+        assert!(
+            html.contains("<strong>Acme &amp; Co</strong> is on Team."),
+            "{html}"
+        );
+        assert!(html.contains("href=\"https://api.example.com/v1/unsubscribe?token=abc\""));
+        assert!(html.contains("News for &lt;Ada&gt;  Bcc: x</h1>"), "{html}");
+        let (subject, _, _) = render(&broadcast(true));
+        assert!(subject.starts_with("[Test] News for"));
+        assert_eq!(broadcast(false).kind(), "broadcast");
+        assert_eq!(broadcast(true).kind(), "broadcast_test");
+        assert!(!format!("{:?}", broadcast(false)).contains("token=abc"));
+    }
+
+    #[test]
+    fn admin_message_takes_markdown() {
+        let (_, text, html) = render(&Mail::AdminMessage {
+            to: "a@example.com".into(),
+            subject: "Hi".into(),
+            body: "See **this** and [docs](https://example.com) or [x](javascript:alert(1))\n- a"
+                .into(),
+        });
+        assert!(html.contains("<strong>this</strong>"), "{html}");
+        assert!(html.contains("<a href=\"https://example.com\""), "{html}");
+        assert!(!html.contains("javascript:alert(1)\""), "{html}");
+        assert!(html.contains("<li style=\"margin:0;\">a</li>"), "{html}");
+        assert!(
+            text.contains("See this and docs (https://example.com)"),
+            "{text}"
+        );
+        // Variables are not filled in a one-off message.
+        let (_, text, _) = render(&Mail::AdminMessage {
+            to: "a@example.com".into(),
+            subject: "Hi".into(),
+            body: "{{first_name}}".into(),
+        });
+        assert_eq!(text, "{{first_name}}\n");
     }
 
     fn plan_granted(plan: Plan, until: Option<DateTime<Utc>>) -> Mail {

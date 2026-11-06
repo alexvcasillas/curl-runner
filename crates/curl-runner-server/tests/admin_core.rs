@@ -250,6 +250,44 @@ fn admin_routes(some_user: &str) -> Vec<(&'static str, String, Option<String>)> 
             "/v1/admin/collections/acme/payments-api/enable-link".into(),
             None,
         ),
+        ("GET", "/v1/admin/broadcasts".into(), None),
+        (
+            "POST",
+            "/v1/admin/broadcasts".into(),
+            Some(json!({"subject": "Hi", "body_md": "Hello", "audience": "everyone"}).to_string()),
+        ),
+        ("GET", format!("/v1/admin/broadcasts/{some_user}"), None),
+        (
+            "PATCH",
+            format!("/v1/admin/broadcasts/{some_user}"),
+            Some(json!({"subject": "Hi"}).to_string()),
+        ),
+        (
+            "POST",
+            format!("/v1/admin/broadcasts/{some_user}/test"),
+            None,
+        ),
+        (
+            "POST",
+            format!("/v1/admin/broadcasts/{some_user}/send"),
+            Some(json!({}).to_string()),
+        ),
+        (
+            "GET",
+            format!("/v1/admin/broadcasts/{some_user}/preview?as_user={some_user}"),
+            None,
+        ),
+        (
+            "GET",
+            "/v1/admin/audience-count?audience=everyone".into(),
+            None,
+        ),
+        ("GET", "/v1/admin/emails/log".into(), None),
+        (
+            "GET",
+            "/v1/admin/emails/log?kind=broadcast&status=failed&q=a".into(),
+            None,
+        ),
     ]
 }
 
@@ -306,6 +344,23 @@ async fn non_admin_gets_404_everywhere(pool: PgPool) {
             "POST",
             "/v1/admin/collections/acme/payments-api/disable-link".into(),
             Some("{nope".into()),
+        ),
+        (
+            "PATCH",
+            "/v1/admin/broadcasts/not-a-uuid".into(),
+            Some("{nope".into()),
+        ),
+        (
+            "POST",
+            format!("/v1/admin/broadcasts/{jane_id}/send"),
+            Some(json!({"at": "yesterday"}).to_string()),
+        ),
+        ("DELETE", format!("/v1/admin/broadcasts/{jane_id}"), None),
+        ("GET", "/v1/admin/audience-count?audience=nope".into(), None),
+        (
+            "GET",
+            "/v1/admin/emails/log?status=nope&cursor=x&limit=0".into(),
+            None,
         ),
     ]);
     let callers: [(&str, Option<&str>); 4] = [

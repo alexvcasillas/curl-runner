@@ -202,7 +202,7 @@ async fn enqueue_sets_created_at_from_the_clock(pool: PgPool) {
             .unwrap();
     assert_eq!(created, Some(app.clock.now()));
     assert_eq!(failed, None);
-    assert_eq!(kind, "transactional");
+    assert_eq!(kind, "sign_in_code");
 }
 
 #[sqlx::test]

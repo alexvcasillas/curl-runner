@@ -1,8 +1,10 @@
 //! Email outbox: mail is queued in the caller's transaction and sent by a
 //! background worker, so a rolled-back action sends nothing.
 
+pub mod markdown;
 pub mod templates;
 pub mod transport;
+pub mod unsubscribe;
 pub mod worker;
 
 use std::sync::Arc;
@@ -93,12 +95,24 @@ pub enum Mail {
         collection: String,
         reason: Option<String>,
     },
-    /// A message an admin wrote to one person. `body` is plain text with
-    /// blank-line paragraphs; its renderer is `templates::message_blocks`.
+    /// A message an admin wrote to one person. `body` is Markdown, rendered
+    /// by [`markdown::render`] without variables.
     AdminMessage {
         to: String,
         subject: String,
         body: String,
+    },
+    /// One recipient's copy of a broadcast. `subject` and `body_md` are the
+    /// broadcast's own; `vars` fill their variables. `unsubscribe` is the
+    /// recipient's one-click link. `test` is the copy an admin sends to
+    /// themselves, marked in the subject.
+    Broadcast {
+        to: String,
+        subject: String,
+        body_md: String,
+        vars: markdown::Vars,
+        unsubscribe: String,
+        test: bool,
     },
 }
 
@@ -198,6 +212,15 @@ impl std::fmt::Debug for Mail {
                 .field("to", to)
                 .field("subject", subject)
                 .finish(),
+            Self::Broadcast {
+                to, subject, test, ..
+            } => f
+                .debug_struct("Broadcast")
+                .field("to", to)
+                .field("subject", subject)
+                .field("unsubscribe", &R)
+                .field("test", test)
+                .finish(),
             Self::PlanChanged {
                 to,
                 team_name,
@@ -227,22 +250,58 @@ impl Mail {
             | Self::TeamSuspended { to, .. }
             | Self::LinkDisabled { to, .. }
             | Self::AdminMessage { to, .. }
+            | Self::Broadcast { to, .. }
             | Self::TestEmail { to } => to,
         }
     }
 
-    /// The `outbox_emails.kind` it is queued with. `transactional` is mail the
-    /// server sends because of something that happened (codes, invites,
-    /// billing, a suspension). `admin` is a message an admin wrote by hand.
-    /// Broadcasts (plan 2b task 6) will use `broadcast`; only those honour the
-    /// product-email opt-out.
+    /// The `outbox_emails.kind` it is queued with: which email it is, for
+    /// the delivery log. Rows queued before 0004 say `transactional`. Only
+    /// `broadcast` mail honours the product-email opt-out, and that is
+    /// decided when a broadcast is expanded, not by the kind.
     pub fn kind(&self) -> &'static str {
         match self {
+            Self::SignInCode { .. } => "sign_in_code",
+            Self::MemberInvite { .. } => "member_invite",
+            Self::CustomerInvite { .. } => "customer_invite",
+            Self::PaymentFailed { .. } => "payment_failed",
+            Self::PlanChanged { .. } => "plan_changed",
+            Self::TestEmail { .. } => "test_email",
+            Self::AccountSuspended { .. } => "account_suspended",
+            Self::PlanGranted { .. } => "plan_granted",
+            Self::OverrideEnding { .. } => "override_ending",
+            Self::TeamSuspended { .. } => "team_suspended",
+            Self::LinkDisabled { .. } => "link_disabled",
             Self::AdminMessage { .. } => "admin",
-            _ => "transactional",
+            Self::Broadcast { test: false, .. } => "broadcast",
+            Self::Broadcast { test: true, .. } => "broadcast_test",
         }
     }
 }
+
+/// Every `outbox_emails.kind` value, for the delivery log's filter.
+pub const KINDS: [&str; 15] = [
+    "sign_in_code",
+    "member_invite",
+    "customer_invite",
+    "payment_failed",
+    "plan_changed",
+    "test_email",
+    "account_suspended",
+    "plan_granted",
+    "override_ending",
+    "team_suspended",
+    "link_disabled",
+    "admin",
+    "broadcast",
+    "broadcast_test",
+    "transactional",
+];
+
+/// Kinds whose subject holds a secret (a sign-in code). The worker blanks
+/// their subject once sent and the delivery log never shows it. Rows from
+/// before 0004 are `transactional` and may be sign-in codes too.
+pub const SECRET_SUBJECT_KINDS: [&str; 2] = ["sign_in_code", "transactional"];
 
 /// Queues email in the `outbox_emails` table, always on the caller's connection.
 #[derive(Clone)]

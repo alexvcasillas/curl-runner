@@ -49,6 +49,7 @@ pub fn app(state: AppState) -> Router {
         .merge(billing::webhook::routes())
         .merge(tokens::routes())
         .merge(collections::routes())
+        .merge(mail::unsubscribe::routes())
         .fallback(not_found)
         .with_state(state)
         .layer(cors)

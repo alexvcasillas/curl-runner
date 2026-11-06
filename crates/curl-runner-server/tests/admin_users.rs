@@ -237,7 +237,7 @@ async fn suspend_deletes_sessions_tokens_keep_publishing(pool: PgPool) {
         .await,
         1
     );
-    // The notice is queued with the reason, as transactional mail.
+    // The notice is queued with the reason, under its own kind.
     let (subject, text, kind, user_id): (String, String, String, Option<uuid::Uuid>) =
         sqlx::query_as(
             "SELECT subject, text_body, kind, user_id FROM outbox_emails \
@@ -248,7 +248,7 @@ async fn suspend_deletes_sessions_tokens_keep_publishing(pool: PgPool) {
         .unwrap();
     assert!(text.contains("abuse"), "{text}");
     assert!(!subject.contains('\u{2014}') && !text.contains('\u{2014}'));
-    assert_eq!(kind, "transactional");
+    assert_eq!(kind, "account_suspended");
     assert_eq!(user_id.map(|u| u.to_string()), Some(jane_id.clone()));
     // Logged, with the target.
     let (action, label): (String, String) = sqlx::query_as(

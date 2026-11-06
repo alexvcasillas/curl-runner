@@ -89,6 +89,7 @@ async fn main() -> std::process::ExitCode {
     let state = AppState::new(pool, config, Arc::new(SystemClock));
     let (stop_tx, mut stop_rx) = tokio::sync::watch::channel(false);
     let mut sync_stop = stop_rx.clone();
+    let mut broadcast_stop = stop_rx.clone();
     let mail_worker = tokio::spawn(worker::run(
         state.db.clone(),
         transport,
@@ -100,6 +101,9 @@ async fn main() -> std::process::ExitCode {
 
     let seat_worker = tokio::spawn(sync::run(state.clone(), async move {
         let _ = sync_stop.wait_for(|stop| *stop).await;
+    }));
+    let broadcast_worker = tokio::spawn(worker::run_broadcasts(state.clone(), async move {
+        let _ = broadcast_stop.wait_for(|stop| *stop).await;
     }));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
@@ -119,6 +123,7 @@ async fn main() -> std::process::ExitCode {
     .await;
     let _ = mail_worker.await;
     let _ = seat_worker.await;
+    let _ = broadcast_worker.await;
     match result {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(err) => {
