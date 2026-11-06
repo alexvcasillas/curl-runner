@@ -517,17 +517,35 @@ pub fn apply_update(root: &Path, plan: &UpdatePlan) -> Result<(), String> {
         let _ = std::fs::remove_dir_all(&tmp);
         return Err(nothing(&e));
     }
-    if let Err(e) = std::fs::rename(root, &old) {
-        let _ = std::fs::remove_dir_all(&tmp);
+    swap_in(&tmp, root, &old, |from, to| std::fs::rename(from, to))
+}
+
+/// Moves `root` aside to `old` and the staged `tmp` into its place with
+/// `rename`, then drops `old`. A failed second move puts `old` back; should
+/// that fail too, the error says where the copy is now.
+fn swap_in(
+    tmp: &Path,
+    root: &Path,
+    old: &Path,
+    rename: impl Fn(&Path, &Path) -> std::io::Result<()>,
+) -> Result<(), String> {
+    let nothing = |e: &std::io::Error| format!("Couldn't update: {e}. Nothing was changed.");
+    if let Err(e) = rename(root, old) {
+        let _ = std::fs::remove_dir_all(tmp);
         return Err(nothing(&e));
     }
-    if let Err(e) = std::fs::rename(&tmp, root) {
+    if let Err(e) = rename(tmp, root) {
+        let _ = std::fs::remove_dir_all(tmp);
         // Back as it was.
-        let _ = std::fs::rename(&old, root);
-        let _ = std::fs::remove_dir_all(&tmp);
-        return Err(nothing(&e));
+        return match rename(old, root) {
+            Ok(()) => Err(nothing(&e)),
+            Err(_) => Err(format!(
+                "Couldn't update: {e}. Your copy couldn't be moved back; it is in {}.",
+                old.display()
+            )),
+        };
     }
-    let _ = std::fs::remove_dir_all(&old);
+    let _ = std::fs::remove_dir_all(old);
     Ok(())
 }
 
@@ -973,6 +991,47 @@ mod tests {
         assert_eq!(read(".env"), "API=1\n");
         assert_eq!(read("notes.txt"), "mine\n");
         assert_eq!(entries(parent.path()), ["acme-shipping-api"]);
+    }
+
+    /// The swap's last step fails and so does putting the copy back: the
+    /// error says where the copy is, never "Nothing was changed".
+    #[test]
+    fn a_swap_that_cant_move_back_says_where_the_copy_is() {
+        let parent = tempfile::tempdir().unwrap();
+        let (root, tmp, old) = (
+            parent.path().join("copy"),
+            parent.path().join(".copy.update.tmp"),
+            parent.path().join(".copy.old.tmp"),
+        );
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("a.yaml"), "a\n").unwrap();
+        std::fs::create_dir(&tmp).unwrap();
+        let calls = std::cell::Cell::new(0);
+        let err = super::swap_in(&tmp, &root, &old, |from, to| {
+            calls.set(calls.get() + 1);
+            match calls.get() {
+                1 => std::fs::rename(from, to),
+                _ => Err(std::io::Error::other("disk full")),
+            }
+        })
+        .unwrap_err();
+        assert!(!err.contains("Nothing was changed"), "{err}");
+        assert!(err.contains(&old.display().to_string()), "{err}");
+        assert!(old.join("a.yaml").exists(), "the copy is where it says");
+        // One failure only: back in place, nothing changed.
+        std::fs::rename(&old, &root).unwrap();
+        std::fs::create_dir(&tmp).unwrap();
+        let calls = std::cell::Cell::new(0);
+        let err = super::swap_in(&tmp, &root, &old, |from, to| {
+            calls.set(calls.get() + 1);
+            match calls.get() {
+                2 => Err(std::io::Error::other("disk full")),
+                _ => std::fs::rename(from, to),
+            }
+        })
+        .unwrap_err();
+        assert!(err.ends_with("Nothing was changed."), "{err}");
+        assert!(root.join("a.yaml").exists());
     }
 
     #[test]

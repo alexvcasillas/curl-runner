@@ -3,6 +3,7 @@
 use super::coming_soon::{soon_pill_labelled, soon_tooltip};
 use super::icons::{self, glyph};
 use super::method_stack::{Stack, method_stack};
+use super::received::CHECKING;
 use super::runs::RunStatus;
 use super::sync::{SyncLine, sync_dot};
 use super::workspace::Workspace;
@@ -934,7 +935,12 @@ impl Workspace {
                     .unwrap_or_default()
             },
         );
-        let checking = self.update_check.is_some();
+        let checking = self.checking_open();
+        let label = if checking {
+            CHECKING
+        } else {
+            "Check for updates"
+        };
         div()
             .id("sidebar-updates")
             .role(Role::Group)
@@ -965,7 +971,7 @@ impl Workspace {
                     .id("sidebar-check-updates")
                     .role(Role::Button)
                     .test_support()
-                    .aria_label("Check for updates")
+                    .aria_label(label)
                     .flex_none()
                     .px(px(10.))
                     .py(px(4.))
@@ -973,19 +979,17 @@ impl Workspace {
                     .border_color(color("border-200"))
                     .rounded(px(6.))
                     .line_height(relative(1.4))
-                    .map(|b| {
-                        if checking {
-                            b.text_color(color("text-disabled"))
-                        } else {
-                            b.text_color(color("text-primary"))
-                                .cursor_pointer()
-                                .hover(|s| s.bg(color("surface-100")))
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.check_for_updates(window, cx)
-                                }))
-                        }
-                    })
-                    .child("Check for updates"),
+                    .text_color(color(if checking {
+                        "text-disabled"
+                    } else {
+                        "text-primary"
+                    }))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(color("surface-100")))
+                    // While checking, a click makes that check's answer
+                    // speak.
+                    .on_click(cx.listener(|this, _, window, cx| this.check_for_updates(window, cx)))
+                    .child(label),
             )
     }
 }

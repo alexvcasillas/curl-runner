@@ -53,6 +53,9 @@ pub fn updated_ago(
         .map_or_else(String::new, |f| f.to_lowercase().chain(c).collect())
 }
 
+/// `Check for updates` while a check of the open copy is in flight.
+pub const CHECKING: &str = "Checking…";
+
 /// What a manual check says when the copy holds the latest version.
 pub const UP_TO_DATE: &str = "Up to date";
 
@@ -194,8 +197,9 @@ impl Workspace {
     }
 
     /// Every [`UPDATE_EVERY`] while the window is open, a quiet check of
-    /// the open copy. A tick that finds the server offline says nothing;
-    /// the next one asks again.
+    /// every received copy, each offer kept by its token (the banner shows
+    /// it once that copy is open). A tick that fails says nothing; the
+    /// next one asks again.
     pub(super) fn start_update_timer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !crate::features::SERVER {
             return;
@@ -205,7 +209,7 @@ impl Workspace {
             loop {
                 timer.timer(UPDATE_EVERY).await;
                 let ticked =
-                    this.update_in(cx, |this, window, cx| this.check_open_received(window, cx));
+                    this.update_in(cx, |this, window, cx| this.check_all_received(window, cx));
                 if ticked.is_err() {
                     break;
                 }
@@ -213,8 +217,28 @@ impl Workspace {
         }));
     }
 
-    /// The open copy, checked quietly: when it opens and every
-    /// [`UPDATE_EVERY`].
+    /// Every received copy, checked quietly (the 15-minute tick).
+    pub(super) fn check_all_received(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.refresh_received_all();
+        let tokens: Vec<String> = self
+            .received_all
+            .iter()
+            .map(|r| r.share.link.token.clone())
+            .collect();
+        for token in tokens {
+            self.check_received(&token, false, window, cx);
+        }
+    }
+
+    /// A check of the open copy is in flight (its `Check for updates`
+    /// reads `Checking…`).
+    pub(super) fn checking_open(&self) -> bool {
+        self.received
+            .as_ref()
+            .is_some_and(|r| self.update_checks.contains_key(&r.share.link.token))
+    }
+
+    /// The open copy, checked quietly as it opens.
     pub(super) fn check_open_received(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(token) = self.received.as_ref().map(|r| r.share.link.token.clone()) {
             self.check_received(&token, false, window, cx);
@@ -223,9 +247,11 @@ impl Workspace {
 
     /// Asks the copy's server for its latest version; only a newer one is
     /// fetched and planned against the copy, and offered in the banner.
-    /// Nothing is written. An automatic check (`manual` false) that finds
-    /// the server offline or unavailable says nothing: the next one asks
-    /// again. A manual one says `Up to date` or why it couldn't ask.
+    /// Nothing is written. An automatic check (`manual` false) says nothing
+    /// on any error: the next one asks again. A manual one says `Up to
+    /// date` or why it couldn't ask. One check per copy at a time: a manual
+    /// ask during an automatic check of the same copy makes that check's
+    /// answer speak.
     pub(super) fn check_received(
         &mut self,
         token: &str,
@@ -241,7 +267,10 @@ impl Workspace {
         else {
             return;
         };
-        if self.update_check.is_some() {
+        if self.update_checks.contains_key(token) {
+            if manual {
+                self.manual_checks.insert(token.to_string());
+            }
             return;
         }
         let offered = self.update_offers.get(token).map(|o| o.version);
@@ -271,16 +300,19 @@ impl Workspace {
                 snapshot.variables,
             )))
         });
-        let token = token.to_string();
-        self.update_check = Some(cx.spawn_in(window, async move |this, cx| {
+        let key = token.to_string();
+        let token = key.clone();
+        let task = cx.spawn_in(window, async move |this, cx| {
             let checked = job.await;
             this.update_in(cx, |this, window, cx| {
-                this.update_check = None;
+                this.update_checks.remove(&token);
+                let manual = this.manual_checks.remove(&token) || manual;
                 this.update_checked(&token, &share.team, checked, manual, window, cx);
                 cx.notify();
             })
             .ok();
-        }));
+        });
+        self.update_checks.insert(key, task);
         cx.notify();
     }
 
@@ -306,9 +338,8 @@ impl Workspace {
             Ok(Checked::Newer(offer)) => {
                 self.update_offers.insert(token.to_string(), offer);
             }
-            // Quiet: the next tick asks again.
-            Err(CheckFailed::Backend(BackendError::Offline | BackendError::Unavailable))
-                if !manual => {}
+            // Quiet, whatever went wrong: the next tick asks again.
+            Err(_) if !manual => {}
             Err(e) => {
                 let why = match e {
                     CheckFailed::Backend(e @ BackendError::Offline) => e.to_string(),
@@ -353,6 +384,9 @@ impl Workspace {
             return;
         }
         self.update_offers.remove(token);
+        // The folder is a new one now: a watcher on the old one (inotify
+        // follows the inode) would miss every change from here on.
+        self.watch(&copy.root, window, cx);
         let hashes = || {
             plan.files
                 .iter()
@@ -605,7 +639,7 @@ mod gpui_tests {
     use super::super::update_banner::UPDATE_EVERY;
     use super::super::workspace::edit_notes;
     use super::super::workspace::{Workspace, test_backend, wait_for_run};
-    use super::{DUPLICATED, STATE_FOLDER_TEXT, UP_TO_DATE};
+    use super::{CHECKING, DUPLICATED, STATE_FOLDER_TEXT, UP_TO_DATE};
     use crate::model::backend::{
         Backend, SharedSnapshot, SharedVar, SyncFile, fixtures, sync_files,
     };
@@ -695,6 +729,31 @@ mod gpui_tests {
             .unwrap()
         });
         cx.run_until_parked();
+        add_link(cx, window, &ws, link, fill);
+        let s = Studio {
+            state,
+            folder,
+            secrets,
+            spy,
+            window,
+            ws,
+        };
+        s.ws.read_with(cx, |ws, _| {
+            let c = ws.state.collection.as_ref().expect("the copy is open");
+            assert_eq!(c.root, s.root());
+            assert_eq!(c.read_only.as_deref(), Some("Acme"));
+        });
+        s
+    }
+
+    /// The Add flow for `link`, its fields filled from `fill`.
+    fn add_link(
+        cx: &mut TestAppContext,
+        window: AnyWindowHandle,
+        ws: &Entity<Workspace>,
+        link: &str,
+        fill: &[(&str, &str)],
+    ) {
         let view = cx
             .update_window(window, |_, window, cx| {
                 ws.update(cx, |ws, cx| ws.open_shared(None, window, cx))
@@ -717,20 +776,6 @@ mod gpui_tests {
         })
         .unwrap();
         click(cx, window, "open-shared-add");
-        let s = Studio {
-            state,
-            folder,
-            secrets,
-            spy,
-            window,
-            ws,
-        };
-        s.ws.read_with(cx, |ws, _| {
-            let c = ws.state.collection.as_ref().expect("the copy is open");
-            assert_eq!(c.root, s.root());
-            assert_eq!(c.read_only.as_deref(), Some("Acme"));
-        });
-        s
     }
 
     fn click(cx: &mut TestAppContext, window: AnyWindowHandle, id: &str) {
@@ -1264,8 +1309,14 @@ mod gpui_tests {
             s.root().join("rates/old.yaml").exists(),
             "nothing written yet"
         );
+        let watched = s.ws.read_with(cx, |ws, _| ws.watched.len());
         click(cx, s.window, "update-banner-update");
         assert!(!dialog_open(cx, &s), "no input asked: all are set");
+        // The watcher follows the swapped-in folder.
+        s.ws.read_with(cx, |ws, _| {
+            assert_eq!(ws.watched.len(), watched + 1);
+            assert_eq!(ws.watched.last(), Some(&s.root()));
+        });
         assert_eq!(snapshot(&s), owners, "the owner's files, exactly");
         assert!(!s.root().join("rates/old.yaml").exists());
         // Values carry over: the .env and the Keychain token.
@@ -1432,6 +1483,131 @@ mod gpui_tests {
         cx.executor().advance_clock(UPDATE_EVERY);
         cx.run_until_parked();
         assert!(label(cx, &s, "update-banner").is_some());
+    }
+
+    /// Any error on an automatic check is quiet (an expired link, a lost
+    /// session); asked by hand, it says why.
+    #[gpui_kit::test]
+    fn automatic_checks_are_quiet_on_every_error(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        open_file(cx, &s, RATES);
+        let dev = s.spy.dev().unwrap();
+        dev.expire_links(true);
+        check(cx, &s, false);
+        cx.executor().advance_clock(UPDATE_EVERY);
+        cx.run_until_parked();
+        assert!(toasts(cx, &s).is_empty(), "{:?}", toasts(cx, &s));
+        assert!(label(cx, &s, "update-banner").is_none());
+        check(cx, &s, true);
+        assert_eq!(
+            toasts(cx, &s),
+            ["Couldn't check for updates: This link has expired. Ask Acme for a new one."]
+        );
+    }
+
+    /// Two received copies: each tick asks about both, and an offer for
+    /// the one not open shows once it opens.
+    #[gpui_kit::test]
+    fn a_tick_checks_every_received_copy(cx: &mut TestAppContext) {
+        use futures::executor::block_on;
+        let inner = test_backend();
+        crate::model::backend::testing::sign_in(&*inner);
+        let owner = CollectionKey {
+            id: "0a0b0c0d".into(),
+            name: "Payments API".into(),
+        };
+        let v1 = "request:\n  url: https://pay/rates\n";
+        block_on(inner.sync(&owner, &[SyncFile::new("rates.yaml", v1)], &[])).unwrap();
+        let payments = block_on(inner.update_share(&owner, ShareUpdate::default()))
+            .unwrap()
+            .link
+            .unwrap();
+        let s = added(
+            cx,
+            inner.clone(),
+            &payments,
+            &[],
+            "shared/acme-payments-api",
+        );
+        // An Add with no field to fill leaves its dialog up in tests (the
+        // focus check in `add_finished`): closed by hand here.
+        if dialog_open(cx, &s) {
+            cx.update_window(s.window, |_, window, cx| window.close_dialog(cx))
+                .unwrap();
+            cx.run_until_parked();
+        }
+        add_link(cx, s.window, &s.ws, LINK, &[("API_TOKEN", TOKEN)]);
+        let shipping = s.state.path().join("shared/acme-shipping-api");
+        s.ws.read_with(cx, |ws, _| {
+            assert_eq!(ws.received_all.len(), 2);
+            assert_eq!(ws.state.collection.as_ref().unwrap().root, shipping);
+        });
+        let dev = s.spy.dev().unwrap();
+        let asked = |from: usize| -> Vec<String> {
+            dev.recorded()[from..]
+                .iter()
+                .filter(|c| c.starts_with("latest_version("))
+                .cloned()
+                .collect()
+        };
+        let from = dev.recorded().len();
+        // Payments publishes a new version while Shipping is open.
+        let v2 = SyncFile::new("rates.yaml", "request:\n  url: https://pay/v2\n")
+            .with_base(Some(SyncFile::hash_of(v1)));
+        block_on(inner.sync(&owner, &[v2], &[])).unwrap();
+        cx.executor().advance_clock(UPDATE_EVERY);
+        cx.run_until_parked();
+        let ticked = asked(from);
+        assert_eq!(ticked.len(), 2, "{ticked:?}");
+        assert!(
+            ticked.iter().any(|c| c.contains("crsl_7Kx2Qm")),
+            "{ticked:?}"
+        );
+        assert!(
+            label(cx, &s, "update-banner").is_none(),
+            "Shipping is current"
+        );
+        assert_eq!(s.ws.read_with(cx, |ws, _| ws.update_offers.len()), 1);
+        // Payments opens: its offer shows.
+        let root = s.root();
+        let ws = s.ws.clone();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| assert!(ws.open_collection(&root, window, cx)));
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(
+            label(cx, &s, "update-banner-text")
+                .is_some_and(|t| t.starts_with("Version 2 available")),
+            "{:?}",
+            label(cx, &s, "update-banner-text")
+        );
+    }
+
+    /// `Check for updates` during an automatic check of the same copy
+    /// reads `Checking…`, and that check's answer speaks.
+    #[gpui_kit::test]
+    fn a_manual_check_during_an_automatic_one_answers(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        let ws = s.ws.clone();
+        let shown = cx
+            .update_window(s.window, |_, window, cx| {
+                ws.update(cx, |ws, cx| ws.check_open_received(window, cx));
+                window.render_frame(cx);
+                let shown = window
+                    .try_find("sidebar-check-updates")
+                    .and_then(|e| e.label().map(str::to_string));
+                ws.update(cx, |ws, cx| ws.check_for_updates(window, cx));
+                shown
+            })
+            .unwrap();
+        assert_eq!(shown.as_deref(), Some(CHECKING));
+        cx.run_until_parked();
+        assert_eq!(toasts(cx, &s), [UP_TO_DATE]);
+        assert_eq!(
+            label(cx, &s, "sidebar-check-updates").as_deref(),
+            Some("Check for updates")
+        );
     }
 
     #[gpui_kit::test]

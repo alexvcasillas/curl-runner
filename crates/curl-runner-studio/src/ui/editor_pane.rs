@@ -320,7 +320,7 @@ impl Workspace {
         if let Some(ago) = self.received_updated(cx) {
             tail.push_str(&format!(" · updated {ago}"));
         }
-        let checking = self.update_check.is_some();
+        let checking = self.checking_open();
         div()
             .id("read-only-note")
             .role(Role::Note)
@@ -361,19 +361,26 @@ impl Workspace {
             )
             .child(div().flex_1())
             .child(
-                note_button("read-only-check", "Check for updates", false)
-                    .when(checking, |b| b.text_color(color("text-disabled")))
-                    .when(!checking, |b| {
-                        b.cursor_pointer()
-                            .hover(|s| s.bg(color("surface-100")))
-                            .on_click(
-                                cx.listener(|this, _, window, cx| {
-                                    this.check_for_updates(window, cx)
-                                }),
-                            )
-                    })
-                    .child("Check for updates")
-                    .test_support(),
+                note_button(
+                    "read-only-check",
+                    if checking {
+                        super::received::CHECKING
+                    } else {
+                        "Check for updates"
+                    },
+                    false,
+                )
+                .when(checking, |b| b.text_color(color("text-disabled")))
+                .cursor_pointer()
+                .hover(|s| s.bg(color("surface-100")))
+                // While checking, a click makes that check's answer speak.
+                .on_click(cx.listener(|this, _, window, cx| this.check_for_updates(window, cx)))
+                .child(if checking {
+                    super::received::CHECKING
+                } else {
+                    "Check for updates"
+                })
+                .test_support(),
             )
             .child(
                 note_button(

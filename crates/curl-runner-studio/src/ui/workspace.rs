@@ -212,12 +212,19 @@ pub struct Workspace {
     /// Every received copy with a server record and a folder still here
     /// (the sidebar's Shared with me), read on open rather than each frame.
     pub(super) received_all: Vec<crate::model::received::ReceivedCopy>,
-    /// An update check in flight (the latest version, then the snapshot).
-    pub(super) update_check: Option<Task<()>>,
+    /// Update checks in flight (the latest version, then the snapshot),
+    /// by share token.
+    pub(super) update_checks: HashMap<String, Task<()>>,
+    /// Tokens whose in-flight automatic check was asked for by hand: its
+    /// answer speaks.
+    pub(super) manual_checks: HashSet<String>,
     /// A newer version of a received copy, by share token: the banner.
     pub(super) update_offers: HashMap<String, super::update_banner::UpdateOffer>,
     /// Checks the open received copy every `UPDATE_EVERY`.
     pub(super) _update_timer: Option<Task<()>>,
+    /// Every folder a watcher was started on, in order (tests).
+    #[cfg(test)]
+    pub(super) watched: Vec<PathBuf>,
     /// Every read-only toast and update prompt shown (tests read them).
     #[cfg(test)]
     pub(super) toasts: Vec<String>,
@@ -341,9 +348,12 @@ impl Workspace {
             link_sign_in: None,
             received: None,
             received_all: Vec::new(),
-            update_check: None,
+            update_checks: HashMap::new(),
+            manual_checks: HashSet::new(),
             update_offers: HashMap::new(),
             _update_timer: None,
+            #[cfg(test)]
+            watched: Vec::new(),
             #[cfg(test)]
             toasts: Vec::new(),
             status,
@@ -417,7 +427,6 @@ impl Workspace {
             .iter()
             .find(|r| r.collection_id == meta.id && r.root == root)
             .cloned();
-        self.update_check = None;
         self.state = AppState {
             collection: Some(collection),
             ..AppState::default()
@@ -1278,7 +1287,11 @@ impl Workspace {
 
     // Disk changes.
 
-    fn watch(&mut self, root: &Path, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn watch(&mut self, root: &Path, window: &mut Window, cx: &mut Context<Self>) {
+        #[cfg(test)]
+        {
+            self.watched.push(root.to_path_buf());
+        }
         let (watcher, mut rx) = watch::start(root);
         self._watcher = watcher;
         self._watch_task = Some(cx.spawn_in(window, async move |this, cx| {

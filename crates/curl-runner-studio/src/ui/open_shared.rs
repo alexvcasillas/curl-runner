@@ -1400,9 +1400,15 @@ impl Workspace {
     ) -> Entity<OpenSharedView> {
         if let Some(view) = self.open_shared_view() {
             match link {
-                // An Add in flight finishes first, open or not.
-                Some(link) if view.read(cx).adding() => self.pending_link = Some(link),
-                Some(link) => view.update(cx, |v, cx| v.receive(&link, window, cx)),
+                // An Add in flight finishes first, open or not; this link
+                // opens next.
+                Some(link) if view.read(cx).adding() => self.wait_for_link(link),
+                // The dialog shows this link now: a sign-in out for another
+                // one no longer opens that one.
+                Some(link) => {
+                    self.forget_link_sign_in();
+                    view.update(cx, |v, cx| v.receive(&link, window, cx))
+                }
                 None => {}
             }
             return view;
@@ -1500,6 +1506,21 @@ impl Workspace {
         .detach();
     }
 
+    /// `url` opens next (once an Add or the sign-in screen is done).
+    /// Latest user action wins: a link waiting before, and a sign-in out
+    /// for it, are dropped.
+    fn wait_for_link(&mut self, url: String) {
+        self.link_sign_in = None;
+        self.pending_link = Some(url);
+    }
+
+    /// A restricted link's sign-in no longer opens that link.
+    fn forget_link_sign_in(&mut self) {
+        if self.link_sign_in.take().is_some() {
+            self.pending_link = None;
+        }
+    }
+
     /// The open flow's view.
     pub(super) fn open_shared_view(&self) -> Option<Entity<OpenSharedView>> {
         self.open_shared.as_ref().and_then(WeakEntity::upgrade)
@@ -1584,7 +1605,7 @@ impl Workspace {
         }
         // The sign-in screen answers first; the link waits for it.
         if self.sign_in_shown() {
-            self.pending_link = Some(url);
+            self.wait_for_link(url);
         } else {
             self.open_shared(Some(url), window, cx);
         }
@@ -1630,7 +1651,12 @@ impl Workspace {
         if waiting {
             self.link_sign_in = None;
         }
-        let for_link = waiting && result.is_ok() && self.open_shared_view().is_some();
+        // …and only while the dialog still asks for that very link (a link
+        // pasted or received since shows instead, and wins).
+        let shown = self.open_shared_view().is_some_and(|v| {
+            v.read(cx).sign_in_for.as_ref().map(ShareLink::url) == self.pending_link
+        });
+        let for_link = waiting && result.is_ok() && shown;
         if waiting && !for_link {
             self.pending_link = None;
         }
@@ -2250,6 +2276,84 @@ mod gpui_tests {
         assert!(forgotten(cx));
         assert!(!dialog_open(cx, &s));
         assert_eq!(resolves(&s.backend), 0, "nothing opened");
+    }
+
+    /// Link B's browser sign-in is out; link C comes in (a deep link, or
+    /// pasted by hand). When B's sign-in lands, C stays: B never opens
+    /// over it.
+    #[cfg(feature = "server")]
+    #[gpui_kit::test]
+    fn a_newer_link_wins_over_a_waiting_sign_in(cx: &mut TestAppContext) {
+        use crate::model::backend::{Access, CollectionKey, MOCK_SERVER, ShareUpdate, testing};
+        for by_hand in [false, true] {
+            let s = studio(cx);
+            testing::sign_in(&*s.backend);
+            let key = CollectionKey {
+                id: "a1b2c3d4".into(),
+                name: "Payments API".into(),
+            };
+            let update = ShareUpdate {
+                access: Some(Access::InvitedOnly),
+                ..Default::default()
+            };
+            let b = futures::executor::block_on(s.backend.update_share(&key, update))
+                .unwrap()
+                .link
+                .unwrap();
+            testing::sign_out(&*s.backend);
+            let view = open_flow(cx, &s);
+            paste_and_open(cx, &s, &view, &b);
+            // Sign in clicked: B waits for its server's callback.
+            let waiting = view.read_with(cx, |v, _| v.sign_in_for.clone()).unwrap();
+            let ws = s.ws.clone();
+            ws.update(cx, |ws, _| {
+                ws.pending_link = Some(waiting.url());
+                ws.link_sign_in = Some(MOCK_SERVER.into());
+            });
+            // C, the fixture's public link.
+            if by_hand {
+                cx.update_window(s.window, |_, window, cx| {
+                    view.update(cx, |v, cx| {
+                        v.paste(DEEP_LINK, window, cx);
+                        v.open_link(window, cx);
+                    })
+                })
+                .unwrap();
+                cx.run_until_parked();
+            } else {
+                cx.update_window(s.window, |_, window, cx| {
+                    ws.update(cx, |ws, cx| {
+                        ws.open_shared(Some(DEEP_LINK.into()), window, cx)
+                    });
+                })
+                .unwrap();
+                cx.run_until_parked();
+            }
+            let shipping = "Acme shared Shipping API with you";
+            assert!(labelled(cx, &s, "open-shared-title", shipping));
+            let resolves = |b: &Arc<dyn Backend>| {
+                b.dev()
+                    .unwrap()
+                    .recorded()
+                    .iter()
+                    .filter(|c| c.starts_with("resolve_link("))
+                    .count()
+            };
+            let before = resolves(&s.backend);
+            // B's sign-in lands, the dialog still up.
+            testing::sign_in(&*s.backend);
+            cx.update_window(s.window, |_, window, cx| {
+                ws.update(cx, |ws, cx| {
+                    ws.sign_in_completed(MOCK_SERVER, Ok(()), window, cx)
+                })
+            })
+            .unwrap();
+            cx.run_until_parked();
+            assert!(labelled(cx, &s, "open-shared-title", shipping), "C stays");
+            assert_eq!(resolves(&s.backend), before, "B never opened");
+            assert!(ws.read_with(cx, |ws, _| ws.pending_link.is_none()
+                && ws.link_sign_in.is_none()));
+        }
     }
 
     #[gpui_kit::test]
