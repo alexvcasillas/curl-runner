@@ -114,7 +114,7 @@ jobs:
         run: |
           SECRET_KEY=$(openssl rand -hex 32) \
           PUBLIC_API_URL=$E2E_API_URL PUBLIC_APP_URL=$E2E_APP_URL PORT=8090 \
-          SIGNUP=open DEFAULT_PLAN=free SMTP_HOST=127.0.0.1 SMTP_PORT=9 \
+          SIGNUP=open DEFAULT_PLAN=free OPERATOR_EMAILS=e2e-owner@example.com SMTP_HOST=127.0.0.1 SMTP_PORT=9 \
           nohup target/release/curl-runner-server > server.log 2>&1 &
           API_INTERNAL_URL=$E2E_API_URL PUBLIC_API_URL=$E2E_API_URL PUBLIC_APP_URL=$E2E_APP_URL \
           nohup pnpm --filter @curl-runner/cloud exec next start --port 3090 > app.log 2>&1 &

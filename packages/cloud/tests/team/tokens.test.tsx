@@ -39,7 +39,7 @@ const rows = [
   {
     id: ID,
     name: 'github-actions',
-    by: 'ada@acme.com',
+    by: 'ada@acme.example',
     created: 'Oct 2',
     expires: 'Never',
     expiresSoon: false,
@@ -48,7 +48,7 @@ const rows = [
   {
     id: '9a1b8a52-8f2d-4a3e-9f53-0e2d2f5a7c22',
     name: 'staging-ci',
-    by: 'ada@acme.com',
+    by: 'ada@acme.example',
     created: 'Aug 1',
     expires: 'In 9 days',
     expiresSoon: true,
@@ -80,7 +80,7 @@ describe('TokensView', () => {
   it('lists tokens with who made them, when they expire and when they were used', () => {
     setup();
     expect(screen.getByText('github-actions')).toBeInTheDocument();
-    expect(screen.getAllByText('ada@acme.com')).toHaveLength(2);
+    expect(screen.getAllByText('ada@acme.example')).toHaveLength(2);
     expect(screen.getByText('In 9 days')).toBeInTheDocument();
     expect(screen.getByText('2 hours ago')).toBeInTheDocument();
     expect(screen.getByText('Never used')).toBeInTheDocument();

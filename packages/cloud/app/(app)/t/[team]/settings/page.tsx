@@ -18,7 +18,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ team:
     getTeam(team),
     isOwner ? getCollections(team) : [],
     isOwner ? getTokens(team) : [],
-    isOwner && info.billing && current.plan === 'team' ? getBillingSummary(team) : null,
+    isOwner && info.billing ? getBillingSummary(team) : null,
   ]);
   const owners = detail.members.filter((m) => m.role === 'owner');
 
@@ -32,7 +32,8 @@ export default async function SettingsPage({ params }: { params: Promise<{ team:
       slugHost={new URL(env().PUBLIC_APP_URL).host}
       collections={collections.length}
       tokens={tokens.length}
-      subscription={summary?.plan_source === 'stripe'}
+      // A live subscription, whoever the plan comes from: a grant doesn't stop its charges.
+      subscription={summary?.has_subscription === true}
       onRename={renameTeam.bind(null, team)}
       onDelete={deleteTeam.bind(null, team)}
       onLeave={leaveTeam.bind(null, team)}

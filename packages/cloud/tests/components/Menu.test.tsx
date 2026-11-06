@@ -188,3 +188,32 @@ describe('Dialog', () => {
     expect(screen.getByRole('button', { name: 'Fallback' })).toHaveFocus();
   });
 });
+
+describe('Menu in a scrolling container', () => {
+  it('can lay out against the window, so a table cannot clip it', async () => {
+    render(
+      <div style={{ overflow: 'auto' }}>
+        <Menu label="Things" trigger="Open" fixed align="end">
+          <MenuItem>One</MenuItem>
+        </Menu>
+      </div>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }));
+    const menu = screen.getByRole('menu', { name: 'Things' });
+    expect(menu.style.position).toBe('fixed');
+    expect(menu.className).not.toContain('absolute');
+  });
+
+  it('closes when the page scrolls, since it would drift from its button', async () => {
+    render(
+      <Menu label="Things" trigger="Open" fixed>
+        <MenuItem>One</MenuItem>
+      </Menu>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }));
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    fireEvent.scroll(window);
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Open' })).toHaveFocus();
+  });
+});

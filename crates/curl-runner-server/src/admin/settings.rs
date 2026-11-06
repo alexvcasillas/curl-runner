@@ -27,12 +27,19 @@ const TEST_EMAILS_PER_WINDOW: u32 = 5;
 const TEST_EMAIL_WINDOW: Duration = Duration::minutes(10);
 
 /// One variable `config.rs` reads. `value` is `null` for a secret, and for a
-/// variable that is not set.
+/// variable that is not set. `set` says whether it is set, and never leaks
+/// anything else.
 #[derive(Serialize, Debug, PartialEq, Eq)]
 pub struct EnvVar {
     key: &'static str,
     value: Option<String>,
     secret: bool,
+    set: bool,
+}
+
+/// Whether the process environment has a non-blank value for `key`.
+fn env_present(key: &str) -> bool {
+    std::env::var(key).is_ok_and(|v| !v.trim().is_empty())
 }
 
 /// Every variable `config.rs` reads, in the order the page lists them.
@@ -40,13 +47,17 @@ pub struct EnvVar {
 pub fn env_listing(config: &Config) -> Vec<EnvVar> {
     let shown = |key: &'static str, value: Option<String>| EnvVar {
         key,
+        set: value.is_some(),
         value,
         secret: false,
     };
-    let secret = |key: &'static str| EnvVar {
+    // `set` comes from the parsed config where it holds the variable, else
+    // from the process environment. The value is never read into the listing.
+    let secret = |key: &'static str, set: bool| EnvVar {
         key,
         value: None,
         secret: true,
+        set,
     };
     let billing = config.billing.as_ref();
     vec![
@@ -70,26 +81,38 @@ pub fn env_listing(config: &Config) -> Vec<EnvVar> {
             "TRUSTED_PROXY_HOPS",
             Some(config.trusted_proxy_hops.to_string()),
         ),
-        secret("SMTP_USER"),
-        secret("SMTP_PASSWORD"),
-        secret("GITHUB_CLIENT_ID"),
-        secret("GITHUB_CLIENT_SECRET"),
-        secret("GOOGLE_CLIENT_ID"),
-        secret("GOOGLE_CLIENT_SECRET"),
-        secret("STRIPE_SECRET_KEY"),
-        secret("STRIPE_WEBHOOK_SECRET"),
-        secret("OPERATOR_EMAILS"),
-        secret("SECRET_KEY"),
-        secret("DATABASE_URL"),
-        secret("DB_HOST"),
-        secret("DB_PORT"),
-        secret("DB_USER"),
-        secret("DB_PASSWORD"),
-        secret("DB_NAME"),
+        secret(
+            "SMTP_USER",
+            config
+                .smtp
+                .as_ref()
+                .is_some_and(|s| s.credentials.is_some()),
+        ),
+        secret(
+            "SMTP_PASSWORD",
+            config
+                .smtp
+                .as_ref()
+                .is_some_and(|s| s.credentials.is_some()),
+        ),
+        secret("GITHUB_CLIENT_ID", config.github.is_some()),
+        secret("GITHUB_CLIENT_SECRET", config.github.is_some()),
+        secret("GOOGLE_CLIENT_ID", config.google.is_some()),
+        secret("GOOGLE_CLIENT_SECRET", config.google.is_some()),
+        secret("STRIPE_SECRET_KEY", billing.is_some()),
+        secret("STRIPE_WEBHOOK_SECRET", billing.is_some()),
+        secret("OPERATOR_EMAILS", !config.operators.is_empty()),
+        secret("SECRET_KEY", !config.secret_key.is_empty()),
+        secret("DATABASE_URL", env_present("DATABASE_URL")),
+        secret("DB_HOST", env_present("DB_HOST")),
+        secret("DB_PORT", env_present("DB_PORT")),
+        secret("DB_USER", env_present("DB_USER")),
+        secret("DB_PASSWORD", env_present("DB_PASSWORD")),
+        secret("DB_NAME", env_present("DB_NAME")),
         // These three only seed the settings row now.
-        secret("SIGNUP"),
-        secret("SIGNUP_DOMAINS"),
-        secret("DEFAULT_PLAN"),
+        secret("SIGNUP", env_present("SIGNUP")),
+        secret("SIGNUP_DOMAINS", env_present("SIGNUP_DOMAINS")),
+        secret("DEFAULT_PLAN", env_present("DEFAULT_PLAN")),
     ]
 }
 

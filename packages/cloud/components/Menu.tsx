@@ -1,7 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { cx } from '@/lib/cx';
 import { MenuCheckIcon } from './icons';
 
@@ -23,6 +32,11 @@ export type MenuProps = {
   align?: 'start' | 'end';
   /** Menu width in px. Never wider than the screen less 24px. */
   width?: number;
+  /**
+   * Lays the menu out against the window instead of the trigger's box, so a
+   * scrolling table can't clip it. It closes when the page scrolls.
+   */
+  fixed?: boolean;
   children: React.ReactNode;
   className?: string;
 };
@@ -39,10 +53,12 @@ export function Menu({
   triggerClassName,
   align = 'start',
   width = 260,
+  fixed = false,
   children,
   className,
 }: MenuProps) {
   const [open, setOpen] = useState(false);
+  const [place, setPlace] = useState<{ top: number; left: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -60,6 +76,39 @@ export function Menu({
       triggerRef.current?.focus();
     }
   }, []);
+
+  // A fixed menu sits under its trigger, or above it when there's no room below.
+  useLayoutEffect(() => {
+    if (!open || !fixed) {
+      setPlace(null);
+      return;
+    }
+    const button = triggerRef.current?.getBoundingClientRect();
+    const box = menuRef.current?.getBoundingClientRect();
+    if (!button || !box) {
+      return;
+    }
+    const below = button.bottom + 4;
+    const top =
+      below + box.height > window.innerHeight - 8 && button.top - 4 - box.height > 8
+        ? button.top - 4 - box.height
+        : below;
+    const left = align === 'end' ? button.right - box.width : button.left;
+    setPlace({ top, left: Math.max(8, left) });
+  }, [open, fixed, align]);
+
+  useEffect(() => {
+    if (!open || !fixed) {
+      return;
+    }
+    const shut = () => close(true);
+    window.addEventListener('scroll', shut, true);
+    window.addEventListener('resize', shut);
+    return () => {
+      window.removeEventListener('scroll', shut, true);
+      window.removeEventListener('resize', shut);
+    };
+  }, [open, fixed, close]);
 
   useEffect(() => {
     if (!open) {
@@ -147,10 +196,21 @@ export function Menu({
             aria-label={label}
             tabIndex={-1}
             onKeyDown={onMenuKeyDown}
-            style={{ width: `min(${width}px, calc(100vw - 24px))` }}
+            style={{
+              width: `min(${width}px, calc(100vw - 24px))`,
+              ...(fixed
+                ? {
+                    position: 'fixed',
+                    top: place?.top ?? 0,
+                    left: place?.left ?? 0,
+                    opacity: place ? 1 : 0,
+                  }
+                : null),
+            }}
             className={cx(
-              'absolute top-full z-50 mt-1 box-border animate-rise rounded-[8px] border border-control bg-raised p-1 shadow-menu',
-              align === 'start' ? 'left-0' : 'right-0',
+              'z-50 box-border animate-rise rounded-[8px] border border-control bg-raised p-1 shadow-menu',
+              !fixed && 'absolute top-full mt-1',
+              !fixed && (align === 'start' ? 'left-0' : 'right-0'),
             )}
           >
             {children}

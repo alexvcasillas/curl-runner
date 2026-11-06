@@ -4,7 +4,7 @@ function firstAndLast(words: string[]): string {
 
 /**
  * A person's initials: first and last word of the name ("Ada Lovelace" → AL),
- * or for an email, its local part and domain ("jane@globex.com" → JG).
+ * or for an email, its local part and domain ("jane@globex.example" → JG).
  */
 export function initials(nameOrEmail: string): string {
   const value = nameOrEmail.trim();

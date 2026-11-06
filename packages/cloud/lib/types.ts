@@ -3,7 +3,7 @@
 export type Plan = 'free' | 'team';
 export type Role = 'owner' | 'member';
 
-export type MeTeam = { slug: string; name: string; role: Role; plan: Plan };
+export type MeTeam = { slug: string; name: string; role: Role; plan: Plan; suspended: boolean };
 
 export type Me = {
   user: { id: string; email: string; name: string | null };
@@ -19,6 +19,13 @@ export type Info = {
   /** Stripe is configured. Off hides Billing and every plan pill. */
   billing: boolean;
   app_url?: string | null;
+  /** An announcement from the admins, already filtered to this caller. Absent on older servers. */
+  banner?: {
+    message: string;
+    tone: 'info' | 'warning';
+    link: string | null;
+    version: number;
+  } | null;
 };
 
 // Wire shapes for collections, from `/v1/teams/{team}/collections` and below.
@@ -99,6 +106,9 @@ export type TeamDetail = {
   role: Role;
   members: Member[];
   pending_invites: PendingInvite[];
+  /** An admin suspended the team. The reason stays with the admins. */
+  suspended: boolean;
+  suspended_at: string | null;
 };
 
 export type Price = { unit_amount: number; currency: string };
@@ -113,8 +123,12 @@ export type BillingSummary = {
   can_manage: boolean;
   cancel_at: string | null;
   current_period_end: string | null;
-  /** `stripe` when a subscription backs the plan, else `none`. */
+  /** `override` while an admin's grant is in force, `stripe` when a subscription backs the plan, else `none`. */
   plan_source: string;
+  /** When the grant ends. Null with no grant, or a grant with no end date. */
+  override_until: string | null;
+  /** A live Stripe subscription exists, whatever `plan_source` says: a grant doesn't stop its charges. */
+  has_subscription: boolean;
 };
 
 // Wire shapes for the account and shared pages, from `/v1/me/…` and `/v1/sessions`.

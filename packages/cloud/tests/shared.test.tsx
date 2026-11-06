@@ -37,7 +37,7 @@ const items = [
 
 describe('SharedView', () => {
   it('shows each row with its facts', () => {
-    render(<SharedView email="jane@globex.com" items={items} />);
+    render(<SharedView email="jane@globex.example" items={items} />);
     const list = screen.getByRole('region', { name: 'Shared collections' });
     expect(within(list).getByText('Payments API')).toBeInTheDocument();
     expect(within(list).getByText('Restricted')).toBeInTheDocument();
@@ -47,7 +47,7 @@ describe('SharedView', () => {
   });
 
   it('gives each row Open in studio and a copyable pull command', () => {
-    render(<SharedView email="jane@globex.com" items={items} />);
+    render(<SharedView email="jane@globex.example" items={items} />);
     const links = screen.getAllByRole('link', { name: 'Open in studio' });
     expect(links).toHaveLength(2);
     expect(links[0]).toHaveAttribute('href', items[0].studioHref);
@@ -58,12 +58,12 @@ describe('SharedView', () => {
   });
 
   it('names the email in the empty state', () => {
-    render(<SharedView email="jane@globex.com" items={[]} />);
+    render(<SharedView email="jane@globex.example" items={[]} />);
     expect(
       screen.getByRole('heading', { name: 'Nothing shared with you yet' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/When a team shares a collection with jane@globex\.com/),
+      screen.getByText(/When a team shares a collection with jane@globex\.example/),
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Create a team/ })).toHaveAttribute(
       'href',

@@ -109,6 +109,14 @@ export async function verifyCode(formData: FormData): Promise<CodeResult> {
 }
 
 function failure(e: ApiError, fallbackTitle: string): AuthProblem {
+  if (e.code === 'account_suspended') {
+    return {
+      title: 'This account is suspended',
+      body: messageFor(e),
+      actionLabel: 'Back to sign in',
+      actionHref: '/sign-in',
+    };
+  }
   return {
     title: e.code === 'rate_limited' ? 'Too many tries' : fallbackTitle,
     body: messageFor(e),

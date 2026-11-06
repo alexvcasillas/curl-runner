@@ -55,6 +55,8 @@ const FREE = {
   cancel_at: null,
   current_period_end: null,
   plan_source: 'none',
+  override_until: null,
+  has_subscription: false,
 };
 const TEAM = {
   ...FREE,
@@ -64,6 +66,7 @@ const TEAM = {
   seats: 3,
   current_period_end: '2027-11-05T00:00:00Z',
   plan_source: 'stripe',
+  has_subscription: true,
 };
 
 describe('isStripeUrl', () => {
@@ -410,18 +413,108 @@ describe('BillingView', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Nope, try later.');
   });
 
-  it('granted: no portal, nothing to pay', () => {
+  it('granted: no portal, nothing to pay, and the end comes from override_until', () => {
     view({
       summary: {
         ...TEAM,
         plan_source: 'override',
         interval: null,
-        cancel_at: '2027-03-31T00:00:00Z',
+        has_subscription: false,
+        // A Stripe cancel date must not be read as the end of the grant.
+        cancel_at: '2026-12-03T00:00:00Z',
+        override_until: '2027-03-31T23:59:59Z',
       },
     });
     expect(screen.getByText('Granted')).toBeInTheDocument();
     expect(screen.getByText(/until Mar 31, 2027. There’s nothing to pay/)).toBeInTheDocument();
+    expect(screen.queryByText(/Dec 3/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Manage billing' })).toBeNull();
+  });
+
+  it('granted over a live subscription says Stripe still bills, and keeps the portal', async () => {
+    const { user, onPortal } = view({
+      summary: {
+        ...TEAM,
+        plan_source: 'override',
+        has_subscription: true,
+        override_until: '2027-03-31T23:59:59Z',
+      },
+    });
+    expect(
+      screen.getAllByText(
+        /Stripe still bills this team. Manage billing to cancel the subscription./,
+      ),
+    ).toHaveLength(2);
+    expect(screen.queryByText(/nothing to pay/)).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Manage billing' }));
+    expect(onPortal).toHaveBeenCalled();
+  });
+
+  it('granted over a live subscription hides the portal from non-owners', () => {
+    view({
+      owner: false,
+      summary: { ...TEAM, plan_source: 'override', has_subscription: true },
+    });
+    expect(screen.queryByRole('button', { name: 'Manage billing' })).toBeNull();
+    expect(screen.getAllByText(/An owner can cancel it under Manage billing./)).toHaveLength(2);
+    expect(screen.queryByText(/Manage billing to cancel/)).toBeNull();
+  });
+
+  it('granted over a live subscription labels the amount as the next invoice', () => {
+    view({
+      summary: { ...TEAM, plan_source: 'override', has_subscription: true, seats: 3 },
+    });
+    expect(screen.getByText('Next invoice')).toBeInTheDocument();
+    expect(screen.queryByText('Cost')).toBeNull();
+    // 3 members on the annual price.
+    expect(screen.getByText('Next invoice').nextElementSibling).toHaveTextContent('$288 a year');
+  });
+
+  it('a Free override over a live subscription keeps the portal and hides Upgrade', async () => {
+    const { user, onPortal } = view({
+      summary: { ...FREE, plan_source: 'override', has_subscription: true, seats: 2 },
+    });
+    expect(
+      screen.getByText('Stripe still bills this team. Manage billing to cancel the subscription.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Upgrade to Team' })).toBeNull();
+    expect(screen.queryByText('Ask a team owner to upgrade.')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Manage billing' }));
+    expect(onPortal).toHaveBeenCalled();
+  });
+
+  it('a Free override over a live subscription tells non-owners an owner can cancel', () => {
+    view({
+      owner: false,
+      summary: { ...FREE, plan_source: 'override', has_subscription: true },
+    });
+    expect(
+      screen.getByText(
+        'Stripe still bills this team. An owner can cancel it under Manage billing.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Manage billing' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Upgrade to Team' })).toBeNull();
+  });
+
+  it('granted with no end date says so', () => {
+    view({
+      summary: {
+        ...TEAM,
+        plan_source: 'override',
+        interval: null,
+        has_subscription: false,
+        override_until: null,
+      },
+    });
+    expect(
+      screen.getByText(/gave Acme the Team plan with no end date. There’s nothing to pay/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'The grant has no end date. If it ever ends, Acme moves to Free unless an owner upgrades.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('says Unavailable, not a dash, when prices are missing on Team', () => {

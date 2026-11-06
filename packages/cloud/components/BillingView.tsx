@@ -65,7 +65,15 @@ export function BillingView(p: BillingViewProps) {
   const [problem, setProblem] = useState<string | null>(null);
   const mode = modeOf(s);
   const sub: Interval = s.interval === 'monthly' ? 'monthly' : 'annual';
-  const canPortal = p.owner && s.plan_source === 'stripe' && mode !== 'free' && mode !== 'granted';
+  // An override (a grant, or Free) doesn't stop a live subscription: Stripe still bills,
+  // so owners keep the portal, and checkout is closed for the team.
+  const stillBilled = mode === 'granted' && s.has_subscription;
+  const freeBilled = mode === 'free' && s.has_subscription;
+  const canPortal =
+    p.owner && (s.has_subscription || (mode !== 'free' && s.plan_source === 'stripe'));
+  const stripeBills = p.owner
+    ? 'Stripe still bills this team. Manage billing to cancel the subscription.'
+    : 'Stripe still bills this team. An owner can cancel it under Manage billing.';
 
   async function portal() {
     setBusy(true);
@@ -79,6 +87,8 @@ export function BillingView(p: BillingViewProps) {
   }
 
   const ends = s.cancel_at ? formatDate(s.cancel_at) : null;
+  // A grant's end is its own date, never Stripe's cancel date.
+  const grantEnd = s.override_until ? `until ${formatDate(s.override_until)}` : 'with no end date';
   const status: { word: string; tone: 'neutral' | 'ok' | 'err' } = {
     free: { word: 'Free', tone: 'neutral' as const },
     active: { word: 'Active', tone: 'ok' as const },
@@ -90,14 +100,16 @@ export function BillingView(p: BillingViewProps) {
   const renews = s.current_period_end ? ` Renews on ${formatDate(s.current_period_end)}.` : '';
   const line = {
     free: '3 members, counting pending invites. Public collections and publishing are unlimited.',
-    granted: `curl-runner gave ${teamName} the Team plan${ends ? ` until ${ends}` : ''}. There’s nothing to pay. Questions? Reply to your welcome email.`,
+    granted: stillBilled
+      ? `curl-runner gave ${teamName} the Team plan ${grantEnd}. ${stripeBills}`
+      : `curl-runner gave ${teamName} the Team plan ${grantEnd}. There’s nothing to pay. Questions? Reply to your welcome email.`,
     active: `Billed ${sub === 'annual' ? 'annually' : 'monthly'}.${renews} Adding or removing a member changes the next invoice, prorated.`,
     scheduled: `Billed ${sub === 'annual' ? 'annually' : 'monthly'}. Adding or removing a member changes the next invoice, prorated.`,
     past_due: `Billed ${sub === 'annual' ? 'annually' : 'monthly'}.${renews} Adding or removing a member changes the next invoice, prorated.`,
   }[mode];
 
   const cost =
-    mode === 'free' || mode === 'granted'
+    mode === 'free' || (mode === 'granted' && !stillBilled)
       ? '$0'
       : mode === 'scheduled'
         ? 'None'
@@ -108,8 +120,14 @@ export function BillingView(p: BillingViewProps) {
   const portalNote = `Cards, invoices, switching to ${sub === 'annual' ? 'monthly' : 'annual'} and cancelling are in the Stripe portal.`;
 
   const foot = {
-    free: `Upgrading starts today. The first invoice covers the members ${teamName} has now.`,
-    granted: `When the grant ends, ${teamName} moves to Free unless an owner upgrades. Owners get an email 14 days before.`,
+    free: freeBilled
+      ? stripeBills
+      : `Upgrading starts today. The first invoice covers the members ${teamName} has now.`,
+    granted: stillBilled
+      ? stripeBills
+      : s.override_until
+        ? `When the grant ends, ${teamName} moves to Free unless an owner upgrades. Owners get an email 14 days before.`
+        : `The grant has no end date. If it ever ends, ${teamName} moves to Free unless an owner upgrades.`,
     active: portalNote,
     scheduled: portalNote,
     past_due: portalNote,
@@ -183,7 +201,9 @@ export function BillingView(p: BillingViewProps) {
             value={mode === 'free' ? 'Team only' : String(p.restricted)}
           />
           <Stat
-            label={mode === 'free' || mode === 'granted' ? 'Cost' : 'Next invoice'}
+            label={
+              mode === 'free' || (mode === 'granted' && !stillBilled) ? 'Cost' : 'Next invoice'
+            }
             value={cost}
             last
           />
@@ -191,7 +211,7 @@ export function BillingView(p: BillingViewProps) {
         <CardFooter>{foot}</CardFooter>
       </Card>
 
-      {mode === 'free' ? (
+      {mode === 'free' && !freeBilled ? (
         <section aria-labelledby="plans" className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-3">
             <h2 id="plans" className="m-0 mr-auto text-[16px] leading-6 font-semibold">

@@ -46,7 +46,7 @@ function setup(over: Partial<Props> = {}) {
       team="acme"
       name="Acme"
       owner
-      me={{ id: 'u1', email: 'ada@acme.com' }}
+      me={{ id: 'u1', email: 'ada@acme.example' }}
       soleOwner={false}
       slugHost="cloud.example.com"
       collections={4}

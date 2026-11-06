@@ -21,6 +21,15 @@ describe('proxy', () => {
     );
   });
 
+  it('sends a signed-out /admin to sign in, and a signed-in one through', () => {
+    const out = proxy(req('/admin/users?q=x'));
+    expect(out.headers.get('location')).toBe(
+      `http://localhost:3000/sign-in?return_to=${encodeURIComponent('/admin/users?q=x')}`,
+    );
+    expect(isPublicPath('/admin')).toBe(false);
+    expect(proxy(req('/admin', 'cr_session=crs_abc')).headers.get('location')).toBeNull();
+  });
+
   it('sends a signed-out / to sign in without return_to', () => {
     expect(proxy(req('/')).headers.get('location')).toBe('http://localhost:3000/sign-in');
   });

@@ -23,6 +23,7 @@
     "openapi-import",
     "env-files",
     "cloud",
+    "cloud-admin",
     "studio"
   ]
 }

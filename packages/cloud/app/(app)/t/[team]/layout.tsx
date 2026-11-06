@@ -1,3 +1,4 @@
+import { Banner } from '@/components/Banner';
 import { PlanBanner } from '@/components/PlanBanner';
 import { UpgradeProvider } from '@/components/UpgradeProvider';
 import { getInfo } from '@/lib/app-data';
@@ -7,6 +8,7 @@ import { env } from '@/lib/env';
 import { ApiError } from '@/lib/errors';
 import { routes } from '@/lib/routes';
 import { getBillingSummary, getPrices, getTeam } from '@/lib/team-data';
+import type { TeamDetail } from '@/lib/types';
 import { openPortal, startCheckout } from './billing/actions';
 
 /**
@@ -23,14 +25,40 @@ export default async function TeamLayout({
 }) {
   const { team } = await params;
   const info = await getInfo();
+  let detail: TeamDetail;
+  try {
+    detail = await getTeam(team);
+  } catch (e) {
+    // The page itself says what's wrong (a 404 for a team that isn't yours).
+    if (e instanceof ApiError) {
+      return children;
+    }
+    throw e;
+  }
+  // Members see that the team is suspended, never why: the reason stays with the admins.
+  const suspended = detail.suspended ? (
+    <Banner tone="err" title={`${detail.name} is suspended.`}>
+      Publishing is off and share links show “no longer works”. Contact support.
+    </Banner>
+  ) : null;
   if (!info.billing) {
-    return children;
+    return (
+      <>
+        {suspended}
+        {children}
+      </>
+    );
   }
 
   try {
-    const [detail, summary] = await Promise.all([getTeam(team), getBillingSummary(team)]);
+    const summary = await getBillingSummary(team);
     if (!summary) {
-      return children;
+      return (
+        <>
+          {suspended}
+          {children}
+        </>
+      );
     }
     const free = summary.plan === 'free';
     const [collections, prices] = free
@@ -55,6 +83,7 @@ export default async function TeamLayout({
     if (!free) {
       return (
         <>
+          {suspended}
           {banner}
           {children}
         </>
@@ -72,6 +101,7 @@ export default async function TeamLayout({
         billingUrl={`${env().PUBLIC_APP_URL}${routes.teamTab(team, 'billing')}`}
         onCheckout={startCheckout.bind(null, team)}
       >
+        {suspended}
         {banner}
         {children}
       </UpgradeProvider>

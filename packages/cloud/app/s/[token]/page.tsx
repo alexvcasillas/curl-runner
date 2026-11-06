@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import { AnnouncementBanner } from '@/components/AnnouncementBanner';
 import { FooterNote } from '@/components/DeadLink';
 import { PublicShell } from '@/components/PublicShell';
 import { ShareGate } from '@/components/ShareGate';
@@ -7,7 +8,7 @@ import { ShareLanding } from '@/components/ShareLanding';
 import { studioLink } from '@/lib/deep-link';
 import { env } from '@/lib/env';
 import { ApiError } from '@/lib/errors';
-import { getLanding, getViewer } from '@/lib/public-data';
+import { getLanding, getPublicBanner, getViewer } from '@/lib/public-data';
 import { relativeTimeInline } from '@/lib/time';
 import { isShareToken } from '@/lib/tokens';
 
@@ -46,11 +47,12 @@ export default async function SharePage({ params }: Props) {
   }
   // A visitor with no session needs no lookup; a stale one is signed out.
   const viewer = await getViewer();
+  const announcement = <AnnouncementBanner banner={await getPublicBanner()} />;
   const returnTo = `/s/${token}`;
 
   if (landing.kind !== 'open') {
     return (
-      <PublicShell signedInAs={viewer} footer={<FooterNote />}>
+      <PublicShell signedInAs={viewer} footer={<FooterNote />} announcement={announcement}>
         <ShareGate
           returnTo={returnTo}
           limited={landing.kind === 'limited' ? landing.message : undefined}
@@ -65,7 +67,7 @@ export default async function SharePage({ params }: Props) {
   const { info } = landing;
   const e = env();
   return (
-    <PublicShell signedInAs={viewer} footer={<FooterNote />}>
+    <PublicShell signedInAs={viewer} footer={<FooterNote />} announcement={announcement}>
       <ShareLanding
         team={info.team}
         name={info.name}
