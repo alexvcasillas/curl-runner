@@ -69,6 +69,10 @@ describe('dates', () => {
     expect(expiresIn('2026-11-05T15:00:00Z', now)).toBe('Expires in 5 hours');
     expect(expiresIn('2026-11-05T10:10:00Z', now)).toBe('Expires soon');
   });
+  it('a 7-day invite seconds old still says 7 days, not 6', () => {
+    expect(expiresIn('2026-11-12T09:59:58Z', now)).toBe('Expires in 7 days');
+    expect(expiresIn('2026-11-07T04:00:00Z', now)).toBe('Expires in 2 days');
+  });
 });
 
 describe('seat notes', () => {
