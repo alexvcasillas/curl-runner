@@ -21,11 +21,9 @@ export default async function NewTeamPage() {
           share with never join it.
         </p>
       </div>
-      {me.admin ? (
+      {me.admin && first ? (
         <Notice tone="info" role="status" className="px-3.5 py-3 text-[13px] leading-5">
-          <span className="font-medium">
-            You’re the first account on this server, so you’re its admin.
-          </span>{' '}
+          <span className="font-medium">You’re an admin of this server.</span>{' '}
           <span className="text-fg-muted">
             You can open the admin panel from the account menu. To let colleagues create teams too,
             add your domain in Admin, Settings.

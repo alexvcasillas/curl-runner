@@ -229,6 +229,8 @@ Set billing up in Stripe like this:
 2. Subscribe it to six events: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed` and `invoice.paid`.
 3. Set the endpoint's API version to `2026-10-28.endive`.
 4. Create two prices, one monthly and one annual. Each must be a flat per-seat recurring price. Tiered and metered prices aren't supported.
+5. Turn on Stripe Tax. Checkout calculates tax, and Stripe refuses the checkout without it.
+6. Set up the customer portal in the Stripe dashboard. The server opens the portal with its default settings. Allow switching plans between your two prices, and leave quantity changes off: the server sets the quantity from the member count.
 
 With billing on, `GET /v1/info` reports `"billing": true`. The dashboard then shows a **Billing** page, where team owners start a checkout or open the Stripe customer portal. Without it, the page doesn't exist.
 

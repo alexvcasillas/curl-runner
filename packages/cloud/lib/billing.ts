@@ -60,13 +60,13 @@ export function total(prices: Prices, interval: Interval, seats: number): string
   return `${dollars(p.unit_amount * seats, p.currency)} ${interval === 'annual' ? 'a year' : 'a month'}`;
 }
 
-/** Whole months the annual price saves over twelve monthly ones. */
-export function monthsFree(prices: Prices): number {
+/** Percent the annual price saves over twelve monthly ones, rounded. 0 when it saves nothing. */
+export function annualSavingPercent(prices: Prices): number {
   const { monthly, annual } = prices;
   if (monthly.unit_amount <= 0) {
     return 0;
   }
-  return Math.max(0, Math.floor(12 - annual.unit_amount / monthly.unit_amount));
+  return Math.max(0, Math.round((1 - annual.unit_amount / (12 * monthly.unit_amount)) * 100));
 }
 
 const DAY = 86_400_000;

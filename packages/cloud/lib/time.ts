@@ -78,11 +78,14 @@ export function tokenExpiry(
   return { label: formatDate(iso), soon: false };
 }
 
-/** "Expires in 5 days", "Expires in 5 hours" or "Expires soon". */
+/**
+ * "Expires in 5 days", "Expires in 5 hours" or "Expires soon". Days round to the nearest,
+ * so a 7-day invite reads "7 days" for its first half day.
+ */
 export function expiresIn(iso: string, now: Date = new Date()): string {
   const left = new Date(iso).getTime() - now.getTime();
   if (left >= DAY) {
-    const d = Math.floor(left / DAY);
+    const d = Math.round(left / DAY);
     return `Expires in ${d} ${d === 1 ? 'day' : 'days'}`;
   }
   if (left >= HOUR) {
