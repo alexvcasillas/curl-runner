@@ -252,7 +252,7 @@ export const PERM_LABELS: Record<Perm, { title: string; short: string; desc: str
   billing: {
     title: 'Manage plans',
     short: 'Plans',
-    desc: 'Grant and remove plan overrides. Billing itself stays in Stripe.',
+    desc: 'Grant and remove plan overrides, sync Stripe and resend invoices.',
   },
   emails: {
     title: 'Send emails',

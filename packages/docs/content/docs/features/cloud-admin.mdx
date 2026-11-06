@@ -129,10 +129,12 @@ There are two roles.
 | --- | --- |
 | Users | Sign people out, suspend and delete accounts. |
 | Teams | Suspend teams, change member roles, disable share links. |
-| Plans | Grant and remove plan overrides. |
-| Emails | Send broadcasts. |
+| Plans | Grant and remove plan overrides, sync Stripe and resend invoices. |
+| Emails | Send broadcasts and email team owners. |
 | Settings | Change sign-up, plan limits, the banner and pausing. |
 | Admins | Add admins and change permissions. |
+
+In the API, the Plans permission is called `billing`.
 
 Every admin can read every page, including the activity log. Without a permission, the buttons are off and the server answers `403`.
 

@@ -241,7 +241,7 @@ The dashboard has an admin panel at `/admin`. See [Cloud admin panel](/docs/feat
 There are two roles:
 
 - **Owners** are the emails in `OPERATOR_EMAILS`, plus the first account on a server with `SIGNUP=domains` and an empty list. They have every permission. You can't remove them in the panel.
-- **Admins** are people an owner adds under **Admins**, each with the permissions they need: users, teams, plans, emails, settings and admins. Every admin can read every page.
+- **Admins** are people an owner adds under **Admins**, each with the permissions they need: users, teams, plans (`billing` in the API), emails, settings and admins. Every admin can read every page.
 
 A person who isn't an owner or admin gets a 404 on `/admin`, not a "forbidden" page. The panel doesn't show that it exists.
 
