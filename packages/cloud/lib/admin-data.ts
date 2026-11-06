@@ -3,8 +3,11 @@ import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import type { ActionResult } from './action-result';
 import { type AdminMe, type AdminOverview, can, type Perm } from './admin';
+import type { ActivityPage, ActivityQuery } from './admin-activity';
 import type { CollectionStats, CollectionsPage, CollectionsQuery } from './admin-collections';
 import type { Audience, AudienceCount, Broadcast, LogPage, LogQuery } from './admin-emails';
+import type { AdminRow, SettingsData } from './admin-settings';
+import type { Health, StripeStats } from './admin-stats';
 import type { TeamDetail, TeamsPage, TeamsQuery } from './admin-teams';
 import type { UserDetail, UsersPage, UsersQuery } from './admin-users';
 import { api } from './api';
@@ -174,4 +177,49 @@ export function getEmailLog(query: LogQuery): Promise<LogPage> {
     p.set('cursor', query.cursor);
   }
   return api<LogPage>(`/v1/admin/emails/log?${p}`);
+}
+
+/** `GET /v1/admin/stripe`, or null when billing is off on this server (the API's 404). */
+export async function getStripeStats(): Promise<StripeStats | null> {
+  try {
+    return await api<StripeStats>('/v1/admin/stripe');
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+export function getHealth(): Promise<Health> {
+  return api<Health>('/v1/admin/health');
+}
+
+export function getSettings(): Promise<SettingsData> {
+  return api<SettingsData>('/v1/admin/settings');
+}
+
+export const getAdmins = cache(() => api<AdminRow[]>('/v1/admin/admins'));
+
+/** Log rows per page. */
+export const ACTIVITY_PAGE_SIZE = 50;
+
+export function getActivity(
+  query: ActivityQuery,
+  since: string | undefined,
+): Promise<ActivityPage> {
+  const p = new URLSearchParams({ limit: String(ACTIVITY_PAGE_SIZE) });
+  if (query.admin) {
+    p.set('admin', query.admin);
+  }
+  if (query.group !== 'all') {
+    p.set('action_group', query.group);
+  }
+  if (since) {
+    p.set('since', since);
+  }
+  if (query.cursor) {
+    p.set('cursor', query.cursor);
+  }
+  return api<ActivityPage>(`/v1/admin/activity?${p}`);
 }

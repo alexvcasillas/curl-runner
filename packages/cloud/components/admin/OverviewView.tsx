@@ -12,20 +12,12 @@ import { cx } from '@/lib/cx';
 import { initials } from '@/lib/initials';
 import { relativeTime } from '@/lib/time';
 import { CheckIcon, WarningIcon } from '../icons';
+import { StatGrid } from './AdminCard';
 import { DayBars } from './DayBars';
 import { Sparkline } from './Sparkline';
-import { StatTile, type StatTone } from './StatTile';
+import type { StatTone } from './StatTile';
 
 const DAY_MS = 86_400_000;
-
-const LG_SPAN = ['', '', 'lg:col-span-2', 'lg:col-span-3'];
-
-/** The last tile stretches over the cells a short final row leaves empty, so the grid fills evenly. */
-function lastTileSpan(n: number): string {
-  const cols = n % 4 === 0 ? 4 : 3;
-  const rem = n % cols;
-  return cx(n % 2 === 1 && 'sm:col-span-2', rem > 0 && LG_SPAN[cols - rem + 1]);
-}
 
 function sum(days: { n: number }[]): number {
   return days.reduce((n, d) => n + d.n, 0);
@@ -258,26 +250,7 @@ export function OverviewView({
         </Link>
       </section>
 
-      <section
-        aria-label="Key numbers"
-        className="overflow-hidden rounded-[8px] border border-hairline bg-bg"
-      >
-        <div
-          data-tiles={tiles.length}
-          className={cx(
-            '-mr-px -mb-px grid grid-cols-1 sm:grid-cols-2',
-            tiles.length % 4 === 0 ? 'lg:grid-cols-4' : 'lg:grid-cols-3',
-          )}
-        >
-          {tiles.map((t, i) => (
-            <StatTile
-              key={t.label}
-              {...t}
-              className={i === tiles.length - 1 ? lastTileSpan(tiles.length) : undefined}
-            />
-          ))}
-        </div>
-      </section>
+      <StatGrid tiles={tiles} />
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,440px),1fr))] gap-4">
         <Card label="Sign-ups and publishes">

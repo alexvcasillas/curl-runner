@@ -223,3 +223,62 @@ const int = new Intl.NumberFormat('en-US');
 export function formatInt(n: number): string {
   return int.format(n);
 }
+
+// ---- Permission labels: the one place they are named ----
+
+export const PERMS: readonly Perm[] = ['users', 'teams', 'billing', 'emails', 'settings', 'admins'];
+
+export function isPerm(value: unknown): value is Perm {
+  return PERMS.includes(value as Perm);
+}
+
+/**
+ * The words for each permission, as the Admins board has them. The board's six
+ * rows don't match the server's one for one: "Manage users and teams" and
+ * "Moderate collections" are the server's `users` and `teams`, and "Manage
+ * plans" is `billing`.
+ */
+export const PERM_LABELS: Record<Perm, { title: string; short: string; desc: string }> = {
+  users: {
+    title: 'Manage users',
+    short: 'Users',
+    desc: 'Sign people out, suspend and delete accounts.',
+  },
+  teams: {
+    title: 'Manage teams and collections',
+    short: 'Teams',
+    desc: 'Suspend teams, change member roles, disable share links that are abused.',
+  },
+  billing: {
+    title: 'Manage plans',
+    short: 'Plans',
+    desc: 'Grant and remove plan overrides. Billing itself stays in Stripe.',
+  },
+  emails: {
+    title: 'Send emails',
+    short: 'Emails',
+    desc: 'Broadcasts to users and team owners.',
+  },
+  settings: {
+    title: 'Change server settings',
+    short: 'Settings',
+    desc: 'Sign-up, plan limits, the banner, pausing publishing.',
+  },
+  admins: {
+    title: 'Manage admins',
+    short: 'Admins',
+    desc: 'Add admins and change their permissions.',
+  },
+};
+
+/** "Users, emails", "Every permission" or "Read only". */
+export function permissionsLabel(permissions: readonly Perm[]): string {
+  if (PERMS.every((p) => permissions.includes(p))) {
+    return 'Every permission';
+  }
+  const names = PERMS.filter((p) => permissions.includes(p)).map((p) => PERM_LABELS[p].short);
+  if (names.length === 0) {
+    return 'Read only';
+  }
+  return names.map((n, i) => (i === 0 ? n : n.toLowerCase())).join(', ');
+}
