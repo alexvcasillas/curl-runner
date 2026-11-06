@@ -11,7 +11,7 @@ export const SESSION_B = 'b0000000-0000-4000-8000-00000000000b';
 export const rows: UserRow[] = [
   {
     id: ADA,
-    email: 'ada@acme.com',
+    email: 'ada@acme.example',
     name: 'Ada Lovelace',
     methods: ['email', 'github'],
     teams: [
@@ -25,7 +25,7 @@ export const rows: UserRow[] = [
   },
   {
     id: LINUS,
-    email: 'linus@acme.com',
+    email: 'linus@acme.example',
     name: 'Linus Torvalds',
     methods: ['email', 'github'],
     teams: [{ slug: 'acme', name: 'Acme', role: 'member' }],
@@ -36,7 +36,7 @@ export const rows: UserRow[] = [
   },
   {
     id: JANE,
-    email: 'jane@globex.com',
+    email: 'jane@globex.example',
     name: null,
     methods: ['email'],
     teams: [],
@@ -52,7 +52,7 @@ export const page: UsersPage = { items: rows, next_cursor: 'CURSOR_2', total: 12
 export const detail: UserDetail = {
   user: {
     id: ADA,
-    email: 'ada@acme.com',
+    email: 'ada@acme.example',
     name: 'Ada Lovelace',
     status: 'active',
     created_at: '2026-03-02T09:00:00Z',
@@ -79,11 +79,16 @@ export const detail: UserDetail = {
     },
   ],
   identities: [
-    { provider: 'email', subject: null, email: 'ada@acme.com', created_at: '2026-03-02T09:00:00Z' },
+    {
+      provider: 'email',
+      subject: null,
+      email: 'ada@acme.example',
+      created_at: '2026-03-02T09:00:00Z',
+    },
     {
       provider: 'github',
       subject: '4021733',
-      email: 'ada@acme.com',
+      email: 'ada@acme.example',
       created_at: '2026-03-05T09:00:00Z',
     },
   ],

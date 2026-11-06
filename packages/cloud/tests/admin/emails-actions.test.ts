@@ -188,11 +188,11 @@ describe('sendBroadcast', () => {
 describe('previewBroadcast', () => {
   it('asks the server for the rendered copy, as a user', async () => {
     answer(json(preview));
-    const r = await actions.previewBroadcast(ID, ' linus@acme.com ');
+    const r = await actions.previewBroadcast(ID, ' linus@acme.example ');
     expect(r).toEqual({ ok: true, preview });
     expect(calls()).toEqual([
       {
-        url: `/v1/admin/broadcasts/${ID}/preview?as_user=linus%40acme.com`,
+        url: `/v1/admin/broadcasts/${ID}/preview?as_user=linus%40acme.example`,
         method: 'GET',
         body: undefined,
       },

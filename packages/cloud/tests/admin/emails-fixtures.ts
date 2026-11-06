@@ -57,7 +57,7 @@ export const preview: Preview = {
 export function logRow(over: Partial<LogRow> = {}): LogRow {
   return {
     id: 'c0000000-0000-4000-8000-000000000001',
-    to: 'jane@globex.com',
+    to: 'jane@globex.example',
     subject: 'You’re invited',
     kind: 'customer_invite',
     status: 'sent',
@@ -76,7 +76,7 @@ export const logRows: LogRow[] = [
   logRow(),
   logRow({
     id: 'c0000000-0000-4000-8000-000000000002',
-    to: 'ada@acme.com',
+    to: 'ada@acme.example',
     kind: 'sign_in_code',
     subject: 'Your curl-runner sign-in code',
   }),
@@ -92,7 +92,7 @@ export const logRows: LogRow[] = [
   }),
   logRow({
     id: 'c0000000-0000-4000-8000-000000000004',
-    to: 'sam@umbrella.dev',
+    to: 'sam@umbrella.example',
     kind: 'broadcast',
     status: 'queued',
     sent_at: null,

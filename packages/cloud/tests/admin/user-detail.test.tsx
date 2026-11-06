@@ -45,7 +45,7 @@ describe('user detail, active', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Ada Lovelace' })).toBeInTheDocument();
     expect(screen.getByText('Active')).toBeInTheDocument();
     expect(
-      screen.getByText('ada@acme.com · joined Mar 2, 2026 · last active 6 minutes ago'),
+      screen.getByText('ada@acme.example · joined Mar 2, 2026 · last active 6 minutes ago'),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Madrid/)).toBeNull();
     for (const name of ['Email Ada', 'Sign out everywhere', 'Suspend']) {
@@ -82,10 +82,10 @@ describe('user detail, active', () => {
     const actions = show();
     const methods = card('Sign-in methods');
     const emailRow = within(methods).getByText('Email code').closest('li') as HTMLElement;
-    expect(emailRow).toHaveTextContent('ada@acme.com');
+    expect(emailRow).toHaveTextContent('ada@acme.example');
     expect(within(emailRow).queryByRole('button')).toBeNull();
     const gh = within(methods).getByText('GitHub').closest('li') as HTMLElement;
-    expect(gh).toHaveTextContent('ada@acme.com · id 4021733');
+    expect(gh).toHaveTextContent('ada@acme.example · id 4021733');
     expect(methods).toHaveTextContent(
       'Unlinking makes the next GitHub sign-in create a new link by email again.',
     );
@@ -241,7 +241,7 @@ describe('delete user', () => {
     const dialog = await screen.findByRole('alertdialog');
     const confirm = within(dialog).getByRole('button', { name: 'Delete user' });
     expect(confirm).toBeDisabled();
-    await userEvent.type(within(dialog).getByRole('textbox'), 'ada@acme.com');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'ada@acme.example');
     await userEvent.click(confirm);
     await waitFor(() => expect(actions.remove).toHaveBeenCalledWith(ADA));
   });
@@ -255,7 +255,7 @@ describe('delete user', () => {
     const zone = card('Delete user');
     await userEvent.click(within(zone).getByRole('button', { name: 'Delete Ada…' }));
     const dialog = await screen.findByRole('alertdialog');
-    await userEvent.type(within(dialog).getByRole('textbox'), 'ada@acme.com');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'ada@acme.example');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Delete user' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(within(card('Delete user')).getByText(message)).toBeInTheDocument();
@@ -274,7 +274,7 @@ describe('email dialog', () => {
     await waitFor(() =>
       expect(actions.email).toHaveBeenCalledWith(ADA, 'About your account', 'Hello **Ada**'),
     );
-    expect(await screen.findByText('Email queued for ada@acme.com.')).toBeInTheDocument();
+    expect(await screen.findByText('Email queued for ada@acme.example.')).toBeInTheDocument();
   });
 });
 

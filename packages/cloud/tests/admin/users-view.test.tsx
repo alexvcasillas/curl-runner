@@ -62,12 +62,12 @@ describe('users list', () => {
     show();
     const table = screen.getByRole('table', { name: 'Users' });
     const ada = within(table).getByRole('row', { name: /Ada Lovelace/ });
-    expect(ada).toHaveTextContent('ada@acme.com');
+    expect(ada).toHaveTextContent('ada@acme.example');
     expect(ada).toHaveTextContent('Email · GitHub');
     expect(ada).toHaveTextContent('Acme (owner), Globex Partners');
     expect(ada).toHaveTextContent('6 minutes ago');
     expect(ada).toHaveTextContent('Active');
-    const jane = within(table).getByRole('row', { name: /jane@globex.com/ });
+    const jane = within(table).getByRole('row', { name: /jane@globex.example/ });
     expect(jane).toHaveTextContent('None');
     expect(jane).toHaveTextContent('Suspended');
     expect(jane).toHaveTextContent('Never');
@@ -234,7 +234,7 @@ describe('row actions', () => {
 
   it('offers to lift a suspension instead of suspending', async () => {
     const actions = show();
-    const menu = await openMenu('jane@globex.com');
+    const menu = await openMenu('jane@globex.example');
     expect(within(menu).queryByRole('menuitem', { name: 'Suspend…' })).toBeNull();
     await userEvent.click(within(menu).getByRole('menuitem', { name: 'Lift suspension' }));
     const dialog = await screen.findByRole('alertdialog');
@@ -268,7 +268,7 @@ describe('row actions', () => {
     const dialog = await screen.findByRole('alertdialog');
     const confirm = within(dialog).getByRole('button', { name: 'Delete user' });
     expect(confirm).toBeDisabled();
-    await userEvent.type(within(dialog).getByRole('textbox'), 'linus@acme.com');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'linus@acme.example');
     await userEvent.click(confirm);
     expect(await within(dialog).findByText(/only owner of Acme/)).toBeInTheDocument();
     expect(actions.remove).toHaveBeenCalledWith(LINUS);
@@ -283,7 +283,7 @@ describe('row actions', () => {
     await userEvent.type(within(dialog).getByLabelText('Message'), 'Hi **there**');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Send email' }));
     await waitFor(() => expect(actions.email).toHaveBeenCalledWith(LINUS, 'Hello', 'Hi **there**'));
-    expect(await screen.findByText('Email queued for linus@acme.com.')).toBeInTheDocument();
+    expect(await screen.findByText('Email queued for linus@acme.example.')).toBeInTheDocument();
   });
 });
 

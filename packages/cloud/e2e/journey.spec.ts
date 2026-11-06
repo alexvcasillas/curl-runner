@@ -2,7 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 
 // The stack under test. CI and the local recipe start it before the run:
 //   DATABASE_URL  Postgres the API uses. The test reads the sign-in code from it with `psql`.
@@ -31,6 +31,18 @@ async function signInCode(email: string): Promise<string> {
     await new Promise((r) => setTimeout(r, 250));
   }
   throw new Error(`No sign-in code for ${email} in outbox_emails.`);
+}
+
+/** Signs `email` in through the email-code form, reading the code the way the journey does. */
+async function signInWithEmail(page: Page, email: string) {
+  await page.goto('/sign-in');
+  await page.getByLabel('Email').fill(email);
+  await page.getByRole('button', { name: 'Email me a code' }).click();
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+  const code = await signInCode(email);
+  await page.getByLabel('Digit 1 of 6').fill(code);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page).toHaveURL(/\/new-team/);
 }
 
 function fixture(extra = false): string {
@@ -84,16 +96,9 @@ test('sign in, create a team, publish, share, and open the link', async ({ page,
   const email = OWNER_EMAIL;
 
   // 1. Sign in by email.
-  await page.goto('/sign-in');
-  await page.getByLabel('Email').fill(email);
-  await page.getByRole('button', { name: 'Email me a code' }).click();
-  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
-  const code = await signInCode(email);
-  await page.getByLabel('Digit 1 of 6').fill(code);
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await signInWithEmail(page, email);
 
   // 2. Create team acme.
-  await expect(page).toHaveURL(/\/new-team/);
   await page.getByLabel('Team name').fill('Acme');
   await page.getByLabel('Slug').fill('acme');
   await page.getByRole('button', { name: 'Create team' }).click();
@@ -174,6 +179,13 @@ test('sign in, create a team, publish, share, and open the link', async ({ page,
   const gone = await stranger.newPage();
   const goneRes = await gone.goto(new URL(shareLink).pathname);
   expect(goneRes?.status()).toBe(404);
+
+  // 11b. A signed-in user who isn't an admin gets a 404 for the admin panel and its search.
+  await signInWithEmail(gone, 'e2e-stranger@example.com');
+  const denied = await gone.goto('/admin');
+  expect(denied?.status()).toBe(404);
+  const deniedSearch = await gone.request.get('/admin/search?q=');
+  expect(deniedSearch.status()).toBe(404);
   await stranger.close();
 
   // 12. Pause publishing. The CLI gets the paused message and a non-zero exit.

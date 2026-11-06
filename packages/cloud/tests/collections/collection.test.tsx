@@ -70,7 +70,7 @@ const versions = [
     number: 13,
     hash: 'h13',
     published_at: '2026-11-04T17:40:00Z',
-    publisher: 'grace@acme.com',
+    publisher: 'grace@acme.example',
     git: {
       commit: 'a81d07e5c2',
       ref: 'release/2.3',
@@ -82,7 +82,7 @@ const versions = [
     number: 12,
     hash: 'h12',
     published_at: '2026-11-02T09:15:00Z',
-    publisher: 'ada@acme.com',
+    publisher: 'ada@acme.example',
     git: null,
     file_count: 11,
   },

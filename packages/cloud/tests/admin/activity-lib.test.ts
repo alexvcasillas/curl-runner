@@ -102,12 +102,12 @@ describe('detailPairs', () => {
       detailPairs({
         section: 'signup',
         from: { mode: 'closed', domains: [] },
-        to: { mode: 'domains', domains: ['acme.com', 'globex.com'] },
+        to: { mode: 'domains', domains: ['acme.example', 'globex.example'] },
       }),
     ).toEqual([
       ['Section', 'signup'],
       ['Mode', 'closed → domains'],
-      ['Domains', 'None → acme.com, globex.com'],
+      ['Domains', 'None → acme.example, globex.example'],
     ]);
   });
 

@@ -110,7 +110,7 @@ describe('Paying via Stripe', () => {
       'href',
       `/admin/users/${ADA}`,
     );
-    expect(members).toHaveTextContent('dana@acme.com');
+    expect(members).toHaveTextContent('dana@acme.example');
     expect(members).toHaveTextContent('Pending invite · expires Nov 10');
     const cols = card('Collections');
     expect(cols).toHaveTextContent('Payments API');
@@ -252,7 +252,7 @@ describe('Override active', () => {
     const plan = card('Plan');
     expect(plan).toHaveTextContent('Team until Mar 31, 2027');
     expect(plan).toHaveTextContent(
-      '“Design partner, pilot until the end of Q1” · granted by alex@curl-runner.com on Nov 5',
+      '“Design partner, pilot until the end of Q1” · granted by alex@example.com on Nov 5',
     );
     expect(plan).toHaveTextContent(
       'Owners get an email 14 days before it ends. Then the team goes back to Stripe or Free.',
@@ -325,7 +325,7 @@ describe('Free team and suspended team', () => {
     const actions = show(suspended);
     const banner = screen.getByRole('alert');
     expect(banner).toHaveTextContent(
-      'Suspended by rosa@curl-runner.com on Oct 29: “Phishing pages in shared collections”.',
+      'Suspended by rosa@example.com on Oct 29: “Phishing pages in shared collections”.',
     );
     expect(banner).toHaveTextContent(
       'Publishing is refused, share links show “no longer works”, and members see a notice to contact support.',

@@ -59,11 +59,11 @@ function setup(over: Partial<React.ComponentProps<typeof AccountView>> = {}) {
   render(
     <ToastProvider>
       <AccountView
-        email="ada@acme.com"
+        email="ada@acme.example"
         name="Ada Lovelace"
         providers={[
-          { provider: 'email', detail: 'ada@acme.com', linked: true },
-          { provider: 'github', detail: 'Linked Oct 2 with ada@acme.com', linked: true },
+          { provider: 'email', detail: 'ada@acme.example', linked: true },
+          { provider: 'github', detail: 'Linked Oct 2 with ada@acme.example', linked: true },
           { provider: 'google', detail: 'Not linked.', linked: false },
         ]}
         sessions={sessions}
@@ -91,7 +91,7 @@ describe('AccountView', () => {
   it('shows who you are', () => {
     setup();
     expect(screen.getByRole('heading', { name: 'Ada Lovelace' })).toBeInTheDocument();
-    expect(screen.getAllByText('ada@acme.com').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('ada@acme.example').length).toBeGreaterThan(0);
   });
 
   it('lists the email, linked providers and the unlinked one', () => {

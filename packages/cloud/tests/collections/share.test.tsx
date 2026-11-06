@@ -218,9 +218,9 @@ describe('SharePanel', () => {
       mk({
         access: 'restricted',
         entries: [
-          entry('jane@globex.com', true),
-          entry('*@initech.com', true),
-          entry('sam@umbrella.dev'),
+          entry('jane@globex.example', true),
+          entry('*@initech.example', true),
+          entry('sam@umbrella.example'),
         ],
       });
 
@@ -230,7 +230,7 @@ describe('SharePanel', () => {
       expect(rows).toHaveLength(3);
       expect(within(rows[0]).getByText('Email')).toBeInTheDocument();
       expect(within(rows[0]).getByText('Opened')).toBeInTheDocument();
-      expect(within(rows[1]).getByText('Domain · anyone at initech.com')).toBeInTheDocument();
+      expect(within(rows[1]).getByText('Domain · anyone at initech.example')).toBeInTheDocument();
       expect(within(rows[2]).getByText('Invited · not opened')).toBeInTheDocument();
     });
 
@@ -286,14 +286,16 @@ describe('SharePanel', () => {
 
     it('confirms before removing', async () => {
       const { user, onRemove } = setup(restricted());
-      await user.click(screen.getByRole('button', { name: 'Remove sam@umbrella.dev' }));
+      await user.click(screen.getByRole('button', { name: 'Remove sam@umbrella.example' }));
       const dialog = await screen.findByRole('alertdialog');
-      expect(dialog).toHaveTextContent('Remove sam@umbrella.dev?');
+      expect(dialog).toHaveTextContent('Remove sam@umbrella.example?');
       expect(dialog).toHaveTextContent('Their local copy stays on their machine.');
       expect(onRemove).not.toHaveBeenCalled();
       await user.click(within(dialog).getByRole('button', { name: 'Remove access' }));
-      expect(onRemove).toHaveBeenCalledWith('sam@umbrella.dev');
-      await waitFor(() => expect(screen.queryByText('sam@umbrella.dev')).not.toBeInTheDocument());
+      expect(onRemove).toHaveBeenCalledWith('sam@umbrella.example');
+      await waitFor(() =>
+        expect(screen.queryByText('sam@umbrella.example')).not.toBeInTheDocument(),
+      );
     });
   });
 });

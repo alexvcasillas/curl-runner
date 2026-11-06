@@ -46,7 +46,7 @@ describe('delivery log', () => {
     for (const h of ['Queued', 'To', 'Email', 'Status', 'Detail']) {
       expect(within(table).getByRole('columnheader', { name: h })).toBeInTheDocument();
     }
-    const invite = within(table).getByRole('row', { name: /jane@globex.com/ });
+    const invite = within(table).getByRole('row', { name: /jane@globex.example/ });
     expect(invite).toHaveTextContent('13:04:12');
     expect(invite).toHaveTextContent('Customer invite');
     expect(invite).toHaveTextContent('Sent');
@@ -54,7 +54,7 @@ describe('delivery log', () => {
     expect(failed).toHaveTextContent('Payment failed');
     expect(failed).toHaveTextContent('Failed');
     expect(failed).toHaveTextContent('550 Mailbox does not exist');
-    const waiting = within(table).getByRole('row', { name: /sam@umbrella.dev/ });
+    const waiting = within(table).getByRole('row', { name: /sam@umbrella.example/ });
     expect(waiting).toHaveTextContent('Waiting');
     expect(waiting).toHaveTextContent('Attempt 2 of 8 failed');
     // Retry is not built.
@@ -63,7 +63,7 @@ describe('delivery log', () => {
 
   it('shows the subject the server sends, which hides sign-in codes', () => {
     show();
-    const row = screen.getByRole('row', { name: /ada@acme.com/ });
+    const row = screen.getByRole('row', { name: /ada@acme.example/ });
     expect(row).toHaveTextContent('Sign-in code');
     expect(row).toHaveTextContent('Your curl-runner sign-in code');
     expect(row).not.toHaveTextContent(/\b\d{6}\b/);

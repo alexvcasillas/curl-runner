@@ -32,22 +32,27 @@ const { MembersView } = await import('@/components/MembersView');
 const actions = await import('@/app/(app)/t/[team]/members/actions');
 const { resetEnv } = await import('@/lib/env');
 
-const ADA = { user_id: 'u1', email: 'ada@acme.com', name: 'Ada Lovelace', role: 'owner' as const };
+const ADA = {
+  user_id: 'u1',
+  email: 'ada@acme.example',
+  name: 'Ada Lovelace',
+  role: 'owner' as const,
+};
 const GRACE = {
   user_id: 'u2',
-  email: 'grace@acme.com',
+  email: 'grace@acme.example',
   name: 'Grace Hopper',
   role: 'owner' as const,
 };
 const LINUS = {
   user_id: 'u3',
-  email: 'linus@acme.com',
+  email: 'linus@acme.example',
   name: 'Linus Torvalds',
   role: 'member' as const,
 };
 const INVITE = {
   id: '3f2b8a52-8f2d-4a3e-9f53-0e2d2f5a7c11',
-  email: 'dana@acme.com',
+  email: 'dana@acme.example',
   role: 'member' as const,
   expires: 'Expires in 5 days',
 };
@@ -67,7 +72,7 @@ function setup(over: Partial<Props> = {}) {
     <MembersView
       team="acme"
       teamName="Acme"
-      me={{ id: 'u1', email: 'ada@acme.com' }}
+      me={{ id: 'u1', email: 'ada@acme.example' }}
       owner
       plan="team"
       billing
@@ -85,7 +90,7 @@ describe('MembersView, owner', () => {
   it('lists members with roles and the seat note', () => {
     setup();
     expect(screen.getByText('Linus Torvalds')).toBeInTheDocument();
-    expect(screen.getByText('linus@acme.com')).toBeInTheDocument();
+    expect(screen.getByText('linus@acme.example')).toBeInTheDocument();
     expect(screen.getByText('(you)')).toBeInTheDocument();
     expect(
       screen.getByText('3 members on the Team plan, billed per member. Customers are never seats.'),
@@ -101,22 +106,22 @@ describe('MembersView, owner', () => {
 
   it('invites with an email and a role', async () => {
     const { user, onInvite } = setup();
-    await user.type(screen.getByLabelText('Email address'), ' Linus2@Acme.com ');
+    await user.type(screen.getByLabelText('Email address'), ' Linus2@Acme.example ');
     await user.selectOptions(screen.getByLabelText('Role'), 'owner');
     await user.click(screen.getByRole('button', { name: 'Send invite' }));
-    expect(onInvite).toHaveBeenCalledWith('linus2@acme.com', 'owner');
+    expect(onInvite).toHaveBeenCalledWith('linus2@acme.example', 'owner');
     expect(await screen.findByRole('status')).toHaveTextContent(
-      'Invite sent to linus2@acme.com. The link works for 7 days.',
+      'Invite sent to linus2@acme.example. The link works for 7 days.',
     );
     expect(screen.getByLabelText('Email address')).toHaveValue('');
   });
 
   it('says so without calling the API when the email is already a member', async () => {
     const { user, onInvite } = setup();
-    await user.type(screen.getByLabelText('Email address'), 'grace@acme.com');
+    await user.type(screen.getByLabelText('Email address'), 'grace@acme.example');
     await user.click(screen.getByRole('button', { name: 'Send invite' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'grace@acme.com is already a member of Acme.',
+      'grace@acme.example is already a member of Acme.',
     );
     expect(onInvite).not.toHaveBeenCalled();
   });
@@ -137,7 +142,7 @@ describe('MembersView, owner', () => {
         code: 'plan_limit' as const,
       })),
     });
-    await user.type(screen.getByLabelText('Email address'), 'new@acme.com');
+    await user.type(screen.getByLabelText('Email address'), 'new@acme.example');
     await user.click(screen.getByRole('button', { name: 'Send invite' }));
     const note = await screen.findByRole('status');
     expect(note).toHaveTextContent(
@@ -158,7 +163,7 @@ describe('MembersView, owner', () => {
         code: 'plan_limit' as const,
       })),
     });
-    await user.type(screen.getByLabelText('Email address'), 'new@acme.com');
+    await user.type(screen.getByLabelText('Email address'), 'new@acme.example');
     await user.click(screen.getByRole('button', { name: 'Send invite' }));
     const note = await screen.findByRole('status');
     expect(note).toHaveTextContent('The Free plan allows 3 members, counting pending invites.');
@@ -186,9 +191,9 @@ describe('MembersView, owner', () => {
   it('lists pending invites and cancels one behind a confirm', async () => {
     const { user, onCancel } = setup();
     expect(screen.getByText('Expires in 5 days')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Cancel invite to dana@acme.com' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel invite to dana@acme.example' }));
     const dialog = await screen.findByRole('alertdialog', {
-      name: 'Cancel the invite to dana@acme.com?',
+      name: 'Cancel the invite to dana@acme.example?',
     });
     expect(dialog).toHaveTextContent('The link in their email stops working.');
     await user.click(within(dialog).getByRole('button', { name: 'Cancel invite' }));
@@ -197,7 +202,7 @@ describe('MembersView, owner', () => {
 
   it('keeps an invite on Keep invite', async () => {
     const { user, onCancel } = setup();
-    await user.click(screen.getByRole('button', { name: 'Cancel invite to dana@acme.com' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel invite to dana@acme.example' }));
     const dialog = await screen.findByRole('alertdialog');
     await user.click(within(dialog).getByRole('button', { name: 'Keep invite' }));
     expect(onCancel).not.toHaveBeenCalled();
@@ -253,7 +258,7 @@ describe('MembersView, owner', () => {
     const { user, onLeave } = setup();
     await user.click(screen.getByRole('button', { name: 'Leave team' }));
     const dialog = await screen.findByRole('alertdialog', { name: 'Leave Acme?' });
-    expect(dialog).toHaveTextContent('Collections shared with ada@acme.com still open for you');
+    expect(dialog).toHaveTextContent('Collections shared with ada@acme.example still open for you');
     await user.click(within(dialog).getByRole('button', { name: 'Leave team' }));
     expect(onLeave).toHaveBeenCalled();
   });
@@ -288,7 +293,7 @@ describe('MembersView, owner', () => {
 
 describe('MembersView, member', () => {
   const asLinus = {
-    me: { id: 'u3', email: 'linus@acme.com' },
+    me: { id: 'u3', email: 'linus@acme.example' },
     owner: false,
   };
 
@@ -381,7 +386,7 @@ describe('member actions', () => {
     fetchMock
       .mockResolvedValueOnce(
         json(200, {
-          user: { id: 'u1', email: 'ada@acme.com', name: null },
+          user: { id: 'u1', email: 'ada@acme.example', name: null },
           teams: [{ slug: 'acme', name: 'Acme', role: 'member', plan: 'free' }],
           admin: false,
         }),
@@ -396,7 +401,7 @@ describe('member actions', () => {
     fetchMock
       .mockResolvedValueOnce(
         json(200, {
-          user: { id: 'u1', email: 'ada@acme.com', name: null },
+          user: { id: 'u1', email: 'ada@acme.example', name: null },
           teams: [{ slug: 'acme', name: 'Acme', role: 'owner', plan: 'free' }],
           admin: false,
         }),
@@ -417,7 +422,7 @@ describe('member actions', () => {
   it('rejects inputs the page never sends, without calling the API', async () => {
     const bad = [
       actions.inviteMember('acme', 'nope', 'member'),
-      actions.inviteMember('acme', '*@acme.com', 'member'),
+      actions.inviteMember('acme', '*@acme.example', 'member'),
       actions.inviteMember('acme', 'a@b.com', 'admin' as never),
       actions.inviteMember('Bad Slug', 'a@b.com', 'member'),
       actions.changeRole('acme', '../x', 'owner'),

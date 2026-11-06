@@ -34,7 +34,7 @@ describe('teams list', () => {
     const table = screen.getByRole('table', { name: 'Teams' });
     const acme = within(table).getByRole('row', { name: /Acme/ });
     expect(acme).toHaveTextContent('acme · since Mar 2');
-    expect(acme).toHaveTextContent('ada@acme.com');
+    expect(acme).toHaveTextContent('ada@acme.example');
     expect(acme).toHaveTextContent('Team');
     expect(acme).toHaveTextContent('Stripe · annual');
     expect(acme).toHaveTextContent('$24');

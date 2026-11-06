@@ -91,7 +91,7 @@ describe('Shell', () => {
         <p>page</p>
       </Shell>,
     );
-    await user.click(screen.getByRole('button', { name: 'Account menu for ada@acme.com' }));
+    await user.click(screen.getByRole('button', { name: 'Account menu for ada@acme.example' }));
     const menu = screen.getByRole('menu', { name: 'Account' });
     expect(within(menu).queryByRole('menuitem', { name: 'Admin' })).toBeNull();
     const form = document.getElementById('sign-out') as HTMLFormElement;
@@ -108,7 +108,7 @@ describe('Shell', () => {
         <p>page</p>
       </Shell>,
     );
-    await user.click(screen.getByRole('button', { name: 'Account menu for ada@acme.com' }));
+    await user.click(screen.getByRole('button', { name: 'Account menu for ada@acme.example' }));
     expect(screen.getByRole('menuitem', { name: 'Admin' })).toHaveAttribute('href', '/admin');
   });
 });

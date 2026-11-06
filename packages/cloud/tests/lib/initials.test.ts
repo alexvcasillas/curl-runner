@@ -6,8 +6,8 @@ describe('initials', () => {
     ['Ada Lovelace', 'AL'],
     ['Linus Benedict Torvalds', 'LT'],
     ['Ada', 'A'],
-    ['jane@globex.com', 'JG'],
-    ['grace.hopper@acme.com', 'GH'],
+    ['jane@globex.example', 'JG'],
+    ['grace.hopper@acme.example', 'GH'],
     ['  ', '?'],
   ])('%j → %s', (input, out) => {
     expect(initials(input)).toBe(out);

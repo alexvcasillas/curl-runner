@@ -10,7 +10,7 @@ const base: TeamRow = {
   slug: 'acme',
   name: 'Acme',
   created_at: '2026-03-02T09:00:00Z',
-  owner: { email: 'ada@acme.com', name: 'Ada Lovelace' },
+  owner: { email: 'ada@acme.example', name: 'Ada Lovelace' },
   members: 3,
   collections: 4,
   plan: 'team',
@@ -30,7 +30,7 @@ export const rows: TeamRow[] = [
     ...base,
     slug: 'initech',
     name: 'Initech',
-    owner: { email: 'peter@initech.com', name: null },
+    owner: { email: 'peter@initech.example', name: null },
     past_due_since: '2026-11-01T12:00:00Z',
     mrr_cents: 7000,
   },
@@ -120,21 +120,21 @@ export const detail: TeamDetail = {
   members: [
     {
       user_id: ADA,
-      email: 'ada@acme.com',
+      email: 'ada@acme.example',
       name: 'Ada Lovelace',
       role: 'owner',
       joined_at: '2026-03-02T09:00:00Z',
     },
     {
       user_id: GRACE,
-      email: 'grace@acme.com',
+      email: 'grace@acme.example',
       name: 'Grace Hopper',
       role: 'owner',
       joined_at: '2026-03-03T09:00:00Z',
     },
     {
       user_id: LINUS,
-      email: 'linus@acme.com',
+      email: 'linus@acme.example',
       name: 'Linus Torvalds',
       role: 'member',
       joined_at: '2026-03-04T09:00:00Z',
@@ -143,7 +143,7 @@ export const detail: TeamDetail = {
   pending: [
     {
       id: 'p0000000-0000-4000-8000-000000000001',
-      email: 'dana@acme.com',
+      email: 'dana@acme.example',
       role: 'member',
       expires_at: '2026-11-10T09:00:00Z',
     },
@@ -179,7 +179,7 @@ export const granted: TeamDetail = {
     plan: 'team',
     until: '2027-03-31T23:59:59Z',
     reason: 'Design partner, pilot until the end of Q1',
-    by: 'alex@curl-runner.com',
+    by: 'alex@example.com',
     at: '2026-11-05T10:00:00Z',
     reminded_at: null,
     active: true,
@@ -205,6 +205,6 @@ export const suspended: TeamDetail = {
   suspension: {
     at: '2026-10-29T10:00:00Z',
     reason: 'Phishing pages in shared collections',
-    by: 'rosa@curl-runner.com',
+    by: 'rosa@example.com',
   },
 };

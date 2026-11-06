@@ -67,7 +67,7 @@ const collections = () => [
     access: 'restricted',
     current_version: 3,
     updated_at: '2026-11-04T10:00:00Z',
-    publisher: 'grace@acme.com',
+    publisher: 'grace@acme.example',
   },
   {
     slug: 'sandbox-tour',

@@ -182,11 +182,11 @@ describe('the preview', () => {
     const actions = show();
     await settle(500);
     actions.preview.mockClear();
-    await userEvent.type(screen.getByLabelText('Preview as'), 'linus@acme.com');
+    await userEvent.type(screen.getByLabelText('Preview as'), 'linus@acme.example');
     expect(actions.preview).not.toHaveBeenCalled();
     await settle(800);
     expect(actions.preview).toHaveBeenCalledTimes(1);
-    expect(actions.preview).toHaveBeenCalledWith(ID, 'linus@acme.com');
+    expect(actions.preview).toHaveBeenCalledWith(ID, 'linus@acme.example');
   });
 
   it('refreshes only once the edit is saved', async () => {

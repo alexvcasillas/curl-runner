@@ -38,7 +38,7 @@ import type { TeamTab } from '@/lib/routes';
 import type { Me } from '@/lib/types';
 
 const ME: Me = {
-  user: { id: 'u1', email: 'ada@acme.com', name: 'Ada Lovelace' },
+  user: { id: 'u1', email: 'ada@acme.example', name: 'Ada Lovelace' },
   teams: [
     { slug: 'acme', name: 'Acme', role: 'owner', plan: 'team', suspended: false },
     { slug: 'globex', name: 'Globex Partners', role: 'member', plan: 'free', suspended: false },
@@ -63,7 +63,7 @@ const ROWS = [
     access: 'restricted',
     version: 'v3',
     when: 'Yesterday',
-    by: 'grace@acme.com',
+    by: 'grace@acme.example',
   },
   {
     name: 'Sandbox tour',
@@ -72,7 +72,7 @@ const ROWS = [
     access: 'public',
     version: 'v27',
     when: '5 minutes ago',
-    by: 'ada@acme.com from the studio',
+    by: 'ada@acme.example from the studio',
   },
   {
     name: 'Internal admin',
@@ -241,7 +241,7 @@ export function KitDemo() {
             <Field
               label="Email"
               type="email"
-              placeholder="ada@acme.com"
+              placeholder="ada@acme.example"
               hint="We send them an invite."
             />
             <Field label="Error" defaultValue="acme" error="That team slug is already taken." />
@@ -319,7 +319,7 @@ export function KitDemo() {
 
         <Section id="k-co" title="Callouts">
           <Notice tone="info">Signing in for the curl-runner CLI.</Notice>
-          <Notice tone="ok">Invite sent to linus@acme.com.</Notice>
+          <Notice tone="ok">Invite sent to linus@acme.example.</Notice>
           <Notice tone="warn">The Free plan allows 3 members, counting pending invites.</Notice>
           <Notice tone="err">The old link stops working right away, for everyone.</Notice>
         </Section>
@@ -381,7 +381,7 @@ export function KitDemo() {
             <Avatar name="Ada Lovelace" />
             <Avatar kind="pending" />
             <Avatar kind="team" name="Acme" />
-            <Avatar name="jane@globex.com" size={28} />
+            <Avatar name="jane@globex.example" size={28} />
             <Avatar kind="team" name="Globex" size={22} active />
             <span className="text-[12px] text-fg-muted">Person · pending invite · team</span>
           </Row>
@@ -577,14 +577,19 @@ export function KitDemo() {
         open={dialog === 'access'}
         onClose={close}
         onConfirm={wait}
-        title="Remove jane@globex.com?"
+        title="Remove jane@globex.example?"
         description="They can’t open Payments API or get new versions after this."
         confirmLabel="Remove access"
       >
-        <Who initials="jane@globex.com" title="jane@globex.com" subtitle="Opened Nov 3" mono />
+        <Who
+          initials="jane@globex.example"
+          title="jane@globex.example"
+          subtitle="Opened Nov 3"
+          mono
+        />
         <p className="m-0 text-[12px] text-fg-subtle">
-          Their local copy stays on their machine. If <code>*@globex.com</code> is on the list too,
-          they still have access through it.
+          Their local copy stays on their machine. If <code>*@globex.example</code> is on the list
+          too, they still have access through it.
         </p>
       </ConfirmDialog>
       <ConfirmDialog
@@ -595,7 +600,11 @@ export function KitDemo() {
         description="They lose access to Acme’s collections and tokens straight away."
         confirmLabel="Remove member"
       >
-        <Who initials="Linus Torvalds" title="Linus Torvalds" subtitle="linus@acme.com · Member" />
+        <Who
+          initials="Linus Torvalds"
+          title="Linus Torvalds"
+          subtitle="linus@acme.example · Member"
+        />
         <p className="m-0 text-[12px] text-fg-subtle">
           Tokens they created keep working. Revoke them under Tokens if you need to. On the Team
           plan, the next invoice drops one seat.
@@ -605,12 +614,18 @@ export function KitDemo() {
         open={dialog === 'invite'}
         onClose={close}
         onConfirm={wait}
-        title="Cancel the invite to dana@acme.com?"
+        title="Cancel the invite to dana@acme.example?"
         description="The link in their email stops working. You can invite them again later."
         confirmLabel="Cancel invite"
         cancelLabel="Keep invite"
       >
-        <Who initials="" title="dana@acme.com" subtitle="Member · expires in 5 days" pending mono />
+        <Who
+          initials=""
+          title="dana@acme.example"
+          subtitle="Member · expires in 5 days"
+          pending
+          mono
+        />
       </ConfirmDialog>
       <ConfirmDialog
         open={dialog === 'leave'}
@@ -621,7 +636,7 @@ export function KitDemo() {
         confirmLabel="Leave team"
       >
         <p className="m-0 text-[12px] text-fg-subtle">
-          Collections shared with ada@acme.com still open for you, from Shared with me.
+          Collections shared with ada@acme.example still open for you, from Shared with me.
         </p>
       </ConfirmDialog>
       <Dialog

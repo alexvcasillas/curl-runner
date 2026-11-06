@@ -77,14 +77,16 @@ describe('the guard', () => {
 
 describe('saveSignup', () => {
   it('PUTs the mode and cleaned domains, then refreshes the page and the layout', async () => {
-    expect(await actions.saveSignup('domains', [' Acme.com ', 'acme.com', 'globex.com'])).toEqual({
+    expect(
+      await actions.saveSignup('domains', [' Acme.example ', 'acme.example', 'globex.example']),
+    ).toEqual({
       ok: true,
     });
     expect(calls()).toEqual([
       {
         url: '/v1/admin/settings/signup',
         method: 'PUT',
-        body: { mode: 'domains', domains: ['acme.com', 'globex.com'] },
+        body: { mode: 'domains', domains: ['acme.example', 'globex.example'] },
       },
     ]);
     expect(revalidatePath).toHaveBeenCalledWith('/admin/settings', undefined);

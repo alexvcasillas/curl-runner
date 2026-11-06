@@ -157,7 +157,7 @@ function AdminDialog({
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="marco@curl-runner.com"
+            placeholder="name@example.com"
             autoComplete="off"
             required
           />

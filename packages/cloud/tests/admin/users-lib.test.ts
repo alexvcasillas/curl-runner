@@ -81,7 +81,7 @@ describe('labels', () => {
 
   it('falls back from name to email', () => {
     expect(displayName(rows[0])).toBe('Ada Lovelace');
-    expect(displayName(rows[2])).toBe('jane@globex.com');
+    expect(displayName(rows[2])).toBe('jane@globex.example');
   });
 
   it('says a first name, else the start of the email', () => {

@@ -55,7 +55,7 @@ const TEAM = {
   name: 'Acme',
   plan: 'team',
   role: 'owner',
-  members: [{ user_id: 'u1', email: 'ada@acme.com', name: 'Ada Lovelace', role: 'owner' }],
+  members: [{ user_id: 'u1', email: 'ada@acme.example', name: 'Ada Lovelace', role: 'owner' }],
   pending_invites: [],
   suspended: false,
   suspended_at: null,

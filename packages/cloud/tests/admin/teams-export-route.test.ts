@@ -29,7 +29,7 @@ const call = (qs = '') => GET(new Request(`http://localhost:3000/admin/teams/exp
 describe('GET /admin/teams/export', () => {
   it('streams the API CSV with the session bearer, q and filter', async () => {
     fetchMock.mockResolvedValue(
-      new Response('email,name\r\nada@acme.com,Ada\r\n', {
+      new Response('email,name\r\nada@acme.example,Ada\r\n', {
         status: 200,
         headers: {
           'content-type': 'text/csv; charset=utf-8',
@@ -45,7 +45,7 @@ describe('GET /admin/teams/export', () => {
     );
     expect(res.headers.get('cache-control')).toBe('no-store');
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
-    expect(await res.text()).toContain('ada@acme.com');
+    expect(await res.text()).toContain('ada@acme.example');
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toBe('http://api.test/v1/admin/teams.csv?q=ada&filter=suspended');
     expect(new Headers(init.headers).get('authorization')).toBe('Bearer crs_ok');

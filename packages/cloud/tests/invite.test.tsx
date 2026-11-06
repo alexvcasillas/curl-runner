@@ -45,7 +45,7 @@ const preview = {
   team_slug: 'acme',
   inviter_name: 'Grace Hopper',
   role: 'member',
-  email: 'ada@acme.com',
+  email: 'ada@acme.example',
   expires_at: new Date(Date.now() + 5 * 86_400_000 + 3_600_000).toISOString(),
 };
 const me = (email: string) =>
@@ -84,7 +84,7 @@ describe('/invites/[token], signed out', () => {
       screen.getByRole('heading', { level: 1, name: 'Join Acme on curl-runner Cloud' }),
     ).toBeInTheDocument();
     expect(screen.getByText('Grace Hopper')).toBeInTheDocument();
-    expect(screen.getAllByText('ada@acme.com').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('ada@acme.example').length).toBeGreaterThan(0);
     expect(
       screen.getByText(/Members publish, share collections and make tokens/),
     ).toBeInTheDocument();
@@ -94,14 +94,14 @@ describe('/invites/[token], signed out', () => {
       `/sign-in?return_to=${encodeURIComponent(`/invites/${TOKEN}`)}`,
     );
     expect(
-      screen.getByText(/Sign in with ada@acme.com, or any account you use/),
+      screen.getByText(/Sign in with ada@acme.example, or any account you use/),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Join Acme/ })).toBeNull();
   });
 
   it('loads the preview without a session', async () => {
     jar.current = cookieJar({ cr_session: 'crs_x' });
-    routes({ [PREVIEW]: () => json(200, preview), 'GET /v1/me': () => me('ada@acme.com') });
+    routes({ [PREVIEW]: () => json(200, preview), 'GET /v1/me': () => me('ada@acme.example') });
     await Invite.default(params());
     const call = fetchMock.mock.calls.find(([u]) => String(u).includes('/v1/invites/'));
     expect(call?.[1].headers.get('authorization')).toBeNull();
@@ -114,10 +114,10 @@ describe('/invites/[token], signed in', () => {
   });
 
   it('offers Join, shows who is signed in and a way to switch', async () => {
-    routes({ [PREVIEW]: () => json(200, preview), 'GET /v1/me': () => me('ada@acme.com') });
+    routes({ [PREVIEW]: () => json(200, preview), 'GET /v1/me': () => me('ada@acme.example') });
     render(await Invite.default(params()));
     expect(screen.getByRole('button', { name: 'Join Acme' })).toBeEnabled();
-    expect(screen.getByText('Signed in as ada@acme.com')).toBeInTheDocument();
+    expect(screen.getByText('Signed in as ada@acme.example')).toBeInTheDocument();
     const form = screen.getByRole('button', { name: 'Use another account' }).closest('form');
     expect(form).toHaveAttribute(
       'action',
@@ -131,7 +131,7 @@ describe('/invites/[token], signed in', () => {
     render(await Invite.default(params()));
     expect(
       screen.getByText(
-        /This invite was sent to ada@acme.com, and you’re signed in as ada@gmail.com/,
+        /This invite was sent to ada@acme.example, and you’re signed in as ada@gmail.com/,
       ),
     ).toBeInTheDocument();
     expect(screen.getByText(/Joining adds ada@gmail.com to Acme/)).toBeInTheDocument();
@@ -139,14 +139,14 @@ describe('/invites/[token], signed in', () => {
   });
 
   it('does not warn when the emails differ only by case', async () => {
-    routes({ [PREVIEW]: () => json(200, preview), 'GET /v1/me': () => me('Ada@Acme.com') });
+    routes({ [PREVIEW]: () => json(200, preview), 'GET /v1/me': () => me('Ada@Acme.example') });
     render(await Invite.default(params()));
     expect(screen.queryByText(/Joining adds/)).toBeNull();
   });
 
   it('shows Joining… while the accept runs, then lands on the team', async () => {
     const user = userEvent.setup();
-    routes({ [PREVIEW]: () => json(200, preview), 'GET /v1/me': () => me('ada@acme.com') });
+    routes({ [PREVIEW]: () => json(200, preview), 'GET /v1/me': () => me('ada@acme.example') });
     const onJoin = vi.fn(() => new Promise<never>(() => {}));
     const { InviteCard } = await import('@/components/InviteCard');
     render(
@@ -154,9 +154,9 @@ describe('/invites/[token], signed in', () => {
         teamName="Acme"
         inviter="Grace Hopper"
         joinAs="member"
-        email="ada@acme.com"
+        email="ada@acme.example"
         expires="Expires in 5 days"
-        viewer={{ email: 'ada@acme.com' }}
+        viewer={{ email: 'ada@acme.example' }}
         returnTo={`/invites/${TOKEN}`}
         onJoin={onJoin}
       />,
@@ -174,9 +174,9 @@ describe('/invites/[token], signed in', () => {
         teamName="Acme"
         inviter="Grace Hopper"
         joinAs="member"
-        email="ada@acme.com"
+        email="ada@acme.example"
         expires="Expires in 5 days"
-        viewer={{ email: 'ada@acme.com' }}
+        viewer={{ email: 'ada@acme.example' }}
         returnTo={`/invites/${TOKEN}`}
         onJoin={async () => ({ ok: false, code: 'plan_limit', message: 'x' })}
       />,
@@ -196,9 +196,9 @@ describe('/invites/[token], signed in', () => {
         teamName="Acme"
         inviter={null}
         joinAs="owner"
-        email="ada@acme.com"
+        email="ada@acme.example"
         expires="Expires soon"
-        viewer={{ email: 'ada@acme.com' }}
+        viewer={{ email: 'ada@acme.example' }}
         returnTo="/invites/x"
         onJoin={async () => ({ ok: false, code: 'unavailable', message: 'Cloud isn’t answering.' })}
       />,

@@ -51,15 +51,15 @@ describe('sign-up', () => {
   });
 
   it('adds and removes chips, then saves only this section', async () => {
-    const a = show({ signup_mode: 'domains', signup_domains: ['acme.com'] });
-    expect(screen.getByRole('button', { name: 'Remove acme.com' })).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText('Add a domain'), ' Globex.com{Enter}');
-    expect(screen.getByRole('button', { name: 'Remove globex.com' })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Remove acme.com' }));
+    const a = show({ signup_mode: 'domains', signup_domains: ['acme.example'] });
+    expect(screen.getByRole('button', { name: 'Remove acme.example' })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Add a domain'), ' Globex.example{Enter}');
+    expect(screen.getByRole('button', { name: 'Remove globex.example' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Remove acme.example' }));
     await userEvent.click(
       within(section('Who can create teams')).getByRole('button', { name: 'Save' }),
     );
-    await waitFor(() => expect(a.signup).toHaveBeenCalledWith('domains', ['globex.com']));
+    await waitFor(() => expect(a.signup).toHaveBeenCalledWith('domains', ['globex.example']));
     expect(a.plans).not.toHaveBeenCalled();
     expect(a.banner).not.toHaveBeenCalled();
     expect(await screen.findByText(/Sign-up settings saved/)).toBeInTheDocument();
