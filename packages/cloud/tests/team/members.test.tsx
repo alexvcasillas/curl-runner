@@ -263,16 +263,9 @@ describe('MembersView, owner', () => {
     expect(onLeave).toHaveBeenCalled();
   });
 
-  it('tells the only owner to make someone else an owner first', async () => {
-    const { user, onLeave } = setup({ members: [ADA, LINUS] });
-    await user.click(screen.getByRole('button', { name: 'Leave team' }));
-    const dialog = await screen.findByRole('alertdialog', {
-      name: 'Make someone else an owner first',
-    });
-    expect(dialog).toHaveTextContent(
-      'A team needs at least one owner, and you’re the only one in Acme.',
-    );
-    expect(onLeave).not.toHaveBeenCalled();
+  it('offers the only owner no Leave team', () => {
+    setup({ members: [ADA, LINUS] });
+    expect(screen.queryByRole('button', { name: 'Leave team' })).not.toBeInTheDocument();
   });
 
   it('shows the API message when leaving is refused', async () => {

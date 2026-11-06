@@ -348,7 +348,6 @@ export function AccountView({
           onClose={() => setLeaving(null)}
           teamName={leaving.name}
           email={email}
-          soleOwner={false}
           onLeave={() => onLeave(leaving.slug)}
         />
       ) : null}

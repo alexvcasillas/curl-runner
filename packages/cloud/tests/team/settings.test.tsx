@@ -142,13 +142,13 @@ describe('TeamSettings, leave', () => {
     expect(onLeave).toHaveBeenCalled();
   });
 
-  it('sends the only owner to Members', async () => {
-    const { user } = setup({ soleOwner: true });
-    await user.click(screen.getByRole('button', { name: 'Leave team' }));
-    const dialog = await screen.findByRole('alertdialog', {
-      name: 'Make someone else an owner first',
-    });
-    expect(within(dialog).getByRole('link', { name: 'Go to members' })).toHaveAttribute(
+  it('sends the only owner to Members instead of offering Leave team', () => {
+    setup({ soleOwner: true });
+    expect(screen.queryByRole('button', { name: 'Leave team' })).not.toBeInTheDocument();
+    expect(
+      screen.getByText('You’re the only owner. Make someone else an owner before you leave.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Go to members' })).toHaveAttribute(
       'href',
       '/t/acme/members',
     );
