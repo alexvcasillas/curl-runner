@@ -12,11 +12,11 @@ import {
   activityExportHref,
   activityHref,
   detailPairs,
-  FIRST_PAGE,
   SINCE_OPTIONS,
   type Since,
   utcStamp,
 } from '@/lib/admin-activity';
+import { nextPage, previousPage } from '@/lib/admin-paging';
 import { Button } from '../Button';
 import { ButtonLink } from '../ButtonLink';
 import { buttonClasses } from '../button-styles';
@@ -78,7 +78,6 @@ export function ActivityView({
   const items = page.items;
   const start = trail.length * pageSize + 1;
   const end = start + items.length - 1;
-  const last = trail[trail.length - 1];
 
   return (
     <>
@@ -142,8 +141,7 @@ export function ActivityView({
                     size="sm"
                     href={activityHref({
                       ...filters,
-                      cursor: last === FIRST_PAGE ? undefined : last,
-                      trail: trail.slice(0, -1),
+                      ...previousPage(trail),
                     })}
                   >
                     Previous
@@ -158,8 +156,7 @@ export function ActivityView({
                     size="sm"
                     href={activityHref({
                       ...filters,
-                      cursor: page.next_cursor,
-                      trail: [...trail, cursor ?? FIRST_PAGE],
+                      ...nextPage(trail, cursor, page.next_cursor),
                     })}
                   >
                     Next

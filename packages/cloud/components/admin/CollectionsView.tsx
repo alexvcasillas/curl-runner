@@ -14,9 +14,8 @@ import {
   collectionsExportHref,
   collectionsHref,
   formatBytes,
-  previousCursor,
 } from '@/lib/admin-collections';
-import { FIRST_PAGE } from '@/lib/admin-teams';
+import { nextPage, previousPage } from '@/lib/admin-paging';
 import { relativeTime } from '@/lib/time';
 import { Button } from '../Button';
 import { ButtonLink } from '../ButtonLink';
@@ -209,8 +208,7 @@ export function CollectionsView({
                     href={collectionsHref({
                       q,
                       filter,
-                      cursor: previousCursor(trail),
-                      trail: trail.slice(0, -1),
+                      ...previousPage(trail),
                     })}
                   >
                     Previous
@@ -226,8 +224,7 @@ export function CollectionsView({
                     href={collectionsHref({
                       q,
                       filter,
-                      cursor: page.next_cursor,
-                      trail: [...trail, cursor ?? FIRST_PAGE],
+                      ...nextPage(trail, cursor, page.next_cursor),
                     })}
                   >
                     Next

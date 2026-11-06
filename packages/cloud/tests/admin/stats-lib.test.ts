@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   agoShort,
   eventKind,
-  formatBytes,
   formatDelta,
+  formatStorage,
   formatUptime,
   jobLabel,
 } from '@/lib/admin-stats';
@@ -60,8 +60,8 @@ describe('health wording', () => {
     expect(formatUptime(45)).toBe('45 s');
     expect(formatUptime(3600 * 5 + 120)).toBe('5 h 2 min');
     expect(formatUptime(86400 * 4 + 3600)).toBe('4 days');
-    expect(formatBytes(1_500_000_000)).toBe('1.4 GB');
-    expect(formatBytes(52_428_800)).toBe('50 MB');
+    expect(formatStorage(1_500_000_000)).toBe('1.4 GB');
+    expect(formatStorage(52_428_800)).toBe('50 MB');
     expect(jobLabel('mail_worker')).toBe('Email outbox');
     expect(jobLabel('mystery_job')).toBe('mystery job');
   });

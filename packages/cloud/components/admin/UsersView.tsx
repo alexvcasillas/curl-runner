@@ -4,9 +4,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { adminRoutes, can, formatInt, type Perm } from '@/lib/admin';
+import { nextPage, previousPage } from '@/lib/admin-paging';
 import {
   displayName,
-  FIRST_PAGE,
   firstName,
   methodsLabel,
   teamsLabel,
@@ -276,11 +276,7 @@ export function UsersView({
                     href={usersHref({
                       q,
                       filter,
-                      cursor:
-                        trail[trail.length - 1] === FIRST_PAGE
-                          ? undefined
-                          : trail[trail.length - 1],
-                      trail: trail.slice(0, -1),
+                      ...previousPage(trail),
                     })}
                   >
                     Previous
@@ -296,8 +292,7 @@ export function UsersView({
                     href={usersHref({
                       q,
                       filter,
-                      cursor: page.next_cursor,
-                      trail: [...trail, cursor ?? FIRST_PAGE],
+                      ...nextPage(trail, cursor, page.next_cursor),
                     })}
                   >
                     Next

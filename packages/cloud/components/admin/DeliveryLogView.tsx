@@ -12,9 +12,8 @@ import {
   logHref,
   logWhen,
   MAX_ATTEMPTS,
-  previousLogCursor,
 } from '@/lib/admin-emails';
-import { FIRST_PAGE } from '@/lib/admin-teams';
+import { nextPage, previousPage } from '@/lib/admin-paging';
 import { Button } from '../Button';
 import { ButtonLink } from '../ButtonLink';
 import { EmptyState } from '../EmptyState';
@@ -156,8 +155,7 @@ export function DeliveryLogView({
                     size="sm"
                     href={logHref({
                       ...filters,
-                      cursor: previousLogCursor(trail),
-                      trail: trail.slice(0, -1),
+                      ...previousPage(trail),
                     })}
                   >
                     Previous
@@ -172,8 +170,7 @@ export function DeliveryLogView({
                     size="sm"
                     href={logHref({
                       ...filters,
-                      cursor: page.next_cursor,
-                      trail: [...trail, cursor ?? FIRST_PAGE],
+                      ...nextPage(trail, cursor, page.next_cursor),
                     })}
                   >
                     Next

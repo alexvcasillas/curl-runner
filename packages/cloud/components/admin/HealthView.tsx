@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { formatInt } from '@/lib/admin';
 import {
   agoShort,
-  formatBytes,
+  formatStorage,
   formatUptime,
   type Health,
   type HealthJob,
@@ -69,7 +69,7 @@ export function HealthView({ health: h, now: nowIso }: { health: Health; now: st
     },
     {
       label: 'Postgres',
-      value: formatBytes(s.db.size_bytes),
+      value: formatStorage(s.db.size_bytes),
       sub: `${s.db.connections} of ${s.db.max_connections} connections${s.db.migration === null ? '' : ` · migration ${s.db.migration}`}`,
     },
     {

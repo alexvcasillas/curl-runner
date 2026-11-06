@@ -2,6 +2,14 @@
 // Safe to import from client components.
 
 import { describeEvent } from './admin';
+import {
+  one,
+  pagingParams,
+  parseCursor,
+  parseSearch,
+  parseTrail,
+  type RawParams,
+} from './admin-paging';
 
 export type UserRole = 'owner' | 'member';
 export type UserTeamRef = { slug: string; name: string; role: UserRole };
@@ -93,12 +101,6 @@ export function isUserFilter(value: unknown): value is UserFilter {
   return USER_FILTERS.some((f) => f.value === value);
 }
 
-/** The server's longest `q`. */
-export const MAX_QUERY = 200;
-/** The first page in a trail: it has no cursor. */
-export const FIRST_PAGE = '-';
-const CURSOR = /^[A-Za-z0-9_-]{1,200}$/;
-
 export type UsersQuery = {
   q: string;
   filter: UserFilter;
@@ -107,19 +109,14 @@ export type UsersQuery = {
   trail: string[];
 };
 
-type Raw = Record<string, string | string[] | undefined>;
-
-const one = (v: string | string[] | undefined) => (typeof v === 'string' ? v : undefined);
-
 /** The list's search params, checked: anything unknown falls back to the first page of everyone. */
-export function parseUsersQuery(sp: Raw): UsersQuery {
+export function parseUsersQuery(sp: RawParams): UsersQuery {
   const filter = one(sp.filter);
-  const cursor = one(sp.cursor);
   return {
-    q: [...(one(sp.q) ?? '').trim()].slice(0, MAX_QUERY).join(''),
+    q: parseSearch(sp.q),
     filter: isUserFilter(filter) ? filter : 'all',
-    cursor: cursor && CURSOR.test(cursor) ? cursor : undefined,
-    trail: (one(sp.trail) ?? '').split('.').filter((c) => CURSOR.test(c)),
+    cursor: parseCursor(sp.cursor),
+    trail: parseTrail(sp.trail),
   };
 }
 
@@ -131,12 +128,7 @@ export function usersHref(query: Pick<UsersQuery, 'q' | 'filter' | 'trail'> & { 
   if (query.filter !== 'all') {
     p.set('filter', query.filter);
   }
-  if (query.cursor) {
-    p.set('cursor', query.cursor);
-  }
-  if (query.trail.length > 0) {
-    p.set('trail', query.trail.join('.'));
-  }
+  pagingParams(p, query);
   const qs = p.toString();
   return qs ? `/admin/users?${qs}` : '/admin/users';
 }

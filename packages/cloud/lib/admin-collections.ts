@@ -1,7 +1,14 @@
 // What the admin collections page shares: wire shapes, the list's URL state and wording.
 // Safe to import from client components.
 
-import { FIRST_PAGE, MAX_QUERY } from './admin-teams';
+import {
+  one,
+  pagingParams,
+  parseCursor,
+  parseSearch,
+  parseTrail,
+  type RawParams,
+} from './admin-paging';
 
 export type CollectionAccess = 'off' | 'public' | 'restricted';
 
@@ -39,8 +46,6 @@ export function isCollectionFilter(value: unknown): value is CollectionFilter {
   return COLLECTION_FILTERS.some((f) => f.value === value);
 }
 
-const CURSOR = /^[A-Za-z0-9_-]{1,200}$/;
-
 export type CollectionsQuery = {
   q: string;
   filter: CollectionFilter;
@@ -49,19 +54,14 @@ export type CollectionsQuery = {
   trail: string[];
 };
 
-type Raw = Record<string, string | string[] | undefined>;
-
-const one = (v: string | string[] | undefined) => (typeof v === 'string' ? v : undefined);
-
 /** The list's search params, checked: anything unknown falls back to the first page of every collection. */
-export function parseCollectionsQuery(sp: Raw): CollectionsQuery {
+export function parseCollectionsQuery(sp: RawParams): CollectionsQuery {
   const filter = one(sp.filter);
-  const cursor = one(sp.cursor);
   return {
-    q: [...(one(sp.q) ?? '').trim()].slice(0, MAX_QUERY).join(''),
+    q: parseSearch(sp.q),
     filter: isCollectionFilter(filter) ? filter : 'all',
-    cursor: cursor && CURSOR.test(cursor) ? cursor : undefined,
-    trail: (one(sp.trail) ?? '').split('.').filter((c) => CURSOR.test(c)),
+    cursor: parseCursor(sp.cursor),
+    trail: parseTrail(sp.trail),
   };
 }
 
@@ -80,12 +80,7 @@ export function collectionsHref(
   query: Pick<CollectionsQuery, 'q' | 'filter' | 'trail'> & { cursor?: string },
 ) {
   const p = params(query);
-  if (query.cursor) {
-    p.set('cursor', query.cursor);
-  }
-  if (query.trail.length > 0) {
-    p.set('trail', query.trail.join('.'));
-  }
+  pagingParams(p, query);
   const qs = p.toString();
   return qs ? `/admin/collections?${qs}` : '/admin/collections';
 }
@@ -93,12 +88,6 @@ export function collectionsHref(
 export function collectionsExportHref(query: Pick<CollectionsQuery, 'q' | 'filter'>) {
   const qs = params(query).toString();
   return qs ? `/admin/collections/export?${qs}` : '/admin/collections/export';
-}
-
-/** The cursor to open for Previous: the first page has none. */
-export function previousCursor(trail: string[]): string | undefined {
-  const last = trail[trail.length - 1];
-  return last === FIRST_PAGE ? undefined : last;
 }
 
 // ---- Wording ----

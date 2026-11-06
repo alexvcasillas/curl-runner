@@ -3,8 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { adminRoutes, formatInt, formatMoney } from '@/lib/admin';
+import { nextPage, previousPage } from '@/lib/admin-paging';
 import {
-  FIRST_PAGE,
   planName,
   sourceOf,
   TEAM_FILTERS,
@@ -149,11 +149,7 @@ export function TeamsView({
                     href={teamsHref({
                       q,
                       filter,
-                      cursor:
-                        trail[trail.length - 1] === FIRST_PAGE
-                          ? undefined
-                          : trail[trail.length - 1],
-                      trail: trail.slice(0, -1),
+                      ...previousPage(trail),
                     })}
                   >
                     Previous
@@ -169,8 +165,7 @@ export function TeamsView({
                     href={teamsHref({
                       q,
                       filter,
-                      cursor: page.next_cursor,
-                      trail: [...trail, cursor ?? FIRST_PAGE],
+                      ...nextPage(trail, cursor, page.next_cursor),
                     })}
                   >
                     Next

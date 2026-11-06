@@ -208,15 +208,15 @@ export function describeEvent(action: string): string {
   return ACTIONS[action] ?? action.replace(/[._]/g, ' ');
 }
 
-const usd = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  maximumFractionDigits: 0,
-});
+const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
-/** Whole dollars from cents. */
-export function formatMoney(cents: number): string {
-  return usd.format(cents / 100);
+/** Whole dollars from cents; with `exact`, odd cents stay ("$16.50", but "$16"). */
+export function formatMoney(cents: number, exact = false): string {
+  const text = usd.format(cents / 100);
+  if (exact) {
+    return text.replace(/\.00$/, '');
+  }
+  return usd.format(Math.round(cents / 100)).replace(/\.00$/, '');
 }
 
 const int = new Intl.NumberFormat('en-US');

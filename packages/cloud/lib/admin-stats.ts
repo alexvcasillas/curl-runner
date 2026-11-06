@@ -2,6 +2,7 @@
 // Safe to import from client components.
 
 import type { PillTone } from '@/components/Pill';
+import { formatMoney } from './admin';
 
 // ---- GET /v1/admin/stripe ----
 
@@ -42,8 +43,6 @@ export type StripeStats = {
   events: StripeEvent[];
 };
 
-const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
-
 /** "+$16", "−$10", "$0", or "—" when the server couldn't price the change. */
 export function formatDelta(cents: number | null): string {
   if (cents === null) {
@@ -52,9 +51,7 @@ export function formatDelta(cents: number | null): string {
   if (cents === 0) {
     return '$0';
   }
-  const abs = Math.abs(cents) / 100;
-  const text = usd.format(abs).replace(/\.00$/, '');
-  return `${cents > 0 ? '+' : '−'}${text}`;
+  return `${cents > 0 ? '+' : '−'}${formatMoney(Math.abs(cents), true)}`;
 }
 
 /** The board's pill for a Stripe event: what happened, in a word. */
@@ -162,7 +159,8 @@ export function formatUptime(secs: number): string {
   return plural(Math.floor(secs / 86_400), 'day');
 }
 
-export function formatBytes(bytes: number): string {
+/** The database's size, in whole MB or GB with one decimal. */
+export function formatStorage(bytes: number): string {
   const mb = bytes / 1024 ** 2;
   if (mb < 1024) {
     return `${Math.round(mb)} MB`;

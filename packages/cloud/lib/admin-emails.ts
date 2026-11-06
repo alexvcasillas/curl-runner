@@ -2,7 +2,14 @@
 // Safe to import from client components.
 
 import type { ActionResult } from './action-result';
-import { FIRST_PAGE, MAX_QUERY } from './admin-teams';
+import {
+  one,
+  pagingParams,
+  parseCursor,
+  parseSearch,
+  parseTrail,
+  type RawParams,
+} from './admin-paging';
 import { dateThisYear, relativeTime } from './time';
 
 export const MAX_SUBJECT = 200;
@@ -217,8 +224,6 @@ export const LOG_STATUSES = [
 
 export type LogStatusFilter = (typeof LOG_STATUSES)[number]['value'];
 
-const CURSOR = /^[A-Za-z0-9_-]{1,200}$/;
-
 export type LogQuery = {
   q: string;
   status: LogStatusFilter;
@@ -228,19 +233,15 @@ export type LogQuery = {
   trail: string[];
 };
 
-type Raw = Record<string, string | string[] | undefined>;
-const one = (v: string | string[] | undefined) => (typeof v === 'string' ? v : undefined);
-
-export function parseLogQuery(sp: Raw): LogQuery {
+export function parseLogQuery(sp: RawParams): LogQuery {
   const status = one(sp.status);
   const kind = one(sp.kind);
-  const cursor = one(sp.cursor);
   return {
-    q: [...(one(sp.q) ?? '').trim()].slice(0, MAX_QUERY).join(''),
+    q: parseSearch(sp.q),
     status: LOG_STATUSES.some((s) => s.value === status) ? (status as LogStatusFilter) : 'all',
     kind: kind && kind in KIND_LABELS ? kind : 'all',
-    cursor: cursor && CURSOR.test(cursor) ? cursor : undefined,
-    trail: (one(sp.trail) ?? '').split('.').filter((c) => CURSOR.test(c)),
+    cursor: parseCursor(sp.cursor),
+    trail: parseTrail(sp.trail),
   };
 }
 
@@ -260,22 +261,12 @@ export function logHref(
   if (query.kind !== 'all') {
     p.set('kind', query.kind);
   }
-  if (query.cursor) {
-    p.set('cursor', query.cursor);
-  }
-  if (query.trail.length > 0) {
-    p.set('trail', query.trail.join('.'));
-  }
+  pagingParams(p, query);
   return `/admin/emails?${p}`;
 }
 
 export function broadcastHref(id?: string): string {
   return id ? `/admin/emails?b=${encodeURIComponent(id)}` : '/admin/emails';
-}
-
-export function previousLogCursor(trail: string[]): string | undefined {
-  const last = trail[trail.length - 1];
-  return last === FIRST_PAGE ? undefined : last;
 }
 
 /** The Detail column: what the server said, or where the retries stand. */

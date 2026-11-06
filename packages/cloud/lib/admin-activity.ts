@@ -1,6 +1,8 @@
 // What the activity log page shares: wire shapes, the URL's filters and wording.
 // Safe to import from client components.
 
+import { one, pagingParams, parseCursor, parseTrail, type RawParams } from './admin-paging';
+
 export type ActivityItem = {
   id: string;
   at: string;
@@ -37,31 +39,19 @@ export type Since = (typeof SINCE_OPTIONS)[number]['value'];
 export type ActivityFilters = { admin: string | undefined; group: ActionGroup; since: Since };
 export type ActivityQuery = ActivityFilters & { cursor: string | undefined; trail: string[] };
 
-/** The first page in a trail: it has no cursor. */
-export const FIRST_PAGE = '-';
-/** The most pages back a trail remembers. */
-const MAX_TRAIL = 50;
-const CURSOR = /^[A-Za-z0-9_-]{1,200}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type Raw = Record<string, string | string[] | undefined>;
-const one = (v: string | string[] | undefined) => (typeof v === 'string' ? v : undefined);
-
 /** The page's search params, checked: anything unknown falls back to the defaults. */
-export function parseActivityQuery(sp: Raw): ActivityQuery {
+export function parseActivityQuery(sp: RawParams): ActivityQuery {
   const admin = one(sp.admin);
   const group = one(sp.group);
   const since = one(sp.since);
-  const cursor = one(sp.cursor);
   return {
     admin: admin && UUID.test(admin) ? admin : undefined,
     group: ACTION_GROUPS.some((g) => g.value === group) ? (group as ActionGroup) : 'all',
     since: SINCE_OPTIONS.some((s) => s.value === since) ? (since as Since) : '7d',
-    cursor: cursor && CURSOR.test(cursor) ? cursor : undefined,
-    trail: (one(sp.trail) ?? '')
-      .split('.')
-      .filter((c) => CURSOR.test(c))
-      .slice(0, MAX_TRAIL),
+    cursor: parseCursor(sp.cursor),
+    trail: parseTrail(sp.trail),
   };
 }
 
@@ -81,12 +71,7 @@ function filterParams(f: ActivityFilters): URLSearchParams {
 
 export function activityHref(query: ActivityFilters & { cursor?: string; trail: string[] }) {
   const p = filterParams(query);
-  if (query.cursor) {
-    p.set('cursor', query.cursor);
-  }
-  if (query.trail.length > 0) {
-    p.set('trail', query.trail.join('.'));
-  }
+  pagingParams(p, query);
   const qs = p.toString();
   return qs ? `/admin/activity?${qs}` : '/admin/activity';
 }

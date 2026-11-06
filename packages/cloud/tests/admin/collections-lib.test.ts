@@ -5,7 +5,6 @@ import {
   collectionsHref,
   formatBytes,
   parseCollectionsQuery,
-  previousCursor,
 } from '@/lib/admin-collections';
 
 describe('parseCollectionsQuery', () => {
@@ -38,8 +37,6 @@ describe('hrefs', () => {
     expect(collectionsExportHref({ q: 'x y', filter: 'disabled' })).toBe(
       '/admin/collections/export?q=x+y&filter=disabled',
     );
-    expect(previousCursor(['-'])).toBeUndefined();
-    expect(previousCursor(['-', 'c1'])).toBe('c1');
   });
 });
 
