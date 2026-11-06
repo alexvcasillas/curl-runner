@@ -14,7 +14,8 @@ pub mod received;
 pub mod result_view;
 pub mod run;
 pub mod secrets;
-#[allow(dead_code)] // consumed by the Cloud backend (plan 3a, task 5)
+// Used by `HttpBackend`, which `app_backend` builds in a later task of 3a.
+#[allow(dead_code)]
 pub mod sessions;
 pub mod settings;
 pub mod shared_copy;

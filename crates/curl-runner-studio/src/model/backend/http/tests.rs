@@ -1,0 +1,343 @@
+use super::*;
+use crate::model::backend::FOREIGN_CALLBACK;
+use crate::model::secrets::MemorySecrets;
+use crate::model::sessions::{AccountCache, MemorySessions};
+use curl_runner_cloud_client::CloudError;
+use curl_runner_cloud_proto::{ErrorBody, ErrorCode};
+use futures::executor::block_on;
+use std::sync::Mutex;
+use testkit::{Request, Response, TestServer};
+
+type Log = Arc<Mutex<Vec<(String, String, Option<String>)>>>;
+
+fn json(status: u16, body: &str) -> Response {
+    Response::from_data(body.as_bytes().to_vec())
+        .with_status_code(status)
+        .with_header("Content-Type", "application/json")
+}
+
+fn info_body(app_url: Option<&str>) -> String {
+    let app = app_url.map_or(String::new(), |a| format!(r#","app_url":"{a}""#));
+    format!(
+        r#"{{"version":"2.1.1","sign_in":["email","github"],"signup":"open","billing":false{app}}}"#
+    )
+}
+
+fn verified(email: &str) -> String {
+    format!(r#"{{"session":"crs_new","user":{{"id":"u1","email":"{email}","name":"Ada"}}}}"#)
+}
+
+/// A server that answers info, redeem, me and sign-out, and logs requests
+/// as (method, path, bearer).
+fn server(me_status: u16) -> (TestServer, Log) {
+    let log: Log = Log::default();
+    let l = log.clone();
+    let srv = TestServer::with_handler(move |r: Request| {
+        l.lock().unwrap().push((
+            r.method.clone(),
+            r.url.clone(),
+            r.header("authorization").map(str::to_string),
+        ));
+        match (r.method.as_str(), r.url.as_str()) {
+            ("GET", "/v1/info") => json(200, &info_body(Some("https://app.example.test"))),
+            ("POST", "/v1/auth/handoff/redeem") => json(200, &verified("ada@example.test")),
+            ("GET", "/v1/me") if me_status == 200 => json(
+                200,
+                r#"{"user":{"id":"u1","email":"ada@example.test","name":"Ada"},"teams":[]}"#,
+            ),
+            ("GET", "/v1/me") => json(me_status, r#"{"error":"unauthorized","message":"No."}"#),
+            ("POST", "/v1/auth/sign-out") => Response::from_data(Vec::new()).with_status_code(204),
+            _ => json(404, r#"{"error":"not_found","message":"No."}"#),
+        }
+    });
+    (srv, log)
+}
+
+fn backend(state: Option<&Path>) -> (HttpBackend, Arc<MemorySessions>) {
+    let sessions = Arc::new(MemorySessions::new(MemorySecrets::default(), state));
+    (HttpBackend::open(state, sessions.clone()), sessions)
+}
+
+fn own(url: &str) -> Server {
+    Server::SelfHosted { url: url.into() }
+}
+
+fn callback(server: &str) -> AuthCallback {
+    AuthCallback {
+        server: server.into(),
+        code: "crh_abc".into(),
+    }
+}
+
+#[test]
+fn test_connection_reports_methods() {
+    let (srv, _) = server(200);
+    let (b, _) = backend(None);
+    let info = block_on(b.test_connection(&own(&srv.base_url))).unwrap();
+    assert_eq!(info.version, "2.1.1");
+    assert_eq!(info.sign_in, [SignInMethod::Email, SignInMethod::Github]);
+    assert!(info.latency_ms < 5_000);
+    let bad = block_on(b.test_connection(&own("http://example.com")));
+    assert!(matches!(bad, Err(BackendError::Invalid(m)) if m.contains("https")));
+    let down = block_on(b.test_connection(&own("http://127.0.0.1:1")));
+    assert_eq!(down.unwrap_err(), BackendError::Offline);
+}
+
+#[test]
+fn sign_in_url_comes_from_the_dashboard() {
+    let (srv, _) = server(200);
+    let (b, _) = backend(None);
+    let url = block_on(b.sign_in_url(&own(&srv.base_url))).unwrap();
+    assert_eq!(url, "https://app.example.test/sign-in?client=studio");
+}
+
+#[test]
+fn sign_in_url_needs_an_app_url() {
+    let srv = TestServer::with_handler(|_| json(200, &info_body(None)));
+    let (b, _) = backend(None);
+    let err = block_on(b.sign_in_url(&own(&srv.base_url))).unwrap_err();
+    assert_eq!(
+        err,
+        BackendError::Invalid("This server has no sign-in page.".into())
+    );
+    // Nothing pending: its callback is foreign.
+    let err = block_on(b.complete_sign_in(&callback(&srv.base_url))).unwrap_err();
+    assert_eq!(err, BackendError::Invalid(FOREIGN_CALLBACK.into()));
+}
+
+#[test]
+fn sign_in_url_refuses_plain_http_off_loopback() {
+    let (b, _) = backend(None);
+    let err = block_on(b.sign_in_url(&own("http://curl.example.com"))).unwrap_err();
+    assert!(
+        matches!(&err, BackendError::Invalid(m) if m.contains("https")),
+        "{err:?}"
+    );
+    assert_ne!(err, BackendError::Invalid(FOREIGN_CALLBACK.into()));
+}
+
+#[test]
+fn callback_without_a_started_sign_in_sends_nothing() {
+    let (srv, log) = server(200);
+    let (b, sessions) = backend(None);
+    let err = block_on(b.complete_sign_in(&callback(&srv.base_url))).unwrap_err();
+    assert_eq!(err, BackendError::Invalid(FOREIGN_CALLBACK.into()));
+    assert!(log.lock().unwrap().is_empty());
+    assert_eq!(sessions.get(&srv.base_url).unwrap(), None);
+}
+
+#[test]
+fn complete_sign_in_stores_session_and_account() {
+    let d = tempfile::tempdir().unwrap();
+    let (srv, _) = server(200);
+    let (b, sessions) = backend(Some(d.path()));
+    block_on(b.sign_in_url(&own(&srv.base_url))).unwrap();
+    // The dashboard's callback carries the server with a trailing slash.
+    let account = block_on(b.complete_sign_in(&callback(&format!("{}/", srv.base_url)))).unwrap();
+    assert_eq!(account.email, "ada@example.test");
+    assert_eq!(account.name, "Ada");
+    assert_eq!(
+        sessions.get(&srv.base_url).unwrap().as_deref(),
+        Some("crs_new")
+    );
+    assert_eq!(b.account_on(&srv.base_url), Some(account));
+    assert_eq!(sessions.servers(), std::slice::from_ref(&srv.base_url));
+    let text = std::fs::read_to_string(d.path().join("accounts.json")).unwrap();
+    assert!(
+        text.contains("ada@example.test") && !text.contains("crs_"),
+        "{text}"
+    );
+    // The pending sign-in is used up.
+    let again = block_on(b.complete_sign_in(&callback(&srv.base_url))).unwrap_err();
+    assert_eq!(again, BackendError::Invalid(FOREIGN_CALLBACK.into()));
+    // A new HttpBackend on the same state still knows who is signed in.
+    let (b2, _) = backend(Some(d.path()));
+    assert_eq!(
+        b2.account_on(&srv.base_url).unwrap().email,
+        "ada@example.test"
+    );
+}
+
+#[test]
+fn the_account_is_the_current_servers() {
+    let (srv, _) = server(200);
+    let (b, _) = backend(None);
+    block_on(b.set_server(own(&srv.base_url))).unwrap();
+    assert_eq!(b.server(), own(&srv.base_url));
+    assert_eq!(b.account(), None);
+    block_on(b.sign_in_url(&own(&srv.base_url))).unwrap();
+    let a = block_on(b.complete_sign_in(&callback(&srv.base_url))).unwrap();
+    assert_eq!(b.account(), Some(a));
+    block_on(b.set_server(Server::Cloud)).unwrap();
+    assert_eq!(b.account(), None);
+}
+
+#[test]
+fn server_choice_persists() {
+    let d = tempfile::tempdir().unwrap();
+    let (b, _) = backend(Some(d.path()));
+    assert_eq!(b.server(), Server::Cloud);
+    block_on(b.set_server(own("https://curl.example.com"))).unwrap();
+    let (b2, _) = backend(Some(d.path()));
+    assert_eq!(b2.server(), own("https://curl.example.com"));
+}
+
+#[test]
+fn unauthorized_drops_only_that_servers_session() {
+    let d = tempfile::tempdir().unwrap();
+    let (a, _) = server(401);
+    let (c, log_c) = server(200);
+    let (b, sessions) = backend(Some(d.path()));
+    for srv in [&a, &c] {
+        block_on(b.sign_in_url(&own(&srv.base_url))).unwrap();
+        block_on(b.complete_sign_in(&callback(&srv.base_url))).unwrap();
+    }
+    assert_eq!(sessions.servers().len(), 2);
+    let err = block_on(b.refresh_account(&a.base_url)).unwrap_err();
+    assert_eq!(err, BackendError::SignedOut);
+    assert_eq!(sessions.get(&a.base_url).unwrap(), None);
+    assert_eq!(b.account_on(&a.base_url), None);
+    assert_eq!(sessions.servers(), std::slice::from_ref(&c.base_url));
+    assert_eq!(AccountCache::load(Some(d.path())).0.len(), 1);
+    // The other server keeps its session and answers with it.
+    assert!(sessions.get(&c.base_url).unwrap().is_some());
+    let acct = block_on(b.refresh_account(&c.base_url)).unwrap();
+    assert_eq!(acct.email, "ada@example.test");
+    assert!(b.account_on(&c.base_url).is_some());
+    let log = log_c.lock().unwrap();
+    assert!(log.iter().any(|(m, p, auth)| m == "GET"
+        && p == "/v1/me"
+        && auth.as_deref() == Some("Bearer crs_new")));
+}
+
+#[test]
+fn refresh_without_a_session_is_signed_out() {
+    let (srv, log) = server(200);
+    let (b, _) = backend(None);
+    let err = block_on(b.refresh_account(&srv.base_url)).unwrap_err();
+    assert_eq!(err, BackendError::SignedOut);
+    assert!(log.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_locked_keychain_is_not_signed_out() {
+    struct Locked;
+    impl SessionStore for Locked {
+        fn get(&self, _: &str) -> std::io::Result<Option<String>> {
+            Err(std::io::Error::other("locked"))
+        }
+        fn set(&self, _: &str, _: &str) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn delete(&self, _: &str) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn servers(&self) -> Vec<String> {
+            Vec::new()
+        }
+    }
+    let (srv, log) = server(200);
+    let b = HttpBackend::open(None, Arc::new(Locked));
+    let err = block_on(b.refresh_account(&srv.base_url)).unwrap_err();
+    assert_eq!(
+        err,
+        BackendError::Invalid("Couldn't read your sign-in from the Keychain.".into())
+    );
+    assert!(log.lock().unwrap().is_empty());
+}
+
+#[test]
+fn sign_out_forgets_session_when_offline() {
+    let d = tempfile::tempdir().unwrap();
+    let down = "http://127.0.0.1:1";
+    let (b, sessions) = backend(Some(d.path()));
+    sessions.set(down, "crs_x").unwrap();
+    let mut cache = AccountCache::default();
+    cache.0.insert(
+        down.into(),
+        crate::model::sessions::CachedAccount {
+            name: None,
+            email: "a@example.test".into(),
+        },
+    );
+    cache.save(Some(d.path())).unwrap();
+    let (b2, _) = (HttpBackend::open(Some(d.path()), sessions.clone()), ());
+    drop(b);
+    assert!(b2.account_on(down).is_some());
+    block_on(b2.sign_out(down)).unwrap();
+    assert_eq!(sessions.get(down).unwrap(), None);
+    assert_eq!(b2.account_on(down), None);
+}
+
+#[test]
+fn sign_out_tells_the_server_with_the_session() {
+    let (srv, log) = server(200);
+    let (b, sessions) = backend(None);
+    block_on(b.sign_in_url(&own(&srv.base_url))).unwrap();
+    block_on(b.complete_sign_in(&callback(&srv.base_url))).unwrap();
+    block_on(b.sign_out(&format!("{}/", srv.base_url))).unwrap();
+    assert_eq!(sessions.get(&srv.base_url).unwrap(), None);
+    let log = log.lock().unwrap();
+    assert!(log.iter().any(|(m, p, auth)| m == "POST"
+        && p == "/v1/auth/sign-out"
+        && auth.as_deref() == Some("Bearer crs_new")));
+}
+
+#[test]
+fn error_mapping() {
+    let api = |code: ErrorCode, status: u16| {
+        CloudError::Api(
+            ErrorBody {
+                error: code,
+                message: "Server words.".into(),
+            },
+            status,
+        )
+    };
+    let (b, sessions) = backend(None);
+    let server = "https://api.example.test";
+    let invalid = |s: &str| BackendError::Invalid(s.into());
+    let table = [
+        (CloudError::Unreachable("x".into()), BackendError::Offline),
+        (api(ErrorCode::Unauthorized, 401), BackendError::SignedOut),
+        (api(ErrorCode::Forbidden, 403), BackendError::Unauthorized),
+        (api(ErrorCode::NotFound, 404), BackendError::NotFound),
+        (api(ErrorCode::LinkDisabled, 404), BackendError::NotFound),
+        (api(ErrorCode::CodeExpired, 400), BackendError::Expired),
+        (
+            api(ErrorCode::CodeInvalid, 400),
+            invalid("That code is not right. Check it and try again."),
+        ),
+        (api(ErrorCode::Unavailable, 503), BackendError::Unavailable),
+        (api(ErrorCode::RateLimited, 429), BackendError::Unavailable),
+        (api(ErrorCode::PlanLimit, 402), invalid("Server words.")),
+        (
+            api(ErrorCode::InvalidRequest, 400),
+            invalid("Server words."),
+        ),
+    ];
+    for (err, want) in table {
+        let shown = format!("{err:?}");
+        sessions.set(server, "crs_x").unwrap();
+        assert_eq!(b.map_error(server, err), want, "{shown}");
+        let kept = sessions.get(server).unwrap().is_some();
+        assert_eq!(kept, want != BackendError::SignedOut, "{shown}");
+    }
+}
+
+#[test]
+fn team_side_calls_are_unavailable_until_3b() {
+    let (b, _) = backend(None);
+    let key = CollectionKey {
+        id: "c".into(),
+        name: "C".into(),
+    };
+    let un = |e: BackendError| assert_eq!(e, BackendError::Unavailable);
+    un(block_on(b.sync(&key, &[], &[])).unwrap_err());
+    un(block_on(b.share_settings(&key)).unwrap_err());
+    un(block_on(b.update_share(&key, ShareUpdate::default())).unwrap_err());
+    un(block_on(b.invite(&key, "a@b.c")).unwrap_err());
+    un(block_on(b.remove_person(&key, "a@b.c")).unwrap_err());
+    assert_eq!(b.sync_status(&key), SyncStatus::Off);
+    assert!(b.dev().is_none());
+}
