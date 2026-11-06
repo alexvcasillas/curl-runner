@@ -1208,7 +1208,9 @@ fn pull_dead_link_says_so() {
         .code(1)
         .get_output()
         .clone();
-    assert!(stderr(&o).contains("This link doesn't work. It may have been reset or expired."));
+    assert!(stderr(&o).contains(
+        "This link doesn't work. It may have been reset, expired or turned off by an admin."
+    ));
 }
 
 #[test]

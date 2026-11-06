@@ -31,7 +31,8 @@ const STATE_DIR: &str = ".curl-runner";
 const STATE_FILE: &str = "pull.json";
 const STAGING_DIR: &str = "staging";
 const ENV_EXAMPLE: &str = ".env.example";
-const LINK_BROKEN: &str = "This link doesn't work. It may have been reset or expired.";
+const LINK_BROKEN: &str =
+    "This link doesn't work. It may have been reset, expired or turned off by an admin.";
 
 /// What `pull.json` records: where the folder came from and what was written.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
