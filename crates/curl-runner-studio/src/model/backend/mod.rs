@@ -14,6 +14,10 @@
 pub mod fixtures;
 #[cfg(any(test, feature = "server"))]
 mod mock;
+// Wired into `app_backend` by a later task of plan 3a.
+#[cfg(any(test, feature = "server"))]
+#[allow(dead_code)]
+pub mod http;
 #[cfg(any(test, not(feature = "server")))]
 mod no_server;
 #[cfg(any(test, feature = "server"))]
@@ -94,7 +98,7 @@ impl fmt::Display for BackendError {
 impl std::error::Error for BackendError {}
 
 /// The cloud server's address.
-pub const CLOUD_URL: &str = "https://cloud.curl-runner.com";
+pub const CLOUD_URL: &str = "https://api.curl-runner.com";
 
 /// Where collections live.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1004,7 +1008,7 @@ mod tests {
 
     #[test]
     fn server_and_sign_in_copy() {
-        assert_eq!(Server::Cloud.url(), "https://cloud.curl-runner.com");
+        assert_eq!(Server::Cloud.url(), "https://api.curl-runner.com");
         let own = Server::SelfHosted {
             url: "https://curl-runner.example.com".into(),
         };

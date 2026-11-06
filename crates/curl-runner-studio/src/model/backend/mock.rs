@@ -498,6 +498,9 @@ impl Backend for MockBackend {
     fn sign_in_url(&self, server: &Server) -> BoxFut<'_, String> {
         self.record(format!("sign_in_url({server:?})"));
         let url = server.url().to_string();
+        if let Err(why) = curl_runner_cloud_client::check_server(url.trim_end_matches('/')) {
+            return Box::pin(async { Err(BackendError::Invalid(why)) });
+        }
         let started = self.call(false, |s| online(s));
         Box::pin(async move {
             started.await?;

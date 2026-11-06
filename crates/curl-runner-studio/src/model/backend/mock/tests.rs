@@ -1003,7 +1003,7 @@ fn callback_without_pending_sign_in_is_refused() {
     let http = Server::SelfHosted {
         url: "http://curl-runner.example.com".into(),
     };
-    block_on(b.sign_in_url(&http)).unwrap();
+    assert!(block_on(b.sign_in_url(&http)).is_err(), "refused up front");
     assert_eq!(complete("http://curl-runner.example.com"), refused);
     assert_eq!(b.account_on("https://evil.test"), None);
     assert_eq!(b.account_on("http://curl-runner.example.com"), None);
@@ -1042,4 +1042,18 @@ fn pending_sign_in_expires_after_10_minutes() {
     block_on(b.sign_in_url(&Server::Cloud)).unwrap();
     advance(10 * 60 - 1);
     assert!(block_on(b.complete_sign_in(&callback(Server::Cloud.url()))).is_ok());
+}
+
+#[test]
+fn sign_in_url_refuses_plain_http_off_loopback() {
+    let b = mock(tempfile::tempdir().unwrap().path());
+    let own = |url: &str| Server::SelfHosted { url: url.into() };
+    let err = block_on(b.sign_in_url(&own("http://curl.example.com"))).unwrap_err();
+    assert!(
+        matches!(&err, BackendError::Invalid(m) if m.contains("https")),
+        "{err:?}"
+    );
+    assert_ne!(err, BackendError::Invalid(FOREIGN_CALLBACK.into()));
+    // Loopback http is fine.
+    block_on(b.sign_in_url(&own("http://127.0.0.1:9"))).unwrap();
 }
