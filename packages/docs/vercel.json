@@ -1,4 +1,4 @@
 {
   "buildCommand": "pnpm build",
-  "ignoreCommand": "[ \"$VERCEL_GIT_COMMIT_REF\" = \"changeset-release/main\" ]"
+  "ignoreCommand": "sh scripts/vercel-ignore-build.sh"
 }
