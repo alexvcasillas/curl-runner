@@ -506,7 +506,7 @@ mod gpui_tests {
     use super::super::state::StateStore;
     use super::super::workspace::{Workspace, test_backend, wait_for_run};
     use super::{DUPLICATED, STATE_FOLDER_TEXT};
-    use crate::model::backend::{Backend, SignInMethod, SyncFile, sync_files};
+    use crate::model::backend::{Backend, SyncFile, sync_files};
     use crate::model::backend::{CollectionKey, ShareUpdate};
     use crate::model::collection_meta::CollectionMeta;
     use crate::model::secrets::{MemorySecrets, SecretStore, service_name};
@@ -551,7 +551,7 @@ mod gpui_tests {
     fn received(cx: &mut TestAppContext, signed_in: bool, base_url: Option<&str>) -> Studio {
         let inner = test_backend();
         if signed_in {
-            futures::executor::block_on(inner.sign_in(SignInMethod::GitHub)).unwrap();
+            crate::model::backend::testing::sign_in(&*inner);
         }
         let mut fill = vec![("API_TOKEN", TOKEN)];
         if let Some(url) = base_url {
@@ -1214,7 +1214,7 @@ mod gpui_tests {
         // folder stays. Signed in again, the copy is opened as before.
         let dev = s.spy.dev().unwrap();
         dev.reset();
-        futures::executor::block_on(s.spy.sign_in(SignInMethod::GitHub)).unwrap();
+        crate::model::backend::testing::sign_in(&*s.spy);
         std::fs::write(s.root().join(RATES), mine).unwrap();
         std::fs::remove_file(s.root().join("rates/validate-address.yaml")).unwrap();
         s.spy.sent.lock().unwrap().clear();
@@ -1309,7 +1309,7 @@ mod gpui_tests {
         // The owner (the mock's one account) shares Payments API with
         // CURRENCY locked to eur.
         let inner = test_backend();
-        block_on(inner.sign_in(SignInMethod::GitHub)).unwrap();
+        crate::model::backend::testing::sign_in(&*inner);
         let owner = CollectionKey {
             id: "0a0b0c0d".into(),
             name: "Payments API".into(),

@@ -1285,7 +1285,7 @@ mod gpui_tests {
     use super::super::state::StateStore;
     use super::super::workspace::{Workspace, test_backend, test_secrets};
     use super::{OFFLINE_POLL, SYNC_DELAY, SyncLine};
-    use crate::model::backend::{Backend, CollectionKey, ShareUpdate, SignInMethod, SyncStatus};
+    use crate::model::backend::{Backend, CollectionKey, ShareUpdate, SyncStatus};
     use gpui_kit::test::{TestQueryExt as _, TestWindowExt as _};
     use gpui_kit::{
         AnyWindowHandle, AppContext as _, Bounds, Entity, Point, TestAppContext, WindowBounds,
@@ -1309,7 +1309,7 @@ mod gpui_tests {
 
     fn signed_in() -> Arc<dyn Backend> {
         let backend = test_backend();
-        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        crate::model::backend::testing::sign_in(&*backend);
         backend
     }
 
@@ -1469,9 +1469,14 @@ mod gpui_tests {
         let files = |cx: &mut TestAppContext| ws.read_with(cx, |ws, _| ws.sync.base.files.len());
         assert_eq!(files(cx), 2, "synced as Jamie");
         let jamie = ws.read_with(cx, |ws, cx| ws.sync_base_id(cx).unwrap());
-        let switch = |cx: &mut TestAppContext, method: SignInMethod| {
-            futures::executor::block_on(backend.sign_out()).unwrap();
-            futures::executor::block_on(backend.sign_in(method)).unwrap();
+        let switch = |cx: &mut TestAppContext, by_email: bool| {
+            use crate::model::backend::testing;
+            testing::sign_out(&*backend);
+            if by_email {
+                testing::sign_in_by_email(&*backend);
+            } else {
+                testing::sign_in(&*backend);
+            }
             cx.update_window(window, |_, window, cx| {
                 ws.update(cx, |ws, cx| ws.start_sync(window, cx));
             })
@@ -1479,13 +1484,13 @@ mod gpui_tests {
             cx.run_until_parked();
         };
         // Another account: its own base, not Jamie's.
-        switch(cx, SignInMethod::Email);
+        switch(cx, true);
         let maria = ws.read_with(cx, |ws, cx| ws.sync_base_id(cx).unwrap());
         assert_ne!(maria, jamie);
         let stored = |id: &str| crate::model::sync_base::load(Some(state.path()), id);
         assert_eq!(stored(&jamie).files.len(), 2, "Jamie's base is kept");
         // Back as Jamie: the old base again, nothing to send.
-        switch(cx, SignInMethod::GitHub);
+        switch(cx, false);
         assert_eq!(
             ws.read_with(cx, |ws, cx| ws.sync_base_id(cx).unwrap()),
             jamie

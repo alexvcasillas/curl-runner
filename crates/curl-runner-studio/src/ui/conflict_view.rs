@@ -1058,7 +1058,7 @@ mod tests {
     use super::super::state::StateStore;
     use super::super::sync::{SYNC_DELAY, SyncLine};
     use super::super::workspace::{Workspace, test_backend, test_secrets};
-    use crate::model::backend::{Backend, Conflict, ShareUpdate, SignInMethod, SyncFile};
+    use crate::model::backend::{Backend, Conflict, ShareUpdate, SyncFile};
     use gpui_kit::component::WindowExt as _;
     use gpui_kit::test::{TestQueryExt as _, TestWindowExt as _};
     use gpui_kit::{
@@ -1200,7 +1200,7 @@ mod tests {
             .unwrap();
         }
         let backend = test_backend();
-        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        crate::model::backend::testing::sign_in(&*backend);
         let (root, store, b) = (
             dir.path().to_path_buf(),
             StateStore::at(state.path()),

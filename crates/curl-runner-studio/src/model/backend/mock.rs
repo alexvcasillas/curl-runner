@@ -8,10 +8,10 @@
 
 use super::fixtures::{self, CONFLICT_AUTHOR};
 use super::{
-    Access, Account, Backend, BackendError, BoxFut, CollectionKey, Conflict, ConnectionInfo,
-    DevControls, DevToggles, Expiry, Person, ReceivedShare, Role, Server, ShareLink, ShareSettings,
-    ShareUpdate, SharedCollection, SharedSnapshot, SharedVar, SignInMethod, SyncDeletion, SyncFile,
-    SyncReport, SyncStatus,
+    Access, Account, AuthCallback, Backend, BackendError, BoxFut, CollectionKey, Conflict,
+    ConnectionInfo, DevControls, DevToggles, Expiry, PendingSignIns, Person, ReceivedShare, Role,
+    Server, ShareLink, ShareSettings, ShareUpdate, SharedCollection, SharedSnapshot, SharedVar,
+    SignInMethod, SyncDeletion, SyncFile, SyncReport, SyncStatus,
 };
 use chrono::{DateTime, Days, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
@@ -44,6 +44,8 @@ pub struct MockBackend {
     /// While held, `update_share` answers wait (the change is already made)
     /// and `add_received` waits before it is made.
     gate: Arc<Gate>,
+    /// The sign-ins started and not yet answered (not persisted).
+    pending: PendingSignIns,
 }
 
 /// [`DevControls::hold_updates`]: held, and the answers waiting on it.
@@ -89,7 +91,8 @@ impl Future for GateOpen {
 #[serde(default, rename_all = "camelCase")]
 struct State {
     server: Server,
-    account: Option<Account>,
+    /// The session on each server, by API URL (no trailing `/`).
+    accounts: BTreeMap<String, Account>,
     toggles: DevToggles,
     /// Owned shares, by collection id.
     shares: BTreeMap<String, OwnedShare>,
@@ -144,7 +147,15 @@ impl MockBackend {
             state: Mutex::new(state),
             log: Mutex::default(),
             gate: Arc::default(),
+            pending: PendingSignIns::default(),
         }
+    }
+
+    /// With `clock` as the time sign-ins expire by (tests).
+    #[cfg(test)]
+    pub fn with_clock(mut self, clock: super::pending::Clock) -> MockBackend {
+        self.pending = PendingSignIns::with_clock(clock);
+        self
     }
 
     fn state(&self) -> MutexGuard<'_, State> {
@@ -215,9 +226,19 @@ fn online(s: &State) -> Result<(), BackendError> {
     }
 }
 
+/// `server` as the sessions are keyed: no trailing `/`.
+fn server_key(server: &str) -> String {
+    server.trim().trim_end_matches('/').to_string()
+}
+
+/// The account on the state's server.
+fn account_of(s: &State) -> Option<&Account> {
+    s.accounts.get(&server_key(s.server.url()))
+}
+
 fn signed_in(s: &State) -> Result<Account, BackendError> {
     online(s)?;
-    s.account.clone().ok_or(BackendError::SignedOut)
+    account_of(s).cloned().ok_or(BackendError::SignedOut)
 }
 
 /// `rates/get-rates.yaml` on every OS.
@@ -298,7 +319,7 @@ fn share_mut<'s>(s: &'s mut State, key: &CollectionKey, account: &Account) -> &'
         .entry(key.id.clone())
         .or_insert_with(|| OwnedShare {
             name: key.name.clone(),
-            owner_org: account.org.clone().unwrap_or_else(|| account.name.clone()),
+            owner_org: fixtures::OWNER_TEAM.into(),
             token: new_token(&key.id, seq),
             access: Access::AnyoneWithLink,
             expires: expiry_date(Expiry::Days(DEFAULT_EXPIRY_DAYS)),
@@ -433,10 +454,7 @@ impl Backend for MockBackend {
         self.record(format!("set_server({server:?})"));
         self.call(true, move |s| {
             online(s)?;
-            if s.server != server {
-                s.account = None;
-                s.server = server;
-            }
+            s.server = server;
             Ok(())
         })
     }
@@ -447,7 +465,11 @@ impl Backend for MockBackend {
         self.call(false, move |s| {
             online(s)?;
             let sign_in = match &server {
-                Server::Cloud => SignInMethod::GitHub,
+                Server::Cloud => vec![
+                    SignInMethod::Github,
+                    SignInMethod::Google,
+                    SignInMethod::Email,
+                ],
                 Server::SelfHosted { url } => {
                     let host = url
                         .strip_prefix("https://")
@@ -460,7 +482,8 @@ impl Backend for MockBackend {
                                 .into(),
                         ));
                     }
-                    SignInMethod::Sso
+                    // Out of order on purpose: the studio sorts them.
+                    vec![SignInMethod::Email, SignInMethod::Github]
                 }
             };
             Ok(ConnectionInfo {
@@ -471,37 +494,62 @@ impl Backend for MockBackend {
         })
     }
 
-    fn sign_in(&self, method: SignInMethod) -> BoxFut<'_, Account> {
-        self.record(format!("sign_in({method:?})"));
+    /// The callback itself: the studio opens it, as the dashboard would.
+    fn sign_in_url(&self, server: &Server) -> BoxFut<'_, String> {
+        self.record(format!("sign_in_url({server:?})"));
+        let url = server.url().to_string();
+        let started = self.call(false, |s| online(s));
+        Box::pin(async move {
+            started.await?;
+            self.pending.start(&url);
+            Ok(format!(
+                "curl-runner://auth/callback?code={}&server={url}",
+                fixtures::MOCK_CODE
+            ))
+        })
+    }
+
+    fn complete_sign_in(&self, callback: &AuthCallback) -> BoxFut<'_, Account> {
+        if let Err(e) = self.pending.redeem(callback) {
+            return Box::pin(async { Err(e) });
+        }
+        // Past the checks: this is where a server gets the code.
+        self.record(format!("redeem({:?})", callback.server));
+        let (server, code) = (server_key(&callback.server), callback.code.clone());
         self.call(true, move |s| {
             online(s)?;
             if s.toggles.fail_next_sign_in {
                 s.toggles.fail_next_sign_in = false;
                 return Err(BackendError::Unauthorized);
             }
-            let account = fixtures::account(method);
-            s.account = Some(account.clone());
+            let account = fixtures::account(&code);
+            s.accounts.insert(server, account.clone());
             Ok(account)
         })
     }
 
     /// Local first: forgetting the account needs no network, so it works
     /// offline too.
-    fn sign_out(&self) -> BoxFut<'_, ()> {
-        self.record("sign_out()".into());
-        self.call(true, |s| {
-            s.account = None;
+    fn sign_out(&self, server: &str) -> BoxFut<'_, ()> {
+        self.record(format!("sign_out({server:?})"));
+        let server = server_key(server);
+        self.call(true, move |s| {
+            s.accounts.remove(&server);
             Ok(())
         })
     }
 
     fn account(&self) -> Option<Account> {
-        self.state().account.clone()
+        account_of(&self.state()).cloned()
+    }
+
+    fn account_on(&self, server: &str) -> Option<Account> {
+        self.state().accounts.get(&server_key(server)).cloned()
     }
 
     fn sync_status(&self, collection: &CollectionKey) -> SyncStatus {
         let s = self.state();
-        if s.account.is_none() {
+        if account_of(&s).is_none() {
             return SyncStatus::Off;
         }
         let Some(col) = s.synced.get(&collection.id) else {

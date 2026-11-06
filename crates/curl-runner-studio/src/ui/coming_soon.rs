@@ -106,8 +106,8 @@ mod tests {
     use super::super::state::{Connection, StateStore};
     use super::super::sync::SYNC_DELAY;
     use super::super::workspace::{Workspace, test_backend, test_secrets};
+    use crate::model::backend::Backend;
     use crate::model::backend::testing::Spy;
-    use crate::model::backend::{Backend, SignInMethod};
     use gpui_kit::component::WindowExt as _;
     use gpui_kit::test::{TestQueryExt as _, TestWindowExt as _};
     use gpui_kit::{
@@ -123,7 +123,7 @@ mod tests {
     /// syncing or sharing.
     fn signed_in() -> Arc<dyn Backend> {
         let backend = test_backend();
-        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        crate::model::backend::testing::sign_in(&*backend);
         backend
     }
 

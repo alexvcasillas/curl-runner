@@ -713,7 +713,7 @@ impl ShareView {
             let you = me
                 .as_ref()
                 .is_some_and(|a| a.email.eq_ignore_ascii_case(&p.email));
-            self.render_person(ix, p, you, me.as_ref().and_then(|a| a.org.clone()), cx)
+            self.render_person(ix, p, you, cx)
         });
         section(2.)
             .child(label_text(format!("People with access · {}", people.len())).pb(px(4.)))
@@ -725,15 +725,11 @@ impl ShareView {
         ix: usize,
         p: &Person,
         you: bool,
-        org: Option<String>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let owner = p.role == PersonRole::Owner;
         let (name, detail) = if you {
-            (
-                "You".to_string(),
-                org.clone().unwrap_or_else(|| p.email.clone()),
-            )
+            ("You".to_string(), p.email.clone())
         } else {
             (p.name.clone(), p.email.clone())
         };
@@ -759,11 +755,7 @@ impl ShareView {
                     d.bg(color(tone))
                 }
             })
-            .child(initials(if you {
-                org.as_deref().unwrap_or(&p.name)
-            } else {
-                &p.name
-            }));
+            .child(initials(&p.name));
         let confirming = self
             .removing
             .as_deref()
@@ -1293,7 +1285,7 @@ mod gpui_tests {
     use super::super::state::StateStore;
     use super::super::workspace::{Workspace, edit_notes, test_backend, test_secrets};
     use super::{Access, Expiry, ShareMode, ShareView};
-    use crate::model::backend::{Backend, SignInMethod};
+    use crate::model::backend::Backend;
     use crate::model::secrets::service_name;
     use gpui_kit::component::WindowExt as _;
     use gpui_kit::test::TestWindowExt as _;
@@ -1324,7 +1316,7 @@ mod gpui_tests {
 
     fn signed_in() -> Arc<dyn Backend> {
         let backend = test_backend();
-        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        crate::model::backend::testing::sign_in(&*backend);
         backend
     }
 

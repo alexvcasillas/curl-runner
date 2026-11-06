@@ -21,13 +21,19 @@ impl Backend for NoServer {
     fn test_connection(&self, _: &Server) -> BoxFut<'_, ConnectionInfo> {
         unavailable()
     }
-    fn sign_in(&self, _: SignInMethod) -> BoxFut<'_, Account> {
+    fn sign_in_url(&self, _: &Server) -> BoxFut<'_, String> {
         unavailable()
     }
-    fn sign_out(&self) -> BoxFut<'_, ()> {
+    fn complete_sign_in(&self, _: &AuthCallback) -> BoxFut<'_, Account> {
+        unavailable()
+    }
+    fn sign_out(&self, _: &str) -> BoxFut<'_, ()> {
         unavailable()
     }
     fn account(&self) -> Option<Account> {
+        None
+    }
+    fn account_on(&self, _: &str) -> Option<Account> {
         None
     }
     fn sync_status(&self, _: &CollectionKey) -> SyncStatus {
@@ -90,8 +96,13 @@ mod tests {
         }
         assert!(unavailable(b.test_connection(&Server::Cloud)));
         assert!(unavailable(b.set_server(Server::Cloud)));
-        assert!(unavailable(b.sign_in(SignInMethod::GitHub)));
-        assert!(unavailable(b.sign_out()));
+        assert!(unavailable(b.sign_in_url(&Server::Cloud)));
+        let callback = AuthCallback {
+            server: CLOUD_URL.into(),
+            code: "crh_x".into(),
+        };
+        assert!(unavailable(b.complete_sign_in(&callback)));
+        assert!(unavailable(b.sign_out(CLOUD_URL)));
         assert!(unavailable(b.sync(&key, &[], &[])));
         assert!(unavailable(b.sync_shared(&key, "s", &[])));
         assert!(unavailable(b.share_settings(&key)));
@@ -111,6 +122,7 @@ mod tests {
         };
         assert!(unavailable(b.add_received(share)));
         assert_eq!(b.account(), None);
+        assert_eq!(b.account_on(CLOUD_URL), None);
         assert_eq!(b.sync_status(&key), SyncStatus::Off);
         assert!(b.received().is_empty());
         assert!(b.dev().is_none());

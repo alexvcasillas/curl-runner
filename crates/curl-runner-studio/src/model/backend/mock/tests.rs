@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::backend::{shared_vars, sync_files};
+use crate::model::backend::{FOREIGN_CALLBACK, shared_vars, sync_files, testing};
 use crate::model::collection_meta::{CollectionMeta, VarMeta};
 use crate::model::secrets::{MemorySecrets, SecretStore, service_name};
 use futures::executor::block_on;
@@ -21,7 +21,7 @@ fn key() -> CollectionKey {
 
 fn signed_in_mock(base: &Path) -> MockBackend {
     let b = mock(base);
-    block_on(b.sign_in(SignInMethod::Sso)).unwrap();
+    testing::sign_in(&b);
     b
 }
 
@@ -31,20 +31,19 @@ fn sign_in_then_account_persists_across_open() {
     let b = mock(d.path());
     assert_eq!(b.account(), None);
     assert_eq!(b.server(), Server::Cloud);
-    let account = block_on(b.sign_in(SignInMethod::Sso)).unwrap();
+    let account = testing::sign_in(&b);
     assert_eq!(account.name, "Jamie Rivera");
     assert_eq!(account.email, "jamie@acme.dev");
-    assert_eq!(account.org.as_deref(), Some("Acme"));
-    assert_eq!(account.provider, SignInMethod::Sso);
+    assert_eq!(account.provider, SignInMethod::Github);
     drop(b);
     let again = mock(d.path());
     assert_eq!(again.account(), Some(account));
-    block_on(again.sign_out()).unwrap();
+    testing::sign_out(&again);
     assert_eq!(mock(d.path()).account(), None);
 }
 
 #[test]
-fn switching_server_signs_out_and_persists() {
+fn switching_server_keeps_sessions_and_persists() {
     let d = tempfile::tempdir().unwrap();
     let b = signed_in_mock(d.path());
     let own = Server::SelfHosted {
@@ -53,7 +52,7 @@ fn switching_server_signs_out_and_persists() {
     let info = block_on(b.test_connection(&own)).unwrap();
     assert_eq!(
         (info.version.as_str(), info.sign_in, info.latency_ms),
-        ("2.1.1", SignInMethod::Sso, 42)
+        ("2.1.1", vec![SignInMethod::Email, SignInMethod::Github], 42)
     );
     let bad = Server::SelfHosted { url: "nope".into() };
     assert!(matches!(
@@ -61,7 +60,8 @@ fn switching_server_signs_out_and_persists() {
         Err(BackendError::Invalid(_))
     ));
     block_on(b.set_server(own.clone())).unwrap();
-    assert_eq!(b.account(), None);
+    assert_eq!(b.account(), None, "no session on the new server");
+    assert!(b.account_on(Server::Cloud.url()).is_some(), "Cloud's stays");
     assert_eq!(mock(d.path()).server(), own);
 }
 
@@ -71,13 +71,15 @@ fn fail_next_sign_in_fails_once() {
     let b = mock(d.path());
     dev(&b).fail_next_sign_in(true);
     assert!(dev(&b).toggles().fail_next_sign_in);
+    let url = block_on(b.sign_in_url(&Server::Cloud)).unwrap();
+    let cb = AuthCallback::parse(&url).unwrap();
     assert_eq!(
-        block_on(b.sign_in(SignInMethod::GitHub)),
+        block_on(b.complete_sign_in(&cb)),
         Err(BackendError::Unauthorized)
     );
     assert_eq!(b.account(), None);
     assert!(!dev(&b).toggles().fail_next_sign_in);
-    assert!(block_on(b.sign_in(SignInMethod::GitHub)).is_ok());
+    testing::sign_in(&b);
 }
 
 #[test]
@@ -95,7 +97,7 @@ fn offline_fails_every_call_with_offline() {
     let off = Err(BackendError::Offline);
     assert_eq!(block_on(b.set_server(Server::Cloud)), off);
     assert_eq!(block_on(b.test_connection(&Server::Cloud)).map(|_| ()), off);
-    assert_eq!(block_on(b.sign_in(SignInMethod::Sso)).map(|_| ()), off);
+    assert_eq!(block_on(b.sign_in_url(&Server::Cloud)).map(|_| ()), off);
     assert_eq!(block_on(b.sync(&k, &[], &[])).map(|_| ()), off);
     assert_eq!(
         block_on(b.sync_shared(&k, fixtures::SHIPPING_ID, &[])).map(|_| ()),
@@ -123,7 +125,7 @@ fn offline_fails_every_call_with_offline() {
     assert!(b.account().is_some(), "local state is kept");
     assert!(b.received().is_empty());
     // Signing out is local first: it works offline.
-    assert_eq!(block_on(b.sign_out()), Ok(()));
+    assert_eq!(block_on(b.sign_out(Server::Cloud.url())), Ok(()));
     assert_eq!(b.account(), None);
     assert_eq!(mock(d.path()).account(), None, "and persists");
 }
@@ -150,7 +152,7 @@ fn offline_mid_call_fails_that_call() {
     let d = tempfile::tempdir().unwrap();
     let b = MockBackend::open(Some(d.path()), Duration::from_millis(30));
     let started = Instant::now();
-    let pending = b.sign_in(SignInMethod::Sso);
+    let pending = b.sign_in_url(&Server::Cloud);
     dev(&b).set_offline(true);
     assert_eq!(block_on(pending), Err(BackendError::Offline));
     assert!(started.elapsed() >= Duration::from_millis(30), "it waited");
@@ -160,11 +162,11 @@ fn offline_mid_call_fails_that_call() {
 #[test]
 fn zero_latency_is_ready_on_first_poll() {
     let b = MockBackend::open(None, Duration::ZERO);
-    let mut fut = b.sign_in(SignInMethod::Email);
+    let mut fut = b.sign_in_url(&Server::Cloud);
     let waker = futures::task::noop_waker();
     let mut cx = Context::from_waker(&waker);
     match fut.as_mut().poll(&mut cx) {
-        Poll::Ready(Ok(a)) => assert_eq!(a.name, "Maria"),
+        Poll::Ready(Ok(url)) => assert!(url.starts_with("curl-runner://auth/callback?")),
         other => panic!("{other:?}"),
     }
 }
@@ -385,14 +387,14 @@ fn sync_pushes_and_reports_pending_counts() {
     assert_eq!(block_on(b.sync(&k, &local, &[])).unwrap().pushed, 2);
     assert!(matches!(b.sync_status(&k), SyncStatus::Synced { .. }));
 
-    block_on(b.sign_out()).unwrap();
+    testing::sign_out(&b);
     assert_eq!(b.sync_status(&k), SyncStatus::Off);
 }
 
 #[test]
 fn received_collection_pulls_and_never_pushes() {
     let b = MockBackend::open(None, Duration::ZERO);
-    block_on(b.sign_in(SignInMethod::Email)).unwrap();
+    testing::sign_in_by_email(&b);
     let k = CollectionKey {
         id: "ffff0000".into(),
         name: "Shipping API".into(),
@@ -515,7 +517,7 @@ fn server_side_changes_one_value_deterministically() {
 #[test]
 fn shared_var_default_never_set_for_secret() {
     let b = MockBackend::open(None, Duration::ZERO);
-    block_on(b.sign_in(SignInMethod::Sso)).unwrap();
+    testing::sign_in(&b);
     let vars = vec![
         SharedVar {
             name: "API_TOKEN".into(),
@@ -584,7 +586,7 @@ fn corrupt_state_file_falls_back() {
     assert_eq!(*b.state(), State::default());
     assert_eq!(b.account(), None);
     // And recovers: the next save rewrites it.
-    block_on(b.sign_in(SignInMethod::Sso)).unwrap();
+    testing::sign_in(&b);
     assert!(mock(d.path()).account().is_some());
 }
 
@@ -719,7 +721,7 @@ fn no_secret_reaches_backend() {
 #[test]
 fn received_copy_of_an_owned_share_pulls_the_owners_files() {
     let b = MockBackend::open(None, Duration::ZERO);
-    block_on(b.sign_in(SignInMethod::Sso)).unwrap();
+    testing::sign_in(&b);
     let owner = key();
     let v1 = files(&[("charges/create.yaml", "request:\n  url: a\n")]);
     block_on(b.sync(&owner, &v1, &[])).unwrap();
@@ -776,7 +778,7 @@ fn received_copy_of_an_owned_share_pulls_the_owners_files() {
     assert_eq!(snapshot.variables, [var]);
 
     // Signed out, a received copy does not sync.
-    block_on(b.sign_out()).unwrap();
+    testing::sign_out(&b);
     assert_eq!(
         block_on(b.sync_shared(&copy, &shared.id, &v2)).map(|_| ()),
         Err(BackendError::SignedOut)
@@ -786,7 +788,7 @@ fn received_copy_of_an_owned_share_pulls_the_owners_files() {
 #[test]
 fn fetch_shared_honours_expiry() {
     let b = MockBackend::open(None, Duration::ZERO);
-    block_on(b.sign_in(SignInMethod::Sso)).unwrap();
+    testing::sign_in(&b);
     let k = key();
     block_on(b.update_share(&k, ShareUpdate::default())).unwrap();
     assert!(block_on(b.fetch_shared(&k.id)).is_ok());
@@ -810,7 +812,7 @@ fn fetch_shared_honours_expiry() {
         Err(BackendError::Expired)
     );
     // Resolving and fetching need no account.
-    block_on(b.sign_out()).unwrap();
+    testing::sign_out(&b);
     assert!(block_on(b.fetch_shared(fixtures::SHIPPING_ID)).is_ok());
 }
 
@@ -840,7 +842,7 @@ fn server_copy_changed_since_base_is_a_conflict_and_kept() {
 #[test]
 fn deletions_remove_owned_files_and_received_copies_are_told() {
     let b = MockBackend::open(None, Duration::ZERO);
-    block_on(b.sign_in(SignInMethod::Sso)).unwrap();
+    testing::sign_in(&b);
     let owner = key();
     let both = files(&[("a.yaml", "a: 1\n"), ("b.yaml", "b: 1\n")]);
     block_on(b.sync(&owner, &both, &[])).unwrap();
@@ -938,4 +940,106 @@ fn owned_pulls_newer_and_refuses_stale_deletions() {
         b.state().synced[&k.id].files.contains_key("b.yaml"),
         "theirs kept"
     );
+}
+
+fn callback(server: &str) -> AuthCallback {
+    AuthCallback {
+        server: server.into(),
+        code: "crh_mock".into(),
+    }
+}
+
+#[test]
+fn sign_in_round_trip() {
+    let d = tempfile::tempdir().unwrap();
+    let b = mock(d.path());
+    let url = block_on(b.sign_in_url(&Server::Cloud)).unwrap();
+    assert_eq!(
+        url,
+        format!(
+            "curl-runner://auth/callback?code=crh_mock&server={}",
+            Server::Cloud.url()
+        )
+    );
+    let cb = AuthCallback::parse(&url).unwrap();
+    let account = block_on(b.complete_sign_in(&cb)).unwrap();
+    assert_eq!(account.name, "Jamie Rivera");
+    assert_eq!(account.email, "jamie@acme.dev");
+    assert_eq!(account.provider, SignInMethod::Github);
+    assert_eq!(b.account(), Some(account.clone()));
+    assert_eq!(b.account_on(Server::Cloud.url()), Some(account.clone()));
+    // A callback works once.
+    assert_eq!(
+        block_on(b.complete_sign_in(&cb)),
+        Err(BackendError::Invalid(FOREIGN_CALLBACK.into()))
+    );
+    // Sessions are per server: switching servers signs nothing out.
+    let own = Server::SelfHosted {
+        url: "https://curl-runner.example.com".into(),
+    };
+    block_on(b.set_server(own.clone())).unwrap();
+    assert_eq!(b.account(), None);
+    assert_eq!(b.account_on(Server::Cloud.url()), Some(account.clone()));
+    drop(b);
+    let again = mock(d.path());
+    assert_eq!(again.server(), own);
+    assert_eq!(again.account_on(Server::Cloud.url()), Some(account));
+    block_on(again.sign_out(Server::Cloud.url())).unwrap();
+    assert_eq!(mock(d.path()).account_on(Server::Cloud.url()), None);
+}
+
+/// Review Focus 1: a callback the studio didn't ask for (a link on a web
+/// page) is refused, and nothing is sent anywhere.
+#[test]
+fn callback_without_pending_sign_in_is_refused() {
+    let b = MockBackend::open(None, Duration::ZERO);
+    let refused = Err(BackendError::Invalid(FOREIGN_CALLBACK.into()));
+    let complete = |server: &str| block_on(b.complete_sign_in(&callback(server))).map(|_| ());
+    assert_eq!(complete(Server::Cloud.url()), refused, "nothing pending");
+    // Pending on Cloud: another server's callback is still refused.
+    block_on(b.sign_in_url(&Server::Cloud)).unwrap();
+    assert_eq!(complete("https://evil.test"), refused);
+    // Plain http, even pending, is refused: the code would travel in clear.
+    let http = Server::SelfHosted {
+        url: "http://curl-runner.example.com".into(),
+    };
+    block_on(b.sign_in_url(&http)).unwrap();
+    assert_eq!(complete("http://curl-runner.example.com"), refused);
+    assert_eq!(b.account_on("https://evil.test"), None);
+    assert_eq!(b.account_on("http://curl-runner.example.com"), None);
+    let sent = dev(&b).recorded();
+    assert!(
+        !sent.iter().any(|c| c.starts_with("redeem")),
+        "no code was sent: {sent:?}"
+    );
+    // Loopback http is fine (local servers), and a trailing `/` too.
+    let local = Server::SelfHosted {
+        url: "http://localhost:8080/".into(),
+    };
+    block_on(b.sign_in_url(&local)).unwrap();
+    assert_eq!(complete("http://localhost:8080"), Ok(()));
+    assert!(b.account_on("http://localhost:8080").is_some());
+    // Cloud's own sign-in still waits, and works.
+    assert_eq!(complete(Server::Cloud.url()), Ok(()));
+}
+
+#[test]
+fn pending_sign_in_expires_after_10_minutes() {
+    let now = Arc::new(Mutex::new(Instant::now()));
+    let clock = {
+        let now = now.clone();
+        Arc::new(move || *now.lock().unwrap())
+    };
+    let b = MockBackend::open(None, Duration::ZERO).with_clock(clock);
+    let advance = |secs: u64| *now.lock().unwrap() += Duration::from_secs(secs);
+    block_on(b.sign_in_url(&Server::Cloud)).unwrap();
+    advance(10 * 60 + 1);
+    assert_eq!(
+        block_on(b.complete_sign_in(&callback(Server::Cloud.url()))).map(|_| ()),
+        Err(BackendError::Invalid(FOREIGN_CALLBACK.into()))
+    );
+    assert_eq!(b.account(), None);
+    block_on(b.sign_in_url(&Server::Cloud)).unwrap();
+    advance(10 * 60 - 1);
+    assert!(block_on(b.complete_sign_in(&callback(Server::Cloud.url()))).is_ok());
 }

@@ -2405,10 +2405,10 @@ mod tests {
     #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn a_drawer_save_keeps_the_owners_lock(cx: &mut TestAppContext) {
-        use crate::model::backend::{SignInMethod, share_payload};
+        use crate::model::backend::share_payload;
         let state = tempfile::tempdir().unwrap();
         let backend = super::super::workspace::test_backend();
-        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        crate::model::backend::testing::sign_in(&*backend);
         let (dir, window, ws, _) = open_with(cx, state.path(), backend.clone());
         open_environments(cx, window);
         cx.update_window(window, |_, window, cx| window.click("settings-sharing", cx))
@@ -2440,10 +2440,9 @@ mod tests {
     #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn sharing_page_shares_like_the_dialog(cx: &mut TestAppContext) {
-        use crate::model::backend::SignInMethod;
         let state = tempfile::tempdir().unwrap();
         let backend = super::super::workspace::test_backend();
-        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        crate::model::backend::testing::sign_in(&*backend);
         let (_dir, window, ws, _) = open_with(cx, state.path(), backend.clone());
         open_environments(cx, window);
         cx.update_window(window, |_, window, cx| window.click("settings-sharing", cx))
@@ -2495,10 +2494,9 @@ mod tests {
     #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn signing_out_drops_the_old_sessions_share(cx: &mut TestAppContext) {
-        use crate::model::backend::SignInMethod;
         let state = tempfile::tempdir().unwrap();
         let backend = super::super::workspace::test_backend();
-        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        crate::model::backend::testing::sign_in(&*backend);
         let (_dir, window, ws, _) = open_with(cx, state.path(), backend.clone());
         open_environments(cx, window);
         cx.update_window(window, |_, window, cx| window.click("settings-sharing", cx))
@@ -2507,7 +2505,7 @@ mod tests {
         let view = ws.read_with(cx, |ws, _| ws.settings_view.clone().unwrap());
         assert_eq!(view.read_with(cx, |v, cx| v.sharing_count(cx)), Some(1));
         // Signed out from Settings: the workspace starts over.
-        futures::executor::block_on(backend.sign_out()).unwrap();
+        crate::model::backend::testing::sign_out(&*backend);
         cx.update_window(window, |_, window, cx| {
             ws.update(cx, |ws, cx| ws.start_sync(window, cx))
         })
@@ -2629,10 +2627,9 @@ mod tests {
     #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn marked_secret_while_its_tick_is_in_flight_shares_nothing(cx: &mut TestAppContext) {
-        use crate::model::backend::SignInMethod;
         let state = tempfile::tempdir().unwrap();
         let backend = super::super::workspace::test_backend();
-        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        crate::model::backend::testing::sign_in(&*backend);
         let (dir, window, ws, _) = open_with(cx, state.path(), backend.clone());
         open_environments(cx, window);
         cx.update_window(window, |_, window, cx| window.click("settings-sharing", cx))
@@ -2696,10 +2693,9 @@ mod tests {
     #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn each_change_writes_the_notes_once(cx: &mut TestAppContext) {
-        use crate::model::backend::SignInMethod;
         let state = tempfile::tempdir().unwrap();
         let backend = super::super::workspace::test_backend();
-        futures::executor::block_on(backend.sign_in(SignInMethod::GitHub)).unwrap();
+        crate::model::backend::testing::sign_in(&*backend);
         let (dir, window, ws, _) = open_with(cx, state.path(), backend.clone());
         let on_disk = || CollectionMeta::load(state.path(), dir.path());
         let start = saves(cx, &ws);

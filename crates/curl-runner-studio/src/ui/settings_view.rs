@@ -20,7 +20,7 @@ use super::settings_kit::{
 };
 use super::sign_in::SETUP_GUIDE_URL;
 use super::workspace::notify_error;
-use crate::model::backend::{Account, Backend, CollectionKey, Server, SyncStatus};
+use crate::model::backend::{Account, Backend, CollectionKey, Server, SyncStatus, method_label};
 use crate::model::environments::{env_file, is_secret, list_environments};
 use crate::model::history::relative_time;
 use crate::model::secrets::{SecretStore, service_name};
@@ -1085,21 +1085,13 @@ fn avatar() -> Div {
         ))
 }
 
-/// `jamie@acme.dev · Owner of Acme · signed in with GitHub`, the org in
-/// `text-primary`.
+/// `jamie@acme.dev · signed in with GitHub`.
 fn account_line(a: &Account) -> Div {
-    let line = div()
-        .flex()
-        .flex_wrap()
-        .text_color(color("text-secondary"))
-        .child(format!("{} · {}", a.email, a.role));
-    match &a.org {
-        Some(org) => line
-            .child("\u{a0}of\u{a0}")
-            .child(div().text_color(color("text-primary")).child(org.clone()))
-            .child(format!(" · signed in with {}", a.provider.label())),
-        None => line.child(format!(" · signed in with {}", a.provider.label())),
-    }
+    div().text_color(color("text-secondary")).child(format!(
+        "{} · signed in with {}",
+        a.email,
+        method_label(a.provider)
+    ))
 }
 
 /// The Sync card's status line: its dot's token and text. What waits,
@@ -1239,7 +1231,10 @@ impl SettingsView {
             return;
         }
         self.busy = true;
-        let call = backend_call(cx, &self.accounts.backend, |b| b.sign_out());
+        let server = self.accounts.backend.server();
+        let call = backend_call(cx, &self.accounts.backend, move |b| {
+            b.sign_out(server.url())
+        });
         self.task = Some(cx.spawn_in(window, async move |this, cx| {
             let result = call.await;
             this.update_in(cx, |this, window, cx| {

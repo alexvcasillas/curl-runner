@@ -16,15 +16,21 @@ pub mod fixtures;
 mod mock;
 #[cfg(any(test, not(feature = "server")))]
 mod no_server;
+#[cfg(any(test, feature = "server"))]
+pub mod pending;
 
 // Only the macOS app constructs the mock; off macOS the UI isn't built.
 #[cfg(any(test, feature = "server"))]
 #[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 pub use mock::{MOCK_LATENCY, MockBackend};
 // Only the macOS app constructs it; off macOS the UI isn't built.
+/// How a server lets people sign in: what `/v1/info` reports.
+pub use curl_runner_cloud_proto::wire::SignInMethod;
 #[cfg(not(feature = "server"))]
 #[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 pub use no_server::NoServer;
+#[cfg(any(test, feature = "server"))]
+pub use pending::PendingSignIns;
 
 use crate::model::collection_meta::CollectionMeta;
 use crate::model::environments::is_secret;
@@ -110,42 +116,55 @@ impl Server {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SignInMethod {
-    Sso,
-    GitHub,
-    Email,
-}
-
-impl SignInMethod {
-    /// `SSO`, `GitHub`, `email`: as in `sign-in via SSO`.
-    pub fn label(self) -> &'static str {
-        match self {
-            SignInMethod::Sso => "SSO",
-            SignInMethod::GitHub => "GitHub",
-            SignInMethod::Email => "email",
-        }
+/// `GitHub`, `Google`, `email`: as in `signed in with GitHub`.
+pub fn method_label(method: SignInMethod) -> &'static str {
+    match method {
+        SignInMethod::Github => "GitHub",
+        SignInMethod::Google => "Google",
+        SignInMethod::Email => "email",
     }
 }
 
+/// `methods` in the order GitHub, Google, email, joined as a sentence:
+/// `GitHub, Google or email`. `None` when there are none.
+pub fn methods_text(methods: &[SignInMethod]) -> Option<String> {
+    let labels: Vec<&str> = [
+        SignInMethod::Github,
+        SignInMethod::Google,
+        SignInMethod::Email,
+    ]
+    .into_iter()
+    .filter(|m| methods.contains(m))
+    .map(method_label)
+    .collect();
+    match labels.as_slice() {
+        [] => None,
+        [one] => Some((*one).to_string()),
+        [rest @ .., last] => Some(format!("{} or {last}", rest.join(", "))),
+    }
+}
+
+/// Who is signed in on one server. Teams arrive with plan 3b.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Account {
     pub name: String,
     pub email: String,
-    pub org: Option<String>,
-    pub role: String,
     pub provider: SignInMethod,
 }
 
-/// What `Test connection` shows: `server 2.1.1 · sign-in via SSO · 42 ms`.
+/// What `Test connection` shows:
+/// `server 2.1.1 · sign-in via GitHub or email · 42 ms`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectionInfo {
     pub version: String,
-    pub sign_in: SignInMethod,
+    pub sign_in: Vec<SignInMethod>,
     pub latency_ms: u64,
 }
+
+/// What a sign-in callback gets when this studio didn't start a sign-in
+/// with its server in the last 10 minutes, or the server isn't https.
+pub const FOREIGN_CALLBACK: &str = "That sign-in link didn't come from this studio.";
 
 /// A collection as the server knows it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -451,13 +470,27 @@ pub struct DevToggles {
 /// The server, as the studio sees it. Calls that need the network return a
 /// [`BoxFut`]; the rest read what the backend already knows.
 pub trait Backend: Send + Sync {
+    /// The server this person's own team publishes to (Settings ›
+    /// Accounts & sync). Received collections carry their own.
     fn server(&self) -> Server;
-    /// Switching servers signs out.
+    /// Sessions are per server: switching signs nothing out.
     fn set_server(&self, server: Server) -> BoxFut<'_, ()>;
     fn test_connection(&self, server: &Server) -> BoxFut<'_, ConnectionInfo>;
-    fn sign_in(&self, method: SignInMethod) -> BoxFut<'_, Account>;
-    fn sign_out(&self) -> BoxFut<'_, ()>;
+    /// Starts a sign-in with `server`: records it as pending for 10
+    /// minutes and returns the page to open, `{app_url}/sign-in?client=studio`.
+    fn sign_in_url(&self, server: &Server) -> BoxFut<'_, String>;
+    /// Redeems the dashboard's callback. Refused with
+    /// `Invalid(`[`FOREIGN_CALLBACK`]`)`, sending nothing, unless a sign-in
+    /// with `callback.server` is pending ([`PendingSignIns`]).
+    fn complete_sign_in(&self, callback: &AuthCallback) -> BoxFut<'_, Account>;
+    /// Ends the session on `server` only.
+    fn sign_out(&self, server: &str) -> BoxFut<'_, ()>;
+    /// The account on [`Backend::server`].
     fn account(&self) -> Option<Account>;
+    /// The account on `server` (an API URL).
+    // Received collections, each on its own server, ask (Task 7 of 3a).
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn account_on(&self, server: &str) -> Option<Account>;
     fn sync_status(&self, collection: &CollectionKey) -> SyncStatus;
     /// Reconciles `local` (each with its `base`) and `deleted` with the
     /// server's copy, file by file:
@@ -647,12 +680,42 @@ pub mod testing {
     use super::*;
     use std::sync::{Arc, Mutex};
 
+    /// Signs `b` in on its server as the studio does: `sign_in_url`, then
+    /// the dashboard's callback. The mock signs in Jamie (GitHub).
+    pub fn sign_in(b: &dyn Backend) -> Account {
+        sign_in_with(b, fixtures::MOCK_CODE)
+    }
+
+    /// [`sign_in`], as the mock's email account (Maria).
+    pub fn sign_in_by_email(b: &dyn Backend) -> Account {
+        sign_in_with(b, fixtures::EMAIL_CODE)
+    }
+
+    fn sign_in_with(b: &dyn Backend, code: &str) -> Account {
+        use futures::executor::block_on;
+        let server = b.server();
+        block_on(b.sign_in_url(&server)).unwrap();
+        let callback = AuthCallback {
+            server: server.url().trim_end_matches('/').to_string(),
+            code: code.into(),
+        };
+        block_on(b.complete_sign_in(&callback)).unwrap()
+    }
+
+    /// Signs `b` out of its server.
+    pub fn sign_out(b: &dyn Backend) {
+        futures::executor::block_on(b.sign_out(b.server().url())).unwrap();
+    }
+
     /// The backend, recording every file a sync sends (text included).
     pub struct Spy {
         pub inner: Arc<dyn Backend>,
         pub sent: Mutex<Vec<SyncFile>>,
         /// `share_settings` fails as offline while set.
         pub fail_share_settings: std::sync::atomic::AtomicBool,
+        /// When set, `sign_in_url` (still started on the inner backend)
+        /// answers with this page, as a real server does.
+        pub browser_url: Mutex<Option<String>>,
     }
 
     impl Spy {
@@ -661,6 +724,7 @@ pub mod testing {
                 inner,
                 sent: Mutex::default(),
                 fail_share_settings: Default::default(),
+                browser_url: Mutex::default(),
             }
         }
     }
@@ -675,14 +739,24 @@ pub mod testing {
         fn test_connection(&self, server: &Server) -> BoxFut<'_, ConnectionInfo> {
             self.inner.test_connection(server)
         }
-        fn sign_in(&self, method: SignInMethod) -> BoxFut<'_, Account> {
-            self.inner.sign_in(method)
+        fn sign_in_url(&self, server: &Server) -> BoxFut<'_, String> {
+            let started = self.inner.sign_in_url(server);
+            Box::pin(async move {
+                let url = started.await?;
+                Ok(self.browser_url.lock().unwrap().clone().unwrap_or(url))
+            })
         }
-        fn sign_out(&self) -> BoxFut<'_, ()> {
-            self.inner.sign_out()
+        fn complete_sign_in(&self, callback: &AuthCallback) -> BoxFut<'_, Account> {
+            self.inner.complete_sign_in(callback)
+        }
+        fn sign_out(&self, server: &str) -> BoxFut<'_, ()> {
+            self.inner.sign_out(server)
         }
         fn account(&self) -> Option<Account> {
             self.inner.account()
+        }
+        fn account_on(&self, server: &str) -> Option<Account> {
+            self.inner.account_on(server)
         }
         fn sync_status(&self, collection: &CollectionKey) -> SyncStatus {
             self.inner.sync_status(collection)
@@ -935,7 +1009,11 @@ mod tests {
             url: "https://curl-runner.example.com".into(),
         };
         assert_eq!(own.url(), "https://curl-runner.example.com");
-        assert_eq!(SignInMethod::Sso.label(), "SSO");
+        assert_eq!(method_label(SignInMethod::Github), "GitHub");
+        assert_eq!(
+            methods_text(&[SignInMethod::Email, SignInMethod::Github]).as_deref(),
+            Some("GitHub or email")
+        );
         assert_eq!(MOCK_LATENCY, std::time::Duration::from_millis(120));
         let b: Box<dyn Backend> = Box::new(MockBackend::open(None, MOCK_LATENCY));
         assert_eq!(b.server(), Server::Cloud);

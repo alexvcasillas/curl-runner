@@ -10,12 +10,13 @@
 //! never to disk, a log, a toast or the backend.
 
 use super::app::mono_font;
-use super::color;
 use super::icons::{self, glyph};
 use super::share_dialog::initials;
+use super::state::Connection;
 use super::workspace::{Workspace, notify_error};
+use super::{backend_call, color};
 use crate::model::backend::{
-    AuthCallback, Backend, BackendError, ShareLink, SharedCollection, SharedVar,
+    AuthCallback, Backend, BackendError, FOREIGN_CALLBACK, ShareLink, SharedCollection, SharedVar,
 };
 use crate::model::environments::is_secret;
 use crate::model::history::relative_time;
@@ -1379,14 +1380,62 @@ impl Workspace {
 }
 
 impl Workspace {
-    /// The dashboard sent the studio back with a handoff code. Task 4 redeems
-    /// it; until then there is nothing to do.
+    /// The dashboard sent the studio back with a handoff code: the backend
+    /// redeems it (or refuses a callback this studio didn't ask for), then
+    /// the sign-in screen closes and a link that waited for it opens.
     pub(super) fn complete_sign_in(
         &mut self,
-        _callback: AuthCallback,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
+        callback: AuthCallback,
+        window: &mut Window,
+        cx: &mut Context<Self>,
     ) {
+        let call = backend_call(cx, &self.backend, move |b| b.complete_sign_in(&callback));
+        // Detached: a later callback (a foreign one, say) must not cancel
+        // this one's redemption.
+        cx.spawn_in(window, async move |this, cx| {
+            let result = call.await;
+            this.update_in(cx, |this, window, cx| {
+                this.sign_in_completed(result.map(|_| ()), window, cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn sign_in_completed(
+        &mut self,
+        result: Result<(), BackendError>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok(()) => {
+                self.signed_in_as(Connection::Online);
+                if self.sign_in.is_some() {
+                    // Back where it came from, then any waiting link.
+                    self.close_sign_in(window, cx);
+                } else if let Some(link) = self.pending_link.take() {
+                    self.open_shared(Some(link), window, cx);
+                }
+                if let Some(view) = &self.app_settings {
+                    view.update(cx, |_, cx| cx.notify());
+                }
+                self.start_sync(window, cx);
+                self.sync_chrome(window, cx);
+                cx.notify();
+            }
+            // Not ours: dropped, with a toast; a sign-in in progress still
+            // waits for its own callback.
+            Err(BackendError::Invalid(text)) if text == FOREIGN_CALLBACK => {
+                #[cfg(test)]
+                self.toasts.push(text.clone());
+                window.push_notification(Notification::error(text), cx);
+            }
+            Err(e) => match &self.sign_in {
+                Some(view) => view.update(cx, |v, cx| v.sign_in_failed(&e, cx)),
+                None => notify_error(format!("Couldn't sign in: {e}"), window, cx),
+            },
+        }
     }
 }
 
@@ -2049,6 +2098,15 @@ mod gpui_tests {
                 && ws.pending_link.is_none()),
             "a callback never reaches the share flow"
         );
+        // No sign-in was started: it is refused, with a toast, and nobody
+        // is signed in.
+        s.ws.read_with(cx, |ws, _| {
+            assert_eq!(
+                ws.toasts.last().map(String::as_str),
+                Some("That sign-in link didn't come from this studio.")
+            );
+        });
+        assert!(s.backend.account().is_none());
         // A share link still does.
         cx.update_window(s.window, |_, window, cx| {
             ws.update(cx, |ws, cx| {

@@ -613,12 +613,31 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let SignInEvent::Done(connection) = event {
-            self.store.set_connection(Some(*connection));
-            self.session_connection = Some(*connection);
+        match event {
+            SignInEvent::OpenUrl(url) => {
+                // The mock's sign-in page is its own callback: the studio
+                // answers it as it would the browser's.
+                if url.starts_with("curl-runner://") {
+                    match crate::model::backend::AuthCallback::parse(url) {
+                        Some(callback) => self.complete_sign_in(callback, window, cx),
+                        None => log::warn!("not a sign-in callback: {url}"),
+                    }
+                } else {
+                    cx.open_url(url);
+                }
+                return;
+            }
+            SignInEvent::Done(connection) => self.signed_in_as(*connection),
+            SignInEvent::Back => {}
         }
         self.close_sign_in(window, cx);
         self.start_sync(window, cx);
+    }
+
+    /// The sign-in screen's answer, remembered.
+    pub(in crate::ui) fn signed_in_as(&mut self, connection: Connection) {
+        self.store.set_connection(Some(connection));
+        self.session_connection = Some(connection);
     }
 
     /// Welcome's cloud chip: its dot's token and its text.
