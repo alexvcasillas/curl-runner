@@ -6,11 +6,11 @@
 //! own, and ends with one exit code per kind of failure (phase 2):
 //! 0 ok, 1 invalid files, 2 auth, 3 plan limit, 4 wrong source, 5 unreachable.
 
-use super::client::{Client, Reply};
 use super::{Env, credentials, flag_value, server_from_args};
 use crate::output::Console;
 use crate::validate_cmd::lint_and_print;
 use crate::version_check::{HOOKS_ENABLED, hook};
+use curl_runner_cloud_client::retry;
 use curl_runner_cloud_proto::{
     BundleFile, ErrorBody, ErrorCode, FileChanges, GitMeta, Input, PublishRequest, PublishResponse,
     PublishStatus,
@@ -23,7 +23,6 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use std::path::Path;
-use std::time::Duration;
 
 pub(super) const EXIT_INVALID: i32 = 1;
 pub(super) const EXIT_AUTH: i32 = 2;
@@ -31,9 +30,6 @@ const EXIT_PLAN_LIMIT: i32 = 3;
 const EXIT_WRONG_SOURCE: i32 = 4;
 pub(super) const EXIT_UNREACHABLE: i32 = 5;
 
-const ATTEMPTS: usize = 5;
-const BASE_DELAYS: [u64; ATTEMPTS - 1] = [1, 2, 4, 8];
-const MAX_RETRY_AFTER: u64 = 60;
 const NO_SLEEP_ENV: &str = "CURL_RUNNER_TEST_NO_SLEEP";
 const TEAM_ENV: &str = "CURL_RUNNER_TEAM";
 
@@ -203,40 +199,20 @@ fn prepare(dir: &str, slug: Option<&str>, color: bool, c: &mut Console) -> Optio
     })
 }
 
-/// Seconds to wait before retry number `retry` (0-based). `unit` in [0, 1)
-/// places the wait inside the +-25 % jitter band. A `Retry-After` is
-/// honored as sent, up to a minute.
-fn delay(retry: usize, retry_after: Option<u64>, unit: f64) -> Duration {
-    if let Some(s) = retry_after {
-        return Duration::from_secs(s.min(MAX_RETRY_AFTER));
-    }
-    let base = BASE_DELAYS[retry.min(BASE_DELAYS.len() - 1)] as f64;
-    Duration::from_secs_f64(base * (0.75 + 0.5 * unit))
-}
-
-/// A random number in [0, 1). `RandomState` is seeded by the OS, which
-/// avoids a clock whose low digits are always zero on some platforms.
-fn jitter_unit() -> f64 {
-    use std::hash::{BuildHasher, Hasher};
-    let n = std::collections::hash_map::RandomState::new()
-        .build_hasher()
-        .finish();
-    (n >> 11) as f64 / (1u64 << 53) as f64
-}
-
-/// A client that retries transport errors, 5xx and 429.
+/// A client that retries transport errors, 5xx and 429 (see
+/// `curl_runner_cloud_client::retry`), reporting failures as exit codes.
 pub(super) struct Api<'a> {
-    client: Client,
-    server: &'a str,
-    sleep: bool,
+    inner: retry::Api<'a>,
 }
 
 impl<'a> Api<'a> {
     pub(super) fn new(server: &'a str, token: Option<String>, env: Env) -> Api<'a> {
         Api {
-            client: Client::new(server, token),
-            server,
-            sleep: hook(env, NO_SLEEP_ENV, HOOKS_ENABLED).is_none(),
+            inner: retry::Api::new(
+                server,
+                token,
+                hook(env, NO_SLEEP_ENV, HOOKS_ENABLED).is_none(),
+            ),
         }
     }
 
@@ -250,52 +226,9 @@ impl<'a> Api<'a> {
         body: Option<&[u8]>,
         gzip: bool,
     ) -> Result<(u16, Vec<u8>), Fail> {
-        for attempt in 0..ATTEMPTS {
-            let last = attempt + 1 == ATTEMPTS;
-            let (why, retry_after) = match self.client.send_full(method, path, body, gzip) {
-                Ok(Reply {
-                    status,
-                    body,
-                    retry_after,
-                }) => {
-                    if status != 429 && status < 500 {
-                        return Ok((status, body));
-                    }
-                    if last {
-                        return Err(match serde_json::from_slice::<ErrorBody>(&body) {
-                            Ok(b) => fail(EXIT_UNREACHABLE, super::escape_control(&b.message)),
-                            Err(_) => fail(
-                                EXIT_UNREACHABLE,
-                                format!(
-                                    "Cannot reach {}: unexpected reply (HTTP {status}).",
-                                    super::escape_control(self.server)
-                                ),
-                            ),
-                        });
-                    }
-                    (format!("HTTP {status}"), retry_after)
-                }
-                Err(e) => {
-                    if last {
-                        return Err(fail(
-                            EXIT_UNREACHABLE,
-                            format!("Cannot reach {}: {e}.", super::escape_control(self.server)),
-                        ));
-                    }
-                    (e.to_string(), None)
-                }
-            };
-            let wait = delay(attempt, retry_after, jitter_unit());
-            c.err(&format!(
-                "{why}. Retrying in {:.0}s (attempt {} of {ATTEMPTS}).",
-                wait.as_secs_f64(),
-                attempt + 2
-            ));
-            if self.sleep {
-                std::thread::sleep(wait);
-            }
-        }
-        unreachable!("the last attempt returns")
+        self.inner
+            .request(&mut |m| c.err(m), method, path, body, gzip)
+            .map_err(|m| fail(EXIT_UNREACHABLE, m))
     }
 
     fn get<T: DeserializeOwned>(
@@ -384,7 +317,7 @@ fn resolve_team(
             ));
         }
         None => {
-            let me: super::client::Me = api.get(c, "/v1/me", || {
+            let me: curl_runner_cloud_client::Me = api.get(c, "/v1/me", || {
                 fail(
                     EXIT_AUTH,
                     "This account can't be found. Run curl-runner login.",
@@ -656,34 +589,6 @@ mod tests {
             path: path.into(),
             text: text.into(),
         }
-    }
-
-    #[test]
-    fn backoff_is_1_2_4_8_with_25_percent_jitter() {
-        for (i, base) in [1.0, 2.0, 4.0, 8.0].into_iter().enumerate() {
-            assert_eq!(delay(i, None, 0.5).as_secs_f64(), base);
-            assert!((delay(i, None, 0.0).as_secs_f64() - base * 0.75).abs() < 1e-9);
-            assert!((delay(i, None, 0.999).as_secs_f64() - base * 1.2495).abs() < 1e-6);
-        }
-    }
-
-    #[test]
-    fn jitter_stays_within_band_and_varies() {
-        let mut seen = std::collections::HashSet::new();
-        for _ in 0..50 {
-            let u = jitter_unit();
-            assert!((0.0..1.0).contains(&u));
-            let d = delay(2, None, u).as_secs_f64();
-            assert!((3.0..=5.0).contains(&d), "{d}");
-            seen.insert(d.to_bits());
-        }
-        assert!(seen.len() > 1);
-    }
-
-    #[test]
-    fn retry_after_is_honored_and_capped() {
-        assert_eq!(delay(0, Some(7), 0.9), Duration::from_secs(7));
-        assert_eq!(delay(0, Some(3600), 0.9), Duration::from_secs(60));
     }
 
     #[test]

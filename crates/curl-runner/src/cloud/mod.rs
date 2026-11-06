@@ -59,18 +59,7 @@ pub fn server_from_args(args: &[String], env: Env) -> Result<String, String> {
 
 /// Text from a server, safe to print: control characters (a terminal reads
 /// escape sequences from them) become `\u{..}` escapes.
-pub(crate) fn escape_control(s: &str) -> String {
-    use std::fmt::Write;
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        if c.is_control() {
-            let _ = write!(out, "\\u{{{:x}}}", c as u32);
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
+pub(crate) use curl_runner_cloud_client::escape_control;
 
 #[cfg(test)]
 mod tests {

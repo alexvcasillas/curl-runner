@@ -1477,6 +1477,7 @@ dependencies = [
  "cliclack",
  "ctrlc",
  "curl",
+ "curl-runner-cloud-client",
  "curl-runner-cloud-proto",
  "curl-runner-core",
  "flate2",
@@ -1493,6 +1494,20 @@ dependencies = [
  "thiserror 2.0.21",
  "url",
  "zip",
+]
+
+[[package]]
+name = "curl-runner-cloud-client"
+version = "2.7.1"
+dependencies = [
+ "curl",
+ "curl-runner-cloud-proto",
+ "curl-runner-core",
+ "flate2",
+ "serde",
+ "serde_json",
+ "testkit",
+ "url",
 ]
 
 [[package]]
