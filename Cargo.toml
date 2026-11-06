@@ -4,12 +4,12 @@ members = ["crates/curl-runner-core", "crates/curl-runner", "crates/curl-runner-
 
 [workspace.package]
 # Synced from packages/cli/package.json by scripts/sync-cargo-version.sh.
-version = "2.7.0"
+version = "2.7.1"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/alexvcasillas/curl-runner"
 homepage = "https://www.curl-runner.com"
 
 [workspace.dependencies]
-curl-runner-core = { path = "crates/curl-runner-core", version = "=2.7.0" }
-curl-runner-cloud-proto = { path = "crates/curl-runner-cloud-proto", version = "=2.7.0" }
+curl-runner-core = { path = "crates/curl-runner-core", version = "=2.7.1" }
+curl-runner-cloud-proto = { path = "crates/curl-runner-cloud-proto", version = "=2.7.1" }
