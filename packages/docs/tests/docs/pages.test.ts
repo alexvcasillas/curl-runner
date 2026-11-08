@@ -106,6 +106,17 @@ describe('docs pages', () => {
     }
   });
 
+  // The title tag is "<title> — curl-runner docs", so two pages with the same
+  // title get the same title tag and SEO audits flag both.
+  it('gives every page its own title', () => {
+    const byTitle = new Map<string, string[]>();
+    for (const page of source.getPages()) {
+      byTitle.set(page.data.title, [...(byTitle.get(page.data.title) ?? []), page.url]);
+    }
+    const duplicates = [...byTitle.values()].filter((pageUrls) => pageUrls.length > 1);
+    expect(duplicates).toEqual([]);
+  });
+
   it('lists each moved page in the sidebar tree, not as a link entry', () => {
     const meta = JSON.parse(readFileSync(join(CONTENT_DIR, 'meta.json'), 'utf8')) as {
       pages: string[];
@@ -219,5 +230,17 @@ describe('markdown rewrites', () => {
     // the generic rule must not shadow the index rule
     const order = list.map((r) => r.source);
     expect(order.indexOf('/docs/index.md')).toBeLessThan(order.indexOf('/docs/:path*.md'));
+  });
+});
+
+describe('redirects', () => {
+  // Crawlers guess /sitemap.html; send them to the real sitemap instead of a 404.
+  it('sends /sitemap.html to /sitemap.xml permanently', async () => {
+    const redirects = (await nextConfig.redirects?.()) ?? [];
+    expect(redirects).toContainEqual({
+      source: '/sitemap.html',
+      destination: '/sitemap.xml',
+      permanent: true,
+    });
   });
 });

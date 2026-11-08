@@ -20,6 +20,10 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Crawlers guess /sitemap.html. There's no such page, so send them to the real sitemap.
+  async redirects() {
+    return [{ source: '/sitemap.html', destination: '/sitemap.xml', permanent: true }];
+  },
   // Every docs page as Markdown: /docs.md and /docs/<page>.md, rendered by app/llms.mdx.
   // /docs/index.md is the same page as /docs.md.
   async rewrites() {
