@@ -14,8 +14,6 @@
   "dependencies": {
     "@pulsora/core": "^1.0.1",
     "@pulsora/react": "^1.0.0",
-    "@vercel/analytics": "^1.5.0",
-    "@vercel/speed-insights": "^1.2.0",
     "fumadocs-core": "~16.17.8",
     "fumadocs-mdx": "~15.4.10",
     "fumadocs-ui": "~16.17.8",
