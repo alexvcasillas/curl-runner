@@ -1,9 +1,7 @@
-import { Analytics } from '@vercel/analytics/next';
 import { GeistMono } from 'geist/font/mono';
 import { GeistSans } from 'geist/font/sans';
 import type { Metadata } from 'next';
 import './globals.css';
-import { SpeedInsights } from '@vercel/speed-insights/next';
 import { PulsoraAnalytics } from '@/components/pulsora-analytics';
 import { SITE_DESCRIPTION } from '@/lib/site';
 
@@ -154,15 +152,11 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <link rel="dns-prefetch" href="https://vercel-insights.com" />
-        <link rel="dns-prefetch" href="https://vitals.vercel-insights.com" />
         <meta name="theme-color" content="#0A0A0A" />
         <meta name="color-scheme" content="dark" />
       </head>
       <body suppressHydrationWarning>
         <PulsoraAnalytics>{children}</PulsoraAnalytics>
-        <Analytics />
-        <SpeedInsights />
       </body>
     </html>
   );
