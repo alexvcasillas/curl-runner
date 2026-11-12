@@ -5,11 +5,12 @@
 pub mod client;
 pub mod link;
 pub mod net;
+pub mod publish;
 pub mod retry;
 
 pub use client::{
-    Client, CloudError, Latest, Me, NetError, Reply, TeamInfo, User, Verified, check_server,
-    describe,
+    Client, CloudError, CollectionRow, Latest, Me, NetError, Reply, TeamInfo, User, Verified,
+    check_server, describe, versions_path,
 };
 
 /// Text from a server, safe to print: control characters (a terminal reads

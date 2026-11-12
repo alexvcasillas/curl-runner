@@ -8,20 +8,15 @@
 
 use super::{Env, credentials, flag_value, server_from_args};
 use crate::output::Console;
-use crate::validate_cmd::lint_and_print;
+use crate::validate_cmd::print_lint;
 use crate::version_check::{HOOKS_ENABLED, hook};
-use curl_runner_cloud_client::retry;
+use curl_runner_cloud_client::publish::{Problem, Target, check, diff};
+use curl_runner_cloud_client::{CollectionRow, retry, versions_path};
 use curl_runner_cloud_proto::{
-    BundleFile, ErrorBody, ErrorCode, FileChanges, GitMeta, Input, PublishRequest, PublishResponse,
-    PublishStatus,
+    BundleFile, ErrorBody, ErrorCode, FileChanges, GitMeta, PublishResponse, PublishStatus,
 };
-use curl_runner_core::cloud::{
-    SkipReason, find_secret_literals, load_cloud_config, scan_bundle, valid_slug,
-};
-use curl_runner_core::config::CONFIG_FILE_PATHS;
-use serde::Deserialize;
+use curl_runner_core::cloud::valid_slug;
 use serde::de::DeserializeOwned;
-use std::collections::HashMap;
 use std::path::Path;
 
 pub(super) const EXIT_INVALID: i32 = 1;
@@ -82,121 +77,46 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
     })
 }
 
-/// One collection, validated and ready to send.
-struct Target {
-    collection: String,
-    name: Option<String>,
-    description: Option<String>,
-    inputs: Vec<Input>,
-    files: Vec<BundleFile>,
-    hash: String,
-}
-
 /// Phase 1 for one directory. Prints every problem it finds and returns the
 /// target only when there are none.
 fn prepare(dir: &str, slug: Option<&str>, color: bool, c: &mut Console) -> Option<Target> {
-    let root = Path::new(dir);
-    let ok = std::cell::Cell::new(true);
-    let error = |c: &mut Console, msg: String| {
-        c.err(&format!("{dir}: {msg}"));
-        ok.set(false);
-    };
-    // Only the plain names are published: the bundle leaves dotfiles out, so a
-    // dotted config would go missing without a word.
-    if let Some(name) = CONFIG_FILE_PATHS
-        .iter()
-        .find(|n| root.join(n).is_file())
-        .filter(|n| n.starts_with('.'))
-    {
-        let plain = name.trim_start_matches('.');
-        error(c, format!("rename {name} to {plain} to publish it."));
-        return None;
-    }
-    let config = match load_cloud_config(root) {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            error(c, e.to_string());
-            return None;
-        }
-    };
-    let (collection, name, description, inputs) = match (config, slug) {
-        (Some(cfg), over) => (
-            over.map(str::to_string).unwrap_or(cfg.collection),
-            cfg.name,
-            cfg.description,
-            cfg.inputs,
-        ),
-        (None, Some(s)) => (s.to_string(), None, None, Vec::new()),
-        (None, None) => {
-            error(
-                c,
-                "no cloud.collection in curl-runner.yaml. Add one, or pass --collection.".into(),
-            );
-            return None;
-        }
-    };
-    if !valid_slug(&collection) {
-        error(
-            c,
-            format!(
-                "invalid collection `{collection}`: use lowercase letters, digits and dashes (max 63)"
-            ),
-        );
-    }
-    let bundle = match scan_bundle(root) {
-        Ok(b) => b,
-        Err(e) => {
-            error(c, e.to_string());
-            return None;
-        }
-    };
-    for (path, why) in &bundle.skipped {
-        let p = path.display();
-        match why {
-            SkipReason::TooBig => error(c, format!("{p} is larger than 1 MiB.")),
-            SkipReason::Unreadable => error(c, format!("cannot read {p}.")),
-            SkipReason::OutsideRoot => c.err(&format!(
-                "{dir}: skipped {p}: it points outside the directory."
-            )),
-        }
-    }
-    if bundle.files.is_empty() {
-        error(c, "no YAML files found.".into());
-    }
-    for f in &bundle.files {
-        // The config file is not a request file; `load_cloud_config` has
-        // already parsed it.
-        if CONFIG_FILE_PATHS.contains(&f.path.as_str()) {
-            continue;
-        }
-        let label = if dir == "." {
-            f.path.clone()
+    let checked = check(Path::new(dir), slug);
+    let label = |path: &str| {
+        if dir == "." {
+            path.to_string()
         } else {
-            format!("{}/{}", dir.trim_end_matches('/'), f.path)
-        };
-        match lint_and_print(&label, &f.text, color, c) {
-            Ok(true) => {}
-            Ok(false) => ok.set(false),
-            Err(crash) => error(c, format!("{label}: {}", crash.0)),
+            format!("{}/{path}", dir.trim_end_matches('/'))
         }
-    }
-    for leak in find_secret_literals(&bundle, &inputs) {
-        error(
-            c,
-            format!(
-                "{}: secret input {} has a literal value. Remove it and set it in Cloud.",
-                leak.file, leak.name
+    };
+    for p in &checked.problems {
+        let msg = match p {
+            Problem::DottedConfig(name) => {
+                let plain = name.trim_start_matches('.');
+                format!("rename {name} to {plain} to publish it.")
+            }
+            Problem::Config(m) | Problem::Scan(m) => m.clone(),
+            Problem::NoCollection => {
+                "no cloud.collection in curl-runner.yaml. Add one, or pass --collection.".into()
+            }
+            Problem::InvalidSlug(s) => format!(
+                "invalid collection `{s}`: use lowercase letters, digits and dashes (max 63)"
             ),
-        );
+            Problem::TooBig(p) => format!("{p} is larger than 1 MiB."),
+            Problem::Unreadable(p) => format!("cannot read {p}."),
+            Problem::OutsideRoot(p) => format!("skipped {p}: it points outside the directory."),
+            Problem::NoFiles => "no YAML files found.".into(),
+            Problem::Lint { path, issues, .. } => {
+                print_lint(&label(path), issues, color, c);
+                continue;
+            }
+            Problem::LintCrash { path, message } => format!("{}: {message}", label(path)),
+            Problem::Secret { file, name } => format!(
+                "{file}: secret input {name} has a literal value. Remove it and set it in Cloud."
+            ),
+        };
+        c.err(&format!("{dir}: {msg}"));
     }
-    ok.get().then_some(Target {
-        collection,
-        name,
-        description,
-        inputs,
-        files: bundle.files,
-        hash: bundle.hash,
-    })
+    checked.target
 }
 
 /// A client that retries transport errors, 5xx and 429 (see
@@ -287,12 +207,6 @@ pub(super) fn api_failure(status: u16, body: &[u8]) -> Fail {
     fail(code, super::escape_control(&b.message))
 }
 
-#[derive(Deserialize)]
-struct CollectionRow {
-    slug: String,
-    current_version: Option<u32>,
-}
-
 fn cannot_publish(team: &str) -> Fail {
     fail(
         EXIT_AUTH,
@@ -343,29 +257,6 @@ fn resolve_team(
     Ok(team)
 }
 
-/// What publishing `local` over `remote` adds, changes and removes.
-fn diff(local: &[BundleFile], remote: &[BundleFile]) -> FileChanges {
-    let old: HashMap<&str, &str> = remote
-        .iter()
-        .map(|f| (f.path.as_str(), f.text.as_str()))
-        .collect();
-    let mut out = FileChanges::default();
-    for f in local {
-        match old.get(f.path.as_str()) {
-            None => out.added.push(f.path.clone()),
-            Some(t) if *t != f.text => out.changed.push(f.path.clone()),
-            Some(_) => {}
-        }
-    }
-    let new: std::collections::HashSet<&str> = local.iter().map(|f| f.path.as_str()).collect();
-    out.removed = remote
-        .iter()
-        .filter(|f| !new.contains(f.path.as_str()))
-        .map(|f| f.path.clone())
-        .collect();
-    out
-}
-
 fn counts(ch: &FileChanges) -> String {
     format!(
         "{} added, {} changed, {} removed",
@@ -396,16 +287,9 @@ fn publish_one(
     t: &Target,
     git: Option<GitMeta>,
 ) -> Result<(), Fail> {
-    let req = PublishRequest {
-        files: t.files.clone(),
-        hash: t.hash.clone(),
-        inputs: t.inputs.clone(),
-        name: t.name.clone(),
-        description: t.description.clone(),
-        git,
-    };
-    let body = serde_json::to_vec(&req).map_err(|e| fail(EXIT_INVALID, e.to_string()))?;
-    let path = format!("/v1/teams/{team}/collections/{}/versions", t.collection);
+    let body =
+        serde_json::to_vec(&t.request(git)).map_err(|e| fail(EXIT_INVALID, e.to_string()))?;
+    let path = versions_path(team, &t.collection);
     let (status, resp) = api.request(c, "PUT", &path, Some(&body), true)?;
     if status == 404 {
         return Err(cannot_publish(team));
@@ -583,28 +467,6 @@ fn worse(a: i32, b: i32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn f(path: &str, text: &str) -> BundleFile {
-        BundleFile {
-            path: path.into(),
-            text: text.into(),
-        }
-    }
-
-    #[test]
-    fn diff_counts_added_changed_removed() {
-        let local = [f("a", "1"), f("b", "2"), f("c", "3")];
-        let remote = [f("a", "1"), f("b", "old"), f("z", "9")];
-        let d = diff(&local, &remote);
-        assert_eq!(
-            (d.added, d.changed, d.removed),
-            (
-                vec!["c".to_string()],
-                vec!["b".to_string()],
-                vec!["z".to_string()]
-            )
-        );
-    }
 
     #[test]
     fn git_meta_prefers_github_then_gitlab_then_none() {

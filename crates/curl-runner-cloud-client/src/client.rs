@@ -4,7 +4,10 @@
 use crate::escape_control;
 use crate::net;
 use curl::easy::List;
-use curl_runner_cloud_proto::{ErrorBody, ErrorCode, Plan, Role, ServerInfo, SharedInfo, Snapshot};
+use curl_runner_cloud_proto::{
+    ErrorBody, ErrorCode, Plan, PublishRequest, PublishResponse, Role, ServerInfo, SharedInfo,
+    Snapshot,
+};
 use flate2::{Compression, write::GzEncoder};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::io::Write;
@@ -64,6 +67,11 @@ impl std::fmt::Debug for Verified {
     }
 }
 
+/// Where a collection's versions are published.
+pub fn versions_path(team: &str, collection: &str) -> String {
+    format!("/v1/teams/{team}/collections/{collection}/versions")
+}
+
 /// Plain http is only for a loopback host.
 pub fn check_server(url: &str) -> Result<(), String> {
     const MSG: &str = "Use an https:// server. Plain http is only allowed for localhost.";
@@ -99,6 +107,13 @@ pub struct Me {
 pub struct Latest {
     pub version: u32,
     pub hash: String,
+}
+
+/// A team's collection as `GET /v1/teams/{team}/collections` lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct CollectionRow {
+    pub slug: String,
+    pub current_version: Option<u32>,
 }
 
 pub struct Client {
@@ -232,8 +247,18 @@ impl Client {
         path: &str,
         body: Option<&[u8]>,
     ) -> Result<(u16, Vec<u8>), CloudError> {
+        self.call_gz(method, path, body, false)
+    }
+
+    fn call_gz(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        gzip: bool,
+    ) -> Result<(u16, Vec<u8>), CloudError> {
         let (status, resp) = self
-            .send(method, path, body, false)
+            .send(method, path, body, gzip)
             .map_err(|e| CloudError::Unreachable(e.0))?;
         if (200..300).contains(&status) {
             return Ok((status, resp));
@@ -286,6 +311,25 @@ impl Client {
     /// The files and inputs of a shared collection's current version.
     pub fn snapshot(&self, token: &str) -> Result<Snapshot, CloudError> {
         self.json("GET", &format!("/v1/shared/{token}/snapshot"), None::<&()>)
+    }
+
+    /// A team's collections. `team` is a validated slug.
+    pub fn collections(&self, team: &str) -> Result<Vec<CollectionRow>, CloudError> {
+        self.json("GET", &format!("/v1/teams/{team}/collections"), None::<&()>)
+    }
+
+    /// Publish a new version of `team/collection` (gzipped). `201` is a new
+    /// version, `200` an unchanged one.
+    pub fn publish(
+        &self,
+        team: &str,
+        collection: &str,
+        req: &PublishRequest,
+    ) -> Result<PublishResponse, CloudError> {
+        let body = serde_json::to_vec(req).map_err(|e| CloudError::Unreachable(e.to_string()))?;
+        let (status, resp) =
+            self.call_gz("PUT", &versions_path(team, collection), Some(&body), true)?;
+        serde_json::from_slice(&resp).map_err(|_| not_the_api(status))
     }
 
     /// The current version number and content hash, without the files.
@@ -481,5 +525,82 @@ mod tests {
             Err(CloudError::Api(b, 404)) => assert_eq!(b.error, ErrorCode::NotFound),
             other => panic!("{other:?}"),
         }
+    }
+
+    fn publish_reply(status: u16, body: &'static str) -> Result<PublishResponse, CloudError> {
+        let srv = TestServer::with_handler(move |r| {
+            assert_eq!(
+                (r.method.as_str(), r.url.as_str()),
+                ("PUT", "/v1/teams/acme/collections/pay/versions")
+            );
+            assert_eq!(r.header("content-encoding"), Some("gzip"));
+            Response::from_data(body.as_bytes().to_vec()).with_status_code(status)
+        });
+        let req = PublishRequest {
+            files: Vec::new(),
+            hash: "h".into(),
+            inputs: Vec::new(),
+            name: None,
+            description: None,
+            git: None,
+        };
+        Client::new(&srv.base_url, Some("crs_x".into())).publish("acme", "pay", &req)
+    }
+
+    #[test]
+    fn publish_created_and_unchanged() {
+        use curl_runner_cloud_proto::PublishStatus;
+        let ok = |status: &str| {
+            format!(
+                r#"{{"collection":"pay","version":14,"status":"{status}","changed":{{"added":["a"],"changed":[],"removed":[]}}}}"#
+            )
+            .leak() as &'static str
+        };
+        let r = publish_reply(201, ok("created")).unwrap();
+        assert_eq!((r.version, r.status), (14, PublishStatus::Created));
+        assert_eq!(r.changed.added, ["a"]);
+        let r = publish_reply(200, ok("unchanged")).unwrap();
+        assert_eq!(r.status, PublishStatus::Unchanged);
+    }
+
+    #[test]
+    fn publish_refusals_keep_their_code() {
+        for (status, code, want) in [
+            (409, "wrong_source", ErrorCode::WrongSource),
+            (402, "plan_limit", ErrorCode::PlanLimit),
+        ] {
+            let body = format!(r#"{{"error":"{code}","message":"No."}}"#).leak();
+            match publish_reply(status, body) {
+                Err(CloudError::Api(b, s)) => assert_eq!((b.error, s), (want, status)),
+                other => panic!("{other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn collections_lists_slugs_and_versions() {
+        let srv = TestServer::with_handler(|r| {
+            assert_eq!(r.url, "/v1/teams/acme/collections");
+            Response::from_data(
+                br#"[{"slug":"pay","current_version":3,"name":"Pay"},{"slug":"new","current_version":null}]"#
+                    .to_vec(),
+            )
+        });
+        let rows = Client::new(&srv.base_url, None)
+            .collections("acme")
+            .unwrap();
+        assert_eq!(
+            rows,
+            [
+                CollectionRow {
+                    slug: "pay".into(),
+                    current_version: Some(3)
+                },
+                CollectionRow {
+                    slug: "new".into(),
+                    current_version: None
+                }
+            ]
+        );
     }
 }
