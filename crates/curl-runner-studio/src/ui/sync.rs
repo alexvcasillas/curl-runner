@@ -33,6 +33,9 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+/// Share's tooltip while the server has no team side.
+pub(super) const SHARE_SOON: &str = "Sharing from the studio is coming soon";
+
 /// Quiet time after the last change before a sync.
 pub(super) const SYNC_DELAY: Duration = Duration::from_secs(2);
 /// How often an offline studio checks whether the server is back.
@@ -518,11 +521,16 @@ impl Workspace {
         }));
     }
 
-    /// Why Share is disabled, as its tooltip: signed out, sign in first;
-    /// signed in but offline (chosen, or the server can't be reached), go
-    /// online first.
+    /// Why Share is disabled, as its tooltip: a server without the team
+    /// side yet ([`Backend::team_sync`]) can't share; signed out, sign in
+    /// first; signed in but offline (chosen, or the server can't be
+    /// reached), go online first.
+    ///
+    /// [`Backend::team_sync`]: crate::model::backend::Backend::team_sync
     pub(super) fn share_blocked(&self, cx: &App) -> Option<&'static str> {
-        if self.backend.account().is_none() {
+        if !self.backend.team_sync() {
+            Some(SHARE_SOON)
+        } else if self.backend.account().is_none() {
             Some("Sign in to share")
         } else if self.meta(cx).read_only_from.is_some() {
             Some("Shared with you: only the owner shares it")
@@ -2105,6 +2113,22 @@ mod gpui_tests {
         let stored = crate::model::sync_base::load(Some(state.path()), &id);
         assert_eq!(stored.files[std::path::Path::new("a.yaml")], 5);
         ws.read_with(cx, |ws, _| assert!(!ws.sync.saver.busy));
+    }
+
+    #[gpui_kit::test]
+    fn share_waits_for_a_server_with_the_team_side(cx: &mut TestAppContext) {
+        use crate::model::backend::http::HttpBackend;
+        use crate::model::secrets::MemorySecrets;
+        use crate::model::sessions::MemorySessions;
+        let dir = collection(&[("a.yaml", REQUEST)]);
+        let sessions = Arc::new(MemorySessions::new(MemorySecrets::default(), None));
+        let backend: Arc<dyn Backend> = Arc::new(HttpBackend::open(None, sessions));
+        assert!(!backend.team_sync());
+        let (_, ws) = open(cx, dir.path(), backend);
+        assert_eq!(
+            ws.read_with(cx, |ws, cx| ws.share_blocked(cx)),
+            Some(super::SHARE_SOON)
+        );
     }
 
     #[gpui_kit::test]

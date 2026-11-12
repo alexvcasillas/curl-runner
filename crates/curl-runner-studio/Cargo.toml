@@ -9,7 +9,10 @@ description = "curl-runner studio: a macOS desktop app for YAML request suites"
 publish = false
 
 [features]
-# The server-backed UI and the mock behind it. Off in release builds.
+default = ["server"]
+# The server-backed UI (sign-in, shared links, the account menu) and the mock
+# behind it. On by default and in releases; `--no-default-features` builds the
+# local-only studio.
 server = []
 
 [[bin]]
