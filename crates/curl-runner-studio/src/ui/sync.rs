@@ -449,6 +449,9 @@ impl Workspace {
         // Which received copies the server (still) records.
         self.refresh_received_all();
         self.variables_resend = None;
+        // The publish foot belongs to the folder and account too.
+        self.publish = Default::default();
+        self.refresh_publish(false, cx);
         let saver = std::mem::take(&mut self.sync.saver);
         self.sync = SyncState {
             saver,
@@ -485,6 +488,9 @@ impl Workspace {
     /// received copy with an update waiting recounts the customer's edits
     /// instead (the banner's warning).
     pub(super) fn mark_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.publish_applies() {
+            self.refresh_publish(true, cx);
+        }
         if self.two_way() {
             self.refresh_pending(self.settings.sync.automatic, window, cx);
         }
@@ -1459,7 +1465,8 @@ mod gpui_tests {
             .unwrap();
         assert_eq!(toasts, 0, "no `Couldn't sync` toast");
         assert_eq!(line(cx, &ws), SyncLine::LocalOnly);
-        assert!(shows(cx, window, "sidebar-sync", "Local only"));
+        // The real server publishes folders: the foot offers that instead.
+        assert!(shows(cx, window, "sidebar-sync", "Not published"));
     }
 
     #[gpui_kit::test]

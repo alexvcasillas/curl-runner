@@ -44,6 +44,9 @@ use crate::model::collection_meta::CollectionMeta;
 use crate::model::environments::is_secret;
 use chrono::{DateTime, NaiveDate, Utc};
 use curl_runner_cloud_client::link::{self, Link, LinkError};
+pub use curl_runner_cloud_proto::{
+    BundleFile, PublishRequest, PublishResponse, Source as CollectionSource, VersionSummary,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -68,6 +71,10 @@ pub enum BackendError {
     Expired,
     /// The input was refused; the text says why.
     Invalid(String),
+    /// Publishing hit the team's plan limit; the server's words.
+    PlanLimit(String),
+    /// The collection syncs from the studio, so a folder can't publish it.
+    WrongSource(String),
     /// A build without the server (`NoServer`).
     #[cfg_attr(feature = "server", allow(dead_code))]
     Unavailable,
@@ -92,7 +99,9 @@ impl fmt::Display for BackendError {
             BackendError::SignedOut => f.write_str("Sign in to sync and share."),
             BackendError::NotFound => f.write_str("This link doesn't work."),
             BackendError::Expired => f.write_str("This link has expired."),
-            BackendError::Invalid(why) => f.write_str(why),
+            BackendError::Invalid(why)
+            | BackendError::PlanLimit(why)
+            | BackendError::WrongSource(why) => f.write_str(why),
             BackendError::Unavailable => {
                 f.write_str("This needs the curl-runner server, which is coming soon.")
             }
@@ -174,6 +183,14 @@ pub struct Account {
     /// From `/v1/me`; empty until the server has said.
     #[serde(default)]
     pub teams: Vec<TeamRef>,
+}
+
+/// A team's collection as the publish foot reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteCollection {
+    pub source: CollectionSource,
+    /// `None` before its first version.
+    pub current: Option<VersionSummary>,
 }
 
 /// A team the account is in, as `/v1/me` lists it.
@@ -530,6 +547,19 @@ pub trait DevControls: Send + Sync {
     /// (tests).
     #[cfg(test)]
     fn recorded(&self) -> Vec<String>;
+    /// `team/slug` exists with one version of `files` (tests).
+    #[cfg(test)]
+    fn seed_published(
+        &self,
+        team: &str,
+        slug: &str,
+        source: CollectionSource,
+        files: Vec<BundleFile>,
+        publisher: &str,
+    );
+    /// The next publish fails with `err` (tests).
+    #[cfg(test)]
+    fn refuse_next_publish(&self, err: BackendError);
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -587,6 +617,40 @@ pub trait Backend: Send + Sync {
     /// call or a toast.
     fn team_sync(&self) -> bool {
         true
+    }
+    /// Whether this backend publishes folders (the Publish foot and
+    /// dialog). The real server does; the mock only in its publishing mode.
+    fn publishes(&self) -> bool {
+        false
+    }
+    /// `team/slug` on the current server: its source and current version,
+    /// `None` when there's no such collection yet.
+    fn remote_collection(&self, team: &str, slug: &str) -> BoxFut<'_, Option<RemoteCollection>> {
+        let _ = (team, slug);
+        Box::pin(async { Err(BackendError::Unavailable) })
+    }
+    /// The files of version `n` of `team/slug`.
+    fn remote_files(&self, team: &str, slug: &str, n: u32) -> BoxFut<'_, Vec<BundleFile>> {
+        let _ = (team, slug, n);
+        Box::pin(async { Err(BackendError::Unavailable) })
+    }
+    /// Publishes `request` as the next version of `team/slug` on the current
+    /// server, signed in as the account. A plan limit and a collection
+    /// that syncs from the studio are refused as [`BackendError::PlanLimit`]
+    /// and [`BackendError::WrongSource`].
+    fn publish(
+        &self,
+        team: &str,
+        slug: &str,
+        request: PublishRequest,
+    ) -> BoxFut<'_, PublishResponse> {
+        let _ = (team, slug, request);
+        Box::pin(async { Err(BackendError::Unavailable) })
+    }
+    /// The current server's dashboard (`https://cloud.curl-runner.com`),
+    /// for View in Cloud, Create a team and Upgrade.
+    fn dashboard_url(&self) -> BoxFut<'_, String> {
+        Box::pin(async { Err(BackendError::Unavailable) })
     }
     fn sync_status(&self, collection: &CollectionKey) -> SyncStatus;
     /// Reconciles `local` (each with its `base`) and `deleted` with the
@@ -773,6 +837,12 @@ pub fn test_backend() -> std::sync::Arc<dyn Backend> {
     std::sync::Arc::new(MockBackend::open(None, std::time::Duration::ZERO))
 }
 
+/// The mock as the real server behaves today: folders publish (tests).
+#[cfg(all(test, feature = "server"))]
+pub fn publishing_test_backend() -> std::sync::Arc<dyn Backend> {
+    std::sync::Arc::new(MockBackend::open(None, std::time::Duration::ZERO).publishing())
+}
+
 /// Test doubles around the mock.
 #[cfg(test)]
 pub mod testing {
@@ -890,6 +960,30 @@ pub mod testing {
         }
         fn team_sync(&self) -> bool {
             self.inner.team_sync()
+        }
+        fn publishes(&self) -> bool {
+            self.inner.publishes()
+        }
+        fn remote_collection(
+            &self,
+            team: &str,
+            slug: &str,
+        ) -> BoxFut<'_, Option<RemoteCollection>> {
+            self.inner.remote_collection(team, slug)
+        }
+        fn remote_files(&self, team: &str, slug: &str, n: u32) -> BoxFut<'_, Vec<BundleFile>> {
+            self.inner.remote_files(team, slug, n)
+        }
+        fn publish(
+            &self,
+            team: &str,
+            slug: &str,
+            request: PublishRequest,
+        ) -> BoxFut<'_, PublishResponse> {
+            self.inner.publish(team, slug, request)
+        }
+        fn dashboard_url(&self) -> BoxFut<'_, String> {
+            self.inner.dashboard_url()
         }
         fn sync_status(&self, collection: &CollectionKey) -> SyncStatus {
             self.inner.sync_status(collection)

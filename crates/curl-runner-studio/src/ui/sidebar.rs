@@ -700,7 +700,10 @@ impl Workspace {
     /// conflicts, `1 conflict · Resolve`; signed out, `Local only`. Share
     /// is disabled signed out (`Sign in to share`) and offline (`Go online
     /// to share`).
-    fn render_sync_footer(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    fn render_sync_footer(&self, cx: &mut Context<Self>) -> AnyElement {
+        if self.publish_applies() {
+            return self.render_publish_footer(cx).into_any_element();
+        }
         let line = self.sync_line();
         let text = if crate::features::SERVER {
             line.text(chrono::Utc::now())
@@ -789,6 +792,7 @@ impl Workspace {
             )
             .when(!crate::features::SERVER, |d| d.child(sync_soon_pill()))
             .child(share)
+            .into_any_element()
     }
 }
 

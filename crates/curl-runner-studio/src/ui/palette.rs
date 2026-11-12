@@ -7,7 +7,7 @@
 
 use super::app::{
     Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder, OpenHistory, OpenSettings,
-    OpenSharedLink, ToggleProblems, Walkthrough, mono_font,
+    OpenSharedLink, Publish, ToggleProblems, Walkthrough, mono_font,
 };
 use super::icons::{self, glyph};
 use super::settings_view::AppPage;
@@ -166,10 +166,11 @@ pub enum PaletteAction {
     Environments,
     Settings,
     Walkthrough,
+    Publish,
 }
 
 impl PaletteAction {
-    pub const ALL: [PaletteAction; 10] = [
+    pub const ALL: [PaletteAction; 11] = [
         PaletteAction::OpenFolder,
         PaletteAction::OpenSharedLink,
         PaletteAction::NewRequest,
@@ -180,12 +181,14 @@ impl PaletteAction {
         PaletteAction::Environments,
         PaletteAction::Settings,
         PaletteAction::Walkthrough,
+        PaletteAction::Publish,
     ];
 
     /// Whether this build lists it: opening a shared link needs the
     /// curl-runner server.
     pub fn listed(self) -> bool {
-        crate::features::SERVER || self != PaletteAction::OpenSharedLink
+        crate::features::SERVER
+            || !matches!(self, PaletteAction::OpenSharedLink | PaletteAction::Publish)
     }
 
     fn label(self) -> &'static str {
@@ -200,6 +203,7 @@ impl PaletteAction {
             PaletteAction::Environments => "Environments…",
             PaletteAction::Settings => "Settings…",
             PaletteAction::Walkthrough => "Run the walkthrough",
+            PaletteAction::Publish => "Publish",
         }
     }
 
@@ -216,6 +220,7 @@ impl PaletteAction {
             PaletteAction::Environments => icons::KEY,
             PaletteAction::Settings => icons::GENERAL,
             PaletteAction::Walkthrough => icons::PLAY,
+            PaletteAction::Publish => icons::CLOUD,
         }
     }
 
@@ -232,6 +237,7 @@ impl PaletteAction {
             PaletteAction::Environments => Box::new(OpenEnvironments),
             PaletteAction::Settings => Box::new(OpenSettings),
             PaletteAction::Walkthrough => Box::new(Walkthrough),
+            PaletteAction::Publish => Box::new(Publish),
         }
     }
 }
@@ -484,6 +490,7 @@ impl Palette {
                     ws.open_app_settings(AppPage::General, window, cx)
                 }
                 Target::Action(PaletteAction::Walkthrough) => ws.start_walkthrough(window, cx),
+                Target::Action(PaletteAction::Publish) => ws.start_publish(window, cx),
             })
             .ok();
     }

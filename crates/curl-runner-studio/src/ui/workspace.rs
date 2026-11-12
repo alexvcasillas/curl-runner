@@ -3,7 +3,7 @@
 
 use super::app::{
     CloseTab, CopyAsCurl, Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder,
-    OpenHistory, OpenPalette, OpenSettings, OpenSharedLink, QuickFix, Rerun, RunActive,
+    OpenHistory, OpenPalette, OpenSettings, OpenSharedLink, Publish, QuickFix, Rerun, RunActive,
     RunCollection, RunRequestUnderCursor, SaveFile, Stop, ToggleProblems, Walkthrough, ui_font,
 };
 use super::collection_settings::{CollectionSettings, EnvStatus, SettingsEvent, Sharing};
@@ -192,6 +192,8 @@ pub struct Workspace {
     pub(super) tour_status: crate::model::tour::TourStatus,
     /// The open collection's sync: pending changes, offline, conflicts.
     pub(super) sync: super::sync::SyncState,
+    /// Publishing the open folder: the foot's line and the job.
+    pub(super) publish: super::publish::PublishUi,
     /// The Share dialog, while it is open.
     /// Held by the dialog itself, so any close drops it.
     pub(super) share_view: Option<WeakEntity<super::share_dialog::ShareView>>,
@@ -357,6 +359,7 @@ impl Workspace {
             _tour_events: None,
             tour_status: Default::default(),
             sync: Default::default(),
+            publish: Default::default(),
             share_view: None,
             _share_events: None,
             share_sync: None,
@@ -1475,6 +1478,9 @@ impl Render for Workspace {
                     cx.listener(|this, _: &OpenHistory, window, cx| {
                         this.toggle_history(window, cx)
                     }),
+                )
+                .on_action(
+                    cx.listener(|this, _: &Publish, window, cx| this.start_publish(window, cx)),
                 )
                 .on_action(cx.listener(|this, _: &OpenEnvironments, window, cx| {
                     this.open_settings(window, cx)

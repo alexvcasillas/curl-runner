@@ -5,8 +5,8 @@ use crate::escape_control;
 use crate::net;
 use curl::easy::List;
 use curl_runner_cloud_proto::{
-    ErrorBody, ErrorCode, Plan, PublishRequest, PublishResponse, Role, ServerInfo, SharedInfo,
-    Snapshot,
+    BundleFile, ErrorBody, ErrorCode, Plan, PublishRequest, PublishResponse, Role, ServerInfo,
+    SharedInfo, Snapshot, Source, VersionSummary,
 };
 use flate2::{Compression, write::GzEncoder};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -114,6 +114,9 @@ pub struct Latest {
 pub struct CollectionRow {
     pub slug: String,
     pub current_version: Option<u32>,
+    /// Where its versions come from; older servers leave it out.
+    #[serde(default)]
+    pub source: Option<Source>,
 }
 
 pub struct Client {
@@ -316,6 +319,34 @@ impl Client {
     /// A team's collections. `team` is a validated slug.
     pub fn collections(&self, team: &str) -> Result<Vec<CollectionRow>, CloudError> {
         self.json("GET", &format!("/v1/teams/{team}/collections"), None::<&()>)
+    }
+
+    /// One version's summary (who, when, git, hash). Inputs are left out.
+    pub fn version(
+        &self,
+        team: &str,
+        collection: &str,
+        n: u32,
+    ) -> Result<VersionSummary, CloudError> {
+        self.json(
+            "GET",
+            &format!("{}/{n}", versions_path(team, collection)),
+            None::<&()>,
+        )
+    }
+
+    /// One version's files.
+    pub fn version_files(
+        &self,
+        team: &str,
+        collection: &str,
+        n: u32,
+    ) -> Result<Vec<BundleFile>, CloudError> {
+        self.json(
+            "GET",
+            &format!("{}/{n}/files", versions_path(team, collection)),
+            None::<&()>,
+        )
     }
 
     /// Publish a new version of `team/collection` (gzipped). `201` is a new
@@ -582,7 +613,7 @@ mod tests {
         let srv = TestServer::with_handler(|r| {
             assert_eq!(r.url, "/v1/teams/acme/collections");
             Response::from_data(
-                br#"[{"slug":"pay","current_version":3,"name":"Pay"},{"slug":"new","current_version":null}]"#
+                br#"[{"slug":"pay","current_version":3,"name":"Pay","source":"git"},{"slug":"new","current_version":null}]"#
                     .to_vec(),
             )
         });
@@ -594,13 +625,36 @@ mod tests {
             [
                 CollectionRow {
                     slug: "pay".into(),
-                    current_version: Some(3)
+                    current_version: Some(3),
+                    source: Some(Source::Git),
                 },
                 CollectionRow {
                     slug: "new".into(),
-                    current_version: None
+                    current_version: None,
+                    source: None,
                 }
             ]
         );
+    }
+
+    #[test]
+    fn version_and_files() {
+        let srv = TestServer::with_handler(|r| {
+            match r.url.as_str() {
+            "/v1/teams/acme/collections/pay/versions/14" => Response::from_data(
+                br#"{"number":14,"hash":"h","published_at":"2026-11-12T10:00:00Z","publisher":"token CI","git":{"commit":"4f2a9c1aa","git_ref":"refs/heads/main","repo_url":null},"file_count":2,"inputs":[]}"#.to_vec(),
+            ),
+            "/v1/teams/acme/collections/pay/versions/14/files" => Response::from_data(
+                br#"[{"path":"a.yaml","text":"x"}]"#.to_vec(),
+            ),
+            other => panic!("{other}"),
+        }
+        });
+        let c = Client::new(&srv.base_url, None);
+        let v = c.version("acme", "pay", 14).unwrap();
+        assert_eq!((v.number, v.publisher.as_str()), (14, "token CI"));
+        assert_eq!(v.git.unwrap().commit.as_deref(), Some("4f2a9c1aa"));
+        let files = c.version_files("acme", "pay", 14).unwrap();
+        assert_eq!(files[0].path, "a.yaml");
     }
 }
