@@ -12,8 +12,8 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@pulsora/core": "^1.0.1",
-    "@pulsora/react": "^1.0.0",
+    "@supapulse/core": "^1.4.1",
+    "@supapulse/react": "^1.2.0",
     "fumadocs-core": "~16.17.8",
     "fumadocs-mdx": "~15.4.10",
     "fumadocs-ui": "~16.17.8",

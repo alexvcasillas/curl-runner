@@ -3,3 +3,5 @@ packages:
 allowBuilds:
   esbuild: false
   sharp: false
+minimumReleaseAgeExclude:
+  - "@supapulse/core@1.4.1"

@@ -294,12 +294,12 @@ importers:
 
   packages/docs:
     dependencies:
-      '@pulsora/core':
-        specifier: ^1.0.1
-        version: 1.0.1
-      '@pulsora/react':
-        specifier: ^1.0.0
-        version: 1.0.0(@pulsora/core@1.0.1)(react@19.2.9)
+      '@supapulse/core':
+        specifier: ^1.4.1
+        version: 1.4.1
+      '@supapulse/react':
+        specifier: ^1.2.0
+        version: 1.2.0(@supapulse/core@1.4.1)(react@19.2.9)
       fumadocs-core:
         specifier: ~16.17.8
         version: 16.17.8(@mdx-js/mdx@3.1.1)(@types/estree-jsx@1.0.5)(@types/hast@3.0.5)(@types/mdast@4.0.4)(@types/react@19.3.0)(lucide-react@0.542.0(react@19.2.9))(next@16.4.5(@babel/core@7.29.7)(@playwright/test@1.64.1)(@types/node@20.19.43)(react-dom@19.2.9(react@19.2.9))(react@19.2.9))(react-dom@19.2.9(react@19.2.9))(react@19.2.9)(zod@4.6.7)
@@ -1109,12 +1109,6 @@ packages:
   '@pulsora/core@1.0.1':
     resolution: {integrity: sha512-4u4RcrvJEXCXw1ceBeT7JI2ofeM/zgGpqLQ6tI5V3IN172AH87Cdgpn09Y+DA65zYB7IC1WSb8FSP42IKWSmLw==}
 
-  '@pulsora/react@1.0.0':
-    resolution: {integrity: sha512-5R3KrryRii5m+T8wFV8drpWl0G3BgKwTQMLvAOcZiICrGQPsyVEW9ervDj/pueO+afDiuG9KLex63SWupzbE4w==}
-    peerDependencies:
-      '@pulsora/core': ^1.0.0
-      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
-
   '@radix-ui/number@1.1.3':
     resolution: {integrity: sha512-Road2bidD0uu/1BGDOWNdPI06g0lIRy6IF9GZcIrDK2KGItfor8IQwQa+yM2ERgHM1MmHxaxpTzk0/Jp42lNfA==}
 
@@ -1621,6 +1615,15 @@ packages:
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
+
+  '@supapulse/core@1.4.1':
+    resolution: {integrity: sha512-aorDmg8v1a9ABBip7ghWZbCPglcYH6NODLiPQjllVak3NEd0RT6cQopfEyTela2RPXqeF33Vgs9to5LbhVHawA==}
+
+  '@supapulse/react@1.2.0':
+    resolution: {integrity: sha512-whHZwvMs602AJws+l/Jm2Y4eJqwwTzihEnv8bAhImEdoYpUJAjPb0Y7eyoCxtZFBKhW6RiZy9xPBLPBTrgCSow==}
+    peerDependencies:
+      '@supapulse/core': ^1.0.0
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   '@swc/helpers@0.5.23':
     resolution: {integrity: sha512-5lSsMOTXURePglDfvuAQUqkGek9Hg2kksOYay2m0+XR++b2NWYL/4sWyuvVBIs8oKnJaxkdi9whaL/sqN13afw==}
@@ -4090,11 +4093,6 @@ snapshots:
 
   '@pulsora/core@1.0.1': {}
 
-  '@pulsora/react@1.0.0(@pulsora/core@1.0.1)(react@19.2.9)':
-    dependencies:
-      '@pulsora/core': 1.0.1
-      react: 19.2.9
-
   '@radix-ui/number@1.1.3': {}
 
   '@radix-ui/primitive@1.2.0': {}
@@ -4570,6 +4568,13 @@ snapshots:
   '@shikijs/vscode-textmate@10.1.0': {}
 
   '@standard-schema/spec@1.1.0': {}
+
+  '@supapulse/core@1.4.1': {}
+
+  '@supapulse/react@1.2.0(@supapulse/core@1.4.1)(react@19.2.9)':
+    dependencies:
+      '@supapulse/core': 1.4.1
+      react: 19.2.9
 
   '@swc/helpers@0.5.23':
     dependencies:
