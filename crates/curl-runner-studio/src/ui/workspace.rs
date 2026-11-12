@@ -287,15 +287,6 @@ impl Workspace {
                 StatusBarEvent::Server => {
                     this.open_app_settings(super::settings_view::AppPage::Accounts, window, cx)
                 }
-                StatusBarEvent::Account => match this.account_state() {
-                    Some(
-                        super::account::AccountState::Connected { .. }
-                        | super::account::AccountState::Expired { .. },
-                    ) => this.toggle_account_menu(cx),
-                    _ => {
-                        this.open_sign_in(None, window, cx);
-                    }
-                },
             },
         );
         let ws = cx.entity().downgrade();

@@ -2,9 +2,9 @@
 "@curl-runner/cli": patch
 ---
 
-**The status bar's account and server are separate**
+**The status bar names the server, the avatar the account**
 
-Clicking your email and clicking the server name now do different things.
+The status bar no longer repeats the account the title bar's avatar already shows.
 
-- **Improved:** your email (or "Not signed in") opens the account menu or sign-in; the server name opens Settings › Accounts & sync.
-- **Improved:** the account and server use the status bar's muted text and brighten on hover, each on its own.
+- **Improved:** the status bar shows only the server (`Cloud`, your server's host, or `Offline`); clicking it opens Settings › Accounts & sync.
+- **Improved:** it uses the status bar's muted text and brightens on hover.
