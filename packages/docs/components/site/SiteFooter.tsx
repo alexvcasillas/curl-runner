@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { GITHUB_URL } from '@/components/site/SiteHeader';
+import { CLOUD_SIGN_IN_URL } from '@/lib/site';
 
 const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
   {
@@ -8,6 +9,7 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
       { label: 'Features', href: '/features/parallel-execution' },
       { label: 'Downloads', href: '/downloads' },
       { label: 'Changelog', href: '/changelog' },
+      { label: 'Sign in to Cloud', href: CLOUD_SIGN_IN_URL },
     ],
   },
   {

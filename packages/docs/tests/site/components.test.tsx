@@ -32,6 +32,10 @@ describe('SiteHeader', () => {
       'href',
       '/docs/quick-start',
     );
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute(
+      'href',
+      'https://cloud.curl-runner.com/sign-in',
+    );
   });
 
   it('marks Docs as the current section on docs pages', () => {
@@ -53,6 +57,10 @@ describe('SiteFooter', () => {
     expect(screen.getByRole('link', { name: 'Issues' })).toHaveAttribute(
       'href',
       'https://github.com/alexvcasillas/curl-runner/issues',
+    );
+    expect(screen.getByRole('link', { name: 'Sign in to Cloud' })).toHaveAttribute(
+      'href',
+      'https://cloud.curl-runner.com/sign-in',
     );
   });
 });
