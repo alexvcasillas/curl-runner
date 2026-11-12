@@ -284,6 +284,9 @@ impl Workspace {
                     this.open_conflicts(window, cx)
                 }
                 StatusBarEvent::Sync => this.sync_now(window, cx),
+                StatusBarEvent::Server => {
+                    this.open_app_settings(super::settings_view::AppPage::Accounts, window, cx)
+                }
                 StatusBarEvent::Account => match this.account_state() {
                     Some(
                         super::account::AccountState::Connected { .. }

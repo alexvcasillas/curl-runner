@@ -4,7 +4,7 @@
 //! A view of its own: it follows the active editor's cursor, so moving it
 //! repaints only this bar.
 
-use super::account::{AccountState, dot};
+use super::account::{AccountState, dot, long_name, short_name};
 use super::collection_settings::EnvStatus;
 use super::color;
 use super::state::Connection;
@@ -69,6 +69,8 @@ pub enum StatusBarEvent {
     Sync,
     /// The account line was clicked: the account menu, or sign in.
     Account,
+    /// The server name was clicked: Settings › Accounts & sync.
+    Server,
 }
 
 impl EventEmitter<StatusBarEvent> for StatusBar {}
@@ -369,6 +371,49 @@ fn render_account(
     compact: bool,
     cx: &mut Context<StatusBar>,
 ) -> impl IntoElement + use<> {
+    // Signed in or out: who (the account menu, or sign in) and the server
+    // (Accounts & sync), each its own target.
+    if let Some(server) = state.server() {
+        let who = match state {
+            AccountState::Connected { account, .. } => (!compact).then(|| account.email.clone()),
+            _ => Some("Not signed in".to_string()),
+        };
+        let account = div()
+            .id("status-account")
+            .role(Role::Button)
+            .test_support()
+            .aria_label(state.label())
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(6.))
+            .cursor_pointer()
+            .text_color(color("text-secondary"))
+            .hover(|s| s.text_color(color("text-primary")))
+            .child(dot(state.dot()))
+            .children(who)
+            .on_click(cx.listener(|_, _, _, cx| cx.emit(StatusBarEvent::Account)));
+        let server = div()
+            .id("status-server")
+            .role(Role::Button)
+            .test_support()
+            .aria_label(format!("{}. Open Accounts & sync", long_name(server)))
+            .flex_none()
+            .cursor_pointer()
+            .text_color(color("text-secondary"))
+            .hover(|s| s.text_color(color("text-primary")))
+            .child(short_name(server))
+            .on_click(cx.listener(|_, _, _, cx| cx.emit(StatusBarEvent::Server)));
+        return div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(6.))
+            .child(account)
+            .child(div().text_color(color("text-disabled")).child("·"))
+            .child(server)
+            .into_any_element();
+    }
     let (strong, rest) = state.status_line(compact);
     let expired = matches!(state, AccountState::Expired { .. });
     div()
@@ -393,6 +438,7 @@ fn render_account(
         })
         .child(rest)
         .on_click(cx.listener(|_, _, _, cx| cx.emit(StatusBarEvent::Account)))
+        .into_any_element()
 }
 
 /// The footer's sync state, compact: `● Offline · 3 changes waiting`.

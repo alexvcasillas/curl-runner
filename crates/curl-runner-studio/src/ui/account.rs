@@ -78,6 +78,17 @@ impl AccountState {
         }
     }
 
+    /// The status line's own server item (`Cloud`, which opens Accounts &
+    /// sync), for the states that name one apart from the account.
+    pub fn server(&self) -> Option<&Server> {
+        match self {
+            AccountState::Connected { server, .. } | AccountState::SignedOut { server } => {
+                Some(server)
+            }
+            _ => None,
+        }
+    }
+
     /// What a screen reader hears for the avatar and the status line.
     pub fn label(&self) -> String {
         match self {
@@ -863,6 +874,34 @@ mod ui_tests {
         // The status line opens it too.
         click(cx, window, "status-account");
         assert!(menu_open(cx, &ws));
+    }
+
+    #[gpui_kit::test]
+    fn status_server_opens_accounts_and_the_account_opens_the_menu(cx: &mut TestAppContext) {
+        use super::super::settings_view::AppPage;
+        let backend = test_backend();
+        testing::sign_in(&*backend);
+        let (window, ws, _state) = open(cx, Connection::Online, backend);
+        assert!(shows_in(
+            cx,
+            window,
+            "status-bar",
+            "curl-runner Cloud. Open Accounts & sync"
+        ));
+        click(cx, window, "status-server");
+        assert!(!menu_open(cx, &ws));
+        ws.read_with(cx, |ws, cx| {
+            let view = ws.app_settings.clone().expect("Settings is open");
+            assert_eq!(view.read(cx).page(), AppPage::Accounts);
+        });
+    }
+
+    #[gpui_kit::test]
+    fn signed_out_status_signs_in_or_opens_accounts(cx: &mut TestAppContext) {
+        let backend = test_backend();
+        let (window, ws, _state) = open(cx, Connection::Online, backend);
+        click(cx, window, "status-account");
+        assert!(ws.read_with(cx, |ws, _| ws.sign_in_shown()));
     }
 
     #[gpui_kit::test]
