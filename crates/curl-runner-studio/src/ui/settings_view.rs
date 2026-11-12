@@ -44,6 +44,8 @@ const SERVER_NOTE: &str = "Your team publishes to this server. You stay signed i
 pub const STUDIO_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Accounts & sync without the server: one card in place of Server,
 /// Account and Sync.
+/// The Sync card's line while the server can't sync collections.
+pub(super) const SYNC_SOON: &str = "Sync is coming soon · collections stay on this Mac";
 const ACCOUNTS_SOON_TITLE: &str = "Accounts and sync";
 const ACCOUNTS_SOON_BODY: &str = "Signing in, syncing collections between your Macs and sharing them need the curl-runner server. Until then, your collections are YAML files on this Mac.";
 /// The changelog on the website (the studio ships in the CLI's release train).
@@ -1448,9 +1450,16 @@ impl SettingsView {
             .key
             .as_ref()
             .map_or(SyncStatus::Off, |k| backend.sync_status(k));
-        let (dot, text) = sync_line(&self.accounts.sync, &server, Utc::now());
-        let can_sync =
-            backend.account().is_some() && self.accounts.key.is_some() && !self.accounts.offline;
+        let (dot, text) = if backend.team_sync() {
+            sync_line(&self.accounts.sync, &server, Utc::now())
+        } else {
+            // No sync on this server yet: say so, rather than a dead button.
+            ("text-tertiary", SYNC_SOON.to_string())
+        };
+        let can_sync = backend.team_sync()
+            && backend.account().is_some()
+            && self.accounts.key.is_some()
+            && !self.accounts.offline;
         let sync = self.settings.sync.clone();
         let toggle = |id: &'static str,
                       label: &'static str,

@@ -2132,6 +2132,26 @@ mod gpui_tests {
     }
 
     #[gpui_kit::test]
+    fn sync_card_says_soon_on_a_server_without_sync(cx: &mut TestAppContext) {
+        use super::super::settings_view::{AppPage, SYNC_SOON};
+        use crate::model::backend::http::HttpBackend;
+        use crate::model::secrets::MemorySecrets;
+        use crate::model::sessions::MemorySessions;
+        let dir = collection(&[("a.yaml", REQUEST)]);
+        let sessions = Arc::new(MemorySessions::new(MemorySecrets::default(), None));
+        let backend: Arc<dyn Backend> = Arc::new(HttpBackend::open(None, sessions));
+        let (window, ws) = open(cx, dir.path(), backend);
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.open_app_settings(AppPage::Accounts, window, cx)
+            });
+            window.render_frame(cx);
+            assert!(window.try_find_by_label(SYNC_SOON).is_some());
+        })
+        .unwrap();
+    }
+
+    #[gpui_kit::test]
     fn share_is_disabled_signed_out_or_offline(cx: &mut TestAppContext) {
         let dir = collection(&[("a.yaml", REQUEST)]);
         let backend = test_backend();

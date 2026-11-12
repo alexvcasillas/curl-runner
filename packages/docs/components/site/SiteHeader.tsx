@@ -100,7 +100,7 @@ export function SiteHeader({
             href={CLOUD_SIGN_IN_URL}
             className="hidden h-11 items-center text-sm whitespace-nowrap text-fg-secondary transition-colors hover:text-fg sm:inline-flex"
           >
-            Sign in
+            Sign in to Cloud
           </a>
           <ButtonLink href="/docs/quick-start" variant="primary" size="md">
             Get started

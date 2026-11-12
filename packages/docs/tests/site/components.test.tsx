@@ -32,7 +32,7 @@ describe('SiteHeader', () => {
       'href',
       '/docs/quick-start',
     );
-    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Sign in to Cloud' })).toHaveAttribute(
       'href',
       'https://cloud.curl-runner.com/sign-in',
     );
