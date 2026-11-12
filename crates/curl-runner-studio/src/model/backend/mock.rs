@@ -93,6 +93,8 @@ struct State {
     server: Server,
     /// The session on each server, by API URL (no trailing `/`).
     accounts: BTreeMap<String, Account>,
+    /// Sessions the server refused, by API URL ([`Backend::lapsed`]).
+    lapsed: BTreeMap<String, Account>,
     toggles: DevToggles,
     /// Owned shares, by collection id.
     shares: BTreeMap<String, OwnedShare>,
@@ -552,6 +554,7 @@ impl Backend for MockBackend {
                 return Err(BackendError::Unauthorized);
             }
             let account = fixtures::account(&code);
+            s.lapsed.remove(&server);
             s.accounts.insert(server, account.clone());
             Ok(account)
         })
@@ -564,6 +567,7 @@ impl Backend for MockBackend {
         let server = server_key(server);
         self.call(true, move |s| {
             s.accounts.remove(&server);
+            s.lapsed.remove(&server);
             Ok(())
         })
     }
@@ -574,6 +578,19 @@ impl Backend for MockBackend {
 
     fn account_on(&self, server: &str) -> Option<Account> {
         self.state().accounts.get(&server_key(server)).cloned()
+    }
+
+    fn lapsed(&self) -> Option<Account> {
+        let s = self.state();
+        s.lapsed.get(&server_key(s.server.url())).cloned()
+    }
+
+    fn accounts(&self) -> Vec<(String, Account)> {
+        let s = self.state();
+        s.accounts
+            .iter()
+            .map(|(k, a)| (k.clone(), a.clone()))
+            .collect()
     }
 
     fn sync_status(&self, collection: &CollectionKey) -> SyncStatus {
@@ -953,6 +970,15 @@ impl DevControls for MockBackend {
 
     fn fail_next_sign_in(&self, on: bool) {
         self.set_toggle(|t| t.fail_next_sign_in = on);
+    }
+
+    fn expire_session(&self) {
+        let mut state = self.state();
+        let server = server_key(state.server.url());
+        if let Some(a) = state.accounts.remove(&server) {
+            state.lapsed.insert(server, a);
+        }
+        self.save(&state);
     }
 
     fn reset(&self) {

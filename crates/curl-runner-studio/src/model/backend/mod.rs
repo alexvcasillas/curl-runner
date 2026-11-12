@@ -491,6 +491,9 @@ pub trait DevControls: Send + Sync {
     fn expire_links(&self, on: bool);
     /// The next sign-in fails, then the toggle clears.
     fn fail_next_sign_in(&self, on: bool);
+    /// The server refuses the current session once: signed out, shown as
+    /// expired.
+    fn expire_session(&self);
     /// Back to the first-launch fixture state.
     fn reset(&self);
     /// The toggles, for the menu's checkmarks.
@@ -539,6 +542,16 @@ pub trait Backend: Send + Sync {
     // Received collections, each on its own server, ask (Task 7 of 3a).
     #[cfg_attr(not(test), allow(dead_code))]
     fn account_on(&self, server: &str) -> Option<Account>;
+    /// Who was signed in to [`Backend::server`] until it refused the
+    /// session (401): shown as expired until they sign in again or out.
+    fn lapsed(&self) -> Option<Account> {
+        None
+    }
+    /// Every account signed in, by server API URL (no trailing `/`),
+    /// sorted by server.
+    fn accounts(&self) -> Vec<(String, Account)> {
+        Vec::new()
+    }
     /// Whether this backend syncs team collections at all ([`Backend::sync`]
     /// works). The real server's answers `false` until its team side ships
     /// (plan 3b): the studio then keeps collections local, without a sync
@@ -839,6 +852,12 @@ pub mod testing {
         }
         fn account_on(&self, server: &str) -> Option<Account> {
             self.inner.account_on(server)
+        }
+        fn lapsed(&self) -> Option<Account> {
+            self.inner.lapsed()
+        }
+        fn accounts(&self) -> Vec<(String, Account)> {
+            self.inner.accounts()
         }
         fn team_sync(&self) -> bool {
             self.inner.team_sync()

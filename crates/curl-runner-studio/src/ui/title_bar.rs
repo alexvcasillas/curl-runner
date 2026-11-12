@@ -106,7 +106,8 @@ impl Workspace {
                     .pr(px(12.))
                     .children(self.render_environment_picker(!compact))
                     .children(self.render_run_collection(cx))
-                    .child(self.render_run_button(cx)),
+                    .child(self.render_run_button(cx))
+                    .children(self.render_account_chip(cx)),
             )
     }
 
@@ -289,7 +290,7 @@ const SEARCH_WIDTH: f32 = 280.;
 /// the mirrored inset, so Run collection and Run stay on screen.
 const COMPACT_BELOW: f32 = 1200.;
 
-fn is_compact(width: f32) -> bool {
+pub(super) fn is_compact(width: f32) -> bool {
     width < COMPACT_BELOW
 }
 

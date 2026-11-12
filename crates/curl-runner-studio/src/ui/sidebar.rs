@@ -635,6 +635,11 @@ impl Workspace {
     /// in`) and `Change`, which opens the sign-in screen.
     fn render_cloud_footer(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let (dot, text) = self.connection_text();
+        // Signed in: the avatar and who, over where (the SignedIn boards).
+        let who = match self.account_state() {
+            Some(super::account::AccountState::Connected { account, .. }) => Some(account),
+            _ => None,
+        };
         div()
             .id("sidebar-cloud")
             .role(Role::Group)
@@ -650,12 +655,23 @@ impl Workspace {
             .border_color(color("border-100"))
             .text_size(px(12.))
             .text_color(color("text-secondary"))
-            .child(div().flex_none().size(px(6.)).rounded_full().bg(color(dot)))
+            .map(|d| match &who {
+                Some(a) => d.child(super::account::avatar(super::account::initials(a), 24.)),
+                None => d.child(div().flex_none().size(px(6.)).rounded_full().bg(color(dot))),
+            })
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
                     .line_height(relative(1.4))
+                    .when_some(who.clone(), |d, a| {
+                        d.child(
+                            div()
+                                .text_color(color("text-primary"))
+                                .text_ellipsis()
+                                .child(a.email),
+                        )
+                    })
                     .child(text),
             )
             .when(!crate::features::SERVER, |d| d.child(sync_soon_pill()))

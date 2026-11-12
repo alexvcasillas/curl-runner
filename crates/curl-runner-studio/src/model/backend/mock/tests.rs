@@ -1025,3 +1025,40 @@ fn sign_in_url_refuses_plain_http_off_loopback() {
     // Loopback http is fine.
     block_on(b.sign_in_url(&own("http://127.0.0.1:9"))).unwrap();
 }
+
+#[test]
+fn an_expired_session_lapses_until_signed_in_or_out() {
+    let d = tempfile::tempdir().unwrap();
+    let b = signed_in_mock(d.path());
+    assert_eq!(b.lapsed(), None);
+    dev(&b).expire_session();
+    assert_eq!(b.account(), None, "signed out");
+    assert_eq!(b.lapsed().unwrap().email, "jamie@acme.dev");
+    // Signing in again clears it.
+    testing::sign_in(&b);
+    assert_eq!(b.lapsed(), None);
+    assert!(b.account().is_some());
+    // So does signing out.
+    dev(&b).expire_session();
+    testing::sign_out(&b);
+    assert_eq!(b.lapsed(), None);
+    // Nothing to expire: nothing lapses.
+    dev(&b).expire_session();
+    assert_eq!(b.lapsed(), None);
+}
+
+#[test]
+fn accounts_lists_every_server_signed_in() {
+    let d = tempfile::tempdir().unwrap();
+    let b = signed_in_mock(d.path());
+    let own = Server::SelfHosted {
+        url: "https://curl-runner.example.com".into(),
+    };
+    block_on(b.set_server(own.clone())).unwrap();
+    testing::sign_in_by_email(&b);
+    let accounts = b.accounts();
+    let servers: Vec<&str> = accounts.iter().map(|(s, _)| s.as_str()).collect();
+    assert_eq!(servers, [Server::Cloud.url(), own.url()]);
+    assert_eq!(accounts[0].1.email, "jamie@acme.dev");
+    assert_eq!(accounts[1].1.email, "maria@example.com");
+}

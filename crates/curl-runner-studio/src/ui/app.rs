@@ -94,6 +94,8 @@ actions!(
         DevExpireLinks,
         /// Developer › Fail next sign-in.
         DevFailNextSignIn,
+        /// Developer › Expire session: the server refuses the session once.
+        DevExpireSession,
         /// Developer › Reset mock: the first-launch state, sign-in screen
         /// included.
         DevResetMock,
@@ -121,6 +123,7 @@ pub fn menus(dev: Option<DevToggles>) -> Vec<Menu> {
                 MenuItem::action("Expire share links", DevExpireLinks).checked(t.expire_links),
                 MenuItem::action("Fail next sign-in", DevFailNextSignIn)
                     .checked(t.fail_next_sign_in),
+                MenuItem::action("Expire session", DevExpireSession),
                 MenuItem::separator(),
                 MenuItem::action("Reset mock", DevResetMock),
             ]),
@@ -610,6 +613,8 @@ fn install_dev_menu(
             cx,
         )
     });
+    let b = backend.clone();
+    cx.on_action(move |_: &DevExpireSession, cx| toggle_dev(&b, |d| d.expire_session(), cx));
     let b = backend.clone();
     cx.on_action(move |_: &DevResetMock, cx| {
         if let Some(d) = b.dev() {
