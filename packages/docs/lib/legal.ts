@@ -4,7 +4,7 @@ export const LEGAL_UPDATED = 'November 6, 2026';
 
 export const CONTACT_EMAIL = 'hello@curl-runner.com';
 
-export const CLOUD_URL = 'https://cloud.curl-runner.com';
+export { CLOUD_URL } from './site';
 
 export const PROCESSORS: { name: string; purpose: string }[] = [
   { name: 'Hetzner', purpose: 'Servers for curl-runner Cloud and its database, in Germany' },

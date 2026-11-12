@@ -1,6 +1,7 @@
 //! The studio window: title bar, collection tree, tabs, YAML editor and
 //! status bar, built with GPUI-kit (macOS only).
 
+mod account;
 mod app;
 mod collection_settings;
 mod coming_soon;

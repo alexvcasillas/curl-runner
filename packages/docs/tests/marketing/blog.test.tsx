@@ -153,8 +153,11 @@ describe('Cloud private preview post', () => {
     expect(out).toContain('href="/changelog#2.6.0"');
     expect(text).toContain('curl-runner publish');
     expect(text).toContain('version: 2.6.0');
-    // The dashboard isn't live yet, so nothing may link to it.
-    expect(out).not.toContain('href="https://cloud.curl-runner.com');
+    // The post was written before the dashboard opened: its body doesn't
+    // link to it (the site header's Sign in does).
+    const body = out.slice(out.indexOf('<article'), out.indexOf('</article>'));
+    expect(body).toContain('curl-runner publish');
+    expect(body).not.toContain('href="https://cloud.curl-runner.com');
     expect(out).not.toContain('—');
   });
 });

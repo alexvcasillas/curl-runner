@@ -704,3 +704,45 @@ fn info_calls_never_sign_out() {
         Some("crs_kept")
     );
 }
+
+#[test]
+fn a_refused_session_lapses_until_signed_in_again() {
+    let (srv, _) = server(401);
+    let (b, _) = backend(None);
+    block_on(b.set_server(own(&srv.base_url))).unwrap();
+    block_on(b.sign_in_url(&own(&srv.base_url))).unwrap();
+    let a = block_on(b.complete_sign_in(&callback(&srv.base_url))).unwrap();
+    assert_eq!(b.lapsed(), None);
+    let err = block_on(b.refresh_account(&srv.base_url)).unwrap_err();
+    assert_eq!(err, BackendError::SignedOut);
+    assert_eq!(b.account(), None, "signed out");
+    assert_eq!(b.lapsed(), Some(a.clone()), "shown as expired");
+    assert!(b.accounts().is_empty());
+    // Signing in again clears it.
+    block_on(b.sign_in_url(&own(&srv.base_url))).unwrap();
+    block_on(b.complete_sign_in(&callback(&srv.base_url))).unwrap();
+    assert_eq!(b.lapsed(), None);
+    // So does signing out after another refusal.
+    block_on(b.refresh_account(&srv.base_url)).unwrap_err();
+    assert!(b.lapsed().is_some());
+    block_on(b.sign_out(&srv.base_url)).unwrap();
+    assert_eq!(b.lapsed(), None);
+}
+
+#[test]
+fn a_refused_session_elsewhere_lapses_only_there() {
+    let (a, _) = server(401);
+    let (c, _) = server(200);
+    let (b, _) = backend(None);
+    for srv in [&a, &c] {
+        block_on(b.sign_in_url(&own(&srv.base_url))).unwrap();
+        block_on(b.complete_sign_in(&callback(&srv.base_url))).unwrap();
+    }
+    block_on(b.set_server(own(&c.base_url))).unwrap();
+    block_on(b.refresh_account(&a.base_url)).unwrap_err();
+    // The current server's account is untouched.
+    assert_eq!(b.lapsed(), None);
+    assert!(b.account().is_some());
+    let servers: Vec<String> = b.accounts().into_iter().map(|(s, _)| s).collect();
+    assert_eq!(servers, std::slice::from_ref(&c.base_url));
+}

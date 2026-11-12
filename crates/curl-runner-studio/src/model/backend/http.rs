@@ -15,6 +15,7 @@ use super::{
 use crate::model::sessions::{AccountCache, CachedAccount, SessionStore};
 use curl_runner_cloud_client::{Client, CloudError, check_server, describe, escape_control};
 use curl_runner_cloud_proto::{ErrorCode, Input, Snapshot};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
@@ -31,6 +32,10 @@ pub struct HttpBackend {
     /// Name and email of each signed-in server (no tokens), mirrored in
     /// `{state}/accounts.json`.
     accounts: Mutex<AccountCache>,
+    /// Accounts whose session a server refused (401), by server, until
+    /// they sign in again or sign out. Memory only: a relaunch reads as
+    /// signed out.
+    lapsed: Mutex<BTreeMap<String, Account>>,
     pending: PendingSignIns,
     /// Mirrored in `{state}/received-shares.json`.
     received: Mutex<Vec<ReceivedShare>>,
@@ -66,6 +71,7 @@ impl HttpBackend {
             sessions,
             server: Mutex::new(server),
             accounts: Mutex::new(AccountCache::load(state)),
+            lapsed: Mutex::default(),
             pending: PendingSignIns::default(),
             received: Mutex::new(
                 state
@@ -146,6 +152,7 @@ impl HttpBackend {
     fn remember(&self, server: &str, name: Option<String>, email: String) -> Account {
         let cached = CachedAccount { name, email };
         let account = account_of(&cached);
+        lock(&self.lapsed).remove(server);
         let mut accounts = lock(&self.accounts);
         accounts.0.insert(server.to_string(), cached);
         // A cache that can't be written costs only the offline display.
@@ -169,9 +176,14 @@ impl HttpBackend {
     fn map_error(&self, server: &str, err: CloudError) -> BackendError {
         let mapped = Self::describe_error(server, err);
         if mapped == BackendError::SignedOut {
+            let server = key(server);
+            // Who it was stays on show as an expired session.
+            if let Some(a) = self.account_on(&server) {
+                lock(&self.lapsed).insert(server.clone(), a);
+            }
             // Signed out either way; a Keychain that won't delete is
             // retried by the next sign-out.
-            let _ = self.forget(&key(server));
+            let _ = self.forget(&server);
         }
         mapped
     }
@@ -350,6 +362,7 @@ impl Backend for HttpBackend {
                 // it expires.
                 let _ = Client::new(&server, Some(token)).sign_out();
             }
+            lock(&self.lapsed).remove(&server);
             self.forget(&server)
         })
     }
@@ -360,6 +373,18 @@ impl Backend for HttpBackend {
 
     fn account_on(&self, server: &str) -> Option<Account> {
         lock(&self.accounts).0.get(&key(server)).map(account_of)
+    }
+
+    fn lapsed(&self) -> Option<Account> {
+        lock(&self.lapsed).get(&key(self.server().url())).cloned()
+    }
+
+    fn accounts(&self) -> Vec<(String, Account)> {
+        lock(&self.accounts)
+            .0
+            .iter()
+            .map(|(s, c)| (s.clone(), account_of(c)))
+            .collect()
     }
     /// Until 3b: `sync` answers `Unavailable`.
     fn team_sync(&self) -> bool {
