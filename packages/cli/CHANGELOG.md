@@ -1,5 +1,31 @@
 # @curl-runner/cli
 
+## 2.9.0
+
+### Minor Changes
+
+- [#207](https://github.com/alexvcasillas/curl-runner/pull/207) [`481c258`](https://github.com/alexvcasillas/curl-runner/commit/481c258abdd025198181ed583ca75bcde85b6d64) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **The studio knows your Cloud teams**
+  
+  The account menu shows the teams you're in, the first step towards publishing from the studio.
+  
+  - **New:** the account menu lists your teams and your role in each ("Owner of Acme").
+  - **Improved:** opening Settings › Accounts & sync checks your account with the server, so a team you just joined shows up.
+
+### Patch Changes
+
+- [#211](https://github.com/alexvcasillas/curl-runner/pull/211) [`c3d4bd8`](https://github.com/alexvcasillas/curl-runner/commit/c3d4bd8335a04c56f48fdb82505a742bc9f2a165) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **The status bar names the server, the avatar the account**
+  
+  The status bar no longer repeats the account the title bar's avatar already shows.
+  
+  - **Improved:** the status bar shows only the server (`Cloud`, your server's host, or `Offline`); clicking it opens Settings › Accounts & sync.
+  - **Improved:** it uses the status bar's muted text and brightens on hover.
+
+- [#210](https://github.com/alexvcasillas/curl-runner/pull/210) [`6c2e2ea`](https://github.com/alexvcasillas/curl-runner/commit/6c2e2ea8768fead9355f57cde973e79ed8fb905e) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **Sync now no longer looks like it works when it can't**
+  
+  Collections don't sync with curl-runner Cloud yet, so the studio says that instead of showing a button that does nothing.
+  
+  - **Fixed:** on a server that can't sync collections yet, Settings › Accounts & sync reads "Sync is coming soon" and turns Sync now off.
+
 ## 2.8.0
 
 ### Minor Changes
