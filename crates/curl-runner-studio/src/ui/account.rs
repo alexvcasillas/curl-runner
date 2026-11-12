@@ -59,27 +59,29 @@ impl AccountState {
         }
     }
 
-    /// The status bar's line, as (emphasised part, rest):
-    /// `jamie@acme.dev · Cloud`, `Session expired · Sign in again`,
-    /// `Not signed in · Cloud`, `Offline · local files only`. `compact`
-    /// drops the email first.
-    pub fn status_line(&self, compact: bool) -> (Option<String>, String) {
+    /// The status bar's server item: `Cloud`, a self-hosted host, or
+    /// `Offline`. Who is signed in is the avatar's job.
+    pub fn status_text(&self) -> String {
         match self {
-            AccountState::Connected { account, server } if compact => (None, short_name(server)),
-            AccountState::Connected { account, server } => {
-                (Some(account.email.clone()), short_name(server))
-            }
-            AccountState::Expired { .. } => {
-                (Some("Session expired".into()), "Sign in again".into())
-            }
-            AccountState::SignedOut { server } => {
-                (None, format!("Not signed in · {}", short_name(server)))
-            }
-            AccountState::Offline => (None, "Offline · local files only".into()),
+            AccountState::Connected { server, .. }
+            | AccountState::Expired { server, .. }
+            | AccountState::SignedOut { server } => short_name(server),
+            AccountState::Offline => "Offline".into(),
         }
     }
 
-    /// What a screen reader hears for the avatar and the status line.
+    /// What a screen reader hears for the status bar's server item.
+    pub fn status_label(&self) -> String {
+        let name = match self {
+            AccountState::Connected { server, .. }
+            | AccountState::Expired { server, .. }
+            | AccountState::SignedOut { server } => long_name(server),
+            AccountState::Offline => "Offline".into(),
+        };
+        format!("{name}. Open Accounts & sync")
+    }
+
+    /// What a screen reader hears for the avatar.
     pub fn label(&self) -> String {
         match self {
             AccountState::Connected { account, server } => format!(
@@ -737,37 +739,35 @@ mod tests {
     }
 
     #[test]
-    fn status_lines_by_state() {
+    fn status_item_names_the_server() {
         let a = acct("Jamie Rivera", "jamie@acme.dev");
+        let own = Server::SelfHosted {
+            url: "https://curl.example.com".into(),
+        };
         let connected = AccountState::Connected {
             account: a.clone(),
             server: Server::Cloud,
         };
+        assert_eq!(connected.status_text(), "Cloud");
         assert_eq!(
-            connected.status_line(false),
-            (Some("jamie@acme.dev".into()), "Cloud".into())
+            connected.status_label(),
+            "curl-runner Cloud. Open Accounts & sync"
         );
-        assert_eq!(connected.status_line(true), (None, "Cloud".into()));
         assert_eq!(connected.dot(), "success");
         let expired = AccountState::Expired {
             account: a,
-            server: Server::Cloud,
+            server: own.clone(),
         };
-        assert_eq!(
-            expired.status_line(false),
-            (Some("Session expired".into()), "Sign in again".into())
-        );
+        assert_eq!(expired.status_text(), "curl.example.com");
         assert_eq!(expired.dot(), "warning");
         assert_eq!(
-            AccountState::SignedOut {
-                server: Server::Cloud
-            }
-            .status_line(false),
-            (None, "Not signed in · Cloud".into())
+            AccountState::SignedOut { server: own }.status_text(),
+            "curl.example.com"
         );
+        assert_eq!(AccountState::Offline.status_text(), "Offline");
         assert_eq!(
-            AccountState::Offline.status_line(false),
-            (None, "Offline · local files only".into())
+            AccountState::Offline.status_label(),
+            "Offline. Open Accounts & sync"
         );
     }
 
@@ -896,7 +896,8 @@ mod ui_tests {
         testing::sign_in(&*backend);
         let (window, ws, _state) = open(cx, Connection::Online, backend);
         assert!(shows_in(cx, window, "title-bar", SIGNED_IN));
-        assert!(shows_in(cx, window, "status-bar", SIGNED_IN));
+        // The avatar alone says who: the status bar names the server.
+        assert!(!shows_in(cx, window, "status-bar", SIGNED_IN));
         assert!(!menu_open(cx, &ws));
         click(cx, window, "account-chip");
         assert!(menu_open(cx, &ws));
@@ -912,9 +913,26 @@ mod ui_tests {
         // Esc closes it.
         cx.simulate_keystrokes(window, "escape");
         assert!(!menu_open(cx, &ws));
-        // The status line opens it too.
-        click(cx, window, "status-account");
-        assert!(menu_open(cx, &ws));
+    }
+
+    #[gpui_kit::test]
+    fn status_server_opens_accounts(cx: &mut TestAppContext) {
+        use super::super::settings_view::AppPage;
+        let backend = test_backend();
+        testing::sign_in(&*backend);
+        let (window, ws, _state) = open(cx, Connection::Online, backend);
+        assert!(shows_in(
+            cx,
+            window,
+            "status-bar",
+            "curl-runner Cloud. Open Accounts & sync"
+        ));
+        click(cx, window, "status-server");
+        assert!(!menu_open(cx, &ws));
+        ws.read_with(cx, |ws, cx| {
+            let view = ws.app_settings.clone().expect("Settings is open");
+            assert_eq!(view.read(cx).page(), AppPage::Accounts);
+        });
     }
 
     fn refreshes(backend: &Arc<dyn Backend>) -> usize {
@@ -971,7 +989,12 @@ mod ui_tests {
         assert!(!menu_open(cx, &ws));
         let signed_out = "Not signed in to curl-runner Cloud. Sign in";
         assert!(shows_in(cx, window, "title-bar", signed_out));
-        assert!(shows_in(cx, window, "status-bar", signed_out));
+        assert!(shows_in(
+            cx,
+            window,
+            "status-bar",
+            "curl-runner Cloud. Open Accounts & sync"
+        ));
         // `Sign in` opens the sign-in screen.
         click(cx, window, "account-chip");
         assert!(ws.read_with(cx, |ws, _| ws.sign_in_shown()));
@@ -985,7 +1008,6 @@ mod ui_tests {
         backend.dev().unwrap().expire_session();
         let expired = "Session expired for jamie@acme.dev on curl-runner Cloud. Open account menu";
         assert!(shows_in(cx, window, "title-bar", expired));
-        assert!(shows_in(cx, window, "status-bar", expired));
         click(cx, window, "account-chip");
         assert!(shows(cx, window, "Your curl-runner Cloud session ended"));
         assert!(!shows(cx, window, "Sign out of curl-runner Cloud"));
