@@ -163,7 +163,7 @@ pub fn methods_text(methods: &[SignInMethod]) -> Option<String> {
     }
 }
 
-/// Who is signed in on one server. Teams arrive with plan 3b.
+/// Who is signed in on one server, and their teams there.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Account {
@@ -171,6 +171,29 @@ pub struct Account {
     pub email: String,
     /// How they signed in, when the server says (the API doesn't).
     pub provider: Option<SignInMethod>,
+    /// From `/v1/me`; empty until the server has said.
+    #[serde(default)]
+    pub teams: Vec<TeamRef>,
+}
+
+/// A team the account is in, as `/v1/me` lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamRef {
+    pub slug: String,
+    pub name: String,
+    pub role: curl_runner_cloud_proto::Role,
+    pub plan: curl_runner_cloud_proto::Plan,
+}
+
+impl From<curl_runner_cloud_client::TeamInfo> for TeamRef {
+    fn from(t: curl_runner_cloud_client::TeamInfo) -> TeamRef {
+        TeamRef {
+            slug: t.slug,
+            name: t.name,
+            role: t.role,
+            plan: t.plan,
+        }
+    }
 }
 
 /// What `Test connection` shows:
@@ -546,6 +569,12 @@ pub trait Backend: Send + Sync {
     /// session (401): shown as expired until they sign in again or out.
     fn lapsed(&self) -> Option<Account> {
         None
+    }
+    /// Asks `server` who the session on it is and refreshes the account
+    /// (teams included). A 401 signs out of that server only.
+    fn refresh_account(&self, server: &str) -> BoxFut<'_, Account> {
+        let account = self.account_on(server).ok_or(BackendError::SignedOut);
+        Box::pin(async move { account })
     }
     /// Every account signed in, by server API URL (no trailing `/`),
     /// sorted by server.

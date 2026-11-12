@@ -580,6 +580,18 @@ impl Backend for MockBackend {
         self.state().accounts.get(&server_key(server)).cloned()
     }
 
+    fn refresh_account(&self, server: &str) -> BoxFut<'_, Account> {
+        self.record(format!("refresh_account({server:?})"));
+        let server = server_key(server);
+        self.call(false, move |s| {
+            online(s)?;
+            s.accounts
+                .get(&server)
+                .cloned()
+                .ok_or(BackendError::SignedOut)
+        })
+    }
+
     fn lapsed(&self) -> Option<Account> {
         let s = self.state();
         s.lapsed.get(&server_key(s.server.url())).cloned()
