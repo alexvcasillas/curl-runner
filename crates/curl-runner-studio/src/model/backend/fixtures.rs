@@ -1,7 +1,8 @@
 //! The mock's fixed data: the accounts, and the Shipping API collection Acme
 //! shares (boards OpenShared and ReadOnly). Placeholders only.
 
-use super::{Account, SharedVar, SignInMethod, SyncFile};
+use super::{Account, SharedVar, SignInMethod, SyncFile, TeamRef};
+use curl_runner_cloud_proto::{Plan, Role};
 
 /// The version every mocked server reports (board SignIn).
 pub const SERVER_VERSION: &str = "2.1.1";
@@ -40,13 +41,25 @@ pub fn account(code: &str) -> Account {
             name: "Maria".into(),
             email: "maria@example.com".into(),
             provider: Some(SignInMethod::Email),
+            teams: Vec::new(),
         }
     } else {
         Account {
             name: "Jamie Rivera".into(),
             email: "jamie@acme.dev".into(),
             provider: Some(SignInMethod::Github),
+            teams: vec![acme()],
         }
+    }
+}
+
+/// Jamie's team: Acme, on the Team plan, Jamie its owner.
+pub fn acme() -> TeamRef {
+    TeamRef {
+        slug: "acme".into(),
+        name: "Acme".into(),
+        role: Role::Owner,
+        plan: Plan::Team,
     }
 }
 

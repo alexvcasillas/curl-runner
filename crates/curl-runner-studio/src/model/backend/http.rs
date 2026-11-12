@@ -10,10 +10,10 @@ use super::{
     Account, AuthCallback, Backend, BackendError, BoxFut, CollectionKey, ConnectionInfo,
     DevControls, PendingSignIns, Person, ReceivedShare, Server, ShareLink, ShareSettings,
     ShareUpdate, SharedCollection, SharedSnapshot, SharedVar, SyncDeletion, SyncFile, SyncReport,
-    SyncStatus,
+    SyncStatus, TeamRef,
 };
 use crate::model::sessions::{AccountCache, CachedAccount, SessionStore};
-use curl_runner_cloud_client::{Client, CloudError, check_server, describe, escape_control};
+use curl_runner_cloud_client::{Client, CloudError, User, check_server, describe, escape_control};
 use curl_runner_cloud_proto::{ErrorCode, Input, Snapshot};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -55,6 +55,7 @@ fn account_of(c: &CachedAccount) -> Account {
         name: c.name.clone().unwrap_or_else(|| c.email.clone()),
         email: c.email.clone(),
         provider: None,
+        teams: c.teams.clone(),
     }
 }
 
@@ -129,28 +130,12 @@ impl HttpBackend {
         Ok(())
     }
 
-    /// Asks `server` who the session on it is, and refreshes the cached
-    /// account. A 401 signs out of that server only.
-    // Not called by the app yet: every call's 401 already signs out through
-    // `map_error`. Settings → Accounts uses it in 3b.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn refresh_account(&self, server: &str) -> BoxFut<'_, Account> {
-        let server = key(server);
-        Box::pin(async move {
-            let token = match self.sessions.get(&server) {
-                Ok(Some(t)) => t,
-                Ok(None) => return Err(BackendError::SignedOut),
-                Err(_) => return Err(keychain_unreadable()),
-            };
-            let me = Client::new(&server, Some(token))
-                .me()
-                .map_err(|e| self.map_error(&server, e))?;
-            Ok(self.remember(&server, me.user.name, me.user.email))
-        })
-    }
-
-    fn remember(&self, server: &str, name: Option<String>, email: String) -> Account {
-        let cached = CachedAccount { name, email };
+    fn remember(&self, server: &str, user: User, teams: Vec<TeamRef>) -> Account {
+        let cached = CachedAccount {
+            name: user.name,
+            email: user.email,
+            teams,
+        };
         let account = account_of(&cached);
         lock(&self.lapsed).remove(server);
         let mut accounts = lock(&self.accounts);
@@ -348,7 +333,13 @@ impl Backend for HttpBackend {
             self.sessions.set(&server, &verified.session).map_err(|_| {
                 BackendError::Invalid("Couldn't save your sign-in to the Keychain.".into())
             })?;
-            Ok(self.remember(&server, verified.user.name, verified.user.email))
+            // The redeem names no teams: ask. Signed in either way; the
+            // teams come with the next refresh if this fails.
+            let teams = Client::new(&server, Some(verified.session))
+                .me()
+                .map(|me| me.teams.into_iter().map(TeamRef::from).collect())
+                .unwrap_or_default();
+            Ok(self.remember(&server, verified.user, teams))
         })
     }
 
@@ -373,6 +364,22 @@ impl Backend for HttpBackend {
 
     fn account_on(&self, server: &str) -> Option<Account> {
         lock(&self.accounts).0.get(&key(server)).map(account_of)
+    }
+
+    fn refresh_account(&self, server: &str) -> BoxFut<'_, Account> {
+        let server = key(server);
+        Box::pin(async move {
+            let token = match self.sessions.get(&server) {
+                Ok(Some(t)) => t,
+                Ok(None) => return Err(BackendError::SignedOut),
+                Err(_) => return Err(keychain_unreadable()),
+            };
+            let me = Client::new(&server, Some(token))
+                .me()
+                .map_err(|e| self.map_error(&server, e))?;
+            let teams = me.teams.into_iter().map(TeamRef::from).collect();
+            Ok(self.remember(&server, me.user, teams))
+        })
     }
 
     fn lapsed(&self) -> Option<Account> {

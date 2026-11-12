@@ -9,6 +9,7 @@ use super::settings_view::AppPage;
 use super::state::Connection;
 use super::workspace::{Workspace, host_of, notify_error};
 use crate::model::backend::{Account, Backend, Server, method_label};
+use curl_runner_cloud_proto::Role as TeamRole;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::time::{Duration, Instant};
@@ -147,6 +148,25 @@ pub fn long_name(server: &Server) -> String {
 }
 
 /// `Signed in with GitHub`; the server doesn't always say how.
+/// `Owner of Acme`, `Owner of Acme, member of Beta`: the menu's team line.
+fn teams_text(a: &Account) -> Option<String> {
+    let parts: Vec<String> = a
+        .teams
+        .iter()
+        .map(|t| {
+            let role = match t.role {
+                TeamRole::Owner => "owner",
+                TeamRole::Member => "member",
+            };
+            format!("{role} of {}", t.name)
+        })
+        .collect();
+    let text = parts.join(", ");
+    let mut chars = text.chars();
+    let first = chars.next()?;
+    Some(first.to_uppercase().chain(chars).collect())
+}
+
 fn provider_text(a: &Account) -> Option<String> {
     a.provider
         .map(|p| format!("Signed in with {}", method_label(p)))
@@ -425,6 +445,15 @@ impl Workspace {
                         .child(div().flex_1().child(long_name(&server)))
                         .child(div().text_color(color("text-tertiary")).child("Connected")),
                 )
+                .children(teams_text(&account).map(|t| {
+                    div()
+                        .id("account-menu-teams")
+                        .test_support()
+                        .aria_label(t.clone())
+                        .pl(px(14.))
+                        .text_color(color("text-secondary"))
+                        .child(t)
+                }))
                 .children(provider_text(&account).map(|t| {
                     div()
                         .pl(px(14.))
@@ -673,7 +702,9 @@ fn chip_button(id: &'static str, _label: &'static str, primary: bool) -> Statefu
 
 #[cfg(test)]
 mod tests {
-    use super::{AccountState, initials, long_name, provider_text, short_name};
+    use super::{
+        AccountState, TeamRole, initials, long_name, provider_text, short_name, teams_text,
+    };
     use crate::model::backend::{Account, Server, SignInMethod};
 
     fn acct(name: &str, email: &str) -> Account {
@@ -681,6 +712,7 @@ mod tests {
             name: name.into(),
             email: email.into(),
             provider: None,
+            teams: Vec::new(),
         }
     }
 
@@ -754,6 +786,25 @@ mod tests {
         assert_eq!(provider_text(&a), None);
         a.provider = Some(SignInMethod::Github);
         assert_eq!(provider_text(&a).as_deref(), Some("Signed in with GitHub"));
+    }
+
+    #[test]
+    fn teams_line_names_each_role() {
+        use crate::model::backend::{TeamRef, fixtures::acme};
+        let mut a = acct("Ada", "ada@example.test");
+        assert_eq!(teams_text(&a), None);
+        a.teams = vec![acme()];
+        assert_eq!(teams_text(&a).as_deref(), Some("Owner of Acme"));
+        a.teams.push(TeamRef {
+            slug: "beta".into(),
+            name: "Beta".into(),
+            role: TeamRole::Member,
+            plan: curl_runner_cloud_proto::Plan::Free,
+        });
+        assert_eq!(
+            teams_text(&a).as_deref(),
+            Some("Owner of Acme, member of Beta")
+        );
     }
 }
 
@@ -856,6 +907,7 @@ mod ui_tests {
             window,
             "curl-runner Cloud, connected. Signed in with GitHub"
         ));
+        assert!(shows_in(cx, window, "account-menu-server", "Owner of Acme"));
         assert!(shows(cx, window, "Accounts & sync…"));
         assert!(shows(cx, window, "Sign out of curl-runner Cloud"));
         // Esc closes it.
@@ -881,6 +933,49 @@ mod ui_tests {
             let view = ws.app_settings.clone().expect("Settings is open");
             assert_eq!(view.read(cx).page(), AppPage::Accounts);
         });
+    }
+
+    fn refreshes(backend: &Arc<dyn Backend>) -> usize {
+        let recorded = backend.dev().expect("the mock").recorded();
+        recorded
+            .iter()
+            .filter(|c| c.starts_with("refresh_account("))
+            .count()
+    }
+
+    fn open_accounts(cx: &mut TestAppContext, window: AnyWindowHandle, ws: &Entity<Workspace>) {
+        use super::super::settings_view::AppPage;
+        cx.update_window(window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.open_app_settings(AppPage::Accounts, window, cx)
+            })
+        })
+        .unwrap();
+        cx.run_until_parked();
+    }
+
+    #[gpui_kit::test]
+    fn opening_accounts_asks_the_server_who_you_are(cx: &mut TestAppContext) {
+        let backend = test_backend();
+        testing::sign_in(&*backend);
+        let (window, ws, _state) = open(cx, Connection::Online, backend.clone());
+        assert_eq!(refreshes(&backend), 0);
+        open_accounts(cx, window, &ws);
+        assert_eq!(refreshes(&backend), 1);
+        // Still signed in, teams and all.
+        assert_eq!(backend.account().unwrap().teams.len(), 1);
+    }
+
+    #[gpui_kit::test]
+    fn offline_or_signed_out_asks_nothing(cx: &mut TestAppContext) {
+        let backend = test_backend();
+        let (window, ws, _state) = open(cx, Connection::Online, backend.clone());
+        open_accounts(cx, window, &ws);
+        let offline = test_backend();
+        testing::sign_in(&*offline);
+        let (window2, ws2, _state2) = open(cx, Connection::Offline, offline.clone());
+        open_accounts(cx, window2, &ws2);
+        assert_eq!((refreshes(&backend), refreshes(&offline)), (0, 0));
     }
 
     #[gpui_kit::test]
