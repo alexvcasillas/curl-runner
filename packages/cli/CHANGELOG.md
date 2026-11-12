@@ -1,5 +1,27 @@
 # @curl-runner/cli
 
+## 2.10.0
+
+### Minor Changes
+
+- [#216](https://github.com/alexvcasillas/curl-runner/pull/216) [`3149488`](https://github.com/alexvcasillas/curl-runner/commit/31494887579a8b476522b32078d7a48df59a1e2e) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **Publish to curl-runner Cloud from the studio**
+  
+  The studio publishes a collection folder the way `curl-runner publish` does, signed in as you, and shows where it stands at the foot of the sidebar.
+  
+  - **New:** Publish at the foot of the sidebar and in the palette. The first time, pick the team and the collection's name, suggested from the folder.
+  - **New:** the same checks as the CLI run on your Mac first: YAML errors and secret values in the files stop the publish, each with a link to the file.
+  - **New:** optionally saves the collection's name to `curl-runner.yaml`, so CI publishes to the same collection.
+  - **New:** the sidebar foot shows the published version, who published it and when, and how many files changed since.
+  - **New:** clear refusals for a collection that syncs from the studio, a plan limit (with Upgrade), and an account without a team.
+
+### Patch Changes
+
+- [#214](https://github.com/alexvcasillas/curl-runner/pull/214) [`ee31d7d`](https://github.com/alexvcasillas/curl-runner/commit/ee31d7d7a68d5bb0b2abba6f3cb9a1ae474ab831) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **Teams get their own section in the account menu**
+  
+  Each team you're in is listed on its own row, as designed.
+  
+  - **Improved:** the account menu's Teams section shows each team's initial, name, your role and its plan ("Acme · Owner · Team").
+
 ## 2.9.0
 
 ### Minor Changes
