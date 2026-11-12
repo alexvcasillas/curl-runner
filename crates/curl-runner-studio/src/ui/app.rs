@@ -67,6 +67,8 @@ actions!(
         OpenHistory,
         /// Leave the run history for the editor (esc).
         CloseHistory,
+        /// Publish the open folder to the server (the sidebar foot's Publish).
+        Publish,
         /// Leave the sync conflict screen; the conflicts stay (esc).
         CloseConflicts,
         /// Show the collection's environments and variables.
@@ -464,6 +466,12 @@ pub fn run() {
                         }
                         "history" => ws.open_history(window, cx),
                         "account" => ws.toggle_account_menu(cx),
+                        "publish" => {
+                            ws.start_publish(window, cx);
+                            if dev_string("CURL_RUNNER_STUDIO_SUBMIT").is_some() {
+                                ws.dev_submit_publish(cx);
+                            }
+                        }
                         "tour" | "tour-run" | "tour-result" => {
                             let fill = dev_string("CURL_RUNNER_STUDIO_FILL").unwrap_or_default();
                             ws.dev_tour(&fill, &show, window, cx);
@@ -556,6 +564,10 @@ pub fn app_backend(base: Option<&Path>, mock_env: Option<&str>) -> Arc<dyn Backe
         // The mock is a development aid: a release build ignores the switch.
         if cfg!(debug_assertions) && mock_env == Some("1") {
             return Arc::new(MockBackend::open(base, MOCK_LATENCY));
+        }
+        // The mock as the real server is today: folders publish.
+        if cfg!(debug_assertions) && mock_env == Some("publish") {
+            return Arc::new(MockBackend::open(base, MOCK_LATENCY).publishing());
         }
         let sessions = Arc::new(KeychainSessions::new(KeychainSecrets, base));
         Arc::new(HttpBackend::open(base, sessions))
@@ -669,6 +681,8 @@ fn toggle_dev(backend: &Arc<dyn Backend>, flip: fn(&dyn DevControls), cx: &mut A
 /// `palette` (with the
 /// query in `CURL_RUNNER_STUDIO_QUERY` and the row in
 /// `CURL_RUNNER_STUDIO_SELECT`, if set); `account` the account menu;
+/// `publish` Publish, as the sidebar foot's button (with
+/// `CURL_RUNNER_STUDIO_SUBMIT=1`, pressing the dialog's Publish once it can);
 /// `problem`
 /// selects the open file's first problem and opens its popover and `export`
 /// opens the run screen's Export menu (with

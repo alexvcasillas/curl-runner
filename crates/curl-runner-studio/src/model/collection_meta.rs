@@ -47,6 +47,9 @@ pub struct CollectionMeta {
     /// A received copy: when its owner last changed it, as this studio
     /// last heard (the add, or a `Check for updates` that took changes).
     pub received_updated: Option<chrono::DateTime<chrono::Utc>>,
+    /// Where this folder publishes, once it has (or the dialog picked).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cloud: Option<crate::model::publish::CloudLink>,
 }
 
 impl CollectionMeta {

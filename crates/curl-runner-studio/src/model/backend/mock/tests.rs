@@ -1062,3 +1062,77 @@ fn accounts_lists_every_server_signed_in() {
     assert_eq!(accounts[0].1.email, "jamie@acme.dev");
     assert_eq!(accounts[1].1.email, "maria@example.com");
 }
+
+fn bundle(text: &str) -> PublishRequest {
+    let files = vec![BundleFile {
+        path: "a.yaml".into(),
+        text: text.into(),
+    }];
+    PublishRequest {
+        hash: curl_runner_cloud_proto::bundle_hash(&files),
+        files,
+        inputs: Vec::new(),
+        name: None,
+        description: None,
+        git: None,
+    }
+}
+
+#[test]
+fn publishing_mode_publishes_instead_of_syncing() {
+    let b = MockBackend::open(None, Duration::ZERO).publishing();
+    assert!(b.publishes() && !b.team_sync());
+    assert!(!MockBackend::open(None, Duration::ZERO).publishes());
+    assert_eq!(
+        block_on(b.publish("acme", "pay", bundle("x"))).unwrap_err(),
+        BackendError::SignedOut
+    );
+    testing::sign_in(&b);
+    assert_eq!(block_on(b.remote_collection("acme", "pay")).unwrap(), None);
+    let r = block_on(b.publish("acme", "pay", bundle("x"))).unwrap();
+    assert_eq!((r.version, r.status), (1, PublishStatus::Created));
+    assert_eq!(r.changed.added, ["a.yaml"]);
+    let again = block_on(b.publish("acme", "pay", bundle("x"))).unwrap();
+    assert_eq!((again.version, again.status), (1, PublishStatus::Unchanged));
+    let v2 = block_on(b.publish("acme", "pay", bundle("y"))).unwrap();
+    assert_eq!((v2.version, v2.changed.changed.len()), (2, 1));
+    let remote = block_on(b.remote_collection("acme", "pay"))
+        .unwrap()
+        .unwrap();
+    let current = remote.current.unwrap();
+    assert_eq!(
+        (current.number, current.publisher.as_str()),
+        (2, "jamie@acme.dev")
+    );
+    assert_eq!(
+        block_on(b.remote_files("acme", "pay", 1)).unwrap()[0].text,
+        "x"
+    );
+}
+
+#[test]
+fn publishing_refusals() {
+    let b = MockBackend::open(None, Duration::ZERO).publishing();
+    testing::sign_in(&b);
+    assert!(matches!(
+        block_on(b.publish("globex", "pay", bundle("x"))),
+        Err(BackendError::Invalid(_))
+    ));
+    dev(&b).seed_published(
+        "acme",
+        "studio",
+        CollectionSource::Cloud,
+        Vec::new(),
+        "jamie@acme.dev",
+    );
+    assert!(matches!(
+        block_on(b.publish("acme", "studio", bundle("x"))),
+        Err(BackendError::WrongSource(_))
+    ));
+    dev(&b).refuse_next_publish(BackendError::PlanLimit("Upgrade.".into()));
+    assert_eq!(
+        block_on(b.publish("acme", "pay", bundle("x"))).unwrap_err(),
+        BackendError::PlanLimit("Upgrade.".into())
+    );
+    assert!(block_on(b.publish("acme", "pay", bundle("x"))).is_ok());
+}

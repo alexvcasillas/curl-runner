@@ -10,6 +10,7 @@ pub mod environments;
 pub mod export;
 pub mod history;
 pub mod import;
+pub mod publish;
 pub mod received;
 pub mod result_view;
 pub mod run;

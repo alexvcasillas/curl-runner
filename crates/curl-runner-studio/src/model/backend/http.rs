@@ -12,6 +12,7 @@ use super::{
     ShareUpdate, SharedCollection, SharedSnapshot, SharedVar, SyncDeletion, SyncFile, SyncReport,
     SyncStatus, TeamRef,
 };
+use super::{BundleFile, CollectionSource, PublishRequest, PublishResponse, RemoteCollection};
 use crate::model::sessions::{AccountCache, CachedAccount, SessionStore};
 use curl_runner_cloud_client::{Client, CloudError, User, check_server, describe, escape_control};
 use curl_runner_cloud_proto::{ErrorCode, Input, Snapshot};
@@ -20,6 +21,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
+/// curl-runner Cloud's dashboard.
+const CLOUD_APP_URL: &str = "https://cloud.curl-runner.com";
 /// Where the server choice is kept, under the state folder.
 const SERVER_FILE: &str = "server.json";
 /// The collections this studio added, under the state folder.
@@ -189,6 +192,29 @@ impl HttpBackend {
             ErrorCode::Unavailable | ErrorCode::RateLimited => BackendError::Unavailable,
             _ => BackendError::Invalid(curl_runner_cloud_client::escape_control(&body.message)),
         }
+    }
+
+    /// A refused publish in the server's words: the plan limit and a
+    /// studio-synced collection by kind, a pause, rate limit or suspension
+    /// as said, a missing team as a team the account can't publish to.
+    fn publish_error(&self, server: &str, team: &str, err: CloudError) -> BackendError {
+        if let CloudError::Api(b, _) = &err {
+            let msg = escape_control(&b.message);
+            match b.error {
+                ErrorCode::PlanLimit => return BackendError::PlanLimit(msg),
+                ErrorCode::WrongSource => return BackendError::WrongSource(msg),
+                ErrorCode::RateLimited | ErrorCode::Unavailable | ErrorCode::TeamSuspended => {
+                    return BackendError::Invalid(msg);
+                }
+                ErrorCode::NotFound => {
+                    return BackendError::Invalid(format!(
+                        "You can't publish to {team}. Check that you're still in the team."
+                    ));
+                }
+                _ => {}
+            }
+        }
+        self.map_error(server, err)
     }
 
     fn save_server(&self, server: &Server) {
@@ -399,6 +425,68 @@ impl Backend for HttpBackend {
     }
     fn sync_status(&self, _: &CollectionKey) -> SyncStatus {
         SyncStatus::Off
+    }
+    fn publishes(&self) -> bool {
+        true
+    }
+    fn remote_collection(&self, team: &str, slug: &str) -> BoxFut<'_, Option<RemoteCollection>> {
+        let (server, team, slug) = (key(self.server().url()), team.to_string(), slug.to_string());
+        Box::pin(async move {
+            let rows = self.authed(&server, |c| c.collections(&team))?;
+            let Some(row) = rows.into_iter().find(|r| r.slug == slug) else {
+                return Ok(None);
+            };
+            let current = match row.current_version {
+                Some(n) => Some(self.authed(&server, |c| c.version(&team, &slug, n))?),
+                None => None,
+            };
+            Ok(Some(RemoteCollection {
+                source: row.source.unwrap_or(CollectionSource::Git),
+                current,
+            }))
+        })
+    }
+    fn remote_files(&self, team: &str, slug: &str, n: u32) -> BoxFut<'_, Vec<BundleFile>> {
+        let (server, team, slug) = (key(self.server().url()), team.to_string(), slug.to_string());
+        Box::pin(async move { self.authed(&server, |c| c.version_files(&team, &slug, n)) })
+    }
+    fn publish(
+        &self,
+        team: &str,
+        slug: &str,
+        request: PublishRequest,
+    ) -> BoxFut<'_, PublishResponse> {
+        let (server, team, slug) = (key(self.server().url()), team.to_string(), slug.to_string());
+        Box::pin(async move {
+            // Publishing needs the session: no anonymous retry.
+            let token = match self.sessions.get(&server) {
+                Ok(Some(t)) => t,
+                Ok(None) => return Err(BackendError::SignedOut),
+                Err(_) => return Err(keychain_unreadable()),
+            };
+            Client::new(&server, Some(token))
+                .publish(&team, &slug, &request)
+                .map_err(|e| self.publish_error(&server, &team, e))
+        })
+    }
+    fn dashboard_url(&self) -> BoxFut<'_, String> {
+        let server = self.server();
+        Box::pin(async move {
+            if server == Server::Cloud {
+                return Ok(CLOUD_APP_URL.to_string());
+            }
+            let url = key(server.url());
+            let info = Client::new(&url, None)
+                .info()
+                .map_err(|e| Self::describe_error(&url, e))?;
+            let app = info
+                .app_url
+                .map(|a| key(&a))
+                .filter(|a| !a.is_empty())
+                .ok_or_else(|| BackendError::Invalid("This server has no dashboard.".into()))?;
+            check_server(&app).map_err(BackendError::Invalid)?;
+            Ok(app)
+        })
     }
     fn sync(
         &self,

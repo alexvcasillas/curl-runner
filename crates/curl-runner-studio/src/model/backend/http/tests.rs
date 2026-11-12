@@ -790,3 +790,92 @@ fn a_refused_session_elsewhere_lapses_only_there() {
     let servers: Vec<String> = b.accounts().into_iter().map(|(s, _)| s).collect();
     assert_eq!(servers, std::slice::from_ref(&c.base_url));
 }
+
+/// Signed in to a server whose collections and publish answer as given.
+fn publish_server(publish: (u16, &'static str)) -> (TestServer, HttpBackend, Arc<MemorySessions>) {
+    let srv = TestServer::with_handler(move |r: Request| {
+        match (r.method.as_str(), r.url.as_str()) {
+            ("GET", "/v1/teams/acme/collections") => json(
+                200,
+                r#"[{"slug":"pay","current_version":14,"source":"git"},{"slug":"studio","current_version":null,"source":"cloud"}]"#,
+            ),
+            ("GET", "/v1/teams/acme/collections/pay/versions/14") => json(
+                200,
+                r#"{"number":14,"hash":"h","published_at":"2026-11-12T10:00:00Z","publisher":"token CI","git":null,"file_count":1,"inputs":[]}"#,
+            ),
+            ("PUT", "/v1/teams/acme/collections/pay/versions") => json(publish.0, publish.1),
+            _ => json(404, r#"{"error":"not_found","message":"No."}"#),
+        }
+    });
+    let (b, sessions) = backend(None);
+    block_on(b.set_server(own(&srv.base_url))).unwrap();
+    sessions.set(&srv.base_url, "crs_x").unwrap();
+    (srv, b, sessions)
+}
+
+fn request() -> PublishRequest {
+    PublishRequest {
+        files: Vec::new(),
+        hash: "h2".into(),
+        inputs: Vec::new(),
+        name: None,
+        description: None,
+        git: None,
+    }
+}
+
+#[test]
+fn remote_collection_reads_source_and_current_version() {
+    let (_srv, b, _) = publish_server((201, "{}"));
+    assert!(b.publishes());
+    let pay = block_on(b.remote_collection("acme", "pay"))
+        .unwrap()
+        .unwrap();
+    assert_eq!(pay.source, CollectionSource::Git);
+    assert_eq!(pay.current.unwrap().publisher, "token CI");
+    let studio = block_on(b.remote_collection("acme", "studio"))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (studio.source, studio.current),
+        (CollectionSource::Cloud, None)
+    );
+    assert_eq!(block_on(b.remote_collection("acme", "nope")).unwrap(), None);
+}
+
+#[test]
+fn publish_refusals_keep_their_kind() {
+    let (_s, b, _) = publish_server((
+        402,
+        r#"{"error":"plan_limit","message":"Upgrade to Team."}"#,
+    ));
+    assert_eq!(
+        block_on(b.publish("acme", "pay", request())).unwrap_err(),
+        BackendError::PlanLimit("Upgrade to Team.".into())
+    );
+    let (_s, b, _) = publish_server((409, r#"{"error":"wrong_source","message":"Syncs."}"#));
+    assert_eq!(
+        block_on(b.publish("acme", "pay", request())).unwrap_err(),
+        BackendError::WrongSource("Syncs.".into())
+    );
+    let (_s, b, _) = publish_server((429, r#"{"error":"rate_limited","message":"Try in 40 s."}"#));
+    assert_eq!(
+        block_on(b.publish("acme", "pay", request())).unwrap_err(),
+        BackendError::Invalid("Try in 40 s.".into())
+    );
+    let (_s, b, sessions) = publish_server((
+        201,
+        r#"{"collection":"pay","version":15,"status":"created","changed":{"added":[],"changed":["a.yaml"],"removed":[]}}"#,
+    ));
+    assert_eq!(
+        block_on(b.publish("acme", "pay", request()))
+            .unwrap()
+            .version,
+        15
+    );
+    sessions.delete(&_s.base_url).unwrap();
+    assert_eq!(
+        block_on(b.publish("acme", "pay", request())).unwrap_err(),
+        BackendError::SignedOut
+    );
+}

@@ -21,6 +21,7 @@ mod new_dialog;
 mod open_shared;
 mod palette;
 mod problems_panel;
+mod publish;
 mod received;
 mod result_marks;
 mod run_button;

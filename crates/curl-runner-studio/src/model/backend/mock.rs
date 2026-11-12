@@ -13,7 +13,11 @@ use super::{
     ReceivedShare, Role, Server, ShareLink, ShareSettings, ShareUpdate, SharedCollection,
     SharedSnapshot, SharedVar, SignInMethod, SyncDeletion, SyncFile, SyncReport, SyncStatus,
 };
+use super::{
+    BundleFile, CollectionSource, PublishRequest, PublishResponse, RemoteCollection, VersionSummary,
+};
 use chrono::{DateTime, Days, NaiveDate, Utc};
+use curl_runner_cloud_proto::{GitMeta, PublishStatus};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
@@ -46,6 +50,10 @@ pub struct MockBackend {
     gate: Arc<Gate>,
     /// The sign-ins started and not yet answered (not persisted).
     pending: PendingSignIns,
+    /// Publishes folders (as the real server) instead of syncing them.
+    publishing: bool,
+    /// The next `publish` fails with this (tests and the dev menu).
+    refuse_publish: Mutex<Option<BackendError>>,
 }
 
 /// [`DevControls::hold_updates`]: held, and the answers waiting on it.
@@ -103,6 +111,38 @@ struct State {
     synced: BTreeMap<String, ServerCollection>,
     /// Bumped per generated token.
     seq: u64,
+    /// Published collections, by `team/slug` (publishing mode).
+    published: BTreeMap<String, PublishedCollection>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+struct PublishedCollection {
+    source: Option<CollectionSource>,
+    versions: Vec<(VersionSummary, Vec<BundleFile>)>,
+}
+
+impl PublishedCollection {
+    fn current(&self) -> Option<&(VersionSummary, Vec<BundleFile>)> {
+        self.versions.last()
+    }
+
+    fn push(&mut self, files: Vec<BundleFile>, publisher: &str, git: Option<GitMeta>) -> u32 {
+        let number = self.versions.len() as u32 + 1;
+        let hash = curl_runner_cloud_proto::bundle_hash(&files);
+        self.versions.push((
+            VersionSummary {
+                number,
+                hash,
+                published_at: Utc::now(),
+                publisher: publisher.to_string(),
+                git,
+                file_count: files.len() as u32,
+            },
+            files,
+        ));
+        number
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -153,7 +193,43 @@ impl MockBackend {
             log: Mutex::default(),
             gate: Arc::default(),
             pending: PendingSignIns::default(),
+            publishing: false,
+            refuse_publish: Mutex::default(),
         }
+    }
+
+    /// The mock as the real server behaves today: folders publish, nothing
+    /// syncs (`CURL_RUNNER_STUDIO_MOCK=publish`).
+    pub fn publishing(mut self) -> MockBackend {
+        self.publishing = true;
+        self
+    }
+
+    /// The next publish fails with `err`.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn refuse_publish_next(&self, err: BackendError) {
+        *self
+            .refuse_publish
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(err);
+    }
+
+    /// `team/slug` exists on the server with one version of `files`,
+    /// published by `publisher` (`token CI`), syncing from `source`.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn seed_collection(
+        &self,
+        team: &str,
+        slug: &str,
+        source: CollectionSource,
+        files: Vec<BundleFile>,
+        publisher: &str,
+    ) {
+        let mut s = self.state();
+        let c = s.published.entry(format!("{team}/{slug}")).or_default();
+        c.source = Some(source);
+        c.push(files, publisher, None);
+        self.save(&s);
     }
 
     /// With `clock` as the time sign-ins expire by (tests).
@@ -572,6 +648,91 @@ impl Backend for MockBackend {
         })
     }
 
+    fn team_sync(&self) -> bool {
+        !self.publishing
+    }
+    fn publishes(&self) -> bool {
+        self.publishing
+    }
+    fn remote_collection(&self, team: &str, slug: &str) -> BoxFut<'_, Option<RemoteCollection>> {
+        self.record(format!("remote_collection({team:?}, {slug:?})"));
+        let key = format!("{team}/{slug}");
+        self.call(false, move |s| {
+            online(s)?;
+            account_of(s).ok_or(BackendError::SignedOut)?;
+            Ok(s.published.get(&key).map(|c| RemoteCollection {
+                source: c.source.unwrap_or(CollectionSource::Git),
+                current: c.current().map(|(v, _)| v.clone()),
+            }))
+        })
+    }
+    fn remote_files(&self, team: &str, slug: &str, n: u32) -> BoxFut<'_, Vec<BundleFile>> {
+        let key = format!("{team}/{slug}");
+        self.call(false, move |s| {
+            online(s)?;
+            s.published
+                .get(&key)
+                .and_then(|c| c.versions.get(n.wrapping_sub(1) as usize))
+                .map(|(_, f)| f.clone())
+                .ok_or(BackendError::NotFound)
+        })
+    }
+    fn publish(
+        &self,
+        team: &str,
+        slug: &str,
+        request: PublishRequest,
+    ) -> BoxFut<'_, PublishResponse> {
+        self.record(format!("publish({team:?}, {slug:?}, {})", request.hash));
+        let refused = self
+            .refuse_publish
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        let (team, slug) = (team.to_string(), slug.to_string());
+        self.call(true, move |s| {
+            online(s)?;
+            if let Some(e) = refused {
+                return Err(e);
+            }
+            let account = account_of(s).ok_or(BackendError::SignedOut)?.clone();
+            if !account.teams.iter().any(|t| t.slug == team) {
+                return Err(BackendError::Invalid(format!(
+                    "You can't publish to {team}. Check that you're still in the team."
+                )));
+            }
+            let c = s.published.entry(format!("{team}/{slug}")).or_default();
+            if c.source == Some(CollectionSource::Cloud) {
+                return Err(BackendError::WrongSource(format!(
+                    "{team}/{slug} syncs from the studio, so it can't be published from a folder."
+                )));
+            }
+            c.source = Some(CollectionSource::Git);
+            let previous = c.current().map(|(v, f)| (v.clone(), f.clone()));
+            if let Some((v, _)) = previous.as_ref().filter(|(v, _)| v.hash == request.hash) {
+                return Ok(PublishResponse {
+                    collection: slug,
+                    version: v.number,
+                    status: PublishStatus::Unchanged,
+                    changed: Default::default(),
+                });
+            }
+            let changed = curl_runner_cloud_client::publish::diff(
+                &request.files,
+                previous.as_ref().map_or(&[][..], |(_, f)| f),
+            );
+            let version = c.push(request.files, &account.email, request.git);
+            Ok(PublishResponse {
+                collection: slug,
+                version,
+                status: PublishStatus::Created,
+                changed,
+            })
+        })
+    }
+    fn dashboard_url(&self) -> BoxFut<'_, String> {
+        Box::pin(async { Ok("https://cloud.curl-runner.com".to_string()) })
+    }
     fn account(&self) -> Option<Account> {
         account_of(&self.state()).cloned()
     }
@@ -964,6 +1125,21 @@ impl Backend for MockBackend {
 }
 
 impl DevControls for MockBackend {
+    #[cfg(test)]
+    fn seed_published(
+        &self,
+        team: &str,
+        slug: &str,
+        source: CollectionSource,
+        files: Vec<BundleFile>,
+        publisher: &str,
+    ) {
+        self.seed_collection(team, slug, source, files, publisher);
+    }
+    #[cfg(test)]
+    fn refuse_next_publish(&self, err: BackendError) {
+        self.refuse_publish_next(err);
+    }
     fn set_offline(&self, on: bool) {
         self.set_toggle(|t| t.offline = on);
     }

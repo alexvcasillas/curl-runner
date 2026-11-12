@@ -6,7 +6,7 @@ description: "curl-runner studio is a macOS app for your YAML request files: liv
 curl-runner studio is a macOS desktop app for the request files you already have. It opens a folder of YAML as a collection, validates as you type, runs one request or the whole collection, and shows every check, retry and timing.
 
 <Callout type="info" title="Preview">
-The studio is a preview. It works fully on local YAML files. Sign in to [curl-runner Cloud](/docs/features/cloud) to open collections teams share with you. Sharing and sync from the studio are coming soon.
+The studio is a preview. It works fully on local YAML files. Sign in to [curl-runner Cloud](/docs/features/cloud) to publish your collections and open the ones teams share with you. Sharing and two-way sync from the studio are coming soon.
 </Callout>
 
 ## Install [#install]
@@ -90,6 +90,12 @@ Runs are kept on your machine for 30 days. Pick one to compare it with the run b
 
 ## Sharing and sync [#sharing]
 
-Sign in from the title bar or **Settings › Accounts & sync**, with curl-runner Cloud or a [self-hosted server](/docs/self-hosting). Your account shows in the title bar and the status bar. To open a collection someone shared with you, use **Open in curl-runner studio** on its page, or paste the link with ⌘L.
+Sign in from the title bar or **Settings › Accounts & sync**, with curl-runner Cloud or a [self-hosted server](/docs/self-hosting). The avatar in the title bar shows your account and your teams; the status bar names the server. To open a collection someone shared with you, use **Open in curl-runner studio** on its page, or paste the link with ⌘L.
 
-Sharing your own collections and syncing them both ways are coming soon. Until then, publish with [`curl-runner publish`](/docs/features/cloud).
+### Publish [#publish]
+
+**Publish**, at the foot of the sidebar or in the palette (⌘K), does what [`curl-runner publish`](/docs/features/cloud) does, signed in as you. The first time, pick the team and the collection's name (suggested from the folder). The studio runs the same checks as the CLI on your Mac, YAML errors and secret values in the files included, and sends nothing until they pass. `.env*`, dotfiles and anything in `.gitignore` stay out.
+
+Leave **Save the name and description to curl-runner.yaml** on to write a `cloud:` block, so CI publishes to the same collection. After that, Publish asks nothing. The sidebar foot says where the folder stands: **Published v14 · 2 hours ago**, or **3 files not published** when the folder has changed since.
+
+Sharing your own collections from the studio and syncing them both ways are coming soon.
