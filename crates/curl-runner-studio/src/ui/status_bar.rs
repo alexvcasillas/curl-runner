@@ -4,9 +4,12 @@
 //! A view of its own: it follows the active editor's cursor, so moving it
 //! repaints only this bar.
 
+use super::account::{AccountState, dot};
 use super::collection_settings::EnvStatus;
 use super::color;
+use super::state::Connection;
 use super::sync::{SyncLine, sync_dot};
+use crate::model::backend::Backend;
 use crate::model::environments::{ResolvedVar, VarSource};
 use gpui_kit::component::Sizable as _;
 use gpui_kit::component::input::{EditorState, Position};
@@ -14,6 +17,7 @@ use gpui_kit::component::spinner::Spinner;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// The History panel's note on where runs are kept.
 pub(super) const HISTORY_NOTE: &str = "History stays on this device.";
@@ -39,6 +43,10 @@ pub struct StatusBar {
     environments: Option<EnvStatus>,
     /// The sidebar footer's sync state, when it asks for attention.
     sync: Option<SyncLine>,
+    /// Where the account line reads who is signed in, and the sign-in
+    /// screen's answer. Read at every paint: a session the server refuses
+    /// mid-call shows at once.
+    account: Option<(Arc<dyn Backend>, Option<Connection>)>,
     _cursor_watch: Option<Subscription>,
 }
 
@@ -59,6 +67,8 @@ pub enum StatusBarEvent {
     OpenEnvironments,
     /// The sync item was clicked: resolve conflicts, else sync now.
     Sync,
+    /// The account line was clicked: the account menu, or sign in.
+    Account,
 }
 
 impl EventEmitter<StatusBarEvent> for StatusBar {}
@@ -193,6 +203,18 @@ impl StatusBar {
 
 impl StatusBar {
     /// Shows (or with `None` hides) the sync item.
+    pub fn set_account(
+        &mut self,
+        backend: Arc<dyn Backend>,
+        connection: Option<Connection>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.account.as_ref().map(|(_, c)| *c) != Some(connection) {
+            self.account = Some((backend, connection));
+            cx.notify();
+        }
+    }
+
     pub fn set_sync(&mut self, line: Option<SyncLine>, cx: &mut Context<Self>) {
         if self.sync != line {
             self.sync = line;
@@ -207,7 +229,12 @@ fn cursor_label(p: Position) -> String {
 }
 
 impl Render for StatusBar {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let compact = super::title_bar::is_compact(window.viewport_size().width.into());
+        let account = self
+            .account
+            .as_ref()
+            .and_then(|(b, c)| AccountState::of(&**b, *c));
         if let Some(env) = &self.environments {
             // The Environments board's footer.
             return div()
@@ -253,6 +280,10 @@ impl Render for StatusBar {
             .border_color(color("border-100"))
             .text_size(px(12.))
             .text_color(color("text-secondary"))
+            .when_some(
+                account.filter(|_| self.history.is_none()),
+                |bar, account| bar.child(render_account(&account, compact, cx)),
+            )
             .when_some(run, |bar, run| {
                 bar.child(
                     div()
@@ -330,6 +361,38 @@ impl StatusBar {
                 )
             })
     }
+}
+
+/// `● jamie@acme.dev · Cloud`: opens the account menu (or sign-in).
+fn render_account(
+    state: &AccountState,
+    compact: bool,
+    cx: &mut Context<StatusBar>,
+) -> impl IntoElement + use<> {
+    let (strong, rest) = state.status_line(compact);
+    let expired = matches!(state, AccountState::Expired { .. });
+    div()
+        .id("status-account")
+        .role(Role::Button)
+        .test_support()
+        .aria_label(state.label())
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(px(6.))
+        .cursor_pointer()
+        .hover(|s| s.text_color(color("text-primary")))
+        .child(dot(state.dot()))
+        .when_some(strong, |d, strong| {
+            d.child(
+                div()
+                    .text_color(color(if expired { "warning" } else { "text-primary" }))
+                    .child(strong),
+            )
+            .child(div().text_color(color("text-disabled")).child("·"))
+        })
+        .child(rest)
+        .on_click(cx.listener(|_, _, _, cx| cx.emit(StatusBarEvent::Account)))
 }
 
 /// The footer's sync state, compact: `● Offline · 3 changes waiting`.

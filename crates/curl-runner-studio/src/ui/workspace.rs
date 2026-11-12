@@ -179,6 +179,12 @@ pub struct Workspace {
     /// The sign-in screen's answer this session, for a store that keeps
     /// nothing (no base): it is not asked again until the next launch.
     session_connection: Option<Connection>,
+    /// The account menu (title bar avatar, status bar line) is open.
+    pub(super) account_menu: bool,
+    /// When a press outside last closed it (that press doesn't reopen it).
+    pub(super) account_menu_closed_at: Option<std::time::Instant>,
+    /// A sign-out or server switch from the account menu.
+    pub(super) account_task: Option<Task<()>>,
     /// The first-run walkthrough's callout, while it is shown.
     pub(super) tour: Option<Entity<super::tour::TourView>>,
     pub(super) _tour_events: Option<Subscription>,
@@ -278,6 +284,15 @@ impl Workspace {
                     this.open_conflicts(window, cx)
                 }
                 StatusBarEvent::Sync => this.sync_now(window, cx),
+                StatusBarEvent::Account => match this.account_state() {
+                    Some(
+                        super::account::AccountState::Connected { .. }
+                        | super::account::AccountState::Expired { .. },
+                    ) => this.toggle_account_menu(cx),
+                    _ => {
+                        this.open_sign_in(None, window, cx);
+                    }
+                },
             },
         );
         let ws = cx.entity().downgrade();
@@ -341,6 +356,9 @@ impl Workspace {
             _first_launch_events: None,
             _sign_in_events: None,
             session_connection: None,
+            account_menu: false,
+            account_menu_closed_at: None,
+            account_task: None,
             tour: None,
             _tour_events: None,
             tour_status: Default::default(),
@@ -531,7 +549,9 @@ impl Workspace {
             }),
             None => self.settings_view.as_ref().map(|v| v.read(cx).status()),
         };
+        let (backend, connection) = (self.backend.clone(), self.connection());
         self.status.update(cx, |s, cx| {
+            s.set_account(backend, connection, cx);
             s.set(name.map(Into::into), editor, cx);
             s.set_history(usage, cx);
             s.set_environments(settings, cx);
@@ -1398,6 +1418,13 @@ impl Render for Workspace {
         div()
             .id("workspace")
             .key_context("Workspace")
+            // Esc closes the account menu before anything else hears it.
+            .capture_key_down(cx.listener(|this, e: &KeyDownEvent, _, cx| {
+                if this.account_menu && e.keystroke.key == "escape" {
+                    this.close_account_menu(cx);
+                    cx.stop_propagation();
+                }
+            }))
             .track_focus(&self.focus)
             .when(actions, |root| {
                 root.on_action(
