@@ -491,6 +491,7 @@ impl Workspace {
                 self.open_sign_in(Some(page), window, cx);
             }
             AppSettingsEvent::AccountChanged => self.start_sync(window, cx),
+            AppSettingsEvent::AccountRefreshed => self.sync_chrome(window, cx),
             AppSettingsEvent::SyncNow => self.sync_now(window, cx),
             AppSettingsEvent::AddVariable => {
                 let page = view.read(cx).page();

@@ -20,7 +20,9 @@ use super::settings_kit::{
 };
 use super::sign_in::SETUP_GUIDE_URL;
 use super::workspace::notify_error;
-use crate::model::backend::{Account, Backend, CollectionKey, Server, SyncStatus, method_label};
+use crate::model::backend::{
+    Account, Backend, BackendError, CollectionKey, Server, SyncStatus, method_label,
+};
 use crate::model::environments::{env_file, is_secret, list_environments};
 use crate::model::history::relative_time;
 use crate::model::secrets::{SecretStore, service_name};
@@ -151,6 +153,8 @@ pub enum AppSettingsEvent {
     OpenSignIn,
     /// Signed out or switched servers: what shows the account repaints.
     AccountChanged,
+    /// The server answered who the account is (teams too): repaint only.
+    AccountRefreshed,
     /// `Sync now`, for the open collection.
     SyncNow,
 }
@@ -322,6 +326,8 @@ pub struct SettingsView {
     /// Why the last Save failed, under the server row.
     server_error: Option<String>,
     task: Option<Task<()>>,
+    /// Accounts & sync asking the server who the account is.
+    refresh: Option<Task<()>>,
     focus: FocusHandle,
 }
 
@@ -381,8 +387,10 @@ impl SettingsView {
             busy: false,
             server_error: None,
             task: None,
+            refresh: None,
             focus: cx.focus_handle(),
         }
+        .refreshed(cx)
     }
 
     pub fn page(&self) -> AppPage {
@@ -407,8 +415,44 @@ impl SettingsView {
     }
 
     pub fn set_page(&mut self, page: AppPage, cx: &mut Context<Self>) {
+        let opened = page == AppPage::Accounts && self.page != page;
         self.page = page;
+        if opened {
+            self.refresh_account(cx);
+        }
         cx.notify();
+    }
+
+    fn refreshed(mut self, cx: &mut Context<Self>) -> Self {
+        if self.page == AppPage::Accounts {
+            self.refresh_account(cx);
+        }
+        self
+    }
+
+    /// Opening Accounts & sync asks the server who the account is, so a
+    /// team joined on the dashboard shows. Offline or signed out: nothing.
+    fn refresh_account(&mut self, cx: &mut Context<Self>) {
+        let backend = &self.accounts.backend;
+        if !crate::features::SERVER || self.accounts.offline || backend.account().is_none() {
+            return;
+        }
+        let server = backend.server();
+        let call = backend_call(cx, backend, move |b| b.refresh_account(server.url()));
+        self.refresh = Some(cx.spawn(async move |this, cx| {
+            let result = call.await;
+            this.update(cx, |this, cx| {
+                this.refresh = None;
+                match result {
+                    Ok(_) => cx.emit(AppSettingsEvent::AccountRefreshed),
+                    // The session ended: shown as expired everywhere.
+                    Err(BackendError::SignedOut) => cx.emit(AppSettingsEvent::AccountChanged),
+                    Err(_) => {}
+                }
+                cx.notify();
+            })
+            .ok();
+        }));
     }
 
     /// Changes, saves and announces a setting.
@@ -1586,6 +1630,7 @@ mod tests {
             name: "Ada".into(),
             email: "ada@example.test".into(),
             provider: None,
+            teams: Vec::new(),
         };
         assert_eq!(super::account_text(&a), "ada@example.test");
         a.provider = Some(SignInMethod::Github);

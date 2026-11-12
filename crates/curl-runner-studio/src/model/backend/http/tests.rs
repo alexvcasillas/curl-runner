@@ -43,7 +43,7 @@ fn server(me_status: u16) -> (TestServer, Log) {
             ("POST", "/v1/auth/handoff/redeem") => json(200, &verified("ada@example.test")),
             ("GET", "/v1/me") if me_status == 200 => json(
                 200,
-                r#"{"user":{"id":"u1","email":"ada@example.test","name":"Ada"},"teams":[]}"#,
+                r#"{"user":{"id":"u1","email":"ada@example.test","name":"Ada"},"teams":[{"slug":"acme","name":"Acme","role":"owner","plan":"team"}]}"#,
             ),
             ("GET", "/v1/me") => json(me_status, r#"{"error":"unauthorized","message":"No."}"#),
             ("POST", "/v1/auth/sign-out") => Response::from_data(Vec::new()).with_status_code(204),
@@ -210,6 +210,49 @@ fn unauthorized_drops_only_that_servers_session() {
         && auth.as_deref() == Some("Bearer crs_new")));
 }
 
+fn acme() -> TeamRef {
+    crate::model::backend::fixtures::acme()
+}
+
+#[test]
+fn sign_in_asks_for_teams_and_caches_them() {
+    let d = tempfile::tempdir().unwrap();
+    let (srv, log) = server(200);
+    let (b, sessions) = backend(Some(d.path()));
+    block_on(b.sign_in_url(&own(&srv.base_url))).unwrap();
+    let acct = block_on(b.complete_sign_in(&callback(&srv.base_url))).unwrap();
+    assert_eq!(acct.teams, [acme()]);
+    assert!(log.lock().unwrap().iter().any(|(m, p, auth)| m == "GET"
+        && p == "/v1/me"
+        && auth.as_deref() == Some("Bearer crs_new")));
+    // A relaunch shows them before the server is asked again.
+    let b2 = HttpBackend::open(Some(d.path()), sessions);
+    assert_eq!(b2.account_on(&srv.base_url).unwrap().teams, [acme()]);
+}
+
+#[test]
+fn sign_in_without_teams_when_me_fails() {
+    let (srv, _) = server(500);
+    let (b, sessions) = backend(None);
+    block_on(b.sign_in_url(&own(&srv.base_url))).unwrap();
+    let acct = block_on(b.complete_sign_in(&callback(&srv.base_url))).unwrap();
+    assert_eq!(
+        (acct.email.as_str(), acct.teams.len()),
+        ("ada@example.test", 0)
+    );
+    assert!(sessions.get(&srv.base_url).unwrap().is_some());
+}
+
+#[test]
+fn refresh_updates_teams() {
+    let (srv, _) = server(200);
+    let (b, sessions) = backend(None);
+    sessions.set(&srv.base_url, "crs_x").unwrap();
+    let acct = block_on(b.refresh_account(&srv.base_url)).unwrap();
+    assert_eq!(acct.teams, [acme()]);
+    assert_eq!(b.account_on(&srv.base_url).unwrap().teams, [acme()]);
+}
+
 #[test]
 fn refresh_without_a_session_is_signed_out() {
     let (srv, log) = server(200);
@@ -258,6 +301,7 @@ fn sign_out_forgets_session_when_offline() {
         crate::model::sessions::CachedAccount {
             name: None,
             email: "a@example.test".into(),
+            teams: Vec::new(),
         },
     );
     cache.save(Some(d.path())).unwrap();

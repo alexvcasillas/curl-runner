@@ -35,6 +35,8 @@ pub trait SessionStore: Send + Sync {
 pub struct CachedAccount {
     pub name: Option<String>,
     pub email: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub teams: Vec<crate::model::backend::TeamRef>,
 }
 
 /// `{state}/accounts.json`: the account of each server. No tokens.
@@ -132,6 +134,7 @@ mod tests {
         CachedAccount {
             name: None,
             email: email.into(),
+            teams: Vec::new(),
         }
     }
 
@@ -159,6 +162,7 @@ mod tests {
             CachedAccount {
                 name: Some("Ada".into()),
                 email: "ada@example.test".into(),
+                teams: Vec::new(),
             },
         );
         cache.0.insert(B.into(), account("b@example.test"));
