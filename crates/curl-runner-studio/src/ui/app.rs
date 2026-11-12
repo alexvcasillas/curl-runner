@@ -541,15 +541,16 @@ pub fn run() {
 
 /// The app's server. The only place the mock is named: views see a
 /// `Backend`. With the `server` feature it's the real one (`HttpBackend`,
-/// sessions in the Keychain), or the mock when `mock_env` (the value of
-/// `CURL_RUNNER_STUDIO_MOCK`) is `1`. Without the feature there is none
+/// sessions in the Keychain), or, in debug builds, the mock when `mock_env`
+/// (the value of `CURL_RUNNER_STUDIO_MOCK`) is `1`. Without the feature there is none
 /// (`NoServer`), and neither is compiled in.
 pub fn app_backend(base: Option<&Path>, mock_env: Option<&str>) -> Arc<dyn Backend> {
     #[cfg(feature = "server")]
     {
         use crate::model::backend::{MOCK_LATENCY, MockBackend, http::HttpBackend};
         use crate::model::sessions::KeychainSessions;
-        if mock_env == Some("1") {
+        // The mock is a development aid: a release build ignores the switch.
+        if cfg!(debug_assertions) && mock_env == Some("1") {
             return Arc::new(MockBackend::open(base, MOCK_LATENCY));
         }
         let sessions = Arc::new(KeychainSessions::new(KeychainSecrets, base));

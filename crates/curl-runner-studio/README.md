@@ -3,12 +3,12 @@
 A macOS desktop app for curl-runner YAML request suites. Not published.
 
 ```sh
-cargo run -p curl-runner-studio                    # local only, as released
-cargo run -p curl-runner-studio --features server  # sign-in and shared links, on curl-runner Cloud
-CURL_RUNNER_STUDIO_MOCK=1 cargo run -p curl-runner-studio --features server  # the same, on the mock
+cargo run -p curl-runner-studio                          # sign-in and shared links, on curl-runner Cloud (as released)
+CURL_RUNNER_STUDIO_MOCK=1 cargo run -p curl-runner-studio  # the same, on the mock (debug builds only)
+cargo run -p curl-runner-studio --no-default-features    # local only, no server
 ```
 
-With `--features server` the studio talks to `https://api.curl-runner.com`
+The `server` feature is on by default. The studio talks to `https://api.curl-runner.com`
 by default. Settings › Accounts & sync points it at a self-hosted server
 instead. Sessions live in the macOS Keychain (service `curl-runner Cloud`,
 one per server).
@@ -24,7 +24,7 @@ macOS hands `curl-runner://` links only to an app bundle that registers the
 scheme. Build one locally:
 
 ```sh
-scripts/studio-bundle.sh --server   # debug build; --release for a release one
+scripts/studio-bundle.sh            # debug build; --release for a release one, --local without the server
 open "target/studio/curl-runner studio.app"
 ```
 

@@ -48,14 +48,15 @@ jobs:
       - name: Test
         run: cargo test --workspace --no-fail-fast
 
-      # The studio's server-backed UI and its mock, off in release builds.
-      - name: Clippy (studio, server feature)
+      # The studio without its server-backed UI (on by default and in
+      # releases): the local-only build must keep working.
+      - name: Clippy (studio, local only)
         if: runner.os == 'macOS'
-        run: cargo clippy -p curl-runner-studio --all-targets --features server -- -D warnings
+        run: cargo clippy -p curl-runner-studio --all-targets --no-default-features -- -D warnings
 
-      - name: Test (studio, server feature)
+      - name: Test (studio, local only)
         if: runner.os == 'macOS'
-        run: cargo test -p curl-runner-studio --features server
+        run: cargo test -p curl-runner-studio --no-default-features
 
       # The website's feature examples must pass `curl-runner validate --strict`.
       - name: Build CLI for docs examples

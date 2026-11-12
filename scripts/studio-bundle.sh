@@ -6,21 +6,23 @@
 #
 # Nothing is installed: the bundle stays in the target dir. Opening it once
 # registers it with LaunchServices, which then sends it the scheme's links.
-# `--server` builds with the server-backed UI (and the mock behind it); a
-# distributed build never passes it. `--universal` builds arm64 and x86_64 and
+# The server-backed UI is on by default, as released; `--local` builds the
+# local-only studio (no sign-in, no shared links). `--server` is accepted and
+# changes nothing. `--universal` builds arm64 and x86_64 and
 # joins them with lipo. The icon comes from assets/AppIcon.icns
 # (scripts/studio-icon.sh renders it).
-# Usage: studio-bundle.sh [--release] [--universal] [--server] [repo-root]
+# Usage: studio-bundle.sh [--release] [--universal] [--local] [repo-root]
 set -euo pipefail
 
 PROFILE=debug
-SERVER=
+LOCAL=
 UNIVERSAL=
 while [[ "${1:-}" == --* ]]; do
   case "$1" in
     --release) PROFILE=release ;;
     --universal) UNIVERSAL=1 ;;
-    --server) SERVER=1 ;;
+    --server) ;;
+    --local) LOCAL=1 ;;
     *)
       echo "error: unknown option $1" >&2
       exit 1
@@ -53,7 +55,7 @@ ICON="$ROOT/crates/curl-runner-studio/assets/AppIcon.icns"
 
 cargo_flags=(--manifest-path "$ROOT/Cargo.toml" -p curl-runner-studio)
 [[ "$PROFILE" == release ]] && cargo_flags+=(--release)
-[[ -n "$SERVER" ]] && cargo_flags+=(--features server)
+[[ -n "$LOCAL" ]] && cargo_flags+=(--no-default-features)
 
 APP="$TARGET/studio/curl-runner studio.app"
 rm -rf "$APP"
