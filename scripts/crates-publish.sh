@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Publish curl-runner-cloud-proto, curl-runner-core, then curl-runner, to crates.io at the workspace
-# version. Re-runnable: versions already on crates.io are skipped. A failed
+# Publish the workspace's crates to crates.io at the workspace version, in
+# dependency order (CRATES). A publishable crate missing from CRATES fails the
+# run before anything is sent. Re-runnable: versions already on crates.io are skipped. A failed
 # registry lookup aborts instead of being mistaken for "unpublished".
 # Needs CARGO_REGISTRY_TOKEN (CI: crates.io trusted publishing).
 # The binaries were already built and tested by the release matrix, so the
@@ -31,7 +32,19 @@ published() {
   return 2
 }
 
-for crate in curl-runner-cloud-proto curl-runner-core curl-runner; do
+# Dependencies first: curl-runner needs the other three.
+CRATES=(curl-runner-cloud-proto curl-runner-core curl-runner-cloud-client curl-runner)
+
+# Every publishable workspace crate (no `publish = false`) must be listed.
+missing="$(cargo metadata --format-version 1 --no-deps --locked |
+  jq -r '.packages[] | select(.publish == null) | .name' |
+  grep -vxF -f <(printf '%s\n' "${CRATES[@]}") || true)"
+if [ -n "$missing" ]; then
+  echo "error: publishable crates missing from CRATES in $0: $missing" >&2
+  exit 1
+fi
+
+for crate in "${CRATES[@]}"; do
   status=0
   published "$crate" "$VERSION" || status=$?
   case "$status" in

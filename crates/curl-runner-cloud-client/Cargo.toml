@@ -6,7 +6,6 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 description = "Blocking client for the curl-runner Cloud API, shared by the CLI and the studio"
-publish = false
 
 [dependencies]
 curl-runner-core.workspace = true

@@ -15,7 +15,7 @@ on:
         type: string
         default: ""
       crates_tag:
-        description: "Publish only the crates (curl-runner-cloud-proto, curl-runner-core, curl-runner) from this existing release tag (e.g. @curl-runner/cli@2.6.0), for a release whose crates.io step failed. Versions already on crates.io are skipped. Everything else is skipped."
+        description: "Publish only the crates (curl-runner-cloud-proto, curl-runner-core, curl-runner-cloud-client, curl-runner) from this existing release tag (e.g. @curl-runner/cli@2.6.0), for a release whose crates.io step failed. Versions already on crates.io are skipped. Everything else is skipped."
         type: string
         default: ""
 
