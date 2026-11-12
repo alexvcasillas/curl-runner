@@ -463,6 +463,7 @@ pub fn run() {
                             });
                         }
                         "history" => ws.open_history(window, cx),
+                        "account" => ws.toggle_account_menu(cx),
                         "tour" | "tour-run" | "tour-result" => {
                             let fill = dev_string("CURL_RUNNER_STUDIO_FILL").unwrap_or_default();
                             ws.dev_tour(&fill, &show, window, cx);
@@ -667,7 +668,8 @@ fn toggle_dev(backend: &Arc<dyn Backend>, flip: fn(&dyn DevControls), cx: &mut A
 /// Folder of YAML tab on the folder in `CURL_RUNNER_STUDIO_FILL`) or
 /// `palette` (with the
 /// query in `CURL_RUNNER_STUDIO_QUERY` and the row in
-/// `CURL_RUNNER_STUDIO_SELECT`, if set); `problem`
+/// `CURL_RUNNER_STUDIO_SELECT`, if set); `account` the account menu;
+/// `problem`
 /// selects the open file's first problem and opens its popover and `export`
 /// opens the run screen's Export menu (with
 /// `CURL_RUNNER_STUDIO_RUN=collection`), `history` the History screen and

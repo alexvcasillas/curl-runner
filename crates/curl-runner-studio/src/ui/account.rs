@@ -8,8 +8,9 @@ use super::icons::{self, glyph};
 use super::settings_view::AppPage;
 use super::state::Connection;
 use super::workspace::{Workspace, host_of, notify_error};
+use crate::model::backend::TeamRef;
 use crate::model::backend::{Account, Backend, Server, method_label};
-use curl_runner_cloud_proto::Role as TeamRole;
+use curl_runner_cloud_proto::{Plan as TeamPlan, Role as TeamRole};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::time::{Duration, Instant};
@@ -148,23 +149,54 @@ pub fn long_name(server: &Server) -> String {
 }
 
 /// `Signed in with GitHub`; the server doesn't always say how.
-/// `Owner of Acme`, `Owner of Acme, member of Beta`: the menu's team line.
-fn teams_text(a: &Account) -> Option<String> {
-    let parts: Vec<String> = a
-        .teams
-        .iter()
-        .map(|t| {
-            let role = match t.role {
-                TeamRole::Owner => "owner",
-                TeamRole::Member => "member",
-            };
-            format!("{role} of {}", t.name)
-        })
-        .collect();
-    let text = parts.join(", ");
-    let mut chars = text.chars();
-    let first = chars.next()?;
-    Some(first.to_uppercase().chain(chars).collect())
+/// A team row's trailing text: `Owner · Team`, `Member · Free`.
+fn team_detail(t: &TeamRef) -> String {
+    let role = match t.role {
+        TeamRole::Owner => "Owner",
+        TeamRole::Member => "Member",
+    };
+    let plan = match t.plan {
+        TeamPlan::Free => "Free",
+        TeamPlan::Team => "Team",
+    };
+    format!("{role} · {plan}")
+}
+
+/// One row of the menu's Teams section: initial, name, role and plan.
+fn team_row(t: &TeamRef) -> Div {
+    let detail = team_detail(t);
+    let initial: String = t
+        .name
+        .chars()
+        .next()
+        .map_or_else(|| "?".to_string(), |c| c.to_uppercase().collect());
+    div()
+        .flex()
+        .items_center()
+        .gap(px(10.))
+        .h(px(36.))
+        .px(px(14.))
+        .text_size(px(12.))
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .justify_center()
+                .size(px(20.))
+                .rounded(px(5.))
+                .bg(color("surface-200"))
+                .text_size(px(11.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .child(initial),
+        )
+        .child(div().flex_1().min_w_0().truncate().child(t.name.clone()))
+        .child(
+            div()
+                .flex_none()
+                .text_color(color("text-tertiary"))
+                .child(detail),
+        )
 }
 
 fn provider_text(a: &Account) -> Option<String> {
@@ -317,6 +349,12 @@ impl Workspace {
             _ => unreachable!("the menu needs an account"),
         };
         let expired = matches!(state, AccountState::Expired { .. });
+        // An ended session's teams may be stale: shown once signed in again.
+        let teams = if expired {
+            Vec::new()
+        } else {
+            account.teams.clone()
+        };
         let current = server.url().to_string();
         let others: Vec<(String, Account)> = self
             .backend
@@ -445,15 +483,6 @@ impl Workspace {
                         .child(div().flex_1().child(long_name(&server)))
                         .child(div().text_color(color("text-tertiary")).child("Connected")),
                 )
-                .children(teams_text(&account).map(|t| {
-                    div()
-                        .id("account-menu-teams")
-                        .test_support()
-                        .aria_label(t.clone())
-                        .pl(px(14.))
-                        .text_color(color("text-secondary"))
-                        .child(t)
-                }))
                 .children(provider_text(&account).map(|t| {
                     div()
                         .pl(px(14.))
@@ -585,6 +614,31 @@ impl Workspace {
             .text_color(color("text-primary"))
             .child(header)
             .child(server_box)
+            .when(!teams.is_empty(), |m| {
+                let rows = teams.iter().enumerate().map(|(i, t)| {
+                    team_row(t)
+                        .id(SharedString::from(format!("account-team-{i}")))
+                        .test_support()
+                        .aria_label(format!("{}, {}", t.name, team_detail(t)))
+                });
+                m.child(div().h(px(1.)).bg(color("border-100")))
+                    .child(
+                        div()
+                            .id("account-menu-teams")
+                            .role(Role::Heading)
+                            .test_support()
+                            .aria_label("Teams")
+                            .px(px(14.))
+                            .pt(px(10.))
+                            .pb(px(4.))
+                            .text_size(px(11.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(color("text-tertiary"))
+                            .child("Teams"),
+                    )
+                    .children(rows)
+                    .child(div().h(px(6.)))
+            })
             .when(has_others, |m| {
                 m.child(div().h(px(1.)).bg(color("border-100")))
                     .child(
@@ -703,7 +757,8 @@ fn chip_button(id: &'static str, _label: &'static str, primary: bool) -> Statefu
 #[cfg(test)]
 mod tests {
     use super::{
-        AccountState, TeamRole, initials, long_name, provider_text, short_name, teams_text,
+        AccountState, TeamPlan, TeamRef, TeamRole, initials, long_name, provider_text, short_name,
+        team_detail,
     };
     use crate::model::backend::{Account, Server, SignInMethod};
 
@@ -789,22 +844,21 @@ mod tests {
     }
 
     #[test]
-    fn teams_line_names_each_role() {
-        use crate::model::backend::{TeamRef, fixtures::acme};
-        let mut a = acct("Ada", "ada@example.test");
-        assert_eq!(teams_text(&a), None);
-        a.teams = vec![acme()];
-        assert_eq!(teams_text(&a).as_deref(), Some("Owner of Acme"));
-        a.teams.push(TeamRef {
+    fn team_rows_name_role_and_plan() {
+        let acme = TeamRef {
+            slug: "acme".into(),
+            name: "Acme".into(),
+            role: TeamRole::Owner,
+            plan: TeamPlan::Team,
+        };
+        assert_eq!(team_detail(&acme), "Owner · Team");
+        let beta = TeamRef {
             slug: "beta".into(),
             name: "Beta".into(),
             role: TeamRole::Member,
-            plan: curl_runner_cloud_proto::Plan::Free,
-        });
-        assert_eq!(
-            teams_text(&a).as_deref(),
-            Some("Owner of Acme, member of Beta")
-        );
+            plan: TeamPlan::Free,
+        };
+        assert_eq!(team_detail(&beta), "Member · Free");
     }
 }
 
@@ -907,7 +961,8 @@ mod ui_tests {
             window,
             "curl-runner Cloud, connected. Signed in with GitHub"
         ));
-        assert!(shows_in(cx, window, "account-menu-server", "Owner of Acme"));
+        assert!(shows(cx, window, "Teams"));
+        assert!(shows(cx, window, "Acme, Owner · Team"));
         assert!(shows(cx, window, "Accounts & sync…"));
         assert!(shows(cx, window, "Sign out of curl-runner Cloud"));
         // Esc closes it.
