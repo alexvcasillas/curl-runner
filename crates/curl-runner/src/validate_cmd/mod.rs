@@ -87,24 +87,23 @@ fn file_result(outcome: LintOutcome, fix: bool) -> Result<FileResult, Crash> {
     })
 }
 
-/// Lint one file's text and print what `validate` prints for it. Returns
-/// whether the file is valid (warnings and infos do not fail it).
-pub fn lint_and_print(name: &str, text: &str, color: bool, c: &mut Console) -> Result<bool, Crash> {
+/// Print what `validate` prints for one file's issues (nothing when there
+/// are none).
+pub fn print_lint(name: &str, issues: &[Issue], color: bool, c: &mut Console) {
     let p = Paint(color);
-    let r = file_result(lint_text(text)?, false)?;
-    let n = Counts::of(&r.issues);
-    if !r.valid || n.warnings > 0 || n.infos > 0 {
-        let icon = if r.valid {
+    let valid = is_valid(issues);
+    let n = Counts::of(issues);
+    if !valid || n.warnings > 0 || n.infos > 0 {
+        let icon = if valid {
             p.c("✓", Color::Green)
         } else {
             p.c("✗", Color::Red)
         };
         c.out(&format!("{icon} {name}"));
-        report::print_issues(c, p, &r.issues, false);
-        report::print_counts(c, p, &n, !r.valid);
+        report::print_issues(c, p, issues, false);
+        report::print_counts(c, p, &n, !valid);
         c.out("");
     }
-    Ok(r.valid)
 }
 
 /// Run `validate`; `argv[0]` is `validate`. Returns the exit code.
