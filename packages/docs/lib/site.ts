@@ -8,6 +8,12 @@ export const SITE_DESCRIPTION =
 
 export const SITE_URL = 'https://www.curl-runner.com';
 
+/** The curl-runner Cloud dashboard. */
+export const CLOUD_URL = 'https://cloud.curl-runner.com';
+
+/** Where people sign in to (or sign up for) curl-runner Cloud. */
+export const CLOUD_SIGN_IN_URL = `${CLOUD_URL}/sign-in`;
+
 export interface PageMetaInput {
   /** Page name without the site suffix, e.g. "Downloads". */
   title: string;
