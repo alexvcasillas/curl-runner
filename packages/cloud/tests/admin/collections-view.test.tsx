@@ -23,7 +23,11 @@ function show(
   over: Partial<React.ComponentProps<typeof CollectionsView>> = {},
   permissions: Perm[] = ['teams'],
 ) {
-  const actions = { disable: vi.fn(async () => ok), enable: vi.fn(async () => ok) };
+  const actions = {
+    disable: vi.fn(async () => ok),
+    enable: vi.fn(async () => ok),
+    unlist: vi.fn(async () => ok),
+  };
   render(
     <CollectionsView
       page={page}
@@ -97,7 +101,7 @@ describe('collections list', () => {
     const footer = screen.getByRole('region', { name: 'Collections' });
     expect(footer).toHaveTextContent('1,904 collections');
     expect(footer).toHaveTextContent('2.1 GB of YAML, de-duplicated to 640 MB');
-    expect(footer).toHaveTextContent('Showing 1–5 of 5');
+    expect(footer).toHaveTextContent('Showing 1–6 of 6');
     expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
   });
@@ -123,6 +127,20 @@ describe('collections list', () => {
     await userEvent.click(screen.getByRole('radio', { name: 'Restricted' }));
     expect(push).toHaveBeenCalledWith('/admin/collections?q=x&filter=restricted');
     expect(screen.getByRole('radio', { name: 'Disabled by admin' })).toBeInTheDocument();
+  });
+
+  it('has a Listed filter that passes through to the url and the export', async () => {
+    show({ q: 'x' });
+    await userEvent.click(screen.getByRole('radio', { name: 'Listed' }));
+    expect(push).toHaveBeenCalledWith('/admin/collections?q=x&filter=listed');
+  });
+
+  it('exports the Listed filter', () => {
+    show({ filter: 'listed' });
+    expect(screen.getByRole('link', { name: 'Export CSV' })).toHaveAttribute(
+      'href',
+      '/admin/collections/export?filter=listed',
+    );
   });
 
   it('searches after a pause and on Enter', async () => {
@@ -210,6 +228,73 @@ describe('disabling a link', () => {
     const dialog = await open();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(actions.disable).not.toHaveBeenCalled();
+  });
+});
+
+describe('unlisting', () => {
+  const open = async () => {
+    await userEvent.click(
+      within(screen.getByRole('row', { name: /Listed API/ })).getByRole('button', {
+        name: 'Unlist',
+      }),
+    );
+    return screen.findByRole('dialog', { name: 'Unlist Listed API?' });
+  };
+
+  it('pills listed rows and offers Unlist only there', () => {
+    show();
+    const row = screen.getByRole('row', { name: /Listed API/ });
+    expect(within(row).getByText('Listed')).toBeInTheDocument();
+    const pay = screen.getByRole('row', { name: /Payments API/ });
+    expect(within(pay).queryByText('Listed')).toBeNull();
+    expect(within(pay).queryByRole('button', { name: 'Unlist' })).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Unlist' })).toHaveLength(1);
+  });
+
+  it('asks for a reason in the board copy and calls the action', async () => {
+    const actions = show();
+    const dialog = await open();
+    expect(dialog).toHaveTextContent(
+      'It leaves the public gallery. The share link keeps working. The team can list it again.',
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Unlist' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Add a reason');
+    expect(actions.unlist).not.toHaveBeenCalled();
+    await userEvent.type(within(dialog).getByLabelText('Reason'), 'Not an API collection');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Unlist' }));
+    await waitFor(() =>
+      expect(actions.unlist).toHaveBeenCalledWith('acme', 'listed-api', 'Not an API collection'),
+    );
+    expect(await screen.findByText('Unlisted Listed API from the gallery.')).toBeInTheDocument();
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it('shows the server message on a 409 and stays open', async () => {
+    const actions = show();
+    actions.unlist.mockResolvedValue({
+      ok: false,
+      code: 'conflict',
+      message: 'That collection is not listed.',
+    } as never);
+    const dialog = await open();
+    await userEvent.type(within(dialog).getByLabelText('Reason'), 'why');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Unlist' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'That collection is not listed.',
+    );
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('cancels without calling anything', async () => {
+    const actions = show();
+    const dialog = await open();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(actions.unlist).not.toHaveBeenCalled();
+  });
+
+  it('is disabled without the teams permission', () => {
+    show({}, ['emails']);
+    expect(screen.getByRole('button', { name: 'Unlist' })).toBeDisabled();
   });
 });
 

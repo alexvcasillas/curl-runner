@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { normalizeEntry } from '@/lib/access-entry';
 import { cx } from '@/lib/cx';
+import { galleryUrl } from '@/lib/routes';
 import { absoluteTime } from '@/lib/time';
 import type { AccessMode, Plan, Share } from '@/lib/types';
 import { Avatar } from './Avatar';
@@ -17,9 +18,15 @@ import { Pill } from './Pill';
 import { RadioCard } from './RadioCard';
 import { RestrictedUpsell } from './RestrictedUpsell';
 import { Select } from './Select';
+import { Switch } from './Switch';
 
 type Result = { ok: true; share: Share } | { ok: false; message: string };
-type Patch = { access?: AccessMode; expires_in_days?: number | null; reset_link?: boolean };
+type Patch = {
+  access?: AccessMode;
+  expires_in_days?: number | null;
+  reset_link?: boolean;
+  listed?: boolean;
+};
 
 const DAY = 86_400_000;
 
@@ -71,6 +78,7 @@ function kindLabel(entry: Share['entries'][number]): string {
 /** Access mode, the share link and the access list for one collection. */
 export function SharePanel({
   team,
+  slug,
   teamName,
   name,
   plan,
@@ -82,6 +90,7 @@ export function SharePanel({
   onRemove,
 }: {
   team: string;
+  slug: string;
   teamName: string;
   name: string;
   plan: Plan;
@@ -112,12 +121,17 @@ export function SharePanel({
   const peopleId = useId();
   const whoId = useId();
   const linkTitleId = useId();
+  const galleryTitleId = useId();
+  const switchId = useId();
+  const hintId = useId();
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
   const { access } = share;
   const off = access === 'off';
   const free = plan === 'free';
+  const listed = share.listed === true;
+  const described = Boolean(share.description?.trim());
 
   /** Runs a PATCH. Returns whether it worked. */
   async function patch(body: Patch): Promise<boolean> {
@@ -383,6 +397,61 @@ export function SharePanel({
           </span>
         </CardFooter>
       </Card>
+
+      {access === 'public' ? (
+        <Card aria-labelledby={galleryTitleId}>
+          <CardBody className="gap-2">
+            <CardTitle id={galleryTitleId}>Public gallery</CardTitle>
+            <div className="flex items-start gap-3">
+              <Switch
+                id={switchId}
+                checked={listed}
+                disabled={busy || (!described && !listed)}
+                onChange={(next) => void patch({ listed: next })}
+                aria-labelledby={`${switchId}-label`}
+                aria-describedby={hintId}
+              />
+              <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 py-[10px]">
+                <label
+                  id={`${switchId}-label`}
+                  htmlFor={switchId}
+                  className="font-medium leading-6"
+                >
+                  List {name} in the gallery
+                </label>
+                <p id={hintId} className="m-0 text-fg-muted leading-normal">
+                  {described || listed ? (
+                    <>
+                      Anyone can find it on curl-runner.com: the name, description, {teamName}, the
+                      requests and their YAML. Variable values never are.
+                      {listed ? (
+                        <>
+                          {' '}
+                          <a
+                            href={galleryUrl(team, slug)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-blue hover:text-blue-hover"
+                          >
+                            View it on curl-runner.com
+                          </a>
+                        </>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      Add a <span className="font-mono text-fg">description</span> to the{' '}
+                      <span className="font-mono text-fg">cloud:</span> block in{' '}
+                      <span className="font-mono text-fg">curl-runner.yaml</span> and publish. It’s
+                      the summary people read in the gallery.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+      ) : null}
 
       {access === 'restricted' ? (
         <Card aria-labelledby={peopleId}>

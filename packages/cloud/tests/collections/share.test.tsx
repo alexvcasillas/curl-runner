@@ -50,6 +50,7 @@ function setup(
     share: {
       ...share,
       ...('access' in body ? { access: (body as { access: Share['access'] }).access } : {}),
+      ...('listed' in body ? { listed: (body as { listed: boolean }).listed } : {}),
     },
   }));
   const onAdd = vi.fn(async (entry: string, notify: boolean) => ({
@@ -76,6 +77,7 @@ function setup(
   render(
     <SharePanel
       team="acme"
+      slug="payments-api"
       teamName="Acme"
       name="Payments API"
       plan={plan}
@@ -90,11 +92,98 @@ function setup(
   return { user, onPatch, onAdd, onRemove };
 }
 
+const SWITCH = 'List Payments API in the gallery';
+
 const entry = (e: string, opened = false) => ({
   entry: e,
   kind: e.startsWith('*@') ? 'domain' : 'email',
   invited_at: '2026-11-03T10:00:00Z',
   opened,
+});
+
+describe('SharePanel gallery', () => {
+  it('is hidden unless access is Public', () => {
+    setup(mk({ access: 'off', description: 'x' }));
+    expect(screen.queryByRole('switch')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Public gallery' })).toBeNull();
+  });
+
+  it('is hidden when restricted', () => {
+    setup(mk({ access: 'restricted', description: 'x' }));
+    expect(screen.queryByRole('switch')).toBeNull();
+  });
+
+  it('is disabled with the hint when there is no description', () => {
+    setup(mk());
+    expect(screen.getByRole('heading', { name: 'Public gallery' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: SWITCH })).toBeDisabled();
+    expect(screen.getByRole('switch', { name: SWITCH })).toHaveAttribute('aria-checked', 'false');
+    const card = screen.getByRole('region', { name: 'Public gallery' });
+    expect(card).toHaveTextContent(
+      'Add a description to the cloud: block in curl-runner.yaml and publish. It’s the summary people read in the gallery.',
+    );
+    expect(within(card).queryByRole('link')).toBeNull();
+  });
+
+  it('treats a blank description as none', () => {
+    setup(mk({ description: '   ', listed: false }));
+    expect(screen.getByRole('switch', { name: SWITCH })).toBeDisabled();
+  });
+
+  it('is off with the sentence and no link when there is a description', () => {
+    setup(mk({ description: 'Pay stuff', listed: false }));
+    const sw = screen.getByRole('switch', { name: SWITCH });
+    expect(sw).toBeEnabled();
+    expect(sw).toHaveAttribute('aria-checked', 'false');
+    const card = screen.getByRole('region', { name: 'Public gallery' });
+    expect(card).toHaveTextContent(
+      'Anyone can find it on curl-runner.com: the name, description, Acme, the requests and their YAML. Variable values never are.',
+    );
+    expect(within(card).queryByRole('link')).toBeNull();
+  });
+
+  it('sends listed: true, then renders the listed state with a link', async () => {
+    const { user, onPatch } = setup(mk({ description: 'Pay stuff', listed: false }));
+    await user.click(screen.getByRole('switch', { name: SWITCH }));
+    expect(onPatch).toHaveBeenCalledWith({ listed: true });
+    expect(await screen.findByRole('switch', { name: SWITCH, checked: true })).toBeEnabled();
+    expect(screen.getByRole('link', { name: 'View it on curl-runner.com' })).toHaveAttribute(
+      'href',
+      'https://www.curl-runner.com/collections/acme/payments-api',
+    );
+  });
+
+  it('sends listed: false from the listed state', async () => {
+    const { user, onPatch } = setup(mk({ description: 'Pay stuff', listed: true }));
+    expect(screen.getByRole('link', { name: 'View it on curl-runner.com' })).toBeInTheDocument();
+    await user.click(screen.getByRole('switch', { name: SWITCH }));
+    expect(onPatch).toHaveBeenCalledWith({ listed: false });
+    expect(await screen.findByRole('switch', { name: SWITCH, checked: false })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'View it on curl-runner.com' })).toBeNull();
+  });
+
+  it('still lets a listed collection without a description be unlisted', () => {
+    setup(mk({ listed: true, description: null }));
+    expect(screen.getByRole('switch', { name: SWITCH })).toBeEnabled();
+  });
+
+  it('shows the server error and leaves the switch where it was', async () => {
+    const { user, onPatch } = setup(mk({ description: 'Pay stuff', listed: false }));
+    onPatch.mockResolvedValueOnce({ ok: false, message: 'Add a description first.' } as never);
+    await user.click(screen.getByRole('switch', { name: SWITCH }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Add a description first.');
+    expect(screen.getByRole('switch', { name: SWITCH })).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('follows the share the server sends back after access changes', async () => {
+    const { user, onPatch } = setup(mk({ description: 'Pay stuff', listed: true }));
+    onPatch.mockResolvedValueOnce({
+      ok: true,
+      share: mk({ access: 'off', listed: false, description: 'Pay stuff' }),
+    } as never);
+    await user.click(screen.getByRole('radio', { name: /Off/ }));
+    await waitFor(() => expect(screen.queryByRole('switch')).toBeNull());
+  });
 });
 
 describe('SharePanel', () => {
@@ -368,6 +457,19 @@ describe('share actions', () => {
     ];
     for (const r of await Promise.all(bad)) {
       expect(r.ok).toBe(false);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('accepts listed and still rejects unknown keys and non-booleans', async () => {
+    fetchMock.mockResolvedValue(json(200, mk({ listed: true })));
+    expect(await actions.patchShare('acme', 'payments-api', { listed: true })).toMatchObject({
+      ok: true,
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ listed: true });
+    fetchMock.mockClear();
+    for (const bad of [{ listed: 'yes' }, { listed: 1 }, { listed: true, extra: 1 }]) {
+      expect((await actions.patchShare('acme', 'payments-api', bad as never)).ok).toBe(false);
     }
     expect(fetchMock).not.toHaveBeenCalled();
   });

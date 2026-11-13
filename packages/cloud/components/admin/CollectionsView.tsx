@@ -29,6 +29,7 @@ import { Segmented } from '../Segmented';
 import { Table, TableCell, TableHead, TableHeader, TableRow } from '../Table';
 import type { CollectionActions } from './collection-actions';
 import { DisableLinkDialog } from './DisableLinkDialog';
+import { UnlistDialog } from './UnlistDialog';
 
 const SEARCH_DELAY = 350;
 
@@ -66,6 +67,7 @@ export function CollectionsView({
   const canTeams = can(permissions, 'teams');
   const [search, setSearch] = useState(q);
   const [target, setTarget] = useState<CollectionRow | null>(null);
+  const [unlisting, setUnlisting] = useState<CollectionRow | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -190,7 +192,7 @@ export function CollectionsView({
       ) : (
         <Table
           label="Collections"
-          minWidth={980}
+          minWidth={960}
           footer={
             <>
               <span className="mr-auto">
@@ -240,19 +242,19 @@ export function CollectionsView({
         >
           <TableHeader>
             <TableHead>Collection</TableHead>
-            <TableHead width={120}>Team</TableHead>
-            <TableHead width={90}>Access</TableHead>
+            <TableHead width={100}>Team</TableHead>
+            <TableHead width={84}>Access</TableHead>
             <TableHead width={64} className="text-right">
               Versions
             </TableHead>
             <TableHead width={64} className="text-right">
               Size
             </TableHead>
-            <TableHead width={135} className="text-right">
+            <TableHead width={110} className="text-right">
               Signed-in opens (30d)
             </TableHead>
             <TableHead width={100}>Last publish</TableHead>
-            <TableHead width={104}>
+            <TableHead width={160}>
               <span className="sr-only">Actions</span>
             </TableHead>
           </TableHeader>
@@ -265,18 +267,19 @@ export function CollectionsView({
                     <span className="flex flex-wrap items-center gap-2">
                       <span className="font-medium [overflow-wrap:anywhere]">{c.name}</span>
                       {c.link_disabled ? <Pill tone="err">Link disabled</Pill> : null}
+                      {c.listed_at ? <Pill tone="info">Listed</Pill> : null}
                     </span>
                     <span className="font-mono text-[12px] text-fg-subtle [overflow-wrap:anywhere]">
                       {c.slug} · {c.source}
                     </span>
                   </span>
                 </TableCell>
-                <TableCell width={120} className="[overflow-wrap:anywhere]">
+                <TableCell width={100} className="[overflow-wrap:anywhere]">
                   <Link href={adminRoutes.team(c.team)} className="text-fg hover:text-fg">
                     {c.team}
                   </Link>
                 </TableCell>
-                <TableCell width={90}>
+                <TableCell width={84}>
                   <Pill>{accessLabel(c.access)}</Pill>
                 </TableCell>
                 <TableCell width={64} className="text-right tabular-nums">
@@ -285,13 +288,27 @@ export function CollectionsView({
                 <TableCell width={64} className="text-right tabular-nums text-fg-muted">
                   {formatBytes(c.size_bytes)}
                 </TableCell>
-                <TableCell width={135} className="text-right tabular-nums text-fg-muted">
+                <TableCell width={110} className="text-right tabular-nums text-fg-muted">
                   {formatInt(c.opens_30d)}
                 </TableCell>
                 <TableCell width={100} className="text-fg-muted">
                   {c.last_publish ? relativeTime(c.last_publish, clock) : 'Never'}
                 </TableCell>
-                <TableCell width={104} className="flex justify-end">
+                <TableCell width={160} className="flex justify-end gap-1.5">
+                  {c.listed_at ? (
+                    <Button
+                      size="sm"
+                      disabled={!canTeams}
+                      title={canTeams ? undefined : NO_PERM}
+                      onClick={() => {
+                        setNote(null);
+                        setProblem(null);
+                        setUnlisting(c);
+                      }}
+                    >
+                      Unlist
+                    </Button>
+                  ) : null}
                   {c.link_disabled ? (
                     <Button
                       size="sm"
@@ -335,6 +352,18 @@ export function CollectionsView({
         }
         onDone={(c) => {
           setNote(`Disabled the share link of ${c.name}.`);
+          router.refresh();
+        }}
+      />
+
+      <UnlistDialog
+        collection={unlisting}
+        onClose={() => setUnlisting(null)}
+        onSubmit={(reason) =>
+          unlisting ? actions.unlist(unlisting.team, unlisting.slug, reason) : Promise.reject()
+        }
+        onDone={(c) => {
+          setNote(`Unlisted ${c.name} from the gallery.`);
           router.refresh();
         }}
       />

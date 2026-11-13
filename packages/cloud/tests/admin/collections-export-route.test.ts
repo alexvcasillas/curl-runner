@@ -51,6 +51,14 @@ describe('GET /admin/collections/export', () => {
     expect(new Headers(init.headers).get('authorization')).toBe('Bearer crs_ok');
   });
 
+  it('passes the listed filter on', async () => {
+    fetchMock.mockResolvedValue(new Response('team\n', { status: 200 }));
+    await call('?filter=listed');
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      'http://api.test/v1/admin/collections.csv?filter=listed',
+    );
+  });
+
   it('falls back to all collections for a filter it does not know', async () => {
     fetchMock.mockResolvedValue(new Response('email\r\n', { status: 200 }));
     await call('?filter=bogus');

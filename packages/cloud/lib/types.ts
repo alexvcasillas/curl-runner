@@ -82,6 +82,10 @@ export type Share = {
   access: AccessMode;
   link: string;
   expires_at: string | null;
+  /** In the public gallery. Missing from an older server: not listed. */
+  listed?: boolean;
+  /** The collection's description. Missing or empty: it can't be listed. */
+  description?: string | null;
   entries: { entry: string; kind: string; invited_at: string; opened: boolean }[];
 };
 

@@ -81,3 +81,40 @@ export async function enableLink(team: string, slug: string): Promise<ActionResu
   revalidatePath(adminRoutes.collections);
   return { ok: true };
 }
+
+/**
+ * `POST …/collections/{team}/{slug}/unlist`: it leaves the public gallery. The
+ * share link keeps working and the team can list it again. Not listed is the API's 409.
+ */
+export async function unlistCollection(
+  team: string,
+  slug: string,
+  reason: string,
+): Promise<ActionResult> {
+  const denied = await requireAdmin('teams');
+  if (denied) {
+    return denied;
+  }
+  if (!valid(team, slug)) {
+    return NO_COLLECTION;
+  }
+  const clean = typeof reason === 'string' ? reason.trim() : '';
+  if (clean === '') {
+    return { ...INVALID, message: 'Add a reason.' };
+  }
+  if ([...clean].length > MAX_REASON) {
+    return { ...INVALID, message: 'The reason is too long.' };
+  }
+  // A 409 (not listed) shows the API's own message.
+  const result = await attempt(() =>
+    api(`/v1/admin/collections/${enc(team)}/${enc(slug)}/unlist`, {
+      method: 'POST',
+      json: { reason: clean },
+    }),
+  );
+  if (!result.ok) {
+    return result;
+  }
+  revalidatePath(adminRoutes.collections);
+  return { ok: true };
+}

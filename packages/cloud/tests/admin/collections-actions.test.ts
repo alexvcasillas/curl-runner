@@ -124,3 +124,45 @@ describe('enableLink', () => {
     expect((r as { message: string }).message).toBe('That link isn’t disabled.');
   });
 });
+
+describe('unlistCollection', () => {
+  it('stops without the teams permission, before any request', async () => {
+    perms = ['emails'];
+    expect(await actions.unlistCollection('acme', 'x', 'why')).toMatchObject({
+      ok: false,
+      code: 'forbidden',
+    });
+    expect(calls()).toHaveLength(0);
+  });
+
+  it('posts the trimmed reason and refreshes the list', async () => {
+    answer(json({ team: 'acme', slug: 'payments-api', listed: false }));
+    expect(await actions.unlistCollection('acme', 'payments-api', '  Spam ')).toEqual({ ok: true });
+    expect(calls()).toEqual([
+      {
+        url: '/v1/admin/collections/acme/payments-api/unlist',
+        method: 'POST',
+        body: { reason: 'Spam' },
+      },
+    ]);
+    expect(revalidatePath).toHaveBeenCalledWith('/admin/collections');
+  });
+
+  it('needs a reason, at most 500 characters, and slugs', async () => {
+    expect(await actions.unlistCollection('acme', 'x', '  ')).toMatchObject({ ok: false });
+    expect(await actions.unlistCollection('acme', 'x', 'a'.repeat(501))).toMatchObject({
+      ok: false,
+      message: 'The reason is too long.',
+    });
+    expect(await actions.unlistCollection('../etc', 'x', 'why')).toMatchObject({ ok: false });
+    expect(calls()).toHaveLength(0);
+  });
+
+  it('passes the API message through on a 409', async () => {
+    answer(json({ error: 'conflict', message: 'That collection is not listed.' }, 409));
+    const r = await actions.unlistCollection('acme', 'payments-api', 'why');
+    expect(r).toMatchObject({ ok: false, code: 'conflict' });
+    expect((r as { message: string }).message).toBe('That collection is not listed.');
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+});

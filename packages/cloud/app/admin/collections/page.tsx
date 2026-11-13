@@ -7,7 +7,7 @@ import {
   getCollectionStats,
   getCollections,
 } from '@/lib/admin-data';
-import { disableLink, enableLink } from './actions';
+import { disableLink, enableLink, unlistCollection } from './actions';
 
 export const metadata: Metadata = { title: 'Collections' };
 
@@ -31,7 +31,7 @@ export default async function AdminCollectionsPage({
       pageSize={COLLECTIONS_PAGE_SIZE}
       now={new Date().toISOString()}
       permissions={admin.permissions}
-      actions={{ disable: disableLink, enable: enableLink }}
+      actions={{ disable: disableLink, enable: enableLink, unlist: unlistCollection }}
     />
   );
 }

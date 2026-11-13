@@ -15,6 +15,8 @@ export type SharePatch = {
   /** `null` is no expiry. */
   expires_in_days?: number | null;
   reset_link?: boolean;
+  /** In or out of the public gallery. */
+  listed?: boolean;
 };
 
 const enc = encodeURIComponent;
@@ -30,7 +32,7 @@ function validPatch(p: unknown): p is SharePatch {
     return false;
   }
   const o = p as Record<string, unknown>;
-  const known = ['access', 'expires_in_days', 'reset_link'];
+  const known = ['access', 'expires_in_days', 'reset_link', 'listed'];
   if (Object.keys(o).some((k) => !known.includes(k))) {
     return false;
   }
@@ -43,6 +45,9 @@ function validPatch(p: unknown): p is SharePatch {
     o.expires_in_days !== 7 &&
     o.expires_in_days !== 30
   ) {
+    return false;
+  }
+  if ('listed' in o && typeof o.listed !== 'boolean') {
     return false;
   }
   return !('reset_link' in o) || typeof o.reset_link === 'boolean';
@@ -69,7 +74,7 @@ async function run(
   }
 }
 
-/** `PATCH …/share`: the access mode, the expiry or a new link. Owners and members alike. */
+/** `PATCH …/share`: the access mode, the expiry, a new link or the gallery listing. Owners and members alike. */
 export async function patchShare(
   team: string,
   slug: string,
