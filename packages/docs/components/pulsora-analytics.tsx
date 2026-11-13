@@ -1,19 +1,9 @@
 'use client';
 
-import { PulsoraProvider, usePageview } from '@pulsora/react';
-import { usePathname } from 'next/navigation';
+import { SupapulseProvider } from '@supapulse/react';
 
-function PageviewTracker() {
-  const pathname = usePathname();
-  usePageview({ trigger: pathname });
-  return null;
-}
+const config = { apiToken: 'pub_X62LKER4NpQqrkZ8A7oIbJMFR1k6an0u' };
 
 export function PulsoraAnalytics({ children }: { children: React.ReactNode }) {
-  return (
-    <PulsoraProvider config={{ apiToken: 'pub_X62LKER4NpQqrkZ8A7oIbJMFR1k6an0u' }}>
-      <PageviewTracker />
-      {children}
-    </PulsoraProvider>
-  );
+  return <SupapulseProvider config={config}>{children}</SupapulseProvider>;
 }
