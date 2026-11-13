@@ -7,6 +7,7 @@ const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
     title: 'Product',
     links: [
       { label: 'Features', href: '/features/parallel-execution' },
+      { label: 'Collections', href: '/collections' },
       { label: 'Downloads', href: '/downloads' },
       { label: 'Changelog', href: '/changelog' },
       { label: 'Sign in to Cloud', href: CLOUD_SIGN_IN_URL },

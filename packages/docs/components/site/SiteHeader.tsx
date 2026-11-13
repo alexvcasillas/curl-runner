@@ -2,11 +2,19 @@ import Link from 'next/link';
 import { ButtonLink } from '@/components/site/ButtonLink';
 import { CLOUD_SIGN_IN_URL } from '@/lib/site';
 
-export type SiteSection = 'docs' | 'features' | 'alternatives' | 'downloads' | 'changelog' | 'blog';
+export type SiteSection =
+  | 'docs'
+  | 'features'
+  | 'collections'
+  | 'alternatives'
+  | 'downloads'
+  | 'changelog'
+  | 'blog';
 
 const NAV: { label: string; href: string; section?: SiteSection }[] = [
   { label: 'Docs', href: '/docs', section: 'docs' },
   { label: 'Features', href: '/features/parallel-execution', section: 'features' },
+  { label: 'Collections', href: '/collections', section: 'collections' },
   { label: 'Alternatives', href: '/alternatives', section: 'alternatives' },
   { label: 'Downloads', href: '/downloads', section: 'downloads' },
   { label: 'Changelog', href: '/changelog', section: 'changelog' },
