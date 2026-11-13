@@ -90,8 +90,8 @@ fn foot(cx: &mut TestAppContext, ws: &Entity<Workspace>) -> String {
         let line = ws.publish_line(cx);
         let now = chrono::Utc::now();
         match line.detail(now) {
-            Some(d) => format!("{}. {d}", line.text(now)),
-            None => line.text(now),
+            Some(d) => format!("{}. {d}", line.text()),
+            None => line.text(),
         }
     })
 }

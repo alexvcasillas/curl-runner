@@ -1486,7 +1486,7 @@ impl Workspace {
     pub(super) fn render_publish_footer(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let now = chrono::Utc::now();
         let line = self.publish_line(cx);
-        let text = line.text(now);
+        let text = line.text();
         let detail = line.detail(now);
         let dot = match line.dot() {
             Some(token) => sync_dot(token, false),
