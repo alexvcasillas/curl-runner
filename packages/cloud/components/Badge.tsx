@@ -1,5 +1,6 @@
-import type { Plan } from '@/lib/types';
-import { EyeOffIcon, GitIcon, GlobeIcon, LockIcon } from './icons';
+import { gitSummary, sourceKind } from '@/lib/collections';
+import type { GitMeta, Plan, Source } from '@/lib/types';
+import { CloudIcon, EyeOffIcon, FolderIcon, GitIcon, GlobeIcon, LockIcon } from './icons';
 import { Pill } from './Pill';
 
 const PLAN_NAMES: Record<Plan, string> = { free: 'Free', team: 'Team' };
@@ -27,7 +28,24 @@ export function AccessBadge({ access }: { access: Access }) {
   );
 }
 
-/** Where a collection is edited: a git repo through CI, or the cloud from the studio. */
-export function SourceBadge({ source }: { source: 'git' | 'cloud' }) {
-  return <Pill icon={<GitIcon size={12} />}>{source === 'git' ? 'git' : 'Cloud'}</Pill>;
+const SOURCES = {
+  git: { label: 'Git', Icon: GitIcon },
+  files: { label: 'Local files', Icon: FolderIcon },
+  cloud: { label: 'Cloud', Icon: CloudIcon },
+} as const;
+
+/**
+ * Where a collection's versions come from: `Git` (published from files that
+ * came with git details), `Local files` (published from files without), or
+ * `Cloud` (synced from the studio). The hover says which repo and commit.
+ */
+export function SourceBadge({ source, git }: { source: Source; git?: GitMeta | null }) {
+  const kind = sourceKind(source, git);
+  const { label, Icon } = SOURCES[kind];
+  const title = kind === 'git' ? (gitSummary(git) ?? undefined) : undefined;
+  return (
+    <span title={title} className="inline-flex">
+      <Pill icon={<Icon size={12} />}>{label}</Pill>
+    </span>
+  );
 }

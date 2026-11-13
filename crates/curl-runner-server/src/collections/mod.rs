@@ -14,7 +14,7 @@ use axum::http::StatusCode;
 use axum::routing::{get, put};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
-use curl_runner_cloud_proto::{Access, Source};
+use curl_runner_cloud_proto::{Access, GitMeta, Source};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
@@ -83,6 +83,9 @@ struct CollectionBody {
     updated_at: Option<DateTime<Utc>>,
     /// Who published the current version: `token {name}` or an email.
     publisher: Option<String>,
+    /// The current version's git details: the dashboard calls a collection
+    /// published from files `Git` when they're there, `Local files` when not.
+    git: Option<GitMeta>,
 }
 
 #[derive(FromRow)]
@@ -94,6 +97,7 @@ struct CollectionRow {
     current_version: Option<i32>,
     updated_at: Option<DateTime<Utc>>,
     publisher: Option<String>,
+    git: Option<sqlx::types::Json<GitMeta>>,
 }
 
 impl CollectionRow {
@@ -106,6 +110,7 @@ impl CollectionRow {
             current_version: self.current_version,
             updated_at: self.updated_at,
             publisher: self.publisher,
+            git: self.git.map(|g| g.0),
         })
     }
 }
@@ -113,10 +118,10 @@ impl CollectionRow {
 /// `updated_at` and `publisher` are the current version's (`null` before the
 /// first), read from one lateral subquery so a list costs one query.
 const COLLECTION_COLUMNS: &str = "c.slug::text AS slug, c.name, c.source, c.access, c.current_version, \
-     cv.created_at AS updated_at, cv.published_by AS publisher";
+     cv.created_at AS updated_at, cv.published_by AS publisher, cv.git";
 
 /// The current version's row, joined to each collection.
-const CURRENT_VERSION_JOIN: &str = "LEFT JOIN LATERAL (SELECT v.created_at, v.published_by \
+const CURRENT_VERSION_JOIN: &str = "LEFT JOIN LATERAL (SELECT v.created_at, v.published_by, v.git \
      FROM versions v WHERE v.collection_id = c.id AND v.number = c.current_version) cv ON true";
 
 /// Read-only, so a team's publish token may call it as well as a member.

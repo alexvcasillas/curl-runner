@@ -14,7 +14,8 @@ use crate::model::backend::{
     BackendError, CollectionSource, PublishResponse, RemoteCollection, TeamRef,
 };
 use crate::model::publish::{
-    CONFIG_FILE, CloudLink, PublishLine, Summary, published, save_cloud_block, suggest_slug,
+    CONFIG_FILE, CloudLink, PublishLine, Summary, folder_git, published, save_cloud_block,
+    suggest_slug,
 };
 use curl_runner_cloud_client::publish::{Checked, Problem, Target, check, diff};
 use curl_runner_cloud_proto::{Plan, PublishStatus};
@@ -1254,10 +1255,15 @@ impl Workspace {
         if target.name.is_none() {
             target.name = self.collection_title();
         }
-        let request = target.request(None);
         self.publish.publishing = Some(next);
         let (team, slug) = (link.team.clone(), link.slug.clone());
-        let call = backend_call(cx, &self.backend, move |b| b.publish(&team, &slug, request));
+        let backend = self.backend.clone();
+        // The folder's git details go up as CI's do (off the UI thread:
+        // it runs `git`).
+        let call = cx.background_spawn(async move {
+            let request = target.request(folder_git(&root));
+            futures::executor::block_on(backend.publish(&team, &slug, request))
+        });
         let dash = backend_call(cx, &self.backend, |b| b.dashboard_url());
         self.publish.job = Some(cx.spawn_in(window, async move |this, cx| {
             let result = call.await;

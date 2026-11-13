@@ -44,6 +44,8 @@ export type CollectionSummary = {
   updated_at: string | null;
   /** Who published it: `token {name}` or an email. Null before the first. */
   publisher: string | null;
+  /** The current version's git details; older servers leave it out. */
+  git?: GitMeta | null;
 };
 
 export type GitMeta = {

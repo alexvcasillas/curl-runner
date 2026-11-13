@@ -91,7 +91,7 @@ export default async function CollectionPage({ params, searchParams }: Props) {
             <h1 className="m-0 text-[24px] leading-8 font-semibold tracking-[-0.02em] [overflow-wrap:anywhere]">
               {collection.name}
             </h1>
-            <SourceBadge source={collection.source} />
+            <SourceBadge source={collection.source} git={newest?.git ?? null} />
             <AccessBadge access={collection.access} />
           </div>
           <p className="m-0 text-[12px] text-fg-subtle">

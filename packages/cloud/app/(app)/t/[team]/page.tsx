@@ -21,6 +21,7 @@ export default async function TeamPage({ params }: { params: Promise<{ team: str
     slug: c.slug,
     name: c.name,
     source: c.source,
+    git: c.git ?? null,
     access: c.access,
     version: c.current_version === null ? null : `v${c.current_version}`,
     when: c.updated_at ? relativeTime(c.updated_at, now) : null,

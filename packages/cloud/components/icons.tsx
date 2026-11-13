@@ -109,6 +109,14 @@ export function FolderIcon(p: IconProps) {
   );
 }
 
+export function CloudIcon(p: IconProps) {
+  return (
+    <Glyph strokeLinecap="round" {...p}>
+      <path d="M4.5 12.5h7a3 3 0 00.4-6A4 4 0 004.3 7.4 2.6 2.6 0 004.5 12.5z" />
+    </Glyph>
+  );
+}
+
 export function PlusIcon(p: IconProps) {
   return (
     <Glyph strokeWidth={1.6} strokeLinecap="round" {...p}>

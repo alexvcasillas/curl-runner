@@ -50,6 +50,11 @@ const ROWS = [
     name: 'Payments API',
     slug: 'payments-api',
     source: 'git',
+    git: {
+      commit: '4f2a9c1aa0',
+      ref: 'refs/heads/main',
+      repo_url: 'https://github.com/acme/payments',
+    },
     access: 'public',
     version: 'v14',
     when: '2 hours ago',
@@ -59,6 +64,7 @@ const ROWS = [
     name: 'Webhooks',
     slug: 'webhooks',
     source: 'git',
+    git: null,
     access: 'restricted',
     version: 'v3',
     when: 'Yesterday',
@@ -68,6 +74,7 @@ const ROWS = [
     name: 'Sandbox tour',
     slug: 'sandbox-tour',
     source: 'cloud',
+    git: null,
     access: 'public',
     version: 'v27',
     when: '5 minutes ago',
@@ -77,6 +84,11 @@ const ROWS = [
     name: 'Internal admin',
     slug: 'internal-admin',
     source: 'git',
+    git: {
+      commit: '4f2a9c1aa0',
+      ref: 'refs/heads/main',
+      repo_url: 'https://github.com/acme/payments',
+    },
     access: 'off',
     version: 'v1',
     when: 'Oct 30',
@@ -284,6 +296,10 @@ export function KitDemo() {
           caption="Source, access and plan are neutral facts. Only states that need attention get color."
         >
           <Row>
+            <SourceBadge
+              source="git"
+              git={{ commit: '4f2a9c1aa0', ref: 'refs/heads/main', repo_url: null }}
+            />
             <SourceBadge source="git" />
             <SourceBadge source="cloud" />
             <AccessBadge access="public" />
@@ -477,7 +493,7 @@ export function KitDemo() {
       >
         <TableHeader>
           <TableHead>Collection</TableHead>
-          <TableHead width={96}>Source</TableHead>
+          <TableHead width={112}>Source</TableHead>
           <TableHead width={120}>Access</TableHead>
           <TableHead width={72}>Version</TableHead>
           <TableHead width={220}>Last publish</TableHead>
@@ -488,8 +504,8 @@ export function KitDemo() {
               <TableRowLink href={`/t/acme/c/${r.slug}`}>{r.name}</TableRowLink>
               <span className="font-mono text-[12px] text-fg-subtle">{r.slug}</span>
             </TableCell>
-            <TableCell width={96}>
-              <SourceBadge source={r.source} />
+            <TableCell width={112}>
+              <SourceBadge source={r.source} git={r.git} />
             </TableCell>
             <TableCell width={120}>
               <AccessBadge access={r.access} />
