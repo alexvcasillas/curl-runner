@@ -52,6 +52,26 @@ pub fn diagnose(text: &str) -> Vec<StudioDiagnostic> {
     }
 }
 
+/// The project config at the collection root (`curl-runner.yaml`, `.yml`):
+/// settings and the `cloud:` block, not requests.
+pub fn is_config_file(rel: &std::path::Path) -> bool {
+    rel == std::path::Path::new("curl-runner.yaml")
+        || rel == std::path::Path::new("curl-runner.yml")
+}
+
+/// [`diagnose`] for the file at `rel`: the config file is held to YAML
+/// syntax only, since the request rules don't apply to it.
+pub fn diagnose_file(rel: &std::path::Path, text: &str) -> Vec<StudioDiagnostic> {
+    if !is_config_file(rel) {
+        return diagnose(text);
+    }
+    match lint_text(text) {
+        Err(crash) => whole_text_error(text, crash.0),
+        Ok(LintOutcome::ParseError(message)) => whole_text_error(text, message),
+        Ok(LintOutcome::Linted { .. }) => Vec::new(),
+    }
+}
+
 pub fn counts(d: &[StudioDiagnostic]) -> Counts {
     let n = |s| d.iter().filter(|x| x.severity == s).count();
     Counts {
@@ -239,5 +259,20 @@ mod tests {
     fn invalid_value_blocks_run() {
         let d = diagnose("request:\n  url: https://api.example.com\n  method: FETCH\n");
         assert!(!can_run(&d), "{d:?}");
+    }
+
+    #[test]
+    fn the_config_file_is_checked_for_syntax_only() {
+        let config = "cloud:\n  collection: pay\n  name: Payments\n";
+        let root = std::path::Path::new("curl-runner.yaml");
+        assert_eq!(diagnose_file(root, config), []);
+        assert!(!diagnose(config).is_empty(), "as a request file it fails");
+        assert_eq!(
+            diagnose_file(root, "cloud: [\n").len(),
+            1,
+            "bad YAML still shows"
+        );
+        // Only at the root: a nested file of that name is a request file.
+        assert!(!diagnose_file(std::path::Path::new("a/curl-runner.yaml"), config).is_empty());
     }
 }

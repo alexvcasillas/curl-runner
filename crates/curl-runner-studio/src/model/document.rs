@@ -1,6 +1,6 @@
 //! An open file: buffer text, saved text, diagnostics and disk-conflict state.
 
-use super::diagnostics::{StudioDiagnostic, diagnose};
+use super::diagnostics::{StudioDiagnostic, diagnose_file};
 use curl_runner_core::lint::edit::fix_edit;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -35,7 +35,7 @@ pub struct Document {
 impl Document {
     pub fn open(root: &Path, rel: &Path) -> io::Result<Document> {
         let text = std::fs::read_to_string(root.join(rel))?;
-        let diagnostics = diagnose(&text);
+        let diagnostics = diagnose_file(rel, &text);
         Ok(Document {
             rel_path: rel.to_path_buf(),
             saved_text: text.clone(),
@@ -49,7 +49,7 @@ impl Document {
 
     pub fn set_text(&mut self, text: String) {
         self.text = text;
-        self.diagnostics = diagnose(&self.text);
+        self.diagnostics = diagnose_file(&self.rel_path, &self.text);
         self.stale = false;
     }
 
@@ -70,7 +70,7 @@ impl Document {
     /// Re-diagnoses the text if it changed since the last diagnosis.
     pub fn rediagnose(&mut self) {
         if self.stale {
-            self.diagnostics = diagnose(&self.text);
+            self.diagnostics = diagnose_file(&self.rel_path, &self.text);
             self.stale = false;
         }
     }

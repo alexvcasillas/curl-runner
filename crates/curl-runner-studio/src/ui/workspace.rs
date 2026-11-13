@@ -1709,9 +1709,16 @@ pub(super) fn edit_notes(
     })
 }
 
+/// Every toast goes through here. A one-line toast's text sits 2px above
+/// gpui-component's type icon (absolute at 18px against 14px of padding):
+/// 16px lines the text up with it, with or without a title.
+pub(in crate::ui) fn push_toast(window: &mut Window, toast: Notification, cx: &mut App) {
+    window.push_notification(toast.py(px(16.)), cx);
+}
+
 pub(super) fn notify_error(message: String, window: &mut Window, cx: &mut App) {
     log::warn!("{message}");
-    window.push_notification(Notification::error(message), cx);
+    crate::ui::workspace::push_toast(window, Notification::error(message), cx);
 }
 
 fn secondary(text: &'static str) -> impl IntoElement {

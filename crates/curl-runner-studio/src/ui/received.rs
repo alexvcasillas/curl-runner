@@ -23,7 +23,6 @@ use crate::model::shared_copy::{
 };
 use crate::model::sync_base::SyncBase;
 use curl_runner_core::interpolate::Store;
-use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
@@ -141,7 +140,7 @@ impl Workspace {
     fn toast(&mut self, text: String, window: &mut Window, cx: &mut App) {
         #[cfg(test)]
         self.toasts.push(text.clone());
-        window.push_notification(Notification::warning(text), cx);
+        crate::ui::workspace::push_toast(window, Notification::warning(text), cx);
     }
 
     /// The open collection as the boards name it: a received copy by its
@@ -181,7 +180,7 @@ impl Workspace {
             let text = "Couldn't check for updates: this copy has no share to ask.".to_string();
             #[cfg(test)]
             self.toasts.push(text.clone());
-            window.push_notification(Notification::warning(text), cx);
+            crate::ui::workspace::push_toast(window, Notification::warning(text), cx);
             return;
         };
         self.check_received(&token, true, window, cx);
@@ -330,7 +329,7 @@ impl Workspace {
                 if manual {
                     #[cfg(test)]
                     self.toasts.push(UP_TO_DATE.into());
-                    window.push_notification(Notification::info(UP_TO_DATE), cx);
+                    crate::ui::workspace::push_toast(window, Notification::info(UP_TO_DATE), cx);
                 }
             }
             Ok(Checked::Offered) => self.recount_in_background(token.to_string(), cx),
@@ -606,7 +605,7 @@ impl Workspace {
         );
         #[cfg(test)]
         self.toasts.push(text.clone());
-        window.push_notification(Notification::success(text), cx);
+        crate::ui::workspace::push_toast(window, Notification::success(text), cx);
         let call = backend_call(cx, &self.backend, move |b| b.update_received(share));
         cx.spawn_in(window, async move |this, cx| {
             let recorded = call.await;
@@ -802,7 +801,7 @@ impl Workspace {
             self.remember_folder(&dest);
             #[cfg(test)]
             self.toasts.push(DUPLICATED.into());
-            window.push_notification(Notification::success(DUPLICATED), cx);
+            crate::ui::workspace::push_toast(window, Notification::success(DUPLICATED), cx);
         }
     }
 
@@ -888,7 +887,7 @@ impl Workspace {
                 let text = format!("Kept your changes in {name}");
                 #[cfg(test)]
                 this.toasts.push(text.clone());
-                window.push_notification(Notification::success(text), cx);
+                crate::ui::workspace::push_toast(window, Notification::success(text), cx);
                 this.apply_offer_now(&token, window, cx);
             })
             .ok();
