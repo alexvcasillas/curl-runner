@@ -13,10 +13,12 @@ const base: CollectionRow = {
   opens_30d: 612,
   last_publish: '2026-11-06T10:00:00Z',
   link_disabled: false,
+  listed_at: null,
 };
 
 export const rows: CollectionRow[] = [
   base,
+  { ...base, slug: 'listed-api', name: 'Listed API', listed_at: '2026-11-05T10:00:00Z' },
   { ...base, slug: 'webhooks', name: 'Webhooks', access: 'restricted', versions: 3, opens_30d: 48 },
   {
     ...base,

@@ -25,6 +25,11 @@ export const routes = {
     `/t/${encodeURIComponent(team)}/c/${encodeURIComponent(slug)}/versions/${n}/download`,
 };
 
+/** The public gallery page of a listed collection. */
+export function galleryUrl(team: string, slug: string): string {
+  return `https://www.curl-runner.com/collections/${encodeURIComponent(team)}/${encodeURIComponent(slug)}`;
+}
+
 export const external = {
   docs: 'https://www.curl-runner.com/docs',
   download: 'https://www.curl-runner.com/downloads',

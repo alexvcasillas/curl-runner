@@ -26,6 +26,8 @@ export type CollectionRow = {
   opens_30d: number;
   last_publish: string | null;
   link_disabled: boolean;
+  /** When it joined the public gallery. Null when it isn't listed. */
+  listed_at: string | null;
 };
 
 export type CollectionsPage = { items: CollectionRow[]; next_cursor: string | null; total: number };
@@ -37,6 +39,7 @@ export const COLLECTION_FILTERS = [
   { value: 'all', label: 'All' },
   { value: 'public', label: 'Public' },
   { value: 'restricted', label: 'Restricted' },
+  { value: 'listed', label: 'Listed' },
   { value: 'disabled', label: 'Disabled by admin' },
 ] as const;
 

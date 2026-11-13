@@ -8,6 +8,13 @@ import {
 } from '@/lib/admin-collections';
 
 describe('parseCollectionsQuery', () => {
+  it('accepts the listed filter', () => {
+    expect(parseCollectionsQuery({ filter: 'listed' }).filter).toBe('listed');
+    expect(collectionsHref({ q: '', filter: 'listed', trail: [] })).toBe(
+      '/admin/collections?filter=listed',
+    );
+  });
+
   it('keeps a good query', () => {
     expect(
       parseCollectionsQuery({ q: ' spam ', filter: 'disabled', cursor: 'abc_1', trail: '-.abc' }),

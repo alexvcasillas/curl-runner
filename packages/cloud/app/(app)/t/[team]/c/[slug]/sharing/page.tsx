@@ -47,6 +47,7 @@ export default async function SharingPage({ params }: Props) {
           <div className="min-w-0 flex-[999_1_560px]">
             <SharePanel
               team={team}
+              slug={slug}
               teamName={current.name}
               name={collection.name}
               plan={current.plan}
