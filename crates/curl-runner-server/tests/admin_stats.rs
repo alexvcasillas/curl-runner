@@ -466,7 +466,7 @@ async fn health_job_times(pool: PgPool) {
     assert_eq!(stats["version"], env!("CARGO_PKG_VERSION"));
     assert!(stats["db"]["size_bytes"].as_i64().unwrap() > 0);
     assert!(stats["db"]["connections"].as_i64().unwrap() >= 1);
-    assert_eq!(stats["db"]["migration"], 4);
+    assert_eq!(stats["db"]["migration"], 5);
 }
 
 fn sign(ts: i64, body: &str) -> String {

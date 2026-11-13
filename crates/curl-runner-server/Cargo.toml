@@ -28,6 +28,7 @@ rand = "0.9.5"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1"
+serde_yaml_ng = "0.10.0"
 sha2 = "0.10.9"
 # Runtime queries only (no compile-time `query!`): builds have no database.
 # No TLS: Postgres is reached on the private compose network.

@@ -100,6 +100,10 @@ pub fn routes() -> Router<AppState> {
             post(collections::enable_link),
         )
         .route(
+            "/v1/admin/collections/{team}/{slug}/unlist",
+            post(collections::unlist),
+        )
+        .route(
             "/v1/admin/broadcasts",
             get(emails::list).post(emails::create),
         )

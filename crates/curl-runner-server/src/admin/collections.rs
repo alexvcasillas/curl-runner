@@ -38,6 +38,7 @@ enum Filter {
     Public,
     Restricted,
     Disabled,
+    Listed,
 }
 
 impl Filter {
@@ -47,6 +48,7 @@ impl Filter {
             "public" => Self::Public,
             "restricted" => Self::Restricted,
             "disabled" => Self::Disabled,
+            "listed" => Self::Listed,
             _ => return None,
         })
     }
@@ -57,6 +59,7 @@ impl Filter {
             Self::Public => "public",
             Self::Restricted => "restricted",
             Self::Disabled => "disabled",
+            Self::Listed => "listed",
         }
     }
 }
@@ -81,8 +84,9 @@ impl ListQuery {
         let pattern = search_pattern(self.q.as_ref())?;
         let filter = match non_empty(self.filter.as_ref()) {
             None => Filter::All,
-            Some(f) => Filter::parse(f)
-                .ok_or_else(|| invalid("`filter` must be all, public, restricted or disabled."))?,
+            Some(f) => Filter::parse(f).ok_or_else(|| {
+                invalid("`filter` must be all, public, restricted, disabled or listed.")
+            })?,
         };
         Ok(Filters { pattern, filter })
     }
@@ -99,7 +103,8 @@ const WHERE_SQL: &str = "($1::text IS NULL OR c.name ILIKE $1 OR c.slug::text IL
      AND (($2 = 'all') \
        OR ($2 = 'public' AND c.access = 'public') \
        OR ($2 = 'restricted' AND c.access = 'restricted') \
-       OR ($2 = 'disabled' AND c.link_disabled_at IS NOT NULL))";
+       OR ($2 = 'disabled' AND c.link_disabled_at IS NOT NULL) \
+       OR ($2 = 'listed' AND c.listed_at IS NOT NULL))";
 
 /// A collection with no version sorts last.
 const SORT_AT: &str = "COALESCE(v.last_publish, 'epoch'::timestamptz)";
@@ -113,6 +118,7 @@ struct CollectionSql {
     source: String,
     access: String,
     link_disabled: bool,
+    listed_at: Option<DateTime<Utc>>,
     versions: i64,
     size_bytes: i64,
     opens_30d: i64,
@@ -135,6 +141,8 @@ pub struct CollectionRow {
     opens_30d: i64,
     last_publish: Option<DateTime<Utc>>,
     link_disabled: bool,
+    /// Listed in the public gallery since.
+    listed_at: Option<DateTime<Utc>>,
 }
 
 impl CollectionSql {
@@ -155,6 +163,7 @@ impl CollectionSql {
                 opens_30d: self.opens_30d,
                 last_publish: self.last_publish,
                 link_disabled: self.link_disabled,
+                listed_at: self.listed_at,
             },
             cursor,
         ))
@@ -173,7 +182,7 @@ async fn page(
 ) -> Result<(Vec<CollectionRow>, Option<Cursor>), ApiError> {
     let rows: Vec<CollectionSql> = sqlx::query_as(&format!(
         "SELECT c.id, t.slug::text AS team, c.slug::text AS slug, c.name, c.source, c.access, \
-                c.link_disabled_at IS NOT NULL AS link_disabled, \
+                c.link_disabled_at IS NOT NULL AS link_disabled, c.listed_at, \
                 v.versions, COALESCE(s.bytes, 0) AS size_bytes, o.opens AS opens_30d, \
                 v.last_publish, {SORT_AT} AS sort_at \
          FROM collections c \
@@ -429,6 +438,47 @@ pub async fn disable_link(
 /// `POST /v1/admin/collections/{team}/{slug}/enable-link`, perm `teams`.
 /// `409` if not disabled. The team's link token is unchanged, so the old
 /// link works again.
+/// `POST /v1/admin/collections/{team}/{slug}/unlist`, perm `teams`: takes it
+/// out of the public gallery (the link keeps working). `409` if not listed.
+pub async fn unlist(
+    admin: AdminAuth,
+    State(state): State<AppState>,
+    ApiPath((team, slug)): ApiPath<(String, String)>,
+    ApiJson(req): ApiJson<DisableReq>,
+) -> Result<Json<UnlistBody>, ApiError> {
+    admin.require(Perm::Teams)?;
+    let reason = clean_reason(req.reason)?;
+    let mut tx = AdminTx::begin(&state, &admin).await?;
+    let c = lock_collection(&mut tx, &team, &slug).await?;
+    let done = sqlx::query(
+        "UPDATE collections SET listed_at = NULL WHERE id = $1 AND listed_at IS NOT NULL",
+    )
+    .bind(c.id)
+    .execute(&mut *tx)
+    .await?;
+    if done.rows_affected() == 0 {
+        return Err(conflict("That collection isn't listed."));
+    }
+    tx.commit(
+        Event::new("collection.unlist")
+            .target("collection", c.id, format!("{team}/{slug}"))
+            .detail(json!({"reason": reason})),
+    )
+    .await?;
+    Ok(Json(UnlistBody {
+        team,
+        slug,
+        listed: false,
+    }))
+}
+
+#[derive(Serialize)]
+pub struct UnlistBody {
+    team: String,
+    slug: String,
+    listed: bool,
+}
+
 pub async fn enable_link(
     admin: AdminAuth,
     State(state): State<AppState>,

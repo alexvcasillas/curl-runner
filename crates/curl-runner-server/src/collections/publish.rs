@@ -324,8 +324,9 @@ pub(super) async fn publish(
         .transpose()
         .map_err(|_| ApiError::unavailable())?;
     let version_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO versions (collection_id, number, hash, inputs, published_by, git, created_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+        "INSERT INTO versions (collection_id, number, hash, inputs, published_by, git, created_at, \
+                               request_count) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
     )
     .bind(locked.id)
     .bind(number)
@@ -334,6 +335,7 @@ pub(super) async fn publish(
     .bind(&published_by)
     .bind(git)
     .bind(now)
+    .bind(super::gallery::request_count(&req.files))
     .fetch_one(&mut *tx)
     .await?;
     let paths: Vec<&str> = req.files.iter().map(|f| f.path.as_str()).collect();

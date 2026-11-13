@@ -2,6 +2,7 @@
 //! [`publish`], version reads in [`versions`].
 
 mod access;
+pub(crate) mod gallery;
 mod publish;
 mod share;
 mod versions;
@@ -59,6 +60,8 @@ pub fn routes() -> Router<AppState> {
             "/v1/teams/{team}/collections/{slug}/share/entries/{entry}",
             axum::routing::delete(share::remove_entry),
         )
+        .route("/v1/public/collections", get(gallery::list))
+        .route("/v1/public/collections/{team}/{slug}", get(gallery::detail))
         .route("/v1/me/shared", get(access::shared_with_me))
         .route("/v1/shared/{token}", get(access::info))
         .route("/v1/shared/{token}/snapshot", get(access::snapshot))
