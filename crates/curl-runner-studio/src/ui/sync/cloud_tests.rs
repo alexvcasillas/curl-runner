@@ -116,6 +116,8 @@ fn a_cloud_source_syncs_both_ways_with_the_sync_foot(cx: &mut TestAppContext) {
     let text = line.text(chrono::Utc::now());
     assert!(labelled(cx, o.window, &text), "{text}");
     assert!(!labelled(cx, o.window, "Syncs from the studio"));
+    // Its version and who changed it, under the state.
+    assert!(labelled(cx, o.window, "v1 · sam@acme.dev edited just now"));
     // The key carries the link the real server needs.
     let key = o.ws.read_with(cx, |ws, cx| ws.collection_key(cx)).unwrap();
     assert_eq!(

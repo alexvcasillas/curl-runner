@@ -710,6 +710,16 @@ impl Workspace {
         } else {
             WORKING_LOCALLY.into()
         };
+        // A synced Cloud collection's version and who changed it last.
+        let detail = self
+            .publish
+            .latest
+            .as_ref()
+            .filter(|_| self.cloud_synced() && matches!(line, SyncLine::Synced(_)))
+            .map(|v| {
+                let me = self.backend.account().map(|a| a.email);
+                crate::model::publish::synced_detail(v, me.as_deref(), chrono::Utc::now())
+            });
         let share = div()
             .id("sidebar-share")
             .role(Role::Button)
@@ -781,21 +791,39 @@ impl Workspace {
                     .flex_1()
                     .min_w_0()
                     .flex()
-                    .items_center()
-                    .gap(px(4.))
+                    .flex_col()
                     .line_height(relative(1.4))
                     .child(
                         div()
-                            .id("sidebar-sync-status")
-                            .role(Role::Status)
-                            .test_support()
-                            .aria_label(text.clone())
-                            .min_w_0()
-                            .text_ellipsis()
-                            .text_color(color(line.text_color()))
-                            .child(text),
+                            .flex()
+                            .items_center()
+                            .gap(px(4.))
+                            .child(
+                                div()
+                                    .id("sidebar-sync-status")
+                                    .role(Role::Status)
+                                    .test_support()
+                                    .aria_label(text.clone())
+                                    .min_w_0()
+                                    .text_ellipsis()
+                                    .text_color(color(line.text_color()))
+                                    .child(text),
+                            )
+                            .when_some(resolve, |d, resolve| d.child("·").child(resolve)),
                     )
-                    .when_some(resolve, |d, resolve| d.child("·").child(resolve)),
+                    // A synced Cloud collection: `v27 · Sam edited 1 h ago`.
+                    .when_some(detail, |d, detail| {
+                        d.child(
+                            div()
+                                .id("sidebar-sync-detail")
+                                .test_support()
+                                .aria_label(detail.clone())
+                                .min_w_0()
+                                .text_ellipsis()
+                                .text_color(color("text-tertiary"))
+                                .child(detail),
+                        )
+                    }),
             )
             .when(!crate::features::SERVER, |d| d.child(sync_soon_pill()))
             .child(share)

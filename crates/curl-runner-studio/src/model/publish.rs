@@ -155,6 +155,17 @@ pub fn published(v: &VersionSummary, me: Option<&str>) -> Published {
     }
 }
 
+/// A synced collection's second foot line (board SyncCloud): `v27 · Sam
+/// edited 1 h ago`, `v3 · you edited just now`.
+pub fn synced_detail(v: &VersionSummary, me: Option<&str>, now: DateTime<Utc>) -> String {
+    let who = publisher_label(&v.publisher, me);
+    let ago = crate::model::history::relative_time(
+        v.published_at.with_timezone(&chrono::Local),
+        now.with_timezone(&chrono::Local),
+    );
+    format!("v{} · {who} edited {ago}", v.number)
+}
+
 /// A collection name from a folder's: lowercase letters, digits and
 /// dashes, at most 63, starting with a letter or digit (`Payments API` is
 /// `payments-api`). Empty when nothing usable is left.
@@ -560,5 +571,26 @@ mod tests {
             .unwrap();
         assert_eq!(cfg.collection, "payments-api");
         assert_eq!(cfg.name.as_deref(), Some("Payments API"));
+    }
+
+    #[test]
+    fn synced_detail_names_who_edited_last() {
+        let now = Utc::now();
+        let v = VersionSummary {
+            number: 27,
+            hash: String::new(),
+            published_at: now - chrono::Duration::hours(1),
+            publisher: "sam@acme.dev".into(),
+            git: None,
+            file_count: 3,
+        };
+        assert_eq!(
+            synced_detail(&v, Some("ada@acme.dev"), now),
+            "v27 · sam@acme.dev edited 1 h ago"
+        );
+        assert_eq!(
+            synced_detail(&v, Some("SAM@acme.dev"), now),
+            "v27 · you edited 1 h ago"
+        );
     }
 }

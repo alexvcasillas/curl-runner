@@ -17,7 +17,16 @@ use std::sync::Arc;
 
 const REQUEST: &str = "request:\n  name: A\n  url: https://api.example.com/a\n  method: GET\n";
 
+/// A git repo (a `.git` folder is enough for the dialog's default) with
+/// `files`.
 fn folder(files: &[(&str, &str)]) -> tempfile::TempDir {
+    let d = plain_folder(files);
+    std::fs::create_dir(d.path().join(".git")).unwrap();
+    d
+}
+
+/// A folder that isn't a git repo.
+fn plain_folder(files: &[(&str, &str)]) -> tempfile::TempDir {
     let d = tempfile::tempdir().unwrap();
     for (rel, text) in files {
         let p = d.path().join(rel);
@@ -47,7 +56,7 @@ fn open(
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds {
                 origin: Point::default(),
-                size: size(px(1440.), px(900.)),
+                size: size(px(1440.), px(1400.)),
             })),
             ..Default::default()
         };
@@ -113,7 +122,13 @@ fn first_publish_picks_team_and_name_then_saves_them(cx: &mut TestAppContext) {
         .unwrap()
         .to_string_lossy()
         .into_owned();
-    assert!(shows(cx, window, &format!("Publish {name}")));
+    assert!(shows(
+        cx,
+        window,
+        &format!("Put {name} on curl-runner Cloud")
+    ));
+    // A git repo: Publish by default.
+    view.read_with(cx, |v, _| assert_eq!(v.mode, super::Mode::Publish));
     assert!(shows(cx, window, "Ready to publish"));
     assert!(shows(
         cx,
@@ -366,4 +381,81 @@ fn success_line_counts_files() {
 fn local_hash_matches_the_bundle() {
     let dir = folder(&[("a.yaml", REQUEST)]);
     assert_eq!(local_hash(dir.path()).len(), 64);
+}
+
+#[gpui_kit::test]
+fn a_folder_outside_git_syncs_by_default_and_starts_syncing(cx: &mut TestAppContext) {
+    let dir = plain_folder(&[("charges/a.yaml", REQUEST)]);
+    let backend = mock();
+    testing::sign_in(&*backend);
+    let (window, ws, _s) = open(cx, dir.path(), backend.clone(), Connection::Online);
+    publish(cx, window, &ws);
+    let view = ws
+        .read_with(cx, |ws, _| ws.publish_view())
+        .expect("the dialog");
+    view.read_with(cx, |v, _| assert_eq!(v.mode, super::Mode::Sync));
+    assert!(shows(cx, window, "Start syncing"));
+    assert!(shows(cx, window, "Ready to sync"));
+    // No curl-runner.yaml switch for a synced collection.
+    assert!(!shows(
+        cx,
+        window,
+        &format!("Save the name and description to {CONFIG_FILE}")
+    ));
+    click(cx, window, "publish-go");
+    assert!(ws.read_with(cx, |ws, _| ws.publish_view()).is_none());
+    let calls = backend.dev().unwrap().recorded();
+    assert!(
+        calls.iter().any(|c| c.starts_with("create_collection(")),
+        "{calls:?}"
+    );
+    assert!(calls.iter().any(|c| c.starts_with("sync(")), "{calls:?}");
+    assert!(ws.read_with(cx, |ws, _| ws.cloud_synced()));
+    assert!(!dir.path().join(CONFIG_FILE).exists(), "nothing written");
+    let key = ws.read_with(cx, |ws, cx| ws.collection_key(cx)).unwrap();
+    let files = testing::server_files(&*backend, &key);
+    assert_eq!(files.len(), 1, "the first sync pushed the folder");
+}
+
+#[gpui_kit::test]
+fn sync_refuses_a_name_the_team_has(cx: &mut TestAppContext) {
+    let dir = plain_folder(&[("a.yaml", REQUEST)]);
+    let backend = mock();
+    testing::sign_in(&*backend);
+    let name = dir
+        .path()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let team = backend.account().unwrap().teams[0].slug.clone();
+    backend.dev().unwrap().seed_published(
+        &team,
+        &suggest_slug(&name),
+        crate::model::backend::CollectionSource::Git,
+        Vec::new(),
+        "token CI",
+    );
+    let (window, ws, _s) = open(cx, dir.path(), backend.clone(), Connection::Online);
+    publish(cx, window, &ws);
+    let view = ws.read_with(cx, |ws, _| ws.publish_view()).unwrap();
+    let blocked = view.read_with(cx, |v, cx| v.blocked(cx)).unwrap();
+    assert!(blocked.contains("already exists"), "{blocked}");
+    // Publish is still open to it.
+    click(cx, window, "publish-mode-publish");
+    let blocked = view.read_with(cx, |v, cx| v.blocked(cx));
+    assert!(blocked.is_none_or(|b| !b.contains("already exists")));
+}
+
+#[gpui_kit::test]
+fn the_foot_says_put_on_cloud_outside_git(cx: &mut TestAppContext) {
+    let plain = plain_folder(&[("a.yaml", REQUEST)]);
+    let backend = mock();
+    testing::sign_in(&*backend);
+    let (window, _ws, _s) = open(cx, plain.path(), backend.clone(), Connection::Online);
+    assert!(shows(cx, window, "Put on Cloud"));
+    let repo = folder(&[("a.yaml", REQUEST)]);
+    let (window, _ws, _s) = open(cx, repo.path(), backend, Connection::Online);
+    assert!(shows(cx, window, "Publish"));
+    assert!(!shows(cx, window, "Put on Cloud"));
 }
