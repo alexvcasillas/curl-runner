@@ -149,6 +149,7 @@ export default async function CollectionPage({ params, searchParams }: Props) {
             source={collection.source}
             version={latest}
             downloadHref={latest === null ? '' : routes.download(team, slug, latest)}
+            owner={current.role === 'owner'}
             onSwitch={switchSource.bind(null, team, slug)}
           />
           {latest !== null ? (

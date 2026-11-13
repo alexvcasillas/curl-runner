@@ -34,8 +34,8 @@ use crate::tokens::PublishAuth;
 /// is twice the bundle limit plus overhead; `validate_bundle` enforces the real
 /// limit on the decoded files. This only stops a body from exhausting memory.
 const MAX_JSON: usize = 2 * MAX_BUNDLE_BYTES + (1 << 20);
-const MAX_BODY: usize = MAX_JSON;
-const TOO_LARGE: &str = "The request body is larger than 51 MiB.";
+pub(super) const MAX_BODY: usize = MAX_JSON;
+pub(super) const TOO_LARGE: &str = "The request body is larger than 51 MiB.";
 const MAX_NAME_CHARS: usize = 100;
 const PUBLISHES_PER_TEAM: u32 = 60;
 const PUBLISH_WINDOW: chrono::Duration = chrono::Duration::minutes(1);
@@ -47,16 +47,16 @@ pub const TEAM_SUSPENDED: &str =
     "This team is suspended, so publishing is turned off. Contact support.";
 const MAX_DESCRIPTION_CHARS: usize = 500;
 
-fn invalid_bundle(message: impl Into<String>) -> ApiError {
+pub(super) fn invalid_bundle(message: impl Into<String>) -> ApiError {
     ApiError::new(ErrorCode::InvalidBundle, message)
 }
 
-fn invalid_request(message: &'static str) -> ApiError {
+pub(super) fn invalid_request(message: &'static str) -> ApiError {
     ApiError::new(ErrorCode::InvalidRequest, message)
 }
 
 /// True when reading the body stopped at the size cap (not a client abort).
-fn is_length_limit(err: &(dyn std::error::Error + 'static)) -> bool {
+pub(super) fn is_length_limit(err: &(dyn std::error::Error + 'static)) -> bool {
     let mut cur = Some(err);
     while let Some(e) = cur {
         if e.is::<http_body_util::LengthLimitError>() {
@@ -69,7 +69,7 @@ fn is_length_limit(err: &(dyn std::error::Error + 'static)) -> bool {
 
 /// The request JSON bytes: gunzipped when `Content-Encoding: gzip`. The read
 /// stops one byte past the cap, so a zip bomb never grows past it in memory.
-fn decode_body(headers: &HeaderMap, body: &[u8]) -> Result<Vec<u8>, ApiError> {
+pub(super) fn decode_body(headers: &HeaderMap, body: &[u8]) -> Result<Vec<u8>, ApiError> {
     let encoding = headers
         .get(header::CONTENT_ENCODING)
         .and_then(|v| v.to_str().ok())
@@ -141,14 +141,14 @@ fn check(headers: &HeaderMap, body: &[u8], slug: &str) -> Result<Checked, ApiErr
 }
 
 /// A collection row held `FOR UPDATE`.
-struct Locked {
-    id: Uuid,
-    source: String,
-    access: String,
-    current_version: Option<i32>,
+pub(super) struct Locked {
+    pub(super) id: Uuid,
+    pub(super) source: String,
+    pub(super) access: String,
+    pub(super) current_version: Option<i32>,
 }
 
-async fn lock_collection(
+pub(super) async fn lock_collection(
     conn: &mut PgConnection,
     team_id: Uuid,
     slug: &str,
@@ -392,7 +392,7 @@ async fn file_hashes_of(
 /// Insert the files' texts under their hashes, skipping ones already stored.
 /// Sorted and deduplicated, so two overlapping publishes lock blob rows in the
 /// same order and cannot deadlock.
-async fn insert_blobs(
+pub(super) async fn insert_blobs(
     conn: &mut PgConnection,
     files: &[BundleFile],
     hashes: &[String],

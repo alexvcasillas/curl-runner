@@ -64,9 +64,17 @@ pub fn requests_of(text: &str) -> Vec<RequestRef> {
 pub fn request_count(files: &[BundleFile]) -> i32 {
     files
         .iter()
-        .filter(|f| !CONFIG_FILES.contains(&f.path.as_str()))
-        .map(|f| requests_of(&f.text).len() as i32)
+        .map(|f| file_request_count(&f.path, &f.text))
         .sum()
+}
+
+/// The requests one file adds to [`request_count`]: none for the config file.
+pub fn file_request_count(path: &str, text: &str) -> i32 {
+    if CONFIG_FILES.contains(&path) {
+        0
+    } else {
+        requests_of(text).len() as i32
+    }
 }
 
 #[derive(Serialize)]

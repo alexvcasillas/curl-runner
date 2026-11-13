@@ -182,41 +182,51 @@ fn is_reserved_device_name(component: &str) -> bool {
 }
 
 pub fn validate_bundle(files: &[BundleFile]) -> Result<(), BundleError> {
+    let sizes: Vec<(&str, usize)> = files
+        .iter()
+        .map(|f| (f.path.as_str(), f.text.len()))
+        .collect();
+    validate_tree(&sizes)
+}
+
+/// [`validate_bundle`] from `(path, text length in bytes)` pairs, for callers
+/// that don't hold every file's text (a sync that only sends its changes).
+pub fn validate_tree(files: &[(&str, usize)]) -> Result<(), BundleError> {
     if files.len() > MAX_FILES {
         return Err(BundleError::TooManyFiles);
     }
     let mut seen = std::collections::HashSet::with_capacity(files.len());
     let mut folded = std::collections::HashMap::with_capacity(files.len());
     let mut total = 0usize;
-    for f in files {
-        validate_path(&f.path).map_err(|error| BundleError::Path {
-            path: f.path.clone(),
+    for &(path, len) in files {
+        validate_path(path).map_err(|error| BundleError::Path {
+            path: path.to_string(),
             error,
         })?;
-        if !seen.insert(f.path.as_str()) {
-            return Err(BundleError::DuplicatePath(f.path.clone()));
+        if !seen.insert(path) {
+            return Err(BundleError::DuplicatePath(path.to_string()));
         }
-        if let Some(other) = folded.insert(f.path.to_lowercase(), f.path.as_str()) {
+        if let Some(other) = folded.insert(path.to_lowercase(), path) {
             return Err(BundleError::CaseCollision(
                 other.to_string(),
-                f.path.clone(),
+                path.to_string(),
             ));
         }
-        if f.text.len() > MAX_FILE_BYTES {
-            return Err(BundleError::FileTooLarge(f.path.clone()));
+        if len > MAX_FILE_BYTES {
+            return Err(BundleError::FileTooLarge(path.to_string()));
         }
-        total += f.text.len();
+        total += len;
         if total > MAX_BUNDLE_BYTES {
             return Err(BundleError::BundleTooLarge);
         }
     }
-    for f in files {
-        let lower = f.path.to_lowercase();
+    for &(path, _) in files {
+        let lower = path.to_lowercase();
         for (i, _) in lower.match_indices('/') {
             if let Some(file) = folded.get(&lower[..i]) {
                 return Err(BundleError::FileFolderConflict(
                     file.to_string(),
-                    f.path.clone(),
+                    path.to_string(),
                 ));
             }
         }

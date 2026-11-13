@@ -1,10 +1,11 @@
 //! Collections: listing, source switching, deletion. Publishing lives in
-//! [`publish`], version reads in [`versions`].
+//! [`publish`], studio sync in [`sync`], version reads in [`versions`].
 
 mod access;
 pub(crate) mod gallery;
 mod publish;
 mod share;
+mod sync;
 mod versions;
 
 pub(crate) use access::{SharedWithMe, share_blocked, shared_for, shared_from};
@@ -30,7 +31,7 @@ use crate::tokens::PublishAuth;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/v1/teams/{team}/collections", get(list))
+        .route("/v1/teams/{team}/collections", get(list).post(sync::create))
         .route(
             "/v1/teams/{team}/collections/{slug}",
             axum::routing::patch(patch).delete(remove),
@@ -47,6 +48,11 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/v1/teams/{team}/collections/{slug}/versions/{n}/files",
             get(versions::files),
+        )
+        .route(
+            "/v1/teams/{team}/collections/{slug}/sync",
+            // Reads its own body, capped as a publish's.
+            axum::routing::post(sync::sync),
         )
         .route(
             "/v1/teams/{team}/collections/{slug}/share",
@@ -161,7 +167,8 @@ struct PatchBody {
     source: Option<Source>,
 }
 
-/// Switch a collection's source. The current version is kept either way.
+/// Switch a collection's source; owners only. The current version is kept
+/// either way.
 async fn patch(
     State(state): State<AppState>,
     auth: UserAuth,
@@ -169,6 +176,9 @@ async fn patch(
     ApiJson(body): ApiJson<PatchBody>,
 ) -> Result<Json<CollectionBody>, ApiError> {
     let access = team_access(&state.db, auth.user_id, &team).await?;
+    if body.source.is_some() {
+        access.require_owner()?;
+    }
     let source = body.source.map(source_str);
     let row: Option<CollectionRow> = sqlx::query_as(&format!(
         "WITH c AS (UPDATE collections SET source = COALESCE($3, source) \
