@@ -1,5 +1,15 @@
 # @curl-runner/cli
 
+## 2.10.1
+
+### Patch Changes
+
+- [#217](https://github.com/alexvcasillas/curl-runner/pull/217) [`59f1ec7`](https://github.com/alexvcasillas/curl-runner/commit/59f1ec7df273d9cfb6708f466aaafd34a422ea25) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **The publish foot reads in two lines**
+  
+  The sidebar foot says the version on one line and when and by whom on the next.
+  
+  - **Improved:** "Published v14", then "2 hours ago by CI · main@4f2a9c1" below it.
+
 ## 2.10.0
 
 ### Minor Changes
