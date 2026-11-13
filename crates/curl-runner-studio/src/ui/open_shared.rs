@@ -2528,6 +2528,7 @@ mod gpui_tests {
 
     /// A link from the website opens the flow on its review; Add closes it,
     /// even with the studio in the background (nothing focused).
+    #[cfg(feature = "server")]
     #[gpui_kit::test]
     fn a_deep_linked_add_closes_the_dialog(cx: &mut TestAppContext) {
         for background in [false, true] {
