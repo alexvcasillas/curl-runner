@@ -1012,6 +1012,30 @@ fn e2e_publish_and_share_against_a_live_server() {
         assert_ne!(reset.link, s.link);
         assert_eq!(reset.expires_at, None);
         eprintln!("e2e: public, expiry, reset ok");
+        // Listing needs a description: this collection has none.
+        let refused = change(ShareChange {
+            listed: Some(true),
+            ..Default::default()
+        });
+        assert!(
+            matches!(refused, Err(BackendError::Invalid(_))),
+            "{refused:?}"
+        );
+        // As people do it: the description in curl-runner.yaml, published.
+        std::fs::write(
+            dir.path().join("curl-runner.yaml"),
+            format!("cloud:\n  collection: {slug}\n  description: An e2e collection\n"),
+        )
+        .unwrap();
+        assert_eq!(block_on(b.publish(&team, &slug, req())).unwrap().version, 3);
+        let listed = change(ShareChange {
+            listed: Some(true),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(listed.listed);
+        assert_eq!(listed.description.as_deref(), Some("An e2e collection"));
+        eprintln!("e2e: listing refused without a description, listed with one");
         // Restricted: needs the Team plan.
         let r = change(ShareChange {
             access: Some(LinkAccess::Restricted),

@@ -120,6 +120,12 @@ pub struct TeamShare {
     #[serde(default)]
     pub link_disabled: bool,
     pub entries: Vec<ShareEntry>,
+    /// Shown in the public gallery. Older servers leave it out.
+    #[serde(default)]
+    pub listed: bool,
+    /// The collection's description; listing needs one.
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 /// Someone (an email) or everyone at a domain (`*@globex.com`) on the list.
@@ -142,6 +148,9 @@ pub struct ShareChange {
     pub expires_in_days: Option<Option<u32>>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub reset_link: bool,
+    /// In or out of the public gallery (Public, with a description).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub listed: Option<bool>,
 }
 
 /// `s` as one path segment (`*@globex.com`, `ada+x@acme.dev`).

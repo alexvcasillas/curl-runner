@@ -31,6 +31,14 @@ const RESTRICT_WARNING: &str = "The link will need sign-in. Anyone already using
 const ENTRY_HELP: &str = "Enter an email (jane@globex.com) or a domain (*@globex.com).";
 const OFFLINE: &str = "You're offline. Changes to sharing need curl-runner Cloud; this shows the last settings it saw.";
 
+/// The collection's page in the public gallery.
+pub fn gallery_url(link: &CloudLink) -> String {
+    format!(
+        "https://www.curl-runner.com/collections/{}/{}",
+        link.team, link.slug
+    )
+}
+
 /// What the title bar's chip says: `Shared · 3`, `Public`, or nothing.
 pub fn chip_text(access: LinkAccess, people: usize) -> Option<String> {
     match access {
@@ -113,6 +121,8 @@ pub struct ShareSetup {
     pub inputs: Vec<String>,
     pub version: Option<u32>,
     pub offline: bool,
+    /// The server has the public gallery (curl-runner Cloud).
+    pub gallery: bool,
     pub backend: Arc<dyn Backend>,
 }
 
@@ -885,6 +895,91 @@ impl ShareCloudView {
             ))
     }
 
+    /// Public only, on Cloud: listing in the gallery (board GalleryListing).
+    fn gallery(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let share = self.share.as_ref();
+        let listed = share.is_some_and(|s| s.listed);
+        let has_description = share
+            .and_then(|s| s.description.as_deref())
+            .is_some_and(|d| !d.trim().is_empty());
+        let enabled = has_description && !self.locked();
+        let url = gallery_url(&self.setup.link);
+        let text = if !has_description {
+            format!(
+                "Add a description to the cloud: block in {CONFIG_FILE} and publish. It's the summary people read in the gallery."
+            )
+        } else {
+            format!(
+                "Anyone can find it on curl-runner.com: the name, description, {}, the requests and their YAML. Variable values never are.",
+                self.setup.team_name
+            )
+        };
+        div()
+            .id("share-cloud-gallery")
+            .role(Role::Switch)
+            .test_support()
+            .aria_label(if listed {
+                "List in the gallery, on"
+            } else {
+                "List in the gallery, off"
+            })
+            .flex()
+            .items_start()
+            .gap(px(12.))
+            .when(enabled, |d| {
+                d.cursor_pointer()
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.change(
+                            ShareChange {
+                                listed: Some(!listed),
+                                ..Default::default()
+                            },
+                            cx,
+                        )
+                    }))
+            })
+            .child(
+                div()
+                    .flex_none()
+                    .mt(px(2.))
+                    .when(!enabled, |d| d.opacity(0.45))
+                    .child(super::settings_kit::switch(listed, enabled)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .gap(px(4.))
+                    .text_size(px(13.))
+                    .child(
+                        div()
+                            .text_color(color(if has_description {
+                                "text-primary"
+                            } else {
+                                "text-tertiary"
+                            }))
+                            .child("List in the gallery"),
+                    )
+                    .child(help_text(text))
+                    .when(listed, |d| {
+                        d.child(
+                            div()
+                                .id("share-cloud-gallery-link")
+                                .role(Role::Link)
+                                .test_support()
+                                .aria_label("View it on curl-runner.com")
+                                .text_size(px(12.))
+                                .cursor_pointer()
+                                .underline()
+                                .on_click(move |_, _, cx| cx.open_url(&url))
+                                .child("View it on curl-runner.com"),
+                        )
+                    }),
+            )
+    }
+
     fn what_they_get(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let version = self
             .setup
@@ -1034,6 +1129,8 @@ impl Render for ShareCloudView {
         }
         let room = window.viewport_size().height - px(DIALOG_TOP * 2. + 140.);
         let restricted = self.share.as_ref().map(|s| s.access) == Some(LinkAccess::Restricted);
+        let public = self.share.as_ref().map(|s| s.access) == Some(LinkAccess::Public);
+        let gallery = self.setup.gallery && public;
         let status = if self.setup.offline || matches!(self.error, Some(BackendError::Offline)) {
             Some(note("warning", "share-cloud-offline", OFFLINE.into(), None))
         } else {
@@ -1080,6 +1177,7 @@ impl Render for ShareCloudView {
                     .children(status)
                     .child(self.access_options(cx))
                     .child(self.link_section(cx))
+                    .when(gallery, |d| d.child(self.gallery(cx)))
                     .when(restricted, |d| d.child(self.people(cx)))
                     .child(self.what_they_get(cx)),
             )
@@ -1147,6 +1245,7 @@ impl Workspace {
                 .unwrap_or_default(),
             version: self.publish.current,
             offline: self.connection() == Some(super::state::Connection::Offline),
+            gallery: self.backend.server() == crate::model::backend::Server::Cloud,
             backend: self.backend.clone(),
             link,
             name,
