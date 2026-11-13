@@ -1,5 +1,16 @@
 # @curl-runner/cli
 
+## 2.12.0
+
+### Minor Changes
+
+- [#226](https://github.com/alexvcasillas/curl-runner/pull/226) [`42e54c5`](https://github.com/alexvcasillas/curl-runner/commit/42e54c5d00a41f5049473766347e1a20c544a9e4) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **List public collections in the gallery from the studio**
+  
+  A public collection on curl-runner Cloud can be listed on curl-runner.com/collections straight from the Share dialog.
+  
+  - **New:** "List in the gallery" under Public in Share, with a link to the collection's page once listed.
+  - **Improved:** without a description the switch says how to add one (the `cloud:` block in `curl-runner.yaml`); Off or Restricted takes the collection out of the gallery.
+
 ## 2.11.0
 
 ### Minor Changes
