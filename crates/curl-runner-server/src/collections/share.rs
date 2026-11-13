@@ -40,6 +40,10 @@ pub(super) struct ShareBody {
     /// An admin turned the link off. It answers 404 and cannot be reset.
     link_disabled: bool,
     entries: Vec<EntryBody>,
+    /// Shown in the public gallery (needs Public and a description).
+    listed: bool,
+    /// The collection's description, which listing needs.
+    description: Option<String>,
 }
 
 #[derive(FromRow)]
@@ -49,6 +53,8 @@ struct ShareRow {
     link_token_enc: Option<String>,
     link_expires_at: Option<DateTime<Utc>>,
     link_disabled_at: Option<DateTime<Utc>>,
+    listed_at: Option<DateTime<Utc>>,
+    description: Option<String>,
 }
 
 async fn share_body(state: &AppState, row: ShareRow) -> Result<ShareBody, ApiError> {
@@ -83,10 +89,13 @@ async fn share_body(state: &AppState, row: ShareRow) -> Result<ShareBody, ApiErr
                 opened,
             })
             .collect(),
+        listed: row.listed_at.is_some(),
+        description: row.description.filter(|d| !d.trim().is_empty()),
     })
 }
 
-const SHARE_COLUMNS: &str = "id, access, link_token_enc, link_expires_at, link_disabled_at";
+const SHARE_COLUMNS: &str =
+    "id, access, link_token_enc, link_expires_at, link_disabled_at, listed_at, description";
 
 pub(super) async fn get(
     State(state): State<AppState>,
@@ -122,6 +131,8 @@ pub(super) struct PatchShare {
     expires_in_days: Option<Option<u32>>,
     #[serde(default)]
     reset_link: bool,
+    /// List in (or take out of) the public gallery.
+    listed: Option<bool>,
 }
 
 fn restricted_needs_team(slug: &str) -> ApiError {
@@ -159,15 +170,34 @@ pub(super) async fn patch(
     let settings = state.settings().await?;
     let mut tx = state.db.begin().await?;
     let (plan, _) = lock_as(&mut tx, found.team_id, auth.user_id, now).await?;
-    let row: Option<(Uuid, String, bool)> = sqlx::query_as(
-        "SELECT id, access, link_disabled_at IS NOT NULL FROM collections \
+    let row: Option<(Uuid, String, bool, Option<String>)> = sqlx::query_as(
+        "SELECT id, access, link_disabled_at IS NOT NULL, description FROM collections \
          WHERE team_id = $1 AND slug = $2 FOR UPDATE",
     )
     .bind(found.team_id)
     .bind(&slug)
     .fetch_optional(&mut *tx)
     .await?;
-    let (id, current, disabled) = row.ok_or_else(ApiError::not_found)?;
+    let (id, current, disabled, description) = row.ok_or_else(ApiError::not_found)?;
+    // Listing needs Public (after this change) and a description.
+    if req.listed == Some(true) {
+        let public = match req.access {
+            Some(a) => a == Access::Public,
+            None => current == "public",
+        };
+        if !public {
+            return Err(ApiError::new(
+                ErrorCode::InvalidRequest,
+                "Only a public collection can be listed in the gallery. Make it public first.",
+            ));
+        }
+        if description.as_deref().is_none_or(|d| d.trim().is_empty()) {
+            return Err(ApiError::new(
+                ErrorCode::InvalidRequest,
+                "Add a description to list it in the gallery: the description field of the cloud block in curl-runner.yaml, then publish.",
+            ));
+        }
+    }
     // A new link would be a way round the takedown. Access and expiry are
     // still the team's to change, but not in the same call as a reset.
     if req.reset_link && disabled {
@@ -186,11 +216,26 @@ pub(super) async fn patch(
     }
 
     if let Some(access) = req.access {
-        sqlx::query("UPDATE collections SET access = $2 WHERE id = $1")
-            .bind(id)
-            .bind(access_str(access))
-            .execute(&mut *tx)
-            .await?;
+        // Off or restricted takes it out of the gallery.
+        sqlx::query(
+            "UPDATE collections SET access = $2, \
+                    listed_at = CASE WHEN $2 = 'public' THEN listed_at END WHERE id = $1",
+        )
+        .bind(id)
+        .bind(access_str(access))
+        .execute(&mut *tx)
+        .await?;
+    }
+    if let Some(listed) = req.listed {
+        sqlx::query(
+            "UPDATE collections SET listed_at = \
+                    CASE WHEN $2 THEN COALESCE(listed_at, $3) END WHERE id = $1",
+        )
+        .bind(id)
+        .bind(listed)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
     }
     if let Some(days) = expires_in {
         let at = days.map(|d| now + Duration::days(i64::from(d)));

@@ -363,6 +363,7 @@ fn limit_label(prefix: &str) -> &str {
         "handoff-redeem:ip" => "Sign-in handoffs, per IP",
         "invite-preview:ip" => "Invite previews, per IP",
         "shared:ip" => "Share link opens, per IP",
+        "gallery:ip" => "Public gallery reads, per IP",
         "publish:team" => "Publishes, per team",
         "admin:broadcast-test" => "Broadcast test emails, per admin",
         "admin:test-email" => "Settings test emails, per admin",
