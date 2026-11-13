@@ -1,5 +1,15 @@
 # @curl-runner/cli
 
+## 2.13.1
+
+### Patch Changes
+
+- [#234](https://github.com/alexvcasillas/curl-runner/pull/234) [`8d1d77f`](https://github.com/alexvcasillas/curl-runner/commit/8d1d77fb5e6e083aa66bf99e9a9350bf019eeab1) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **Studio fixes after 2.13.0**
+  
+  - **Fixed:** `curl-runner.yaml` is checked as a config file: only YAML syntax errors show, not "Missing request(s)".
+  - **Fixed:** adding a shared collection from a link (the website's Open in curl-runner studio) closes the dialog. Before, it could stay open for good with Close doing nothing, and each retry added another copy.
+  - **Fixed:** a one-line toast's icon lines up with its text.
+
 ## 2.13.0
 
 ### Minor Changes
