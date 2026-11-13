@@ -73,8 +73,9 @@ impl PublishLine {
     /// The muted second line, if any.
     pub fn detail(&self, now: DateTime<Utc>) -> Option<String> {
         match self {
+            // With git details the commit says enough: who would crowd it.
             PublishLine::UpToDate(p) => Some(match &p.git {
-                Some(g) => format!("{} by {} · {g}", ago(p.at, now), p.by),
+                Some(g) => format!("{} · {g}", ago(p.at, now)),
                 None => format!("{} by {}", ago(p.at, now), p.by),
             }),
             PublishLine::Behind(_, p) => {
@@ -404,7 +405,7 @@ mod tests {
         assert_eq!(up.text(), "Published v14");
         assert_eq!(
             up.detail(now).as_deref(),
-            Some("2 hours ago by CI · main@4f2a9c1")
+            Some("2 hours ago · main@4f2a9c1")
         );
         let behind = PublishLine::Behind(3, p);
         assert_eq!(behind.text(), "3 files not published");
