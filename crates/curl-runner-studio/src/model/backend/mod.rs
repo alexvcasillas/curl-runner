@@ -313,6 +313,8 @@ pub mod stored_hash {
         }
     }
 
+    // The mock's stored files use it; it has the `server` feature.
+    #[cfg_attr(not(feature = "server"), allow(dead_code))]
     pub fn one<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
         Ok(Either::deserialize(d)?.into())
     }

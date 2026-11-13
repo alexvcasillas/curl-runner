@@ -2394,6 +2394,6 @@ mod gpui_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "server"))]
 #[path = "sync/cloud_tests.rs"]
 mod cloud_tests;
