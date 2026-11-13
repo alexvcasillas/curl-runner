@@ -140,6 +140,10 @@ pub const LOCK: &str = glyph!(
     "1.5",
     r#"<rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/>"#
 );
+pub const SHARE: &str = glyph!(
+    "1.5",
+    r#"<path d="M8 2.5v7.5M5 5.5l3-3 3 3M3.5 9v4.5h9V9"/>"#
+);
 pub const LINK: &str = glyph!(
     "1.5",
     r#"<path d="M6.5 9.5l3-3"/><path d="M7 4.5l1-1a2.8 2.8 0 014 4l-1 1M9 11.5l-1 1a2.8 2.8 0 01-4-4l1-1"/>"#

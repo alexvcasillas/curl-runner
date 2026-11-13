@@ -6,7 +6,7 @@ description: "curl-runner studio is a macOS app for your YAML request files: liv
 curl-runner studio is a macOS desktop app for the request files you already have. It opens a folder of YAML as a collection, validates as you type, runs one request or the whole collection, and shows every check, retry and timing.
 
 <Callout type="info" title="Preview">
-The studio is a preview. It works fully on local YAML files. Sign in to [curl-runner Cloud](/docs/features/cloud) to publish your collections and open the ones teams share with you. Sharing and two-way sync from the studio are coming soon.
+The studio is a preview. It works fully on local YAML files. Sign in to [curl-runner Cloud](/docs/features/cloud) to publish and share your collections and open the ones teams share with you. Two-way sync from the studio is coming soon.
 </Callout>
 
 ## Install [#install]
@@ -98,4 +98,14 @@ Sign in from the title bar or **Settings › Accounts & sync**, with curl-runner
 
 Leave **Save the name and description to curl-runner.yaml** on to write a `cloud:` block, so CI publishes to the same collection. After that, Publish asks nothing. The sidebar foot says where the folder stands: **Published v14 · 2 hours ago**, or **3 files not published** when the folder has changed since.
 
-Sharing your own collections from the studio and syncing them both ways are coming soon.
+### Share [#share]
+
+Once a folder is published, **Share** (at the foot of the sidebar, in the palette, or the title bar's **Shared · N**) sets who else can open it, the same settings as the dashboard's Sharing page:
+
+- **Off**: only your team.
+- **Public**: anyone with the link, no account needed.
+- **Restricted** (Team plan): only the people on the list, after they sign in. Add an email or a whole domain like `*@globex.com`, and optionally email them the link.
+
+Copy or reset the link, and set it to expire in 7 or 30 days. Moving a public collection to Restricted asks first, since people using the link who aren't on the list stop getting updates. What people fill in is the `inputs` of the `cloud:` block in `curl-runner.yaml`; values and your Keychain never leave your Mac.
+
+Syncing collections both ways from the studio is coming soon.

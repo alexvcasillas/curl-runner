@@ -9,8 +9,8 @@ pub mod publish;
 pub mod retry;
 
 pub use client::{
-    Client, CloudError, CollectionRow, Latest, Me, NetError, Reply, TeamInfo, User, Verified,
-    check_server, describe, versions_path,
+    Client, CloudError, CollectionRow, Latest, Me, NetError, Reply, ShareChange, ShareEntry,
+    TeamInfo, TeamShare, User, Verified, check_server, describe, versions_path,
 };
 
 /// Text from a server, safe to print: control characters (a terminal reads

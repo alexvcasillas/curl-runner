@@ -4,7 +4,8 @@
 use super::app::{
     CloseTab, CopyAsCurl, Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder,
     OpenHistory, OpenPalette, OpenSettings, OpenSharedLink, Publish, QuickFix, Rerun, RunActive,
-    RunCollection, RunRequestUnderCursor, SaveFile, Stop, ToggleProblems, Walkthrough, ui_font,
+    RunCollection, RunRequestUnderCursor, SaveFile, ShareCollection, Stop, ToggleProblems,
+    Walkthrough, ui_font,
 };
 use super::collection_settings::{CollectionSettings, EnvStatus, SettingsEvent, Sharing};
 use super::diagnostic_popover::DiagnosticHover;
@@ -1482,6 +1483,9 @@ impl Render for Workspace {
                 .on_action(
                     cx.listener(|this, _: &Publish, window, cx| this.start_publish(window, cx)),
                 )
+                .on_action(cx.listener(|this, _: &ShareCollection, window, cx| {
+                    this.share_from_palette(window, cx)
+                }))
                 .on_action(cx.listener(|this, _: &OpenEnvironments, window, cx| {
                     this.open_settings(window, cx)
                 }))

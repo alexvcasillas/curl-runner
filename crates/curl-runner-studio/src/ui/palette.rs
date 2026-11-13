@@ -7,7 +7,7 @@
 
 use super::app::{
     Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder, OpenHistory, OpenSettings,
-    OpenSharedLink, Publish, ToggleProblems, Walkthrough, mono_font,
+    OpenSharedLink, Publish, ShareCollection, ToggleProblems, Walkthrough, mono_font,
 };
 use super::icons::{self, glyph};
 use super::settings_view::AppPage;
@@ -167,10 +167,11 @@ pub enum PaletteAction {
     Settings,
     Walkthrough,
     Publish,
+    Share,
 }
 
 impl PaletteAction {
-    pub const ALL: [PaletteAction; 11] = [
+    pub const ALL: [PaletteAction; 12] = [
         PaletteAction::OpenFolder,
         PaletteAction::OpenSharedLink,
         PaletteAction::NewRequest,
@@ -182,13 +183,17 @@ impl PaletteAction {
         PaletteAction::Settings,
         PaletteAction::Walkthrough,
         PaletteAction::Publish,
+        PaletteAction::Share,
     ];
 
     /// Whether this build lists it: opening a shared link needs the
     /// curl-runner server.
     pub fn listed(self) -> bool {
         crate::features::SERVER
-            || !matches!(self, PaletteAction::OpenSharedLink | PaletteAction::Publish)
+            || !matches!(
+                self,
+                PaletteAction::OpenSharedLink | PaletteAction::Publish | PaletteAction::Share
+            )
     }
 
     fn label(self) -> &'static str {
@@ -204,6 +209,7 @@ impl PaletteAction {
             PaletteAction::Settings => "Settings…",
             PaletteAction::Walkthrough => "Run the walkthrough",
             PaletteAction::Publish => "Publish",
+            PaletteAction::Share => "Share…",
         }
     }
 
@@ -221,6 +227,7 @@ impl PaletteAction {
             PaletteAction::Settings => icons::GENERAL,
             PaletteAction::Walkthrough => icons::PLAY,
             PaletteAction::Publish => icons::CLOUD,
+            PaletteAction::Share => icons::SHARE,
         }
     }
 
@@ -238,6 +245,7 @@ impl PaletteAction {
             PaletteAction::Settings => Box::new(OpenSettings),
             PaletteAction::Walkthrough => Box::new(Walkthrough),
             PaletteAction::Publish => Box::new(Publish),
+            PaletteAction::Share => Box::new(ShareCollection),
         }
     }
 }
@@ -491,6 +499,7 @@ impl Palette {
                 }
                 Target::Action(PaletteAction::Walkthrough) => ws.start_walkthrough(window, cx),
                 Target::Action(PaletteAction::Publish) => ws.start_publish(window, cx),
+                Target::Action(PaletteAction::Share) => ws.share_from_palette(window, cx),
             })
             .ok();
     }

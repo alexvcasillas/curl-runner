@@ -879,3 +879,172 @@ fn publish_refusals_keep_their_kind() {
         BackendError::SignedOut
     );
 }
+
+#[test]
+fn team_share_calls_map_refusals() {
+    let srv = TestServer::with_handler(move |r: Request| {
+        match (r.method.as_str(), r.url.as_str()) {
+            ("GET", "/v1/teams/acme/collections/pay/share") => json(
+                200,
+                r#"{"access":"public","link":"https://cloud.example/s/t","expires_at":null,"link_disabled":false,"entries":[]}"#,
+            ),
+            ("PATCH", _) => json(
+                402,
+                r#"{"error":"plan_limit","message":"Restricted sharing needs the Team plan."}"#,
+            ),
+            ("POST", _) => json(
+                400,
+                r#"{"error":"invalid_request","message":"An entry is an email like ada@example.com."}"#,
+            ),
+            ("DELETE", "/v1/teams/acme/collections/pay/share/entries/*@globex.com") => {
+                Response::from_data(Vec::new()).with_status_code(204)
+            }
+            _ => json(404, r#"{"error":"not_found","message":"No."}"#),
+        }
+    });
+    let (b, sessions) = backend(None);
+    block_on(b.set_server(own(&srv.base_url))).unwrap();
+    assert_eq!(
+        block_on(b.team_share("acme", "pay")).unwrap_err(),
+        BackendError::SignedOut
+    );
+    sessions.set(&srv.base_url, "crs_x").unwrap();
+    assert_eq!(
+        block_on(b.team_share("acme", "pay")).unwrap().access,
+        LinkAccess::Public
+    );
+    assert_eq!(
+        block_on(b.change_team_share("acme", "pay", ShareChange::default())).unwrap_err(),
+        BackendError::PlanLimit("Restricted sharing needs the Team plan.".into())
+    );
+    assert_eq!(
+        block_on(b.add_share_entry("acme", "pay", "x", false)).unwrap_err(),
+        BackendError::Invalid("An entry is an email like ada@example.com.".into())
+    );
+    block_on(b.remove_share_entry("acme", "pay", "*@globex.com")).unwrap();
+}
+
+/// The studio's publish and share calls against a real server, end to end.
+/// Opt-in: `CURL_RUNNER_E2E_SERVER`, `CURL_RUNNER_E2E_TOKEN` (a `crs_`
+/// session) and `CURL_RUNNER_E2E_TEAM`. Publishes a throwaway collection,
+/// walks its sharing, then deletes it.
+#[test]
+#[ignore = "needs a live server and a session"]
+fn e2e_publish_and_share_against_a_live_server() {
+    let env = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("set {k}"));
+    let (server, token, team) = (
+        env("CURL_RUNNER_E2E_SERVER"),
+        env("CURL_RUNNER_E2E_TOKEN"),
+        env("CURL_RUNNER_E2E_TEAM"),
+    );
+    let slug = format!(
+        "studio-e2e-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    );
+    let (b, sessions) = backend(None);
+    block_on(b.set_server(own(&server))).unwrap();
+    sessions.set(&key(&server), &token).unwrap();
+    let cleanup = || {
+        let _ = Client::new(&key(&server), Some(token.clone())).send(
+            "DELETE",
+            &format!("/v1/teams/{team}/collections/{slug}"),
+            None,
+            false,
+        );
+    };
+    let run = || {
+        let me = block_on(b.refresh_account(&server)).unwrap();
+        let plan = me
+            .teams
+            .iter()
+            .find(|t| t.slug == team)
+            .unwrap_or_else(|| panic!("not in {team}"))
+            .plan;
+        eprintln!("e2e: {} in {team} ({plan:?})", me.email);
+        // Publish: v1, unchanged, v2.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("a.yaml"),
+            "request:\n  name: A\n  url: https://api.example.com/a\n  method: GET\n",
+        )
+        .unwrap();
+        let req = || {
+            curl_runner_cloud_client::publish::check(dir.path(), Some(&slug))
+                .target
+                .expect("a clean folder")
+                .request(None)
+        };
+        assert_eq!(block_on(b.publish(&team, &slug, req())).unwrap().version, 1);
+        let again = block_on(b.publish(&team, &slug, req())).unwrap();
+        assert_eq!(again.version, 1);
+        std::fs::write(
+            dir.path().join("a.yaml"),
+            "request:\n  name: A\n  url: https://api.example.com/a\n  method: POST\n",
+        )
+        .unwrap();
+        assert_eq!(block_on(b.publish(&team, &slug, req())).unwrap().version, 2);
+        let remote = block_on(b.remote_collection(&team, &slug))
+            .unwrap()
+            .unwrap();
+        assert_eq!(remote.current.unwrap().number, 2);
+        eprintln!("e2e: published v1, unchanged, v2");
+        // Share: off by default, public, link reset and expiry.
+        let s = block_on(b.team_share(&team, &slug)).unwrap();
+        assert_eq!(s.access, LinkAccess::Off);
+        let change = |c: ShareChange| block_on(b.change_team_share(&team, &slug, c));
+        let s = change(ShareChange {
+            access: Some(LinkAccess::Public),
+            expires_in_days: Some(Some(7)),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(s.access, LinkAccess::Public);
+        assert!(s.expires_at.is_some());
+        let reset = change(ShareChange {
+            reset_link: true,
+            expires_in_days: Some(None),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_ne!(reset.link, s.link);
+        assert_eq!(reset.expires_at, None);
+        eprintln!("e2e: public, expiry, reset ok");
+        // Restricted: needs the Team plan.
+        let r = change(ShareChange {
+            access: Some(LinkAccess::Restricted),
+            ..Default::default()
+        });
+        if plan == curl_runner_cloud_proto::Plan::Team {
+            assert_eq!(r.unwrap().access, LinkAccess::Restricted);
+            let e = block_on(b.add_share_entry(&team, &slug, "*@example.com", false)).unwrap();
+            assert_eq!(e.kind, "domain");
+            assert!(matches!(
+                block_on(b.add_share_entry(&team, &slug, "nope", false)),
+                Err(BackendError::Invalid(_))
+            ));
+            assert_eq!(
+                block_on(b.team_share(&team, &slug)).unwrap().entries.len(),
+                1
+            );
+            block_on(b.remove_share_entry(&team, &slug, "*@example.com")).unwrap();
+            assert!(
+                block_on(b.team_share(&team, &slug))
+                    .unwrap()
+                    .entries
+                    .is_empty()
+            );
+            eprintln!("e2e: restricted, add/reject/remove ok");
+        } else {
+            assert!(matches!(r, Err(BackendError::PlanLimit(_))), "{r:?}");
+            eprintln!("e2e: restricted refused on Free, as designed");
+        }
+    };
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run));
+    cleanup();
+    if let Err(e) = outcome {
+        std::panic::resume_unwind(e);
+    }
+}

@@ -8,7 +8,7 @@ use super::backend_call;
 use super::color;
 use super::icons::{self, glyph};
 use super::settings_kit::{Observed, label_text, primary_button, small_button, switch};
-use super::sync::{SHARE_SOON, sync_dot};
+use super::sync::sync_dot;
 use super::workspace::Workspace;
 use crate::model::backend::{
     BackendError, CollectionSource, PublishResponse, RemoteCollection, TeamRef,
@@ -60,6 +60,12 @@ pub struct PublishUi {
     pub(super) publishing: Option<u32>,
     pub(super) view: Option<WeakEntity<PublishView>>,
     _events: Option<Subscription>,
+    /// The collection's sharing as last read: access and people, for the
+    /// title bar's chip.
+    pub(super) share: Option<(crate::model::backend::LinkAccess, usize)>,
+    pub(super) share_task: Option<Task<()>>,
+    pub(super) share_view: Option<WeakEntity<super::share_cloud::ShareCloudView>>,
+    pub(super) share_events: Option<Subscription>,
 }
 
 /// One problem as the dialog lists it: the file it opens, and the text.
@@ -1079,6 +1085,10 @@ impl Workspace {
                     Refreshed::Remote(n, l) => {
                         this.publish.current = n;
                         this.publish.line = Some(l);
+                        // The chip, once per open (not on every edit).
+                        if n.is_some() && !delay {
+                            this.refresh_team_share(cx);
+                        }
                     }
                 }
                 cx.notify();
@@ -1515,11 +1525,7 @@ impl Workspace {
             ),
             PublishLine::UpToDate(_) => Some(
                 small_button("sidebar-share", "Share")
-                    .text_color(color("text-disabled"))
-                    .cursor_default()
-                    .tooltip(move |window, cx| {
-                        gpui_kit::component::tooltip::Tooltip::new(SHARE_SOON).build(window, cx)
-                    })
+                    .on_click(cx.listener(|this, _, window, cx| this.open_team_share(window, cx)))
                     .child("Share")
                     .into_any_element(),
             ),

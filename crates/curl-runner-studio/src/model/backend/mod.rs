@@ -44,6 +44,7 @@ use crate::model::collection_meta::CollectionMeta;
 use crate::model::environments::is_secret;
 use chrono::{DateTime, NaiveDate, Utc};
 use curl_runner_cloud_client::link::{self, Link, LinkError};
+pub use curl_runner_cloud_client::{ShareChange, ShareEntry, TeamShare};
 pub use curl_runner_cloud_proto::{
     BundleFile, PublishRequest, PublishResponse, Source as CollectionSource, VersionSummary,
 };
@@ -647,6 +648,37 @@ pub trait Backend: Send + Sync {
         let _ = (team, slug, request);
         Box::pin(async { Err(BackendError::Unavailable) })
     }
+    /// `team/slug`'s sharing: access, link, expiry and the list.
+    fn team_share(&self, team: &str, slug: &str) -> BoxFut<'_, TeamShare> {
+        let _ = (team, slug);
+        Box::pin(async { Err(BackendError::Unavailable) })
+    }
+    /// Changes access, expiry or resets the link; Restricted on a Free team
+    /// is [`BackendError::PlanLimit`].
+    fn change_team_share(
+        &self,
+        team: &str,
+        slug: &str,
+        change: ShareChange,
+    ) -> BoxFut<'_, TeamShare> {
+        let _ = (team, slug, change);
+        Box::pin(async { Err(BackendError::Unavailable) })
+    }
+    /// Adds an email or `*@domain` to a restricted collection's list.
+    fn add_share_entry(
+        &self,
+        team: &str,
+        slug: &str,
+        entry: &str,
+        notify: bool,
+    ) -> BoxFut<'_, ShareEntry> {
+        let _ = (team, slug, entry, notify);
+        Box::pin(async { Err(BackendError::Unavailable) })
+    }
+    fn remove_share_entry(&self, team: &str, slug: &str, entry: &str) -> BoxFut<'_, ()> {
+        let _ = (team, slug, entry);
+        Box::pin(async { Err(BackendError::Unavailable) })
+    }
     /// The current server's dashboard (`https://cloud.curl-runner.com`),
     /// for View in Cloud, Create a team and Upgrade.
     fn dashboard_url(&self) -> BoxFut<'_, String> {
@@ -984,6 +1016,29 @@ pub mod testing {
         }
         fn dashboard_url(&self) -> BoxFut<'_, String> {
             self.inner.dashboard_url()
+        }
+        fn team_share(&self, team: &str, slug: &str) -> BoxFut<'_, TeamShare> {
+            self.inner.team_share(team, slug)
+        }
+        fn change_team_share(
+            &self,
+            team: &str,
+            slug: &str,
+            change: ShareChange,
+        ) -> BoxFut<'_, TeamShare> {
+            self.inner.change_team_share(team, slug, change)
+        }
+        fn add_share_entry(
+            &self,
+            team: &str,
+            slug: &str,
+            entry: &str,
+            notify: bool,
+        ) -> BoxFut<'_, ShareEntry> {
+            self.inner.add_share_entry(team, slug, entry, notify)
+        }
+        fn remove_share_entry(&self, team: &str, slug: &str, entry: &str) -> BoxFut<'_, ()> {
+            self.inner.remove_share_entry(team, slug, entry)
         }
         fn sync_status(&self, collection: &CollectionKey) -> SyncStatus {
             self.inner.sync_status(collection)

@@ -69,6 +69,8 @@ actions!(
         CloseHistory,
         /// Publish the open folder to the server (the sidebar foot's Publish).
         Publish,
+        /// Share the published collection (the sidebar foot's Share).
+        ShareCollection,
         /// Leave the sync conflict screen; the conflicts stay (esc).
         CloseConflicts,
         /// Show the collection's environments and variables.
@@ -466,6 +468,7 @@ pub fn run() {
                         }
                         "history" => ws.open_history(window, cx),
                         "account" => ws.toggle_account_menu(cx),
+                        "share-cloud" => ws.open_team_share(window, cx),
                         "publish" => {
                             ws.start_publish(window, cx);
                             if dev_string("CURL_RUNNER_STUDIO_SUBMIT").is_some() {
@@ -681,7 +684,7 @@ fn toggle_dev(backend: &Arc<dyn Backend>, flip: fn(&dyn DevControls), cx: &mut A
 /// `palette` (with the
 /// query in `CURL_RUNNER_STUDIO_QUERY` and the row in
 /// `CURL_RUNNER_STUDIO_SELECT`, if set); `account` the account menu;
-/// `publish` Publish, as the sidebar foot's button (with
+/// `share-cloud` a published folder's Share dialog, `publish` Publish, as the sidebar foot's button (with
 /// `CURL_RUNNER_STUDIO_SUBMIT=1`, pressing the dialog's Publish once it can);
 /// `problem`
 /// selects the open file's first problem and opens its popover and `export`
