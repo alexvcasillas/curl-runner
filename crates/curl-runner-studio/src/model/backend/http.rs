@@ -493,6 +493,18 @@ impl Backend for HttpBackend {
                 .map_err(|e| self.publish_error(&server, &team, e))
         })
     }
+    fn create_collection(&self, team: &str, slug: &str, name: &str) -> BoxFut<'_, ()> {
+        let (server, team, slug, name) = (
+            key(self.server().url()),
+            team.to_string(),
+            slug.to_string(),
+            name.to_string(),
+        );
+        Box::pin(async move {
+            self.team_call(&server, &team, |c| c.create_collection(&team, &slug, &name))
+                .map(|_| ())
+        })
+    }
     fn team_share(&self, team: &str, slug: &str) -> BoxFut<'_, TeamShare> {
         let (server, team, slug) = (key(self.server().url()), team.to_string(), slug.to_string());
         Box::pin(async move { self.team_call(&server, &team, |c| c.share(&team, &slug)) })

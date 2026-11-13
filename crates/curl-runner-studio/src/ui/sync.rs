@@ -785,6 +785,13 @@ impl Workspace {
         self.sync.emptied = false;
         match result {
             Ok(report) => {
+                // A new version on a Cloud collection: the foot's
+                // `v27 · Sam edited …` follows.
+                let moved =
+                    report.pushed > 0 || !report.pulled.is_empty() || !report.deleted.is_empty();
+                if moved && self.cloud_synced() {
+                    self.refresh_publish(false, window, cx);
+                }
                 // The server's conflicts first; ours for other paths.
                 let mut conflicts = report.conflicts;
                 let held: Vec<PathBuf> = applied.conflicts.iter().map(|c| c.rel.clone()).collect();

@@ -734,6 +734,31 @@ impl Backend for MockBackend {
                 .ok_or(BackendError::NotFound)
         })
     }
+    fn create_collection(&self, team: &str, slug: &str, name: &str) -> BoxFut<'_, ()> {
+        self.record(format!("create_collection({team:?}, {slug:?}, {name:?})"));
+        let (team, slug) = (team.to_string(), slug.to_string());
+        self.call(true, move |s| {
+            online(s)?;
+            let account = account_of(s).ok_or(BackendError::SignedOut)?;
+            if !account.teams.iter().any(|t| t.slug == team) {
+                return Err(BackendError::NotFound);
+            }
+            let key = format!("{team}/{slug}");
+            if s.published.contains_key(&key) {
+                return Err(BackendError::Invalid(format!(
+                    "{slug} already exists in this team."
+                )));
+            }
+            s.published.insert(
+                key,
+                PublishedCollection {
+                    source: Some(CollectionSource::Cloud),
+                    ..PublishedCollection::default()
+                },
+            );
+            Ok(())
+        })
+    }
     fn publish(
         &self,
         team: &str,

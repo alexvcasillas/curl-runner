@@ -44,6 +44,25 @@ const LEFT_OUT: &str = "Left out: .env*, dotfiles and anything in .gitignore. Va
 const YAML_HELP: &str =
     "So curl-runner publish in CI publishes to the same collection. Commit it with your requests.";
 const SOURCE_NOTE: &str = "Source: this folder (git). Publish again from here or from CI.";
+const SYNC_NOTE: &str = "Source: Cloud. Edits sync as you save.";
+const CHOOSE_TEXT: &str =
+    "Pick how it stays up to date. You can switch later in the collection's settings.";
+const PUBLISH_TEXT: &str = "The folder is the source. You publish from here or from CI, and teammates get each version. Best when it lives in a git repo.";
+const SYNC_TEXT: &str = "Cloud is the source. Teammates open it in their studio, and every save syncs both ways. If two people change the same file, the studio asks which to keep.";
+
+/// How a collection stays up to date on Cloud (board SyncCloud, row 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    /// Versions published from the folder (or CI).
+    Publish,
+    /// Two-way sync from the studio.
+    Sync,
+}
+
+/// Whether `root` is in a git repo: a `.git` in it or a parent. Only stats.
+pub fn in_git_repo(root: &std::path::Path) -> bool {
+    root.ancestors().any(|d| d.join(".git").exists())
+}
 const CHECKS_NOTE: &str = "Same checks as curl-runner publish. Nothing was sent.";
 const NO_TEAM_BODY: &str = "Collections belong to a team. Create one on curl-runner Cloud, then come back and publish. It takes a minute and Free is enough.";
 
@@ -54,6 +73,11 @@ pub struct PublishUi {
     pub(super) line: Option<PublishLine>,
     /// The current version, as last asked.
     pub(super) current: Option<u32>,
+    /// A synced collection's current version, for the foot's second line.
+    pub(super) latest: Option<curl_runner_cloud_proto::VersionSummary>,
+    /// The folder is in a git repo (the foot's button: `Publish`, else
+    /// `Put on Cloud`).
+    pub(super) git: bool,
     refresh: Option<Task<()>>,
     job: Option<Task<()>>,
     /// The version being made, while a publish is under way.
@@ -239,6 +263,8 @@ pub struct PublishSetup {
     /// from its name.
     pub slug: String,
     pub backend: std::sync::Arc<dyn crate::model::backend::Backend>,
+    /// The folder is in a git repo: Publish is the default, else Sync.
+    pub git: bool,
 }
 
 pub enum PublishEvent {
@@ -253,6 +279,11 @@ pub enum PublishEvent {
         next: u32,
     },
     OpenFile(PathBuf),
+    /// Make `team/slug` on Cloud, syncing from the studio.
+    StartSync {
+        team: String,
+        slug: String,
+    },
 }
 
 /// The name's lookup on the server.
@@ -273,6 +304,7 @@ pub struct PublishView {
     lookup: Lookup,
     checked: Option<Checked>,
     save_yaml: bool,
+    pub(super) mode: Mode,
     dashboard: Option<String>,
     /// Presses Publish once it can (`CURL_RUNNER_STUDIO_SUBMIT`, dev).
     pub(super) auto_submit: bool,
@@ -316,6 +348,7 @@ impl PublishView {
                 .ok();
             }
         });
+        let mode = if setup.git { Mode::Publish } else { Mode::Sync };
         let mut view = PublishView {
             setup,
             team: 0,
@@ -324,6 +357,7 @@ impl PublishView {
             lookup: Lookup::Checking,
             checked: None,
             save_yaml: true,
+            mode,
             dashboard: None,
             auto_submit: false,
             _tasks: vec![check_task, dash_task],
@@ -411,6 +445,11 @@ impl PublishView {
         }
         match &self.lookup {
             Lookup::Checking => return Some("Checking the name…".into()),
+            Lookup::Exists(_) if self.mode == Mode::Sync => {
+                return Some(format!(
+                    "{slug} already exists in this team. Pick another name."
+                ));
+            }
             Lookup::Exists(c) if c.source == CollectionSource::Cloud => {
                 return Some("This collection syncs from the studio.".into());
             }
@@ -426,6 +465,15 @@ impl PublishView {
 
     fn publish(&mut self, cx: &mut Context<Self>) {
         if self.blocked(cx).is_some() {
+            return;
+        }
+        if self.mode == Mode::Sync {
+            if let Some(team) = self.team().map(|t| t.slug.clone()) {
+                cx.emit(PublishEvent::StartSync {
+                    team,
+                    slug: self.slug(cx),
+                });
+            }
             return;
         }
         let (Some(team), Some(target)) = (
@@ -453,7 +501,7 @@ impl PublishView {
     }
 
     fn render_header(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let title = format!("Publish {}", self.setup.name);
+        let title = self.title();
         div()
             .flex()
             .items_start()
@@ -465,7 +513,8 @@ impl PublishView {
                 div()
                     .flex()
                     .flex_col()
-                    .flex_1().min_w_0()
+                    .flex_1()
+                    .min_w_0()
                     .gap(px(6.))
                     .child(
                         div()
@@ -479,10 +528,7 @@ impl PublishView {
                             .text_size(px(13.))
                             .line_height(relative(1.5))
                             .text_color(color("text-secondary"))
-                            .child(format!(
-                                "Uploads this folder to curl-runner Cloud as version {}. Your team sees it in the dashboard, and anyone you share it with gets each new version as an update.",
-                                self.next()
-                            )),
+                            .child(CHOOSE_TEXT),
                     ),
             )
             .child(
@@ -710,14 +756,14 @@ impl PublishView {
                 )
                 .child(text)
         };
-        card.aria_label("Ready to publish")
+        let ready = match self.mode {
+            Mode::Publish => "Ready to publish",
+            Mode::Sync => "Ready to sync",
+        };
+        card.aria_label(ready)
             .p(px(12.))
             .gap(px(8.))
-            .child(
-                div()
-                    .font_weight(FontWeight::MEDIUM)
-                    .child("Ready to publish"),
-            )
+            .child(div().font_weight(FontWeight::MEDIUM).child(ready))
             .children(
                 summary.map(|s| line("publish-summary", format!("{} · {}", s.line(), s.size()))),
             )
@@ -768,9 +814,89 @@ impl PublishView {
             )
     }
 
+    fn title(&self) -> String {
+        format!("Put {} on curl-runner Cloud", self.setup.name)
+    }
+
+    /// `Publish versions` or `Sync with my team` (board SyncCloud).
+    fn render_mode(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let option = |mode: Mode, id: &'static str, label: &'static str, text: &'static str| {
+            let on = self.mode == mode;
+            div()
+                .id(id)
+                .role(Role::RadioButton)
+                .test_support()
+                .aria_label(label)
+                .aria_selected(on)
+                .flex()
+                .items_start()
+                .gap(px(12.))
+                .px(px(14.))
+                .py(px(12.))
+                .border_1()
+                .border_color(color(if on { "text-primary" } else { "border-100" }))
+                .when(on, |d| d.bg(color("surface-100")))
+                .rounded(px(8.))
+                .text_size(px(13.))
+                .cursor_pointer()
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.mode = mode;
+                    cx.notify();
+                }))
+                .child(
+                    div()
+                        .flex_none()
+                        .mt(px(2.))
+                        .size(px(14.))
+                        .rounded_full()
+                        .border(px(if on { 4. } else { 1. }))
+                        .border_color(color(if on { "text-primary" } else { "text-tertiary" })),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .gap(px(3.))
+                        .child(label)
+                        .child(
+                            div()
+                                .text_size(px(12.))
+                                .line_height(relative(1.5))
+                                .text_color(color("text-secondary"))
+                                .child(text),
+                        ),
+                )
+        };
+        div()
+            .id("publish-mode")
+            .role(Role::RadioGroup)
+            .test_support()
+            .aria_label("How it stays up to date")
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(option(
+                Mode::Publish,
+                "publish-mode-publish",
+                "Publish versions",
+                PUBLISH_TEXT,
+            ))
+            .child(option(
+                Mode::Sync,
+                "publish-mode-sync",
+                "Sync with my team",
+                SYNC_TEXT,
+            ))
+    }
+
     fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let blocked = self.blocked(cx);
-        let label = format!("Publish version {}", self.next());
+        let label = match self.mode {
+            Mode::Publish => format!("Publish version {}", self.next()),
+            Mode::Sync => "Start syncing".to_string(),
+        };
         let publish = dialog_button("publish-go", label)
             .primary()
             .disabled(blocked.is_some())
@@ -791,7 +917,10 @@ impl PublishView {
                     .min_w_0()
                     .text_size(px(12.))
                     .text_color(color("text-secondary"))
-                    .child(SOURCE_NOTE),
+                    .child(match self.mode {
+                        Mode::Publish => SOURCE_NOTE,
+                        Mode::Sync => SYNC_NOTE,
+                    }),
             )
             .child(
                 dialog_button("publish-cancel", "Cancel")
@@ -809,7 +938,7 @@ impl Render for PublishView {
             cx.defer_in(window, |this, _, cx| this.publish(cx));
         }
         let room = window.viewport_size().height - px(DIALOG_TOP * 2. + 140.);
-        let title = format!("Publish {}", self.setup.name);
+        let title = self.title();
         div()
             .id("publish-dialog")
             .role(Role::Dialog)
@@ -829,10 +958,15 @@ impl Render for PublishView {
                     .px(px(22.))
                     .pt(px(12.))
                     .pb(px(18.))
+                    .child(self.render_mode(cx))
                     .child(self.render_team(cx))
                     .child(self.render_slug(cx))
                     .child(self.render_checks(cx))
-                    .child(self.render_toggle(cx)),
+                    // CI reads the name from the file; a synced collection
+                    // doesn't need it.
+                    .when(self.mode == Mode::Publish, |d| {
+                        d.child(self.render_toggle(cx))
+                    }),
             )
             .child(self.render_footer(cx))
     }
@@ -950,6 +1084,8 @@ fn collection_url(dashboard: &str, team: &str, slug: &str) -> String {
 /// What the background refresh works out.
 enum Refreshed {
     Line(PublishLine),
+    /// Syncs from the studio, at this version (`None` before the first).
+    Synced(Option<curl_runner_cloud_proto::VersionSummary>),
     Remote(Option<u32>, PublishLine),
 }
 
@@ -1017,6 +1153,7 @@ impl Workspace {
         let Some(root) = self.state.collection.as_ref().map(|c| c.root.clone()) else {
             return;
         };
+        self.publish.git = in_git_repo(&root);
         let Some(link) = self.publish_link(cx) else {
             self.publish.line = Some(PublishLine::NotPublished);
             self.publish.current = None;
@@ -1037,9 +1174,7 @@ impl Workspace {
                 Err(BackendError::SignedOut) => Refreshed::Line(PublishLine::SignIn),
                 Err(e) => Refreshed::Line(PublishLine::Unchecked(e.to_string())),
                 Ok(None) => Refreshed::Remote(None, PublishLine::NotPublished),
-                Ok(Some(c)) if c.source == CollectionSource::Cloud => {
-                    Refreshed::Line(PublishLine::Studio)
-                }
+                Ok(Some(c)) if c.source == CollectionSource::Cloud => Refreshed::Synced(c.current),
                 Ok(Some(RemoteCollection { current: None, .. })) => {
                     Refreshed::Remote(None, PublishLine::NotPublished)
                 }
@@ -1088,6 +1223,11 @@ impl Workspace {
                 let was = this.cloud_synced();
                 match result {
                     Refreshed::Line(l) => this.publish.line = Some(l),
+                    Refreshed::Synced(v) => {
+                        this.publish.line = Some(PublishLine::Studio);
+                        this.publish.current = v.as_ref().map(|v| v.number);
+                        this.publish.latest = v;
+                    }
                     Refreshed::Remote(n, l) => {
                         this.publish.current = n;
                         this.publish.line = Some(l);
@@ -1147,6 +1287,7 @@ impl Workspace {
             let slug = cfg
                 .map(|cfg| cfg.collection)
                 .unwrap_or_else(|| suggest_slug(&name));
+            let git = in_git_repo(&root);
             self.open_publish_dialog(
                 PublishSetup {
                     root,
@@ -1154,6 +1295,7 @@ impl Workspace {
                     teams: account.teams,
                     slug,
                     backend: self.backend.clone(),
+                    git,
                 },
                 window,
                 cx,
@@ -1193,6 +1335,14 @@ impl Workspace {
                     window.close_dialog(cx);
                     this.publish.view = None;
                     this.open_file(rel, window, cx);
+                }
+                PublishEvent::StartSync { team, slug } => {
+                    window.close_dialog(cx);
+                    this.publish.view = None;
+                    let (team, slug, name) = (team.clone(), slug.clone(), name.clone());
+                    cx.defer_in(window, move |this, window, cx| {
+                        this.start_syncing(team, slug, name, window, cx);
+                    });
                 }
                 PublishEvent::Publish {
                     team,
@@ -1235,6 +1385,47 @@ impl Workspace {
                 .child(content.clone())
         });
         self.publish.view = Some(view.downgrade());
+    }
+
+    /// Makes `team/slug` on the server as a collection that syncs from the
+    /// studio, links the folder to it and syncs: the first sync pushes every
+    /// file. A refusal (the name taken meanwhile, a plan limit) is a toast.
+    fn start_syncing(
+        &mut self,
+        team: String,
+        slug: String,
+        name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let server = self
+            .backend
+            .server()
+            .url()
+            .trim_end_matches('/')
+            .to_string();
+        let link = CloudLink {
+            server,
+            team: team.clone(),
+            slug: slug.clone(),
+        };
+        let call = backend_call(cx, &self.backend, move |b| {
+            b.create_collection(&team, &slug, &name)
+        });
+        self.publish.job = Some(cx.spawn_in(window, async move |this, cx| {
+            let r = call.await;
+            this.update_in(cx, |this, window, cx| match r {
+                Ok(()) => {
+                    this.notes.update(cx, |m, cx| {
+                        m.cloud = Some(link);
+                        cx.notify();
+                    });
+                    this.refresh_publish(false, window, cx);
+                }
+                Err(e) => super::workspace::notify_error(e.to_string(), window, cx),
+            })
+            .ok();
+        }));
     }
 
     /// Presses the open dialog's Publish once the checks allow (dev).
@@ -1529,12 +1720,19 @@ impl Workspace {
             None => sync_dot("text-tertiary", true),
         };
         let action = match &line {
-            PublishLine::NotPublished | PublishLine::Behind(..) => Some(
-                primary_button("sidebar-publish", "Publish")
+            PublishLine::NotPublished | PublishLine::Behind(..) => Some({
+                // Outside git the dialog leans to Sync: the button says
+                // so (board SyncCloud).
+                let label = if self.publish.git {
+                    "Publish"
+                } else {
+                    "Put on Cloud"
+                };
+                primary_button("sidebar-publish", label)
                     .on_click(cx.listener(|this, _, window, cx| this.start_publish(window, cx)))
-                    .child("Publish")
-                    .into_any_element(),
-            ),
+                    .child(label)
+                    .into_any_element()
+            }),
             PublishLine::SignIn => Some(
                 small_button("sidebar-publish-sign-in", "Sign in")
                     .on_click(cx.listener(|this, _, window, cx| {

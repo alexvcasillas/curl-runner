@@ -705,6 +705,14 @@ pub trait Backend: Send + Sync {
         let _ = (team, slug, request);
         Box::pin(async { Err(BackendError::Unavailable) })
     }
+    /// Makes `team/slug` on the current server as a new, empty collection
+    /// that syncs from the studio (the first sync pushes its files). A slug
+    /// the team already has is [`BackendError::Invalid`] in the server's
+    /// words.
+    fn create_collection(&self, team: &str, slug: &str, name: &str) -> BoxFut<'_, ()> {
+        let _ = (team, slug, name);
+        Box::pin(async { Err(BackendError::Unavailable) })
+    }
     /// `team/slug`'s sharing: access, link, expiry and the list.
     fn team_share(&self, team: &str, slug: &str) -> BoxFut<'_, TeamShare> {
         let _ = (team, slug);
@@ -1049,6 +1057,9 @@ pub mod testing {
         }
         fn team_sync(&self) -> bool {
             self.inner.team_sync()
+        }
+        fn create_collection(&self, team: &str, slug: &str, name: &str) -> BoxFut<'_, ()> {
+            self.inner.create_collection(team, slug, name)
         }
         fn publishes(&self) -> bool {
             self.inner.publishes()
