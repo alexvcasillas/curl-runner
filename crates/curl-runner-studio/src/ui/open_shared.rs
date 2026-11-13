@@ -2154,6 +2154,7 @@ mod gpui_tests {
         let key = CollectionKey {
             id: "a1b2c3d4".into(),
             name: "Payments API".into(),
+            cloud: None,
         };
         let update = ShareUpdate {
             access: Some(Access::InvitedOnly),
@@ -2291,6 +2292,7 @@ mod gpui_tests {
             let key = CollectionKey {
                 id: "a1b2c3d4".into(),
                 name: "Payments API".into(),
+                cloud: None,
             };
             let update = ShareUpdate {
                 access: Some(Access::InvitedOnly),

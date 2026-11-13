@@ -72,7 +72,7 @@ pub struct Resolved {
     /// To push before the conflict is settled (Keep mine, Keep both).
     pub push: Option<Push>,
     /// The file's synced hash once settled; `None` drops it from the base.
-    pub base: Option<u64>,
+    pub base: Option<String>,
     /// Files written or removed (open tabs re-read them).
     pub touched: Vec<PathBuf>,
     /// Keep both's copy of the server's text.
@@ -169,8 +169,9 @@ fn keep_mine(c: &Conflict) -> Push {
     if c.local_deleted {
         Push::Delete(SyncDeletion {
             rel: c.rel.clone(),
-            // A deletion of a file the server lacks is a no-op anyway.
-            base: server.unwrap_or_default(),
+            // A deletion of a file the server lacks is a no-op anyway; any
+            // well-formed hash does.
+            base: server.unwrap_or_else(|| SyncFile::hash_of("")),
         })
     } else {
         Push::File(SyncFile::new(c.rel.clone(), c.local.clone()).with_base(server))

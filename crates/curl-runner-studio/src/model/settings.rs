@@ -89,6 +89,8 @@ pub struct SyncSettings {
     pub automatic: bool,
     /// Also on a metered (personal hotspot) connection.
     pub metered: bool,
+    /// How often a synced collection checks for teammates' changes.
+    pub check: CheckEvery,
 }
 
 impl Default for SyncSettings {
@@ -96,6 +98,49 @@ impl Default for SyncSettings {
         SyncSettings {
             automatic: true,
             metered: false,
+            check: CheckEvery::default(),
+        }
+    }
+}
+
+/// Settings › Accounts & sync › Check for team changes. Saves go up right
+/// away whatever this says; it's only how often others' changes come down.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckEvery {
+    OneMinute,
+    #[default]
+    FiveMinutes,
+    FifteenMinutes,
+    /// Only on open and on Sync now.
+    OnOpen,
+}
+
+impl CheckEvery {
+    pub const ALL: [CheckEvery; 4] = [
+        CheckEvery::OneMinute,
+        CheckEvery::FiveMinutes,
+        CheckEvery::FifteenMinutes,
+        CheckEvery::OnOpen,
+    ];
+
+    /// The timer, `None` for [`CheckEvery::OnOpen`].
+    pub fn interval(self) -> Option<std::time::Duration> {
+        let mins = match self {
+            CheckEvery::OneMinute => 1,
+            CheckEvery::FiveMinutes => 5,
+            CheckEvery::FifteenMinutes => 15,
+            CheckEvery::OnOpen => return None,
+        };
+        Some(std::time::Duration::from_secs(mins * 60))
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            CheckEvery::OneMinute => "1 min",
+            CheckEvery::FiveMinutes => "5 min",
+            CheckEvery::FifteenMinutes => "15 min",
+            CheckEvery::OnOpen => "On open",
         }
     }
 }
@@ -136,7 +181,7 @@ impl Settings {
 
 #[cfg(test)]
 mod tests {
-    use super::{EditorSettings, GeneralSettings, Settings, Theme};
+    use super::{CheckEvery, EditorSettings, GeneralSettings, Settings, SyncSettings, Theme};
 
     #[test]
     fn settings_roundtrip_and_defaults() {
@@ -151,6 +196,15 @@ mod tests {
         assert_eq!(defaults.appearance.theme, Theme::Dark);
         assert!(defaults.sync.automatic);
         assert!(!defaults.sync.metered);
+        assert_eq!(defaults.sync.check, CheckEvery::FiveMinutes);
+        assert_eq!(
+            CheckEvery::FiveMinutes.interval(),
+            Some(std::time::Duration::from_secs(300))
+        );
+        assert_eq!(CheckEvery::OnOpen.interval(), None);
+        // Settings saved before the option load with the default.
+        let old: SyncSettings = serde_json::from_str(r#"{"automatic":false}"#).unwrap();
+        assert_eq!(old.check, CheckEvery::FiveMinutes);
 
         let s = Settings {
             general: GeneralSettings {

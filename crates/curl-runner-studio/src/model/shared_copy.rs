@@ -453,10 +453,10 @@ pub fn plan_update(root: &Path, files: Vec<SyncFile>) -> Result<UpdatePlan, Stri
     if !scan.root_ok {
         return Err("Couldn't read the collection folder. Nothing was changed.".into());
     }
-    let local: std::collections::HashMap<&Path, u64> = scan
+    let local: std::collections::HashMap<&Path, &str> = scan
         .files
         .iter()
-        .map(|f| (f.rel.as_path(), f.hash))
+        .map(|f| (f.rel.as_path(), f.hash.as_str()))
         .collect();
     let mut plan = UpdatePlan::default();
     for f in &files {

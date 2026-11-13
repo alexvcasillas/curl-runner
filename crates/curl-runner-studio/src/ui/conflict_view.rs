@@ -14,11 +14,11 @@ use super::app::{CloseConflicts, mono_font};
 use super::color;
 use super::icons::{self, glyph};
 use super::workspace::{Then, Workspace};
-use crate::model::backend::{BackendError, Conflict, SyncFile};
+use crate::model::backend::{BackendError, Conflict};
 use crate::model::conflict::{
     Choice, DiffRow, Push, ResolveError, line_diff, resolve_on_disk, server_copy_name,
 };
-use crate::model::history::relative_time;
+use crate::model::history::{fnv1a, relative_time};
 use chrono::{DateTime, Local, Utc};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::dialog::DialogFooter;
@@ -169,8 +169,8 @@ impl ConflictView {
         };
         let key = (
             c.rel.clone(),
-            SyncFile::hash_of(&c.local),
-            SyncFile::hash_of(&c.server),
+            fnv1a(c.local.as_bytes()),
+            fnv1a(c.server.as_bytes()),
         );
         if self.rows_of.as_ref() == Some(&key) {
             return;
@@ -891,7 +891,7 @@ impl Workspace {
     fn settle(
         &mut self,
         c: &Conflict,
-        base: Option<u64>,
+        base: Option<String>,
         touched: Vec<PathBuf>,
         window: &mut Window,
         cx: &mut Context<Self>,

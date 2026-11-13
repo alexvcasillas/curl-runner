@@ -1620,8 +1620,10 @@ mod gpui_tests {
         // Recorded: the version and each file's hash as received.
         let record = s.spy.received().into_iter().next().unwrap();
         assert_eq!(record.version, 4);
-        let hashes: std::collections::BTreeMap<_, _> =
-            owners.iter().map(|f| (f.rel.clone(), f.hash)).collect();
+        let hashes: std::collections::BTreeMap<_, _> = owners
+            .iter()
+            .map(|f| (f.rel.clone(), f.hash.clone()))
+            .collect();
         assert_eq!(record.files, hashes);
         assert!(label(cx, &s, "update-banner").is_none(), "the banner went");
         assert_eq!(
@@ -1802,6 +1804,7 @@ mod gpui_tests {
         let owner = CollectionKey {
             id: "0a0b0c0d".into(),
             name: "Payments API".into(),
+            cloud: None,
         };
         let v1 = "request:\n  url: https://pay/rates\n";
         block_on(inner.sync(&owner, &[SyncFile::new("rates.yaml", v1)], &[])).unwrap();
@@ -2509,6 +2512,7 @@ mod gpui_tests {
         let owner = CollectionKey {
             id: "0a0b0c0d".into(),
             name: "Payments API".into(),
+            cloud: None,
         };
         let v1 = "request:\n  name: Rates\n  url: ${BASE_URL}/rates\n  headers:\n    X-Currency: ${CURRENCY}\n";
         block_on(inner.sync(&owner, &[SyncFile::new("rates.yaml", v1)], &[])).unwrap();

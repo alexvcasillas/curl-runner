@@ -701,7 +701,7 @@ impl Workspace {
     /// is disabled signed out (`Sign in to share`) and offline (`Go online
     /// to share`).
     fn render_sync_footer(&self, cx: &mut Context<Self>) -> AnyElement {
-        if self.publish_applies() {
+        if self.publish_applies() && !self.cloud_synced() {
             return self.render_publish_footer(cx).into_any_element();
         }
         let line = self.sync_line();
@@ -739,7 +739,14 @@ impl Workspace {
                 .text_color(color("text-primary"))
                 .cursor_pointer()
                 .hover(|s| s.bg(color("surface-100")))
-                .on_click(cx.listener(|this, _, window, cx| this.open_share(window, cx)))
+                .on_click(cx.listener(|this, _, window, cx| {
+                    // A team collection shares from its Cloud settings.
+                    if this.cloud_synced() {
+                        this.open_team_share(window, cx);
+                    } else {
+                        this.open_share(window, cx);
+                    }
+                }))
         };
         let resolve = matches!(line, SyncLine::Conflicts(_)).then(|| {
             div()

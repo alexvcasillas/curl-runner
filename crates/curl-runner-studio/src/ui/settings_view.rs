@@ -26,7 +26,7 @@ use crate::model::backend::{
 use crate::model::environments::{env_file, is_secret, list_environments};
 use crate::model::history::relative_time;
 use crate::model::secrets::{SecretStore, service_name};
-use crate::model::settings::{FONT_SIZES, Settings, TAB_SIZES};
+use crate::model::settings::{CheckEvery, FONT_SIZES, Settings, TAB_SIZES};
 use crate::ui::sync::SyncLine;
 use chrono::{DateTime, Local, Utc};
 use curl_runner_core::env::parse_env_content;
@@ -47,7 +47,10 @@ pub const STUDIO_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Accounts & sync without the server: one card in place of Server,
 /// Account and Sync.
 /// The Sync card's line while the server can't sync collections.
-pub(super) const SYNC_SOON: &str = "Sync is coming soon · collections stay on this Mac";
+/// The sync card when the open collection doesn't sync both ways (it
+/// publishes from files, or isn't on the server).
+pub(super) const NOT_SYNCED: &str =
+    "This collection doesn't sync · only ones set to Sync with my team do";
 const ACCOUNTS_SOON_TITLE: &str = "Accounts and sync";
 const ACCOUNTS_SOON_BODY: &str = "Signing in, syncing collections between your Macs and sharing them need the curl-runner server. Until then, your collections are YAML files on this Mac.";
 /// The changelog on the website (the studio ships in the CLI's release train).
@@ -1494,13 +1497,16 @@ impl SettingsView {
             .key
             .as_ref()
             .map_or(SyncStatus::Off, |k| backend.sync_status(k));
-        let (dot, text) = if backend.team_sync() {
+        // The real server syncs per collection: the open one does when the
+        // workspace's line says more than local only.
+        let syncs = backend.team_sync() || self.accounts.sync != SyncLine::LocalOnly;
+        let (dot, text) = if syncs {
             sync_line(&self.accounts.sync, &server, Utc::now())
         } else {
-            // No sync on this server yet: say so, rather than a dead button.
-            ("text-tertiary", SYNC_SOON.to_string())
+            // Say why, rather than a dead button.
+            ("text-tertiary", NOT_SYNCED.to_string())
         };
-        let can_sync = backend.team_sync()
+        let can_sync = syncs
             && backend.account().is_some()
             && self.accounts.key.is_some()
             && !self.accounts.offline;
@@ -1574,12 +1580,52 @@ impl SettingsView {
                         sync.metered,
                         |s| s.sync.metered = !s.sync.metered,
                         cx,
-                    )),
+                    ))
+                    .child(check_every(sync.check, cx)),
             )
             .child(card_footer().child(div().flex_1().child(
                 "On conflict, the studio shows both versions and asks you. It never merges silently.",
             )))
     }
+}
+
+/// `Check for team changes` (the Sync board): how often a collection
+/// synced from Cloud asks for teammates' changes. Saves go up at once.
+fn check_every(current: CheckEvery, cx: &mut Context<SettingsView>) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(16.))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_w_0()
+                .gap(px(2.))
+                .child("Check for team changes")
+                .child(
+                    div()
+                        .text_size(px(12.))
+                        .text_color(color("text-secondary"))
+                        .child("Your saves always go up right away."),
+                ),
+        )
+        .child(
+            segments("sync-check")
+                .aria_label("Check for team changes")
+                .children(CheckEvery::ALL.into_iter().map(|every| {
+                    segment(
+                        ("sync-check", every as usize),
+                        every.label(),
+                        every == current,
+                    )
+                    .child(every.label())
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.update_settings(|s| s.sync.check = every, window, cx)
+                    }))
+                })),
+        )
 }
 
 /// Updates: the versions and the changelog.
@@ -1913,6 +1959,34 @@ mod tests {
             .unwrap();
         ws.read_with(cx, |ws, _| assert!(!ws.app_settings_shown()));
         assert_eq!(line_height(cx, window, &ws), 22.);
+    }
+
+    #[cfg(feature = "server")]
+    #[gpui_kit::test]
+    fn check_for_team_changes_saves_the_interval(cx: &mut TestAppContext) {
+        use crate::model::settings::CheckEvery;
+        let state = tempfile::tempdir().unwrap();
+        let (_dir, window, ws) = open(cx, state.path());
+        cx.update_window(window, |_, window, cx| {
+            window.press("cmd-,", cx);
+            window.render_frame(cx);
+            window
+                .within("app-settings-nav")
+                .click("app-settings-accounts", cx);
+            window.render_frame(cx);
+            window
+                .within("sync-check")
+                .click(("sync-check", CheckEvery::FifteenMinutes as usize), cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+        ws.read_with(cx, |ws, _| {
+            assert_eq!(ws.settings.sync.check, CheckEvery::FifteenMinutes)
+        });
+        assert_eq!(
+            Settings::load(state.path()).sync.check,
+            CheckEvery::FifteenMinutes
+        );
     }
 
     #[gpui_kit::test]

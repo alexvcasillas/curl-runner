@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SyncBase {
     /// Relative path → hash last synced.
-    pub files: HashMap<PathBuf, u64>,
+    pub files: HashMap<PathBuf, String>,
     /// What the last sync left changed on both sides.
     pub conflicts: Vec<Conflict>,
     /// Paths of `conflicts` found by this client (a file changed on disk
@@ -31,7 +31,8 @@ pub struct SyncBase {
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
 struct Stored {
-    files: BTreeMap<String, u64>,
+    #[serde(deserialize_with = "super::backend::stored_hash::map")]
+    files: BTreeMap<String, String>,
     conflicts: Vec<Conflict>,
     held: Vec<String>,
 }
@@ -86,7 +87,11 @@ pub fn save(base: Option<&Path>, id: &str, sync: &SyncBase) -> std::io::Result<(
         std::fs::create_dir_all(dir)?;
     }
     let stored = Stored {
-        files: sync.files.iter().map(|(k, v)| (key(k), *v)).collect(),
+        files: sync
+            .files
+            .iter()
+            .map(|(k, v)| (key(k), v.clone()))
+            .collect(),
         conflicts: sync.conflicts.clone(),
         held: sync.held.iter().map(|p| key(p)).collect(),
     };
@@ -119,7 +124,7 @@ mod tests {
             server_deleted: false,
         };
         let sync = SyncBase {
-            files: HashMap::from([(PathBuf::from("rates/get.yaml"), 42u64)]),
+            files: HashMap::from([(PathBuf::from("rates/get.yaml"), "42".to_string())]),
             conflicts: vec![conflict],
             held: vec!["rates/get.yaml".into()],
         };
@@ -135,6 +140,26 @@ mod tests {
         remove(Some(d.path()), "2230f875").unwrap();
         assert_eq!(load(Some(d.path()), "2230f875"), SyncBase::default());
         remove(Some(d.path()), "2230f875").unwrap();
+    }
+
+    #[test]
+    fn hashes_kept_before_2_13_load_as_legacy_and_match_their_text() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("sync")).unwrap();
+        let fnv = crate::model::history::fnv1a(b"a: 1\n");
+        std::fs::write(
+            d.path().join("sync/old.json"),
+            format!(r#"{{"files":{{"a.yaml":{fnv}}}}}"#),
+        )
+        .unwrap();
+        let base = load(Some(d.path()), "old");
+        let stored = &base.files[Path::new("a.yaml")];
+        assert_eq!(*stored, format!("fnv:{fnv:016x}"));
+        let file = crate::model::backend::SyncFile::new("a.yaml", "a: 1\n");
+        assert!(file.matches(stored));
+        assert!(!crate::model::backend::SyncFile::new("a.yaml", "a: 2\n").matches(stored));
+        assert!(!crate::model::backend::is_current_hash(stored));
+        assert!(crate::model::backend::is_current_hash(&file.hash));
     }
 
     #[test]
@@ -171,7 +196,7 @@ mod tests {
         assert!(cloud.starts_with("2230f875-"));
         let d = tempfile::tempdir().unwrap();
         let sync = SyncBase {
-            files: HashMap::from([(PathBuf::from("a.yaml"), 1u64)]),
+            files: HashMap::from([(PathBuf::from("a.yaml"), "1".to_string())]),
             ..SyncBase::default()
         };
         save(Some(d.path()), &cloud, &sync).unwrap();

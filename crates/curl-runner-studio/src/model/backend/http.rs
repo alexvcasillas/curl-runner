@@ -442,6 +442,8 @@ impl Backend for HttpBackend {
             .collect()
     }
     /// Until 3b: `sync` answers `Unavailable`.
+    /// Per collection instead: one syncs when its source on the server is
+    /// the studio (the workspace asks [`Backend::remote_collection`]).
     fn team_sync(&self) -> bool {
         false
     }
@@ -557,13 +559,26 @@ impl Backend for HttpBackend {
             Ok(app)
         })
     }
+    /// Needs the key's Cloud link: a folder that isn't on Cloud has no
+    /// collection to sync with.
     fn sync(
         &self,
-        _: &CollectionKey,
-        _: &[SyncFile],
-        _: &[SyncDeletion],
+        collection: &CollectionKey,
+        local: &[SyncFile],
+        deleted: &[SyncDeletion],
     ) -> BoxFut<'_, SyncReport> {
-        unavailable()
+        let server = key(self.server().url());
+        let link = collection.cloud.clone();
+        let (req, texts) = sync_request(local, deleted);
+        Box::pin(async move {
+            let Some(link) = link else {
+                return Err(BackendError::Unavailable);
+            };
+            let res = self.team_call(&server, &link.team, |c| {
+                c.sync(&link.team, &link.slug, &req)
+            })?;
+            Ok(sync_report(res, &texts))
+        })
     }
     fn share_settings(&self, _: &CollectionKey) -> BoxFut<'_, ShareSettings> {
         unavailable()
@@ -643,3 +658,96 @@ impl Backend for HttpBackend {
 mod live;
 #[cfg(test)]
 mod tests;
+
+/// `rates/get.yaml` on every OS: the server's form of a path.
+fn wire_path(rel: &std::path::Path) -> String {
+    rel.components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// The request for `local` and `deleted`, and each local text by wire path
+/// (the conflicts' "mine"). Texts go only for files changed since their
+/// base; a base kept before 2.13 is unknown to the server, so a file goes
+/// without one and a deletion waits (it can't be checked against the
+/// server's copy).
+fn sync_request(
+    local: &[SyncFile],
+    deleted: &[SyncDeletion],
+) -> (
+    curl_runner_cloud_proto::sync::SyncRequest,
+    std::collections::HashMap<String, String>,
+) {
+    use super::is_current_hash;
+    use curl_runner_cloud_proto::sync::{SyncDeletion as WireDeletion, SyncFile as WireFile};
+    let mut texts = std::collections::HashMap::with_capacity(local.len());
+    let files = local
+        .iter()
+        .map(|f| {
+            let path = wire_path(&f.rel);
+            texts.insert(path.clone(), f.text.clone());
+            let base = f.base.clone().filter(|b| is_current_hash(b));
+            WireFile {
+                text: (base.as_ref() != Some(&f.hash)).then(|| f.text.clone()),
+                path,
+                hash: f.hash.clone(),
+                base,
+            }
+        })
+        .collect();
+    let deleted = deleted
+        .iter()
+        .filter(|d| is_current_hash(&d.base))
+        .map(|d| WireDeletion {
+            path: wire_path(&d.rel),
+            base: d.base.clone(),
+        })
+        .collect();
+    (
+        curl_runner_cloud_proto::sync::SyncRequest { files, deleted },
+        texts,
+    )
+}
+
+/// The server's answer as the workspace takes it. A conflict on a file not
+/// sent (deleted here) is a local deletion.
+fn sync_report(
+    res: curl_runner_cloud_proto::sync::SyncResponse,
+    texts: &std::collections::HashMap<String, String>,
+) -> SyncReport {
+    SyncReport {
+        pushed: res.pushed.len(),
+        pulled: res
+            .pulled
+            .into_iter()
+            .map(|f| SyncFile {
+                rel: std::path::PathBuf::from(&f.path),
+                hash: f.hash,
+                text: f.text,
+                base: None,
+            })
+            .collect(),
+        conflicts: res
+            .conflicts
+            .into_iter()
+            .map(|c| {
+                let local = texts.get(&c.path);
+                super::Conflict {
+                    rel: std::path::PathBuf::from(&c.path),
+                    local: local.cloned().unwrap_or_default(),
+                    local_deleted: local.is_none(),
+                    server: c.server_text.unwrap_or_default(),
+                    server_deleted: c.deleted,
+                    server_author: c.server_author,
+                    server_at: c.server_at,
+                }
+            })
+            .collect(),
+        deleted: res
+            .deleted
+            .into_iter()
+            .map(std::path::PathBuf::from)
+            .collect(),
+    }
+}

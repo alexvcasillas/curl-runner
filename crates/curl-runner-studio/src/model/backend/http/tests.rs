@@ -375,6 +375,7 @@ fn team_side_calls_are_unavailable_until_3b() {
     let key = CollectionKey {
         id: "c".into(),
         name: "C".into(),
+        cloud: None,
     };
     let un = |e: BackendError| assert_eq!(e, BackendError::Unavailable);
     un(block_on(b.sync(&key, &[], &[])).unwrap_err());
@@ -612,7 +613,7 @@ fn record(token: &str, version: u32) -> ReceivedShare {
         name: "Shipping API".into(),
         version,
         added: chrono::NaiveDate::from_ymd_opt(2026, 11, 6).unwrap(),
-        files: [(PathBuf::from("rates/get.yaml"), 42)].into(),
+        files: [(PathBuf::from("rates/get.yaml"), "42".to_string())].into(),
     }
 }
 
@@ -1065,6 +1066,160 @@ fn e2e_publish_and_share_against_a_live_server() {
             assert!(matches!(r, Err(BackendError::PlanLimit(_))), "{r:?}");
             eprintln!("e2e: restricted refused on Free, as designed");
         }
+    };
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run));
+    cleanup();
+    if let Err(e) = outcome {
+        std::panic::resume_unwind(e);
+    }
+}
+
+#[test]
+fn sync_requests_send_text_only_for_changes_and_skip_legacy_bases() {
+    use crate::model::backend::legacy_hash;
+    let same = SyncFile::new("rates/get.yaml", "a: 1\n");
+    let same_base = Some(same.hash.clone());
+    let local = [
+        same.with_base(same_base),
+        SyncFile::new("new.yaml", "n: 1\n"),
+        SyncFile::new("old.yaml", "o: 2\n").with_base(Some(legacy_hash("o: 1\n"))),
+    ];
+    let deleted = [
+        SyncDeletion {
+            rel: "gone.yaml".into(),
+            base: SyncFile::hash_of("g: 1\n"),
+        },
+        SyncDeletion {
+            rel: "legacy.yaml".into(),
+            base: legacy_hash("l: 1\n"),
+        },
+    ];
+    let (req, texts) = sync_request(&local, &deleted);
+    assert_eq!(req.files[0].path, "rates/get.yaml");
+    assert_eq!(req.files[0].text, None, "unchanged since its base");
+    assert_eq!(req.files[1].text.as_deref(), Some("n: 1\n"));
+    assert_eq!(req.files[2].base, None, "a legacy base is unknown here");
+    assert!(req.files[2].text.is_some());
+    assert_eq!(
+        req.deleted
+            .iter()
+            .map(|d| d.path.as_str())
+            .collect::<Vec<_>>(),
+        ["gone.yaml"]
+    );
+    assert_eq!(texts["new.yaml"], "n: 1\n");
+}
+
+#[test]
+fn sync_responses_map_to_reports() {
+    use curl_runner_cloud_proto::sync::{PulledFile, SyncConflict, SyncResponse};
+    let at = chrono::Utc::now();
+    let res = SyncResponse {
+        version: 3,
+        pushed: vec!["a.yaml".into()],
+        pulled: vec![PulledFile {
+            path: "b/c.yaml".into(),
+            hash: SyncFile::hash_of("c"),
+            text: "c".into(),
+        }],
+        conflicts: vec![
+            SyncConflict {
+                path: "mine.yaml".into(),
+                server_hash: Some(SyncFile::hash_of("theirs")),
+                server_text: Some("theirs".into()),
+                server_author: "sam@acme.dev".into(),
+                server_at: at,
+                deleted: false,
+            },
+            SyncConflict {
+                path: "deleted-here.yaml".into(),
+                server_hash: Some(SyncFile::hash_of("x")),
+                server_text: Some("x".into()),
+                server_author: "sam@acme.dev".into(),
+                server_at: at,
+                deleted: false,
+            },
+        ],
+        deleted: vec!["old.yaml".into()],
+    };
+    let texts = std::collections::HashMap::from([("mine.yaml".to_string(), "mine".to_string())]);
+    let r = sync_report(res, &texts);
+    assert_eq!(r.pushed, 1);
+    assert_eq!(r.pulled[0].rel, std::path::PathBuf::from("b/c.yaml"));
+    assert_eq!(r.conflicts[0].local, "mine");
+    assert_eq!(r.conflicts[0].server, "theirs");
+    assert!(!r.conflicts[0].local_deleted);
+    assert!(r.conflicts[1].local_deleted);
+    assert_eq!(r.deleted, [std::path::PathBuf::from("old.yaml")]);
+}
+
+/// Sync against a running server (a self-hosted one, or Cloud with a test
+/// team): `CURL_RUNNER_E2E_SERVER`, `_TOKEN` (a `crs_` session) and `_TEAM`.
+#[test]
+#[ignore = "needs a live server"]
+fn e2e_sync_against_a_live_server() {
+    let env = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("set {k}"));
+    let (server, token, team) = (
+        env("CURL_RUNNER_E2E_SERVER"),
+        env("CURL_RUNNER_E2E_TOKEN"),
+        env("CURL_RUNNER_E2E_TEAM"),
+    );
+    let slug = format!(
+        "studio-sync-e2e-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    );
+    let (b, sessions) = backend(None);
+    block_on(b.set_server(own(&server))).unwrap();
+    sessions.set(&key(&server), &token).unwrap();
+    let client = Client::new(&key(&server), Some(token.clone()));
+    let cleanup = || {
+        let _ = client.send(
+            "DELETE",
+            &format!("/v1/teams/{team}/collections/{slug}"),
+            None,
+            false,
+        );
+    };
+    let run = || {
+        client
+            .create_collection(&team, &slug, "Studio sync e2e (safe to delete)")
+            .unwrap();
+        let link = crate::model::publish::CloudLink {
+            server: key(&server),
+            team: team.clone(),
+            slug: slug.clone(),
+        };
+        let k = CollectionKey {
+            id: "e2e".into(),
+            name: "e2e".into(),
+            cloud: Some(link),
+        };
+        // Mac A pushes; Mac B, with nothing, pulls.
+        let a1 = SyncFile::new("a.yaml", "a: 1\n");
+        let r = block_on(b.sync(&k, std::slice::from_ref(&a1), &[])).unwrap();
+        assert_eq!(r.pushed, 1);
+        let r = block_on(b.sync(&k, &[], &[])).unwrap();
+        assert_eq!(r.pulled.len(), 1);
+        assert_eq!(r.pulled[0].text, "a: 1\n");
+        // B edits from that base; A's unchanged copy pulls it.
+        let b2 = SyncFile::new("a.yaml", "a: 2\n").with_base(Some(a1.hash.clone()));
+        assert_eq!(block_on(b.sync(&k, &[b2], &[])).unwrap().pushed, 1);
+        let a_same = a1.clone().with_base(Some(a1.hash.clone()));
+        let r = block_on(b.sync(&k, &[a_same], &[])).unwrap();
+        assert_eq!(r.pulled[0].text, "a: 2\n");
+        // A edits from the old base: a conflict, with B's text.
+        let a3 = SyncFile::new("a.yaml", "a: 3\n").with_base(Some(a1.hash.clone()));
+        let r = block_on(b.sync(&k, &[a3], &[])).unwrap();
+        assert_eq!(r.conflicts.len(), 1);
+        assert_eq!(r.conflicts[0].server, "a: 2\n");
+        assert_eq!(r.conflicts[0].local, "a: 3\n");
+        eprintln!(
+            "e2e: push, pull, conflict by {}",
+            r.conflicts[0].server_author
+        );
     };
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run));
     cleanup();

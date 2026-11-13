@@ -476,8 +476,12 @@ impl Workspace {
         match event {
             AppSettingsEvent::Close => self.hide_app_settings(window, cx),
             AppSettingsEvent::Changed => {
+                let check = self.settings.sync.check;
                 self.settings = view.read(cx).settings().clone();
                 self.apply_editor_settings(window, cx);
+                if self.settings.sync.check != check {
+                    self.schedule_checks(window, cx);
+                }
             }
             AppSettingsEvent::EditVariable { environment, name } => {
                 let (environment, name) = (environment.clone(), name.clone());
@@ -512,6 +516,7 @@ impl Workspace {
         Some(CollectionKey {
             id: self.notes.read(cx).id.clone(),
             name: c.name.clone(),
+            cloud: self.publish_link(cx),
         })
     }
 

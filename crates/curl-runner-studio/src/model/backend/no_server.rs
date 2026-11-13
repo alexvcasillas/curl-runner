@@ -93,6 +93,7 @@ mod tests {
         let key = CollectionKey {
             id: "c".into(),
             name: "C".into(),
+            cloud: None,
         };
         fn unavailable<T>(call: BoxFut<'_, T>) -> bool {
             matches!(block_on(call), Err(BackendError::Unavailable))

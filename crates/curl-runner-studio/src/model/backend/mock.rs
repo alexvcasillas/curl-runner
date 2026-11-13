@@ -228,7 +228,8 @@ struct ServerCollection {
 #[serde(rename_all = "camelCase")]
 struct ServerFile {
     text: String,
-    hash: u64,
+    #[serde(deserialize_with = "super::stored_hash::one")]
+    hash: String,
     author: String,
     at: DateTime<Utc>,
 }
@@ -392,7 +393,7 @@ fn new_token(id: &str, seq: u64) -> String {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos());
-    let mut h = SyncFile::hash_of(&format!("{id}:{seq}:{nanos}"));
+    let mut h = crate::model::history::fnv1a(format!("{id}:{seq}:{nanos}").as_bytes());
     let tail: String = (0..6)
         .map(|_| {
             let c = ALPHABET[(h % 62) as usize] as char;
@@ -571,7 +572,7 @@ fn snapshot_of(s: &State, found: &Found<'_>) -> SharedSnapshot {
                     .flat_map(|c| &c.files)
                     .map(|(rel, f)| SyncFile {
                         rel: rel.into(),
-                        hash: f.hash,
+                        hash: f.hash.clone(),
                         text: f.text.clone(),
                         base: None,
                     })
@@ -987,7 +988,7 @@ impl Backend for MockBackend {
     ) -> BoxFut<'_, SyncReport> {
         // Paths and hashes only: the log stays small, and request text is
         // the caller's to check.
-        let files: Vec<_> = local.iter().map(|f| (&f.rel, f.hash, f.base)).collect();
+        let files: Vec<_> = local.iter().map(|f| (&f.rel, &f.hash, &f.base)).collect();
         self.record(format!("sync({collection:?}, {files:?}, {deleted:?})"));
         let (key, local, deleted) = (collection.clone(), local.to_vec(), deleted.to_vec());
         self.call(true, move |s| {
@@ -1039,13 +1040,13 @@ impl Backend for MockBackend {
                 }
                 let k = rel_key(&f.rel);
                 if let Some(sf) = col.files.get(&k)
-                    && f.base != Some(sf.hash)
+                    && f.base.as_ref() != Some(&sf.hash)
                 {
-                    if f.base == Some(f.hash) {
+                    if f.base.as_ref() == Some(&f.hash) {
                         // Unchanged here, newer there: pull theirs.
                         report.pulled.push(SyncFile {
                             rel: f.rel.clone(),
-                            hash: sf.hash,
+                            hash: sf.hash.clone(),
                             text: sf.text.clone(),
                             base: None,
                         });
@@ -1066,7 +1067,7 @@ impl Backend for MockBackend {
                 }
                 let file = ServerFile {
                     text: f.text.clone(),
-                    hash: f.hash,
+                    hash: f.hash.clone(),
                     author: author.clone(),
                     at: now,
                 };
