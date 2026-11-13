@@ -1,5 +1,31 @@
 # @curl-runner/cli
 
+## 2.13.0
+
+### Minor Changes
+
+- [#230](https://github.com/alexvcasillas/curl-runner/pull/230) [`642ea19`](https://github.com/alexvcasillas/curl-runner/commit/642ea19719063bf522e095a1137f134d0be5e5e7) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **The studio syncs collections whose source is Cloud**
+  
+  A collection set to sync from the studio now syncs both ways with your team on curl-runner Cloud and self-hosted servers.
+  
+  - **New:** saves go up a moment later, and teammates' changes come down on open and at the interval you pick in Settings › Accounts & sync › Check for team changes (1, 5 or 15 minutes, or only on open).
+  - **New:** a file changed on both sides opens the conflict screen with your teammate's version, who made it and when.
+  - **Improved:** the sidebar foot of a synced collection shows its sync state and opens the collection's Cloud sharing from Share.
+
+- [#233](https://github.com/alexvcasillas/curl-runner/pull/233) [`6b79907`](https://github.com/alexvcasillas/curl-runner/commit/6b79907b4dd9f986ae5908ea935ae0282f7c2584) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **Open your team's synced collections on any Mac**
+  
+  Synced collections follow you and your teammates to every studio.
+  
+  - **New:** **Open from Cloud…** (palette, Welcome screen, or a team in the account menu) lists a team's collections and opens a synced one into a folder under `~/curl-runner/{team}` that syncs with it.
+  - **New:** a collection's settings show where it lives on Cloud, and team owners can switch it between publishing and syncing, with the same warnings as the dashboard. Members see the source but can't change it.
+
+- [#231](https://github.com/alexvcasillas/curl-runner/pull/231) [`6cf7383`](https://github.com/alexvcasillas/curl-runner/commit/6cf73830838383a4a00e7c4be91165f89ade4a33) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **Publish or sync, your choice**
+  
+  Putting a folder on curl-runner Cloud now asks how it stays up to date.
+  
+  - **New:** pick **Publish versions** (the folder is the source, best in a git repo) or **Sync with my team** (Cloud is the source, every save syncs both ways). Outside a git repo the studio suggests Sync, and the sidebar's button reads **Put on Cloud**.
+  - **Improved:** a synced collection's sidebar foot shows its version and who changed it last, such as `v27 · sam@acme.dev edited 1 h ago`.
+
 ## 2.12.0
 
 ### Minor Changes
