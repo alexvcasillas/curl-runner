@@ -616,10 +616,18 @@ impl Workspace {
             .child(server_box)
             .when(!teams.is_empty(), |m| {
                 let rows = teams.iter().enumerate().map(|(i, t)| {
+                    let slug = t.slug.clone();
+                    // Opens the team's collections (Open from Cloud).
                     team_row(t)
                         .id(SharedString::from(format!("account-team-{i}")))
                         .test_support()
                         .aria_label(format!("{}, {}", t.name, team_detail(t)))
+                        .cursor_pointer()
+                        .hover(|s| s.bg(color("surface-100")))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.toggle_account_menu(cx);
+                            this.open_from_cloud(Some(&slug), window, cx);
+                        }))
                 });
                 m.child(div().h(px(1.)).bg(color("border-100")))
                     .child(

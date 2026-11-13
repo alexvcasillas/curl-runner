@@ -15,14 +15,14 @@ use super::icons::{self, glyph};
 use super::inspector::env_label;
 use super::run_view::pill;
 use super::settings_kit::{
-    MASK, back_link, label_text, nav_item, neutral_pill, primary_button, small_button, soon_chip,
-    switch, tinted_pill,
+    MASK, back_link, label_text, nav_item, neutral_pill, primary_button, segment, segments,
+    small_button, soon_chip, switch, tinted_pill,
 };
 use super::settings_view::AppPage;
 use super::share_dialog::{SUBTITLE as SHARE_SUBTITLE, ShareMode, ShareView};
 use super::share_sync::ShareSync;
 use super::workspace::{edit_notes, notify_error};
-use crate::model::backend::Backend;
+use crate::model::backend::{Backend, CollectionSource};
 use crate::model::collection_meta::{CollectionMeta, VarMeta};
 use crate::model::environments::{
     CapturedVar, DEFAULT_ENVIRONMENT, EnvRow, RowSource, UsageIndex, create_environment, env_file,
@@ -30,6 +30,7 @@ use crate::model::environments::{
     move_to_keychain, name_in_env_files, plain_copies, remove_env_var, remove_env_var_at,
     write_env_var,
 };
+use crate::model::publish::CloudLink;
 use crate::model::secrets::{CachedSecrets, SecretStore, service_name};
 use curl_runner_core::env::parse_env_content;
 use gpui_kit::component::WindowExt as _;
@@ -72,7 +73,7 @@ const IMPORT_MAX_BYTES: u64 = 1 << 20;
 type ProcessEnv = std::rc::Rc<dyn Fn(&str) -> Option<String>>;
 
 /// What the page asks of the workspace.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingsEvent {
     /// Back to the editor.
     Close,
@@ -84,6 +85,58 @@ pub enum SettingsEvent {
     Status,
     /// One of the `App` rows: the app's Settings on that page.
     OpenApp(AppPage),
+    /// The Cloud card's switch, confirmed: change the collection's source.
+    SwitchSource(CollectionSource),
+    /// The Cloud card's `Open in the dashboard`.
+    OpenUrl(String),
+}
+
+/// The General page's Cloud card (board SyncCloud, row 4): where the
+/// collection lives and how it stays up to date.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CloudSource {
+    pub link: CloudLink,
+    pub source: CollectionSource,
+    /// Only owners switch the source.
+    pub owner: bool,
+    /// The current version, `None` before the first.
+    pub version: Option<u32>,
+    /// The collection in the dashboard.
+    pub url: Option<String>,
+}
+
+fn cloud_source_label(source: CollectionSource) -> &'static str {
+    match source {
+        CollectionSource::Git => "Publish versions",
+        CollectionSource::Cloud => "Sync with my team",
+    }
+}
+
+fn source_help(source: CollectionSource) -> &'static str {
+    match source {
+        CollectionSource::Git => {
+            "Publish: the folder is the source. You or CI publish versions; the studio doesn't sync edits to it."
+        }
+        CollectionSource::Cloud => {
+            "Sync: teammates edit it in the studio and every save syncs both ways. CI publishing is refused."
+        }
+    }
+}
+
+/// What switching to `target` does, asked before it happens: the same
+/// words as the dashboard.
+fn switch_warning(target: CollectionSource, slug: &str, version: Option<u32>) -> String {
+    match (target, version) {
+        (CollectionSource::Cloud, _) => format!(
+            "CI publishes to {slug} will be refused with “synced from the studio”. Remove the publish step, or switch back to Publish first."
+        ),
+        (CollectionSource::Git, Some(n)) => format!(
+            "Switching to Publish stops syncing for everyone. The folder becomes the source: your next publish replaces v{n}, and teammates' unsynced edits won't go up."
+        ),
+        (CollectionSource::Git, None) => {
+            "Switching to Publish stops syncing for everyone. Teammates' unsynced edits won't go up.".into()
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -347,6 +400,14 @@ pub struct CollectionSettings {
     back_to_settings: bool,
     /// The Sharing page's server and counts (`None`: no sharing here).
     sharing: Option<Sharing>,
+    /// The General page's Cloud card (`None`: not on Cloud here).
+    cloud: Option<CloudSource>,
+    /// The source picked in the Cloud card, waiting for its confirm.
+    switch_to: Option<CollectionSource>,
+    /// A switch in flight.
+    switching: bool,
+    /// Why the last switch didn't happen.
+    switch_error: Option<String>,
     /// The Sharing page's controls, while it is shown.
     share_view: Option<Entity<ShareView>>,
     _share_events: Option<Subscription>,
@@ -409,6 +470,10 @@ impl CollectionSettings {
             drawer: None,
             back_to_settings: false,
             sharing: None,
+            cloud: None,
+            switch_to: None,
+            switching: false,
+            switch_error: None,
             share_view: None,
             _share_events: None,
             focus: cx.focus_handle(),
@@ -497,6 +562,196 @@ impl CollectionSettings {
     }
 
     /// The Sharing page's server and counts.
+    /// The Cloud card's facts, as the workspace last knew them. A switch
+    /// that landed clears its confirm.
+    pub fn set_cloud(&mut self, cloud: Option<CloudSource>, cx: &mut Context<Self>) {
+        if self.cloud.as_ref().map(|c| c.source) != cloud.as_ref().map(|c| c.source) {
+            self.switch_to = None;
+            self.switching = false;
+        }
+        self.cloud = cloud;
+        cx.notify();
+    }
+
+    /// The switch failed: the confirm stays, with the server's words.
+    pub fn source_switch_failed(&mut self, message: String, cx: &mut Context<Self>) {
+        self.switching = false;
+        self.switch_error = Some(message);
+        cx.notify();
+    }
+
+    fn render_cloud(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        let cloud = self.cloud.clone()?;
+        let text = |t: String| {
+            div()
+                .text_size(px(12.))
+                .line_height(relative(1.5))
+                .text_color(color("text-secondary"))
+                .child(t)
+        };
+        let url = cloud.url.clone();
+        let where_ =
+            div()
+                .flex()
+                .flex_wrap()
+                .gap(px(4.))
+                .text_size(px(12.))
+                .text_color(color("text-secondary"))
+                .child({
+                    let at = format!(
+                        "{}/{} on curl-runner Cloud.",
+                        cloud.link.team, cloud.link.slug
+                    );
+                    div()
+                        .id("settings-cloud-where")
+                        .test_support()
+                        .aria_label(at.clone())
+                        .child(at)
+                })
+                .children(url.map(|url| {
+                    div()
+                        .id("settings-cloud-dashboard")
+                        .role(Role::Link)
+                        .test_support()
+                        .aria_label("Open in the dashboard")
+                        .text_color(color("text-primary"))
+                        .cursor_pointer()
+                        .hover(|s| s.underline())
+                        .on_click(cx.listener(move |_, _, _, cx| {
+                            cx.emit(SettingsEvent::OpenUrl(url.clone()))
+                        }))
+                        .child("Open in the dashboard")
+                }));
+        let control = if cloud.owner {
+            let current = cloud.source;
+            segments("settings-source")
+                .aria_label("Source")
+                .self_start()
+                .children(
+                    [CollectionSource::Git, CollectionSource::Cloud].map(|source| {
+                        let on = self.switch_to.unwrap_or(current) == source;
+                        segment(
+                            ("settings-source", source as usize),
+                            cloud_source_label(source),
+                            on,
+                        )
+                        .child(cloud_source_label(source))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.switch_error = None;
+                            this.switch_to = (source != current).then_some(source);
+                            cx.notify();
+                        }))
+                    }),
+                )
+                .into_any_element()
+        } else {
+            div()
+                .id("settings-source-text")
+                .test_support()
+                .aria_label(format!("Source: {}", cloud_source_label(cloud.source)))
+                .flex()
+                .flex_col()
+                .gap(px(4.))
+                .child(format!("Source: {}", cloud_source_label(cloud.source)))
+                .child(
+                    div()
+                        .id("settings-source-owners")
+                        .test_support()
+                        .aria_label("Only team owners can change this.")
+                        .child(text("Only team owners can change this.".into())),
+                )
+                .into_any_element()
+        };
+        let confirm = self.switch_to.map(|target| {
+            let warning = switch_warning(target, &cloud.link.slug, cloud.version);
+            let label = match target {
+                CollectionSource::Git => "Switch to Publish",
+                CollectionSource::Cloud => "Switch to Sync",
+            };
+            div()
+                .id("settings-source-confirm")
+                .role(Role::Alert)
+                .test_support()
+                .aria_label(warning.clone())
+                .flex()
+                .flex_col()
+                .gap(px(10.))
+                .px(px(14.))
+                .py(px(12.))
+                .border_1()
+                .border_color(color("warning-border"))
+                .bg(color("warning-subtle"))
+                .rounded(px(8.))
+                .text_size(px(12.))
+                .line_height(relative(1.5))
+                .child(warning)
+                .children(self.switch_error.clone().map(|e| {
+                    div()
+                        .id("settings-source-error")
+                        .test_support()
+                        .aria_label(e.clone())
+                        .text_color(color("danger"))
+                        .child(e)
+                }))
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(8.))
+                        .child(
+                            small_button("settings-source-cancel", "Cancel")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.switch_to = None;
+                                    this.switch_error = None;
+                                    cx.notify();
+                                }))
+                                .child("Cancel"),
+                        )
+                        .child(
+                            primary_button("settings-source-go", label)
+                                .when(self.switching, |b| b.opacity(0.6).cursor_default())
+                                .when(!self.switching, |b| {
+                                    b.on_click(cx.listener(move |this, _, _, cx| {
+                                        this.switching = true;
+                                        this.switch_error = None;
+                                        cx.emit(SettingsEvent::SwitchSource(target));
+                                        cx.notify();
+                                    }))
+                                })
+                                .child(label),
+                        ),
+                )
+        });
+        Some(
+            div()
+                .id("settings-cloud")
+                .role(Role::Group)
+                .test_support()
+                .aria_label("Cloud")
+                .mx(px(24.))
+                .mt(px(16.))
+                .px(px(24.))
+                .py(px(20.))
+                .flex()
+                .flex_col()
+                .gap(px(12.))
+                .border_1()
+                .border_color(color("border-100"))
+                .rounded(px(10.))
+                .child(
+                    div()
+                        .text_size(px(16.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child("Cloud"),
+                )
+                .child(where_)
+                .child(control)
+                .child(text(
+                    source_help(self.switch_to.unwrap_or(cloud.source)).into(),
+                ))
+                .children(confirm),
+        )
+    }
+
     pub fn set_sharing(&mut self, sharing: Sharing, cx: &mut Context<Self>) {
         self.sharing = Some(sharing);
         cx.notify();
@@ -781,7 +1036,10 @@ impl Render for CollectionSettings {
             .bg(color("bg-100"))
             .child(self.render_nav(cx))
             .child(match self.page {
-                Page::General => self.render_general().into_any_element(),
+                Page::General => {
+                    let cloud = self.render_cloud(cx);
+                    self.render_general().children(cloud).into_any_element()
+                }
                 Page::Environments => self.render_environments(cx).into_any_element(),
                 Page::Sharing => self.render_sharing(cx).into_any_element(),
             })
@@ -936,7 +1194,7 @@ impl CollectionSettings {
             .child(subtitle)
     }
 
-    fn render_general(&self) -> impl IntoElement + use<> {
+    fn render_general(&self) -> super::settings_kit::Observed {
         let field = |label: &'static str, value: String, mono: bool| {
             div()
                 .flex()

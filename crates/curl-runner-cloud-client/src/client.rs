@@ -168,6 +168,14 @@ pub struct CollectionRow {
     /// Where its versions come from; older servers leave it out.
     #[serde(default)]
     pub source: Option<Source>,
+    #[serde(default)]
+    pub name: Option<String>,
+    /// When the current version was made, and by whom (an email, or
+    /// `token {name}`).
+    #[serde(default)]
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub publisher: Option<String>,
 }
 
 pub struct Client {
@@ -435,6 +443,24 @@ impl Client {
             "POST",
             &format!("/v1/teams/{team}/collections"),
             Some(&Body { slug, name }),
+        )
+    }
+
+    /// Switches a collection's source (owners only; a member gets `403`).
+    pub fn set_source(
+        &self,
+        team: &str,
+        collection: &str,
+        source: Source,
+    ) -> Result<CollectionRow, CloudError> {
+        #[derive(serde::Serialize)]
+        struct Body {
+            source: Source,
+        }
+        self.json(
+            "PATCH",
+            &format!("/v1/teams/{team}/collections/{collection}"),
+            Some(&Body { source }),
         )
     }
 
@@ -765,11 +791,17 @@ mod tests {
                     slug: "pay".into(),
                     current_version: Some(3),
                     source: Some(Source::Git),
+                    name: Some("Pay".into()),
+                    updated_at: None,
+                    publisher: None,
                 },
                 CollectionRow {
                     slug: "new".into(),
                     current_version: None,
                     source: None,
+                    name: None,
+                    updated_at: None,
+                    publisher: None,
                 }
             ]
         );

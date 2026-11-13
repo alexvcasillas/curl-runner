@@ -110,4 +110,15 @@ On curl-runner Cloud, a public collection with a `description` in its `cloud:` b
 
 Copy or reset the link, and set it to expire in 7 or 30 days. Moving a public collection to Restricted asks first, since people using the link who aren't on the list stop getting updates. What people fill in is the `inputs` of the `cloud:` block in `curl-runner.yaml`; values and your Keychain never leave your Mac.
 
-Syncing collections both ways from the studio is coming soon.
+### Sync with your team [#sync]
+
+The first time you put a folder on Cloud, pick how it stays up to date:
+
+- **Publish versions**: the folder is the source. You publish from the studio or from CI. This is the default in a git repo.
+- **Sync with my team**: Cloud is the source. Teammates open it in their studio, and every save syncs both ways. Outside a git repo the sidebar's button reads **Put on Cloud** and this is the default.
+
+A synced collection's sidebar foot shows its state (**Synced just now**, **Offline · 3 changes waiting**, **1 conflict · Resolve**) and the last change, such as `v27 · sam@acme.dev edited 1 h ago`. Your saves go up a moment later. Teammates' changes come down on open, on **Sync now**, and at the interval in **Settings › Accounts & sync › Check for team changes** (1, 5 or 15 minutes, or only on open). When a file changed on both sides, the conflict screen shows both versions and asks which to keep.
+
+To open a team's synced collection on another Mac, use **Open from Cloud…** in the palette, the Welcome screen, or a team in the account menu. It makes a folder under `~/curl-runner/{team}` (or one you pick) and syncs it. Collections published from files are listed but open from their repo.
+
+Team owners can switch a collection between Publish and Sync in its settings (**General › Cloud**) or on the dashboard. Switching to Sync makes CI publishes fail; switching to Publish stops syncing for everyone.

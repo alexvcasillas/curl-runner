@@ -78,6 +78,8 @@ pub struct PublishUi {
     /// The folder is in a git repo (the foot's button: `Publish`, else
     /// `Put on Cloud`).
     pub(super) git: bool,
+    /// The dashboard's URL, once asked (the Cloud card's link).
+    pub(super) dashboard: Option<String>,
     refresh: Option<Task<()>>,
     job: Option<Task<()>>,
     /// The version being made, while a publish is under way.
@@ -1237,6 +1239,10 @@ impl Workspace {
                         }
                     }
                 }
+                this.push_cloud_source(None, cx);
+                if this.publish.dashboard.is_none() {
+                    this.fetch_dashboard(cx);
+                }
                 match (was, this.cloud_synced()) {
                     // Found to sync from the studio: two-way from now on.
                     (false, true) => {
@@ -1426,6 +1432,90 @@ impl Workspace {
             })
             .ok();
         }));
+    }
+
+    /// The open collection's Cloud facts for the settings' Cloud card:
+    /// `None` until the server says where its versions come from.
+    pub(super) fn cloud_source(&self, cx: &App) -> Option<super::collection_settings::CloudSource> {
+        let link = self.publish_link(cx)?;
+        let source = match self.publish.line.as_ref()? {
+            PublishLine::Studio => CollectionSource::Cloud,
+            PublishLine::UpToDate(_) | PublishLine::Behind(..) => CollectionSource::Git,
+            _ => return None,
+        };
+        let owner = self.backend.account().is_some_and(|a| {
+            a.teams
+                .iter()
+                .any(|t| t.slug == link.team && t.role == curl_runner_cloud_proto::Role::Owner)
+        });
+        let url = self
+            .publish
+            .dashboard
+            .as_deref()
+            .map(|d| collection_url(d, &link.team, &link.slug));
+        Some(super::collection_settings::CloudSource {
+            owner,
+            version: self.publish.current,
+            url,
+            source,
+            link,
+        })
+    }
+
+    /// Hands the Cloud card its facts: `view`, else the open settings.
+    pub(super) fn push_cloud_source(
+        &self,
+        view: Option<&Entity<super::collection_settings::CollectionSettings>>,
+        cx: &mut App,
+    ) {
+        let Some(view) = view.or(self.settings_view.as_ref()).cloned() else {
+            return;
+        };
+        let cloud = self.cloud_source(cx);
+        view.update(cx, |v, cx| v.set_cloud(cloud, cx));
+    }
+
+    fn fetch_dashboard(&mut self, cx: &mut Context<Self>) {
+        let call = backend_call(cx, &self.backend, |b| b.dashboard_url());
+        cx.spawn(async move |this, cx| {
+            if let Ok(url) = call.await {
+                this.update(cx, |this, cx| {
+                    this.publish.dashboard = Some(url);
+                    this.push_cloud_source(None, cx);
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    /// The Cloud card's confirmed switch: the server first, then the foot
+    /// and the sync follow the new source (two-way starts or stops).
+    pub(super) fn switch_source(
+        &mut self,
+        source: CollectionSource,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(link) = self.publish_link(cx) else {
+            return;
+        };
+        let call = backend_call(cx, &self.backend, move |b| {
+            b.set_source(&link.team, &link.slug, source)
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let r = call.await;
+            this.update_in(cx, |this, window, cx| match r {
+                Ok(()) => this.refresh_publish(false, window, cx),
+                Err(e) => {
+                    if let Some(view) = this.settings_view.clone() {
+                        view.update(cx, |v, cx| v.source_switch_failed(e.to_string(), cx));
+                    }
+                }
+            })
+            .ok();
+        })
+        .detach();
     }
 
     /// Presses the open dialog's Publish once the checks allow (dev).
@@ -1671,7 +1761,7 @@ impl Workspace {
     }
 
     /// `You're not in a team yet` (board PublishStates, row 2).
-    fn no_team_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn no_team_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let backend = self.backend.clone();
         open_dialog(window, cx, move || {
             let backend = backend.clone();

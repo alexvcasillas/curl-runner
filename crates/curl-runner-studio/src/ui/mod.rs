@@ -18,6 +18,7 @@ mod inspector;
 mod inspector_failed;
 mod method_stack;
 mod new_dialog;
+mod open_cloud;
 mod open_shared;
 mod palette;
 mod problems_panel;
