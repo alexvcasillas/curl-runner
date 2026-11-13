@@ -56,11 +56,11 @@ pub enum PublishLine {
 
 impl PublishLine {
     /// The first line.
-    pub fn text(&self, now: DateTime<Utc>) -> String {
+    pub fn text(&self) -> String {
         match self {
             PublishLine::NotPublished => "Not published".into(),
             PublishLine::Publishing(n) => format!("Publishing version {n}…"),
-            PublishLine::UpToDate(p) => format!("Published v{} · {}", p.version, ago(p.at, now)),
+            PublishLine::UpToDate(p) => format!("Published v{}", p.version),
             PublishLine::Behind(1, _) => "1 file not published".into(),
             PublishLine::Behind(n, _) => format!("{n} files not published"),
             PublishLine::SignIn => "Sign in to publish".into(),
@@ -74,8 +74,8 @@ impl PublishLine {
     pub fn detail(&self, now: DateTime<Utc>) -> Option<String> {
         match self {
             PublishLine::UpToDate(p) => Some(match &p.git {
-                Some(g) => format!("by {} · {g}", p.by),
-                None => format!("by {}", p.by),
+                Some(g) => format!("{} by {} · {g}", ago(p.at, now), p.by),
+                None => format!("{} by {}", ago(p.at, now), p.by),
             }),
             PublishLine::Behind(_, p) => {
                 Some(format!("v{} · {} by {}", p.version, ago(p.at, now), p.by))
@@ -343,19 +343,19 @@ mod tests {
             git: Some("main@4f2a9c1".into()),
         };
         let up = PublishLine::UpToDate(p.clone());
-        assert_eq!(up.text(now), "Published v14 · 2 hours ago");
-        assert_eq!(up.detail(now).as_deref(), Some("by CI · main@4f2a9c1"));
+        assert_eq!(up.text(), "Published v14");
+        assert_eq!(
+            up.detail(now).as_deref(),
+            Some("2 hours ago by CI · main@4f2a9c1")
+        );
         let behind = PublishLine::Behind(3, p);
-        assert_eq!(behind.text(now), "3 files not published");
+        assert_eq!(behind.text(), "3 files not published");
         assert_eq!(
             behind.detail(now).as_deref(),
             Some("v14 · 2 hours ago by CI")
         );
-        assert_eq!(
-            PublishLine::Publishing(15).text(now),
-            "Publishing version 15…"
-        );
-        assert_eq!(PublishLine::NotPublished.text(now), "Not published");
+        assert_eq!(PublishLine::Publishing(15).text(), "Publishing version 15…");
+        assert_eq!(PublishLine::NotPublished.text(), "Not published");
         assert_eq!(PublishLine::NotPublished.dot(), None);
         assert_eq!(
             PublishLine::Studio.detail(now).as_deref(),

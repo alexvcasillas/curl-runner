@@ -90,8 +90,8 @@ fn foot(cx: &mut TestAppContext, ws: &Entity<Workspace>) -> String {
         let line = ws.publish_line(cx);
         let now = chrono::Utc::now();
         match line.detail(now) {
-            Some(d) => format!("{}. {d}", line.text(now)),
-            None => line.text(now),
+            Some(d) => format!("{}. {d}", line.text()),
+            None => line.text(),
         }
     })
 }
@@ -134,7 +134,7 @@ fn first_publish_picks_team_and_name_then_saves_them(cx: &mut TestAppContext) {
             .iter()
             .any(|c| c.starts_with("publish(\"acme\""))
     );
-    assert_eq!(foot(cx, &ws), "Published v1 · just now. by you");
+    assert_eq!(foot(cx, &ws), "Published v1. just now by you");
     // The folder names its collection for CI now, and the notes link it.
     let cfg = load_cloud_config(dir.path()).unwrap().unwrap();
     assert_eq!(cfg.collection, suggest_slug(&name));
@@ -165,7 +165,7 @@ fn later_publishes_ask_nothing(cx: &mut TestAppContext) {
     assert_eq!(foot(cx, &ws), "1 file not published. v1 · just now by you");
     publish(cx, window, &ws);
     assert!(ws.read_with(cx, |ws, _| ws.publish_view()).is_none());
-    assert_eq!(foot(cx, &ws), "Published v2 · just now. by you");
+    assert_eq!(foot(cx, &ws), "Published v2. just now by you");
 }
 
 #[gpui_kit::test]
