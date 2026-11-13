@@ -122,6 +122,7 @@ struct State {
 #[serde(default)]
 struct MockTeamShare {
     access: Option<LinkAccess>,
+    listed: bool,
     token: String,
     expires_at: Option<DateTime<Utc>>,
     /// (entry, kind, invited at, opened)
@@ -135,6 +136,8 @@ impl MockTeamShare {
             link: format!("https://cloud.curl-runner.com/s/{}", self.token),
             expires_at: self.expires_at,
             link_disabled: false,
+            listed: self.listed,
+            description: None,
             entries: self
                 .entries
                 .iter()
@@ -170,6 +173,8 @@ fn entry_kind(raw: &str) -> Option<(String, &'static str)> {
 #[serde(default)]
 struct PublishedCollection {
     source: Option<CollectionSource>,
+    /// From the latest publish that named one.
+    description: Option<String>,
     versions: Vec<(VersionSummary, Vec<BundleFile>)>,
 }
 
@@ -759,6 +764,9 @@ impl Backend for MockBackend {
                 )));
             }
             c.source = Some(CollectionSource::Git);
+            if request.description.is_some() {
+                c.description = request.description.clone();
+            }
             let previous = c.current().map(|(v, f)| (v.clone(), f.clone()));
             if let Some((v, _)) = previous.as_ref().filter(|(v, _)| v.hash == request.hash) {
                 return Ok(PublishResponse {
@@ -794,12 +802,17 @@ impl Backend for MockBackend {
                 return Err(BackendError::NotFound);
             }
             let seq = s.seq;
-            let share = s.team_shares.entry(key).or_insert_with(|| MockTeamShare {
-                token: format!("crsl_mock{seq}"),
-                ..Default::default()
-            });
+            let share = s
+                .team_shares
+                .entry(key.clone())
+                .or_insert_with(|| MockTeamShare {
+                    token: format!("crsl_mock{seq}"),
+                    ..Default::default()
+                });
             s.seq += 1;
-            Ok(share.view())
+            let mut view = share.view();
+            view.description = s.published.get(&key).and_then(|c| c.description.clone());
+            Ok(view)
         })
     }
     fn change_team_share(
@@ -825,17 +838,43 @@ impl Backend for MockBackend {
             }
             let seq = s.seq;
             s.seq += 1;
+            let description = s
+                .published
+                .get(&format!("{team}/{slug}"))
+                .and_then(|c| c.description.clone());
             let share = s.team_shares.entry(format!("{team}/{slug}")).or_default();
+            if change.listed == Some(true) {
+                let access = change.access.or(share.access).unwrap_or(LinkAccess::Off);
+                if access != LinkAccess::Public {
+                    return Err(BackendError::Invalid(
+                        "Only a public collection can be listed in the gallery. Make it public first."
+                            .into(),
+                    ));
+                }
+                if description.as_deref().is_none_or(|d| d.trim().is_empty()) {
+                    return Err(BackendError::Invalid(
+                        "Add a description to list it in the gallery.".into(),
+                    ));
+                }
+            }
             if share.token.is_empty() || change.reset_link {
                 share.token = format!("crsl_mock{seq}");
             }
             if let Some(a) = change.access {
                 share.access = Some(a);
+                if a != LinkAccess::Public {
+                    share.listed = false;
+                }
+            }
+            if let Some(l) = change.listed {
+                share.listed = l;
             }
             if let Some(days) = change.expires_in_days {
                 share.expires_at = days.map(|d| Utc::now() + chrono::Duration::days(i64::from(d)));
             }
-            Ok(share.view())
+            let mut view = share.view();
+            view.description = description;
+            Ok(view)
         })
     }
     fn add_share_entry(

@@ -250,3 +250,32 @@ fn the_foot_share_opens_it(cx: &mut TestAppContext) {
     click(cx, window, "sidebar-share");
     assert!(ws.read_with(cx, |ws, _| ws.team_share_view()).is_some());
 }
+
+#[gpui_kit::test]
+fn listing_needs_public_and_a_description(cx: &mut TestAppContext) {
+    let (window, ws, b, d, _s) = open(cx, "acme", Connection::Online);
+    // Published without a description: the switch is there but off.
+    let v = share(cx, window, &ws);
+    click(cx, window, "share-cloud-public");
+    assert!(shows(cx, window, "List in the gallery, off"));
+    click(cx, window, "share-cloud-gallery");
+    assert!(!v.read_with(cx, |v, _| v.share.clone().unwrap().listed));
+    // Publish with one, then list it.
+    let mut target = curl_runner_cloud_client::publish::check(d.path(), Some("pay"))
+        .target
+        .unwrap();
+    target.description = Some("Charges and refunds".into());
+    block_on(b.publish("acme", "pay", target.request(None))).unwrap();
+    cx.update_window(window, |_, _, cx| {
+        v.update(cx, |v, cx| v.load(cx));
+    })
+    .unwrap();
+    cx.run_until_parked();
+    click(cx, window, "share-cloud-gallery");
+    assert!(v.read_with(cx, |v, _| v.share.clone().unwrap().listed));
+    assert!(shows(cx, window, "View it on curl-runner.com"));
+    // Off takes it out of the gallery.
+    click(cx, window, "share-cloud-off");
+    assert!(!v.read_with(cx, |v, _| v.share.clone().unwrap().listed));
+    assert!(!shows(cx, window, "List in the gallery, off"));
+}
