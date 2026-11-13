@@ -71,6 +71,8 @@ actions!(
         Publish,
         /// Share the published collection (the sidebar foot's Share).
         ShareCollection,
+        /// List the team's collections and open a synced one here.
+        OpenFromCloud,
         /// Leave the sync conflict screen; the conflicts stay (esc).
         CloseConflicts,
         /// Show the collection's environments and variables.
@@ -469,6 +471,30 @@ pub fn run() {
                         "history" => ws.open_history(window, cx),
                         "account" => ws.toggle_account_menu(cx),
                         "share-cloud" => ws.open_team_share(window, cx),
+                        "open-cloud" => ws.open_from_cloud(None, window, cx),
+                        // The collection's Cloud card, once the server said
+                        // where its versions come from.
+                        "cloud-settings" => {
+                            cx.spawn_in(window, async move |ws, cx| {
+                                cx.background_executor()
+                                    .timer(std::time::Duration::from_millis(1500))
+                                    .await;
+                                ws.update_in(cx, |ws, window, cx| {
+                                    ws.open_settings(window, cx);
+                                    if let Some(v) = ws.settings_view.clone() {
+                                        v.update(cx, |v, cx| {
+                                            v.set_page(
+                                                super::collection_settings::Page::General,
+                                                window,
+                                                cx,
+                                            )
+                                        });
+                                    }
+                                })
+                                .ok();
+                            })
+                            .detach();
+                        }
                         "publish" => {
                             ws.start_publish(window, cx);
                             if dev_string("CURL_RUNNER_STUDIO_SUBMIT").is_some() {

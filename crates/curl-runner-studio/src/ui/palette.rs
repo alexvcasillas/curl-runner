@@ -6,8 +6,8 @@
 //! scrollbar covered the shortcut chips).
 
 use super::app::{
-    Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder, OpenHistory, OpenSettings,
-    OpenSharedLink, Publish, ShareCollection, ToggleProblems, Walkthrough, mono_font,
+    Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder, OpenFromCloud, OpenHistory,
+    OpenSettings, OpenSharedLink, Publish, ShareCollection, ToggleProblems, Walkthrough, mono_font,
 };
 use super::icons::{self, glyph};
 use super::settings_view::AppPage;
@@ -168,10 +168,11 @@ pub enum PaletteAction {
     Walkthrough,
     Publish,
     Share,
+    OpenFromCloud,
 }
 
 impl PaletteAction {
-    pub const ALL: [PaletteAction; 12] = [
+    pub const ALL: [PaletteAction; 13] = [
         PaletteAction::OpenFolder,
         PaletteAction::OpenSharedLink,
         PaletteAction::NewRequest,
@@ -184,6 +185,7 @@ impl PaletteAction {
         PaletteAction::Walkthrough,
         PaletteAction::Publish,
         PaletteAction::Share,
+        PaletteAction::OpenFromCloud,
     ];
 
     /// Whether this build lists it: opening a shared link needs the
@@ -192,7 +194,10 @@ impl PaletteAction {
         crate::features::SERVER
             || !matches!(
                 self,
-                PaletteAction::OpenSharedLink | PaletteAction::Publish | PaletteAction::Share
+                PaletteAction::OpenSharedLink
+                    | PaletteAction::Publish
+                    | PaletteAction::Share
+                    | PaletteAction::OpenFromCloud
             )
     }
 
@@ -210,6 +215,7 @@ impl PaletteAction {
             PaletteAction::Walkthrough => "Run the walkthrough",
             PaletteAction::Publish => "Publish",
             PaletteAction::Share => "Share…",
+            PaletteAction::OpenFromCloud => "Open from Cloud…",
         }
     }
 
@@ -228,6 +234,7 @@ impl PaletteAction {
             PaletteAction::Walkthrough => icons::PLAY,
             PaletteAction::Publish => icons::CLOUD,
             PaletteAction::Share => icons::SHARE,
+            PaletteAction::OpenFromCloud => icons::CLOUD_DOWN,
         }
     }
 
@@ -246,6 +253,7 @@ impl PaletteAction {
             PaletteAction::Walkthrough => Box::new(Walkthrough),
             PaletteAction::Publish => Box::new(Publish),
             PaletteAction::Share => Box::new(ShareCollection),
+            PaletteAction::OpenFromCloud => Box::new(OpenFromCloud),
         }
     }
 }
@@ -500,6 +508,9 @@ impl Palette {
                 Target::Action(PaletteAction::Walkthrough) => ws.start_walkthrough(window, cx),
                 Target::Action(PaletteAction::Publish) => ws.start_publish(window, cx),
                 Target::Action(PaletteAction::Share) => ws.share_from_palette(window, cx),
+                Target::Action(PaletteAction::OpenFromCloud) => {
+                    ws.open_from_cloud(None, window, cx)
+                }
             })
             .ok();
     }

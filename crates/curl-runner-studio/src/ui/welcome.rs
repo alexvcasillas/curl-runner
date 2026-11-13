@@ -151,6 +151,7 @@ impl Workspace {
                             .gap(px(12.))
                             .children(CARDS.iter().map(|card| render_card(card, cx))),
                     )
+                    .children(self.render_open_from_cloud(cx))
                     .children(self.render_recent(cx))
                     .child(render_secrets_note()),
             )
@@ -215,6 +216,37 @@ impl Workspace {
                         .child("Start"),
                 ),
         )
+    }
+
+    /// `Your team syncs on Cloud? Open from Cloud…` (board SyncCloud): signed
+    /// in to a server, in a team.
+    fn render_open_from_cloud(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        let signed_in = self.backend.account().is_some_and(|a| !a.teams.is_empty());
+        (crate::features::SERVER && signed_in).then(|| {
+            div()
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .text_size(px(13.))
+                .text_color(color("text-secondary"))
+                .child("Your team syncs collections on Cloud?")
+                .child(
+                    div()
+                        .id("welcome-open-cloud")
+                        .role(Role::Link)
+                        .test_support()
+                        .aria_label("Open from Cloud…")
+                        .text_color(color("text-primary"))
+                        .cursor_pointer()
+                        .hover(|s| s.underline())
+                        .on_click(
+                            cx.listener(|this, _, window, cx| {
+                                this.open_from_cloud(None, window, cx)
+                            }),
+                        )
+                        .child("Open from Cloud…"),
+                )
+        })
     }
 
     /// Recent, or nothing when no folder was opened yet.

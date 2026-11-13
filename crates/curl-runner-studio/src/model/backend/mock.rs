@@ -734,6 +734,51 @@ impl Backend for MockBackend {
                 .ok_or(BackendError::NotFound)
         })
     }
+    fn team_collections(&self, team: &str) -> BoxFut<'_, Vec<super::TeamCollection>> {
+        let prefix = format!("{team}/");
+        self.call(false, move |s| {
+            online(s)?;
+            account_of(s).ok_or(BackendError::SignedOut)?;
+            Ok(s.published
+                .iter()
+                .filter_map(|(k, c)| {
+                    let slug = k.strip_prefix(&prefix)?.to_string();
+                    let current = c.current().map(|(v, _)| v);
+                    Some(super::TeamCollection {
+                        name: slug.clone(),
+                        slug,
+                        source: c.source.unwrap_or(CollectionSource::Git),
+                        version: current.map(|v| v.number),
+                        updated_at: current.map(|v| v.published_at),
+                        publisher: current.map(|v| v.publisher.clone()),
+                    })
+                })
+                .collect())
+        })
+    }
+    fn set_source(&self, team: &str, slug: &str, source: CollectionSource) -> BoxFut<'_, ()> {
+        self.record(format!("set_source({team:?}, {slug:?}, {source:?})"));
+        let (team, slug) = (team.to_string(), slug.to_string());
+        self.call(true, move |s| {
+            online(s)?;
+            let account = account_of(s).ok_or(BackendError::SignedOut)?;
+            let owner = account
+                .teams
+                .iter()
+                .any(|t| t.slug == team && t.role == curl_runner_cloud_proto::Role::Owner);
+            if !owner {
+                return Err(BackendError::Invalid(
+                    "Only team owners can do this.".into(),
+                ));
+            }
+            let c = s
+                .published
+                .get_mut(&format!("{team}/{slug}"))
+                .ok_or(BackendError::NotFound)?;
+            c.source = Some(source);
+            Ok(())
+        })
+    }
     fn create_collection(&self, team: &str, slug: &str, name: &str) -> BoxFut<'_, ()> {
         self.record(format!("create_collection({team:?}, {slug:?}, {name:?})"));
         let (team, slug) = (team.to_string(), slug.to_string());

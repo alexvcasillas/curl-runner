@@ -493,6 +493,30 @@ impl Backend for HttpBackend {
                 .map_err(|e| self.publish_error(&server, &team, e))
         })
     }
+    fn team_collections(&self, team: &str) -> BoxFut<'_, Vec<super::TeamCollection>> {
+        let (server, team) = (key(self.server().url()), team.to_string());
+        Box::pin(async move {
+            let rows = self.team_call(&server, &team, |c| c.collections(&team))?;
+            Ok(rows
+                .into_iter()
+                .map(|r| super::TeamCollection {
+                    name: r.name.unwrap_or_else(|| r.slug.clone()),
+                    slug: r.slug,
+                    source: r.source.unwrap_or(CollectionSource::Git),
+                    version: r.current_version,
+                    updated_at: r.updated_at,
+                    publisher: r.publisher,
+                })
+                .collect())
+        })
+    }
+    fn set_source(&self, team: &str, slug: &str, source: CollectionSource) -> BoxFut<'_, ()> {
+        let (server, team, slug) = (key(self.server().url()), team.to_string(), slug.to_string());
+        Box::pin(async move {
+            self.team_call(&server, &team, |c| c.set_source(&team, &slug, source))
+                .map(|_| ())
+        })
+    }
     fn create_collection(&self, team: &str, slug: &str, name: &str) -> BoxFut<'_, ()> {
         let (server, team, slug, name) = (
             key(self.server().url()),

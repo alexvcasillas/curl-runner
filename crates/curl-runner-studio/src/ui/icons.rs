@@ -127,6 +127,10 @@ pub const CLOUD: &str = glyph!(
     "1.4",
     r#"<path d="M4.5 12.5a3 3 0 01-.3-6 4 4 0 017.6-.9 3.2 3.2 0 01.2 6.9z"/>"#
 );
+pub const CLOUD_DOWN: &str = glyph!(
+    "1.4",
+    r#"<path d="M4.5 12.5a3 3 0 01-.3-6 4 4 0 017.6-.9 3.2 3.2 0 01.2 6.9"/><path d="M8 8v5M6 11l2 2 2-2"/>"#
+);
 pub const SERVER: &str = glyph!(
     "1.4",
     r#"<rect x="2.5" y="2.5" width="11" height="4.5" rx="1"/><rect x="2.5" y="9" width="11" height="4.5" rx="1"/><path d="M5 4.75h.5M5 11.25h.5"/>"#

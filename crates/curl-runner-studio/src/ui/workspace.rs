@@ -3,9 +3,9 @@
 
 use super::app::{
     CloseTab, CopyAsCurl, Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder,
-    OpenHistory, OpenPalette, OpenSettings, OpenSharedLink, Publish, QuickFix, Rerun, RunActive,
-    RunCollection, RunRequestUnderCursor, SaveFile, ShareCollection, Stop, ToggleProblems,
-    Walkthrough, ui_font,
+    OpenFromCloud, OpenHistory, OpenPalette, OpenSettings, OpenSharedLink, Publish, QuickFix,
+    Rerun, RunActive, RunCollection, RunRequestUnderCursor, SaveFile, ShareCollection, Stop,
+    ToggleProblems, Walkthrough, ui_font,
 };
 use super::collection_settings::{CollectionSettings, EnvStatus, SettingsEvent, Sharing};
 use super::diagnostic_popover::DiagnosticHover;
@@ -139,6 +139,12 @@ pub struct Workspace {
     /// The collection settings page (Environments), while it is open.
     pub(super) settings_view: Option<Entity<CollectionSettings>>,
     _settings_events: Option<Subscription>,
+    /// Open from Cloud, while it is open.
+    pub(super) open_cloud_view: Option<WeakEntity<super::open_cloud::OpenCloudView>>,
+    pub(super) _open_cloud_events: Option<Subscription>,
+    /// Where Open from Cloud makes folders instead of the home folder
+    /// (tests).
+    pub(super) cloud_home: Option<std::path::PathBuf>,
     /// The app's settings, as saved.
     pub(super) settings: Settings,
     /// Welcome's Recent list, each with whether its folder is still there.
@@ -330,6 +336,9 @@ impl Workspace {
             notes_saves: 0,
             settings_view: None,
             _settings_events: None,
+            open_cloud_view: None,
+            _open_cloud_events: None,
+            cloud_home: None,
             settings,
             recent: Vec::new(),
             app_settings: None,
@@ -1485,6 +1494,9 @@ impl Render for Workspace {
                 )
                 .on_action(cx.listener(|this, _: &ShareCollection, window, cx| {
                     this.share_from_palette(window, cx)
+                }))
+                .on_action(cx.listener(|this, _: &OpenFromCloud, window, cx| {
+                    this.open_from_cloud(None, window, cx)
                 }))
                 .on_action(cx.listener(|this, _: &OpenEnvironments, window, cx| {
                     this.open_settings(window, cx)

@@ -194,6 +194,19 @@ pub struct RemoteCollection {
     pub current: Option<VersionSummary>,
 }
 
+/// One of a team's collections, as Open from Cloud lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TeamCollection {
+    pub slug: String,
+    pub name: String,
+    pub source: CollectionSource,
+    /// The current version, `None` before the first.
+    pub version: Option<u32>,
+    pub updated_at: Option<DateTime<Utc>>,
+    /// Who made the current version: an email, or `token {name}`.
+    pub publisher: Option<String>,
+}
+
 /// A team the account is in, as `/v1/me` lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamRef {
@@ -705,6 +718,18 @@ pub trait Backend: Send + Sync {
         let _ = (team, slug, request);
         Box::pin(async { Err(BackendError::Unavailable) })
     }
+    /// `team`'s collections on the current server, by slug.
+    fn team_collections(&self, team: &str) -> BoxFut<'_, Vec<TeamCollection>> {
+        let _ = team;
+        Box::pin(async { Err(BackendError::Unavailable) })
+    }
+    /// Switches `team/slug`'s source: publishing from files, or syncing
+    /// from the studio. Owners only; a member is refused in the server's
+    /// words.
+    fn set_source(&self, team: &str, slug: &str, source: CollectionSource) -> BoxFut<'_, ()> {
+        let _ = (team, slug, source);
+        Box::pin(async { Err(BackendError::Unavailable) })
+    }
     /// Makes `team/slug` on the current server as a new, empty collection
     /// that syncs from the studio (the first sync pushes its files). A slug
     /// the team already has is [`BackendError::Invalid`] in the server's
@@ -1060,6 +1085,12 @@ pub mod testing {
         }
         fn create_collection(&self, team: &str, slug: &str, name: &str) -> BoxFut<'_, ()> {
             self.inner.create_collection(team, slug, name)
+        }
+        fn set_source(&self, team: &str, slug: &str, source: CollectionSource) -> BoxFut<'_, ()> {
+            self.inner.set_source(team, slug, source)
+        }
+        fn team_collections(&self, team: &str) -> BoxFut<'_, Vec<TeamCollection>> {
+            self.inner.team_collections(team)
         }
         fn publishes(&self) -> bool {
             self.inner.publishes()

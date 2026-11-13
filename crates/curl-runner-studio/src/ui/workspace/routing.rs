@@ -350,6 +350,7 @@ impl Workspace {
             }
             view
         });
+        self.push_cloud_source(Some(&view), cx);
         self._settings_events = Some(cx.subscribe_in(&view, window, Self::on_settings_event));
         view.read(cx).focus_handle(cx).focus(window, cx);
         self.settings_view = Some(view);
@@ -386,6 +387,8 @@ impl Workspace {
             },
             SettingsEvent::Status => self.sync_chrome(window, cx),
             SettingsEvent::OpenApp(page) => self.open_app_settings(*page, window, cx),
+            SettingsEvent::SwitchSource(source) => self.switch_source(*source, window, cx),
+            SettingsEvent::OpenUrl(url) => cx.open_url(url),
             // The notes are shared: what the page wrote there is saved and
             // passed on by `notes_changed`.
             SettingsEvent::Changed => {
