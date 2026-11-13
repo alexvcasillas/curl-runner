@@ -168,7 +168,7 @@ describe('collection header', () => {
     render(await CollectionPage(page()));
     expect(screen.getByRole('heading', { level: 1, name: 'Payments API' })).toBeInTheDocument();
     const head = screen.getByRole('heading', { level: 1 }).parentElement as HTMLElement;
-    expect(within(head).getByText('git')).toBeInTheDocument();
+    expect(within(head).getByText('Git')).toBeInTheDocument();
     expect(within(head).getByText('Public')).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent(
       'Collections/Payments API',
@@ -386,7 +386,7 @@ describe('SourceSwitch', () => {
   it('warns before switching git to Cloud, and switches on confirm', async () => {
     const user = userEvent.setup();
     const onSwitch = setup('git');
-    expect(screen.getByRole('radio', { name: 'git' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Files' })).toBeChecked();
     expect(screen.getByText(/The studio can’t sync edits to it/)).toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: 'Cloud' }));
     const warning = screen.getByRole('alert');
@@ -394,7 +394,7 @@ describe('SourceSwitch', () => {
     expect(warning).toHaveTextContent('synced from the studio');
     expect(onSwitch).not.toHaveBeenCalled();
     // Nothing changed yet.
-    expect(screen.getByRole('radio', { name: 'git' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Files' })).toBeChecked();
     await user.click(screen.getByRole('button', { name: 'Switch to Cloud' }));
     expect(onSwitch).toHaveBeenCalledWith('cloud');
   });
@@ -402,7 +402,7 @@ describe('SourceSwitch', () => {
   it('warns that studio edits get overwritten going Cloud to git, and offers the zip', async () => {
     const user = userEvent.setup();
     const onSwitch = setup('cloud');
-    await user.click(screen.getByRole('radio', { name: 'git' }));
+    await user.click(screen.getByRole('radio', { name: 'Files' }));
     const warning = screen.getByRole('alert');
     expect(warning).toHaveTextContent('v14 stays current until the next CI publish replaces it');
     expect(warning).toHaveTextContent('Studio edits that aren’t in git yet will be overwritten');
@@ -410,7 +410,7 @@ describe('SourceSwitch', () => {
       'href',
       '/t/acme/c/payments-api/versions/14/download',
     );
-    await user.click(screen.getByRole('button', { name: 'Switch to git' }));
+    await user.click(screen.getByRole('button', { name: 'Switch to Files' }));
     expect(onSwitch).toHaveBeenCalledWith('git');
   });
 
@@ -439,7 +439,7 @@ describe('SourceSwitch', () => {
   it('has no download to offer before the first version', async () => {
     const user = userEvent.setup();
     setup('cloud', undefined, null);
-    await user.click(screen.getByRole('radio', { name: 'git' }));
+    await user.click(screen.getByRole('radio', { name: 'Files' }));
     expect(screen.queryByRole('link', { name: /Download/ })).not.toBeInTheDocument();
   });
 });

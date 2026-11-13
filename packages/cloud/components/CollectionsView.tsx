@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { cx } from '@/lib/cx';
-import type { AccessMode, Source } from '@/lib/types';
+import type { AccessMode, GitMeta, Source } from '@/lib/types';
 import { AccessBadge, SourceBadge } from './Badge';
 import { inputClasses } from './field-styles';
 import { ChevronRightIcon, SearchIcon } from './icons';
@@ -13,6 +13,8 @@ export type CollectionRow = {
   slug: string;
   name: string;
   source: Source;
+  /** The current version's git details, for the source badge. */
+  git?: GitMeta | null;
   access: AccessMode;
   /** "v14", or null before the first publish. */
   version: string | null;
@@ -79,7 +81,7 @@ export function CollectionsView({ rows, note }: { rows: CollectionRow[]; note: s
       >
         <TableHeader>
           <TableHead>Collection</TableHead>
-          <TableHead width={96}>Source</TableHead>
+          <TableHead width={112}>Source</TableHead>
           <TableHead width={120}>Access</TableHead>
           <TableHead width={72}>Version</TableHead>
           <TableHead width={220}>Last publish</TableHead>
@@ -98,8 +100,8 @@ export function CollectionsView({ rows, note }: { rows: CollectionRow[]; note: s
               <TableRowLink href={r.href}>{r.name}</TableRowLink>
               <span className="truncate font-mono text-[12px] text-fg-subtle">{r.slug}</span>
             </TableCell>
-            <TableCell width={96}>
-              <SourceBadge source={r.source} />
+            <TableCell width={112}>
+              <SourceBadge source={r.source} git={r.git} />
             </TableCell>
             <TableCell width={120}>
               <AccessBadge access={r.access} />

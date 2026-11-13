@@ -117,6 +117,8 @@ async fn first_publish_creates_git_collection_v1(pool: PgPool) {
     assert_eq!(list[0]["current_version"], 1);
     assert!(list[0]["updated_at"].is_string());
     assert_eq!(list[0]["publisher"], "a@example.com");
+    // Published from files without git details: the dashboard says so.
+    assert_eq!(list[0]["git"], Value::Null);
 
     // A fresh link token, hashed, and recoverable with the secret key.
     let (hash, enc): (String, String) =
@@ -788,4 +790,19 @@ async fn concurrent_identical_publishes_create_once(pool: PgPool) {
         ]
     );
     assert_eq!(count(&app, "versions").await, 2);
+}
+
+#[sqlx::test]
+async fn list_carries_the_current_versions_git_details(pool: PgPool) {
+    let (app, s) = setup(pool).await;
+    let mut body = body_for(&[("a.yaml", "x: 1")]);
+    body["git"] = json!({"commit": "4f2a9c1aa", "ref": "refs/heads/main", "repo_url": "https://github.com/acme/api"});
+    let (status, res) = put_raw(&app, PUBLISH, &s, body.to_string().into_bytes(), false).await;
+    assert_eq!(status, StatusCode::CREATED, "{res}");
+    let (_, list) = app
+        .request(Method::GET, "/v1/teams/acme/collections", None, Some(&s))
+        .await;
+    assert_eq!(list[0]["git"]["commit"], "4f2a9c1aa");
+    assert_eq!(list[0]["git"]["ref"], "refs/heads/main");
+    assert_eq!(list[0]["git"]["repo_url"], "https://github.com/acme/api");
 }

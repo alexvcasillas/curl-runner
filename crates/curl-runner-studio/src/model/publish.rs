@@ -73,8 +73,9 @@ impl PublishLine {
     /// The muted second line, if any.
     pub fn detail(&self, now: DateTime<Utc>) -> Option<String> {
         match self {
+            // With git details the commit says enough: who would crowd it.
             PublishLine::UpToDate(p) => Some(match &p.git {
-                Some(g) => format!("{} by {} · {g}", ago(p.at, now), p.by),
+                Some(g) => format!("{} · {g}", ago(p.at, now)),
                 None => format!("{} by {}", ago(p.at, now), p.by),
             }),
             PublishLine::Behind(_, p) => {
@@ -168,6 +169,64 @@ pub fn suggest_slug(name: &str) -> String {
     }
     out.truncate(63);
     out.trim_end_matches('-').to_string()
+}
+
+/// The folder's git details, as CI sends them: HEAD's commit, its branch and
+/// the `origin` remote as an https URL (no credentials). Not a repo, or no
+/// `git` on this Mac: `None`. Uncommitted changes under `root` leave the
+/// commit out, since the version isn't that commit.
+pub fn folder_git(root: &Path) -> Option<GitMeta> {
+    let git = |args: &[&str]| -> Option<String> {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()?;
+        out.status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    };
+    git(&["rev-parse", "--is-inside-work-tree"]).filter(|s| s == "true")?;
+    let clean = git(&["status", "--porcelain", "--", "."]).is_some_and(|s| s.is_empty());
+    let meta = GitMeta {
+        commit: git(&["rev-parse", "HEAD"]).filter(|c| clean && !c.is_empty()),
+        git_ref: git(&["symbolic-ref", "-q", "HEAD"]).filter(|r| !r.is_empty()),
+        repo_url: git(&["config", "--get", "remote.origin.url"]).and_then(|u| web_url(&u)),
+    };
+    (meta.commit.is_some() || meta.git_ref.is_some() || meta.repo_url.is_some()).then_some(meta)
+}
+
+/// A remote as its web page: `git@github.com:acme/api.git` and
+/// `https://user:token@github.com/acme/api.git` are both
+/// `https://github.com/acme/api`. Anything else (a local path) is `None`.
+fn web_url(remote: &str) -> Option<String> {
+    let remote = remote.trim();
+    let (host, path) = if let Some(rest) = remote
+        .strip_prefix("https://")
+        .or_else(|| remote.strip_prefix("http://"))
+        .or_else(|| remote.strip_prefix("ssh://"))
+        .or_else(|| remote.strip_prefix("git://"))
+    {
+        let (authority, path) = rest.split_once('/')?;
+        let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+        // An ssh port is no web port.
+        let host = host.split_once(':').map_or(host, |(h, _)| h);
+        (host.to_string(), path.to_string())
+    } else {
+        // scp form: `[user@]host:path`.
+        let (authority, path) = remote.split_once(':')?;
+        if authority.contains('/') || path.starts_with('/') && authority.is_empty() {
+            return None;
+        }
+        let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+        (host.to_string(), path.to_string())
+    };
+    let path = path.trim_matches('/').trim_end_matches(".git");
+    let ok = |s: &str| !s.is_empty() && !s.chars().any(|c| c.is_whitespace() || c == '@');
+    (ok(&host) && host.contains('.') && ok(path)).then(|| format!("https://{host}/{path}"))
 }
 
 /// What the dialog's `Ready to publish` card counts.
@@ -346,7 +405,7 @@ mod tests {
         assert_eq!(up.text(), "Published v14");
         assert_eq!(
             up.detail(now).as_deref(),
-            Some("2 hours ago by CI · main@4f2a9c1")
+            Some("2 hours ago · main@4f2a9c1")
         );
         let behind = PublishLine::Behind(3, p);
         assert_eq!(behind.text(), "3 files not published");
@@ -416,6 +475,79 @@ mod tests {
         assert_eq!(
             with_cloud_block("global:\n  timeout: 5", "pay", None),
             "global:\n  timeout: 5\ncloud:\n  collection: pay\n"
+        );
+    }
+
+    #[test]
+    fn remotes_become_web_urls_without_credentials() {
+        for (remote, want) in [
+            (
+                "git@github.com:acme/api.git",
+                Some("https://github.com/acme/api"),
+            ),
+            (
+                "https://user:tok3n@github.com/acme/api.git",
+                Some("https://github.com/acme/api"),
+            ),
+            (
+                "ssh://git@gitlab.com:2222/acme/sub/api.git",
+                Some("https://gitlab.com/acme/sub/api"),
+            ),
+            (
+                "https://github.com/acme/api",
+                Some("https://github.com/acme/api"),
+            ),
+            ("/srv/git/api.git", None),
+            ("../api", None),
+            ("C:/repos/api", None),
+        ] {
+            assert_eq!(web_url(remote).as_deref(), want, "{remote}");
+        }
+    }
+
+    fn git(dir: &Path, args: &[&str]) {
+        let ok = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@example.test")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@example.test")
+            .output()
+            .unwrap()
+            .status
+            .success();
+        assert!(ok, "git {args:?}");
+    }
+
+    #[test]
+    fn folder_git_reads_commit_branch_and_remote() {
+        let d = tempfile::tempdir().unwrap();
+        assert_eq!(folder_git(d.path()), None);
+        git(d.path(), &["init", "-q", "-b", "main"]);
+        std::fs::write(d.path().join("a.yaml"), "x: 1\n").unwrap();
+        git(d.path(), &["add", "."]);
+        git(d.path(), &["commit", "-q", "-m", "one"]);
+        git(
+            d.path(),
+            &[
+                "remote",
+                "add",
+                "origin",
+                "https://u:secret@github.com/acme/api.git",
+            ],
+        );
+        let g = folder_git(d.path()).unwrap();
+        assert_eq!(g.commit.as_deref().map(str::len), Some(40));
+        assert_eq!(g.git_ref.as_deref(), Some("refs/heads/main"));
+        assert_eq!(g.repo_url.as_deref(), Some("https://github.com/acme/api"));
+        // Uncommitted changes: not that commit any more.
+        std::fs::write(d.path().join("a.yaml"), "x: 2\n").unwrap();
+        let dirty = folder_git(d.path()).unwrap();
+        assert_eq!(
+            (dirty.commit, dirty.git_ref.as_deref()),
+            (None, Some("refs/heads/main"))
         );
     }
 

@@ -59,6 +59,11 @@ const collections = () => [
     current_version: 14,
     updated_at: new Date(Date.now() - 2 * 3600_000).toISOString(),
     publisher: 'token github-actions',
+    git: {
+      commit: '4f2a9c1aa0',
+      ref: 'refs/heads/main',
+      repo_url: 'https://github.com/acme/payments',
+    },
   },
   {
     slug: 'webhooks',
@@ -122,7 +127,9 @@ describe('collections list', () => {
       '/t/acme/c/payments-api',
     );
     expect(first.getByText('payments-api')).toBeInTheDocument();
-    expect(first.getByText('git')).toBeInTheDocument();
+    // Published from files with git details: Git, the repo and commit on hover.
+    expect(first.getByText('Git')).toBeInTheDocument();
+    expect(first.getByTitle('acme/payments · main@4f2a9c1')).toBeInTheDocument();
     expect(first.getByText('Public')).toBeInTheDocument();
     expect(first.getByText('v14')).toBeInTheDocument();
     const when = first.getByText('2 hours ago');
