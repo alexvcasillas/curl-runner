@@ -38,6 +38,21 @@ describe('SiteHeader', () => {
     );
   });
 
+  it('links Collections between Features and Downloads', () => {
+    render(<SiteHeader active="collections" />);
+    const labels = screen.getAllByRole('link').map((l) => l.textContent);
+    expect(labels.indexOf('Collections')).toBeGreaterThan(labels.indexOf('Features'));
+    expect(labels.indexOf('Collections')).toBeLessThan(labels.indexOf('Downloads'));
+    expect(screen.getByRole('link', { name: 'Collections' })).toHaveAttribute(
+      'href',
+      '/collections',
+    );
+    expect(screen.getByRole('link', { name: 'Collections' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+  });
+
   it('marks Docs as the current section on docs pages', () => {
     render(<SiteHeader active="docs" />);
     expect(screen.getByRole('link', { name: 'Docs' })).toHaveAttribute('aria-current', 'page');
@@ -50,6 +65,10 @@ describe('SiteFooter', () => {
     for (const heading of ['Product', 'Resources', 'Community']) {
       expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
     }
+    expect(screen.getByRole('link', { name: 'Collections' })).toHaveAttribute(
+      'href',
+      '/collections',
+    );
     expect(screen.getByRole('link', { name: 'Tools database' })).toHaveAttribute(
       'href',
       '/tools-database',

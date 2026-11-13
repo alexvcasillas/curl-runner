@@ -154,9 +154,11 @@ describe('studio feature page', () => {
     expect(meta.openGraph).toMatchObject({ url: `${SITE_URL}/features/studio` });
   });
 
-  it('is in the sitemap', () => {
-    expect(sitemap().map((e) => e.url)).toContain(`${SITE_URL}/features/studio`);
-    expect(sitemap().map((e) => e.url)).toContain(`${SITE_URL}/docs/features/studio`);
+  it('is in the sitemap', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+    const urls = (await sitemap()).map((e) => e.url);
+    expect(urls).toContain(`${SITE_URL}/features/studio`);
+    expect(urls).toContain(`${SITE_URL}/docs/features/studio`);
   });
 
   it('stays out of the CLI’s JSON-LD feature list', async () => {

@@ -1,5 +1,5 @@
 import { prerenderToNodeStream } from 'react-dom/static.node';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import BlogPostPage, { generateMetadata } from '@/app/(marketing)/blog/[slug]/page';
 import { metadata as indexMetadata } from '@/app/(marketing)/blog/page';
 import { GET as getFeed } from '@/app/blog/rss.xml/route';
@@ -34,8 +34,9 @@ describe('/blog/rss.xml', () => {
 });
 
 describe('sitemap', () => {
-  it('lists the blog and each post', () => {
-    const urls = sitemap().map((entry) => entry.url);
+  it('lists the blog and each post', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+    const urls = (await sitemap()).map((entry) => entry.url);
     expect(urls).toContain(`${SITE}/blog`);
     expect(urls).toContain(`${SITE}/blog/${SLUG}`);
   });

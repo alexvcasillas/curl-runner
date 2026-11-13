@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { getPosts } from '@/lib/blog';
 import { getAllFeatures } from '@/lib/features-data';
+import { fetchAllCollections } from '@/lib/gallery';
 import { lastCommitDates } from '@/lib/git-dates';
 import {
   BLOG_POST_SOURCES,
@@ -16,8 +17,9 @@ interface Entry {
   priority: number;
 }
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const posts = getPosts();
+  const collections = await fetchAllCollections();
   const entries: Entry[] = [
     ...MARKETING_PAGES.map(({ path, sources }) => ({
       url: `${SITE_URL}${path}`,
@@ -41,11 +43,28 @@ export default function sitemap(): MetadataRoute.Sitemap {
     })),
   ];
 
+  const galleryPages: MetadataRoute.Sitemap = [...new Set(collections.map((c) => c.team.slug))].map(
+    (team) => ({
+      url: `${SITE_URL}/collections/${team}`,
+      changeFrequency: 'weekly' as const,
+      priority: 0.6,
+    }),
+  );
+  const galleryEntries: MetadataRoute.Sitemap = collections.map((c) => {
+    const updated = new Date(c.updated_at);
+    return {
+      url: `${SITE_URL}/collections/${c.team.slug}/${c.slug}`,
+      ...(!Number.isNaN(updated.getTime()) && { lastModified: updated }),
+      changeFrequency: 'weekly' as const,
+      priority: 0.6,
+    };
+  });
+
   // lastmod is the last commit to a page's sources, not the build time: a date that moves
   // on every deploy tells crawlers (and IndexNow) that every page changed.
   const dates = lastCommitDates([...new Set(entries.flatMap((entry) => entry.sources))]);
 
-  return entries.map(({ url, sources, priority }) => {
+  const pages = entries.map(({ url, sources, priority }) => {
     const times = sources.flatMap((file) => dates.get(file)?.getTime() ?? []);
     return {
       url,
@@ -54,4 +73,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority,
     };
   });
+  return [...pages, ...galleryPages, ...galleryEntries];
 }

@@ -11,6 +11,7 @@ export const MARKETING_PAGES: { path: string; sources: string[] }[] = [
     path: '/alternatives',
     sources: ['app/(marketing)/alternatives/page.tsx', 'lib/alternatives.ts'],
   },
+  { path: '/collections', sources: ['app/(marketing)/collections/page.tsx', 'lib/gallery.ts'] },
   { path: '/downloads', sources: ['app/(marketing)/downloads/page.tsx', CLI_CHANGELOG] },
   { path: '/tools-database', sources: ['app/(marketing)/tools-database/page.tsx', CLI_CHANGELOG] },
   { path: '/changelog', sources: ['app/(marketing)/changelog/page.tsx', CLI_CHANGELOG] },
