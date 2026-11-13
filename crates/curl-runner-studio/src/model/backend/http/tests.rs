@@ -1184,9 +1184,11 @@ fn e2e_sync_against_a_live_server() {
         );
     };
     let run = || {
-        client
-            .create_collection(&team, &slug, "Studio sync e2e (safe to delete)")
-            .unwrap();
+        block_on(b.create_collection(&team, &slug, "Studio sync e2e (safe to delete)")).unwrap();
+        let listed = block_on(b.team_collections(&team)).unwrap();
+        let row = listed.iter().find(|c| c.slug == slug).expect("listed");
+        assert_eq!(row.source, CollectionSource::Cloud);
+        assert_eq!(row.name, "Studio sync e2e (safe to delete)");
         let link = crate::model::publish::CloudLink {
             server: key(&server),
             team: team.clone(),
