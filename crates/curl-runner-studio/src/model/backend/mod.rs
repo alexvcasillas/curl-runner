@@ -233,6 +233,9 @@ pub struct CollectionKey {
     /// The collection's [`CollectionMeta::id`].
     pub id: String,
     pub name: String,
+    /// The team collection it syncs with on the real server; the mock keys
+    /// by `id` and ignores it.
+    pub cloud: Option<crate::model::publish::CloudLink>,
 }
 
 /// One YAML file of a collection, as synced. Never a `.env` file, never a
@@ -242,12 +245,12 @@ pub struct SyncFile {
     /// Relative to the collection root.
     pub rel: PathBuf,
     /// [`SyncFile::hash_of`] the text.
-    pub hash: u64,
+    pub hash: String,
     pub text: String,
     /// The hash this client last synced for the file (`None`: never). The
     /// server reports a conflict when its copy is neither this nor `hash`.
     #[serde(default)]
-    pub base: Option<u64>,
+    pub base: Option<String>,
 }
 
 impl SyncFile {
@@ -262,14 +265,65 @@ impl SyncFile {
     }
 
     /// With the hash this client last synced.
-    pub fn with_base(mut self, base: Option<u64>) -> SyncFile {
+    pub fn with_base(mut self, base: Option<String>) -> SyncFile {
         self.base = base;
         self
     }
 
-    /// FNV-1a 64 of `text`: stable across releases and machines.
-    pub fn hash_of(text: &str) -> u64 {
-        crate::model::history::fnv1a(text.as_bytes())
+    /// SHA-256 hex of `text`, as the server hashes files.
+    pub fn hash_of(text: &str) -> String {
+        curl_runner_cloud_proto::file_hash(text)
+    }
+
+    /// Whether `stored` (a hash kept on disk) is this file's text. Hashes
+    /// kept before 2.13 are FNV-1a, read back as [`legacy_hash`] strings.
+    pub fn matches(&self, stored: &str) -> bool {
+        stored == self.hash || stored == legacy_hash(&self.text)
+    }
+}
+
+/// The form a hash kept before 2.13 (FNV-1a 64) is read back in: never equal
+/// to a SHA-256 hex, so it only matches through [`SyncFile::matches`].
+pub fn legacy_hash(text: &str) -> String {
+    format!("fnv:{:016x}", crate::model::history::fnv1a(text.as_bytes()))
+}
+
+/// Whether `hash` is a current (SHA-256) hash, not a [`legacy_hash`].
+pub fn is_current_hash(hash: &str) -> bool {
+    !hash.starts_with("fnv:")
+}
+
+/// Deserializes a stored hash: a string, or a pre-2.13 FNV number.
+pub mod stored_hash {
+    use serde::{Deserialize, Deserializer};
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    pub(crate) enum Either {
+        Current(String),
+        Legacy(u64),
+    }
+
+    impl From<Either> for String {
+        fn from(e: Either) -> String {
+            match e {
+                Either::Current(s) => s,
+                Either::Legacy(n) => format!("fnv:{n:016x}"),
+            }
+        }
+    }
+
+    pub fn one<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+        Ok(Either::deserialize(d)?.into())
+    }
+
+    pub fn map<'de, D, K>(d: D) -> Result<std::collections::BTreeMap<K, String>, D::Error>
+    where
+        D: Deserializer<'de>,
+        K: Deserialize<'de> + Ord,
+    {
+        let raw = std::collections::BTreeMap::<K, Either>::deserialize(d)?;
+        Ok(raw.into_iter().map(|(k, v)| (k, v.into())).collect())
     }
 }
 
@@ -309,7 +363,7 @@ pub struct Conflict {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncDeletion {
     pub rel: PathBuf,
-    pub base: u64,
+    pub base: String,
 }
 
 /// What the server knows of one collection's sync. Anything about this
@@ -516,7 +570,8 @@ pub struct ReceivedShare {
     pub version: u32,
     pub added: NaiveDate,
     /// [`SyncFile::hash_of`] each file as received.
-    pub files: BTreeMap<PathBuf, u64>,
+    #[serde(deserialize_with = "stored_hash::map")]
+    pub files: BTreeMap<PathBuf, String>,
 }
 
 /// The mock's developer toggles (App menu › Developer, debug builds with

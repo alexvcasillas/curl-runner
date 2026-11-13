@@ -15,7 +15,7 @@ pub const CONFIG_FILE: &str = "curl-runner.yaml";
 
 /// Where a folder publishes: a team's collection on a server (API URL, no
 /// trailing `/`). Kept in the collection's notes, not in the folder.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CloudLink {
     pub server: String,
     pub team: String,

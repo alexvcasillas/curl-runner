@@ -16,6 +16,7 @@ fn key() -> CollectionKey {
     CollectionKey {
         id: "a1b2c3d4".into(),
         name: "Payments API".into(),
+        cloud: None,
     }
 }
 
@@ -371,7 +372,7 @@ fn sync_pushes_and_reports_pending_counts() {
 
     // Offline: the call fails and the server says only what it has (what
     // waits is the client's to count).
-    let base = |f: &SyncFile| Some(f.hash);
+    let base = |f: &SyncFile| Some(f.hash.clone());
     local[0] =
         SyncFile::new("charges/create.yaml", "request:\n  url: a2\n").with_base(base(&local[0]));
     local[1] =
@@ -503,7 +504,7 @@ fn conflict_next_sync_returns_one_conflict_with_sam_as_author() {
     let mut local: Vec<SyncFile> = local
         .into_iter()
         .map(|f| {
-            let h = f.hash;
+            let h = f.hash.clone();
             f.with_base(Some(h))
         })
         .collect();
@@ -672,6 +673,7 @@ fn no_secret_reaches_backend() {
     let k = CollectionKey {
         id: meta.id.clone(),
         name: "payments".into(),
+        cloud: None,
     };
     // The owner even ticks "Share default" on the secret.
     let ticked = ["BASE_URL".to_string(), "API_TOKEN".to_string()];
@@ -766,7 +768,7 @@ fn an_owned_share_publishes_each_change_as_a_version() {
     let v2_based: Vec<SyncFile> = v2
         .iter()
         .cloned()
-        .map(|f| f.with_base(Some(v1[0].hash)))
+        .map(|f| f.with_base(Some(v1[0].hash.clone())))
         .collect();
     assert_eq!(block_on(b.sync(&owner, &v2_based, &[])).unwrap().pushed, 1);
     assert_eq!(block_on(b.latest_version(&link)), Ok(2));

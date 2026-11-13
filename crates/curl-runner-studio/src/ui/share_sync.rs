@@ -697,6 +697,7 @@ mod tests {
             key: CollectionKey {
                 id: "0a1b2c3d".into(),
                 name: "Payments API".into(),
+                cloud: None,
             },
             root: std::path::PathBuf::from("/nowhere"),
             notes: notes.clone(),

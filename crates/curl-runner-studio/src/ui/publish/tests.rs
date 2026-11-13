@@ -160,7 +160,10 @@ fn later_publishes_ask_nothing(cx: &mut TestAppContext) {
     click(cx, window, "publish-go");
     assert!(!dir.path().join(CONFIG_FILE).exists());
     std::fs::write(dir.path().join("a.yaml"), REQUEST.replace("GET", "POST")).unwrap();
-    ws.update(cx, |ws, cx| ws.refresh_publish(false, cx));
+    cx.update_window(window, |_, window, cx| {
+        ws.update(cx, |ws, cx| ws.refresh_publish(false, window, cx))
+    })
+    .unwrap();
     cx.run_until_parked();
     assert_eq!(foot(cx, &ws), "1 file not published. v1 · just now by you");
     publish(cx, window, &ws);

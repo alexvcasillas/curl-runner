@@ -418,6 +418,40 @@ impl Client {
         format!("/v1/teams/{team}/collections/{collection}/share")
     }
 
+    /// A new, empty collection that syncs from the studio. A slug the team
+    /// already has is a `409 conflict`.
+    pub fn create_collection(
+        &self,
+        team: &str,
+        slug: &str,
+        name: &str,
+    ) -> Result<CollectionRow, CloudError> {
+        #[derive(serde::Serialize)]
+        struct Body<'a> {
+            slug: &'a str,
+            name: &'a str,
+        }
+        self.json(
+            "POST",
+            &format!("/v1/teams/{team}/collections"),
+            Some(&Body { slug, name }),
+        )
+    }
+
+    /// One two-way sync of a collection whose source is the studio. Sent
+    /// gzipped: a first sync carries every file.
+    pub fn sync(
+        &self,
+        team: &str,
+        collection: &str,
+        req: &curl_runner_cloud_proto::sync::SyncRequest,
+    ) -> Result<curl_runner_cloud_proto::sync::SyncResponse, CloudError> {
+        let body = serde_json::to_vec(req).map_err(|e| CloudError::Unreachable(e.to_string()))?;
+        let path = format!("/v1/teams/{team}/collections/{collection}/sync");
+        let (status, resp) = self.call_gz("POST", &path, Some(&body), true)?;
+        serde_json::from_slice(&resp).map_err(|_| not_the_api(status))
+    }
+
     /// A collection's access, link and list.
     pub fn share(&self, team: &str, collection: &str) -> Result<TeamShare, CloudError> {
         self.json("GET", &Self::share_path(team, collection), None::<&()>)

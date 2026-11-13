@@ -103,7 +103,7 @@ pub fn local_changes(root: &Path, share: &ReceivedShare) -> Vec<PathBuf> {
     let mut changed: BTreeSet<PathBuf> = scan
         .files
         .iter()
-        .filter(|f| share.files.get(&f.rel) != Some(&f.hash))
+        .filter(|f| share.files.get(&f.rel).is_none_or(|h| !f.matches(h)))
         .map(|f| f.rel.clone())
         .chain(unhashed.cloned())
         .collect();

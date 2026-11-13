@@ -245,7 +245,10 @@ fn the_foot_share_opens_it(cx: &mut TestAppContext) {
         .target
         .unwrap();
     block_on(b.publish("acme", "pay", target.request(None))).unwrap();
-    ws.update(cx, |ws, cx| ws.refresh_publish(false, cx));
+    cx.update_window(window, |_, window, cx| {
+        ws.update(cx, |ws, cx| ws.refresh_publish(false, window, cx))
+    })
+    .unwrap();
     cx.run_until_parked();
     click(cx, window, "sidebar-share");
     assert!(ws.read_with(cx, |ws, _| ws.team_share_view()).is_some());

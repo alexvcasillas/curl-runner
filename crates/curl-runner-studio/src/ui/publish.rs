@@ -1003,7 +1003,12 @@ impl Workspace {
 
     /// Works the foot out again: the folder against the current version,
     /// off the UI thread. `delay` waits first (edits in a row).
-    pub(super) fn refresh_publish(&mut self, delay: bool, cx: &mut Context<Self>) {
+    pub(super) fn refresh_publish(
+        &mut self,
+        delay: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if !self.publish_applies() || self.backend.account().is_none() {
             self.publish.refresh = None;
             cx.notify();
@@ -1024,7 +1029,7 @@ impl Workspace {
             b.remote_collection(&team, &slug)
         });
         let backend = self.backend.clone();
-        self.publish.refresh = Some(cx.spawn(async move |this, cx| {
+        self.publish.refresh = Some(cx.spawn_in(window, async move |this, cx| {
             if delay {
                 cx.background_executor().timer(RECHECK_DELAY).await;
             }
@@ -1079,7 +1084,8 @@ impl Workspace {
                     }
                 }
             };
-            this.update(cx, |this, cx| {
+            this.update_in(cx, |this, window, cx| {
+                let was = this.cloud_synced();
                 match result {
                     Refreshed::Line(l) => this.publish.line = Some(l),
                     Refreshed::Remote(n, l) => {
@@ -1090,6 +1096,20 @@ impl Workspace {
                             this.refresh_team_share(cx);
                         }
                     }
+                }
+                match (was, this.cloud_synced()) {
+                    // Found to sync from the studio: two-way from now on.
+                    (false, true) => {
+                        this.refresh_team_share(cx);
+                        this.begin_two_way(window, cx);
+                        this.sync_changed(cx);
+                    }
+                    // Switched to publishing: the sync stops.
+                    (true, false) => {
+                        this.stop_two_way();
+                        this.sync_changed(cx);
+                    }
+                    _ => {}
                 }
                 cx.notify();
             })
@@ -1291,7 +1311,7 @@ impl Workspace {
                     Err(BackendError::SignedOut) => this.publish.line = Some(PublishLine::SignIn),
                     Err(e) => this.publish_failed(e, link, dashboard, window, cx),
                 }
-                this.refresh_publish(false, cx);
+                this.refresh_publish(false, window, cx);
             })
             .ok();
         }));
@@ -1531,7 +1551,9 @@ impl Workspace {
             ),
             PublishLine::Unchecked(_) => Some(
                 small_button("sidebar-publish-retry", "Retry")
-                    .on_click(cx.listener(|this, _, _, cx| this.refresh_publish(false, cx)))
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.refresh_publish(false, window, cx)),
+                    )
                     .child("Retry")
                     .into_any_element(),
             ),
