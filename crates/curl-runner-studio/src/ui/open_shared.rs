@@ -130,6 +130,11 @@ impl Field {
 }
 
 pub struct OpenSharedView {
+    /// The dialog's own focus: an Add that finishes closes the dialog only
+    /// while focus is still in it (no dialog opened over it since).
+    pub(super) focus: FocusHandle,
+    /// Added already (see [`OpenSharedView::added`]).
+    done: bool,
     backend: Arc<dyn Backend>,
     secrets: Arc<dyn SecretStore>,
     /// The studio's state dir: shared copies go under `{base}/shared/`.
@@ -194,6 +199,8 @@ impl OpenSharedView {
                 },
             );
         OpenSharedView {
+            focus: cx.focus_handle(),
+            done: false,
             backend,
             secrets,
             base,
@@ -443,6 +450,14 @@ impl OpenSharedView {
     }
 
     /// An Add is in flight: the dialog stays until it is done.
+    /// The copy was added while this dialog sat under another one: Add
+    /// now only closes it.
+    pub fn added(&mut self, cx: &mut Context<Self>) {
+        self.done = true;
+        self.busy = false;
+        cx.notify();
+    }
+
     pub fn adding(&self) -> bool {
         self.busy && self.step == Step::Credentials
     }
@@ -459,6 +474,10 @@ impl OpenSharedView {
     /// view going) never leaves a half-added copy: it finishes and opens,
     /// or rolls back.
     pub fn add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.done {
+            cx.emit(OpenSharedEvent::Close);
+            return;
+        }
         if self.busy || self.step != Step::Credentials || !self.ready(cx) {
             return;
         }
@@ -1363,6 +1382,7 @@ impl Render for OpenSharedView {
         let room = window.viewport_size().height - px(140.);
         div()
             .id("open-shared")
+            .track_focus(&self.focus)
             .role(Role::Dialog)
             .test_support()
             .aria_label(title)
@@ -1451,8 +1471,15 @@ impl Workspace {
         let content = view.clone();
         let first_build = std::cell::Cell::new(true);
         window.open_dialog(cx, move |d, window, cx| {
-            if first_build.replace(false) && content.read(cx).step == Step::Paste {
-                let focus = content.read(cx).link.read(cx).focus_handle(cx);
+            if first_build.replace(false) {
+                // The link field to paste into, else the dialog itself, so
+                // the Add's close finds focus in it (a deep link opens
+                // straight on the review).
+                let focus = if content.read(cx).step == Step::Paste {
+                    content.read(cx).link.read(cx).focus_handle(cx)
+                } else {
+                    content.read(cx).focus.clone()
+                };
                 focus.focus(window, cx);
             }
             // Centred on the credentials step, so the steps don't jump.
@@ -1469,8 +1496,9 @@ impl Workspace {
                 .on_ok(|_, _, _| false)
                 .child(content.clone())
         });
-        // Opening a dialog focuses it.
-        self.open_shared_focus = window.focused(cx);
+        // Its own handle: `window.focused` here would still be whatever had
+        // focus before the dialog's first frame.
+        self.open_shared_focus = Some(view.read(cx).focus.clone());
         self.open_shared = Some(view.downgrade());
         view
     }
@@ -1540,15 +1568,20 @@ impl Workspace {
             Ok(root) => {
                 // Closed mid-Add, its view can outlive the dialog a while;
                 // and a dialog opened over it is not this one to close.
-                let on_top = self
-                    .open_shared_focus
-                    .take()
-                    .is_some_and(|f| f.contains_focused(window, cx));
+                // Nothing focused (the studio in the background) counts too:
+                // another dialog would have taken the focus.
+                let on_top = self.open_shared_focus.take().is_some_and(|f| {
+                    f.contains_focused(window, cx) || window.focused(cx).is_none()
+                });
                 if self.open_shared_view().is_some() && on_top {
                     window.close_dialog(cx);
+                    self.open_shared = None;
+                    self._open_shared_events = None;
+                } else if let Some(view) = self.open_shared_view() {
+                    // Still open under another dialog: it stays wired, so its
+                    // Close works, and it won't add a second copy.
+                    view.update(cx, |v, cx| v.added(cx));
                 }
-                self.open_shared = None;
-                self._open_shared_events = None;
                 // Listed now, whether or not the copy opens (unsaved
                 // changes may keep the current one).
                 self.refresh_received_all();
@@ -1700,7 +1733,7 @@ impl Workspace {
             Err(BackendError::Invalid(text)) if text == FOREIGN_CALLBACK => {
                 #[cfg(test)]
                 self.toasts.push(text.clone());
-                window.push_notification(Notification::error(text), cx);
+                crate::ui::workspace::push_toast(window, Notification::error(text), cx);
             }
             Err(e) => match &self.sign_in {
                 Some(view) => view.update(cx, |v, cx| v.sign_in_failed(&e, cx)),
@@ -1718,7 +1751,7 @@ impl Workspace {
     fn notify_soon(&mut self, text: &'static str, window: &mut Window, cx: &mut App) {
         #[cfg(test)]
         self.toasts.push(text.into());
-        window.push_notification(Notification::info(text), cx);
+        crate::ui::workspace::push_toast(window, Notification::info(text), cx);
     }
 }
 
@@ -2491,6 +2524,34 @@ mod gpui_tests {
             "open-shared-existing",
             "Already in your studio — open it?"
         ));
+    }
+
+    /// A link from the website opens the flow on its review; Add closes it,
+    /// even with the studio in the background (nothing focused).
+    #[cfg(feature = "server")]
+    #[gpui_kit::test]
+    fn a_deep_linked_add_closes_the_dialog(cx: &mut TestAppContext) {
+        for background in [false, true] {
+            let s = studio(cx);
+            let (tx, rx) = futures::channel::mpsc::unbounded();
+            let mut handler = link_handler(tx);
+            handler(vec![DEEP_LINK.into()]);
+            let (window, ws) = (s.window, s.ws.downgrade());
+            cx.update(|cx| pump_links(rx, window, ws, cx));
+            cx.run_until_parked();
+            let view = s.ws.read_with(cx, |ws, _| ws.open_shared_view()).unwrap();
+            click(cx, &s, "open-shared-continue");
+            fill(cx, &s, &view, "API_TOKEN", TOKEN);
+            if background {
+                cx.update_window(s.window, |_, window, cx| window.blur(cx))
+                    .unwrap();
+            }
+            click(cx, &s, "open-shared-add");
+            cx.run_until_parked();
+            assert!(!dialog_open(cx, &s), "closed (background: {background})");
+            assert!(s.ws.read_with(cx, |ws, _| ws.open_shared_view()).is_none());
+            assert_eq!(s.backend.received().len(), 1, "one copy");
+        }
     }
 
     #[gpui_kit::test]

@@ -472,6 +472,13 @@ pub fn run() {
                         "account" => ws.toggle_account_menu(cx),
                         "share-cloud" => ws.open_team_share(window, cx),
                         "open-cloud" => ws.open_from_cloud(None, window, cx),
+                        "toast" => super::workspace::push_toast(
+                            window,
+                            gpui_kit::component::notification::Notification::info(
+                                super::received::UP_TO_DATE,
+                            ),
+                            cx,
+                        ),
                         // The collection's Cloud card, once the server said
                         // where its versions come from.
                         "cloud-settings" => {

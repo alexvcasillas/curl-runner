@@ -9,7 +9,6 @@ use crate::model::document::FixError;
 use curl_runner_core::lint::Severity;
 use gpui_kit::base::Scrollbar;
 use gpui_kit::base::input::EditorScrollbarContext;
-use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::input::{CodeActionProvider, EditorState, Position};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::*;
@@ -336,7 +335,11 @@ impl Workspace {
 }
 
 fn cant_apply(window: &mut Window, cx: &mut App) {
-    window.push_notification(Notification::warning("Can't apply this fix here"), cx);
+    crate::ui::workspace::push_toast(
+        window,
+        Notification::warning("Can't apply this fix here"),
+        cx,
+    );
 }
 
 #[cfg(test)]

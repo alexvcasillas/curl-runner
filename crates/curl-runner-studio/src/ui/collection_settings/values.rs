@@ -149,7 +149,11 @@ impl CollectionSettings {
                 window,
                 cx,
             ),
-            None => window.push_notification(Notification::success(format!("Saved {name}")), cx),
+            None => crate::ui::workspace::push_toast(
+                window,
+                Notification::success(format!("Saved {name}")),
+                cx,
+            ),
         }
         self.focus.focus(window, cx);
         cx.notify();

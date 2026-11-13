@@ -998,7 +998,8 @@ impl CollectionSettings {
         ) {
             Ok(n) => {
                 let noun = if n == 1 { "variable" } else { "variables" };
-                window.push_notification(
+                crate::ui::workspace::push_toast(
+                    window,
                     Notification::success(format!(
                         "Imported {n} {noun} into {}",
                         env_label(&self.environment)

@@ -1652,7 +1652,7 @@ impl Workspace {
                 }
             }
         };
-        window.push_notification(note, cx);
+        crate::ui::workspace::push_toast(window, note, cx);
     }
 
     /// `Couldn't publish` (board PublishStates, row 2): the server's

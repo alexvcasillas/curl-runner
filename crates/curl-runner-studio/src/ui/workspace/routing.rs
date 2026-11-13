@@ -269,7 +269,8 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         if self.runs.active.is_some() {
-            window.push_notification(
+            crate::ui::workspace::push_toast(
+                window,
                 Notification::warning("A run is in flight. Stop it first."),
                 cx,
             );
@@ -285,7 +286,8 @@ impl Workspace {
             self.load_environments(window, cx);
         }
         if !self.environments.contains(&e.environment) {
-            window.push_notification(
+            crate::ui::workspace::push_toast(
+                window,
                 Notification::warning(format!(
                     "Environment \"{}\" no longer exists",
                     env_label(&e.environment)
@@ -296,7 +298,8 @@ impl Workspace {
         }
         let Some((target, skipped)) = resolved else {
             let (title, _) = super::super::history_view::entry_title(e);
-            window.push_notification(
+            crate::ui::workspace::push_toast(
+                window,
                 Notification::warning(format!("{title} is no longer in the collection.")),
                 cx,
             );
@@ -310,7 +313,8 @@ impl Workspace {
         self.run(target, window, cx);
         if skipped > 0 {
             let files = if skipped == 1 { "file" } else { "files" };
-            window.push_notification(
+            crate::ui::workspace::push_toast(
+                window,
                 Notification::warning(format!(
                     "Skipped {skipped} {files} no longer in the collection."
                 )),
