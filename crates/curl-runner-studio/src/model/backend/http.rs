@@ -12,7 +12,10 @@ use super::{
     ShareUpdate, SharedCollection, SharedSnapshot, SharedVar, SyncDeletion, SyncFile, SyncReport,
     SyncStatus, TeamRef,
 };
-use super::{BundleFile, CollectionSource, PublishRequest, PublishResponse, RemoteCollection};
+use super::{
+    BundleFile, CollectionSource, PublishRequest, PublishResponse, RemoteCollection, ShareChange,
+    ShareEntry, TeamShare,
+};
 use crate::model::sessions::{AccountCache, CachedAccount, SessionStore};
 use curl_runner_cloud_client::{Client, CloudError, User, check_server, describe, escape_control};
 use curl_runner_cloud_proto::{ErrorCode, Input, Snapshot};
@@ -194,6 +197,22 @@ impl HttpBackend {
         }
     }
 
+    /// A call for one of the account's teams, with its session (none:
+    /// signed out). Refusals come back as [`HttpBackend::publish_error`].
+    fn team_call<T>(
+        &self,
+        server: &str,
+        team: &str,
+        call: impl FnOnce(&Client) -> Result<T, CloudError>,
+    ) -> Result<T, BackendError> {
+        let token = match self.sessions.get(server) {
+            Ok(Some(t)) => t,
+            Ok(None) => return Err(BackendError::SignedOut),
+            Err(_) => return Err(keychain_unreadable()),
+        };
+        call(&Client::new(server, Some(token))).map_err(|e| self.publish_error(server, team, e))
+    }
+
     /// A refused publish in the server's words: the plan limit and a
     /// studio-synced collection by kind, a pause, rate limit or suspension
     /// as said, a missing team as a team the account can't publish to.
@@ -203,7 +222,10 @@ impl HttpBackend {
             match b.error {
                 ErrorCode::PlanLimit => return BackendError::PlanLimit(msg),
                 ErrorCode::WrongSource => return BackendError::WrongSource(msg),
-                ErrorCode::RateLimited | ErrorCode::Unavailable | ErrorCode::TeamSuspended => {
+                ErrorCode::RateLimited
+                | ErrorCode::Unavailable
+                | ErrorCode::TeamSuspended
+                | ErrorCode::InvalidRequest => {
                     return BackendError::Invalid(msg);
                 }
                 ErrorCode::NotFound => {
@@ -467,6 +489,53 @@ impl Backend for HttpBackend {
             Client::new(&server, Some(token))
                 .publish(&team, &slug, &request)
                 .map_err(|e| self.publish_error(&server, &team, e))
+        })
+    }
+    fn team_share(&self, team: &str, slug: &str) -> BoxFut<'_, TeamShare> {
+        let (server, team, slug) = (key(self.server().url()), team.to_string(), slug.to_string());
+        Box::pin(async move { self.team_call(&server, &team, |c| c.share(&team, &slug)) })
+    }
+    fn change_team_share(
+        &self,
+        team: &str,
+        slug: &str,
+        change: ShareChange,
+    ) -> BoxFut<'_, TeamShare> {
+        let (server, team, slug) = (key(self.server().url()), team.to_string(), slug.to_string());
+        Box::pin(async move {
+            self.team_call(&server, &team, |c| c.change_share(&team, &slug, &change))
+        })
+    }
+    fn add_share_entry(
+        &self,
+        team: &str,
+        slug: &str,
+        entry: &str,
+        notify: bool,
+    ) -> BoxFut<'_, ShareEntry> {
+        let (server, team, slug, entry) = (
+            key(self.server().url()),
+            team.to_string(),
+            slug.to_string(),
+            entry.to_string(),
+        );
+        Box::pin(async move {
+            self.team_call(&server, &team, |c| {
+                c.add_share_entry(&team, &slug, &entry, notify)
+            })
+        })
+    }
+    fn remove_share_entry(&self, team: &str, slug: &str, entry: &str) -> BoxFut<'_, ()> {
+        let (server, team, slug, entry) = (
+            key(self.server().url()),
+            team.to_string(),
+            slug.to_string(),
+            entry.to_string(),
+        );
+        Box::pin(async move {
+            self.team_call(&server, &team, |c| {
+                c.remove_share_entry(&team, &slug, &entry)
+            })
         })
     }
     fn dashboard_url(&self) -> BoxFut<'_, String> {

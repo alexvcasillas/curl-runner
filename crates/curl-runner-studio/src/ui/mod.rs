@@ -29,6 +29,7 @@ mod run_view;
 mod runs;
 mod settings_kit;
 mod settings_view;
+mod share_cloud;
 mod share_dialog;
 mod share_sync;
 mod sidebar;

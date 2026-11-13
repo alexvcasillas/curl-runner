@@ -109,6 +109,48 @@ pub struct Latest {
     pub hash: String,
 }
 
+/// A collection's sharing, as the team sees it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct TeamShare {
+    pub access: curl_runner_cloud_proto::Access,
+    /// The landing page, `{app}/s/{token}`.
+    pub link: String,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// An admin turned the link off: it can't be used or reset.
+    #[serde(default)]
+    pub link_disabled: bool,
+    pub entries: Vec<ShareEntry>,
+}
+
+/// Someone (an email) or everyone at a domain (`*@globex.com`) on the list.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ShareEntry {
+    pub entry: String,
+    /// `email` or `domain`.
+    pub kind: String,
+    pub invited_at: chrono::DateTime<chrono::Utc>,
+    pub opened: bool,
+}
+
+/// A change to a collection's sharing; unset fields stay as they are.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct ShareChange {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access: Option<curl_runner_cloud_proto::Access>,
+    /// `Some(None)` is never.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_in_days: Option<Option<u32>>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub reset_link: bool,
+}
+
+/// `s` as one path segment (`*@globex.com`, `ada+x@acme.dev`).
+fn segment(s: &str) -> String {
+    let mut u = url::Url::parse("http://x/").expect("a valid URL");
+    u.path_segments_mut().expect("a base URL").push(s);
+    u.path()[1..].to_string()
+}
+
 /// A team's collection as `GET /v1/teams/{team}/collections` lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct CollectionRow {
@@ -361,6 +403,59 @@ impl Client {
         let (status, resp) =
             self.call_gz("PUT", &versions_path(team, collection), Some(&body), true)?;
         serde_json::from_slice(&resp).map_err(|_| not_the_api(status))
+    }
+
+    fn share_path(team: &str, collection: &str) -> String {
+        format!("/v1/teams/{team}/collections/{collection}/share")
+    }
+
+    /// A collection's access, link and list.
+    pub fn share(&self, team: &str, collection: &str) -> Result<TeamShare, CloudError> {
+        self.json("GET", &Self::share_path(team, collection), None::<&()>)
+    }
+
+    /// Changes access, expiry or the link (reset); answers the new settings.
+    pub fn change_share(
+        &self,
+        team: &str,
+        collection: &str,
+        change: &ShareChange,
+    ) -> Result<TeamShare, CloudError> {
+        self.json("PATCH", &Self::share_path(team, collection), Some(change))
+    }
+
+    /// Adds an email or `*@domain` to the list; `notify` emails the link
+    /// (never to a domain).
+    pub fn add_share_entry(
+        &self,
+        team: &str,
+        collection: &str,
+        entry: &str,
+        notify: bool,
+    ) -> Result<ShareEntry, CloudError> {
+        let body = serde_json::json!({"entry": entry, "notify": notify});
+        self.json(
+            "POST",
+            &format!("{}/entries", Self::share_path(team, collection)),
+            Some(&body),
+        )
+    }
+
+    pub fn remove_share_entry(
+        &self,
+        team: &str,
+        collection: &str,
+        entry: &str,
+    ) -> Result<(), CloudError> {
+        self.empty(
+            "DELETE",
+            &format!(
+                "{}/entries/{}",
+                Self::share_path(team, collection),
+                segment(entry)
+            ),
+            None,
+        )
     }
 
     /// The current version number and content hash, without the files.
@@ -656,5 +751,59 @@ mod tests {
         assert_eq!(v.git.unwrap().commit.as_deref(), Some("4f2a9c1aa"));
         let files = c.version_files("acme", "pay", 14).unwrap();
         assert_eq!(files[0].path, "a.yaml");
+    }
+
+    #[test]
+    fn share_calls_shape_their_requests() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let s2 = seen.clone();
+        let srv = TestServer::with_handler(move |r| {
+            s2.lock().unwrap().push((
+                r.method.clone(),
+                r.url.clone(),
+                String::from_utf8_lossy(&r.body).into_owned(),
+            ));
+            let share = br#"{"access":"restricted","link":"https://cloud.example/s/t","expires_at":null,"link_disabled":false,"entries":[{"entry":"*@globex.com","kind":"domain","invited_at":"2026-11-12T10:00:00Z","opened":true}]}"#;
+            match r.method.as_str() {
+                "DELETE" => Response::from_data(Vec::new()).with_status_code(204),
+                "POST" => Response::from_data(
+                    br#"{"entry":"ada+x@acme.dev","kind":"email","invited_at":"2026-11-12T10:00:00Z","opened":false}"#.to_vec(),
+                )
+                .with_status_code(201),
+                _ => Response::from_data(share.to_vec()),
+            }
+        });
+        let c = Client::new(&srv.base_url, Some("crs_x".into()));
+        let s = c.share("acme", "pay").unwrap();
+        assert_eq!(s.entries[0].kind, "domain");
+        c.change_share(
+            "acme",
+            "pay",
+            &ShareChange {
+                expires_in_days: Some(None),
+                reset_link: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let e = c
+            .add_share_entry("acme", "pay", "ada+x@acme.dev", true)
+            .unwrap();
+        assert!(!e.opened);
+        c.remove_share_entry("acme", "pay", "*@globex.com").unwrap();
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen[0].1, "/v1/teams/acme/collections/pay/share");
+        assert_eq!(
+            (seen[1].0.as_str(), seen[1].2.as_str()),
+            ("PATCH", r#"{"expires_in_days":null,"reset_link":true}"#)
+        );
+        assert_eq!(seen[2].2, r#"{"entry":"ada+x@acme.dev","notify":true}"#);
+        assert_eq!(
+            (seen[3].0.as_str(), seen[3].1.as_str()),
+            (
+                "DELETE",
+                "/v1/teams/acme/collections/pay/share/entries/*@globex.com"
+            )
+        );
     }
 }

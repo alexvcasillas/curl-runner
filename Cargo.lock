@@ -1500,6 +1500,7 @@ dependencies = [
 name = "curl-runner-cloud-client"
 version = "2.10.1"
 dependencies = [
+ "chrono",
  "curl",
  "curl-runner-cloud-proto",
  "curl-runner-core",

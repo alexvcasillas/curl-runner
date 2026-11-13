@@ -1136,3 +1136,72 @@ fn publishing_refusals() {
     );
     assert!(block_on(b.publish("acme", "pay", bundle("x"))).is_ok());
 }
+
+#[test]
+fn team_sharing_follows_the_server() {
+    let b = MockBackend::open(None, Duration::ZERO).publishing();
+    testing::sign_in(&b);
+    assert_eq!(
+        block_on(b.team_share("acme", "pay")).unwrap_err(),
+        BackendError::NotFound
+    );
+    block_on(b.publish("acme", "pay", bundle("x"))).unwrap();
+    let s = block_on(b.team_share("acme", "pay")).unwrap();
+    assert_eq!((s.access, s.entries.len()), (LinkAccess::Off, 0));
+    // People need Restricted first.
+    assert!(matches!(
+        block_on(b.add_share_entry("acme", "pay", "ada@globex.com", true)),
+        Err(BackendError::Invalid(_))
+    ));
+    let change = |access| ShareChange {
+        access: Some(access),
+        ..Default::default()
+    };
+    block_on(b.change_team_share("acme", "pay", change(LinkAccess::Restricted))).unwrap();
+    let e = block_on(b.add_share_entry("acme", "pay", "*@Globex.com", false)).unwrap();
+    assert_eq!(
+        (e.entry.as_str(), e.kind.as_str()),
+        ("*@globex.com", "domain")
+    );
+    assert!(matches!(
+        block_on(b.add_share_entry("acme", "pay", "globex", false)),
+        Err(BackendError::Invalid(_))
+    ));
+    let before = block_on(b.team_share("acme", "pay")).unwrap();
+    let reset = block_on(b.change_team_share(
+        "acme",
+        "pay",
+        ShareChange {
+            reset_link: true,
+            expires_in_days: Some(Some(7)),
+            ..Default::default()
+        },
+    ))
+    .unwrap();
+    assert_ne!(before.link, reset.link);
+    assert!(reset.expires_at.is_some());
+    block_on(b.remove_share_entry("acme", "pay", "*@globex.com")).unwrap();
+    assert!(
+        block_on(b.team_share("acme", "pay"))
+            .unwrap()
+            .entries
+            .is_empty()
+    );
+}
+
+#[test]
+fn restricted_needs_the_team_plan() {
+    let b = MockBackend::open(None, Duration::ZERO).publishing();
+    testing::sign_in(&b);
+    block_on(b.publish("acme", "pay", bundle("x"))).unwrap();
+    // Jamie's Acme is on Team; a team he isn't in reads as Free.
+    let r = block_on(b.change_team_share(
+        "globex",
+        "pay",
+        ShareChange {
+            access: Some(LinkAccess::Restricted),
+            ..Default::default()
+        },
+    ));
+    assert!(matches!(r, Err(BackendError::PlanLimit(_))));
+}

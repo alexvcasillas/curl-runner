@@ -114,6 +114,18 @@ impl Workspace {
     /// The Main board's `Shared · 3`: people with access, while the
     /// collection has a share link. Opens Share.
     fn render_shared_pill(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        // A published folder: the server's sharing (board ShareCloud).
+        if self.publish_applies() {
+            let (access, people) = self.publish.share?;
+            let text = super::share_cloud::chip_text(access, people)?;
+            return Some(
+                pill("title-shared", text, "text-secondary", "border-200")
+                    .cursor_pointer()
+                    .hover(|s| s.bg(color("surface-100")))
+                    .on_click(cx.listener(|this, _, window, cx| this.open_team_share(window, cx)))
+                    .test_support(),
+            );
+        }
         let people = self.sync.people.filter(|_| self.sync_on())?;
         let text = format!("Shared · {people}");
         Some(

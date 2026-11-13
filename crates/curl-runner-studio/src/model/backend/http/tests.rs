@@ -879,3 +879,47 @@ fn publish_refusals_keep_their_kind() {
         BackendError::SignedOut
     );
 }
+
+#[test]
+fn team_share_calls_map_refusals() {
+    let srv = TestServer::with_handler(move |r: Request| {
+        match (r.method.as_str(), r.url.as_str()) {
+            ("GET", "/v1/teams/acme/collections/pay/share") => json(
+                200,
+                r#"{"access":"public","link":"https://cloud.example/s/t","expires_at":null,"link_disabled":false,"entries":[]}"#,
+            ),
+            ("PATCH", _) => json(
+                402,
+                r#"{"error":"plan_limit","message":"Restricted sharing needs the Team plan."}"#,
+            ),
+            ("POST", _) => json(
+                400,
+                r#"{"error":"invalid_request","message":"An entry is an email like ada@example.com."}"#,
+            ),
+            ("DELETE", "/v1/teams/acme/collections/pay/share/entries/*@globex.com") => {
+                Response::from_data(Vec::new()).with_status_code(204)
+            }
+            _ => json(404, r#"{"error":"not_found","message":"No."}"#),
+        }
+    });
+    let (b, sessions) = backend(None);
+    block_on(b.set_server(own(&srv.base_url))).unwrap();
+    assert_eq!(
+        block_on(b.team_share("acme", "pay")).unwrap_err(),
+        BackendError::SignedOut
+    );
+    sessions.set(&srv.base_url, "crs_x").unwrap();
+    assert_eq!(
+        block_on(b.team_share("acme", "pay")).unwrap().access,
+        LinkAccess::Public
+    );
+    assert_eq!(
+        block_on(b.change_team_share("acme", "pay", ShareChange::default())).unwrap_err(),
+        BackendError::PlanLimit("Restricted sharing needs the Team plan.".into())
+    );
+    assert_eq!(
+        block_on(b.add_share_entry("acme", "pay", "x", false)).unwrap_err(),
+        BackendError::Invalid("An entry is an email like ada@example.com.".into())
+    );
+    block_on(b.remove_share_entry("acme", "pay", "*@globex.com")).unwrap();
+}

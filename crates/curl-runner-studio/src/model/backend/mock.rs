@@ -16,6 +16,7 @@ use super::{
 use super::{
     BundleFile, CollectionSource, PublishRequest, PublishResponse, RemoteCollection, VersionSummary,
 };
+use super::{ShareChange, ShareEntry, TeamShare};
 use chrono::{DateTime, Days, NaiveDate, Utc};
 use curl_runner_cloud_proto::{GitMeta, PublishStatus};
 use serde::{Deserialize, Serialize};
@@ -113,6 +114,56 @@ struct State {
     seq: u64,
     /// Published collections, by `team/slug` (publishing mode).
     published: BTreeMap<String, PublishedCollection>,
+    /// Their sharing, by `team/slug` (publishing mode).
+    team_shares: BTreeMap<String, MockTeamShare>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+struct MockTeamShare {
+    access: Option<LinkAccess>,
+    token: String,
+    expires_at: Option<DateTime<Utc>>,
+    /// (entry, kind, invited at, opened)
+    entries: Vec<(String, String, DateTime<Utc>, bool)>,
+}
+
+impl MockTeamShare {
+    fn view(&self) -> TeamShare {
+        TeamShare {
+            access: self.access.unwrap_or(LinkAccess::Off),
+            link: format!("https://cloud.curl-runner.com/s/{}", self.token),
+            expires_at: self.expires_at,
+            link_disabled: false,
+            entries: self
+                .entries
+                .iter()
+                .map(|(entry, kind, at, opened)| ShareEntry {
+                    entry: entry.clone(),
+                    kind: kind.clone(),
+                    invited_at: *at,
+                    opened: *opened,
+                })
+                .collect(),
+        }
+    }
+}
+
+/// The server's rule: an email, or `*@domain.tld`.
+fn entry_kind(raw: &str) -> Option<(String, &'static str)> {
+    let entry = raw.trim().to_lowercase();
+    if entry.chars().any(char::is_whitespace) {
+        return None;
+    }
+    let (local, domain) = entry.split_once('@')?;
+    if domain.is_empty() || domain.contains('@') {
+        return None;
+    }
+    if local == "*" {
+        return (domain.contains('.') && domain.split('.').all(|l| !l.is_empty()))
+            .then_some((entry.clone(), "domain"));
+    }
+    (!local.is_empty() && !local.contains('*')).then_some((entry.clone(), "email"))
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -732,6 +783,108 @@ impl Backend for MockBackend {
     }
     fn dashboard_url(&self) -> BoxFut<'_, String> {
         Box::pin(async { Ok("https://cloud.curl-runner.com".to_string()) })
+    }
+    fn team_share(&self, team: &str, slug: &str) -> BoxFut<'_, TeamShare> {
+        self.record(format!("team_share({team:?}, {slug:?})"));
+        let key = format!("{team}/{slug}");
+        self.call(true, move |s| {
+            online(s)?;
+            account_of(s).ok_or(BackendError::SignedOut)?;
+            if !s.published.contains_key(&key) {
+                return Err(BackendError::NotFound);
+            }
+            let seq = s.seq;
+            let share = s.team_shares.entry(key).or_insert_with(|| MockTeamShare {
+                token: format!("crsl_mock{seq}"),
+                ..Default::default()
+            });
+            s.seq += 1;
+            Ok(share.view())
+        })
+    }
+    fn change_team_share(
+        &self,
+        team: &str,
+        slug: &str,
+        change: ShareChange,
+    ) -> BoxFut<'_, TeamShare> {
+        self.record(format!("change_team_share({team:?}, {slug:?}, {change:?})"));
+        let (team, slug) = (team.to_string(), slug.to_string());
+        self.call(true, move |s| {
+            online(s)?;
+            let account = account_of(s).ok_or(BackendError::SignedOut)?.clone();
+            let free = account
+                .teams
+                .iter()
+                .find(|t| t.slug == team)
+                .is_none_or(|t| t.plan == curl_runner_cloud_proto::Plan::Free);
+            if change.access == Some(LinkAccess::Restricted) && free {
+                return Err(BackendError::PlanLimit(format!(
+                    "Restricted sharing needs the Team plan. Upgrade, or keep {slug} public or off."
+                )));
+            }
+            let seq = s.seq;
+            s.seq += 1;
+            let share = s.team_shares.entry(format!("{team}/{slug}")).or_default();
+            if share.token.is_empty() || change.reset_link {
+                share.token = format!("crsl_mock{seq}");
+            }
+            if let Some(a) = change.access {
+                share.access = Some(a);
+            }
+            if let Some(days) = change.expires_in_days {
+                share.expires_at = days.map(|d| Utc::now() + chrono::Duration::days(i64::from(d)));
+            }
+            Ok(share.view())
+        })
+    }
+    fn add_share_entry(
+        &self,
+        team: &str,
+        slug: &str,
+        entry: &str,
+        notify: bool,
+    ) -> BoxFut<'_, ShareEntry> {
+        self.record(format!(
+            "add_share_entry({team:?}, {slug:?}, {entry:?}, {notify})"
+        ));
+        let (key, slug, raw) = (
+            format!("{team}/{slug}"),
+            slug.to_string(),
+            entry.to_string(),
+        );
+        self.call(true, move |s| {
+            online(s)?;
+            account_of(s).ok_or(BackendError::SignedOut)?;
+            let share = s.team_shares.entry(key).or_default();
+            if share.access != Some(LinkAccess::Restricted) {
+                return Err(BackendError::Invalid(format!(
+                    "{slug} isn't restricted. Set its access to restricted before adding people."
+                )));
+            }
+            let (entry, kind) = entry_kind(&raw).ok_or_else(|| {
+                BackendError::Invalid(
+                    "An entry is an email like ada@example.com or a domain like *@example.com."
+                        .into(),
+                )
+            })?;
+            share.entries.retain(|e| e.0 != entry);
+            share
+                .entries
+                .push((entry, kind.to_string(), Utc::now(), false));
+            Ok(share.view().entries.pop().expect("just added"))
+        })
+    }
+    fn remove_share_entry(&self, team: &str, slug: &str, entry: &str) -> BoxFut<'_, ()> {
+        self.record(format!("remove_share_entry({team:?}, {slug:?}, {entry:?})"));
+        let (key, entry) = (format!("{team}/{slug}"), entry.to_string());
+        self.call(true, move |s| {
+            online(s)?;
+            if let Some(share) = s.team_shares.get_mut(&key) {
+                share.entries.retain(|e| e.0 != entry);
+            }
+            Ok(())
+        })
     }
     fn account(&self) -> Option<Account> {
         account_of(&self.state()).cloned()
