@@ -370,6 +370,7 @@ describe('SourceSwitch', () => {
     source: 'git' | 'cloud',
     onSwitch = vi.fn().mockResolvedValue(ok),
     version: number | null = 14,
+    owner = true,
   ) {
     render(
       <SourceSwitch
@@ -377,6 +378,7 @@ describe('SourceSwitch', () => {
         source={source}
         version={version}
         downloadHref="/t/acme/c/payments-api/versions/14/download"
+        owner={owner}
         onSwitch={onSwitch}
       />,
     );
@@ -412,6 +414,13 @@ describe('SourceSwitch', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Switch to Files' }));
     expect(onSwitch).toHaveBeenCalledWith('git');
+  });
+
+  it('shows members the source as text, without the switch', () => {
+    setup('cloud', vi.fn(), 14, false);
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+    expect(screen.getByText('Source: Cloud')).toBeInTheDocument();
+    expect(screen.getByText('Only team owners can change this.')).toBeInTheDocument();
   });
 
   it('cancels without calling the API', async () => {

@@ -23,13 +23,15 @@ const HELP: Record<Source, string> = {
 
 /**
  * Where new versions come from. Picking the other side asks first, in place,
- * and says what the switch does to CI or to unsynced studio edits.
+ * and says what the switch does to CI or to unsynced studio edits. Owners
+ * only: members see the source as text.
  */
 export function SourceSwitch({
   name,
   source,
   version,
   downloadHref,
+  owner,
   onSwitch,
 }: {
   name: string;
@@ -38,6 +40,8 @@ export function SourceSwitch({
   version: number | null;
   /** The zip of the current version. */
   downloadHref: string;
+  /** Whether the viewer owns the team; only owners can switch. */
+  owner: boolean;
   onSwitch: (source: Source) => Promise<SwitchResult>;
 }) {
   const [target, setTarget] = useState<Source | null>(null);
@@ -69,19 +73,27 @@ export function SourceSwitch({
       <CardBody>
         <CardTitle id="source-title">Source of truth</CardTitle>
         <p className="m-0 text-fg-muted leading-normal">
-          Where new versions come from. Teammates can switch it, and the switch is the only way to
+          Where new versions come from. Team owners can switch it, and the switch is the only way to
           change it.
         </p>
-        <Segmented
-          label="Source"
-          options={OPTIONS}
-          value={source}
-          onChange={(next) => {
-            setError(null);
-            setTarget(next === source ? null : next);
-          }}
-          className="self-start"
-        />
+        {owner ? null : (
+          <div className="flex flex-col gap-1">
+            <span>Source: {OPTIONS.find((o) => o.value === source)?.label}</span>
+            <span className="text-[12px] text-fg-muted">Only team owners can change this.</span>
+          </div>
+        )}
+        {owner ? (
+          <Segmented
+            label="Source"
+            options={OPTIONS}
+            value={source}
+            onChange={(next) => {
+              setError(null);
+              setTarget(next === source ? null : next);
+            }}
+            className="self-start"
+          />
+        ) : null}
         <p className="m-0 text-[12px] text-fg-muted">{HELP[source]}</p>
 
         {target ? (
