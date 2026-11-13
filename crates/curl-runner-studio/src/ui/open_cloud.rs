@@ -182,7 +182,7 @@ impl OpenCloudView {
     }
 
     /// Whether `slug` (in the shown team) has a folder on this Mac.
-    #[cfg(test)]
+    #[cfg(all(test, feature = "server"))]
     pub(super) fn is_here(&self, slug: &str) -> bool {
         self.here.contains_key(&self.key(slug))
     }
