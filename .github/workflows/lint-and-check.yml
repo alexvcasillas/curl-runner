@@ -12,6 +12,13 @@ on:
         required: true
         type: string
 
+# A new push to a pull request cancels its previous run. Pushes to main,
+# manual runs and other triggers each get their own group, so they never wait
+# on or cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint-and-check:
     name: Lint and Check
