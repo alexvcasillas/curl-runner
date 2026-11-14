@@ -1300,31 +1300,70 @@ mod gpui_tests {
             });
         })
         .unwrap();
+        // The switcher lists it under Shared with me, and the copy's own
+        // switcher lists the user's folder under My collections.
+        click(cx, s.window, "sidebar-switcher");
         assert_eq!(
-            label(cx, "shared-with-me").as_deref(),
-            Some("Shared with me")
-        );
-        assert_eq!(
-            label(cx, "other-collection-0").as_deref(),
+            label(cx, "switcher-shared-0").as_deref(),
             Some("Shipping API")
         );
         assert!(label(cx, "shared-note").is_none());
-        click(cx, s.window, "other-collection-0");
+        click(cx, s.window, "switcher-shared-0");
         s.ws.read_with(cx, |ws, _| {
             assert_eq!(ws.state.collection.as_ref().unwrap().root, s.root());
         });
-        // And from the copy, My collections lists the user's own.
-        assert_eq!(
-            label(cx, "my-collections").as_deref(),
-            Some("My collections")
-        );
+        assert_eq!(label(cx, "sidebar-title").as_deref(), Some("Shipping API"));
+        click(cx, s.window, "sidebar-switcher");
         let name = mine
             .path()
             .file_name()
             .unwrap()
             .to_string_lossy()
             .into_owned();
-        assert_eq!(label(cx, "other-collection-0"), Some(name));
+        assert_eq!(label(cx, "switcher-mine-0"), Some(name));
+    }
+
+    #[gpui_kit::test]
+    fn the_switcher_removes_a_copy_and_forgets_a_folder(cx: &mut TestAppContext) {
+        let s = received(cx, false, None);
+        let mine = tempfile::tempdir().unwrap();
+        std::fs::write(mine.path().join("a.yaml"), "request:\n  url: https://a\n").unwrap();
+        let other = tempfile::tempdir().unwrap();
+        std::fs::write(other.path().join("b.yaml"), "request:\n  url: https://b\n").unwrap();
+        let ws = s.ws.clone();
+        let (path, gone) = (mine.path().to_path_buf(), other.path().to_path_buf());
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| {
+                ws.remember_folder(&gone);
+                assert!(ws.open_collection(&path, window, cx));
+                ws.remember_folder(&path);
+            });
+        })
+        .unwrap();
+        let rows = |cx: &mut TestAppContext| {
+            s.ws.update(cx, |ws, cx| {
+                ws.toggle_switcher(cx);
+                let r = ws.switcher_rows();
+                ws.toggle_switcher(cx);
+                r
+            })
+        };
+        let (own, shared) = rows(cx);
+        assert_eq!(own.len(), 2);
+        assert_eq!(shared, ["Shipping API"]);
+        // Remove from list forgets a folder; the folder stays.
+        s.ws.update(cx, |ws, cx| ws.remove_from_list(&gone, cx));
+        assert_eq!(rows(cx).0.len(), 1);
+        assert!(gone.exists());
+        // Remove copy deletes the copy and its record.
+        let root = s.root();
+        cx.update_window(s.window, |_, window, cx| {
+            ws.update(cx, |ws, cx| ws.remove_copy(&root, window, cx))
+        })
+        .unwrap();
+        assert!(!root.exists());
+        assert!(rows(cx).1.is_empty());
+        assert!(crate::model::received::load(Some(s.state.path())).is_empty());
     }
 
     #[gpui_kit::test]

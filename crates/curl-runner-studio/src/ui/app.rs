@@ -71,6 +71,8 @@ actions!(
         Publish,
         /// Share the published collection (the sidebar foot's Share).
         ShareCollection,
+        /// Open the sidebar header's collection switcher.
+        SwitchCollection,
         /// List the team's collections and open a synced one here.
         OpenFromCloud,
         /// Leave the sync conflict screen; the conflicts stay (esc).
@@ -472,6 +474,7 @@ pub fn run() {
                         "account" => ws.toggle_account_menu(cx),
                         "share-cloud" => ws.open_team_share(window, cx),
                         "open-cloud" => ws.open_from_cloud(None, window, cx),
+                        "switcher" => ws.toggle_switcher(cx),
                         "toast" => super::workspace::push_toast(
                             window,
                             gpui_kit::component::notification::Notification::info(

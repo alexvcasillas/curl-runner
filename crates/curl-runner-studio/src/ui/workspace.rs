@@ -5,7 +5,7 @@ use super::app::{
     CloseTab, CopyAsCurl, Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder,
     OpenFromCloud, OpenHistory, OpenPalette, OpenSettings, OpenSharedLink, Publish, QuickFix,
     Rerun, RunActive, RunCollection, RunRequestUnderCursor, SaveFile, ShareCollection, Stop,
-    ToggleProblems, Walkthrough, ui_font,
+    SwitchCollection, ToggleProblems, Walkthrough, ui_font,
 };
 use super::collection_settings::{CollectionSettings, EnvStatus, SettingsEvent, Sharing};
 use super::diagnostic_popover::DiagnosticHover;
@@ -139,6 +139,8 @@ pub struct Workspace {
     /// The collection settings page (Environments), while it is open.
     pub(super) settings_view: Option<Entity<CollectionSettings>>,
     _settings_events: Option<Subscription>,
+    /// The sidebar header's collection switcher.
+    pub(super) switcher: super::switcher::SwitcherState,
     /// Open from Cloud, while it is open.
     pub(super) open_cloud_view: Option<WeakEntity<super::open_cloud::OpenCloudView>>,
     pub(super) _open_cloud_events: Option<Subscription>,
@@ -336,6 +338,7 @@ impl Workspace {
             notes_saves: 0,
             settings_view: None,
             _settings_events: None,
+            switcher: Default::default(),
             open_cloud_view: None,
             _open_cloud_events: None,
             cloud_home: None,
@@ -1495,6 +1498,9 @@ impl Render for Workspace {
                 .on_action(cx.listener(|this, _: &ShareCollection, window, cx| {
                     this.share_from_palette(window, cx)
                 }))
+                .on_action(
+                    cx.listener(|this, _: &SwitchCollection, _, cx| this.toggle_switcher(cx)),
+                )
                 .on_action(cx.listener(|this, _: &OpenFromCloud, window, cx| {
                     this.open_from_cloud(None, window, cx)
                 }))

@@ -7,7 +7,8 @@
 
 use super::app::{
     Import, NewCollection, NewRequest, OpenEnvironments, OpenFolder, OpenFromCloud, OpenHistory,
-    OpenSettings, OpenSharedLink, Publish, ShareCollection, ToggleProblems, Walkthrough, mono_font,
+    OpenSettings, OpenSharedLink, Publish, ShareCollection, SwitchCollection, ToggleProblems,
+    Walkthrough, mono_font,
 };
 use super::icons::{self, glyph};
 use super::settings_view::AppPage;
@@ -156,6 +157,7 @@ pub enum Target {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PaletteAction {
+    SwitchCollection,
     OpenFolder,
     OpenSharedLink,
     NewRequest,
@@ -172,7 +174,8 @@ pub enum PaletteAction {
 }
 
 impl PaletteAction {
-    pub const ALL: [PaletteAction; 13] = [
+    pub const ALL: [PaletteAction; 14] = [
+        PaletteAction::SwitchCollection,
         PaletteAction::OpenFolder,
         PaletteAction::OpenSharedLink,
         PaletteAction::NewRequest,
@@ -203,6 +206,7 @@ impl PaletteAction {
 
     fn label(self) -> &'static str {
         match self {
+            PaletteAction::SwitchCollection => "Switch collection…",
             PaletteAction::OpenFolder => "Open folder…",
             PaletteAction::OpenSharedLink => "Open a shared link…",
             PaletteAction::NewRequest => "New request…",
@@ -222,6 +226,7 @@ impl PaletteAction {
     /// The row's leading glyph.
     pub fn icon(self) -> &'static str {
         match self {
+            PaletteAction::SwitchCollection => icons::FOLDER,
             PaletteAction::OpenFolder => icons::FOLDER_OPEN,
             PaletteAction::OpenSharedLink => icons::LINK,
             PaletteAction::NewRequest => icons::FILE_PLUS,
@@ -241,6 +246,7 @@ impl PaletteAction {
     /// The studio action, for its shortcut.
     fn action(self) -> Box<dyn Action> {
         match self {
+            PaletteAction::SwitchCollection => Box::new(SwitchCollection),
             PaletteAction::OpenFolder => Box::new(OpenFolder),
             PaletteAction::OpenSharedLink => Box::new(OpenSharedLink),
             PaletteAction::NewRequest => Box::new(NewRequest),
@@ -490,6 +496,7 @@ impl Palette {
                     ws.open_file(&rel_path, window, cx);
                 }
                 Target::Folder { path } => ws.reveal_folder(&path, cx),
+                Target::Action(PaletteAction::SwitchCollection) => ws.toggle_switcher(cx),
                 Target::Action(PaletteAction::OpenFolder) => ws.open_folder(window, cx),
                 Target::Action(PaletteAction::OpenSharedLink) => {
                     drop(ws.open_shared(None, window, cx));
