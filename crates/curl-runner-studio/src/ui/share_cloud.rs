@@ -14,7 +14,7 @@ use chrono::Utc;
 use curl_runner_cloud_proto::Plan;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::dialog::DialogEntrance;
-use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{Disableable as _, WindowExt as _};
 use gpui_kit::prelude::*;
@@ -30,6 +30,9 @@ const FOOTER: &str = "They get each version you publish.";
 const RESTRICT_WARNING: &str = "The link will need sign-in. Anyone already using it who isn't on the list stops getting updates. Add them before you switch.";
 const ENTRY_HELP: &str = "Enter an email (jane@globex.com) or a domain (*@globex.com).";
 const OFFLINE: &str = "You're offline. Changes to sharing need curl-runner Cloud; this shows the last settings it saw.";
+
+/// The gallery description's limit, as the server's.
+const MAX_DESCRIPTION: usize = 500;
 
 /// The collection's page in the public gallery.
 pub fn gallery_url(link: &CloudLink) -> String {
@@ -141,6 +144,9 @@ enum Confirm {
 }
 
 pub struct ShareCloudView {
+    /// The gallery description's field, and whether `Edit` opened it.
+    description: Entity<TextareaState>,
+    editing_description: bool,
     setup: ShareSetup,
     share: Option<TeamShare>,
     error: Option<BackendError>,
@@ -171,7 +177,15 @@ impl ShareCloudView {
             InputEvent::PressEnter { .. } => this.add_entry(cx),
             _ => {}
         });
+        let description = cx.new(|cx| {
+            TextareaState::new(window, cx)
+                .rows(3)
+                .placeholder("What these requests are for, in a sentence or two")
+        });
+        let desc_sub = cx.observe(&description, |_, _, cx| cx.notify());
         let mut view = ShareCloudView {
+            description,
+            editing_description: false,
             setup,
             share: None,
             error: None,
@@ -183,7 +197,7 @@ impl ShareCloudView {
             copied: false,
             clear_entry: false,
             tasks: Vec::new(),
-            _subs: vec![sub],
+            _subs: vec![sub, desc_sub],
         };
         view.load(cx);
         view
@@ -202,6 +216,7 @@ impl ShareCloudView {
         self.busy = false;
         match r {
             Ok(s) => {
+                self.editing_description = false;
                 cx.emit(ShareCloudEvent::Changed(s.access, s.entries.len()));
                 self.share = Some(s);
                 self.error = None;
@@ -895,19 +910,136 @@ impl ShareCloudView {
             ))
     }
 
+    /// `Edit`: the saved description back into the field.
+    fn edit_description(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let current = self
+            .share
+            .as_ref()
+            .and_then(|s| s.description.clone())
+            .unwrap_or_default();
+        self.description
+            .update(cx, |t, cx| t.set_value(current, window, cx));
+        self.editing_description = true;
+        cx.notify();
+    }
+
+    fn save_description(&mut self, cx: &mut Context<Self>) {
+        let text = self.description.read(cx).value().trim().to_string();
+        if text.is_empty() || text.chars().count() > MAX_DESCRIPTION {
+            return;
+        }
+        self.change(
+            ShareChange {
+                description: Some(text),
+                ..Default::default()
+            },
+            cx,
+        );
+    }
+
+    /// The description field (board Switcher, Share): shown while there's
+    /// none, and after `Edit`.
+    fn description_field(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let text = self.description.read(cx).value().to_string();
+        let count = text.trim().chars().count();
+        let ok = count > 0 && count <= MAX_DESCRIPTION && !self.locked();
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .child(Textarea::new(&self.description))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(
+                        div()
+                            .id("share-cloud-description-count")
+                            .test_support()
+                            .aria_label(format!("{count} / {MAX_DESCRIPTION}"))
+                            .flex_1()
+                            .text_size(px(12.))
+                            .text_color(color(if count > MAX_DESCRIPTION {
+                                "danger"
+                            } else {
+                                "text-tertiary"
+                            }))
+                            .child(format!("{count} / {MAX_DESCRIPTION}")),
+                    )
+                    .when(self.editing_description, |d| {
+                        d.child(
+                            super::settings_kit::small_button(
+                                "share-cloud-description-cancel",
+                                "Cancel",
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.editing_description = false;
+                                cx.notify();
+                            }))
+                            .child("Cancel"),
+                        )
+                    })
+                    .child(
+                        super::settings_kit::primary_button(
+                            "share-cloud-description-save",
+                            "Save description",
+                        )
+                        .when(!ok, |b| b.opacity(0.45).cursor_default())
+                        .when(ok, |b| {
+                            b.on_click(cx.listener(|this, _, _, cx| this.save_description(cx)))
+                        })
+                        .child("Save description"),
+                    ),
+            )
+    }
+
     /// Public only, on Cloud: listing in the gallery (board GalleryListing).
     fn gallery(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let share = self.share.as_ref();
         let listed = share.is_some_and(|s| s.listed);
-        let has_description = share
-            .and_then(|s| s.description.as_deref())
-            .is_some_and(|d| !d.trim().is_empty());
+        let saved = share
+            .and_then(|s| s.description.clone())
+            .filter(|d| !d.trim().is_empty());
+        let has_description = saved.is_some();
         let enabled = has_description && !self.locked();
         let url = gallery_url(&self.setup.link);
+        let field =
+            (!has_description || self.editing_description).then(|| self.description_field(cx));
+        let shown = saved.filter(|_| !self.editing_description).map(|d| {
+            div()
+                .flex()
+                .flex_wrap()
+                .gap(px(6.))
+                .text_size(px(12.))
+                .text_color(color("text-secondary"))
+                .child(
+                    div()
+                        .id("share-cloud-description")
+                        .test_support()
+                        .aria_label(d.clone())
+                        .child(d),
+                )
+                .child(
+                    div()
+                        .id("share-cloud-description-edit")
+                        .role(Role::Link)
+                        .test_support()
+                        .aria_label("Edit")
+                        .text_color(color("text-primary"))
+                        .cursor_pointer()
+                        .underline()
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            // Not the row's listing toggle as well.
+                            cx.stop_propagation();
+                            this.edit_description(window, cx)
+                        }))
+                        .child("Edit"),
+                )
+        });
         let text = if !has_description {
-            format!(
-                "Add a description to the cloud: block in {CONFIG_FILE} and publish. It's the summary people read in the gallery."
-            )
+            "Add a description first. It's the summary people read on curl-runner.com/collections."
+                .to_string()
         } else {
             format!(
                 "Anyone can find it on curl-runner.com: the name, description, {}, the requests and their YAML. Variable values never are.",
@@ -926,7 +1058,8 @@ impl ShareCloudView {
             .flex()
             .items_start()
             .gap(px(12.))
-            .when(enabled, |d| {
+            // Not while the field is open: clicks there are typing.
+            .when(enabled && !self.editing_description, |d| {
                 d.cursor_pointer()
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.change(
@@ -962,7 +1095,9 @@ impl ShareCloudView {
                             }))
                             .child("List in the gallery"),
                     )
+                    .children(shown)
                     .child(help_text(text))
+                    .children(field)
                     .when(listed, |d| {
                         d.child(
                             div()
@@ -973,7 +1108,10 @@ impl ShareCloudView {
                                 .text_size(px(12.))
                                 .cursor_pointer()
                                 .underline()
-                                .on_click(move |_, _, cx| cx.open_url(&url))
+                                .on_click(move |_, _, cx| {
+                                    cx.stop_propagation();
+                                    cx.open_url(&url)
+                                })
                                 .child("View it on curl-runner.com"),
                         )
                     }),

@@ -17,6 +17,8 @@ export type SharePatch = {
   reset_link?: boolean;
   /** In or out of the public gallery. */
   listed?: boolean;
+  /** The gallery's summary, at most 500 characters. */
+  description?: string;
 };
 
 const enc = encodeURIComponent;
@@ -32,7 +34,7 @@ function validPatch(p: unknown): p is SharePatch {
     return false;
   }
   const o = p as Record<string, unknown>;
-  const known = ['access', 'expires_in_days', 'reset_link', 'listed'];
+  const known = ['access', 'expires_in_days', 'reset_link', 'listed', 'description'];
   if (Object.keys(o).some((k) => !known.includes(k))) {
     return false;
   }
@@ -48,6 +50,12 @@ function validPatch(p: unknown): p is SharePatch {
     return false;
   }
   if ('listed' in o && typeof o.listed !== 'boolean') {
+    return false;
+  }
+  if (
+    'description' in o &&
+    (typeof o.description !== 'string' || o.description.trim().length > 500)
+  ) {
     return false;
   }
   return !('reset_link' in o) || typeof o.reset_link === 'boolean';

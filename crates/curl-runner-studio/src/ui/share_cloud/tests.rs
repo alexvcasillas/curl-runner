@@ -282,3 +282,35 @@ fn listing_needs_public_and_a_description(cx: &mut TestAppContext) {
     assert!(!v.read_with(cx, |v, _| v.share.clone().unwrap().listed));
     assert!(!shows(cx, window, "List in the gallery, off"));
 }
+
+#[gpui_kit::test]
+fn a_description_is_written_in_share_then_listed(cx: &mut TestAppContext) {
+    let (window, ws, _b, _d, _s) = open(cx, "acme", Connection::Online);
+    let v = share(cx, window, &ws);
+    click(cx, window, "share-cloud-public");
+    assert!(shows(cx, window, "0 / 500"), "the field, empty");
+    // Typed and saved: not listed yet, the switch does that.
+    cx.update_window(window, |_, window, cx| {
+        v.update(cx, |v, cx| {
+            v.description
+                .update(cx, |t, cx| t.set_value("Charges and refunds", window, cx))
+        })
+    })
+    .unwrap();
+    cx.run_until_parked();
+    click(cx, window, "share-cloud-description-save");
+    let shared = v.read_with(cx, |v, _| v.share.clone().unwrap());
+    assert_eq!(shared.description.as_deref(), Some("Charges and refunds"));
+    assert!(!shared.listed);
+    assert!(shows(cx, window, "Charges and refunds"));
+    assert!(!shows(cx, window, "19 / 500"), "the field closed");
+    click(cx, window, "share-cloud-gallery");
+    assert!(v.read_with(cx, |v, _| v.share.clone().unwrap().listed));
+    // Edit opens it with the text; clicks there don't toggle the listing.
+    click(cx, window, "share-cloud-description-edit");
+    assert!(shows(cx, window, "19 / 500"));
+    click(cx, window, "share-cloud-gallery");
+    assert!(v.read_with(cx, |v, _| v.share.clone().unwrap().listed));
+    click(cx, window, "share-cloud-description-cancel");
+    assert!(!shows(cx, window, "19 / 500"));
+}

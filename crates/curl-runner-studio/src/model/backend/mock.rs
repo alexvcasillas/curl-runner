@@ -909,6 +909,22 @@ impl Backend for MockBackend {
             }
             let seq = s.seq;
             s.seq += 1;
+            if let Some(d) = &change.description {
+                if d.chars().count() > 500 {
+                    return Err(BackendError::Invalid(
+                        "The description must be at most 500 characters.".into(),
+                    ));
+                }
+                let d = Some(d.trim().to_string()).filter(|d| !d.is_empty());
+                if let Some(c) = s.published.get_mut(&format!("{team}/{slug}")) {
+                    c.description = d.clone();
+                }
+                if d.is_none()
+                    && let Some(share) = s.team_shares.get_mut(&format!("{team}/{slug}"))
+                {
+                    share.listed = false;
+                }
+            }
             let description = s
                 .published
                 .get(&format!("{team}/{slug}"))

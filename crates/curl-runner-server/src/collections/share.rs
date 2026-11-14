@@ -133,7 +133,12 @@ pub(super) struct PatchShare {
     reset_link: bool,
     /// List in (or take out of) the public gallery.
     listed: Option<bool>,
+    /// The gallery's summary; empty clears it (and unlists). A publish whose
+    /// `cloud:` block has one replaces it.
+    description: Option<String>,
 }
+
+const MAX_DESCRIPTION_CHARS: usize = 500;
 
 fn restricted_needs_team(slug: &str) -> ApiError {
     ApiError::new(
@@ -179,6 +184,18 @@ pub(super) async fn patch(
     .fetch_optional(&mut *tx)
     .await?;
     let (id, current, disabled, description) = row.ok_or_else(ApiError::not_found)?;
+    // The description as this call leaves it: a new one, or the current.
+    let new_description = match &req.description {
+        Some(d) if d.chars().count() > MAX_DESCRIPTION_CHARS => {
+            return Err(ApiError::new(
+                ErrorCode::InvalidRequest,
+                format!("The description must be at most {MAX_DESCRIPTION_CHARS} characters."),
+            ));
+        }
+        Some(d) => Some(Some(d.trim().to_string()).filter(|d| !d.is_empty())),
+        None => None,
+    };
+    let description = new_description.clone().unwrap_or(description);
     // Listing needs Public (after this change) and a description.
     if req.listed == Some(true) {
         let public = match req.access {
@@ -194,7 +211,7 @@ pub(super) async fn patch(
         if description.as_deref().is_none_or(|d| d.trim().is_empty()) {
             return Err(ApiError::new(
                 ErrorCode::InvalidRequest,
-                "Add a description to list it in the gallery: the description field of the cloud block in curl-runner.yaml, then publish.",
+                "Add a description to list it in the gallery. It's the summary people read there.",
             ));
         }
     }
@@ -223,6 +240,17 @@ pub(super) async fn patch(
         )
         .bind(id)
         .bind(access_str(access))
+        .execute(&mut *tx)
+        .await?;
+    }
+    if let Some(d) = &new_description {
+        // No description, no listing.
+        sqlx::query(
+            "UPDATE collections SET description = $2, \
+                    listed_at = CASE WHEN $2 IS NULL THEN NULL ELSE listed_at END WHERE id = $1",
+        )
+        .bind(id)
+        .bind(d.as_deref())
         .execute(&mut *tx)
         .await?;
     }

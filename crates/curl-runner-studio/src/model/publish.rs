@@ -159,7 +159,7 @@ pub fn published(v: &VersionSummary, me: Option<&str>) -> Published {
 /// edited 1 h ago`, `v3 · you edited just now`.
 pub fn synced_detail(v: &VersionSummary, me: Option<&str>, now: DateTime<Utc>) -> String {
     let who = publisher_label(&v.publisher, me);
-    let ago = crate::model::history::relative_time(
+    let ago = crate::model::history::relative_time_inline(
         v.published_at.with_timezone(&chrono::Local),
         now.with_timezone(&chrono::Local),
     );
