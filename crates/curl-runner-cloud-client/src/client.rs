@@ -151,6 +151,9 @@ pub struct ShareChange {
     /// In or out of the public gallery (Public, with a description).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub listed: Option<bool>,
+    /// The gallery's summary; empty clears it (and unlists).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// `s` as one path segment (`*@globex.com`, `ada+x@acme.dev`).

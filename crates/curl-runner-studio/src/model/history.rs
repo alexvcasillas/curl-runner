@@ -433,11 +433,31 @@ pub fn relative_time(at: DateTime<Local>, now: DateTime<Local>) -> String {
     }
 }
 
+/// [`relative_time`] inside a sentence (`Sam edited yesterday`, `edited on
+/// Sep 12`), not at the start of a row.
+pub fn relative_time_inline(at: DateTime<Local>, now: DateTime<Local>) -> String {
+    match relative_time(at, now) {
+        t if t == "Yesterday" => "yesterday".into(),
+        t if t.ends_with("ago") || t == "just now" => t,
+        date => format!("on {date}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::TimeZone;
     use curl_runner_core::executor::create_summary;
+
+    #[test]
+    fn inline_relative_time_reads_mid_sentence() {
+        let now = Local.with_ymd_and_hms(2026, 10, 30, 12, 0, 0).unwrap();
+        let ago = |d: Duration| relative_time_inline(now - d, now);
+        assert_eq!(ago(Duration::hours(3)), "3 h ago");
+        assert_eq!(ago(Duration::hours(26)), "yesterday");
+        assert_eq!(ago(Duration::days(3)), "3 days ago");
+        assert_eq!(ago(Duration::days(40)), "on Sep 20");
+    }
     use curl_runner_core::model::{ExecutionResult, Metrics, RequestConfig};
 
     fn at(day: u32, h: u32) -> DateTime<Local> {

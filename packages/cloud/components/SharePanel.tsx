@@ -12,6 +12,7 @@ import { Card, CardBody, CardFooter, CardTitle } from './Card';
 import { Checkbox } from './Checkbox';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Field } from './Field';
+import { inputClasses } from './field-styles';
 import { LockIcon } from './icons';
 import { Notice } from './Notice';
 import { Pill } from './Pill';
@@ -26,7 +27,11 @@ type Patch = {
   expires_in_days?: number | null;
   reset_link?: boolean;
   listed?: boolean;
+  description?: string;
 };
+
+/** The gallery description's limit, as the server's. */
+const MAX_DESCRIPTION = 500;
 
 const DAY = 86_400_000;
 
@@ -132,6 +137,17 @@ export function SharePanel({
   const free = plan === 'free';
   const listed = share.listed === true;
   const described = Boolean(share.description?.trim());
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const descriptionId = useId();
+  const draftLength = draft.trim().length;
+  const draftOk = draftLength > 0 && draftLength <= MAX_DESCRIPTION;
+
+  async function saveDescription() {
+    if (draftOk && (await patch({ description: draft.trim() }))) {
+      setEditing(false);
+    }
+  }
 
   /** Runs a PATCH. Returns whether it worked. */
   async function patch(body: Patch): Promise<boolean> {
@@ -419,8 +435,23 @@ export function SharePanel({
                 >
                   List {name} in the gallery
                 </label>
+                {described && !editing ? (
+                  <p className="m-0 text-fg-muted leading-normal">
+                    {share.description}{' '}
+                    <button
+                      type="button"
+                      className="text-blue hover:text-blue-hover"
+                      onClick={() => {
+                        setDraft(share.description ?? '');
+                        setEditing(true);
+                      }}
+                    >
+                      Edit
+                    </button>
+                  </p>
+                ) : null}
                 <p id={hintId} className="m-0 text-fg-muted leading-normal">
-                  {described || listed ? (
+                  {described ? (
                     <>
                       Anyone can find it on curl-runner.com: the name, description, {teamName}, the
                       requests and their YAML. Variable values never are.
@@ -439,14 +470,50 @@ export function SharePanel({
                       ) : null}
                     </>
                   ) : (
-                    <>
-                      Add a <span className="font-mono text-fg">description</span> to the{' '}
-                      <span className="font-mono text-fg">cloud:</span> block in{' '}
-                      <span className="font-mono text-fg">curl-runner.yaml</span> and publish. It’s
-                      the summary people read in the gallery.
-                    </>
+                    'Add a description first. It’s the summary people read on curl-runner.com/collections.'
                   )}
                 </p>
+                {!described || editing ? (
+                  <div className="flex flex-col gap-1.5">
+                    <label htmlFor={descriptionId} className="sr-only">
+                      Description
+                    </label>
+                    <textarea
+                      id={descriptionId}
+                      rows={3}
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      placeholder="What these requests are for, in a sentence or two"
+                      className={inputClasses(
+                        draftLength > MAX_DESCRIPTION,
+                        'h-auto resize-y py-2 leading-normal',
+                      )}
+                    />
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cx(
+                          'flex-1 text-[12px]',
+                          draftLength > MAX_DESCRIPTION ? 'text-danger' : 'text-fg-subtle',
+                        )}
+                      >
+                        {draftLength} / {MAX_DESCRIPTION}
+                      </span>
+                      {editing ? (
+                        <Button size="sm" onClick={() => setEditing(false)} disabled={busy}>
+                          Cancel
+                        </Button>
+                      ) : null}
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onClick={() => void saveDescription()}
+                        disabled={!draftOk || busy}
+                      >
+                        Save description
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           </CardBody>

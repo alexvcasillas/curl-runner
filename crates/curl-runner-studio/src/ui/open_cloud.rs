@@ -9,7 +9,7 @@ use super::icons::{self, glyph};
 use super::settings_kit::{label_text, neutral_pill, primary_button, small_button};
 use super::workspace::Workspace;
 use crate::model::backend::{Backend, CollectionSource, TeamCollection, TeamRef};
-use crate::model::history::relative_time;
+use crate::model::history::relative_time_inline;
 use crate::model::publish::{CloudLink, publisher_label};
 use gpui_kit::component::button::Button;
 use gpui_kit::component::dialog::DialogEntrance;
@@ -78,7 +78,7 @@ pub fn row_detail(
     now: chrono::DateTime<chrono::Utc>,
 ) -> String {
     let ago = |at: chrono::DateTime<chrono::Utc>| {
-        relative_time(
+        relative_time_inline(
             at.with_timezone(&chrono::Local),
             now.with_timezone(&chrono::Local),
         )

@@ -269,3 +269,30 @@ async fn the_gallery_is_rate_limited_per_ip(pool: PgPool) {
     }
     assert_eq!(last, StatusCode::TOO_MANY_REQUESTS);
 }
+
+#[sqlx::test]
+async fn the_description_is_set_in_share(pool: PgPool) {
+    let (app, s) = setup(pool).await;
+    publish(&app, &s, "bare", None).await;
+    // A description and the listing in one call, trimmed.
+    let (status, body) = share(
+        &app,
+        &s,
+        "bare",
+        json!({"access": "public", "description": "  Charges  ", "listed": true}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["description"], "Charges");
+    assert_eq!(body["listed"], true);
+    assert_eq!(slugs(&list(&app, "").await), ["bare"]);
+    // Too long: refused, nothing changes.
+    let long = "x".repeat(501);
+    let (status, _) = share(&app, &s, "bare", json!({"description": long})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // Cleared: out of the gallery.
+    let (_, body) = share(&app, &s, "bare", json!({"description": " "})).await;
+    assert_eq!(body["description"], Value::Null);
+    assert_eq!(body["listed"], false);
+    assert!(slugs(&list(&app, "").await).is_empty());
+}

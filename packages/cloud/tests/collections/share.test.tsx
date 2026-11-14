@@ -51,6 +51,9 @@ function setup(
       ...share,
       ...('access' in body ? { access: (body as { access: Share['access'] }).access } : {}),
       ...('listed' in body ? { listed: (body as { listed: boolean }).listed } : {}),
+      ...('description' in body
+        ? { description: (body as { description: string }).description }
+        : {}),
     },
   }));
   const onAdd = vi.fn(async (entry: string, notify: boolean) => ({
@@ -120,9 +123,26 @@ describe('SharePanel gallery', () => {
     expect(screen.getByRole('switch', { name: SWITCH })).toHaveAttribute('aria-checked', 'false');
     const card = screen.getByRole('region', { name: 'Public gallery' });
     expect(card).toHaveTextContent(
-      'Add a description to the cloud: block in curl-runner.yaml and publish. It’s the summary people read in the gallery.',
+      'Add a description first. It’s the summary people read on curl-runner.com/collections.',
     );
     expect(within(card).queryByRole('link')).toBeNull();
+    expect(within(card).getByRole('button', { name: 'Save description' })).toBeDisabled();
+  });
+
+  it('saves a description without listing it, then lists with the switch', async () => {
+    const { user, onPatch } = setup(mk());
+    await user.type(screen.getByLabelText('Description'), '  Charges and refunds ');
+    expect(screen.getByText('19 / 500')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save description' }));
+    expect(onPatch).toHaveBeenCalledWith({ description: 'Charges and refunds' });
+    expect(await screen.findByText('Charges and refunds')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Description')).toBeNull();
+    expect(screen.getByRole('switch', { name: SWITCH })).toBeEnabled();
+    // Edit brings the field back with the text.
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(screen.getByLabelText('Description')).toHaveValue('Charges and refunds');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByLabelText('Description')).toBeNull();
   });
 
   it('treats a blank description as none', () => {
@@ -447,6 +467,7 @@ describe('share actions', () => {
     const bad = [
       actions.patchShare('acme', 'payments-api', { access: 'admin' } as never),
       actions.patchShare('acme', 'payments-api', { expires_in_days: 5 } as never),
+      actions.patchShare('acme', 'payments-api', { description: 'x'.repeat(501) }),
       actions.patchShare('acme', 'payments-api', { expires_in_days: '7' } as never),
       actions.patchShare('acme', 'payments-api', { reset_link: 'yes' } as never),
       actions.patchShare('acme', 'payments-api', { extra: 1 } as never),
