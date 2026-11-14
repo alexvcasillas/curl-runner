@@ -1059,3 +1059,95 @@ mod tests {
         );
     }
 }
+
+/// Removes a received copy for good (the switcher's `Remove copy…`): its
+/// Keychain values, notes, sync state, the folder, and the record. Only a
+/// folder under `{base}/shared/` is deleted; anything else is refused.
+pub fn remove_copy(
+    base: &Path,
+    copy: &received::ReceivedCopy,
+    secrets: &dyn SecretStore,
+) -> Result<(), String> {
+    let shared = base.join("shared");
+    let inside = match (shared.canonicalize(), copy.root.canonicalize()) {
+        (Ok(s), Ok(r)) => r.starts_with(&s) && r != s,
+        _ => false,
+    };
+    if !inside {
+        return Err(format!(
+            "{} isn't in the studio's shared folder, so it wasn't removed.",
+            copy.root.display()
+        ));
+    }
+    let name = copy
+        .root
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    for env in crate::model::environments::list_environments(&copy.root) {
+        let service = service_name(&name, &env, &copy.collection_id);
+        for key in secrets.names(&service) {
+            let _ = secrets.delete(&service, &key);
+        }
+    }
+    let _ = CollectionMeta::remove(base, &copy.root);
+    if !copy.collection_id.is_empty() {
+        let _ = sync_base::remove(Some(base), &copy.collection_id);
+    }
+    std::fs::remove_dir_all(&copy.root)
+        .map_err(|e| format!("Couldn't remove {}: {e}", copy.root.display()))?;
+    received::forget(base, &copy.share.link.token)
+        .map_err(|e| format!("Removed the folder, but couldn't update the list: {e}"))
+}
+
+#[cfg(test)]
+mod remove_tests {
+    use super::*;
+    use crate::model::secrets::MemorySecrets;
+
+    #[test]
+    fn a_copy_goes_with_its_values_and_record_and_nothing_outside_shared() {
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("shared/acme-pay");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("a.yaml"), "request: {}\n").unwrap();
+        let secrets = MemorySecrets::default();
+        let service = service_name("acme-pay", "Default", "c1");
+        secrets.set(&service, "API_TOKEN", "tok").unwrap();
+        received::record(
+            base.path(),
+            received::LocalCopy {
+                share_id: "crsl_1".into(),
+                root: root.clone(),
+                collection_id: "c1".into(),
+            },
+        )
+        .unwrap();
+        let copy = received::ReceivedCopy {
+            share: ReceivedShare {
+                link: crate::model::backend::ShareLink {
+                    server: "https://api.x.test".into(),
+                    token: "crsl_1".into(),
+                },
+                team: "Acme".into(),
+                name: "Pay".into(),
+                version: 1,
+                added: chrono::Utc::now().date_naive(),
+                files: Default::default(),
+            },
+            root: root.clone(),
+            collection_id: "c1".into(),
+        };
+        remove_copy(base.path(), &copy, &secrets).unwrap();
+        assert!(!root.exists());
+        assert!(secrets.names(&service).is_empty());
+        assert!(received::load(Some(base.path())).is_empty());
+        // A folder outside shared/ is never deleted.
+        let mine = tempfile::tempdir().unwrap();
+        let outside = received::ReceivedCopy {
+            root: mine.path().to_path_buf(),
+            ..copy
+        };
+        assert!(remove_copy(base.path(), &outside, &secrets).is_err());
+        assert!(mine.path().exists());
+    }
+}

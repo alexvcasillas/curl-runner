@@ -37,6 +37,7 @@ mod sidebar;
 mod sign_in;
 mod state;
 mod status_bar;
+mod switcher;
 mod sync;
 mod title_bar;
 mod tour;

@@ -262,13 +262,8 @@ impl Workspace {
             .pr(px(12.))
             .pb(px(8.))
             .pl(px(16.))
-            .child(
-                div()
-                    .text_size(px(12.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(color("text-secondary"))
-                    .child("Collections"),
-            );
+            .gap(px(8.))
+            .child(self.render_switcher(cx));
         let column = div()
             .id("sidebar")
             .flex()
@@ -309,14 +304,12 @@ impl Workspace {
                 rows.into_iter()
                     .enumerate()
                     .map(|(ix, row)| self.render_row(ix, row, active.as_deref(), cx)),
-            )
-            .children(self.render_other_collections(cx));
+            );
 
         if received {
             // The ReadOnly board: the shared name, no filter; the foot says
             // when the owner last changed it. The copy takes edits: New
             // request as for any collection.
-            let title = self.collection_title().unwrap_or_default();
             return column
                 .child(
                     div()
@@ -329,19 +322,8 @@ impl Workspace {
                         .pr(px(12.))
                         .pb(px(8.))
                         .pl(px(16.))
-                        .child(
-                            div()
-                                .id("sidebar-title")
-                                .role(Role::Label)
-                                .test_support()
-                                .aria_label(title.clone())
-                                .min_w_0()
-                                .text_ellipsis()
-                                .text_size(px(12.))
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(color("text-secondary"))
-                                .child(title),
-                        )
+                        .gap(px(8.))
+                        .child(self.render_switcher(cx))
                         .child(new_request_button(cx)),
                 )
                 .child(tree)
@@ -832,120 +814,6 @@ impl Workspace {
 }
 
 impl Workspace {
-    /// Below the tree: `Shared with me` (each received copy, `Shared`;
-    /// the Main board), or, in a received copy, `My collections` (the
-    /// recent folders that are not received copies; the ReadOnly board).
-    fn render_other_collections(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
-        // Received copies need the server; one left by an earlier build
-        // stays an ordinary folder.
-        if !crate::features::SERVER {
-            return None;
-        }
-        let root = self.state.collection.as_ref()?.root.clone();
-        let received = &self.received_all;
-        let (heading, rows): (&'static str, Vec<(PathBuf, String, bool)>) =
-            if self.shared_by().is_some() {
-                let rows = self
-                    .recent
-                    .iter()
-                    .filter(|(r, exists)| {
-                        *exists && r.path != root && !received.iter().any(|s| s.root == r.path)
-                    })
-                    .map(|(r, _)| {
-                        let name = r.path.file_name().map_or_else(
-                            || r.path.display().to_string(),
-                            |n| n.to_string_lossy().into_owned(),
-                        );
-                        (r.path.clone(), name, false)
-                    })
-                    .collect();
-                ("My collections", rows)
-            } else {
-                let rows = received
-                    .iter()
-                    .filter(|r| r.root != root)
-                    .map(|r| (r.root.clone(), r.share.name.clone(), true))
-                    .collect();
-                ("Shared with me", rows)
-            };
-        if rows.is_empty() {
-            return None;
-        }
-        let id = SharedString::from(heading.to_lowercase().replace(' ', "-"));
-        Some(
-            div()
-                .id(id)
-                .role(Role::Group)
-                .test_support()
-                .aria_label(heading)
-                .flex()
-                .flex_col()
-                .flex_none()
-                .gap(px(1.))
-                .child(
-                    div()
-                        .h(px(1.))
-                        .mx(px(8.))
-                        .my(px(10.))
-                        .bg(color("border-100")),
-                )
-                .child(
-                    div()
-                        .px(px(8.))
-                        .pb(px(6.))
-                        .text_size(px(12.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(color("text-secondary"))
-                        .child(heading),
-                )
-                .children(
-                    rows.into_iter()
-                        .enumerate()
-                        .map(|(ix, (path, name, pill))| {
-                            div()
-                                .id(SharedString::from(format!("other-collection-{ix}")))
-                                .role(Role::Button)
-                                .test_support()
-                                .aria_label(name.clone())
-                                .flex()
-                                .flex_none()
-                                .items_center()
-                                .gap(px(8.))
-                                .h(px(ROW_HEIGHT))
-                                .px(px(8.))
-                                .rounded(px(6.))
-                                .text_size(px(13.))
-                                .text_color(color(if pill {
-                                    "text-primary"
-                                } else {
-                                    "text-secondary"
-                                }))
-                                .whitespace_nowrap()
-                                .cursor_pointer()
-                                .hover(hover)
-                                .child(chevron(false))
-                                .child(name_cell(name))
-                                .when(pill, |row| {
-                                    row.child(
-                                        div()
-                                            .flex_none()
-                                            .px(px(6.))
-                                            .border_1()
-                                            .border_color(color("border-200"))
-                                            .rounded(px(4.))
-                                            .text_size(px(11.))
-                                            .text_color(color("text-secondary"))
-                                            .child("Shared"),
-                                    )
-                                })
-                                .on_click(cx.listener(move |this, _, window, cx| {
-                                    this.switch_to(path.clone(), window, cx)
-                                }))
-                        }),
-                ),
-        )
-    }
-
     /// The ReadOnly board's foot: `Updated 3 days ago` and `Check for
     /// updates`.
     fn render_updates_footer(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
