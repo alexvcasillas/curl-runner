@@ -1,5 +1,24 @@
 # @curl-runner/cli
 
+## 2.14.0
+
+### Minor Changes
+
+- [#237](https://github.com/alexvcasillas/curl-runner/pull/237) [`5729b97`](https://github.com/alexvcasillas/curl-runner/commit/5729b976f06cf07f8804b503968193bf62dfb2f4) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **One switcher for every collection**
+  
+  The sidebar header now names the open collection and switches between all of them.
+  
+  - **New:** click it (or ⌘K › Switch collection…) for **My collections** and **Shared with me** in one menu, plus Open folder, Open from Cloud and Open a shared link.
+  - **New:** right-click a row to reveal it in Finder, remove a folder from the list, or remove a shared copy (its folder and the values you filled in, after asking).
+  - **Improved:** the list under the tree that changed with what was open is gone.
+
+- [#236](https://github.com/alexvcasillas/curl-runner/pull/236) [`c6f48e2`](https://github.com/alexvcasillas/curl-runner/commit/c6f48e2dc86d5434c59cf3637eb7007376663297) Thanks [@alexvcasillas](https://github.com/alexvcasillas)! - **List any public collection in the gallery**
+  
+  A collection that syncs from the studio can now be listed too.
+  
+  - **New:** Share (studio) and Sharing (dashboard) take the gallery description directly: write it, save it, then switch on **List in the gallery**. Edit it any time; clearing it takes the collection out of the gallery.
+  - **Improved:** a publish whose `cloud:` block has a description still sets it, as before.
+
 ## 2.13.1
 
 ### Patch Changes
